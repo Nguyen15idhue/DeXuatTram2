@@ -1,0 +1,60 @@
+services:
+  frontend:
+    build: ./frontend
+    container_name: station-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.js:/app/vite.config.js
+    depends_on:
+      - backend
+    networks:
+      - station-network
+
+  backend:
+    build: ./backend
+    container_name: station-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/src:/app/src
+    environment:
+      - PORT=3000
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_NAME=station_management
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - station-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: station-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=station_management
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - station-network
+
+volumes:
+  mysql_data:
+
+networks:
+  station-network:
+    driver: bridge

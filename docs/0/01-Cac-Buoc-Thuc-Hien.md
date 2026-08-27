@@ -68,7 +68,7 @@ station-management/
 | latitude | DECIMAL(10,8) | |
 | longitude | DECIMAL(11,8) | |
 | address | VARCHAR(255) | |
-| status | ENUM('ACTIVE','DEPLOYING') | |
+| status | ENUM('ACTIVE','DEPLOYING','PROPOSAL') | |
 | description | TEXT | |
 | created_at | TIMESTAMP | |
 
