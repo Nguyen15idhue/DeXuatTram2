@@ -96,6 +96,9 @@ export const stationService = {
   getAll() {
     return api.get('/stations');
   },
+  getAllWithParams(queryString) {
+    return api.get(`/stations?${queryString}`);
+  },
   getById(id) {
     return api.get(`/stations/${id}`);
   },

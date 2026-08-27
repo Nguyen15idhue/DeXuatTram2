@@ -1,6 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
 import { stationService } from '../../services/api';
+import 'leaflet/dist/leaflet.css';
+
+const markerIcon = new L.Icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({ click(e) { onMapClick(e.latlng); } });
+  return null;
+}
 
 const AdminStationsPage = () => {
   const { token } = useAuth();
@@ -15,19 +31,31 @@ const AdminStationsPage = () => {
     address: '', status: 'ACTIVE', description: ''
   });
 
-  const loadStations = async () => {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+
+  const loadStations = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await stationService.getAll();
-      if (res.success) setStations(res.data);
+      const params = new URLSearchParams({ page, limit: 10 });
+      if (search) params.append('search', search);
+      if (filterStatus) params.append('status', filterStatus);
+      const res = await stationService.getAllWithParams(params.toString());
+      if (res.success) {
+        setStations(res.data);
+        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+      }
     } catch {
       setError('Lỗi tải danh sách trạm');
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, filterStatus]);
 
-  useEffect(() => { loadStations(); }, []);
+  useEffect(() => { loadStations(1); }, [loadStations]);
+
+  const handleSearch = () => { loadStations(1); };
 
   const openCreate = () => {
     setEditingId(null);
@@ -52,6 +80,10 @@ const AdminStationsPage = () => {
     setSuccess('');
   };
 
+  const handleMapClick = (latlng) => {
+    setForm({ ...form, latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -73,7 +105,7 @@ const AdminStationsPage = () => {
       if (res.success) {
         setSuccess(editingId ? 'Cập nhật thành công' : 'Tạo trạm thành công');
         setShowForm(false);
-        loadStations();
+        loadStations(pagination.page);
       } else {
         setError(res.message || 'Thao tác thất bại');
       }
@@ -89,7 +121,7 @@ const AdminStationsPage = () => {
       const res = await stationService.delete(id, token);
       if (res.success) {
         setSuccess('Xóa trạm thành công');
-        loadStations();
+        loadStations(pagination.page);
       } else {
         setError(res.message || 'Xóa thất bại');
       }
@@ -98,7 +130,7 @@ const AdminStationsPage = () => {
     }
   };
 
-  if (loading) return <div className="loading">Đang tải...</div>;
+  if (loading && stations.length === 0) return <div className="loading">Đang tải...</div>;
 
   return (
     <div className="admin-stations-page">
@@ -110,9 +142,25 @@ const AdminStationsPage = () => {
       {error && <div className="error-message">{error}</div>}
       {success && <div className="success-message">{success}</div>}
 
+      <div className="filter-bar">
+        <input
+          type="text"
+          placeholder="Search theo tên hoặc địa chỉ..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+        />
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <option value="">Tất cả trạng thái</option>
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="DEPLOYING">DEPLOYING</option>
+        </select>
+        <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
+      </div>
+
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <h2>{editingId ? 'Sửa trạm' : 'Thêm trạm mới'}</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
@@ -122,12 +170,26 @@ const AdminStationsPage = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Latitude *</label>
-                  <input type="number" step="any" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} />
+                  <input type="text" readOnly value={form.latitude} placeholder="Click trên bản đồ" />
                 </div>
                 <div className="form-group">
                   <label>Longitude *</label>
-                  <input type="number" step="any" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} />
+                  <input type="text" readOnly value={form.longitude} placeholder="Click trên bản đồ" />
                 </div>
+              </div>
+              <div className="map-picker">
+                <label>Chọn vị trí trên bản đồ</label>
+                <MapContainer
+                  center={[10.762622, 106.660172]}
+                  zoom={13}
+                  style={{ height: '250px', width: '100%' }}
+                >
+                  <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                  <MapClickHandler onMapClick={handleMapClick} />
+                  {form.latitude && form.longitude && (
+                    <Marker position={[parseFloat(form.latitude), parseFloat(form.longitude)]} icon={markerIcon} />
+                  )}
+                </MapContainer>
               </div>
               <div className="form-group">
                 <label>Địa chỉ *</label>
@@ -188,6 +250,14 @@ const AdminStationsPage = () => {
           </tbody>
         </table>
       </div>
+
+      {pagination.totalPages > 1 && (
+        <div className="pagination">
+          <button disabled={pagination.page <= 1} onClick={() => loadStations(pagination.page - 1)}>Trước</button>
+          <span>Trang {pagination.page} / {pagination.totalPages} (Tổng: {pagination.total})</span>
+          <button disabled={pagination.page >= pagination.totalPages} onClick={() => loadStations(pagination.page + 1)}>Sau</button>
+        </div>
+      )}
     </div>
   );
 };

@@ -626,6 +626,92 @@ select:focus {
   width: auto;
 }
 
+/* Filter Bar */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.filter-bar input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.filter-bar input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.filter-bar select {
+  width: auto;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.filter-bar .btn {
+  width: auto;
+  padding: 8px 16px;
+}
+
+/* Map Picker */
+.map-picker {
+  margin-bottom: 15px;
+}
+
+.map-picker label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #555;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 20px;
+  padding: 10px 0;
+}
+
+.pagination button {
+  width: auto;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.pagination span {
+  color: #666;
+  font-size: 14px;
+}
+
+/* Modal Large */
+.modal-lg {
+  max-width: 700px;
+}
+
+/* Form Input (textarea in form-group) */
+.form-group textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
 /* Success Message */
 .success-message {
   background: #d4edda;

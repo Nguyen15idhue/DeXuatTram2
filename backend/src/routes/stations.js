@@ -3,13 +3,44 @@ const router = express.Router();
 const pool = require('../utils/db');
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
 
-// GET /api/stations - Get all stations (public)
+// GET /api/stations - Get all stations (public, with search/filter/pagination)
 router.get('/', async (req, res) => {
   try {
-    const [stations] = await pool.query(
-      'SELECT id, name, latitude, longitude, address, status, description, created_at FROM stations ORDER BY created_at DESC'
-    );
-    res.json({ success: true, data: stations });
+    const { search, status, page = 1, limit = 10 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let where = [];
+    let params = [];
+
+    if (search) {
+      where.push('(name LIKE ? OR address LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    if (status) {
+      where.push('status = ?');
+      params.push(status);
+    }
+
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+
+    const countQuery = `SELECT COUNT(*) as total FROM stations ${whereClause}`;
+    const [countResult] = await pool.query(countQuery, params);
+    const total = countResult[0].total;
+
+    const dataQuery = `SELECT id, name, latitude, longitude, address, status, description, created_at FROM stations ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+    const [stations] = await pool.query(dataQuery, [...params, parseInt(limit), offset]);
+
+    res.json({
+      success: true,
+      data: stations,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
   } catch (error) {
     console.error('Get stations error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

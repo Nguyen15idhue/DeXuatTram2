@@ -565,26 +565,57 @@ Vấn đề gặp phải: Không có
 
 ### Kết quả đã đạt
 
-- [ ] Search theo tên
-- [ ] Filter theo status
-- [ ] Phân trang
-- [ ] Map picker khi tạo/sửa
+- [x] Search theo tên hoặc địa chỉ
+- [x] Filter theo status (ACTIVE, DEPLOYING)
+- [x] Phân trang danh sách (10 trang/trang)
+- [x] Map picker khi tạo/sửa (click bản đồ lấy tọa độ)
 
-### Test Cases
+### File đã tạo/cập nhật
 
-| Feature | Test Case | Status |
-|---------|-----------|--------|
-| Search | Search "Trạm A" → có kết quả | ... |
-| Filter | Filter ACTIVE → chỉ thấy ACTIVE | ... |
-| Pagination | Click trang 2 → data đúng | ... |
-| Map Picker | Click map → lấy Lat/Lng | ... |
+```
+backend/src/routes/stations.js        # GET /api/stations + search, filter, pagination params
+frontend/src/pages/admin/AdminStationsPage.jsx  # Search + filter + pagination + map picker
+frontend/src/services/api.js          # Thêm getAllWithParams()
+frontend/src/App.css                  # Thêm styles: filter-bar, map-picker, pagination, modal-lg
+```
+
+### API Test Results
+
+| Endpoint | Method | Test Case | Status |
+|----------|--------|-----------|--------|
+| /api/stations?page=1&limit=3 | GET | Pagination: 3 items/trang, total=6, totalPages=2 | ✅ Pass |
+| /api/stations?search=Quận | GET | Search "Quận" → 2 kết quả (Quận 1, Quận 3) | ✅ Pass |
+| /api/stations?status=DEPLOYING | GET | Filter DEPLOYING → 1 kết quả (Thủ Đức) | ✅ Pass |
+| /api/stations?search=HN&status=ACTIVE | GET | Kết hợp search + filter → 1 kết quả | ✅ Pass |
+| /api/stations | GET | Không query → trả 6 items + pagination info | ✅ Pass |
+
+### Frontend Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Search input | ✅ Pass | Nhập text, Enter hoặc click Tìm |
+| Filter dropdown | ✅ Pass | Chọn ALL / ACTIVE / DEPLOYING |
+| Pagination | ✅ Pass | Nút Trước/Sau, hiển thị trang hiện tại |
+| Map picker trong form | ✅ Pass | Click bản đồ → lat/lng tự điền |
+| Marker preview trong form | ✅ Pass | Hiển thị marker tại vị trí đã chọn |
+| Tạo trạm mới với map picker | ✅ Pass | Click map → nhập info → tạo thành công |
+| Sửa trạm với map picker | ✅ Pass | Click map → cập nhật tọa độ |
+
+### CSS Styles mới
+
+```css
+.filter-bar           /* Search + filter + button layout */
+.map-picker           /* Map container trong form */
+.pagination           /* Pagination controls */
+.modal-lg             /* Modal rộng hơn cho form có map */
+```
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.5 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -802,7 +833,7 @@ Vấn đề gặp phải: ...
 | 7 | 2.5h | 0.5h | ✅ |
 | 8 | 1h | 0.25h | ✅ |
 | 9 | 1.5h | 0.5h | ✅ |
-| 10 | 1h | ... | ... |
+| 10 | 1h | 0.5h | ✅ |
 | 11 | 1.5h | 0.25h | ✅ |
 | 12 | 2.5h | ... | ... |
 | 13 | 1h | ... | ... |
@@ -816,7 +847,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 4.75 giờ (Bước 1-9, 11)
+Tổng thời gian thực tế: 5.25 giờ (Bước 1-11)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```
