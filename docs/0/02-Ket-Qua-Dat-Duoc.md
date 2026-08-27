@@ -508,30 +508,55 @@ Vấn đề gặp phải: Không có
 
 ### Kết quả đã đạt
 
-- [ ] Danh sách users
-- [ ] Tạo user mới
-- [ ] Sửa user
-- [ ] Xóa user
-- [ ] Lock/Unlock user
-- [ ] Đổi role
+- [x] Danh sách users (bảng hiển thị)
+- [x] Tạo user mới (modal form)
+- [x] Sửa thông tin user (modal form)
+- [x] Xóa user (không cho xóa admin)
+- [x] Lock/Unlock user (toggle button)
+- [x] Thay đổi role USER ↔ ADMIN (dropdown)
 
-### CRUD Test Results
+### File đã tạo
 
-| Operation | Test Case | Status |
-|-----------|-----------|--------|
-| List | Hiển thị danh sách | ✅ Pass |
-| Create | Tạo user mới | ✅ Pass |
-| Update | Sửa thông tin | ✅ Pass |
-| Delete | Xóa user | ✅ Pass |
-| Lock | Lock user → không login được | ✅ Pass |
-| Change Role | USER → ADMIN | ✅ Pass |
+```
+backend/src/routes/adminUsers.js       # GET, POST, PUT, DELETE, PATCH lock, PATCH role
+frontend/src/pages/admin/AdminUsersPage.jsx  # Full CRUD UI
+frontend/src/services/api.js           # Thêm adminUserService + patchWithAuth
+frontend/src/App.css                   # Thêm style btn-lock
+```
+
+### API Test Results
+
+| Endpoint | Method | Test Case | Status |
+|----------|--------|-----------|--------|
+| /api/admin/users | GET | Lấy danh sách 4 users | ✅ Pass |
+| /api/admin/users | POST | Tạo user mới | ✅ Pass |
+| /api/admin/users/:id | PUT | Sửa tên + SĐT | ✅ Pass |
+| /api/admin/users/:id/lock | PATCH | Lock → LOCKED | ✅ Pass |
+| /api/admin/users/:id/lock | PATCH | Unlock → ACTIVE | ✅ Pass |
+| /api/admin/users/:id/role | PATCH | USER → ADMIN | ✅ Pass |
+| /api/admin/users/:id | DELETE | Xóa user thường | ✅ Pass |
+| /api/admin/users | GET | User thường truy cập | ✅ Pass (bị chặn 403) |
+| /api/admin/users/1 | DELETE | Xóa admin | ✅ Pass (bị chặn 400) |
+
+### Frontend Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Trang /admin/users load | ✅ Pass | Hiển thị bảng danh sách |
+| Nút "Thêm user" | ✅ Pass | Mở modal form |
+| Form tạo user | ✅ Pass | Nhập đủ thông tin + Submit |
+| Nút "Sửa" | ✅ Pass | Mở form với data cũ |
+| Nút "Khóa/Mở" | ✅ Pass | Toggle lock/unlock |
+| Dropdown Role | ✅ Pass | Chuyển USER ↔ ADMIN |
+| Nút "Xóa" | ✅ Pass | Confirm dialog + xóa (không cho xóa admin) |
+| Badge trạng thái | ✅ Pass | ACTIVE xanh, LOCKED đỏ |
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.5 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -776,7 +801,7 @@ Vấn đề gặp phải: ...
 | 6 | 1.5h | 0.5h | ✅ |
 | 7 | 2.5h | 0.5h | ✅ |
 | 8 | 1h | 0.25h | ✅ |
-| 9 | 1.5h | ... | ... |
+| 9 | 1.5h | 0.5h | ✅ |
 | 10 | 1h | ... | ... |
 | 11 | 1.5h | 0.25h | ✅ |
 | 12 | 2.5h | ... | ... |
@@ -791,7 +816,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 4.25 giờ (Bước 1-8, 11)
+Tổng thời gian thực tế: 4.75 giờ (Bước 1-9, 11)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```

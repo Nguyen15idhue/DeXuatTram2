@@ -76,6 +76,19 @@ export const api = {
     });
     const data = await response.json();
     return data;
+  },
+
+  async patchWithAuth(endpoint, body, token) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    return data;
   }
 };
 
@@ -126,5 +139,26 @@ export const myProposalService = {
   getAll(status, token) {
     const query = status ? `?status=${status}` : '';
     return api.getWithAuth(`/my-proposals${query}`, token);
+  }
+};
+
+export const adminUserService = {
+  getAll(token) {
+    return api.getWithAuth('/admin/users', token);
+  },
+  create(user, token) {
+    return api.postWithAuth('/admin/users', user, token);
+  },
+  update(id, user, token) {
+    return api.putWithAuth(`/admin/users/${id}`, user, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/users/${id}`, token);
+  },
+  toggleLock(id, token) {
+    return api.patchWithAuth(`/admin/users/${id}/lock`, {}, token);
+  },
+  changeRole(id, role, token) {
+    return api.patchWithAuth(`/admin/users/${id}/role`, { role }, token);
   }
 };

@@ -466,6 +466,16 @@ button:disabled {
   background: #c0392b;
 }
 
+.btn-lock {
+  background: #f39c12;
+  color: white;
+  margin-right: 5px;
+}
+
+.btn-lock:hover {
+  background: #e67e22;
+}
+
 /* Table */
 .table-container {
   overflow-x: auto;
