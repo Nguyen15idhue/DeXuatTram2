@@ -5,6 +5,8 @@ const testRoutes = require('./routes/test');
 const authRoutes = require('./routes/auth');
 const stationsRoutes = require('./routes/stations');
 const proposalsRoutes = require('./routes/proposals');
+const adminProposalsRoutes = require('./routes/adminProposals');
+const myProposalsRoutes = require('./routes/myProposals');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +20,8 @@ app.use('/api', testRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/stations', stationsRoutes);
 app.use('/api/proposals', proposalsRoutes);
+app.use('/api/admin/proposals', adminProposalsRoutes);
+app.use('/api/my-proposals', myProposalsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

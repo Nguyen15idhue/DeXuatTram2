@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import MapView from '../../components/MapView';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
@@ -12,14 +12,20 @@ const MapPage = () => {
     area: '', land_type: '', description: ''
   });
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [toast, setToast] = useState('');
   const [mapKey, setMapKey] = useState(0);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const handleMapClick = (lat, lng) => {
     setCoords({ lat, lng });
     setForm({ owner_name: '', owner_phone: '', address: '', area: '', land_type: '', description: '' });
     setError('');
-    setSuccess('');
     setShowForm(true);
   };
 
@@ -40,8 +46,8 @@ const MapPage = () => {
       }, token);
 
       if (res.success) {
-        setSuccess('Tạo đề xuất thành công!');
         setShowForm(false);
+        setToast('Tạo đề xuất thành công! Marker mới xuất hiện trên bản đồ.');
         setMapKey(prev => prev + 1);
       } else {
         setError(res.message || 'Tạo đề xuất thất bại');
@@ -54,6 +60,7 @@ const MapPage = () => {
   return (
     <div className="map-page">
       <div className="map-container">
+        {toast && <div className="map-toast">{toast}</div>}
         <MapView key={mapKey} onMapClick={handleMapClick} />
       </div>
 
@@ -61,7 +68,6 @@ const MapPage = () => {
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Đề xuất trạm mới</h2>
-            {success && <div className="success-message">{success}</div>}
             {error && <div className="error-message">{error}</div>}
             <form onSubmit={handleSubmit}>
               <div className="form-row">

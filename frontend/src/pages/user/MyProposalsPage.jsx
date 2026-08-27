@@ -1,8 +1,79 @@
+import { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { myProposalService } from '../../services/api';
+
 const MyProposalsPage = () => {
+  const { token } = useAuth();
+  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [error, setError] = useState('');
+
+  const loadProposals = async () => {
+    try {
+      setLoading(true);
+      const res = await myProposalService.getAll(filter || null, token);
+      if (res.success) setProposals(res.data);
+    } catch {
+      setError('Lỗi tải danh sách đề xuất');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadProposals(); }, [filter]);
+
+  if (loading) return <div className="loading">Đang tải...</div>;
+
   return (
     <div className="proposals-page">
-      <h1>Đề xuất của tôi</h1>
-      <p>Danh sách đề xuất sẽ được hiển thị ở đây (Phase 8)</p>
+      <div className="page-header">
+        <h1>Đề xuất của tôi</h1>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
+          <option value="">Tất cả</option>
+          <option value="PENDING">PENDING</option>
+          <option value="REVIEWING">REVIEWING</option>
+          <option value="APPROVED">APPROVED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+      </div>
+
+      {error && <div className="error-message">{error}</div>}
+
+      <div className="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Chủ MB</th>
+              <th>SĐT</th>
+              <th>Địa chỉ</th>
+              <th>Diện tích</th>
+              <th>Loại đất</th>
+              <th>Trạng thái</th>
+              <th>Ngày tạo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {proposals.length === 0 ? (
+              <tr><td colSpan="8" className="empty">Bạn chưa có đề xuất nào</td></tr>
+            ) : proposals.map((p) => (
+              <tr key={p.id}>
+                <td>{p.id}</td>
+                <td>{p.owner_name}</td>
+                <td>{p.owner_phone}</td>
+                <td>{p.address}</td>
+                <td>{p.area || '-'}</td>
+                <td>{p.land_type || '-'}</td>
+                <td>
+                  <span className={`badge badge-${p.status.toLowerCase()}`}>{p.status}</span>
+                </td>
+                <td>{new Date(p.created_at).toLocaleDateString('vi-VN')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

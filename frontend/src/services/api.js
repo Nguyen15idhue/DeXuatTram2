@@ -108,3 +108,23 @@ export const proposalService = {
     return api.postWithAuth('/proposals', proposal, token);
   }
 };
+
+export const adminProposalService = {
+  getAll(status, token) {
+    const query = status ? `?status=${status}` : '';
+    return api.getWithAuth(`/admin/proposals${query}`, token);
+  },
+  updateStatus(id, status, token) {
+    return api.putWithAuth(`/admin/proposals/${id}/status`, { status }, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/proposals/${id}`, token);
+  }
+};
+
+export const myProposalService = {
+  getAll(status, token) {
+    const query = status ? `?status=${status}` : '';
+    return api.getWithAuth(`/my-proposals${query}`, token);
+  }
+};
