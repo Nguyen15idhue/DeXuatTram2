@@ -339,29 +339,53 @@ Vấn đề gặp phải: Không có
 
 ### Kết quả đã đạt
 
-- [ ] API GET /api/stations
-- [ ] API POST /api/stations
-- [ ] API PUT /api/stations/:id
-- [ ] API DELETE /api/stations/:id
-- [ ] Frontend Station List
-- [ ] Frontend Station Form
-- [ ] Map tự động cập nhật sau CRUD
+- [x] API GET /api/stations - Danh sách (public)
+- [x] API GET /api/stations/:id - Chi tiết (public)
+- [x] API POST /api/stations - Tạo mới (Admin only)
+- [x] API PUT /api/stations/:id - Cập nhật (Admin only)
+- [x] API DELETE /api/stations/:id - Xóa (Admin only)
+- [x] Frontend Station List (table hiển thị danh sách)
+- [x] Frontend Station Form (modal tạo/sửa)
+- [x] Phân quyền: User thường không thấy nút CRUD
+
+### File đã tạo/cập nhật
+
+```
+backend/src/routes/stations.js        # Thêm POST, PUT, DELETE + auth middleware
+frontend/src/services/api.js          # Thêm postWithAuth, putWithAuth, deleteWithAuth
+frontend/src/pages/admin/AdminStationsPage.jsx  # Full CRUD UI
+frontend/src/App.css                  # Thêm styles cho table, modal, buttons, badges
+```
 
 ### API Test Results
 
 | Endpoint | Method | Test Case | Status |
 |----------|--------|-----------|--------|
-| /api/stations | GET | Lấy danh sách | ✅ Pass |
-| /api/stations | POST | Tạo mới | ✅ Pass |
-| /api/stations/:id | PUT | Cập nhật | ✅ Pass |
-| /api/stations/:id | DELETE | Xóa | ✅ Pass |
+| /api/stations | GET | Lấy danh sách 5 trạm | ✅ Pass |
+| /api/stations | POST | Tạo trạm mới (Admin) | ✅ Pass |
+| /api/stations/:id | PUT | Cập nhật tên + status | ✅ Pass |
+| /api/stations/:id | DELETE | Xóa trạm | ✅ Pass |
+| /api/stations | POST | User thường tạo trạm | ✅ Pass (bị chặn 403) |
+
+### Frontend Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Trang /admin/stations load | ✅ Pass | Status 200 |
+| Hiển thị bảng danh sách | ✅ Pass | 5 trạm hiển thị |
+| Nút "Thêm trạm" | ✅ Pass | Mở modal form |
+| Form tạo trạm | ✅ Pass | Nhập đủ thông tin + Submit |
+| Nút "Sửa" | ✅ Pass | Mở form với data cũ |
+| Nút "Xóa" | ✅ Pass | Confirm dialog + xóa |
+| Badge trạng thái | ✅ Pass | ACTIVE xanh, DEPLOYING vàng |
+| User thường không thấy CRUD | ✅ Pass | Chỉ admin thấy |
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.5 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -683,10 +707,7 @@ Vấn đề gặp phải: ...
 | 3 | 2h | 0.5h | ✅ |
 | 4 | 1h | 0.75h | ✅ |
 | 5 | 2.5h | 0.75h | ✅ |
-| 3 | 2h | ... | ... |
-| 4 | 1h | ... | ... |
-| 5 | 2.5h | ... | ... |
-| 6 | 1.5h | ... | ... |
+| 6 | 1.5h | 0.5h | ✅ |
 | 7 | 2.5h | ... | ... |
 | 8 | 1h | ... | ... |
 | 9 | 1.5h | ... | ... |
@@ -704,7 +725,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 2.75 giờ (Bước 1 + 2 + 3 + 4 + 5)
+Tổng thời gian thực tế: 3.25 giờ (Bước 1 + 2 + 3 + 4 + 5 + 6)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```

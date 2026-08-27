@@ -17,8 +17,61 @@ export const api = {
     return data;
   },
 
+  async put(endpoint, body) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    return data;
+  },
+
+  async delete(endpoint) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+    return data;
+  },
+
   async getWithAuth(endpoint, token) {
     const response = await fetch(`${API_URL}${endpoint}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    return data;
+  },
+
+  async postWithAuth(endpoint, body, token) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    return data;
+  },
+
+  async putWithAuth(endpoint, body, token) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    return data;
+  },
+
+  async deleteWithAuth(endpoint, token) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await response.json();
@@ -32,6 +85,15 @@ export const stationService = {
   },
   getById(id) {
     return api.get(`/stations/${id}`);
+  },
+  create(station, token) {
+    return api.postWithAuth('/stations', station, token);
+  },
+  update(id, station, token) {
+    return api.putWithAuth(`/stations/${id}`, station, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/stations/${id}`, token);
   }
 };
 

@@ -1,52 +1,100 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../utils/db');
+const { requireAuth, requireAdmin } = require('../middlewares/auth');
 
-// GET /api/stations - Get all stations
+// GET /api/stations - Get all stations (public)
 router.get('/', async (req, res) => {
   try {
     const [stations] = await pool.query(
       'SELECT id, name, latitude, longitude, address, status, description, created_at FROM stations ORDER BY created_at DESC'
     );
-    
-    res.json({
-      success: true,
-      data: stations
-    });
+    res.json({ success: true, data: stations });
   } catch (error) {
     console.error('Get stations error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi server' 
-    });
+    res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 });
 
-// GET /api/stations/:id - Get station by ID
+// GET /api/stations/:id - Get station by ID (public)
 router.get('/:id', async (req, res) => {
   try {
-    const [stations] = await pool.query(
-      'SELECT * FROM stations WHERE id = ?',
-      [req.params.id]
-    );
-
+    const [stations] = await pool.query('SELECT * FROM stations WHERE id = ?', [req.params.id]);
     if (stations.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Không tìm thấy trạm' 
-      });
+      return res.status(404).json({ success: false, message: 'Không tìm thấy trạm' });
     }
-
-    res.json({
-      success: true,
-      data: stations[0]
-    });
+    res.json({ success: true, data: stations[0] });
   } catch (error) {
     console.error('Get station error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi server' 
-    });
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
+// POST /api/stations - Create station (admin only)
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { name, latitude, longitude, address, status, description } = req.body;
+
+    if (!name || !latitude || !longitude || !address) {
+      return res.status(400).json({ success: false, message: 'Thiếu trường bắt buộc' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO stations (name, latitude, longitude, address, status, description) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, latitude, longitude, address, status || 'ACTIVE', description || '']
+    );
+
+    const [station] = await pool.query('SELECT * FROM stations WHERE id = ?', [result.insertId]);
+    res.status(201).json({ success: true, data: station[0], message: 'Tạo trạm thành công' });
+  } catch (error) {
+    console.error('Create station error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
+// PUT /api/stations/:id - Update station (admin only)
+router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { name, latitude, longitude, address, status, description } = req.body;
+    const { id } = req.params;
+
+    if (!name || !latitude || !longitude || !address) {
+      return res.status(400).json({ success: false, message: 'Thiếu trường bắt buộc' });
+    }
+
+    const [existing] = await pool.query('SELECT id FROM stations WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy trạm' });
+    }
+
+    await pool.query(
+      'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ? WHERE id = ?',
+      [name, latitude, longitude, address, status, description || '', id]
+    );
+
+    const [station] = await pool.query('SELECT * FROM stations WHERE id = ?', [id]);
+    res.json({ success: true, data: station[0], message: 'Cập nhật trạm thành công' });
+  } catch (error) {
+    console.error('Update station error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
+// DELETE /api/stations/:id - Delete station (admin only)
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [existing] = await pool.query('SELECT id FROM stations WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy trạm' });
+    }
+
+    await pool.query('DELETE FROM stations WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Xóa trạm thành công' });
+  } catch (error) {
+    console.error('Delete station error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 });
 
