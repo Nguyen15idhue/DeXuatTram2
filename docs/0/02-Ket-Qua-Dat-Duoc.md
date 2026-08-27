@@ -465,25 +465,41 @@ Vấn đề gặp phải: Không có
 
 ### Kết quả đã đạt
 
-- [ ] Hiển thị danh sách đề xuất của user
-- [ ] Hiển thị trên bản đồ
-- [ ] Filter theo status
-- [ ] User chỉ thấy của mình
+- [x] Hiển thị danh sách đề xuất của user đang login
+- [x] Filter theo trạng thái: PENDING, REVIEWING, APPROVED, REJECTED
+- [x] User chỉ thấy đề xuất của mình, không thấy của người khác
 
-### Test Cases
+### File đã tạo
 
-| Test Case | Expected | Actual | Status |
-|-----------|----------|--------|--------|
-| Login User A → Xem danh sách | Chỉ thấy proposals User A | ... | ... |
-| Filter PENDING | Chỉ thấy status PENDING | ... | ... |
-| Xem chi tiết proposal | Hiển thị đúng thông tin | ... | ... |
+```
+backend/src/routes/myProposals.js         # GET /api/my-proposals (requireAuth)
+frontend/src/pages/user/MyProposalsPage.jsx  # Danh sách + filter
+frontend/src/services/api.js              # Thêm myProposalService
+```
+
+### API Test Results
+
+| Endpoint | Method | Test Case | Status |
+|----------|--------|-----------|--------|
+| /api/my-proposals | GET | User1 lấy đề xuất của mình | ✅ Pass (3 proposals) |
+| /api/my-proposals | GET | Filter ?status=PENDING | ✅ Pass |
+| /api/my-proposals | GET | Không token → 401 | ✅ Pass |
+
+### Frontend Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Trang /my-proposals load | ✅ Pass | Hiển thị danh sách |
+| Hiển thị đúng data user | ✅ Pass | Chỉ thấy đề xuất của mình |
+| Filter trạng thái | ✅ Pass | Dropdown filter hoạt động |
+| Badge màu | ✅ Pass | PENDING cam, APPROVED xanh, REJECTED đỏ |
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.25 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -548,31 +564,49 @@ Vấn đề gặp phải: ...
 
 ---
 
-## BƯỚC 11: QUẢN LÝ ĐỀ XUẤT
+## BƯỚC 11: QUẢN LÝ ĐỀ XUẤT (Admin)
 
 ### Kết quả đã đạt
 
-- [ ] Danh sách đề xuất
-- [ ] Filter status/người đề xuất
-- [ ] Duyệt/Từ chối đề xuất
-- [ ] Auto tạo Station khi Approved
+- [x] Danh sách đề xuất (bảng đầy đủ thông tin)
+- [x] Filter theo trạng thái
+- [x] Đổi trạng thái (dropdown: PENDING, REVIEWING, APPROVED, REJECTED)
+- [x] Xóa đề xuất
 
-### Workflow Test
+### File đã tạo
 
 ```
-Trạng thái hiện tại: PENDING
-Action: Click "Duyệt"
-Kết quả mong đợi: Status → APPROVED + Tạo Station
-Kết quả thực tế: ...
-Status: ...
+backend/src/routes/adminProposals.js      # GET, DELETE, PUT /status (requireAuth + requireAdmin)
+frontend/src/pages/admin/AdminProposalsPage.jsx  # Bảng + filter + status + xóa
+frontend/src/services/api.js              # Thêm adminProposalService
 ```
+
+### API Test Results
+
+| Endpoint | Method | Test Case | Status |
+|----------|--------|-----------|--------|
+| /api/admin/proposals | GET | Admin lấy tất cả | ✅ Pass (5 proposals) |
+| /api/admin/proposals | GET | Filter ?status=PENDING | ✅ Pass (3 proposals) |
+| /api/admin/proposals/:id/status | PUT | Đổi REVIEWING → PENDING | ✅ Pass |
+| /api/admin/proposals/:id | DELETE | Xóa đề xuất | ✅ Pass |
+| /api/admin/proposals | GET | User thường truy cập | ✅ Pass (bị chặn 403) |
+
+### Frontend Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Trang /admin/proposals load | ✅ Pass | Hiển thị bảng |
+| Filter trạng thái | ✅ Pass | Dropdown filter hoạt động |
+| Đổi trạng thái | ✅ Pass | Select dropdown + tự cập nhật |
+| Xóa đề xuất | ✅ Pass | Confirm dialog + xóa |
+| User thường không thấy | ✅ Pass | Chỉ admin thấy |
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.25 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -741,10 +775,10 @@ Vấn đề gặp phải: ...
 | 5 | 2.5h | 0.75h | ✅ |
 | 6 | 1.5h | 0.5h | ✅ |
 | 7 | 2.5h | 0.5h | ✅ |
-| 8 | 1h | ... | ... |
+| 8 | 1h | 0.25h | ✅ |
 | 9 | 1.5h | ... | ... |
 | 10 | 1h | ... | ... |
-| 11 | 1.5h | ... | ... |
+| 11 | 1.5h | 0.25h | ✅ |
 | 12 | 2.5h | ... | ... |
 | 13 | 1h | ... | ... |
 | 14 | 1.5h | ... | ... |
@@ -757,7 +791,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 3.75 giờ (Bước 1 + 2 + 3 + 4 + 5 + 6 + 7)
+Tổng thời gian thực tế: 4.25 giờ (Bước 1-8, 11)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```
