@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { stationService, proposalService } from '../services/api';
@@ -12,14 +12,19 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const MapView = ({ onMarkerClick }) => {
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({
+    click(e) {
+      onMapClick && onMapClick(e.latlng.lat, e.latlng.lng);
+    }
+  });
+  return null;
+}
+
+const MapView = ({ onMarkerClick, onMapClick }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const fetchData = async () => {
     try {
@@ -27,19 +32,16 @@ const MapView = ({ onMarkerClick }) => {
         stationService.getAll(),
         proposalService.getAll()
       ]);
-
-      if (stationsRes.success) {
-        setStations(stationsRes.data);
-      }
-      if (proposalsRes.success) {
-        setProposals(proposalsRes.data);
-      }
+      if (stationsRes.success) setStations(stationsRes.data);
+      if (proposalsRes.success) setProposals(proposalsRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => { fetchData(); }, []);
 
   if (loading) {
     return <div className="map-loading">Đang tải bản đồ...</div>;
@@ -59,6 +61,8 @@ const MapView = ({ onMarkerClick }) => {
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
+
+        <MapClickHandler onMapClick={onMapClick} />
         
         {stations.map((station) => (
           <Marker

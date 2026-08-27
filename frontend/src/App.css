@@ -70,6 +70,11 @@ body {
   border-color: #667eea;
 }
 
+.form-group input.readonly {
+  background: #f0f0f0;
+  cursor: not-allowed;
+}
+
 button {
   width: 100%;
   padding: 12px;

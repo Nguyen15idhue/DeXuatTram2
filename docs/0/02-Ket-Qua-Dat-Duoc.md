@@ -394,37 +394,69 @@ Vấn đề gặp phải: Không có
 
 ### Kết quả đã đạt
 
-- [ ] Click map → lấy tọa độ
-- [ ] Form đề xuất hiển thị đúng
-- [ ] Submit → tạo proposal
-- [ ] Marker proposal xuất hiện trên map
+- [x] User click vị trí trên map → lấy được tọa độ
+- [x] Mở form đề xuất với tọa độ đã chọn (readonly)
+- [x] Submit → tạo proposal trong database (status: PENDING)
+- [x] Proposal xuất hiện trên map với marker màu cam
+- [x] Form validation: bắt buộc nhập chủ MB, SĐT, địa chỉ
+- [x] Map tự refresh marker sau khi submit
 
-### Flow Test
+### Flow hoạt động
 
 ```
-Test Case: User đề xuất trạm mới
-Input: Click vị trí trên map
-Expected: Form hiện với Lat/Lng đúng
-Actual: ...
-Status: ...
-
-Input: Nhập thông tin + Submit
-Expected: Tạo proposal thành công
-Actual: ...
-Status: ...
-
-Input: Xem lại bản đồ
-Expected: Marker mới xuất hiện
-Actual: ...
-Status: ...
+User click map → Lấy Lat/Lng → Mở form → Nhập thông tin → Submit
+    → API POST /api/proposals → Database → Refresh map → Marker mới xuất hiện
 ```
+
+### File đã tạo/cập nhật
+
+```
+backend/src/routes/proposals.js         # Thêm POST /api/proposals (requireAuth)
+frontend/src/services/api.js            # Thêm proposalService.create()
+frontend/src/components/MapView.jsx     # Thêm MapClickHandler + onMapClick prop
+frontend/src/pages/user/MapPage.jsx     # Click map → form → submit → refresh
+frontend/src/App.css                    # Thêm style input.readonly
+```
+
+### API Test Results
+
+| Endpoint | Method | Test Case | Status |
+|----------|--------|-----------|--------|
+| /api/proposals | GET | Lấy danh sách 3 proposals | ✅ Pass |
+| /api/proposals | POST | Tạo proposal mới (user login) | ✅ Pass |
+| /api/proposals | GET | Verify sau tạo → 4 proposals | ✅ Pass |
+| /api/proposals | POST | Không token → bị chặn 401 | ✅ Pass |
+| /api/proposals | POST | Thiếu field → lỗi 400 | ✅ Pass |
+
+### Frontend Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Click trên map | ✅ Pass | Form hiện tọa độ đúng (readonly) |
+| Form đề xuất | ✅ Pass | Đầy đủ fields: chủ MB, SĐT, địa chỉ, diện tích, loại đất, ghi chú |
+| Submit thành công | ✅ Pass | Tạo proposal status PENDING |
+| Refresh map | ✅ Pass | Marker mới xuất hiện sau submit |
+| Popup proposal | ✅ Pass | Hiển thị thông tin đã nhập |
+
+### Dữ liệu test
+
+| Field | Giá trị |
+|-------|---------|
+| Latitude | 10.775000 |
+| Longitude | 106.695000 |
+| Chủ MB | Nguyen Van Test |
+| SĐT | 0909123456 |
+| Địa chỉ | Đường Test, Quận 1, TP.HCM |
+| Diện tích | 30m2 |
+| Loại đất | Nhà riêng |
+| Status | PENDING |
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.5 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -708,7 +740,7 @@ Vấn đề gặp phải: ...
 | 4 | 1h | 0.75h | ✅ |
 | 5 | 2.5h | 0.75h | ✅ |
 | 6 | 1.5h | 0.5h | ✅ |
-| 7 | 2.5h | ... | ... |
+| 7 | 2.5h | 0.5h | ✅ |
 | 8 | 1h | ... | ... |
 | 9 | 1.5h | ... | ... |
 | 10 | 1h | ... | ... |
@@ -725,7 +757,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 3.25 giờ (Bước 1 + 2 + 3 + 4 + 5 + 6)
+Tổng thời gian thực tế: 3.75 giờ (Bước 1 + 2 + 3 + 4 + 5 + 6 + 7)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```

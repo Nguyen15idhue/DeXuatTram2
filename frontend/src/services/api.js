@@ -103,5 +103,8 @@ export const proposalService = {
   },
   getById(id) {
     return api.get(`/proposals/${id}`);
+  },
+  create(proposal, token) {
+    return api.postWithAuth('/proposals', proposal, token);
   }
 };
