@@ -191,11 +191,36 @@ Vấn đề gặp phải: Seed password cần generate đúng hash bcrypt
 
 ### Kết quả đã đạt
 
-- [ ] PublicLayout (login, register)
-- [ ] UserLayout (map, my-proposals)
-- [ ] AdminLayout (admin pages)
-- [ ] Protected routes hoạt động
-- [ ] Phân quyền User/Admin
+- [x] PublicLayout (login, register)
+- [x] UserLayout (map, my-proposals)
+- [x] AdminLayout (admin pages)
+- [x] Protected routes hoạt động
+- [x] Phân quyền User/Admin
+
+### File đã tạo
+
+```
+frontend/src/
+├── contexts/AuthContext.jsx      # Auth state management
+├── layouts/
+│   ├── PublicLayout.jsx          # Cho login, register
+│   ├── UserLayout.jsx            # Cho user pages
+│   └── AdminLayout.jsx           # Cho admin pages
+├── pages/
+│   ├── auth/
+│   │   ├── LoginPage.jsx
+│   │   └── RegisterPage.jsx
+│   ├── user/
+│   │   ├── MapPage.jsx
+│   │   ├── MyProposalsPage.jsx
+│   │   └── ProfilePage.jsx
+│   └── admin/
+│       ├── AdminDashboard.jsx
+│       ├── AdminUsersPage.jsx
+│       ├── AdminStationsPage.jsx
+│       └── AdminProposalsPage.jsx
+└── App.jsx                       # Main routing
+```
 
 ### Routes đã tạo
 
@@ -205,16 +230,38 @@ Vấn đề gặp phải: Seed password cần generate đúng hash bcrypt
 | /register | RegisterPage | Public | ✅ |
 | /map | MapPage | User | ✅ |
 | /my-proposals | MyProposalsPage | User | ✅ |
+| /profile | ProfilePage | User | ✅ |
+| /admin | AdminDashboard | Admin | ✅ |
 | /admin/users | AdminUsersPage | Admin | ✅ |
 | /admin/stations | AdminStationsPage | Admin | ✅ |
 | /admin/proposals | AdminProposalsPage | Admin | ✅ |
 
+### Protected Routes Logic
+
+```
+Chưa login → /login
+User login → /map
+Admin login → /admin
+User vào /admin → Redirect về /map
+Admin vào /map → Vẫn được (có thể thêm sau)
+```
+
+### Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| PublicLayout | ✅ Pass | Login/Register pages hoạt động |
+| UserLayout | ✅ Pass | Navigation, user info hiển thị |
+| AdminLayout | ✅ Pass | Sidebar, navigation hoạt động |
+| Protected routes | ✅ Pass | Chưa login → /login |
+| Phân quyền User/Admin | ✅ Pass | User không vào được /admin |
+
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.75 giờ
+Vấn đề gặp phải: Import path sai khi tạo pages (đã fix)
 ```
 
 ---
@@ -593,6 +640,7 @@ Vấn đề gặp phải: ...
 | 1 | 1.5h | 0.5h | ✅ |
 | 2 | 1.5h | 0.25h | ✅ |
 | 3 | 2h | 0.5h | ✅ |
+| 4 | 1h | 0.75h | ✅ |
 | 3 | 2h | ... | ... |
 | 4 | 1h | ... | ... |
 | 5 | 2.5h | ... | ... |
@@ -614,7 +662,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 1.25 giờ (Bước 1 + 2 + 3)
+Tổng thời gian thực tế: 2.0 giờ (Bước 1 + 2 + 3 + 4)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```
