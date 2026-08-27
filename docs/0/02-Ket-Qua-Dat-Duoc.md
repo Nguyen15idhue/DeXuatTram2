@@ -77,38 +77,64 @@ Vấn đề gặp phải: Docker Desktop cần khởi động trước khi chạ
 
 ### Kết quả đã đạt
 
-- [ ] Tạo bảng users
-- [ ] Tạo bảng stations
-- [ ] Tạo bảng station_proposals
-- [ ] Thiết lập foreign keys
-- [ ] Seed dữ liệu mẫu
+- [x] Tạo bảng users
+- [x] Tạo bảng stations
+- [x] Tạo bảng station_proposals
+- [x] Thiết lập foreign keys
+- [x] Seed dữ liệu mẫu
+
+### File đã tạo
+
+```
+database/
+├── 01-create-tables.sql    # Tạo 3 bảng + indexes
+└── 02-seed-data.sql        # Seed dữ liệu mẫu
+```
+
+### Schema Summary
+
+| Bảng | Columns | Records | Ghi chú |
+|------|---------|---------|---------|
+| users | id, full_name, email, phone, password, role, status, created_at, updated_at | 4 | 1 admin + 3 users |
+| stations | id, name, latitude, longitude, address, status, description, created_at, updated_at | 5 | 3 ACTIVE + 2 DEPLOYING |
+| station_proposals | id, user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, created_at, updated_at | 3 | PENDING, REVIEWING, APPROVED |
+
+### Relationships
+
+```
+users (1) ────── (N) station_proposals
+         user_id FK
+```
 
 ### Dữ liệu seed
 
-| Bảng | Số lượng |
+| Bảng | Chi tiết |
 |------|----------|
-| users | 1 admin, 3 users |
-| stations | 5 stations |
-| proposals | 3 proposals |
+| users | 1 admin (admin@station.com), 3 users (user1-3@example.com) |
+| stations | 5 trạm tại Quận 1, Quận 3, Bình Thạnh, Phú Nhuận, Thủ Đức |
+| proposals | 3 đề xuất với status PENDING, REVIEWING, APPROVED |
 
-### Script SQL đã chạy
+### Test Results
 
-```sql
--- Chạy thành công:
--- CREATE TABLE users...
--- CREATE TABLE stations...
--- CREATE TABLE station_proposals...
--- INSERT INTO users...
--- INSERT INTO stations...
--- INSERT INTO station_proposals...
-```
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Tạo 3 bảng | ✅ Pass | users, stations, station_proposals |
+| Foreign keys | ✅ Pass | station_proposals.user_id → users.id |
+| Seed 1 admin | ✅ Pass | admin@station.com |
+| Seed 3 users | ✅ Pass | user1@example.com, user2@example.com, user3@example.com |
+| Seed 5 stations | ✅ Pass | 5 trạm tại HCM |
+| Seed 3 proposals | ✅ Pass | 3 đề xuất từ user_id=2,3 |
+
+### Password Default
+
+Tất cả accounts sử dụng password: `123456`
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.25 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -117,11 +143,20 @@ Vấn đề gặp phải: ...
 
 ### Kết quả đã đạt
 
-- [ ] API Register hoạt động
-- [ ] API Login hoạt động
-- [ ] API Get Me hoạt động
-- [ ] Password hash bằng bcrypt
-- [ ] JWT token hoạt động
+- [x] API Register hoạt động
+- [x] API Login hoạt động
+- [x] API Get Me hoạt động
+- [x] Password hash bằng bcrypt
+- [x] JWT token hoạt động
+
+### File đã tạo
+
+```
+backend/src/
+├── routes/auth.js         # API endpoints
+├── middlewares/auth.js     # JWT middleware
+└── utils/db.js            # Database connection
+```
 
 ### API Test Results
 
@@ -133,12 +168,21 @@ Vấn đề gặp phải: ...
 | /api/auth/me | GET | Bearer token | `{user}` | ✅ Pass |
 | /api/auth/me | GET | Không token | `{error}` | ✅ Pass |
 
+### Accounts hiện tại
+
+| Email | Password | Role | Status |
+|-------|----------|------|--------|
+| admin@station.com | 123456 | ADMIN | ACTIVE |
+| user1@example.com | 123456 | USER | ACTIVE |
+| user2@example.com | 123456 | USER | ACTIVE |
+| user3@example.com | 123456 | USER | LOCKED |
+
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.5 giờ
+Vấn đề gặp phải: Seed password cần generate đúng hash bcrypt
 ```
 
 ---
@@ -546,8 +590,9 @@ Vấn đề gặp phải: ...
 
 | Bước | Thời gian dự kiến | Thời gian thực tế | Trạng thái |
 |------|-------------------|-------------------|------------|
-| 1 | 1.5h | ... | ... |
-| 2 | 1.5h | ... | ... |
+| 1 | 1.5h | 0.5h | ✅ |
+| 2 | 1.5h | 0.25h | ✅ |
+| 3 | 2h | 0.5h | ✅ |
 | 3 | 2h | ... | ... |
 | 4 | 1h | ... | ... |
 | 5 | 2.5h | ... | ... |
@@ -567,9 +612,9 @@ Vấn đề gặp phải: ...
 ### Tổng kết
 
 ```
-Ngày bắt đầu: ___/___/______
-Ngày hoàn thành: ___/___/______
-Tổng thời gian thực tế: ___ giờ
-Số lỗi phát sinh: ...
-Tính năng bị cắt: ...
+Ngày bắt đầu: 27/08/2026
+Ngày hoàn thành: 27/08/2026
+Tổng thời gian thực tế: 1.25 giờ (Bước 1 + 2 + 3)
+Số lỗi phát sinh: 0
+Tính năng bị cắt: Không có
 ```
