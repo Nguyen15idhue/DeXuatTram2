@@ -251,13 +251,11 @@ const AdminStationsPage = () => {
         </table>
       </div>
 
-      {pagination.totalPages > 1 && (
-        <div className="pagination">
-          <button disabled={pagination.page <= 1} onClick={() => loadStations(pagination.page - 1)}>Trước</button>
-          <span>Trang {pagination.page} / {pagination.totalPages} (Tổng: {pagination.total})</span>
-          <button disabled={pagination.page >= pagination.totalPages} onClick={() => loadStations(pagination.page + 1)}>Sau</button>
-        </div>
-      )}
+      <div className="pagination">
+        <button disabled={pagination.page <= 1} onClick={() => loadStations(pagination.page - 1)}>Trước</button>
+        <span>Trang {pagination.page} / {pagination.totalPages} (Tổng: {pagination.total})</span>
+        <button disabled={pagination.page >= pagination.totalPages} onClick={() => loadStations(pagination.page + 1)}>Sau</button>
+      </div>
     </div>
   );
 };
