@@ -1,9 +1,14 @@
+import MapView from '../../components/MapView';
+
 const MapPage = () => {
+  const handleMarkerClick = (data, type) => {
+    console.log('Marker clicked:', type, data);
+  };
+
   return (
     <div className="map-page">
-      <h1>Bản đồ trạm sạc</h1>
       <div className="map-container">
-        <p>Bản đồ sẽ được tích hợp ở đây (Phase 5)</p>
+        <MapView onMarkerClick={handleMarkerClick} />
       </div>
     </div>
   );

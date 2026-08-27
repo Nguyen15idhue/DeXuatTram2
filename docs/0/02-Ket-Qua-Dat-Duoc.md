@@ -270,11 +270,24 @@ Vấn đề gặp phải: Import path sai khi tạo pages (đã fix)
 
 ### Kết quả đã đạt
 
-- [ ] Hiển thị bản đồ với React Leaflet
-- [ ] Hiển thị markers stations
-- [ ] Hiển thị markers proposals
-- [ ] Click marker → popup thông tin
-- [ ] Phân biệt màu theo status
+- [x] Hiển thị bản đồ với React Leaflet + OpenStreetMap
+- [x] Hiển thị markers stations từ database
+- [x] Hiển thị markers proposals từ database
+- [x] Click marker → hiển thị popup thông tin
+- [x] Phân biệt màu marker theo status
+
+### File đã tạo
+
+```
+frontend/src/
+├── components/MapView.jsx      # Map component chính
+├── services/api.js             # API service
+└── utils/mapHelpers.js         # Marker color utilities
+
+backend/src/
+├── routes/stations.js          # GET /api/stations
+└── routes/proposals.js         # GET /api/proposals
+```
 
 ### Color Mapping
 
@@ -283,13 +296,41 @@ Vấn đề gặp phải: Import path sai khi tạo pages (đã fix)
 | ACTIVE | Xanh | #22c55e | ✅ |
 | DEPLOYING | Vàng | #eab308 | ✅ |
 | PENDING | Cam | #f97316 | ✅ |
+| REVIEWING | Xanh dương | #3b82f6 | ✅ |
+| APPROVED | Xanh | #22c55e | ✅ |
+| REJECTED | Đỏ | #ef4444 | ✅ |
+
+### API Endpoints
+
+| Endpoint | Method | Response | Status |
+|----------|--------|----------|--------|
+| /api/stations | GET | Danh sách stations | ✅ Pass |
+| /api/proposals | GET | Danh sách proposals | ✅ Pass |
+
+### Map Features
+
+- Hiển thị bản đồ OpenStreetMap
+- 5 markers stations (3 ACTIVE, 2 DEPLOYING)
+- 3 markers proposals (PENDING, REVIEWING, APPROVED)
+- Click marker → popup thông tin chi tiết
+- Phân biệt màu theo status
+
+### Test Results
+
+| Checklist | Kết quả | Chi tiết |
+|-----------|---------|----------|
+| Bản đồ hiển thị | ✅ Pass | OpenStreetMap loads correctly |
+| Markers stations | ✅ Pass | 5 markers hiển thị |
+| Markers proposals | ✅ Pass | 3 markers hiển thị |
+| Popup thông tin | ✅ Pass | Click marker hiện popup |
+| Màu marker | ✅ Pass | Phân biệt theo status |
 
 ### Ghi chú
 
 ```
-Ngày hoàn thành: ___/___/______
-Thời gian thực tế: ___ giờ
-Vấn đề gặp phải: ...
+Ngày hoàn thành: 27/08/2026
+Thời gian thực tế: 0.75 giờ
+Vấn đề gặp phải: Không có
 ```
 
 ---
@@ -641,6 +682,7 @@ Vấn đề gặp phải: ...
 | 2 | 1.5h | 0.25h | ✅ |
 | 3 | 2h | 0.5h | ✅ |
 | 4 | 1h | 0.75h | ✅ |
+| 5 | 2.5h | 0.75h | ✅ |
 | 3 | 2h | ... | ... |
 | 4 | 1h | ... | ... |
 | 5 | 2.5h | ... | ... |
@@ -662,7 +704,7 @@ Vấn đề gặp phải: ...
 ```
 Ngày bắt đầu: 27/08/2026
 Ngày hoàn thành: 27/08/2026
-Tổng thời gian thực tế: 2.0 giờ (Bước 1 + 2 + 3 + 4)
+Tổng thời gian thực tế: 2.75 giờ (Bước 1 + 2 + 3 + 4 + 5)
 Số lỗi phát sinh: 0
 Tính năng bị cắt: Không có
 ```

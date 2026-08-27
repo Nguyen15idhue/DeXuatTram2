@@ -1,18 +1,21 @@
 -- ============================================
 -- DATABASE: Station Management System
+-- Charset: UTF-8 (Vietnamese support)
 -- ============================================
 
--- Tạo database nếu chưa có
-CREATE DATABASE IF NOT EXISTS station_management;
+-- Xóa database cũ nếu tồn tại
+DROP DATABASE IF EXISTS station_management;
+
+-- Tạo database mới với charset UTF-8
+CREATE DATABASE station_management
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
 USE station_management;
 
 -- ============================================
 -- BẢNG 1: USERS
 -- ============================================
-DROP TABLE IF EXISTS station_proposals;
-DROP TABLE IF EXISTS stations;
-DROP TABLE IF EXISTS users;
-
 CREATE TABLE users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   full_name VARCHAR(100) NOT NULL,
@@ -23,7 +26,7 @@ CREATE TABLE users (
   status ENUM('ACTIVE', 'LOCKED') DEFAULT 'ACTIVE',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
 -- BẢNG 2: STATIONS
@@ -38,7 +41,7 @@ CREATE TABLE stations (
   description TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
 -- BẢNG 3: STATION PROPOSALS
@@ -58,7 +61,7 @@ CREATE TABLE station_proposals (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
 -- INDEXES (tối ưu performance)
