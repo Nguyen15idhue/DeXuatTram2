@@ -35,6 +35,7 @@ export const parseGoogleMapsLink = (url) => {
 
   const trimmed = url.trim();
 
+  // Standard patterns: @lat,lng ?q=lat,lng etc.
   const patterns = [
     /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
     /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
@@ -43,7 +44,6 @@ export const parseGoogleMapsLink = (url) => {
     /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
     /\/maps\?.*center=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
     /google\.com\/maps\?q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,
-    /maps\.app\.goo\.gl/,
   ];
 
   for (const pattern of patterns) {
@@ -59,6 +59,18 @@ export const parseGoogleMapsLink = (url) => {
     }
   }
 
+  // Data parameters pattern: !3dlat!4dlng (from short URL redirects)
+  const dataPattern = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/;
+  const dataMatch = trimmed.match(dataPattern);
+  if (dataMatch) {
+    const lat = parseFloat(dataMatch[1]);
+    const lng = parseFloat(dataMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng };
+    }
+  }
+
+  // Short URL needs resolution
   if (trimmed.includes('maps.app.goo.gl') || trimmed.includes('goo.gl/maps')) {
     return { needResolve: true, url: trimmed };
   }

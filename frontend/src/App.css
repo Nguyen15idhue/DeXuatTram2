@@ -371,7 +371,7 @@ button:disabled {
   padding: 0;
   background: transparent;
   box-shadow: none;
-  height: calc(100vh - 80px);
+  height: 90vh;
   overflow: hidden;
   position: relative;
 }
@@ -1589,7 +1589,7 @@ select:focus {
   }
 
   .map-page {
-    height: calc(100vh - 60px);
+    height: 90vh;
   }
 
   .map-container {
