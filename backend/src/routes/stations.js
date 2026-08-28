@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../utils/db');
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { validateCreateStation, validateUpdateStation } = require('../middlewares/validators');
 
 // GET /api/stations - Get all stations (public, with search/filter/pagination)
 router.get('/', async (req, res) => {
@@ -62,13 +63,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/stations - Create station (admin only)
-router.post('/', requireAuth, requireAdmin, async (req, res) => {
+router.post('/', requireAuth, requireAdmin, validateCreateStation, async (req, res) => {
   try {
     const { name, latitude, longitude, address, status, description } = req.body;
-
-    if (!name || !latitude || !longitude || !address) {
-      return res.status(400).json({ success: false, message: 'Thiếu trường bắt buộc' });
-    }
 
     const [result] = await pool.query(
       'INSERT INTO stations (name, latitude, longitude, address, status, description) VALUES (?, ?, ?, ?, ?, ?)',
@@ -84,14 +81,10 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // PUT /api/stations/:id - Update station (admin only)
-router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.put('/:id', requireAuth, requireAdmin, validateUpdateStation, async (req, res) => {
   try {
     const { name, latitude, longitude, address, status, description } = req.body;
     const { id } = req.params;
-
-    if (!name || !latitude || !longitude || !address) {
-      return res.status(400).json({ success: false, message: 'Thiếu trường bắt buộc' });
-    }
 
     const [existing] = await pool.query('SELECT id FROM stations WHERE id = ?', [id]);
     if (existing.length === 0) {

@@ -4,19 +4,12 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../utils/db');
 const { requireAuth, JWT_SECRET } = require('../middlewares/auth');
+const { validateRegister, validateLogin } = require('../middlewares/validators');
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', validateRegister, async (req, res) => {
   try {
     const { full_name, email, phone, password } = req.body;
-
-    // Validation
-    if (!full_name || !email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Vui lòng điền đầy đủ thông tin bắt buộc' 
-      });
-    }
 
     // Check if email exists
     const [existingUsers] = await pool.query(
@@ -78,17 +71,9 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', validateLogin, async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Vui lòng nhập email và password' 
-      });
-    }
 
     // Find user by email
     const [users] = await pool.query(

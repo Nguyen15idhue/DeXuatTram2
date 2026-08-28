@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import MapView from '../../components/MapView';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
+import Toast from '../../components/Toast';
+import ErrorMessage from '../../components/ErrorMessage';
 
 const MapPage = () => {
   const { token } = useAuth();
@@ -12,15 +14,15 @@ const MapPage = () => {
     area: '', land_type: '', description: ''
   });
   const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState({ message: '', type: 'success' });
   const [mapKey, setMapKey] = useState(0);
 
   useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(''), 3000);
+    if (toast.message) {
+      const timer = setTimeout(() => setToast({ message: '', type: 'success' }), 3000);
       return () => clearTimeout(timer);
     }
-  }, [toast]);
+  }, [toast.message]);
 
   const handleMapClick = (lat, lng) => {
     setCoords({ lat, lng });
@@ -47,7 +49,7 @@ const MapPage = () => {
 
       if (res.success) {
         setShowForm(false);
-        setToast('Tạo đề xuất thành công! Marker mới xuất hiện trên bản đồ.');
+        setToast({ message: 'Tạo đề xuất thành công! Marker mới xuất hiện trên bản đồ.', type: 'success' });
         setMapKey(prev => prev + 1);
       } else {
         setError(res.message || 'Tạo đề xuất thất bại');
@@ -60,7 +62,12 @@ const MapPage = () => {
   return (
     <div className="map-page">
       <div className="map-container">
-        {toast && <div className="map-toast">{toast}</div>}
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast({ message: '', type: 'success' })}
+          duration={3000}
+        />
         <MapView key={mapKey} onMapClick={handleMapClick} />
       </div>
 
@@ -68,7 +75,7 @@ const MapPage = () => {
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Đề xuất trạm mới</h2>
-            {error && <div className="error-message">{error}</div>}
+            {error && <ErrorMessage message={error} />}
             <form onSubmit={handleSubmit}>
               <div className="form-row">
                 <div className="form-group">

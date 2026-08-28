@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { adminUserService } from '../../services/api';
+import Loading from '../../components/Loading';
+import Toast from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import EmptyState from '../../components/EmptyState';
+import ErrorMessage from '../../components/ErrorMessage';
 
 const AdminUsersPage = () => {
   const { token } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [toast, setToast] = useState({ message: '', type: 'success' });
   const [showForm, setShowForm] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '', password: '', role: 'USER', status: 'ACTIVE'
@@ -33,7 +39,7 @@ const AdminUsersPage = () => {
     setForm({ full_name: '', email: '', phone: '', password: '', role: 'USER', status: 'ACTIVE' });
     setShowForm(true);
     setError('');
-    setSuccess('');
+    setToast({ message: '', type: 'success' });
   };
 
   const openEdit = (user) => {
@@ -48,7 +54,7 @@ const AdminUsersPage = () => {
     });
     setShowForm(true);
     setError('');
-    setSuccess('');
+    setToast({ message: '', type: 'success' });
   };
 
   const handleSubmit = async (e) => {
@@ -74,7 +80,7 @@ const AdminUsersPage = () => {
       }
 
       if (res.success) {
-        setSuccess(editingId ? 'Cập nhật user thành công' : 'Tạo user thành công');
+        setToast({ message: editingId ? 'Cập nhật user thành công' : 'Tạo user thành công', type: 'success' });
         setShowForm(false);
         loadUsers();
       } else {
@@ -85,12 +91,17 @@ const AdminUsersPage = () => {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (!window.confirm(`Xóa user "${name}"?`)) return;
+  const handleDeleteClick = (id, name) => {
+    setConfirmDelete({ isOpen: true, id, name });
+  };
+
+  const handleConfirmDelete = async () => {
+    const { id } = confirmDelete;
+    setConfirmDelete({ isOpen: false, id: null, name: '' });
     try {
       const res = await adminUserService.delete(id, token);
       if (res.success) {
-        setSuccess('Xóa user thành công');
+        setToast({ message: 'Xóa user thành công', type: 'success' });
         loadUsers();
       } else {
         setError(res.message || 'Xóa thất bại');
@@ -104,7 +115,7 @@ const AdminUsersPage = () => {
     try {
       const res = await adminUserService.toggleLock(id, token);
       if (res.success) {
-        setSuccess(res.message);
+        setToast({ message: res.message, type: 'success' });
         loadUsers();
       }
     } catch {
@@ -116,7 +127,7 @@ const AdminUsersPage = () => {
     try {
       const res = await adminUserService.changeRole(id, newRole, token);
       if (res.success) {
-        setSuccess('Đổi role thành công');
+        setToast({ message: 'Đổi role thành công', type: 'success' });
         loadUsers();
       }
     } catch {
@@ -124,17 +135,32 @@ const AdminUsersPage = () => {
     }
   };
 
-  if (loading) return <div className="loading">Đang tải...</div>;
+  if (loading) return <Loading message="Đang tải danh sách users..." />;
 
   return (
     <div className="admin-users-page">
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ message: '', type: 'success' })}
+      />
+
       <div className="page-header">
         <h1>Quản lý Users</h1>
         <button className="btn btn-primary" onClick={openCreate}>+ Thêm user</button>
       </div>
 
-      {error && <div className="error-message">{error}</div>}
-      {success && <div className="success-message">{success}</div>}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(); }} />}
+
+      <ConfirmDialog
+        isOpen={confirmDelete.isOpen}
+        title="Xóa user"
+        message={`Bạn có chắc chắn muốn xóa user "${confirmDelete.name}"?`}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null, name: '' })}
+        confirmText="Xóa"
+        type="danger"
+      />
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
@@ -197,7 +223,7 @@ const AdminUsersPage = () => {
           </thead>
           <tbody>
             {users.length === 0 ? (
-              <tr><td colSpan="7" className="empty">Không có user nào</td></tr>
+              <tr><td colSpan="7"><EmptyState icon="👤" title="Không có user nào" /></td></tr>
             ) : users.map((u) => (
               <tr key={u.id}>
                 <td>{u.id}</td>
@@ -223,7 +249,7 @@ const AdminUsersPage = () => {
                     {u.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
                   </button>
                   {u.role !== 'ADMIN' && (
-                    <button className="btn btn-sm btn-delete" onClick={() => handleDelete(u.id, u.full_name)}>Xóa</button>
+                    <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(u.id, u.full_name)}>Xóa</button>
                   )}
                 </td>
               </tr>

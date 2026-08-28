@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { myProposalService } from '../../services/api';
+import Loading from '../../components/Loading';
+import EmptyState from '../../components/EmptyState';
+import ErrorMessage from '../../components/ErrorMessage';
 
 const MyProposalsPage = () => {
   const { token } = useAuth();
@@ -23,7 +26,7 @@ const MyProposalsPage = () => {
 
   useEffect(() => { loadProposals(); }, [filter]);
 
-  if (loading) return <div className="loading">Đang tải...</div>;
+  if (loading) return <Loading message="Đang tải đề xuất..." />;
 
   return (
     <div className="proposals-page">
@@ -38,7 +41,7 @@ const MyProposalsPage = () => {
         </select>
       </div>
 
-      {error && <div className="error-message">{error}</div>}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(); }} />}
 
       <div className="table-container">
         <table>
@@ -56,7 +59,7 @@ const MyProposalsPage = () => {
           </thead>
           <tbody>
             {proposals.length === 0 ? (
-              <tr><td colSpan="8" className="empty">Bạn chưa có đề xuất nào</td></tr>
+              <tr><td colSpan="8"><EmptyState icon="📋" title="Bạn chưa có đề xuất nào" description="Hãy click trên bản đồ để tạo đề xuất mới" /></td></tr>
             ) : proposals.map((p) => (
               <tr key={p.id}>
                 <td>{p.id}</td>

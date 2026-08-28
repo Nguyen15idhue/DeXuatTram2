@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import ErrorMessage from '../../components/ErrorMessage';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -29,7 +30,7 @@ const LoginPage = () => {
     <div className="auth-page">
       <div className="auth-card">
         <h1>Đăng nhập</h1>
-        {error && <div className="error-message">{error}</div>}
+        {error && <ErrorMessage message={error} />}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Email</label>

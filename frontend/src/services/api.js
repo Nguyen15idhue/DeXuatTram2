@@ -89,6 +89,24 @@ export const api = {
     });
     const data = await response.json();
     return data;
+  },
+
+  async downloadWithAuth(endpoint, token) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Download failed');
+    return response;
+  },
+
+  async uploadWithAuth(endpoint, formData, token) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const data = await response.json();
+    return data;
   }
 };
 
@@ -163,5 +181,56 @@ export const adminUserService = {
   },
   changeRole(id, role, token) {
     return api.patchWithAuth(`/admin/users/${id}/role`, { role }, token);
+  }
+};
+
+export const excelService = {
+  async exportStations(token) {
+    const response = await api.downloadWithAuth('/admin/excel/export/stations', token);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'stations.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async exportProposals(token) {
+    const response = await api.downloadWithAuth('/admin/excel/export/proposals', token);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'proposals.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadTemplate(token) {
+    const response = await api.downloadWithAuth('/admin/excel/template', token);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'station_import_template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  previewImport(file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.uploadWithAuth('/admin/excel/import/preview', formData, token);
+  },
+
+  confirmImport(rows, token) {
+    return api.postWithAuth('/admin/excel/import/confirm', { rows }, token);
   }
 };

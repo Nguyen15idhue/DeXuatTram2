@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const pool = require('../utils/db');
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { validateCreateUser, validateUpdateUser } = require('../middlewares/validators');
 
 // GET /api/admin/users - Danh sách users
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
@@ -18,13 +19,9 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/users - Tạo user mới
-router.post('/', requireAuth, requireAdmin, async (req, res) => {
+router.post('/', requireAuth, requireAdmin, validateCreateUser, async (req, res) => {
   try {
     const { full_name, email, phone, password, role, status } = req.body;
-
-    if (!full_name || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Thiếu trường bắt buộc' });
-    }
 
     const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
     if (existing.length > 0) {
@@ -52,14 +49,10 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/users/:id - Sửa user
-router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.put('/:id', requireAuth, requireAdmin, validateUpdateUser, async (req, res) => {
   try {
     const { full_name, email, phone, password, role, status } = req.body;
     const { id } = req.params;
-
-    if (!full_name || !email) {
-      return res.status(400).json({ success: false, message: 'Thiếu trường bắt buộc' });
-    }
 
     const [existing] = await pool.query('SELECT id FROM users WHERE id = ?', [id]);
     if (existing.length === 0) {
