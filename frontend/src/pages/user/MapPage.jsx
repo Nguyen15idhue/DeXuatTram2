@@ -16,6 +16,8 @@ const MapPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [mapKey, setMapKey] = useState(0);
+  const [selectingLocation, setSelectingLocation] = useState(false);
+  const [highlightPosition, setHighlightPosition] = useState(null);
 
   useEffect(() => {
     if (toast.message) {
@@ -24,11 +26,34 @@ const MapPage = () => {
     }
   }, [toast.message]);
 
-  const handleMapClick = (lat, lng) => {
+  const openProposalForm = (lat, lng) => {
     setCoords({ lat, lng });
+    setHighlightPosition([lat, lng]);
     setForm({ owner_name: '', owner_phone: '', address: '', area: '', land_type: '', description: '' });
     setError('');
     setShowForm(true);
+    setSelectingLocation(false);
+  };
+
+  const handleMapClick = (lat, lng, mode) => {
+    if (mode === 'select') {
+      setSelectingLocation(true);
+      setToast({ message: 'Di chuyển bản đồ đến vị trí cần chọn, sau đó click để xác nhận', type: 'info' });
+      return;
+    }
+
+    if (selectingLocation && lat !== null) {
+      openProposalForm(lat, lng);
+      return;
+    }
+
+    if (lat !== null && lng !== null) {
+      openProposalForm(lat, lng);
+    }
+  };
+
+  const handleLocationSelected = (lat, lng) => {
+    openProposalForm(lat, lng);
   };
 
   const handleSubmit = async (e) => {
@@ -51,6 +76,7 @@ const MapPage = () => {
         setShowForm(false);
         setToast({ message: 'Tạo đề xuất thành công! Marker mới xuất hiện trên bản đồ.', type: 'success' });
         setMapKey(prev => prev + 1);
+        setHighlightPosition(null);
       } else {
         setError(res.message || 'Tạo đề xuất thất bại');
       }
@@ -61,6 +87,35 @@ const MapPage = () => {
 
   return (
     <div className="map-page">
+      <div className="map-top-bar">
+        <button
+          className="btn btn-primary btn-my-location"
+          onClick={() => {
+            if (!navigator.geolocation) {
+              alert('Trình duyệt không hỗ trợ định vị');
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                setHighlightPosition([pos.coords.latitude, pos.coords.longitude]);
+                openProposalForm(pos.coords.latitude, pos.coords.longitude);
+              },
+              (err) => {
+                let msg = 'Không thể lấy vị trí';
+                if (err.code === 1) msg = 'Bạn đã từ chối quyền truy cập vị trí';
+                alert(msg);
+              },
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          }}
+        >
+          📍 Vị trí của tôi
+        </button>
+        {selectingLocation && (
+          <span className="map-selecting-hint">Click trên bản đồ để chọn vị trí</span>
+        )}
+      </div>
+
       <div className="map-container">
         <Toast
           message={toast.message}
@@ -68,25 +123,25 @@ const MapPage = () => {
           onClose={() => setToast({ message: '', type: 'success' })}
           duration={3000}
         />
-        <MapView key={mapKey} onMapClick={handleMapClick} />
+        <MapView
+          key={mapKey}
+          onMapClick={handleMapClick}
+          selectingLocation={selectingLocation}
+          onLocationSelected={handleLocationSelected}
+          highlightPosition={highlightPosition}
+          refreshKey={mapKey}
+        />
       </div>
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+        <div className="modal-overlay" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Đề xuất trạm mới</h2>
+            <div className="form-coords-info">
+              <span>📍 Tọa độ: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}</span>
+            </div>
             {error && <ErrorMessage message={error} />}
             <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Vĩ độ (Latitude)</label>
-                  <input type="text" value={coords.lat.toFixed(6)} readOnly className="readonly" />
-                </div>
-                <div className="form-group">
-                  <label>Kinh độ (Longitude)</label>
-                  <input type="text" value={coords.lng.toFixed(6)} readOnly className="readonly" />
-                </div>
-              </div>
               <div className="form-group">
                 <label>Họ tên chủ mặt bằng *</label>
                 <input type="text" value={form.owner_name} onChange={(e) => setForm({ ...form, owner_name: e.target.value })} />
@@ -114,7 +169,7 @@ const MapPage = () => {
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" />
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>Hủy</button>
                 <button type="submit" className="btn btn-primary">Gửi đề xuất</button>
               </div>
             </form>

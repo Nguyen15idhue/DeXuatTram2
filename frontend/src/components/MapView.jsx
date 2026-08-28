@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { stationService, proposalService } from '../services/api';
-import { getMarkerColor, createCustomIcon } from '../utils/mapHelpers';
+import { getMarkerColor, createCustomIcon, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -12,19 +12,54 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-function MapClickHandler({ onMapClick }) {
+function MapClickHandler({ onMapClick, selectingLocation, onLocationSelected }) {
   useMapEvents({
     click(e) {
-      onMapClick && onMapClick(e.latlng.lat, e.latlng.lng);
+      if (selectingLocation) {
+        onLocationSelected(e.latlng.lat, e.latlng.lng);
+      } else if (onMapClick) {
+        onMapClick(e.latlng.lat, e.latlng.lng);
+      }
     }
   });
   return null;
 }
 
-const MapView = ({ onMarkerClick, onMapClick }) => {
+function FlyToLocation({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) {
+      map.flyTo(position, 16, { duration: 1.5 });
+    }
+  }, [position, map]);
+  return null;
+}
+
+const MAP_LEGEND = [
+  { status: 'ACTIVE', label: 'Đang hoạt động' },
+  { status: 'DEPLOYING', label: 'Đang triển khai' },
+  { status: 'PENDING', label: 'Đang đề xuất' },
+  { status: 'REVIEWING', label: 'Đang xem xét' },
+  { status: 'APPROVED', label: 'Đã duyệt' },
+  { status: 'REJECTED', label: 'Từ chối' },
+];
+
+const MapView = ({
+  onMarkerClick,
+  onMapClick,
+  selectingLocation,
+  onLocationSelected,
+  highlightPosition,
+  refreshKey
+}) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [googleMapUrl, setGoogleMapUrl] = useState('');
+  const [resolvingUrl, setResolvingUrl] = useState(false);
+  const [myLocation, setMyLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -42,6 +77,68 @@ const MapView = ({ onMarkerClick, onMapClick }) => {
   };
 
   useEffect(() => { fetchData(); }, []);
+  useEffect(() => { if (refreshKey) fetchData(); }, [refreshKey]);
+
+  const handleMyLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Trình duyệt không hỗ trợ định vị');
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setMyLocation([latitude, longitude]);
+        setLocationLoading(false);
+        setShowCreateMenu(false);
+        if (onLocationSelected) {
+          onLocationSelected(latitude, longitude);
+        }
+      },
+      (error) => {
+        setLocationLoading(false);
+        let msg = 'Không thể lấy vị trí';
+        if (error.code === 1) msg = 'Bạn đã từ chối quyền truy cập vị trí';
+        else if (error.code === 2) msg = 'Không xác định được vị trí';
+        else if (error.code === 3) msg = 'Timeout lấy vị trí';
+        alert(msg);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const handleGoogleMapSubmit = async () => {
+    if (!googleMapUrl.trim()) return;
+
+    setResolvingUrl(true);
+    const result = parseGoogleMapsLink(googleMapUrl);
+
+    if (result && !result.needResolve) {
+      setGoogleMapUrl('');
+      setResolvingUrl(false);
+      setShowCreateMenu(false);
+      if (onLocationSelected) {
+        onLocationSelected(result.lat, result.lng);
+      }
+      return;
+    }
+
+    if (result && result.needResolve) {
+      const resolved = await resolveGoogleMapsShortUrl(result.url);
+      setResolvingUrl(false);
+      if (resolved && !resolved.needResolve) {
+        setGoogleMapUrl('');
+        setShowCreateMenu(false);
+        if (onLocationSelected) {
+          onLocationSelected(resolved.lat, resolved.lng);
+        }
+        return;
+      }
+    }
+
+    setResolvingUrl(false);
+    alert('Không thể đọc tọa độ từ link này. Vui lòng kiểm tra lại định dạng link.');
+  };
 
   if (loading) {
     return <div className="map-loading">Đang tải bản đồ...</div>;
@@ -62,8 +159,15 @@ const MapView = ({ onMarkerClick, onMapClick }) => {
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
 
-        <MapClickHandler onMapClick={onMapClick} />
-        
+        <MapClickHandler
+          onMapClick={onMapClick}
+          selectingLocation={selectingLocation}
+          onLocationSelected={onLocationSelected}
+        />
+
+        {highlightPosition && <FlyToLocation position={highlightPosition} />}
+        {myLocation && <FlyToLocation position={myLocation} />}
+
         {stations.map((station) => (
           <Marker
             key={`station-${station.id}`}
@@ -110,6 +214,63 @@ const MapView = ({ onMarkerClick, onMapClick }) => {
           </Marker>
         ))}
       </MapContainer>
+
+      {/* Map Legend - top left */}
+      <div className="map-legend">
+        <div className="map-legend-title">Chú thích</div>
+        {MAP_LEGEND.map((item) => (
+          <div key={item.status} className="map-legend-item">
+            <span
+              className="map-legend-dot"
+              style={{ backgroundColor: getMarkerColor(item.status) }}
+            />
+            <span className="map-legend-label">{item.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Create Proposal Button - bottom right */}
+      <div className="map-create-btn-wrapper">
+        {showCreateMenu && (
+          <div className="map-create-menu">
+            <button className="map-create-option" onClick={handleMyLocation} disabled={locationLoading}>
+              <span className="map-create-option-icon">📍</span>
+              <span>{locationLoading ? 'Đang lấy...' : 'Vị trí của tôi'}</span>
+            </button>
+            <button
+              className="map-create-option"
+              onClick={() => { setShowCreateMenu(false); if (onMapClick) onMapClick(null, null, 'select'); }}
+            >
+              <span className="map-create-option-icon">📌</span>
+              <span>Vị trí khác</span>
+            </button>
+            <div className="map-create-option map-create-option-input">
+              <span className="map-create-option-icon">🗺️</span>
+              <input
+                type="text"
+                placeholder="Dán link Google Map..."
+                value={googleMapUrl}
+                onChange={(e) => setGoogleMapUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleGoogleMapSubmit()}
+              />
+              <button
+                className="map-google-confirm"
+                onClick={handleGoogleMapSubmit}
+                disabled={resolvingUrl || !googleMapUrl.trim()}
+              >
+                {resolvingUrl ? '...' : '✓'}
+              </button>
+            </div>
+          </div>
+        )}
+        <button
+          className={`map-fab ${showCreateMenu ? 'map-fab-active' : ''}`}
+          onClick={() => setShowCreateMenu(!showCreateMenu)}
+          title="Tạo đề xuất mới"
+        >
+          <span className="map-fab-icon">{showCreateMenu ? '×' : '+'}</span>
+        </button>
+      </div>
     </div>
   );
 };
