@@ -373,37 +373,7 @@ button:disabled {
   box-shadow: none;
   height: calc(100vh - 80px);
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.map-top-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: white;
-  border-radius: 8px;
-  margin: 8px 12px 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  z-index: 10;
-  flex-shrink: 0;
-}
-
-.btn-my-location {
-  width: auto;
-  padding: 8px 16px;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.map-selecting-hint {
-  font-size: 13px;
-  color: #667eea;
-  font-weight: 500;
+  position: relative;
 }
 
 .map-container {
@@ -535,140 +505,175 @@ button:disabled {
   line-height: 1.2;
 }
 
-/* Map Create Proposal Button - bottom right */
-.map-create-btn-wrapper {
+/* Floating Action Buttons - bottom right */
+.map-fab-group {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
+  bottom: 24px;
+  right: 16px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: 12px;
 }
 
 .map-fab {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #667eea;
-  color: white;
+  background: white;
+  color: #333;
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  transition: all 0.3s;
-  width: auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  transition: all 0.2s ease;
   padding: 0;
 }
 
 .map-fab:hover {
-  background: #5a6fd6;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   transform: scale(1.05);
 }
 
+.map-fab:active {
+  transform: scale(0.95);
+}
+
+.map-fab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.map-fab-location {
+  color: #4285f4;
+}
+
+.map-fab-location:hover {
+  background: #f0f4ff;
+}
+
+.map-fab-create {
+  color: white;
+  background: #4285f4;
+}
+
+.map-fab-create:hover {
+  background: #3367d6;
+}
+
+.map-fab-create svg {
+  stroke: white;
+}
+
 .map-fab-active {
-  background: #e74c3c;
-  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+  background: #ea4335;
+  transform: rotate(45deg);
 }
 
 .map-fab-active:hover {
-  background: #c0392b;
+  background: #d33426;
 }
 
-.map-fab-icon {
-  font-size: 24px;
-  font-weight: 300;
-  line-height: 1;
+.map-fab-active svg {
+  stroke: white;
 }
 
+/* Create Menu */
 .map-create-menu {
   background: white;
   border-radius: 12px;
   padding: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 220px;
-  animation: slideUp 0.2s ease;
+  min-width: 240px;
+  animation: fabMenuIn 0.2s ease;
 }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes fabMenuIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .map-create-option {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 12px 14px;
   border: none;
   background: transparent;
   cursor: pointer;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   color: #333;
-  transition: background 0.2s;
+  transition: background 0.15s;
   width: 100%;
   text-align: left;
 }
 
 .map-create-option:hover {
-  background: #f0f4ff;
+  background: #f1f3f4;
 }
 
 .map-create-option:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.map-create-option-icon {
-  font-size: 18px;
-  width: 24px;
-  text-align: center;
+.map-create-option svg {
+  color: #5f6368;
+  flex-shrink: 0;
 }
 
 .map-create-option-input {
-  padding: 6px 8px;
-  gap: 6px;
+  padding: 8px 10px;
+  gap: 8px;
 }
 
 .map-create-option-input input {
   flex: 1;
-  padding: 6px 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  font-size: 13px;
   min-width: 0;
+  color: #333;
 }
 
 .map-create-option-input input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66,133,244,0.15);
+}
+
+.map-create-option-input input::placeholder {
+  color: #9aa0a6;
 }
 
 .map-google-confirm {
-  padding: 4px 8px;
-  background: #22c55e;
+  padding: 6px 10px;
+  background: #34a853;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: bold;
+  font-size: 14px;
+  font-weight: 600;
   width: auto;
+  flex-shrink: 0;
 }
 
 .map-google-confirm:hover {
-  background: #16a34a;
+  background: #2d9249;
 }
 
 .map-google-confirm:disabled {
-  background: #ccc;
+  background: #dadce0;
   cursor: not-allowed;
 }
 
@@ -1591,16 +1596,6 @@ select:focus {
     margin: 0 8px 8px;
   }
 
-  .map-top-bar {
-    margin: 6px 8px 0;
-    padding: 6px 10px;
-  }
-
-  .btn-my-location {
-    font-size: 12px;
-    padding: 6px 12px;
-  }
-
   .map-legend {
     font-size: 10px;
     padding: 8px 10px;
@@ -1611,8 +1606,8 @@ select:focus {
     font-size: 11px;
   }
 
-  .map-create-btn-wrapper {
-    bottom: 12px;
+  .map-fab-group {
+    bottom: 16px;
     right: 12px;
   }
 
@@ -1621,12 +1616,18 @@ select:focus {
     height: 44px;
   }
 
-  .map-fab-icon {
-    font-size: 22px;
+  .map-fab svg {
+    width: 20px;
+    height: 20px;
   }
 
   .map-create-menu {
     min-width: 200px;
+  }
+
+  .map-create-option {
+    padding: 10px 12px;
+    font-size: 13px;
   }
 
   .confirm-dialog {

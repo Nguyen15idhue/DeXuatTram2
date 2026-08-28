@@ -87,51 +87,21 @@ const MapPage = () => {
 
   return (
     <div className="map-page">
-      <div className="map-top-bar">
-        <button
-          className="btn btn-primary btn-my-location"
-          onClick={() => {
-            if (!navigator.geolocation) {
-              alert('Trình duyệt không hỗ trợ định vị');
-              return;
-            }
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                setHighlightPosition([pos.coords.latitude, pos.coords.longitude]);
-                openProposalForm(pos.coords.latitude, pos.coords.longitude);
-              },
-              (err) => {
-                let msg = 'Không thể lấy vị trí';
-                if (err.code === 1) msg = 'Bạn đã từ chối quyền truy cập vị trí';
-                alert(msg);
-              },
-              { enableHighAccuracy: true, timeout: 10000 }
-            );
-          }}
-        >
-          📍 Vị trí của tôi
-        </button>
-        {selectingLocation && (
-          <span className="map-selecting-hint">Click trên bản đồ để chọn vị trí</span>
-        )}
-      </div>
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ message: '', type: 'success' })}
+        duration={3000}
+      />
 
-      <div className="map-container">
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast({ message: '', type: 'success' })}
-          duration={3000}
-        />
-        <MapView
-          key={mapKey}
-          onMapClick={handleMapClick}
-          selectingLocation={selectingLocation}
-          onLocationSelected={handleLocationSelected}
-          highlightPosition={highlightPosition}
-          refreshKey={mapKey}
-        />
-      </div>
+      <MapView
+        key={mapKey}
+        onMapClick={handleMapClick}
+        selectingLocation={selectingLocation}
+        onLocationSelected={handleLocationSelected}
+        highlightPosition={highlightPosition}
+        refreshKey={mapKey}
+      />
 
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>

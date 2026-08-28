@@ -229,23 +229,33 @@ const MapView = ({
         ))}
       </div>
 
-      {/* Create Proposal Button - bottom right */}
-      <div className="map-create-btn-wrapper">
+      {/* Floating Action Buttons - bottom right */}
+      <div className="map-fab-group">
+        {/* Create Proposal Menu */}
         {showCreateMenu && (
           <div className="map-create-menu">
             <button className="map-create-option" onClick={handleMyLocation} disabled={locationLoading}>
-              <span className="map-create-option-icon">📍</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+                <circle cx="12" cy="9" r="2.5"/>
+              </svg>
               <span>{locationLoading ? 'Đang lấy...' : 'Vị trí của tôi'}</span>
             </button>
             <button
               className="map-create-option"
               onClick={() => { setShowCreateMenu(false); if (onMapClick) onMapClick(null, null, 'select'); }}
             >
-              <span className="map-create-option-icon">📌</span>
-              <span>Vị trí khác</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span>Chọn trên bản đồ</span>
             </button>
             <div className="map-create-option map-create-option-input">
-              <span className="map-create-option-icon">🗺️</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/>
+                <path d="M8 2v12M16 6v12"/>
+              </svg>
               <input
                 type="text"
                 placeholder="Dán link Google Map..."
@@ -263,12 +273,30 @@ const MapView = ({
             </div>
           </div>
         )}
+
+        {/* My Location Button */}
         <button
-          className={`map-fab ${showCreateMenu ? 'map-fab-active' : ''}`}
+          className="map-fab map-fab-location"
+          onClick={handleMyLocation}
+          disabled={locationLoading}
+          title="Vị trí của tôi"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+
+        {/* Create Proposal Button */}
+        <button
+          className={`map-fab map-fab-create ${showCreateMenu ? 'map-fab-active' : ''}`}
           onClick={() => setShowCreateMenu(!showCreateMenu)}
           title="Tạo đề xuất mới"
         >
-          <span className="map-fab-icon">{showCreateMenu ? '×' : '+'}</span>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
         </button>
       </div>
     </div>
