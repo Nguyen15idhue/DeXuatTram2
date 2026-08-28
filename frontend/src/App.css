@@ -117,7 +117,7 @@ button:disabled {
 
 /* User Layout */
 .user-layout {
-  min-height: 100vh;
+  height: 90vh;
   display: flex;
   flex-direction: column;
 }
@@ -371,7 +371,7 @@ button:disabled {
   padding: 0;
   background: transparent;
   box-shadow: none;
-  height: 90vh;
+  flex: 1;
   overflow: hidden;
   position: relative;
 }
@@ -1589,7 +1589,7 @@ select:focus {
   }
 
   .map-page {
-    height: 90vh;
+    flex: 1;
   }
 
   .map-container {
