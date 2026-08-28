@@ -148,6 +148,9 @@ export const adminProposalService = {
     const query = status ? `?status=${status}` : '';
     return api.getWithAuth(`/admin/proposals${query}`, token);
   },
+  getAllWithParams(queryString, token) {
+    return api.getWithAuth(`/admin/proposals?${queryString}`, token);
+  },
   updateStatus(id, status, token) {
     return api.putWithAuth(`/admin/proposals/${id}/status`, { status }, token);
   },
@@ -160,12 +163,27 @@ export const myProposalService = {
   getAll(status, token) {
     const query = status ? `?status=${status}` : '';
     return api.getWithAuth(`/my-proposals${query}`, token);
+  },
+  getAllWithParams(queryString, token) {
+    return api.getWithAuth(`/my-proposals?${queryString}`, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/my-proposals/${id}`, data, token);
+  }
+};
+
+export const profileService = {
+  update(data, token) {
+    return api.putWithAuth('/auth/profile', data, token);
   }
 };
 
 export const adminUserService = {
   getAll(token) {
     return api.getWithAuth('/admin/users', token);
+  },
+  getAllWithParams(queryString, token) {
+    return api.getWithAuth(`/admin/users?${queryString}`, token);
   },
   create(user, token) {
     return api.postWithAuth('/admin/users', user, token);

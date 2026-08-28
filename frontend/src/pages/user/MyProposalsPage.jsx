@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { myProposalService } from '../../services/api';
 import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
-import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
+import Pagination from '../../components/Pagination';
 
 const MyProposalsPage = () => {
   const { token } = useAuth();
@@ -20,20 +20,26 @@ const MyProposalsPage = () => {
     owner_name: '', owner_phone: '', address: '',
     area: '', land_type: '', description: ''
   });
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
 
-  const loadProposals = async () => {
+  const loadProposals = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await myProposalService.getAll(filter || null, token);
-      if (res.success) setProposals(res.data);
+      const params = new URLSearchParams({ page, limit: 10 });
+      if (filter) params.append('status', filter);
+      const res = await myProposalService.getAllWithParams(params.toString(), token);
+      if (res.success) {
+        setProposals(res.data);
+        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+      }
     } catch {
       setError('Lỗi tải danh sách đề xuất');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, token]);
 
-  useEffect(() => { loadProposals(); }, [filter]);
+  useEffect(() => { loadProposals(1); }, [loadProposals]);
 
   const openEdit = (proposal) => {
     setEditingId(proposal.id);
@@ -63,7 +69,7 @@ const MyProposalsPage = () => {
       if (res.success) {
         setToast({ message: 'Cập nhật đề xuất thành công', type: 'success' });
         setShowForm(false);
-        loadProposals();
+        loadProposals(pagination.page);
       } else {
         setError(res.message || 'Cập nhật thất bại');
       }
@@ -72,7 +78,7 @@ const MyProposalsPage = () => {
     }
   };
 
-  if (loading) return <Loading message="Đang tải đề xuất..." />;
+  if (loading && proposals.length === 0) return <Loading message="Đang tải đề xuất..." />;
 
   return (
     <div className="proposals-page">
@@ -93,7 +99,7 @@ const MyProposalsPage = () => {
         </select>
       </div>
 
-      {error && !showForm && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(); }} />}
+      {error && !showForm && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
@@ -156,7 +162,7 @@ const MyProposalsPage = () => {
               <tr><td colSpan="9"><EmptyState icon="📋" title="Bạn chưa có đề xuất nào" description="Hãy click trên bản đồ để tạo đề xuất mới" /></td></tr>
             ) : proposals.map((p, idx) => (
               <tr key={p.id}>
-                <td>{idx + 1}</td>
+                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td>{p.owner_name}</td>
                 <td>{p.owner_phone}</td>
                 <td>{p.address}</td>
@@ -176,6 +182,13 @@ const MyProposalsPage = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={loadProposals}
+      />
     </div>
   );
 };

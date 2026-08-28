@@ -5,13 +5,39 @@ const pool = require('../utils/db');
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
 const { validateCreateUser, validateUpdateUser } = require('../middlewares/validators');
 
-// GET /api/admin/users - Danh sách users
+// GET /api/admin/users - Danh sách users (with pagination)
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const [users] = await pool.query(
-      'SELECT id, full_name, email, phone, role, status, created_at FROM users ORDER BY created_at DESC'
-    );
-    res.json({ success: true, data: users });
+    const { page = 1, limit = 10, search = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let where = [];
+    let params = [];
+
+    if (search) {
+      where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+
+    const countQuery = `SELECT COUNT(*) as total FROM users ${whereClause}`;
+    const [countResult] = await pool.query(countQuery, params);
+    const total = countResult[0].total;
+
+    const dataQuery = `SELECT id, full_name, email, phone, role, status, created_at FROM users ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+    const [users] = await pool.query(dataQuery, [...params, parseInt(limit), offset]);
+
+    res.json({
+      success: true,
+      data: users,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
   } catch (error) {
     console.error('Admin get users error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { adminUserService } from '../../services/api';
 import Loading from '../../components/Loading';
@@ -6,6 +6,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
+import Pagination from '../../components/Pagination';
 
 const AdminUsersPage = () => {
   const { token } = useAuth();
@@ -19,20 +20,29 @@ const AdminUsersPage = () => {
   const [form, setForm] = useState({
     full_name: '', email: '', phone: '', password: '', role: 'USER', status: 'ACTIVE'
   });
+  const [search, setSearch] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await adminUserService.getAll(token);
-      if (res.success) setUsers(res.data);
+      const params = new URLSearchParams({ page, limit: 10 });
+      if (search) params.append('search', search);
+      const res = await adminUserService.getAllWithParams(params.toString(), token);
+      if (res.success) {
+        setUsers(res.data);
+        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+      }
     } catch {
       setError('Lỗi tải danh sách users');
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, token]);
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(1); }, [loadUsers]);
+
+  const handleSearch = () => { loadUsers(1); };
 
   const openCreate = () => {
     setEditingId(null);
@@ -82,7 +92,7 @@ const AdminUsersPage = () => {
       if (res.success) {
         setToast({ message: editingId ? 'Cập nhật user thành công' : 'Tạo user thành công', type: 'success' });
         setShowForm(false);
-        loadUsers();
+        loadUsers(pagination.page);
       } else {
         setError(res.message || 'Thao tác thất bại');
       }
@@ -102,7 +112,7 @@ const AdminUsersPage = () => {
       const res = await adminUserService.delete(id, token);
       if (res.success) {
         setToast({ message: 'Xóa user thành công', type: 'success' });
-        loadUsers();
+        loadUsers(pagination.page);
       } else {
         setError(res.message || 'Xóa thất bại');
       }
@@ -116,7 +126,7 @@ const AdminUsersPage = () => {
       const res = await adminUserService.toggleLock(id, token);
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
-        loadUsers();
+        loadUsers(pagination.page);
       }
     } catch {
       setError('Lỗi kết nối server');
@@ -128,14 +138,14 @@ const AdminUsersPage = () => {
       const res = await adminUserService.changeRole(id, newRole, token);
       if (res.success) {
         setToast({ message: 'Đổi role thành công', type: 'success' });
-        loadUsers();
+        loadUsers(pagination.page);
       }
     } catch {
       setError('Lỗi kết nối server');
     }
   };
 
-  if (loading) return <Loading message="Đang tải danh sách users..." />;
+  if (loading && users.length === 0) return <Loading message="Đang tải danh sách users..." />;
 
   return (
     <div className="admin-users-page">
@@ -150,7 +160,7 @@ const AdminUsersPage = () => {
         <button className="btn btn-primary" onClick={openCreate}>+ Thêm user</button>
       </div>
 
-      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(); }} />}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(1); }} />}
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -161,6 +171,17 @@ const AdminUsersPage = () => {
         confirmText="Xóa"
         type="danger"
       />
+
+      <div className="filter-bar">
+        <input
+          type="text"
+          placeholder="Search theo tên, email, SĐT..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+        />
+        <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
+      </div>
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
@@ -226,7 +247,7 @@ const AdminUsersPage = () => {
               <tr><td colSpan="7"><EmptyState icon="👤" title="Không có user nào" /></td></tr>
             ) : users.map((u, idx) => (
               <tr key={u.id}>
-                <td>{idx + 1}</td>
+                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td>{u.full_name}</td>
                 <td>{u.email}</td>
                 <td>{u.phone || '-'}</td>
@@ -257,6 +278,13 @@ const AdminUsersPage = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={loadUsers}
+      />
     </div>
   );
 };

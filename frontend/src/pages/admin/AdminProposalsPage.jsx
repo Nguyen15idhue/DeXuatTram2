@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { adminProposalService, excelService } from '../../services/api';
 import Loading from '../../components/Loading';
@@ -6,6 +6,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
+import Pagination from '../../components/Pagination';
 
 const AdminProposalsPage = () => {
   const { token } = useAuth();
@@ -15,27 +16,33 @@ const AdminProposalsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
 
-  const loadProposals = async () => {
+  const loadProposals = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await adminProposalService.getAll(filter || null, token);
-      if (res.success) setProposals(res.data);
+      const params = new URLSearchParams({ page, limit: 10 });
+      if (filter) params.append('status', filter);
+      const res = await adminProposalService.getAllWithParams(params.toString(), token);
+      if (res.success) {
+        setProposals(res.data);
+        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+      }
     } catch {
       setError('Lỗi tải danh sách đề xuất');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, token]);
 
-  useEffect(() => { loadProposals(); }, [filter]);
+  useEffect(() => { loadProposals(1); }, [loadProposals]);
 
   const handleStatusChange = async (id, newStatus) => {
     try {
       const res = await adminProposalService.updateStatus(id, newStatus, token);
       if (res.success) {
         setToast({ message: 'Cập nhật trạng thái thành công', type: 'success' });
-        loadProposals();
+        loadProposals(pagination.page);
       } else {
         setError(res.message || 'Cập nhật thất bại');
       }
@@ -55,7 +62,7 @@ const AdminProposalsPage = () => {
       const res = await adminProposalService.delete(id, token);
       if (res.success) {
         setToast({ message: 'Xóa đề xuất thành công', type: 'success' });
-        loadProposals();
+        loadProposals(pagination.page);
       } else {
         setError(res.message || 'Xóa thất bại');
       }
@@ -73,7 +80,7 @@ const AdminProposalsPage = () => {
     }
   };
 
-  if (loading) return <Loading message="Đang tải danh sách đề xuất..." />;
+  if (loading && proposals.length === 0) return <Loading message="Đang tải danh sách đề xuất..." />;
 
   return (
     <div className="admin-proposals-page">
@@ -97,7 +104,7 @@ const AdminProposalsPage = () => {
         </div>
       </div>
 
-      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(); }} />}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -127,7 +134,7 @@ const AdminProposalsPage = () => {
               <tr><td colSpan="7"><EmptyState icon="📋" title="Không có đề xuất nào" /></td></tr>
             ) : proposals.map((p, idx) => (
               <tr key={p.id}>
-                <td>{idx + 1}</td>
+                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td>{p.owner_name}</td>
                 <td>{p.owner_phone}</td>
                 <td>{p.address}</td>
@@ -153,6 +160,13 @@ const AdminProposalsPage = () => {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={loadProposals}
+      />
     </div>
   );
 };

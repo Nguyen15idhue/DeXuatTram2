@@ -3,27 +3,47 @@ const router = express.Router();
 const pool = require('../utils/db');
 const { requireAuth } = require('../middlewares/auth');
 
-// GET /api/my-proposals - User get own proposals
+// GET /api/my-proposals - User get own proposals (with pagination)
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const { status } = req.query;
-    let query = `
+    const { status, page = 1, limit = 10 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let where = ['p.user_id = ?'];
+    let params = [req.user.id];
+
+    if (status) {
+      where.push('p.status = ?');
+      params.push(status);
+    }
+
+    const whereClause = 'WHERE ' + where.join(' AND ');
+
+    const countQuery = `SELECT COUNT(*) as total FROM station_proposals p ${whereClause}`;
+    const [countResult] = await pool.query(countQuery, params);
+    const total = countResult[0].total;
+
+    const dataQuery = `
       SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
               p.address, p.area, p.land_type, p.description, p.status,
               p.created_at
       FROM station_proposals p
-      WHERE p.user_id = ?
+      ${whereClause}
+      ORDER BY p.created_at DESC
+      LIMIT ? OFFSET ?
     `;
-    const params = [req.user.id];
+    const [proposals] = await pool.query(dataQuery, [...params, parseInt(limit), offset]);
 
-    if (status) {
-      query += ' AND p.status = ?';
-      params.push(status);
-    }
-    query += ' ORDER BY p.created_at DESC';
-
-    const [proposals] = await pool.query(query, params);
-    res.json({ success: true, data: proposals });
+    res.json({
+      success: true,
+      data: proposals,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
   } catch (error) {
     console.error('Get my proposals error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

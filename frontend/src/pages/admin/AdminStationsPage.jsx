@@ -485,7 +485,7 @@ const AdminStationsPage = () => {
               <tr><td colSpan="7"><EmptyState icon="📍" title="Không có trạm nào" description="Hãy thêm trạm mới để bắt đầu" /></td></tr>
             ) : stations.map((s, idx) => (
               <tr key={s.id}>
-                <td>{idx + 1}</td>
+                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td>{s.name}</td>
                 <td>{s.address}</td>
                 <td>{Number(s.latitude).toFixed(4)}</td>
