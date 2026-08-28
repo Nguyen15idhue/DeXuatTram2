@@ -471,7 +471,7 @@ const AdminStationsPage = () => {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>STT</th>
               <th>Tên trạm</th>
               <th>Địa chỉ</th>
               <th>Vĩ độ</th>
@@ -483,9 +483,9 @@ const AdminStationsPage = () => {
           <tbody>
             {stations.length === 0 ? (
               <tr><td colSpan="7"><EmptyState icon="📍" title="Không có trạm nào" description="Hãy thêm trạm mới để bắt đầu" /></td></tr>
-            ) : stations.map((s) => (
+            ) : stations.map((s, idx) => (
               <tr key={s.id}>
-                <td>{s.id}</td>
+                <td>{idx + 1}</td>
                 <td>{s.name}</td>
                 <td>{s.address}</td>
                 <td>{Number(s.latitude).toFixed(4)}</td>

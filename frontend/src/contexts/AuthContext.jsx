@@ -87,6 +87,10 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateUser = (userData) => {
+    setUser(prev => ({ ...prev, ...userData }));
+  };
+
   const isAdmin = user?.role === 'ADMIN';
   const isUser = user?.role === 'USER';
   const isAuthenticated = !!user;
@@ -99,6 +103,7 @@ export const AuthProvider = ({ children }) => {
       login, 
       register, 
       logout,
+      updateUser,
       isAdmin,
       isUser,
       isAuthenticated

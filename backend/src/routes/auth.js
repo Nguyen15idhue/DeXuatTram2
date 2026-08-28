@@ -173,4 +173,52 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 });
 
+// PUT /api/auth/profile - User update own profile
+router.put('/profile', requireAuth, async (req, res) => {
+  try {
+    const { full_name, phone, current_password, new_password } = req.body;
+
+    if (!full_name) {
+      return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
+    }
+
+    const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+
+    const user = users[0];
+
+    if (new_password) {
+      if (!current_password) {
+        return res.status(400).json({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại' });
+      }
+      const isPasswordValid = await bcrypt.compare(current_password, user.password);
+      if (!isPasswordValid) {
+        return res.status(400).json({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+      }
+      if (new_password.length < 6) {
+        return res.status(400).json({ success: false, message: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(new_password, salt);
+      await pool.query('UPDATE users SET full_name = ?, phone = ?, password = ? WHERE id = ?',
+        [full_name, phone || '', hashedPassword, req.user.id]);
+    } else {
+      await pool.query('UPDATE users SET full_name = ?, phone = ? WHERE id = ?',
+        [full_name, phone || '', req.user.id]);
+    }
+
+    const [updated] = await pool.query(
+      'SELECT id, full_name, email, phone, role, status, created_at FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    res.json({ success: true, data: updated[0], message: 'Cập nhật hồ sơ thành công' });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
 module.exports = router;

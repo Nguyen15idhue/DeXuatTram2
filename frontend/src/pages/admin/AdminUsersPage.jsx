@@ -212,7 +212,7 @@ const AdminUsersPage = () => {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>STT</th>
               <th>Họ tên</th>
               <th>Email</th>
               <th>SĐT</th>
@@ -224,9 +224,9 @@ const AdminUsersPage = () => {
           <tbody>
             {users.length === 0 ? (
               <tr><td colSpan="7"><EmptyState icon="👤" title="Không có user nào" /></td></tr>
-            ) : users.map((u) => (
+            ) : users.map((u, idx) => (
               <tr key={u.id}>
-                <td>{u.id}</td>
+                <td>{idx + 1}</td>
                 <td>{u.full_name}</td>
                 <td>{u.email}</td>
                 <td>{u.phone || '-'}</td>

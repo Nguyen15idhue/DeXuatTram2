@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Outlet, Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const UserLayout = () => {
-  const { user, isAuthenticated, loading, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin, loading, logout } = useAuth();
   const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   if (loading) {
     return <div className="loading">Đang tải...</div>;
@@ -19,22 +21,43 @@ const UserLayout = () => {
     { path: '/profile', label: 'Hồ sơ', icon: '👤' },
   ];
 
+  const handleNavClick = () => {
+    setMenuOpen(false);
+  };
+
   return (
-    <div className="user-layout">
+    <div className={`user-layout ${menuOpen ? 'menu-open' : ''}`}>
+      {menuOpen && <div className="menu-overlay" onClick={() => setMenuOpen(false)} />}
       <header className="header">
         <div className="header-left">
-          <Link to="/map" className="logo">Station Management</Link>
+          <button className="hamburger-btn" onClick={() => setMenuOpen(!menuOpen)}>
+            <span className="hamburger-icon">☰</span>
+          </button>
+          <Link to="/map" className="logo" onClick={handleNavClick}>Station Management</Link>
         </div>
-        <nav className="nav">
+        <nav className={`nav ${menuOpen ? 'nav-open' : ''}`}>
           {menuItems.map(item => (
             <Link 
               key={item.path} 
               to={item.path}
               className={location.pathname === item.path ? 'active' : ''}
+              onClick={handleNavClick}
             >
               <span>{item.icon}</span> {item.label}
             </Link>
           ))}
+          {isAdmin && (
+            <>
+              <div className="nav-divider" />
+              <Link
+                to="/admin"
+                className="nav-link-admin"
+                onClick={handleNavClick}
+              >
+                <span>🔧</span> Admin Panel
+              </Link>
+            </>
+          )}
         </nav>
         <div className="header-right">
           <span className="user-name">{user?.full_name}</span>

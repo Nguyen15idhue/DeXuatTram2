@@ -113,7 +113,7 @@ const AdminProposalsPage = () => {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>STT</th>
               <th>Chủ MB</th>
               <th>SĐT</th>
               <th>Địa chỉ</th>
@@ -125,9 +125,9 @@ const AdminProposalsPage = () => {
           <tbody>
             {proposals.length === 0 ? (
               <tr><td colSpan="7"><EmptyState icon="📋" title="Không có đề xuất nào" /></td></tr>
-            ) : proposals.map((p) => (
+            ) : proposals.map((p, idx) => (
               <tr key={p.id}>
-                <td>{p.id}</td>
+                <td>{idx + 1}</td>
                 <td>{p.owner_name}</td>
                 <td>{p.owner_phone}</td>
                 <td>{p.address}</td>
