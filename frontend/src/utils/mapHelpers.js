@@ -80,9 +80,17 @@ export const parseGoogleMapsLink = (url) => {
 
 export const resolveGoogleMapsShortUrl = async (url) => {
   try {
-    const response = await fetch(url, { redirect: 'follow' });
-    const finalUrl = response.url;
-    return parseGoogleMapsLink(finalUrl);
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const response = await fetch(`${API_BASE}/api/map/resolve-map-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const result = await response.json();
+    if (result.success && result.data) {
+      return result.data;
+    }
+    return null;
   } catch (error) {
     console.error('Error resolving short URL:', error);
     return null;
