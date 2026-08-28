@@ -181,6 +181,9 @@ button:disabled {
   flex: 1;
   padding: 30px;
   background: #f5f6fa;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Admin Layout */
@@ -372,8 +375,11 @@ button:disabled {
   background: transparent;
   box-shadow: none;
   flex: 1;
+  height: 100%;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .map-container {

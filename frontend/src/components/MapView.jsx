@@ -147,7 +147,7 @@ const MapView = ({
   const position = [10.7626, 106.6601];
 
   return (
-    <div style={{ height: '100%', width: '100%', position: 'relative' }}>
+    <div style={{ flex: 1, height: '100%', width: '100%', position: 'relative' }}>
       <MapContainer
         center={position}
         zoom={12}
