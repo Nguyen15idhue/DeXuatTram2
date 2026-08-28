@@ -1,5 +1,5 @@
 const Pagination = ({ page, totalPages, total, onPageChange }) => {
-  if (totalPages <= 1) return null;
+  if (total === 0) return null;
 
   return (
     <div className="pagination">
