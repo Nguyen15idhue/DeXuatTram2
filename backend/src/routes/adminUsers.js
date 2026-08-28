@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const pool = require('../utils/db');
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
 const { validateCreateUser, validateUpdateUser } = require('../middlewares/validators');
