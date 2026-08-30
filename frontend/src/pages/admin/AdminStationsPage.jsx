@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { stationService, excelService } from '../../services/api';
+import DynamicTable from '../../components/dynamic/DynamicTable';
+import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import 'leaflet/dist/leaflet.css';
@@ -24,29 +26,55 @@ function MapClickHandler({ onMapClick }) {
   return null;
 }
 
+const STATIONS_VIEW_ID = 6;
+
 const AdminStationsPage = () => {
   const { token } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', latitude: '', longitude: '',
     address: '', status: 'ACTIVE', description: ''
   });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
-
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
 
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+
+  useEffect(() => {
+    const match = location.pathname.match(/\/admin\/stations\/(view|edit)=(\d+)/);
+    if (match) {
+      const mode = match[1];
+      const id = parseInt(match[2]);
+      const existing = stations.find(s => s.id === id);
+      setPopup({ open: true, record: existing || null, mode });
+      if (!existing && id) loadStationById(id, mode);
+    } else {
+      setPopup({ open: false, record: null, mode: 'view' });
+    }
+  }, [location.pathname, stations.length]);
+
+  const loadStationById = async (id, mode) => {
+    try {
+      const res = await stationService.getAllWithParams('');
+      if (res.success) {
+        const station = res.data.find(s => s.id === id);
+        if (station) setPopup({ open: true, record: station, mode });
+      }
+    } catch { /* silent */ }
+  };
 
   const loadStations = useCallback(async (page = 1) => {
     try {
@@ -71,52 +99,27 @@ const AdminStationsPage = () => {
   const handleSearch = () => { loadStations(1); };
 
   const openCreate = () => {
-    setEditingId(null);
     setForm({ name: '', latitude: '', longitude: '', address: '', status: 'ACTIVE', description: '' });
-    setShowForm(true);
+    setShowCreateForm(true);
     setError('');
-    setToast({ message: '', type: 'success' });
-  };
-
-  const openEdit = (station) => {
-    setEditingId(station.id);
-    setForm({
-      name: station.name,
-      latitude: station.latitude,
-      longitude: station.longitude,
-      address: station.address,
-      status: station.status,
-      description: station.description || ''
-    });
-    setShowForm(true);
-    setError('');
-    setToast({ message: '', type: 'success' });
   };
 
   const handleMapClick = (latlng) => {
     setForm({ ...form, latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
   };
 
-  const handleSubmit = async (e) => {
+  const handleCreateSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
     if (!form.name || !form.latitude || !form.longitude || !form.address) {
       setError('Vui lòng nhập đầy đủ thông tin bắt buộc');
       return;
     }
-
     try {
-      let res;
-      if (editingId) {
-        res = await stationService.update(editingId, form, token);
-      } else {
-        res = await stationService.create(form, token);
-      }
-
+      const res = await stationService.create(form, token);
       if (res.success) {
-        setToast({ message: editingId ? 'Cập nhật thành công' : 'Tạo trạm thành công', type: 'success' });
-        setShowForm(false);
+        setToast({ message: 'Tạo trạm thành công', type: 'success' });
+        setShowCreateForm(false);
         loadStations(pagination.page);
       } else {
         setError(res.message || 'Thao tác thất bại');
@@ -169,7 +172,6 @@ const AdminStationsPage = () => {
     setImportPreview(null);
     setImportStep('upload');
     setError('');
-    setToast({ message: '', type: 'success' });
   };
 
   const handleFileSelect = (e) => {
@@ -182,11 +184,7 @@ const AdminStationsPage = () => {
   };
 
   const handlePreviewImport = async () => {
-    if (!importFile) {
-      setError('Vui lòng chọn file Excel');
-      return;
-    }
-
+    if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
     try {
       setImportLoading(true);
       setError('');
@@ -205,11 +203,7 @@ const AdminStationsPage = () => {
   };
 
   const handleConfirmImport = async () => {
-    if (!importPreview || importPreview.rows.length === 0) {
-      setError('Không có dữ liệu hợp lệ để import');
-      return;
-    }
-
+    if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
     try {
       setImportLoading(true);
       setError('');
@@ -228,15 +222,19 @@ const AdminStationsPage = () => {
     }
   };
 
+  const renderActions = (row) => (
+    <div className="action-buttons">
+      <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/stations/view=${row.id}`)}>Xem</button>
+      <button className="btn btn-sm btn-edit" onClick={() => navigate(`/admin/stations/edit=${row.id}`)}>Sửa</button>
+      <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id, row.name)}>Xóa</button>
+    </div>
+  );
+
   if (loading && stations.length === 0) return <Loading message="Đang tải danh sách trạm..." />;
 
   return (
     <div className="admin-stations-page">
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        onClose={() => setToast({ message: '', type: 'success' })}
-      />
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <div className="page-header">
         <h1>Quản lý Trạm</h1>
@@ -261,13 +259,7 @@ const AdminStationsPage = () => {
       />
 
       <div className="filter-bar">
-        <input
-          type="text"
-          placeholder="Search theo tên hoặc địa chỉ..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-        />
+        <input type="text" placeholder="Search theo tên hoặc địa chỉ..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           <option value="ACTIVE">ACTIVE</option>
@@ -280,7 +272,6 @@ const AdminStationsPage = () => {
         <div className="modal-overlay" onClick={() => setShowImport(false)}>
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             <h2>Import Stations từ Excel</h2>
-
             {importStep === 'upload' && (
               <div className="import-upload">
                 <div className="form-group">
@@ -295,111 +286,23 @@ const AdminStationsPage = () => {
                 )}
                 <div className="form-actions">
                   <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handlePreviewImport}
-                    disabled={!importFile || importLoading}
-                  >
+                  <button type="button" className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
                     {importLoading ? 'Đang đọc...' : 'Xem trước'}
                   </button>
                 </div>
               </div>
             )}
-
             {importStep === 'preview' && importPreview && (
               <div className="import-preview">
                 <div className="import-summary">
                   <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
                   <p className="success-text">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
-                  {importPreview.errorRows > 0 && (
-                    <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>
-                  )}
+                  {importPreview.errorRows > 0 && <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
                 </div>
-
-                {importPreview.rows.length > 0 && (
-                  <div className="import-table-section">
-                    <h3>Dữ liệu hợp lệ ({importPreview.validRows} dòng)</h3>
-                    <div className="table-container import-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Dòng</th>
-                            <th>Tên trạm</th>
-                            <th>Vĩ độ</th>
-                            <th>Kinh độ</th>
-                            <th>Địa chỉ</th>
-                            <th>Trạng thái</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {importPreview.rows.map((row, idx) => (
-                            <tr key={idx}>
-                              <td>{row.row}</td>
-                              <td>{row.name}</td>
-                              <td>{row.latitude}</td>
-                              <td>{row.longitude}</td>
-                              <td>{row.address}</td>
-                              <td><span className={`badge badge-${row.status.toLowerCase()}`}>{row.status}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {importPreview.errors.length > 0 && (
-                  <div className="import-errors-section">
-                    <h3>Dữ liệu lỗi ({importPreview.errorRows} dòng)</h3>
-                    <div className="table-container import-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Dòng</th>
-                            <th>Lỗi</th>
-                            <th>Dữ liệu</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {importPreview.errors.map((err, idx) => (
-                            <tr key={idx} className="row-error">
-                              <td>{err.row}</td>
-                              <td>
-                                <ul className="error-list">
-                                  {err.errors.map((e, i) => (
-                                    <li key={i}>{e}</li>
-                                  ))}
-                                </ul>
-                              </td>
-                              <td className="error-data">
-                                {err.data.name && <span>Tên: {err.data.name}</span>}
-                                {err.data.latitude && <span>Lat: {err.data.latitude}</span>}
-                                {err.data.longitude && <span>Lng: {err.data.longitude}</span>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
                 <div className="form-actions">
                   <button type="button" className="btn btn-secondary" onClick={() => setImportStep('upload')}>Quay lại</button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowImport(false)}
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleConfirmImport}
-                    disabled={importPreview.rows.length === 0 || importLoading}
-                  >
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} trạm`}
                   </button>
                 </div>
@@ -409,11 +312,11 @@ const AdminStationsPage = () => {
         </div>
       )}
 
-      {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+      {showCreateForm && (
+        <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingId ? 'Sửa trạm' : 'Thêm trạm mới'}</h2>
-            <form onSubmit={handleSubmit}>
+            <h2>Thêm trạm mới</h2>
+            <form onSubmit={handleCreateSubmit}>
               <div className="form-group">
                 <label>Tên trạm *</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -430,11 +333,7 @@ const AdminStationsPage = () => {
               </div>
               <div className="map-picker">
                 <label>Chọn vị trí trên bản đồ</label>
-                <MapContainer
-                  center={[10.762622, 106.660172]}
-                  zoom={13}
-                  style={{ height: '250px', width: '100%' }}
-                >
+                <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '250px', width: '100%' }}>
                   <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
                   <MapClickHandler onMapClick={handleMapClick} />
                   {form.latitude && form.longitude && (
@@ -458,49 +357,36 @@ const AdminStationsPage = () => {
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" />
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">{editingId ? 'Cập nhật' : 'Tạo mới'}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
+                <button type="submit" className="btn btn-primary">Tạo mới</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Tên trạm</th>
-              <th>Địa chỉ</th>
-              <th>Vĩ độ</th>
-              <th>Kinh độ</th>
-              <th>Trạng thái</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stations.length === 0 ? (
-              <tr><td colSpan="7"><EmptyState icon="📍" title="Không có trạm nào" description="Hãy thêm trạm mới để bắt đầu" /></td></tr>
-            ) : stations.map((s, idx) => (
-              <tr key={s.id}>
-                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                <td>{s.name}</td>
-                <td>{s.address}</td>
-                <td>{Number(s.latitude).toFixed(4)}</td>
-                <td>{Number(s.longitude).toFixed(4)}</td>
-                <td>
-                  <span className={`badge badge-${s.status.toLowerCase()}`}>{s.status}</span>
-                </td>
-                <td>
-                  <button className="btn btn-sm btn-edit" onClick={() => openEdit(s)}>Sửa</button>
-                  <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(s.id, s.name)}>Xóa</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {popup.open && (
+        <RecordDetailPopup
+          entity="stations"
+          record={popup.record}
+          recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
+          viewId={STATIONS_VIEW_ID}
+          mode={popup.mode}
+          onClose={() => navigate('/admin/stations')}
+          onSaved={() => { loadStations(pagination.page); navigate('/admin/stations'); }}
+          onSwitchMode={(newMode) => {
+            const id = location.pathname.match(/=(\d+)/)?.[1];
+            navigate(`/admin/stations/${newMode}=${id}`, { replace: true });
+          }}
+        />
+      )}
+
+      <DynamicTable
+        entity="stations"
+        viewId={STATIONS_VIEW_ID}
+        data={stations}
+        actions={renderActions}
+      />
 
       <Pagination
         page={pagination.page}

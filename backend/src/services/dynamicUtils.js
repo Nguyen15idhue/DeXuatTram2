@@ -121,7 +121,9 @@ exports.splitData = (entity, data, fieldDefs) => {
     return { fixedData, dynamicData };
   }
 
-  const dynamicKeys = new Set(fieldDefs.map(f => f.key));
+  const dynamicKeys = new Set(
+    fieldDefs.filter(f => f.source_type === 'json').map(f => f.key)
+  );
 
   Object.keys(data).forEach(key => {
     if (dynamicKeys.has(key)) {

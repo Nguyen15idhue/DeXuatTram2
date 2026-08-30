@@ -69,6 +69,8 @@ exports.getViewConfig = async (entity, viewId) => {
     [viewId]
   );
 
+  const allFieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
+
   return {
     view: {
       id: view.id,
@@ -91,6 +93,15 @@ exports.getViewConfig = async (entity, viewId) => {
       sortable: !!f.sortable,
       filterable: !!f.filterable,
       config: f.config
+    })),
+    allFields: allFieldDefs.map(f => ({
+      id: f.id,
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      source_type: f.source_type,
+      required: !!f.required,
+      options: f.options ? dynamicUtils.parseOptions(f.options) : []
     }))
   };
 };

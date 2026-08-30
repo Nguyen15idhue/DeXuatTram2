@@ -57,3 +57,15 @@ exports.deleteProposal = async (id) => {
 exports.updateStatus = async (id, status) => {
   await pool.query('UPDATE station_proposals SET status = ?, updated_at = NOW() WHERE id = ?', [status, id]);
 };
+
+exports.updateProposal = async (id, data) => {
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+
+  const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
+
+  await pool.query(
+    `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
+    [fixedData.owner_name, fixedData.owner_phone, fixedData.address, fixedData.area, fixedData.land_type, fixedData.description || '', fixedData.status, customData, id]
+  );
+};

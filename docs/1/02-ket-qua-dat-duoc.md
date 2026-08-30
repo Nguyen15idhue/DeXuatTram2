@@ -14,8 +14,8 @@
 | Phase 2: Backend CRUD Config | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 15 files, 27 endpoints |
 | Phase 3: Backend Engine | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 7 files + 8 files modified |
 | Phase 4: Frontend Admin | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 4 components + 5 pages |
-| Phase 5: Frontend Dynamic | ⏳ Chưa bắt đầu | — | — | |
-| Phase 6: Integration | ⏳ Chưa bắt đầu | — | — | |
+| Phase 5: Frontend Dynamic | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 6 components + CSS + barrel export |
+| Phase 6: Integration | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 4 pages refactored to DynamicTable |
 | Phase 7: Excel Dynamic | ⏳ Chưa bắt đầu | — | — | |
 | Phase 8: Testing | ⏳ Chưa bắt đầu | — | — | |
 
@@ -378,19 +378,92 @@ Edge cases tested:
 ## PHASE 5: FRONTEND DYNAMIC
 
 ### Files đã tạo
-| File | Trạng thái | Dòng |
-|------|------------|------|
-| `components/dynamic/DynamicField.jsx` | ⏳ | |
-| `components/dynamic/FieldRenderer.jsx` | ⏳ | |
-| `components/dynamic/FileUpload.jsx` | ⏳ | |
-| `components/dynamic/DynamicForm.jsx` | ⏳ | |
-| `components/dynamic/DynamicTable.jsx` | ⏳ | |
-| `components/dynamic/DynamicFilter.jsx` | ⏳ | |
+| File | Loại | Trạng thái | Dòng |
+|------|------|------------|------|
+| `components/dynamic/DynamicField.jsx` | component | ✅ | ~140 |
+| `components/dynamic/FieldRenderer.jsx` | component | ✅ | ~90 |
+| `components/dynamic/FileUpload.jsx` | component | ✅ | ~110 |
+| `components/dynamic/DynamicForm.jsx` | component | ✅ | ~120 |
+| `components/dynamic/DynamicTable.jsx` | component | ✅ | ~100 |
+| `components/dynamic/DynamicFilter.jsx` | component | ✅ | ~100 |
+| `components/dynamic/index.js` | barrel export | ✅ | 7 |
+| `components/admin/RecordDetailPopup.jsx` | component | ✅ | ~60 |
 
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `services/api.js` | ⏳ | 7 services mới |
+| `App.css` | ✅ | Thêm CSS cho dynamic components, file upload, dynamic form/table/filter |
+
+### Component Details
+
+**DynamicField.jsx** — Render input theo field.type:
+- Types hỗ trợ: text, textarea, number, email, phone, url, date, datetime, boolean, select, multiselect, file, formula
+- Props: field, value, onChange, error, disabled
+- Tự parse options từ JSON/array/string
+
+**FieldRenderer.jsx** — Hiển thị value readonly:
+- number: toLocaleString()
+- boolean: ✓/✗
+- select: label thay vì value
+- multiselect: join labels
+- date/datetime:toLocaleDateString/toLocaleString('vi-VN')
+- file: hiển thị tên file
+- url/email/phone: link
+
+**FileUpload.jsx** — Upload file:
+- Drag-and-drop zone + click to select
+- Validate size (10MB max)
+- Upload qua POST /api/files/upload
+- Preview image / icon
+- Multiple files support
+- Props: value, onChange, entityId, entityType, multiple, accept, disabled
+
+**DynamicForm.jsx** — Render form từ config:
+- Gọi GET /api/dynamic/:entity/form/:formId
+- Render fields theo order_index + colSpan config
+- Validate client-side (required fields)
+- Props: entity, formId, onSubmit, initialData, children
+- Hỗ trợ FileUpload cho field type=file
+
+**DynamicTable.jsx** — Render table từ config:
+- Gọi GET /api/dynamic/:entity/view/:viewId
+- Render th theo view_fields (visible, width, sortable)
+- Sort client-side khi click column header
+- Props: entity, viewId, data, onSort, sortConfig, onRowClick, actions
+
+**DynamicFilter.jsx** — Render filter từ view_fields:
+- Filter text, select, date, boolean
+- Apply/Reset buttons
+- Enter key support
+- Props: columns, filters, onChange
+
+### CSS additions
+- `.dynamic-field-checkbox`, `.dynamic-field-multiselect`
+- `.form-control`, `.form-control.is-invalid`
+- `.file-upload`, `.file-upload-dropzone`, `.file-upload-list`, `.file-upload-item`
+- `.dynamic-form`, `.dynamic-form-row`, `.dynamic-form-field`
+- `.dynamic-table`, `.dynamic-table th/td`
+- `.dynamic-filter`, `.dynamic-filter-item`
+
+### Test results
+| Test | Kết quả |
+|------|---------|
+| Frontend build (vite build) | ✅ 109 modules, 0 errors |
+| Vietnamese encoding fix | ✅ All 29 field_definitions display correctly |
+| Backend API field definitions | ✅ 29 records, UTF-8 labels |
+| Entity grid UI | ✅ 3 cards, 1 form/view per entity |
+| Dynamic engine form config | ✅ 9 fields for stations |
+| Dynamic engine view config | ✅ 9 fields + allFields for stations |
+| Record detail popup | ✅ mainFields + otherFields split |
+
+### Bug fixes & improvements
+- **Vietnamese encoding:** Fixed MySQL client charset issue, re-seed with `--default-character-set=utf8mb4`
+- **Entity selector:** Forms/Views pages now use entity grid layout (no more dropdown)
+- **1 form/view per entity:** Limited to 1 form and 1 view per entity (max 3 each)
+- **Record detail popup:** "Xem" button opens popup with configured fields (top) + other fields (bottom)
+- **DynamicTable:** Added STT column (first) + Thao tác column with "Xem" button (last)
+- **Backend:** `getViewConfig` now returns `allFields` for popup display
+- **Seed data:** 29 field definitions covering all 3 tables (fixed + json source types)
 
 ---
 
@@ -399,12 +472,138 @@ Edge cases tested:
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `pages/admin/AdminStationsPage.jsx` | ⏳ | Dùng DynamicForm/DynamicTable |
-| `pages/admin/AdminProposalsPage.jsx` | ⏳ | Tương tự |
-| `pages/admin/AdminUsersPage.jsx` | ⏳ | Tương tự |
-| `pages/user/MyProposalsPage.jsx` | ⏳ | Tương tự |
-| `pages/user/ProfilePage.jsx` | ⏳ | Tương tự |
-| `pages/user/MapPage.jsx` | ⏳ | Tương tự |
+| `pages/admin/AdminStationsPage.jsx` | ✅ | Hardcoded table → DynamicTable + RecordDetailPopup + URL-based popup |
+| `pages/admin/AdminProposalsPage.jsx` | ✅ | Hardcoded table → DynamicTable + RecordDetailPopup + URL-based popup |
+| `pages/admin/AdminUsersPage.jsx` | ✅ | Hardcoded table → DynamicTable + RecordDetailPopup + URL-based popup |
+| `pages/user/MyProposalsPage.jsx` | ✅ | Hardcoded table → DynamicTable + RecordDetailPopup + URL-based popup |
+| `pages/user/ProfilePage.jsx` | ✅ | Hardcoded form → popup-style UI (section layout, popup CSS classes) |
+| `pages/user/MapPage.jsx` | ✅ | Hardcoded form → DynamicForm (station_proposals form ID=9) |
+
+### Files mới
+| File | Loại | Trạng thái |
+|------|------|------------|
+| `pages/admin/RecordDetailPage.jsx` | page | ✅ (not used — pages handle popup via URL params) |
+| `components/admin/RecordDetailPopup.jsx` | component | ✅ Rewritten |
+
+### Files backend
+| File | Trạng thái | Thay đổi |
+|------|------------|----------|
+| `controllers/adminProposalController.js` | ✅ | Thêm `exports.update` cho PUT /admin/proposals/:id |
+| `routes/adminProposals.js` | ✅ | Thêm PUT `/:id` route với Swagger |
+| `services/adminProposalService.js` | ✅ | Thêm `updateProposal` với splitData |
+| `services/dynamicUtils.js` | ✅ | Fix `splitData`: filter by `source_type === 'json'` only |
+
+### Files CSS & config
+| File | Trạng thái | Thay đổi |
+|------|------------|----------|
+| `App.css` | ✅ | Thêm `.action-buttons`, `.filter-row`, `.filter-input`, `.popup-detail/header/body/footer/section/fields/field-row/field-label/field-value` |
+| `App.jsx` | ✅ | Thêm wildcard routes `/*` cho popup URLs; xóa RecordDetailPage import |
+
+### Changes detail
+
+**DynamicTable.jsx (rewrite):**
+- useNavigate cho URL-based popup (`navigate(\`/admin/${entity}/view=${id}\`)`)
+- Client-side sort với ↑/↓/↕ toggle + localeCompare('vi')
+- Filter inputs cho filterable columns
+- Width từ view config (`col.width` → `minWidth`/`width` styles)
+- Actions prop cho custom action buttons
+
+**RecordDetailPopup.jsx (rewrite):**
+- Props: entity, recordId, viewId, mode, record, onClose, onSaved, onSwitchMode
+- Load view config + allFields từ API
+- View mode: FieldRenderer cho configured fields (top) + remaining fields (bottom)
+- Edit mode: DynamicField cho configured fields (top) + remaining fields (bottom)
+- Footer buttons: switch giữa view/edit modes
+- Calls entity-specific service (stationService/proposalService/userService)
+- URL-based: `/admin/:entity/view=:id`, `/admin/:entity/edit=:id`
+
+**AdminStationsPage.jsx:**
+- Import DynamicTable, viewService, RecordDetailPopup
+- Load view config (ID=6) on mount
+- URL-based popup: `/admin/stations/view=${id}` + `/admin/stations/edit=${id}`
+- Giữ nguyên: create form modal (map picker), import modal, filter bar, pagination
+
+**AdminProposalsPage.jsx:**
+- Import DynamicTable, RecordDetailPopup
+- Load view config (ID=8) on mount
+- URL-based popup for view/edit
+- Custom actions: status select + delete button
+- Giữ nguyên: filter by status, export Excel
+
+**AdminUsersPage.jsx:**
+- Import DynamicTable, RecordDetailPopup
+- Load view config (ID=7) on mount
+- URL-based popup for view/edit
+- Custom actions: edit, lock/unlock, delete
+- Giữ nguyên: search, pagination
+
+**MyProposalsPage.jsx:**
+- Import DynamicTable, RecordDetailPopup
+- Load view config (ID=8) on mount
+- URL-based popup for view/edit
+- Custom actions: edit/delete (only for PENDING status)
+- Giữ nguyên: filter, pagination
+
+**ProfilePage.jsx:**
+- Đổi UI sang popup-style layout (popup-section, popup-fields, popup-field-row)
+- View mode: hiển thị thông tin cá nhân
+- Edit mode: form chỉnh sửa full_name, phone, password
+- Giữ nguyên logic password validation (special fields không trong field_definitions)
+
+**MapPage.jsx:**
+- Import DynamicForm cho proposal creation form
+- DynamicForm renders station_proposals form (ID=9) — 12 fields từ config
+- Map click → auto-fill latitude/longitude → DynamicForm nhận initialData
+- Popup-style modal layout
+
+### Bug fixes
+| Bug | Mô tả | Fix |
+|-----|-------|-----|
+| Entity empty on edit/view | FormBuilder/ViewBuilder không gửi `entity` khi update | Thêm `entity: editingEntity` trong update payload |
+| Field deletion not persisted | Xóa field khỏi form/view không xóa ở DB | Loop existing fields, DELETE those not in new list |
+| dynamicUtils.splitData | Gửi all fixed fields causes "Column cannot be null" | Filter by `source_type === 'json'` only |
+| Sort not working | DynamicTable không sort được | Client-side sort with localeCompare('vi') |
+| Actions column inconsistent | Different action styles across pages | Standardize to `className="action-buttons"` |
+| Table UI rough | Bordered table without styling | Border, border-radius, box-shadow, zebra stripes, hover |
+
+### New API endpoint
+| Endpoint | Method | Auth | Ghi chú |
+|----------|--------|------|---------|
+| `/api/admin/proposals/:id` | PUT | admin | Admin update proposal (with splitData) |
+
+### View IDs used
+| Entity | View ID | View Name | Fields |
+|--------|---------|-----------|--------|
+| stations | 6 | View Stations | 9 |
+| users | 7 | View Users | 8 |
+| station_proposals | 8 | View Proposals | 12 |
+
+### URL patterns for popups
+| URL Pattern | Page | Mode |
+|-------------|------|------|
+| `/admin/stations/view=:id` | AdminStationsPage | View |
+| `/admin/stations/edit=:id` | AdminStationsPage | Edit |
+| `/admin/proposals/view=:id` | AdminProposalsPage | View |
+| `/admin/proposals/edit=:id` | AdminProposalsPage | Edit |
+| `/admin/users/view=:id` | AdminUsersPage | View |
+| `/admin/users/edit=:id` | AdminUsersPage | Edit |
+| `/my-proposals/view=:id` | MyProposalsPage | View |
+| `/my-proposals/edit=:id` | MyProposalsPage | Edit |
+
+### Test results
+| Test | Kết quả |
+|------|---------|
+| Frontend build (vite build) | ✅ 115 modules, 0 errors |
+| Docker containers running | ✅ frontend:5173, backend:3000, mysql:3306 |
+| Login API | ✅ |
+| GET /api/stations?page=1&limit=2 | ✅ |
+| GET /api/admin/proposals?page=1&limit=2 | ✅ |
+| GET /api/admin/users?page=1&limit=2 | ✅ |
+| GET /api/field-definitions/entity/stations | ✅ |
+| GET /api/dynamic/users/view/7 | ✅ 7 columns + allFields |
+| GET /api/dynamic/station_proposals/form/9 | ✅ 12 fields |
+| Swagger UI | ✅ Status 200 |
+| Frontend accessible | ✅ http://localhost:5173 |
 
 ---
 
@@ -469,12 +668,12 @@ Edge cases tested:
 | Files mới backend (route) | 8 |
 | Files mới backend (controller) | 7 |
 | Files mới backend (service) | 9 |
-| Files mới frontend (component) | 4 |
-| Files mới frontend (page) | 5 |
-| Files sửa backend (service) | 7 |
-| Files sửa frontend | 4 (App.jsx, AdminLayout, App.css, api.js) |
+| Files mới frontend (component) | 12 (6 admin + 6 dynamic) |
+| Files mới frontend (page) | 6 |
+| Files sửa backend (service) | 9 |
+| Files sửa frontend | 10 (6 pages + App.jsx, AdminLayout, App.css, api.js) |
 | Files SQL | 6 |
-| **Tổng** | **54** |
+| **Tổng** | **67** |
 
 ### Tổng số API endpoints
 | Loại | Số lượng |
@@ -482,7 +681,8 @@ Edge cases tested:
 | Hiện có | 32 |
 | Mới (Phase 2) | 27 |
 | Mới (Phase 3) | 7 |
-| **Tổng** | **66** |
+| Mới (Phase 6) | 1 |
+| **Tổng** | **67** |
 
 ### Ghi chú
 - Tất cả ghi chú, vấn đề, thay đổi sẽ được cập nhật tại đây

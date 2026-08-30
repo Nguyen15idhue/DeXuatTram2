@@ -65,6 +65,54 @@ router.delete('/:id', requireAuth, requireAdmin, adminProposalController.delete)
 
 /**
  * @swagger
+ * /api/admin/proposals/{id}:
+ *   put:
+ *     tags: [Admin - Proposals]
+ *     summary: Admin cập nhật đề xuất
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               owner_name:
+ *                 type: string
+ *               owner_phone:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *               area:
+ *                 type: string
+ *               land_type:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.put('/:id', requireAuth, requireAdmin, adminProposalController.update);
+
+/**
+ * @swagger
  * /api/admin/proposals/{id}/status:
  *   put:
  *     tags: [Admin - Proposals]

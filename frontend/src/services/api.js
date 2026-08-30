@@ -154,6 +154,9 @@ export const adminProposalService = {
   updateStatus(id, status, token) {
     return api.putWithAuth(`/admin/proposals/${id}/status`, { status }, token);
   },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/proposals/${id}`, data, token);
+  },
   delete(id, token) {
     return api.deleteWithAuth(`/admin/proposals/${id}`, token);
   }

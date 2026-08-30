@@ -100,57 +100,55 @@ const ProfilePage = () => {
       {isEditing ? (
         <div className="profile-card">
           <form onSubmit={handleSubmit}>
-            <div className="profile-field">
-              <label>Họ tên:</label>
-              <input
-                type="text"
-                value={form.full_name}
-                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              />
+            <div className="popup-section">
+              <h3 className="popup-section-title">Thông tin cơ bản</h3>
+              <div className="popup-fields">
+                <div className="popup-field-row">
+                  <span className="popup-field-label">Họ tên *</span>
+                  <span className="popup-field-value">
+                    <input type="text" className="form-control" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+                  </span>
+                </div>
+                <div className="popup-field-row">
+                  <span className="popup-field-label">Email</span>
+                  <span className="popup-field-value">
+                    <span className="form-control" style={{ background: '#f5f5f5', cursor: 'not-allowed' }}>{user?.email}</span>
+                  </span>
+                </div>
+                <div className="popup-field-row">
+                  <span className="popup-field-label">Số điện thoại</span>
+                  <span className="popup-field-value">
+                    <input type="text" className="form-control" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="profile-field">
-              <label>Email:</label>
-              <span className="profile-email">{user?.email}</span>
+
+            <div className="popup-section">
+              <h3 className="popup-section-title">Đổi mật khẩu (không bắt buộc)</h3>
+              <div className="popup-fields">
+                <div className="popup-field-row">
+                  <span className="popup-field-label">Mật khẩu hiện tại</span>
+                  <span className="popup-field-value">
+                    <input type="password" className="form-control" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} placeholder="Nhập mật khẩu hiện tại" />
+                  </span>
+                </div>
+                <div className="popup-field-row">
+                  <span className="popup-field-label">Mật khẩu mới</span>
+                  <span className="popup-field-value">
+                    <input type="password" className="form-control" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Ít nhất 6 ký tự" />
+                  </span>
+                </div>
+                <div className="popup-field-row">
+                  <span className="popup-field-label">Xác nhận mật khẩu</span>
+                  <span className="popup-field-value">
+                    <input type="password" className="form-control" value={form.confirm_password} onChange={(e) => setForm({ ...form, confirm_password: e.target.value })} placeholder="Nhập lại mật khẩu mới" />
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="profile-field">
-              <label>Số điện thoại:</label>
-              <input
-                type="text"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              />
-            </div>
-            <div className="profile-divider">
-              <span>Đổi mật khẩu (không bắt buộc)</span>
-            </div>
-            <div className="profile-field">
-              <label>Mật khẩu hiện tại:</label>
-              <input
-                type="password"
-                value={form.current_password}
-                onChange={(e) => setForm({ ...form, current_password: e.target.value })}
-                placeholder="Nhập mật khẩu hiện tại"
-              />
-            </div>
-            <div className="profile-field">
-              <label>Mật khẩu mới:</label>
-              <input
-                type="password"
-                value={form.new_password}
-                onChange={(e) => setForm({ ...form, new_password: e.target.value })}
-                placeholder="Ít nhất 6 ký tự"
-              />
-            </div>
-            <div className="profile-field">
-              <label>Xác nhận:</label>
-              <input
-                type="password"
-                value={form.confirm_password}
-                onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
-                placeholder="Nhập lại mật khẩu mới"
-              />
-            </div>
-            <div className="form-actions">
+
+            <div className="popup-footer">
               <button type="button" className="btn btn-secondary" onClick={handleCancel}>Hủy</button>
               <button type="submit" className="btn btn-primary">Lưu thay đổi</button>
             </div>
@@ -158,25 +156,30 @@ const ProfilePage = () => {
         </div>
       ) : (
         <div className="profile-card">
-          <div className="profile-field">
-            <label>Họ tên:</label>
-            <span>{user?.full_name}</span>
-          </div>
-          <div className="profile-field">
-            <label>Email:</label>
-            <span>{user?.email}</span>
-          </div>
-          <div className="profile-field">
-            <label>Số điện thoại:</label>
-            <span>{user?.phone || 'Chưa cập nhật'}</span>
-          </div>
-          <div className="profile-field">
-            <label>Vai trò:</label>
-            <span>{user?.role}</span>
-          </div>
-          <div className="profile-field">
-            <label>Trạng thái:</label>
-            <span>{user?.status}</span>
+          <div className="popup-section">
+            <h3 className="popup-section-title">Thông tin cá nhân</h3>
+            <div className="popup-fields">
+              <div className="popup-field-row">
+                <span className="popup-field-label">Họ tên</span>
+                <span className="popup-field-value">{user?.full_name}</span>
+              </div>
+              <div className="popup-field-row">
+                <span className="popup-field-label">Email</span>
+                <span className="popup-field-value">{user?.email}</span>
+              </div>
+              <div className="popup-field-row">
+                <span className="popup-field-label">Số điện thoại</span>
+                <span className="popup-field-value">{user?.phone || 'Chưa cập nhật'}</span>
+              </div>
+              <div className="popup-field-row">
+                <span className="popup-field-label">Vai trò</span>
+                <span className="popup-field-value">{user?.role}</span>
+              </div>
+              <div className="popup-field-row">
+                <span className="popup-field-label">Trạng thái</span>
+                <span className="popup-field-value">{user?.status}</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

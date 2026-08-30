@@ -113,7 +113,7 @@ const ViewBuilder = ({ viewId, onSaved }) => {
     try {
       let res;
       if (viewId) {
-        res = await viewService.update(viewId, { name: viewName, description: viewDesc }, token);
+        res = await viewService.update(viewId, { entity, name: viewName, description: viewDesc }, token);
       } else {
         res = await viewService.create({ entity, name: viewName, description: viewDesc }, token);
       }
@@ -123,6 +123,16 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         return;
       }
       const savedViewId = viewId || res.data.id;
+
+      const existingFieldsRes = await viewFieldService.getByView(savedViewId);
+      const existingIds = existingFieldsRes.success ? existingFieldsRes.data.map(f => f.id) : [];
+      const keptIds = assignedFields.filter(f => f.id).map(f => f.id);
+      for (const exId of existingIds) {
+        if (!keptIds.includes(exId)) {
+          await viewFieldService.remove(savedViewId, exId, token);
+        }
+      }
+
       for (const field of assignedFields) {
         if (field.id) {
           await viewFieldService.update(savedViewId, field.id, {

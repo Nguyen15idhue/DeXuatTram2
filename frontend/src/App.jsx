@@ -43,6 +43,7 @@ function App() {
           <Route element={<UserLayout />}>
             <Route path="/map" element={<MapPage />} />
             <Route path="/my-proposals" element={<MyProposalsPage />} />
+            <Route path="/my-proposals/*" element={<MyProposalsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
@@ -50,8 +51,11 @@ function App() {
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/users/*" element={<AdminUsersPage />} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />
+            <Route path="/admin/stations/*" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<AdminProposalsPage />} />
+            <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
             <Route path="/admin/fields" element={<AdminFieldsPage />} />
             <Route path="/admin/forms" element={<AdminFormsPage />} />
             <Route path="/admin/forms/:id/edit" element={<AdminFormBuilderPage />} />

@@ -1,27 +1,56 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService } from '../../services/api';
+import DynamicTable from '../../components/dynamic/DynamicTable';
+import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 
+const USERS_VIEW_ID = 7;
+
 const AdminUsersPage = () => {
   const { token, user: currentUser } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
-  const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({
-    full_name: '', email: '', phone: '', password: '', role: 'USER', status: 'ACTIVE'
-  });
   const [search, setSearch] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+
+  useEffect(() => {
+    const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
+    if (match) {
+      const mode = match[1];
+      const id = parseInt(match[2]);
+      const existingUser = users.find(u => u.id === id);
+      setPopup({ open: true, record: existingUser || null, mode });
+      if (!existingUser && id) loadUserById(id, mode);
+    } else {
+      setPopup({ open: false, record: null, mode: 'view' });
+    }
+  }, [location.pathname, users.length]);
+
+  const loadUserById = async (id, mode) => {
+    try {
+      const res = await adminUserService.getAllWithParams('', token);
+      if (res.success) {
+        const user = res.data.find(u => u.id === id);
+        if (user) setPopup({ open: true, record: user, mode });
+      }
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => {
+    loadUsers(1);
+  }, []);
 
   const loadUsers = useCallback(async (page = 1) => {
     try {
@@ -43,63 +72,6 @@ const AdminUsersPage = () => {
   useEffect(() => { loadUsers(1); }, [loadUsers]);
 
   const handleSearch = () => { loadUsers(1); };
-
-  const openCreate = () => {
-    setEditingId(null);
-    setForm({ full_name: '', email: '', phone: '', password: '', role: 'USER', status: 'ACTIVE' });
-    setShowForm(true);
-    setError('');
-    setToast({ message: '', type: 'success' });
-  };
-
-  const openEdit = (user) => {
-    setEditingId(user.id);
-    setForm({
-      full_name: user.full_name,
-      email: user.email,
-      phone: user.phone || '',
-      password: '',
-      role: user.role,
-      status: user.status
-    });
-    setShowForm(true);
-    setError('');
-    setToast({ message: '', type: 'success' });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!form.full_name || !form.email) {
-      setError('Vui lòng nhập đầy đủ thông tin bắt buộc');
-      return;
-    }
-
-    if (!editingId && !form.password) {
-      setError('Vui lòng nhập password');
-      return;
-    }
-
-    try {
-      let res;
-      if (editingId) {
-        res = await adminUserService.update(editingId, form, token);
-      } else {
-        res = await adminUserService.create(form, token);
-      }
-
-      if (res.success) {
-        setToast({ message: editingId ? 'Cập nhật user thành công' : 'Tạo user thành công', type: 'success' });
-        setShowForm(false);
-        loadUsers(pagination.page);
-      } else {
-        setError(res.message || 'Thao tác thất bại');
-      }
-    } catch {
-      setError('Lỗi kết nối server');
-    }
-  };
 
   const handleDeleteClick = (id, name) => {
     setConfirmDelete({ isOpen: true, id, name });
@@ -133,31 +105,27 @@ const AdminUsersPage = () => {
     }
   };
 
-  const handleChangeRole = async (id, newRole) => {
-    try {
-      const res = await adminUserService.changeRole(id, newRole, token);
-      if (res.success) {
-        setToast({ message: 'Đổi role thành công', type: 'success' });
-        loadUsers(pagination.page);
-      }
-    } catch {
-      setError('Lỗi kết nối server');
-    }
-  };
+  const renderActions = (row) => (
+    <div className="action-buttons">
+      <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
+      <button className="btn btn-sm btn-edit" onClick={() => navigate(`/admin/users/edit=${row.id}`)}>Sửa</button>
+      <button className="btn btn-sm btn-lock" onClick={() => handleToggleLock(row.id)}>
+        {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
+      </button>
+      {row.role !== 'ADMIN' && row.id !== currentUser.id && (
+        <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
+      )}
+    </div>
+  );
 
   if (loading && users.length === 0) return <Loading message="Đang tải danh sách users..." />;
 
   return (
     <div className="admin-users-page">
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        onClose={() => setToast({ message: '', type: 'success' })}
-      />
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <div className="page-header">
         <h1>Quản lý Users</h1>
-        <button className="btn btn-primary" onClick={openCreate}>+ Thêm user</button>
       </div>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(1); }} />}
@@ -173,111 +141,32 @@ const AdminUsersPage = () => {
       />
 
       <div className="filter-bar">
-        <input
-          type="text"
-          placeholder="Search theo tên, email, SĐT..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-        />
+        <input type="text" placeholder="Search theo tên, email, SĐT..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
         <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
       </div>
 
-      {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingId ? 'Sửa user' : 'Thêm user mới'}</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Họ tên *</label>
-                <input type="text" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Email *</label>
-                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Số điện thoại</label>
-                <input type="text" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Password {editingId ? '(để trống nếu không đổi)' : '*'}</label>
-                <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Role</label>
-                  <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                    <option value="USER">USER</option>
-                    <option value="ADMIN">ADMIN</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Trạng thái</label>
-                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="LOCKED">LOCKED</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">{editingId ? 'Cập nhật' : 'Tạo mới'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {popup.open && (
+        <RecordDetailPopup
+          entity="users"
+          record={popup.record}
+          recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
+          viewId={USERS_VIEW_ID}
+          mode={popup.mode}
+          onClose={() => navigate('/admin/users')}
+          onSaved={() => { loadUsers(pagination.page); navigate('/admin/users'); }}
+          onSwitchMode={(newMode) => {
+            const id = location.pathname.match(/=(\d+)/)?.[1];
+            navigate(`/admin/users/${newMode}=${id}`, { replace: true });
+          }}
+        />
       )}
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Họ tên</th>
-              <th>Email</th>
-              <th>SĐT</th>
-              <th>Role</th>
-              <th>Trạng thái</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.length === 0 ? (
-              <tr><td colSpan="7"><EmptyState icon="👤" title="Không có user nào" /></td></tr>
-            ) : users.map((u, idx) => (
-              <tr key={u.id}>
-                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                <td>{u.full_name}</td>
-                <td>{u.email}</td>
-                <td>{u.phone || '-'}</td>
-                <td>
-                  <select
-                    value={u.role}
-                    onChange={(e) => handleChangeRole(u.id, e.target.value)}
-                    className="status-select"
-                  >
-                    <option value="USER">USER</option>
-                    <option value="ADMIN">ADMIN</option>
-                  </select>
-                </td>
-                <td>
-                  <span className={`badge badge-${u.status.toLowerCase()}`}>{u.status}</span>
-                </td>
-                <td>
-                  <button className="btn btn-sm btn-edit" onClick={() => openEdit(u)}>Sửa</button>
-                  <button className="btn btn-sm btn-lock" onClick={() => handleToggleLock(u.id)}>
-                    {u.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
-                  </button>
-                  {u.role !== 'ADMIN' && u.id !== currentUser.id && (
-                    <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(u.id, u.full_name)}>Xóa</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DynamicTable
+        entity="users"
+        viewId={USERS_VIEW_ID}
+        data={users}
+        actions={renderActions}
+      />
 
       <Pagination
         page={pagination.page}

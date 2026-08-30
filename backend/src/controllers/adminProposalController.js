@@ -46,3 +46,22 @@ exports.updateStatus = async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };
+
+exports.update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { owner_name, owner_phone, address, area, land_type, description, status } = req.body;
+
+    const existing = await adminProposalService.getProposalById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+
+    await adminProposalService.updateProposal(id, { owner_name, owner_phone, address, area, land_type, description, status });
+    const proposal = await adminProposalService.getProposalWithUser(id);
+    res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
+  } catch (error) {
+    console.error('Admin update proposal error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};

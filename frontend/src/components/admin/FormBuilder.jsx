@@ -109,7 +109,7 @@ const FormBuilder = ({ formId, onSaved }) => {
     try {
       let res;
       if (formId) {
-        res = await formService.update(formId, { name: formName, description: formDesc }, token);
+        res = await formService.update(formId, { entity, name: formName, description: formDesc }, token);
       } else {
         res = await formService.create({ entity, name: formName, description: formDesc }, token);
       }
@@ -119,6 +119,16 @@ const FormBuilder = ({ formId, onSaved }) => {
         return;
       }
       const savedFormId = formId || res.data.id;
+
+      const existingFieldsRes = await formFieldService.getByForm(savedFormId);
+      const existingIds = existingFieldsRes.success ? existingFieldsRes.data.map(f => f.id) : [];
+      const keptIds = assignedFields.filter(f => f.id).map(f => f.id);
+      for (const exId of existingIds) {
+        if (!keptIds.includes(exId)) {
+          await formFieldService.remove(savedFormId, exId, token);
+        }
+      }
+
       for (const field of assignedFields) {
         if (field.id) {
           await formFieldService.update(savedFormId, field.id, {

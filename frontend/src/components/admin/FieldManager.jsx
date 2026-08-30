@@ -262,8 +262,10 @@ const FieldManager = () => {
                   </span>
                 </td>
                 <td>
-                  <button className="btn btn-sm btn-edit" onClick={() => openEdit(f)}>Sửa</button>
-                  <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(f.id, f.label)}>Xóa</button>
+                  <div className="action-buttons">
+                    <button className="btn btn-sm btn-edit" onClick={() => openEdit(f)}>Sửa</button>
+                    <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(f.id, f.label)}>Xóa</button>
+                  </div>
                 </td>
               </tr>
             ))}

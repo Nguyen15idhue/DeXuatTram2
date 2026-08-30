@@ -1,28 +1,56 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { myProposalService } from '../../services/api';
+import DynamicTable from '../../components/dynamic/DynamicTable';
+import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 
+const PROPOSALS_VIEW_ID = 8;
+
 const MyProposalsPage = () => {
   const { token } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({
-    owner_name: '', owner_phone: '', address: '',
-    area: '', land_type: '', description: ''
-  });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
+  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+
+  useEffect(() => {
+    const match = location.pathname.match(/\/my-proposals\/(view|edit)=(\d+)/);
+    if (match) {
+      const mode = match[1];
+      const id = parseInt(match[2]);
+      const existing = proposals.find(p => p.id === id);
+      setPopup({ open: true, record: existing || null, mode });
+      if (!existing && id) loadProposalById(id);
+    } else {
+      setPopup({ open: false, record: null, mode: 'view' });
+    }
+  }, [location.pathname, proposals.length]);
+
+  const loadProposalById = async (id) => {
+    try {
+      const res = await myProposalService.getAllWithParams('', token);
+      if (res.success) {
+        const p = res.data.find(x => x.id === id);
+        if (p) setPopup(prev => ({ ...prev, record: p }));
+      }
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => {
+    loadProposals(1);
+  }, []);
 
   const loadProposals = useCallback(async (page = 1) => {
     try {
@@ -42,43 +70,6 @@ const MyProposalsPage = () => {
   }, [filter, token]);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
-
-  const openEdit = (proposal) => {
-    setEditingId(proposal.id);
-    setForm({
-      owner_name: proposal.owner_name,
-      owner_phone: proposal.owner_phone,
-      address: proposal.address,
-      area: proposal.area || '',
-      land_type: proposal.land_type || '',
-      description: proposal.description || ''
-    });
-    setShowForm(true);
-    setError('');
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!form.owner_name || !form.owner_phone || !form.address) {
-      setError('Vui lòng nhập đầy đủ thông tin bắt buộc');
-      return;
-    }
-
-    try {
-      const res = await myProposalService.update(editingId, form, token);
-      if (res.success) {
-        setToast({ message: 'Cập nhật đề xuất thành công', type: 'success' });
-        setShowForm(false);
-        loadProposals(pagination.page);
-      } else {
-        setError(res.message || 'Cập nhật thất bại');
-      }
-    } catch {
-      setError('Lỗi kết nối server');
-    }
-  };
 
   const handleDeleteClick = (id) => {
     setConfirmDelete({ isOpen: true, id });
@@ -100,15 +91,23 @@ const MyProposalsPage = () => {
     }
   };
 
+  const renderActions = (row) => (
+    <div className="action-buttons">
+      <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
+      {row.status === 'PENDING' && (
+        <>
+          <button className="btn btn-sm btn-edit" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
+          <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
+        </>
+      )}
+    </div>
+  );
+
   if (loading && proposals.length === 0) return <Loading message="Đang tải đề xuất..." />;
 
   return (
     <div className="proposals-page">
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        onClose={() => setToast({ message: '', type: 'success' })}
-      />
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -131,92 +130,30 @@ const MyProposalsPage = () => {
         </select>
       </div>
 
-      {error && !showForm && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
 
-      {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Chỉnh sửa đề xuất</h2>
-            {error && <ErrorMessage message={error} />}
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Họ tên chủ mặt bằng *</label>
-                <input type="text" value={form.owner_name} onChange={(e) => setForm({ ...form, owner_name: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Số điện thoại *</label>
-                <input type="text" value={form.owner_phone} onChange={(e) => setForm({ ...form, owner_phone: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Địa chỉ *</label>
-                <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Diện tích</label>
-                  <input type="text" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="VD: 50m2" />
-                </div>
-                <div className="form-group">
-                  <label>Loại mặt bằng</label>
-                  <input type="text" value={form.land_type} onChange={(e) => setForm({ ...form, land_type: e.target.value })} placeholder="VD: Nhà riêng" />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Ghi chú</label>
-                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" />
-              </div>
-              <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Cập nhật</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {popup.open && (
+        <RecordDetailPopup
+          entity="station_proposals"
+          record={popup.record}
+          recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
+          viewId={PROPOSALS_VIEW_ID}
+          mode={popup.mode}
+          onClose={() => navigate('/my-proposals')}
+          onSaved={() => { loadProposals(pagination.page); navigate('/my-proposals'); }}
+          onSwitchMode={(newMode) => {
+            const id = location.pathname.match(/=(\d+)/)?.[1];
+            navigate(`/my-proposals/${newMode}=${id}`, { replace: true });
+          }}
+        />
       )}
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Chủ MB</th>
-              <th>SĐT</th>
-              <th>Địa chỉ</th>
-              <th>Diện tích</th>
-              <th>Loại đất</th>
-              <th>Trạng thái</th>
-              <th>Ngày tạo</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {proposals.length === 0 ? (
-              <tr><td colSpan="9"><EmptyState icon="📋" title="Bạn chưa có đề xuất nào" description="Hãy click trên bản đồ để tạo đề xuất mới" /></td></tr>
-            ) : proposals.map((p, idx) => (
-              <tr key={p.id}>
-                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                <td>{p.owner_name}</td>
-                <td>{p.owner_phone}</td>
-                <td>{p.address}</td>
-                <td>{p.area || '-'}</td>
-                <td>{p.land_type || '-'}</td>
-                <td>
-                  <span className={`badge badge-${p.status.toLowerCase()}`}>{p.status}</span>
-                </td>
-                <td>{new Date(p.created_at).toLocaleDateString('vi-VN')}</td>
-                <td>
-                  {p.status === 'PENDING' && (
-                    <>
-                      <button className="btn btn-sm btn-edit" onClick={() => openEdit(p)}>Sửa</button>
-                      <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(p.id)}>Xóa</button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DynamicTable
+        entity="station_proposals"
+        viewId={PROPOSALS_VIEW_ID}
+        data={proposals}
+        actions={renderActions}
+      />
 
       <Pagination
         page={pagination.page}

@@ -1,15 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { adminProposalService, excelService } from '../../services/api';
+import DynamicTable from '../../components/dynamic/DynamicTable';
+import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 
+const PROPOSALS_VIEW_ID = 8;
+
 const AdminProposalsPage = () => {
   const { token } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -17,6 +23,34 @@ const AdminProposalsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+
+  useEffect(() => {
+    const match = location.pathname.match(/\/admin\/proposals\/(view|edit)=(\d+)/);
+    if (match) {
+      const mode = match[1];
+      const id = parseInt(match[2]);
+      const existing = proposals.find(p => p.id === id);
+      setPopup({ open: true, record: existing || null, mode });
+      if (!existing && id) loadProposalById(id);
+    } else {
+      setPopup({ open: false, record: null, mode: 'view' });
+    }
+  }, [location.pathname, proposals.length]);
+
+  const loadProposalById = async (id) => {
+    try {
+      const res = await adminProposalService.getAllWithParams('', token);
+      if (res.success) {
+        const p = res.data.find(x => x.id === id);
+        if (p) setPopup(prev => ({ ...prev, record: p }));
+      }
+    } catch { /* silent */ }
+  };
+
+  useEffect(() => {
+    loadProposals(1);
+  }, []);
 
   const loadProposals = useCallback(async (page = 1) => {
     try {
@@ -80,15 +114,25 @@ const AdminProposalsPage = () => {
     }
   };
 
+  const renderActions = (row) => (
+    <div className="action-buttons">
+      <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/proposals/view=${row.id}`)}>Xem</button>
+      <button className="btn btn-sm btn-edit" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>Sửa</button>
+      <select value={row.status} onChange={(e) => handleStatusChange(row.id, e.target.value)} className="status-select btn-sm">
+        <option value="PENDING">PENDING</option>
+        <option value="REVIEWING">REVIEWING</option>
+        <option value="APPROVED">APPROVED</option>
+        <option value="REJECTED">REJECTED</option>
+      </select>
+      <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
+    </div>
+  );
+
   if (loading && proposals.length === 0) return <Loading message="Đang tải danh sách đề xuất..." />;
 
   return (
     <div className="admin-proposals-page">
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        onClose={() => setToast({ message: '', type: 'success' })}
-      />
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <div className="page-header">
         <h1>Quản lý Đề xuất</h1>
@@ -116,50 +160,28 @@ const AdminProposalsPage = () => {
         type="danger"
       />
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Chủ MB</th>
-              <th>SĐT</th>
-              <th>Địa chỉ</th>
-              <th>Người đề xuất</th>
-              <th>Trạng thái</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {proposals.length === 0 ? (
-              <tr><td colSpan="7"><EmptyState icon="📋" title="Không có đề xuất nào" /></td></tr>
-            ) : proposals.map((p, idx) => (
-              <tr key={p.id}>
-                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                <td>{p.owner_name}</td>
-                <td>{p.owner_phone}</td>
-                <td>{p.address}</td>
-                <td>{p.user_name}</td>
-                <td>
-                  <span className={`badge badge-${p.status.toLowerCase()}`}>{p.status}</span>
-                </td>
-                <td>
-                  <select
-                    value={p.status}
-                    onChange={(e) => handleStatusChange(p.id, e.target.value)}
-                    className="status-select"
-                  >
-                    <option value="PENDING">PENDING</option>
-                    <option value="REVIEWING">REVIEWING</option>
-                    <option value="APPROVED">APPROVED</option>
-                    <option value="REJECTED">REJECTED</option>
-                  </select>
-                  <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(p.id)}>Xóa</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {popup.open && (
+        <RecordDetailPopup
+          entity="station_proposals"
+          record={popup.record}
+          recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
+          viewId={PROPOSALS_VIEW_ID}
+          mode={popup.mode}
+          onClose={() => navigate('/admin/proposals')}
+          onSaved={() => { loadProposals(pagination.page); navigate('/admin/proposals'); }}
+          onSwitchMode={(newMode) => {
+            const id = location.pathname.match(/=(\d+)/)?.[1];
+            navigate(`/admin/proposals/${newMode}=${id}`, { replace: true });
+          }}
+        />
+      )}
+
+      <DynamicTable
+        entity="station_proposals"
+        viewId={PROPOSALS_VIEW_ID}
+        data={proposals}
+        actions={renderActions}
+      />
 
       <Pagination
         page={pagination.page}
