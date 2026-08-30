@@ -11,6 +11,27 @@ const STATION_HEADERS = ['name', 'latitude', 'longitude', 'address', 'status', '
 const STATION_HEADER_LABELS = ['Tên trạm', 'Vĩ độ', 'Kinh độ', 'Địa chỉ', 'Trạng thái', 'Mô tả'];
 const VALID_STATION_STATUSES = ['ACTIVE', 'DEPLOYING'];
 
+/**
+ * @swagger
+ * /api/admin/excel/export/stations:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất danh sách trạm ra file Excel
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
 router.get('/export/stations', requireAuth, requireAdmin, async (req, res) => {
   try {
     const [stations] = await pool.query(
@@ -59,6 +80,27 @@ router.get('/export/stations', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/admin/excel/export/proposals:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất danh sách đề xuất ra file Excel
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
 router.get('/export/proposals', requireAuth, requireAdmin, async (req, res) => {
   try {
     const [proposals] = await pool.query(`
@@ -122,6 +164,27 @@ router.get('/export/proposals', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/admin/excel/template:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Tải file template import trạm
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: File Excel template
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
 router.get('/template', requireAuth, requireAdmin, async (req, res) => {
   try {
     const workbook = new ExcelJS.Workbook();
@@ -160,6 +223,61 @@ router.get('/template', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/admin/excel/import/preview:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Preview import trạm từ file Excel
+ *     description: Upload file Excel để xem trước dữ liệu trước khi import
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: File Excel (.xlsx)
+ *     responses:
+ *       200:
+ *         description: Preview kết quả
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalRows:
+ *                       type: integer
+ *                     validRows:
+ *                       type: integer
+ *                     errorRows:
+ *                       type: integer
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     errors:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *       400:
+ *         description: File không hợp lệ hoặc thiếu cột bắt buộc
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
 router.post('/import/preview', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -260,6 +378,64 @@ router.post('/import/preview', requireAuth, requireAdmin, upload.single('file'),
   }
 });
 
+/**
+ * @swagger
+ * /api/admin/excel/import/confirm:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Xác nhận import trạm
+ *     description: Import dữ liệu đã preview. Dùng transaction, nếu có lỗi sẽ rollback toàn bộ.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rows]
+ *             properties:
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                     latitude:
+ *                       type: number
+ *                     longitude:
+ *                       type: number
+ *                     address:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Import thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     imported:
+ *                       type: integer
+ *                     failed:
+ *                       type: integer
+ *       400:
+ *         description: Không có dữ liệu hoặc import thất bại
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
 router.post('/import/confirm', requireAuth, requireAdmin, async (req, res) => {
   const connection = await pool.getConnection();
   try {

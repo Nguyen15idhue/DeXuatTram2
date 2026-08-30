@@ -3,7 +3,49 @@ const router = express.Router();
 const pool = require('../utils/db');
 const { requireAuth } = require('../middlewares/auth');
 
-// GET /api/my-proposals - User get own proposals (with pagination)
+/**
+ * @swagger
+ * /api/my-proposals:
+ *   get:
+ *     tags: [My Proposals]
+ *     summary: Lấy danh sách đề xuất của user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Proposal'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       401:
+ *         description: Chưa xác thực
+ */
 router.get('/', requireAuth, async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
@@ -50,7 +92,51 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// PUT /api/my-proposals/:id - User update own proposal (only PENDING status)
+/**
+ * @swagger
+ * /api/my-proposals/{id}:
+ *   put:
+ *     tags: [My Proposals]
+ *     summary: Cập nhật đề xuất của mình
+ *     description: Chỉ cập nhật được đề xuất có trạng thái PENDING
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [owner_name, owner_phone, address]
+ *             properties:
+ *               owner_name:
+ *                 type: string
+ *               owner_phone:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *               area:
+ *                 type: string
+ *               land_type:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *       400:
+ *         description: Trạng thái không phải PENDING hoặc dữ liệu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       404:
+ *         description: Không tìm thấy đề xuất hoặc không phải của user
+ */
 router.put('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -74,7 +160,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     await pool.query(
-      `UPDATE station_proposals 
+      `UPDATE station_proposals
        SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, updated_at = NOW()
        WHERE id = ? AND user_id = ?`,
       [owner_name, owner_phone, address, area || '', land_type || '', description || '', id, req.user.id]
@@ -92,7 +178,31 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// DELETE /api/my-proposals/:id - User delete own proposal (only PENDING status)
+/**
+ * @swagger
+ * /api/my-proposals/{id}:
+ *   delete:
+ *     tags: [My Proposals]
+ *     summary: Xóa đề xuất của mình
+ *     description: Chỉ xóa được đề xuất có trạng thái PENDING
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Xóa thành công
+ *       400:
+ *         description: Trạng thái không phải PENDING
+ *       401:
+ *         description: Chưa xác thực
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;

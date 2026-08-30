@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kế hoạch xây dựng hệ thống Dynamic Form & Data</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background: #f5f7fa;
+        }
+
+        .container {
+            width: min(1200px, calc(100% - 40px));
+            margin: 0 auto;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 45px 0;
+        }
+
+        header h1 {
+            margin: 0 0 10px;
+            font-size: 32px;
+        }
+
+        header p {
+            margin: 0;
+            color: #d1d5db;
+            font-size: 16px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 18px;
+        }
+
+        .sidebar h3 {
+            margin-top: 0;
+            font-size: 15px;
+        }
+
+        .sidebar a {
+            display: block;
+            padding: 7px 8px;
+            color: #374151;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 13px;
+        }
+
+        .sidebar a:hover {
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        main {
+            min-width: 0;
+        }
+
+        section {
+            background: white;
+            margin: 30px 0;
+            padding: 30px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+        }
+
+        section:first-child {
+            margin-top: 0;
+        }
+
+        h2 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e5e7eb;
+            font-size: 24px;
+        }
+
+        h3 {
+            margin-top: 28px;
+            font-size: 19px;
+        }
+
+        h4 {
+            margin-top: 22px;
+            font-size: 16px;
+        }
+
+        code {
+            background: #f3f4f6;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
+        }
+
+        pre {
+            background: #111827;
+            color: #e5e7eb;
+            padding: 18px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+
+        th,
+        td {
+            border: 1px solid #d1d5db;
+            padding: 9px 11px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+
+        .note {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 14px 16px;
+            margin: 15px 0;
+        }
+
+        .important {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 14px 16px;
+            margin: 15px 0;
+        }
+
+        .danger {
+            background: #fef2f2;
+            border-left: 4px solid #ef4444;
+            padding: 14px 16px;
+            margin: 15px 0;
+        }
+
+        .success {
+            background: #f0fdf4;
+            border-left: 4px solid #22c55e;
+            padding: 14px 16px;
+            margin: 15px 0;
+        }
+
+        ul,
+        ol {
+            padding-left: 25px;
+        }
+
+        li {
+            margin: 5px 0;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: #e5e7eb;
+            font-size: 12px;
+            margin: 2px;
+        }
+
+        .architecture {
+            text-align: center;
+        }
+
+        .architecture pre {
+            text-align: left;
+            display: inline-block;
+            min-width: 70%;
+        }
+
+        footer {
+            padding: 40px 0;
+            text-align: center;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        @media (max-width: 900px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                max-height: none;
+            }
+
+            section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <div class="container">
+        <h1>KẾ HOẠCH XÂY DỰNG HỆ THỐNG DYNAMIC FORM &amp; DATA</h1>
+        <p>
+            Kiến trúc Dynamic Field dùng chung cho nhiều bảng nghiệp vụ,
+            Form Builder, Table Builder và File Upload.
+        </p>
+    </div>
+</header>
+
+<div class="container">
+    <div class="layout">
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <h3>Mục lục</h3>
+
+            <a href="#section-0">0. Lưu ý quan trọng</a>
+            <a href="#section-1">1. Kiến trúc tổng thể</a>
+            <a href="#section-2">2. Phạm vi Dynamic</a>
+            <a href="#section-3">3. Database nghiệp vụ</a>
+            <a href="#section-4">4. Field Definition</a>
+            <a href="#section-5">5. Fixed & Dynamic Field</a>
+            <a href="#section-6">6. Các loại Field</a>
+            <a href="#section-7">7. Form Builder</a>
+            <a href="#section-8">8. Table/View Builder</a>
+            <a href="#section-9">9. Ẩn/hiện Field</a>
+            <a href="#section-10">10. Nhập dữ liệu</a>
+            <a href="#section-11">11. Formula Field</a>
+            <a href="#section-12">12. Upload File</a>
+            <a href="#section-13">13. Bảng Files</a>
+            <a href="#section-14">14. Custom Data & File</a>
+            <a href="#section-15">15. File Storage</a>
+            <a href="#section-16">16. Không lưu file trong Container</a>
+            <a href="#section-17">17. Cấu trúc File</a>
+            <a href="#section-18">18. File Configuration</a>
+            <a href="#section-19">19. Download File</a>
+            <a href="#section-20">20. Query & Pagination</a>
+            <a href="#section-21">21. Performance & Index</a>
+            <a href="#section-22">22. Cache / Redis</a>
+            <a href="#section-23">23. Runtime Configuration</a>
+            <a href="#section-24">24. Kiến trúc Database</a>
+            <a href="#section-25">25. Nguyên tắc Codebase</a>
+        </aside>
+
+        <main>
+
+            <!-- 0 -->
+            <section id="section-0">
+                <h2>0. LƯU Ý QUAN TRỌNG</h2>
+
+                <div class="important">
+                    <strong>stations chỉ là ví dụ, không phải đối tượng duy nhất sử dụng Dynamic Field.</strong>
+                </div>
+
+                <p>
+                    Kiến trúc Dynamic phải được xây dựng ở mức
+                    <strong>tầng dùng chung của hệ thống</strong>.
+                    Không được hard-code logic Dynamic riêng cho bảng
+                    <code>stations</code>.
+                </p>
+
+                <p>
+                    Các bảng nghiệp vụ thực tế có thể áp dụng Dynamic Field,
+                    ví dụ:
+                </p>
+
+                <div>
+                    <span class="tag">users</span>
+                    <span class="tag">stations</span>
+                    <span class="tag">station_proposals</span>
+                    <span class="tag">customers</span>
+                    <span class="tag">contracts</span>
+                    <span class="tag">projects</span>
+                    <span class="tag">documents</span>
+                </div>
+
+                <p>
+                    Hệ thống phải xác định Dynamic Field dựa trên
+                    <strong>entity/table</strong>, thay vì viết riêng logic cho từng bảng.
+                </p>
+
+                <h3>Ví dụ</h3>
+
+                <pre>
+field_definitions
+
+entity              key                 label
+---------------------------------------------------------
+users               employee_code       Mã nhân viên
+users               department          Phòng ban
+users               avatar              Ảnh đại diện
+
+stations            antenna_height      Chiều cao anten
+stations            tower_type          Loại cột
+
+station_proposals   land_type           Loại mặt bằng
+station_proposals   investment_cost     Chi phí đầu tư
+station_proposals   legal_document      Hồ sơ pháp lý
+                </pre>
+
+                <p>
+                    Như vậy cùng một cơ chế Dynamic có thể phục vụ nhiều bảng.
+                </p>
+
+                <div class="danger">
+                    Không được thiết kế theo kiểu:
+                    <code>station_dynamic_fields</code>,
+                    <code>station_forms</code>,
+                    <code>station_views</code>
+                    nếu không có lý do nghiệp vụ đặc biệt.
+                </div>
+
+                <p>
+                    Nên thiết kế thành các bảng cấu hình dùng chung,
+                    có trường xác định entity.
+                </p>
+            </section>
+
+
+            <!-- 1 -->
+            <section id="section-1">
+                <h2>1. KIẾN TRÚC TỔNG THỂ</h2>
+
+                <div class="architecture">
+                    <pre>
+                    React Frontend
+                          │
+                          ▼
+                    Node.js API
+                          │
+             ┌────────────┴────────────┐
+             ▼                         ▼
+           MySQL                  File Storage
+             │                         │
+       ┌─────┼────────────┐            │
+       │     │            │            │
+       ▼     ▼            ▼            │
+   Business  Dynamic    File           │
+    Tables   Config    Metadata         │
+       │       │            │           │
+       │       │            │           │
+       └───────┴────────────┴───────────┘
+                    </pre>
+                </div>
+
+                <p>Technology định hướng:</p>
+
+                <ul>
+                    <li>Frontend: React</li>
+                    <li>Backend: Node.js</li>
+                    <li>Database: MySQL</li>
+                    <li>File Storage: Local Persistent Storage ở giai đoạn đầu</li>
+                    <li>Container: Docker</li>
+                    <li>Không sử dụng Redis ở phiên bản hiện tại</li>
+                </ul>
+            </section>
+
+
+            <!-- 2 -->
+            <section id="section-2">
+                <h2>2. PHẠM VI DYNAMIC</h2>
+
+                <p>
+                    Không phải tất cả field đều phải Dynamic.
+                    Mỗi bảng nghiệp vụ được chia thành:
+                </p>
+
+                <pre>
+Business Table
+│
+├── Fixed Fields
+│   ├── id
+│   ├── code
+│   ├── name
+│   ├── status
+│   └── created_at
+│
+└── Dynamic Fields
+    ├── custom_data JSON
+    ├── được định nghĩa bởi field_definitions
+    └── có thể thay đổi runtime
+                </pre>
+
+                <p>
+                    Dynamic phù hợp với các thông tin có khả năng thay đổi,
+                    bổ sung theo yêu cầu nghiệp vụ hoặc cần cấu hình từ Admin.
+                </p>
+            </section>
+
+
+            <!-- 3 -->
+            <section id="section-3">
+                <h2>3. DATABASE NGHIỆP VỤ</h2>
+
+                <p>
+                    Ví dụ bảng <code>stations</code>:
+                </p>
+
+                <pre>
+stations
+├── id
+├── code
+├── name
+├── status
+├── latitude
+├── longitude
+├── custom_data JSON
+├── created_at
+└── updated_at
+                </pre>
+
+                <p>
+                    Nhưng cùng nguyên tắc này có thể áp dụng cho:
+                </p>
+
+                <pre>
+users
+├── id
+├── username
+├── email
+├── status
+├── custom_data JSON
+└── ...
+
+station_proposals
+├── id
+├── proposal_code
+├── station_id
+├── status
+├── custom_data JSON
+└── ...
+                </pre>
+
+                <div class="success">
+                    Không cần tạo một kiểu Dynamic Database riêng cho từng bảng.
+                    Mỗi bảng nghiệp vụ chỉ cần có <code>custom_data JSON</code>
+                    nếu bảng đó được phép sử dụng Dynamic Field.
+                </div>
+            </section>
+
+
+            <!-- 4 -->
+            <section id="section-4">
+                <h2>4. FIELD DEFINITION</h2>
+
+                <p>
+                    Tạo bảng dùng chung:
+                    <code>field_definitions</code>.
+                </p>
+
+                <p>
+                    Bảng này lưu <strong>định nghĩa của Field</strong>,
+                    không lưu giá trị thực tế của từng record.
+                </p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Ý nghĩa</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>id</td>
+                            <td>ID của field</td>
+                        </tr>
+                        <tr>
+                            <td>entity</td>
+                            <td>Field thuộc entity/bảng nghiệp vụ nào</td>
+                        </tr>
+                        <tr>
+                            <td>key</td>
+                            <td>Tên kỹ thuật ổn định</td>
+                        </tr>
+                        <tr>
+                            <td>label</td>
+                            <td>Tên hiển thị</td>
+                        </tr>
+                        <tr>
+                            <td>type</td>
+                            <td>Loại field</td>
+                        </tr>
+                        <tr>
+                            <td>source_type</td>
+                            <td>column hoặc json</td>
+                        </tr>
+                        <tr>
+                            <td>required</td>
+                            <td>Bắt buộc nhập</td>
+                        </tr>
+                        <tr>
+                            <td>validation</td>
+                            <td>Quy tắc validate</td>
+                        </tr>
+                        <tr>
+                            <td>options</td>
+                            <td>Danh sách option của select</td>
+                        </tr>
+                        <tr>
+                            <td>formula</td>
+                            <td>Công thức nếu là Formula Field</td>
+                        </tr>
+                        <tr>
+                            <td>status</td>
+                            <td>Active/Inactive</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Ví dụ</h3>
+
+                <pre>
+id | entity            | key              | label             | type
+----------------------------------------------------------------------
+1  | stations          | antenna_height   | Chiều cao anten   | number
+2  | stations          | tower_type       | Loại cột          | select
+3  | users             | employee_code    | Mã nhân viên      | text
+4  | station_proposals | land_type        | Loại mặt bằng     | select
+5  | station_proposals | legal_document   | Hồ sơ pháp lý     | file
+                </pre>
+            </section>
+
+
+            <!-- 5 -->
+            <section id="section-5">
+                <h2>5. FIXED FIELD &amp; DYNAMIC FIELD</h2>
+
+                <h3>Fixed Field</h3>
+
+                <p>
+                    Field quan trọng, ổn định, thường xuyên được query,
+                    filter hoặc join nên để thành column thật trong MySQL.
+                </p>
+
+                <pre>
+stations.code
+stations.name
+stations.status
+stations.latitude
+stations.longitude
+                </pre>
+
+                <h3>Dynamic Field</h3>
+
+                <p>
+                    Field có thể thêm/xóa/đổi cấu hình bởi Admin,
+                    không cần thay đổi schema database.
+                </p>
+
+                <pre>
+stations.custom_data
+
+{
+    "antenna_height": 35.5,
+    "tower_type": "self_support"
+}
+                </pre>
+
+                <div class="important">
+                    <strong>Không ALTER TABLE khi Admin tạo Dynamic Field.</strong>
+                </div>
+            </section>
+
+
+            <!-- 6 -->
+            <section id="section-6">
+                <h2>6. CÁC LOẠI FIELD</h2>
+
+                <p>Phiên bản đầu có thể hỗ trợ:</p>
+
+                <div>
+                    <span class="tag">text</span>
+                    <span class="tag">textarea</span>
+                    <span class="tag">number</span>
+                    <span class="tag">email</span>
+                    <span class="tag">phone</span>
+                    <span class="tag">url</span>
+                    <span class="tag">date</span>
+                    <span class="tag">datetime</span>
+                    <span class="tag">boolean</span>
+                    <span class="tag">select</span>
+                    <span class="tag">multiselect</span>
+                    <span class="tag">file</span>
+                    <span class="tag">formula</span>
+                </div>
+
+                <p>
+                    Mỗi field type nên có:
+                </p>
+
+                <ul>
+                    <li>Input/Editor</li>
+                    <li>Renderer</li>
+                    <li>Validation</li>
+                    <li>Serialization</li>
+                </ul>
+            </section>
+
+
+            <!-- 7 -->
+            <section id="section-7">
+                <h2>7. FORM BUILDER</h2>
+
+                <p>
+                    Form Builder không tạo Field mới.
+                    Nó lấy Field từ <code>field_definitions</code>
+                    và cho Admin kéo-thả vào Form.
+                </p>
+
+                <pre>
+field_definitions
+       │
+       ▼
+   Form Builder
+       │
+       ├── kéo field
+       ├── sắp xếp
+       ├── cấu hình hiển thị
+       └── lưu
+       │
+       ▼
+form_fields
+                </pre>
+
+                <h3>Cấu trúc</h3>
+
+                <pre>
+forms
+├── id
+├── entity
+├── name
+└── status
+
+form_fields
+├── id
+├── form_id
+├── field_id
+├── order
+├── visible
+└── config
+                </pre>
+
+                <p>
+                    Ví dụ:
+                </p>
+
+                <pre>
+Form: Tạo đề xuất trạm
+
+1. Mã đề xuất
+2. Tên vị trí
+3. Loại mặt bằng
+4. Chi phí đầu tư
+5. Hồ sơ pháp lý
+                </pre>
+
+                <p>
+                    Các Field này đều lấy từ kho
+                    <code>field_definitions</code>.
+                </p>
+            </section>
+
+
+            <!-- 8 -->
+            <section id="section-8">
+                <h2>8. TABLE / VIEW BUILDER</h2>
+
+                <p>
+                    Table Builder quản lý cách dữ liệu được hiển thị
+                    trên frontend.
+                </p>
+
+                <pre>
+field_definitions
+       │
+       ▼
+ Table Builder
+       │
+       ├── chọn field
+       ├── kéo-thả
+       ├── sắp xếp
+       ├── ẩn/hiện
+       └── cấu hình width
+       │
+       ▼
+view_fields
+                </pre>
+
+                <p>
+                    Ví dụ bảng danh sách <code>station_proposals</code>:
+                </p>
+
+                <pre>
+| Mã đề xuất | Vị trí | Loại mặt bằng | Chi phí | Trạng thái |
+|------------|--------|---------------|---------|------------|
+                </pre>
+
+                <p>
+                    Admin có thể tự cấu hình cột mà không cần sửa code frontend.
+                </p>
+            </section>
+
+
+            <!-- 9 -->
+            <section id="section-9">
+                <h2>9. ẨN / HIỆN FIELD</h2>
+
+                <p>
+                    Visibility phải được cấu hình riêng theo ngữ cảnh.
+                </p>
+
+                <pre>
+Field
+ │
+ ├── Form visibility
+ │
+ ├── Table visibility
+ │
+ └── Dashboard visibility
+                </pre>
+
+                <p>
+                    Ví dụ:
+                </p>
+
+                <pre>
+Field: Chi phí đầu tư
+
+Form       → Hiện
+Table      → Hiện
+Dashboard  → Ẩn
+                </pre>
+
+                <div class="danger">
+                    Ẩn field trên frontend không phải là cơ chế bảo mật.
+                    Permission và authorization bắt buộc phải được kiểm tra ở backend.
+                </div>
+            </section>
+
+
+            <!-- 10 -->
+            <section id="section-10">
+                <h2>10. NHẬP DỮ LIỆU</h2>
+
+                <p>
+                    Frontend gửi dữ liệu theo key của Field.
+                </p>
+
+                <pre>
+{
+    "code": "HN001",
+    "name": "Trạm Hà Nội",
+    "status": "active",
+
+    "antenna_height": 35.5,
+    "tower_type": "self_support"
+}
+                </pre>
+
+                <p>
+                    Backend dựa vào <code>field_definitions</code>
+                    để xác định field nào là fixed và field nào là dynamic.
+                </p>
+
+                <pre>
+code
+→ stations.code
+
+name
+→ stations.name
+
+status
+→ stations.status
+
+antenna_height
+→ stations.custom_data.antenna_height
+
+tower_type
+→ stations.custom_data.tower_type
+                </pre>
+            </section>
+
+
+            <!-- 11 -->
+            <section id="section-11">
+                <h2>11. FORMULA FIELD</h2>
+
+                <p>
+                    Formula cũng được quản lý trong
+                    <code>field_definitions</code>.
+                </p>
+
+                <p>Ví dụ:</p>
+
+                <pre>
+quantity
+unit_price
+total
+
+Formula:
+quantity * unit_price
+                </pre>
+
+                <p>
+                    Frontend có thể tính realtime để hiển thị.
+                    Backend phải tính hoặc kiểm tra lại khi lưu.
+                </p>
+
+                <div class="danger">
+                    Không tin giá trị Formula do frontend gửi lên.
+                </div>
+            </section>
+
+
+            <!-- 12 -->
+            <section id="section-12">
+                <h2>12. UPLOAD FILE</h2>
+
+                <p>
+                    File Upload cũng là một Dynamic Field.
+                </p>
+
+                <pre>
+field_definitions
+
+key: license
+label: Giấy phép
+type: file
+source_type: json
+                </pre>
+
+                <p>
+                    Admin chỉ cần tạo Field một lần.
+                    Sau đó có thể kéo Field này vào Form Builder.
+                </p>
+
+                <pre>
+Admin
+  ↓
+Tạo "Giấy phép"
+  ↓
+field_definitions
+  ↓
+Form Builder
+  ↓
+Kéo "Giấy phép" vào form
+  ↓
+User upload file
+                </pre>
+            </section>
+
+
+            <!-- 13 -->
+            <section id="section-13">
+                <h2>13. BẢNG FILES</h2>
+
+                <p>
+                    Không lưu binary file trực tiếp trong MySQL.
+                    Tạo bảng metadata:
+                    <code>files</code>.
+                </p>
+
+                <pre>
+files
+├── id
+├── original_name
+├── storage_key
+├── mime_type
+├── size
+├── checksum
+├── storage_provider
+├── uploaded_by
+├── status
+└── created_at
+                </pre>
+
+                <p>
+                    Ví dụ:
+                </p>
+
+                <pre>
+id:              f001
+original_name:   giay_phep.pdf
+storage_key:     station_proposals/123/f001.pdf
+mime_type:       application/pdf
+size:            2457600
+                </pre>
+            </section>
+
+
+            <!-- 14 -->
+            <section id="section-14">
+                <h2>14. CUSTOM_DATA &amp; FILE</h2>
+
+                <p>
+                    <code>custom_data</code> chỉ lưu reference đến file,
+                    không lưu binary.
+                </p>
+
+                <pre>
+{
+    "license": {
+        "file_id": "f001"
+    }
+}
+                </pre>
+
+                <p>
+                    Multiple file:
+                </p>
+
+                <pre>
+{
+    "site_images": [
+        "f001",
+        "f002",
+        "f003"
+    ]
+}
+                </pre>
+
+                <p>
+                    Quan hệ:
+                </p>
+
+                <pre>
+business_table.custom_data
+          │
+          │ file_id
+          ▼
+        files
+          │
+          │ storage_key
+          ▼
+     File Storage
+                </pre>
+            </section>
+
+
+            <!-- 15 -->
+            <section id="section-15">
+                <h2>15. FILE STORAGE</h2>
+
+                <p>
+                    Ở giai đoạn development và hệ thống một server,
+                    sử dụng persistent storage trên host.
+                </p>
+
+                <pre>
+Project
+│
+├── backend/
+├── frontend/
+├── storage/
+│   └── uploads/
+└── docker-compose.yml
+                </pre>
+
+                <p>
+                    File thật nằm trong:
+                </p>
+
+                <pre>
+storage/uploads/
+                </pre>
+
+                <p>
+                    Database chỉ lưu:
+                </p>
+
+                <pre>
+storage_key
+                </pre>
+
+                <p>
+                    Sau này có thể chuyển File Storage sang
+                    S3-compatible storage mà không phải thay đổi
+                    cấu trúc <code>custom_data</code>.
+                </p>
+            </section>
+
+
+            <!-- 16 -->
+            <section id="section-16">
+                <h2>16. KHÔNG LƯU FILE CHỈ TRONG DOCKER CONTAINER</h2>
+
+                <div class="danger">
+                    Không lưu file upload vào filesystem của container
+                    nếu không có persistent volume/bind mount.
+                </div>
+
+                <pre>
+Windows Host
+
+./storage/uploads
+        │
+        │ Docker Bind Mount
+        ▼
+Container
+
+/app/uploads
+                </pre>
+
+                <p>
+                    Container chứa chương trình.
+                    Host storage chứa dữ liệu lâu dài.
+                </p>
+            </section>
+
+
+            <!-- 17 -->
+            <section id="section-17">
+                <h2>17. CẤU TRÚC FILE</h2>
+
+                <p>
+                    Nên tổ chức file theo entity và record.
+                </p>
+
+                <pre>
+storage/
+└── uploads/
+    ├── stations/
+    │   ├── 1/
+    │   │   ├── f001.pdf
+    │   │   └── f002.jpg
+    │   └── 2/
+    │       └── f003.pdf
+    │
+    ├── station_proposals/
+    │   ├── 123/
+    │   │   ├── f004.pdf
+    │   │   └── f005.jpg
+    │
+    └── users/
+        └── 10/
+            └── f006.jpg
+                </pre>
+
+                <p>
+                    Quy tắc đề xuất:
+                </p>
+
+                <pre>
+{entity}/{record_id}/{file_id}.{extension}
+                </pre>
+            </section>
+
+
+            <!-- 18 -->
+            <section id="section-18">
+                <h2>18. FILE CONFIGURATION</h2>
+
+                <p>
+                    File Field cần có cấu hình.
+                </p>
+
+                <pre>
+{
+    "type": "file",
+    "multiple": true,
+    "max_files": 5,
+    "max_size": 10485760,
+    "allowed_extensions": [
+        ".pdf",
+        ".jpg",
+        ".png"
+    ]
+}
+                </pre>
+
+                <p>
+                    Có thể hỗ trợ:
+                </p>
+
+                <ul>
+                    <li>Cho phép một hoặc nhiều file</li>
+                    <li>Số lượng file tối đa</li>
+                    <li>Dung lượng tối đa</li>
+                    <li>Extension cho phép</li>
+                    <li>MIME type cho phép</li>
+                </ul>
+
+                <div class="important">
+                    Backend phải validate lại file.
+                    Không chỉ kiểm tra ở frontend.
+                </div>
+            </section>
+
+
+            <!-- 19 -->
+            <section id="section-19">
+                <h2>19. DOWNLOAD FILE</h2>
+
+                <p>
+                    Không nên public trực tiếp toàn bộ thư mục upload.
+                </p>
+
+                <pre>
+GET /api/files/:id/download
+                </pre>
+
+                <p>
+                    Backend thực hiện:
+                </p>
+
+                <pre>
+Authentication
+      ↓
+Authorization
+      ↓
+Kiểm tra quyền truy cập file
+      ↓
+Tìm metadata trong files
+      ↓
+Download / tạo temporary URL
+                </pre>
+
+                <p>
+                    Không cho phép user chỉ cần biết file ID
+                    là có thể truy cập file của người khác.
+                </p>
+            </section>
+
+
+            <!-- 20 -->
+            <section id="section-20">
+                <h2>20. QUERY &amp; PAGINATION</h2>
+
+                <p>
+                    Bảng quản lý nên sử dụng pagination.
+                </p>
+
+                <pre>
+GET /api/stations?page=1&limit=10
+
+GET /api/station-proposals?page=1&limit=10
+
+GET /api/users?page=1&limit=10
+                </pre>
+
+                <p>
+                    Không query toàn bộ dữ liệu nếu frontend chỉ hiển thị
+                    10 record.
+                </p>
+
+                <p>
+                    Dynamic data nên được lấy cùng request,
+                    không gọi API riêng cho từng field.
+                </p>
+
+                <pre>
+1 API Request
+       ↓
+10 Records
+       ↓
+custom_data của 10 Records
+       ↓
+Frontend render Dynamic Fields
+                </pre>
+            </section>
+
+
+            <!-- 21 -->
+            <section id="section-21">
+                <h2>21. PERFORMANCE &amp; INDEX</h2>
+
+                <p>
+                    Với khoảng 10 record/trang và khoảng 10 Dynamic Field
+                    trên mỗi record, <code>custom_data JSON</code>
+                    thường đủ nhanh cho giai đoạn đầu.
+                </p>
+
+                <p>
+                    Không tạo index cho tất cả Dynamic Field.
+                </p>
+
+                <p>
+                    Field nào thường xuyên:
+                </p>
+
+                <ul>
+                    <li>Search</li>
+                    <li>Filter</li>
+                    <li>Sort</li>
+                </ul>
+
+                <p>
+                    mới cân nhắc tối ưu bằng:
+                </p>
+
+                <ul>
+                    <li>Generated Column</li>
+                    <li>Functional Index</li>
+                    <li>Hoặc chuyển thành Fixed Column nếu thực sự trở thành dữ liệu cốt lõi</li>
+                </ul>
+
+                <div class="success">
+                    Không nên tạo hàng trăm index chỉ vì Dynamic Field có thể được tìm kiếm.
+                </div>
+            </section>
+
+
+            <!-- 22 -->
+            <section id="section-22">
+                <h2>22. CACHE / REDIS</h2>
+
+                <div class="success">
+                    <strong>Không sử dụng Redis ở phiên bản hiện tại.</strong>
+                </div>
+
+                <p>
+                    Kiến trúc ban đầu:
+                </p>
+
+                <pre>
+React
+  ↓
+Node.js
+  ↓
+MySQL
+                </pre>
+
+                <p>
+                    Nếu cần cache sau này có thể sử dụng memory cache
+                    trong Node.js cho các cấu hình như:
+                </p>
+
+                <ul>
+                    <li>field_definitions</li>
+                    <li>form configuration</li>
+                    <li>view configuration</li>
+                    <li>select options</li>
+                </ul>
+
+                <p>
+                    Redis chỉ được cân nhắc khi hệ thống thực sự có nhu cầu
+                    distributed cache, nhiều backend instance hoặc các chức năng
+                    cần shared state.
+                </p>
+            </section>
+
+
+            <!-- 23 -->
+            <section id="section-23">
+                <h2>23. RUNTIME CONFIGURATION — KHÔNG RESTART</h2>
+
+                <div class="important">
+                    Đây là yêu cầu quan trọng của toàn bộ kiến trúc.
+                </div>
+
+                <p>
+                    Khi Admin thêm Dynamic Field:
+                </p>
+
+                <pre>
+Admin
+  ↓
+Tạo Field
+  ↓
+INSERT field_definitions
+  ↓
+Form/Table Builder đọc config mới
+  ↓
+Frontend hiển thị Field mới
+                </pre>
+
+                <p>
+                    Không được yêu cầu:
+                </p>
+
+                <pre>
+❌ Restart Node.js
+❌ Restart Docker
+❌ Rebuild Frontend
+❌ ALTER TABLE
+❌ Database Migration
+                </pre>
+
+                <p>
+                    Khi Admin thay đổi cấu hình Form hoặc Table,
+                    cấu hình mới phải có hiệu lực ngay với request tiếp theo.
+                </p>
+
+                <p>
+                    Nếu sau này có cache:
+                </p>
+
+                <pre>
+Update Configuration
+        ↓
+Update MySQL
+        ↓
+Invalidate Cache
+        ↓
+Request tiếp theo
+        ↓
+Đọc Configuration mới
+                </pre>
+            </section>
+
+
+            <!-- 24 -->
+            <section id="section-24">
+                <h2>24. KIẾN TRÚC DATABASE</h2>
+
+                <p>
+                    Kiến trúc tổng thể nên chia thành 3 nhóm:
+                </p>
+
+                <h3>A. Business Data</h3>
+
+                <pre>
+users
+stations
+station_proposals
+customers
+...
+                </pre>
+
+                <p>
+                    Các bảng này chứa dữ liệu nghiệp vụ thực tế.
+                    Những field Dynamic được lưu trong
+                    <code>custom_data JSON</code>.
+                </p>
+
+                <h3>B. Dynamic Configuration</h3>
+
+                <pre>
+field_definitions
+
+forms
+form_fields
+
+views
+view_fields
+                </pre>
+
+                <p>
+                    Các bảng này chứa cấu hình,
+                    không phải dữ liệu nghiệp vụ.
+                </p>
+
+                <h3>C. File Management</h3>
+
+                <pre>
+files
+      │
+      ▼
+Persistent File Storage
+                </pre>
+
+                <h3>Quan hệ tổng thể</h3>
+
+                <pre>
+                    field_definitions
+                     /           \
+                    /             \
+                   ▼               ▼
+              form_fields      view_fields
+                   │               │
+                   ▼               ▼
+                 forms            views
+
+
+users ───────────────┐
+stations ────────────┤
+station_proposals ───┤
+customers ───────────┤
+                     │
+                     ▼
+                custom_data
+                     │
+                     │ file_id
+                     ▼
+                   files
+                     │
+                     ▼
+              File Storage
+                </pre>
+            </section>
+
+
+            <!-- 25 -->
+            <section id="section-25">
+                <h2>25. NGUYÊN TẮC CODEBASE</h2>
+
+                <pre>
+ARCHITECTURE RULES
+
+1. Use MySQL as the primary database.
+
+2. Do NOT use Redis.
+
+3. Dynamic architecture MUST be reusable across
+   multiple business entities/tables.
+
+4. stations is only an example entity.
+
+5. users, stations, station_proposals and other
+   business tables may use Dynamic Fields.
+
+6. Fixed business fields are physical database columns.
+
+7. Dynamic fields MUST be stored in custom_data JSON.
+
+8. Creating a Dynamic Field MUST NOT modify
+   the business table schema.
+
+9. field_definitions stores field metadata,
+   not record values.
+
+10. field_definitions MUST contain the target entity.
+
+11. field.key is the stable machine identifier.
+
+12. field.label is the display label.
+
+13. Forms reference field_definitions.
+
+14. Tables/Views reference field_definitions.
+
+15. Form Builder MUST NOT create duplicate field definitions.
+
+16. Table Builder controls table display configuration.
+
+17. Frontend visibility is NOT a security mechanism.
+
+18. Backend MUST enforce authorization.
+
+19. Formula values MUST be validated/recalculated
+    on the backend.
+
+20. File fields store file references,
+    not binary data.
+
+21. File metadata belongs in the files table.
+
+22. Actual files belong in persistent storage.
+
+23. Docker containers MUST NOT be the only storage
+    location for uploaded files.
+
+24. Development storage:
+    ./storage/uploads:/app/uploads
+
+25. API list endpoints MUST use pagination.
+
+26. Do NOT make one API request per Dynamic Field.
+
+27. Do NOT create indexes for every Dynamic Field.
+
+28. Index only fields that actually require
+    search/filter/sort optimization.
+
+29. Dynamic configuration MUST work at runtime.
+
+30. Adding/modifying Dynamic Fields, Forms and Views
+    MUST NOT require restarting Node.js.
+
+31. Configuration cache, if introduced later,
+    MUST be invalidated after configuration changes.
+
+32. Keep the architecture simple.
+
+33. Do not introduce Redis, Elasticsearch, queues
+    or other infrastructure unless there is
+    a demonstrated technical requirement.
+                </pre>
+
+                <h3>Kết luận kiến trúc</h3>
+
+                <div class="success">
+                    <strong>
+                        Business Table giữ dữ liệu cố định →
+                        custom_data JSON giữ dữ liệu Dynamic →
+                        field_definitions định nghĩa Dynamic Field →
+                        Form/Table Builder tham chiếu Field →
+                        files quản lý metadata →
+                        Persistent Storage lưu file thật.
+                    </strong>
+                </div>
+
+                <p>
+                    Mục tiêu cuối cùng là Admin có thể thêm Field,
+                    kéo Field vào Form hoặc Table, thay đổi thứ tự,
+                    ẩn/hiện, cấu hình validation và upload file
+                    mà không phải sửa code nghiệp vụ và không phải
+                    restart hệ thống.
+                </p>
+            </section>
+
+        </main>
+    </div>
+</div>
+
+<footer>
+    Dynamic Form &amp; Data Architecture — Technical Plan
+</footer>
+
+</body>
+</html>

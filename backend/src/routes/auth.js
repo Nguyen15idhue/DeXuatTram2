@@ -6,46 +6,99 @@ const pool = require('../utils/db');
 const { requireAuth, JWT_SECRET } = require('../middlewares/auth');
 const { validateRegister, validateLogin } = require('../middlewares/validators');
 
-// POST /api/auth/register
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Đăng ký tài khoản mới
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [full_name, email, phone, password]
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *                 minLength: 2
+ *                 maxLength: 100
+ *                 example: Nguyen Van A
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               phone:
+ *                 type: string
+ *                 pattern: '^\d{10}$'
+ *                 example: 0912345678
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: 123456
+ *     responses:
+ *       201:
+ *         description: Đăng ký thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Đăng ký thành công
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *                     token:
+ *                       type: string
+ *       400:
+ *         description: Email đã tồn tại hoặc dữ liệu không hợp lệ
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/register', validateRegister, async (req, res) => {
   try {
     const { full_name, email, phone, password } = req.body;
 
-    // Check if email exists
     const [existingUsers] = await pool.query(
-      'SELECT id FROM users WHERE email = ?', 
+      'SELECT id FROM users WHERE email = ?',
       [email]
     );
-    
+
     if (existingUsers.length > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email đã được sử dụng' 
+      return res.status(400).json({
+        success: false,
+        message: 'Email đã được sử dụng'
       });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Insert user
     const [result] = await pool.query(
       'INSERT INTO users (full_name, email, phone, password, role, status) VALUES (?, ?, ?, ?, ?, ?)',
       [full_name, email, phone, hashedPassword, 'USER', 'ACTIVE']
     );
 
-    // Generate token
     const token = jwt.sign(
-      { 
-        id: result.insertId, 
-        email, 
-        role: 'USER' 
+      {
+        id: result.insertId,
+        email,
+        role: 'USER'
       },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Return user info (without password)
     res.status(201).json({
       success: true,
       message: 'Đăng ký thành công',
@@ -63,62 +116,103 @@ router.post('/register', validateRegister, async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi server' 
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server'
     });
   }
 });
 
-// POST /api/auth/login
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Đăng nhập
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@example.com
+ *               password:
+ *                 type: string
+ *                 example: 123456
+ *     responses:
+ *       200:
+ *         description: Đăng nhập thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Đăng nhập thành công
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *                     token:
+ *                       type: string
+ *       400:
+ *         description: Email hoặc password không đúng
+ *       403:
+ *         description: Tài khoản đã bị khóa
+ */
 router.post('/login', validateLogin, async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find user by email
     const [users] = await pool.query(
       'SELECT * FROM users WHERE email = ?',
       [email]
     );
 
     if (users.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email hoặc password không đúng' 
+      return res.status(400).json({
+        success: false,
+        message: 'Email hoặc password không đúng'
       });
     }
 
     const user = users[0];
 
-    // Check if user is locked
     if (user.status === 'LOCKED') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Tài khoản đã bị khóa' 
+      return res.status(403).json({
+        success: false,
+        message: 'Tài khoản đã bị khóa'
       });
     }
 
-    // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email hoặc password không đúng' 
+      return res.status(400).json({
+        success: false,
+        message: 'Email hoặc password không đúng'
       });
     }
 
-    // Generate token
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        email: user.email, 
-        role: user.role 
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role
       },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Return user info (without password)
     res.json({
       success: true,
       message: 'Đăng nhập thành công',
@@ -136,14 +230,42 @@ router.post('/login', validateLogin, async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi server' 
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server'
     });
   }
 });
 
-// GET /api/auth/me
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Lấy thông tin user hiện tại
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Chưa xác thực
+ *       404:
+ *         description: Không tìm thấy user
+ */
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const [users] = await pool.query(
@@ -152,9 +274,9 @@ router.get('/me', requireAuth, async (req, res) => {
     );
 
     if (users.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Không tìm thấy user' 
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy user'
       });
     }
 
@@ -166,14 +288,65 @@ router.get('/me', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Get me error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi server' 
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server'
     });
   }
 });
 
-// PUT /api/auth/profile - User update own profile
+/**
+ * @swagger
+ * /api/auth/profile:
+ *   put:
+ *     tags: [Auth]
+ *     summary: Cập nhật hồ sơ cá nhân
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [full_name]
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *                 minLength: 2
+ *                 maxLength: 100
+ *                 example: Nguyen Van A
+ *               phone:
+ *                 type: string
+ *                 example: 0912345678
+ *               current_password:
+ *                 type: string
+ *                 description: Bắt buộc nếu muốn đổi mật khẩu
+ *               new_password:
+ *                 type: string
+ *                 minLength: 6
+ *                 description: Mật khẩu mới (cùng current_password)
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/User'
+ *                 message:
+ *                   type: string
+ *                   example: Cập nhật hồ sơ thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ */
 router.put('/profile', requireAuth, async (req, res) => {
   try {
     const { full_name, phone, current_password, new_password } = req.body;
