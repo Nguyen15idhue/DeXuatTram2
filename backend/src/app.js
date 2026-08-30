@@ -15,6 +15,11 @@ const adminUsersRoutes = require('./routes/adminUsers');
 const excelRoutes = require('./routes/excel');
 const mapUtilsRoutes = require('./routes/mapUtils');
 const dashboardRoutes = require('./routes/dashboard');
+const fieldDefinitionsRoutes = require('./routes/fieldDefinitions');
+const formsRoutes = require('./routes/forms');
+const formFieldsRoutes = require('./routes/formFields');
+const viewsRoutes = require('./routes/views');
+const viewFieldsRoutes = require('./routes/viewFields');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -83,6 +88,11 @@ app.use('/api/admin/users', adminLimiter, adminUsersRoutes);
 app.use('/api/admin/excel', adminLimiter, excelLimiter, excelRoutes);
 app.use('/api/admin/dashboard', adminLimiter, dashboardRoutes);
 app.use('/api/map', mapUtilsRoutes);
+app.use('/api/field-definitions', fieldDefinitionsRoutes);
+app.use('/api/forms', formsRoutes);
+app.use('/api/forms', formFieldsRoutes);
+app.use('/api/views', viewsRoutes);
+app.use('/api/views', viewFieldsRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

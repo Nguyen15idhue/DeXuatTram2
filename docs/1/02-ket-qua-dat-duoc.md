@@ -10,8 +10,8 @@
 
 | Phase | Trạng thái | Ngày bắt đầu | Ngày hoàn thành | Ghi chú |
 |-------|------------|---------------|------------------|---------|
-| Phase 1: Database Migration | ⏳ Chưa bắt đầu | — | — | |
-| Phase 2: Backend CRUD Config | ⏳ Chưa bắt đầu | — | — | |
+| Phase 1: Database Migration | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 6 SQL files, 9 tables |
+| Phase 2: Backend CRUD Config | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 15 files, 27 endpoints |
 | Phase 3: Backend Engine | ⏳ Chưa bắt đầu | — | — | |
 | Phase 4: Frontend Admin | ⏳ Chưa bắt đầu | — | — | |
 | Phase 5: Frontend Dynamic | ⏳ Chưa bắt đầu | — | — | |
@@ -26,93 +26,192 @@
 ### Files đã tạo
 | File | Trạng thái | Dòng |
 |------|------------|------|
-| `database/04-add-custom-data.sql` | ⏳ | |
-| `database/05-create-field-definitions.sql` | ⏳ | |
-| `database/06-create-forms.sql` | ⏳ | |
-| `database/07-create-views.sql` | ⏳ | |
-| `database/08-create-files.sql` | ⏳ | |
-| `database/09-seed-field-definitions.sql` | ⏳ | |
+| `database/04-add-custom-data.sql` | ✅ | 3 |
+| `database/05-create-field-definitions.sql` | ✅ | 22 |
+| `database/06-create-forms.sql` | ✅ | 25 |
+| `database/07-create-views.sql` | ✅ | 29 |
+| `database/08-create-files.sql` | ✅ | 16 |
+| `database/09-seed-field-definitions.sql` | ✅ | 14 |
 
 ### Kết quả test
 | Test | Kết quả | Ghi chú |
 |------|---------|---------|
-| custom_data columns added | ⏳ | |
-| field_definitions table | ⏳ | |
-| forms + form_fields FK cascade | ⏳ | |
-| views + view_fields FK cascade | ⏳ | |
-| files table | ⏳ | |
-| Seed data 9 records | ⏳ | |
+| custom_data columns added | ✅ | users, stations, station_proposals |
+| field_definitions table | ✅ | 14 columns, unique constraint |
+| forms + form_fields FK cascade | ✅ | Xóa form → form_fields tự xóa |
+| views + view_fields FK cascade | ✅ | Xóa view → view_fields tự xóa |
+| files table | ✅ | FK to users (ON DELETE SET NULL) |
+| Seed data 9 records | ✅ | 3 stations, 3 proposals, 3 users |
+| Unique constraint (entity+key) | ✅ | ERROR 1062 khi duplicate |
+| custom_data JSON storage | ✅ | UPDATE/SELECT JSON hoạt động |
+| Existing data unaffected | ✅ | 13 users, 16 stations, 6 proposals |
+| API still works | ✅ | Login, stations, proposals hoạt động |
+
+### Database info
+- Database name: `station_management`
+- MySQL password: `password`
+- Total tables: 9
 
 ---
 
 ## PHASE 2: BACKEND CRUD CONFIG
 
 ### Files đã tạo
-| File | Trạng thái | Dòng |
-|------|------------|------|
-| `routes/fieldDefinitions.js` | ⏳ | |
-| `routes/forms.js` | ⏳ | |
-| `routes/formFields.js` | ⏳ | |
-| `routes/views.js` | ⏳ | |
-| `routes/viewFields.js` | ⏳ | |
+| File | Loại | Trạng thái | Dòng |
+|------|------|------------|------|
+| `routes/fieldDefinitions.js` | route | ✅ | 157 |
+| `controllers/fieldDefinitionController.js` | controller | ✅ | 155 |
+| `services/fieldDefinitionService.js` | service | ✅ | 95 |
+| `routes/forms.js` | route | ✅ | 137 |
+| `controllers/formController.js` | controller | ✅ | 109 |
+| `services/formService.js` | service | ✅ | 68 |
+| `routes/formFields.js` | route | ✅ | 135 |
+| `controllers/formFieldController.js` | controller | ✅ | 110 |
+| `services/formFieldService.js` | service | ✅ | 60 |
+| `routes/views.js` | route | ✅ | 120 |
+| `controllers/viewController.js` | controller | ✅ | 109 |
+| `services/viewService.js` | service | ✅ | 68 |
+| `routes/viewFields.js` | route | ✅ | 140 |
+| `controllers/viewFieldController.js` | controller | ✅ | 115 |
+| `services/viewFieldService.js` | service | ✅ | 65 |
 
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `app.js` | ⏳ | Mount 5 routes mới |
+| `app.js` | ✅ | Mount fieldDefinitions route |
+
+### Feature 1: Field Definitions — 7 endpoints
+| Endpoint | Method | Auth | Test | Ghi chú |
+|----------|--------|------|------|---------|
+| `/api/field-definitions` | GET | admin | ✅ | 9 records, pagination OK |
+| `/api/field-definitions/:id` | GET | admin | ✅ | Get by ID OK |
+| `/api/field-definitions/entity/:entity` | GET | public | ✅ | Returns active fields per entity |
+| `/api/field-definitions` | POST | admin | ✅ | Create OK |
+| `/api/field-definitions/:id` | PUT | admin | ✅ | Update OK |
+| `/api/field-definitions/:id` | DELETE | admin | ✅ | Delete OK |
+| `/api/field-definitions/:id/status` | PATCH | admin | ✅ | Toggle active/inactive OK |
+
+Edge cases tested:
+- Duplicate key (entity+key) → 400 error ✅
+- Missing required fields → 400 validation error ✅
+- Not found (id=99999) → 404 ✅
+- User role access → 403 Forbidden ✅
+
+### Feature 2: Forms — 5 endpoints
+| Endpoint | Method | Auth | Test | Ghi chú |
+|----------|--------|------|------|---------|
+| `/api/forms` | GET | admin | ✅ | List forms + field_count |
+| `/api/forms/:id` | GET | public | ✅ | Get form + fields array |
+| `/api/forms` | POST | admin | ✅ | Create form OK |
+| `/api/forms/:id` | PUT | admin | ✅ | Update form OK |
+| `/api/forms/:id` | DELETE | admin | ✅ | Delete form OK |
+
+Edge cases tested:
+- Missing name → 400 error ✅
+- Invalid entity → 400 error ✅
+- Not found (id=99999) → 404 ✅
+- User role access → 403 Forbidden ✅
+
+### Feature 3: Form Fields — 5 endpoints
+| Endpoint | Method | Auth | Test | Ghi chú |
+|----------|--------|------|------|---------|
+| `/api/forms/:formId/fields` | GET | public | ✅ | Get fields with join field_definitions |
+| `/api/forms/:formId/fields` | POST | admin | ✅ | Add field to form, entity check |
+| `/api/forms/:formId/fields/:id` | PUT | admin | ✅ | Update field config |
+| `/api/forms/:formId/fields/:id` | DELETE | admin | ✅ | Remove field from form |
+| `/api/forms/:formId/fields/reorder` | PUT | admin | ✅ | Reorder fields OK |
+
+Edge cases tested:
+- Duplicate field in same form → 400 error ✅
+- Entity mismatch (users field in stations form) → 400 error ✅
+- User role access → 403 Forbidden ✅
+
+### Feature 4: Views — 5 endpoints
+| Endpoint | Method | Auth | Test | Ghi chú |
+|----------|--------|------|------|---------|
+| `/api/views` | GET | admin | ✅ | List views + field_count |
+| `/api/views/:id` | GET | public | ✅ | Get view + fields array |
+| `/api/views` | POST | admin | ✅ | Create view OK |
+| `/api/views/:id` | PUT | admin | ✅ | Update view OK |
+| `/api/views/:id` | DELETE | admin | ✅ | Delete view OK |
+
+Edge cases tested:
+- Missing name → 400 error ✅
+- Invalid entity → 400 error ✅
+- Not found → 404 ✅
+- User role access → 403 Forbidden ✅
+
+### Feature 5: View Fields — 5 endpoints
+| Endpoint | Method | Auth | Test | Ghi chú |
+|----------|--------|------|------|---------|
+| `/api/views/:viewId/fields` | GET | public | ✅ | Get fields with join field_definitions |
+| `/api/views/:viewId/fields` | POST | admin | ✅ | Add field, entity check, width/sortable/filterable |
+| `/api/views/:viewId/fields/:id` | PUT | admin | ✅ | Update field config |
+| `/api/views/:viewId/fields/:id` | DELETE | admin | ✅ | Remove field from view |
+| `/api/views/:viewId/fields/reorder` | PUT | admin | ✅ | Reorder fields OK |
+
+Edge cases tested:
+- Duplicate field in same view → 400 error ✅
+- Entity mismatch → 400 error ✅
+- User role access → 403 Forbidden ✅
+- Bug fix: order_index null on update → fixed (use existing value) ✅
 
 ### API endpoints mới (27 endpoints)
 | Endpoint | Method | Auth | Test |
 |----------|--------|------|------|
-| `/api/field-definitions` | GET | admin | ⏳ |
-| `/api/field-definitions/:id` | GET | admin | ⏳ |
-| `/api/field-definitions/entity/:entity` | GET | public | ⏳ |
-| `/api/field-definitions` | POST | admin | ⏳ |
-| `/api/field-definitions/:id` | PUT | admin | ⏳ |
-| `/api/field-definitions/:id` | DELETE | admin | ⏳ |
-| `/api/field-definitions/:id/status` | PATCH | admin | ⏳ |
-| `/api/forms` | GET | admin | ⏳ |
-| `/api/forms/:id` | GET | public | ⏳ |
-| `/api/forms` | POST | admin | ⏳ |
-| `/api/forms/:id` | PUT | admin | ⏳ |
-| `/api/forms/:id` | DELETE | admin | ⏳ |
-| `/api/forms/:formId/fields` | GET | public | ⏳ |
-| `/api/forms/:formId/fields` | POST | admin | ⏳ |
-| `/api/forms/:formId/fields/:id` | PUT | admin | ⏳ |
-| `/api/forms/:formId/fields/:id` | DELETE | admin | ⏳ |
-| `/api/forms/:formId/fields/reorder` | PUT | admin | ⏳ |
-| `/api/views` | GET | admin | ⏳ |
-| `/api/views/:id` | GET | public | ⏳ |
-| `/api/views` | POST | admin | ⏳ |
-| `/api/views/:id` | PUT | admin | ⏳ |
-| `/api/views/:id` | DELETE | admin | ⏳ |
-| `/api/views/:viewId/fields` | GET | public | ⏳ |
-| `/api/views/:viewId/fields` | POST | admin | ⏳ |
-| `/api/views/:viewId/fields/:id` | PUT | admin | ⏳ |
-| `/api/views/:viewId/fields/:id` | DELETE | admin | ⏳ |
-| `/api/views/:viewId/fields/reorder` | PUT | admin | ⏳ |
+| `/api/field-definitions` | GET | admin | ✅ |
+| `/api/field-definitions/:id` | GET | admin | ✅ |
+| `/api/field-definitions/entity/:entity` | GET | public | ✅ |
+| `/api/field-definitions` | POST | admin | ✅ |
+| `/api/field-definitions/:id` | PUT | admin | ✅ |
+| `/api/field-definitions/:id` | DELETE | admin | ✅ |
+| `/api/field-definitions/:id/status` | PATCH | admin | ✅ |
+| `/api/forms` | GET | admin | ✅ |
+| `/api/forms/:id` | GET | public | ✅ |
+| `/api/forms` | POST | admin | ✅ |
+| `/api/forms/:id` | PUT | admin | ✅ |
+| `/api/forms/:id` | DELETE | admin | ✅ |
+| `/api/forms/:formId/fields` | GET | public | ✅ |
+| `/api/forms/:formId/fields` | POST | admin | ✅ |
+| `/api/forms/:formId/fields/:id` | PUT | admin | ✅ |
+| `/api/forms/:formId/fields/:id` | DELETE | admin | ✅ |
+| `/api/forms/:formId/fields/reorder` | PUT | admin | ✅ |
+| `/api/views` | GET | admin | ✅ |
+| `/api/views/:id` | GET | public | ✅ |
+| `/api/views` | POST | admin | ✅ |
+| `/api/views/:id` | PUT | admin | ✅ |
+| `/api/views/:id` | DELETE | admin | ✅ |
+| `/api/views/:viewId/fields` | GET | public | ✅ |
+| `/api/views/:viewId/fields` | POST | admin | ✅ |
+| `/api/views/:viewId/fields/:id` | PUT | admin | ✅ |
+| `/api/views/:viewId/fields/:id` | DELETE | admin | ✅ |
+| `/api/views/:viewId/fields/reorder` | PUT | admin | ✅ |
 
 ---
 
 ## PHASE 3: BACKEND ENGINE
 
 ### Files đã tạo
-| File | Trạng thái | Dòng |
-|------|------------|------|
-| `utils/dynamicUtils.js` | ⏳ | |
-| `routes/dynamicEngine.js` | ⏳ | |
-| `routes/files.js` | ⏳ | |
+| File | Loại | Trạng thái | Dòng |
+|------|------|------------|------|
+| `services/dynamicUtils.js` | service (helper) | ⏳ | |
+| `routes/dynamicEngine.js` | route | ⏳ | |
+| `controllers/dynamicEngineController.js` | controller | ⏳ | |
+| `services/dynamicEngineService.js` | service | ⏳ | |
+| `routes/files.js` | route | ⏳ | |
+| `controllers/fileController.js` | controller | ⏳ | |
+| `services/fileService.js` | service | ⏳ | |
 
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
 | `app.js` | ⏳ | Mount routes + static serving |
-| `routes/stations.js` | ⏳ | Hỗ trợ custom_data |
-| `routes/proposals.js` | ⏳ | Hỗ trợ custom_data |
-| `routes/myProposals.js` | ⏳ | Hỗ trợ custom_data |
-| `routes/adminProposals.js` | ⏳ | Hỗ trợ custom_data |
-| `routes/adminUsers.js` | ⏳ | Hỗ trợ custom_data |
-| `routes/auth.js` | ⏳ | Profile custom_data |
+| `services/stationService.js` | ⏳ | Hỗ trợ custom_data |
+| `services/proposalService.js` | ⏳ | Hỗ trợ custom_data |
+| `services/myProposalService.js` | ⏳ | Hỗ trợ custom_data |
+| `services/adminProposalService.js` | ⏳ | Hỗ trợ custom_data |
+| `services/adminUserService.js` | ⏳ | Hỗ trợ custom_data |
+| `services/authService.js` | ⏳ | Profile custom_data |
 | `middlewares/validators.js` | ⏳ | Dynamic validation |
 
 ### API endpoints mới (4 endpoints)
@@ -195,7 +294,8 @@
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `routes/excel.js` | ⏳ | Export/Import 3 entities theo dynamic config |
+| `services/excelService.js` | ⏳ | Export/Import 3 entities theo dynamic config |
+| `routes/excel.js` | ⏳ | Thêm export users endpoint |
 
 ### Endpoints mới/sửa
 | Endpoint | Method | Entity | Trạng thái |
@@ -247,12 +347,14 @@
 ### Tổng số files
 | Loại | Số lượng |
 |------|----------|
-| Files mới backend | ~8 |
+| Files mới backend (route) | ~8 |
+| Files mới backend (controller) | ~7 |
+| Files mới backend (service) | ~9 |
 | Files mới frontend | ~14 |
-| Files sửa backend | ~9 |
+| Files sửa backend (service) | ~7 |
 | Files sửa frontend | ~7 |
 | Files SQL | 6 |
-| **Tổng** | **~44** |
+| **Tổng** | **~58** |
 
 ### Tổng số API endpoints
 | Loại | Số lượng |
@@ -265,3 +367,4 @@
 ### Ghi chú
 - Tất cả ghi chú, vấn đề, thay đổi sẽ được cập nhật tại đây
 - Mỗi lần hoàn thành phase, cập nhật trạng thái tương ứng
+- Backend theo MVC pattern: routes (routing) → controllers (req/res) → services (business logic)

@@ -1,0 +1,3 @@
+ALTER TABLE users ADD COLUMN custom_data JSON DEFAULT NULL;
+ALTER TABLE stations ADD COLUMN custom_data JSON DEFAULT NULL;
+ALTER TABLE station_proposals ADD COLUMN custom_data JSON DEFAULT NULL;

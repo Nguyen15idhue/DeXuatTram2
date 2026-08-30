@@ -151,12 +151,13 @@ INSERT INTO field_definitions (entity, `key`, label, type, source_type, required
 
 #### Bước 1.7: Chạy migration và verify
 ```bash
-docker compose exec mysql mysql -u root -proot station_db < database/04-add-custom-data.sql
-docker compose exec mysql mysql -u root -proot station_db < database/05-create-field-definitions.sql
-docker compose exec mysql mysql -u root -proot station_db < database/06-create-forms.sql
-docker compose exec mysql mysql -u root -proot station_db < database/07-create-views.sql
-docker compose exec mysql mysql -u root -proot station_db < database/08-create-files.sql
-docker compose exec mysql mysql -u root -proot station_db < database/09-seed-field-definitions.sql
+# Database name: station_management, Password: password
+docker compose exec mysql mysql -u root -ppassword station_management < database/04-add-custom-data.sql
+docker compose exec mysql mysql -u root -ppassword station_management < database/05-create-field-definitions.sql
+docker compose exec mysql mysql -u root -ppassword station_management < database/06-create-forms.sql
+docker compose exec mysql mysql -u root -ppassword station_management < database/07-create-views.sql
+docker compose exec mysql mysql -u root -ppassword station_management < database/08-create-files.sql
+docker compose exec mysql mysql -u root -ppassword station_management < database/09-seed-field-definitions.sql
 ```
 
 ### Checklist Phase 1
@@ -173,14 +174,51 @@ docker compose exec mysql mysql -u root -proot station_db < database/09-seed-fie
 ## PHASE 2: BACKEND CRUD CHO DYNAMIC CONFIGURATION
 
 ### Yêu cầu
-- Tạo 5 route files mới: fieldDefinitions.js, forms.js, formFields.js, views.js, viewFields.js
-- Mỗi file có đầy đủ CRUD endpoints
-- Tất cả endpoints phải có Swagger JSDoc comments
+- Tạo 5 feature mới, mỗi feature gồm 3 files: route + controller + service
+- Tất cả endpoints phải có Swagger JSDoc comments trong route file
 - Mount routes trong app.js
+
+### Cấu trúc file mới (MVC pattern)
+```
+routes/fieldDefinitions.js      → routing + Swagger JSDoc
+controllers/fieldDefinitionController.js → request/response handling
+services/fieldDefinitionService.js      → business logic (DB queries)
+
+routes/forms.js                 → routing + Swagger JSDoc
+controllers/formController.js           → request/response handling
+services/formService.js                 → business logic
+
+routes/formFields.js            → routing + Swagger JSDoc
+controllers/formFieldController.js      → request/response handling
+services/formFieldService.js            → business logic
+
+routes/views.js                 → routing + Swagger JSDoc
+controllers/viewController.js           → request/response handling
+services/viewService.js                 → business logic
+
+routes/viewFields.js            → routing + Swagger JSDoc
+controllers/viewFieldController.js      → request/response handling
+services/viewFieldService.js            → business logic
+```
 
 ### Bước thực hiện
 
-#### Bước 2.1: Tạo `routes/fieldDefinitions.js`
+#### Bước 2.1: Tạo fieldDefinitionService.js + fieldDefinitionController.js + fieldDefinitions.js
+
+**Services** (business logic):
+```
+getAllFieldDefinitions(entity, status, page, limit)
+getFieldDefinitionById(id)
+getFieldDefinitionsByEntity(entity)
+createFieldDefinition(data)
+updateFieldDefinition(id, data)
+deleteFieldDefinition(id)
+updateFieldDefinitionStatus(id, status)
+```
+
+**Controllers** (request/response): gọi service, xử lý req/res
+
+**Routes** (routing + Swagger): mount middleware + gọi controller
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -194,7 +232,7 @@ docker compose exec mysql mysql -u root -proot station_db < database/09-seed-fie
 
 **Validate:** entity không rỗng, key không rỗng, type trong danh sách cho phép
 
-#### Bước 2.2: Tạo `routes/forms.js`
+#### Bước 2.2: Tạo formService.js + formController.js + forms.js
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -204,7 +242,7 @@ docker compose exec mysql mysql -u root -proot station_db < database/09-seed-fie
 | PUT | `/api/forms/:id` | admin | Update form |
 | DELETE | `/api/forms/:id` | admin | Delete form (CASCADE form_fields) |
 
-#### Bước 2.3: Tạo `routes/formFields.js`
+#### Bước 2.3: Tạo formFieldService.js + formFieldController.js + formFields.js
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -214,7 +252,7 @@ docker compose exec mysql mysql -u root -proot station_db < database/09-seed-fie
 | DELETE | `/api/forms/:formId/fields/:id` | admin | Remove field from form |
 | PUT | `/api/forms/:formId/fields/reorder` | admin | Reorder fields |
 
-#### Bước 2.4: Tạo `routes/views.js`
+#### Bước 2.4: Tạo viewService.js + viewController.js + views.js
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -224,7 +262,7 @@ docker compose exec mysql mysql -u root -proot station_db < database/09-seed-fie
 | PUT | `/api/views/:id` | admin | Update view |
 | DELETE | `/api/views/:id` | admin | Delete view (CASCADE view_fields) |
 
-#### Bước 2.5: Tạo `routes/viewFields.js`
+#### Bước 2.5: Tạo viewFieldService.js + viewFieldController.js + viewFields.js
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -246,6 +284,9 @@ app.use('/api/views', require('./routes/viewFields'));
 #### Bước 2.7: Test tất cả CRUD APIs qua Swagger UI
 
 ### Checklist Phase 2
+- [ ] 5 route files mới tạo (routing + Swagger)
+- [ ] 5 controller files mới tạo (request/response)
+- [ ] 5 service files mới tạo (business logic)
 - [ ] fieldDefinitions: 7 endpoints hoạt động
 - [ ] forms: 5 endpoints hoạt động
 - [ ] formFields: 5 endpoints hoạt động
@@ -261,15 +302,22 @@ app.use('/api/views', require('./routes/viewFields'));
 ## PHASE 3: BACKEND GENERIC ENGINE
 
 ### Yêu cầu
-- Tạo `utils/dynamicUtils.js` — helper functions
-- Tạo `routes/dynamicEngine.js` — core engine
-- Tạo `routes/files.js` — file upload/download/delete
+- Tạo `services/dynamicUtils.js` — helper functions
+- Tạo 2 feature mới: dynamicEngine (route+controller+service), files (route+controller+service)
 - Tạo thư mục `storage/uploads/` trên host
-- Sửa 8 route files hiện tại hỗ trợ custom_data
+- Sửa 6 service files hiện tại hỗ trợ custom_data
+- Sửa `middlewares/validators.js` thêm dynamic validation
+
+### Cấu trúc file mới (MVC pattern)
+```
+services/dynamicUtils.js                    → helper functions (parseOptions, validateField, etc.)
+routes/dynamicEngine.js + controllers/dynamicEngineController.js + services/dynamicEngineService.js
+routes/files.js + controllers/fileController.js + services/fileService.js
+```
 
 ### Bước thực hiện
 
-#### Bước 3.1: Tạo `utils/dynamicUtils.js`
+#### Bước 3.1: Tạo `services/dynamicUtils.js`
 
 ```javascript
 // Các functions cần có:
@@ -281,7 +329,14 @@ mergeData(row, fieldDefs)             // Merge fixed + custom_data
 buildDynamicSetClause(data, fieldDefs) // Build SQL SET
 ```
 
-#### Bước 3.2: Tạo `routes/dynamicEngine.js`
+#### Bước 3.2: Tạo dynamicEngineService.js + dynamicEngineController.js + dynamicEngine.js
+
+**Services:**
+```
+getFormConfig(entity, formId)    // Render form config
+getViewConfig(entity, viewId)    // Render view config
+validateEntityData(entity, data) // Validate data
+```
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -289,7 +344,15 @@ buildDynamicSetClause(data, fieldDefs) // Build SQL SET
 | GET | `/api/dynamic/:entity/view/:viewId` | public | Render view config |
 | POST | `/api/dynamic/:entity/validate` | auth | Validate data |
 
-#### Bước 3.3: Tạo `routes/files.js`
+#### Bước 3.3: Tạo fileService.js + fileController.js + files.js
+
+**Services:**
+```
+uploadFile(file, userId, entityId)  // Upload + save metadata
+getFileById(id)                     // Get metadata
+downloadFile(id)                    // Stream file
+deleteFile(id)                      // Soft delete + physical delete
+```
 
 | Method | Endpoint | Auth | Mô tả |
 |--------|----------|------|-------|
@@ -327,37 +390,41 @@ echo "storage/uploads/*" >> .gitignore
 app.use('/uploads', express.static(path.join(__dirname, '../storage/uploads')));
 ```
 
-#### Bước 3.6: Sửa các route files hiện tại
+#### Bước 3.6: Sửa các service files hiện tại
 
-**stations.js:**
-- GET: merge custom_data + field_definitions vào response
-- POST/PUT: tách dynamic fields → lưu custom_data
+**Lưu ý:** Vì đã refactor MVC, KHÔNG sửa route files — sửa service files:
 
-**proposals.js:** Tương tự stations
+**services/stationService.js:**
+- getAllStations(): merge custom_data + field_definitions vào response
+- createStation(), updateStation(): tách dynamic fields → lưu custom_data
 
-**myProposals.js:** Tương tự
+**services/proposalService.js:** Tương tự
 
-**adminProposals.js:** Tương tự
+**services/myProposalService.js:** Tương tự
 
-**adminUsers.js:** Tương tự
+**services/adminProposalService.js:** Tương tự
 
-**auth.js:** PUT /profile hỗ trợ custom_data
+**services/adminUserService.js:** Tương tự
 
-**validators.js:** Thêm `validateDynamicFields(entity, data, fieldDefs)`
+**services/authService.js:** updateProfile() hỗ trợ custom_data
+
+**middlewares/validators.js:** Thêm `validateDynamicFields(entity, data, fieldDefs)`
 
 ### Checklist Phase 3
 - [ ] dynamicUtils.js: tất cả functions hoạt động
+- [ ] dynamicEngine: route + controller + service tạo xong
 - [ ] dynamicEngine: GET form config trả về đúng data
 - [ ] dynamicEngine: GET view config trả về đúng data
 - [ ] dynamicEngine: POST validate trả về errors đúng
+- [ ] files: route + controller + service tạo xong
 - [ ] files: upload thành công, file lưu đúng path
 - [ ] files: download trả về binary stream
 - [ ] files: delete soft delete + file vật lý xóa
 - [ ] storage/uploads/ tồn tại + .gitignore
-- [ ] stations CRUD hoạt động với custom_data
-- [ ] proposals CRUD hoạt động với custom_data
-- [ ] users CRUD hoạt động với custom_data
-- [ ] Auth profile hoạt động với custom_data
+- [ ] stationService: CRUD hoạt động với custom_data
+- [ ] proposalService: CRUD hoạt động với custom_data
+- [ ] adminUserService: CRUD hoạt động với custom_data
+- [ ] authService: Profile hoạt động với custom_data
 - [ ] Existing features không bị regress
 
 ---
@@ -536,7 +603,7 @@ Thêm: fieldDefinitionService, formService, formFieldService, viewService, viewF
 ## PHASE 7: EXCEL DYNAMIC
 
 ### Yêu cầu
-- Sửa excel.js: export + import cho cả 3 entity (stations, proposals, users)
+- Sửa `services/excelService.js`: export + import cho cả 3 entity (stations, proposals, users)
 - Export theo view config (view_fields)
 - Import theo form config (field_definitions)
 - Template download cho từng entity
@@ -544,50 +611,57 @@ Thêm: fieldDefinitionService, formService, formFieldService, viewService, viewF
 ### Bước thực hiện
 
 #### Bước 7.1: Export Stations
+- Sửa `excelService.js` → exportStations()
 - Đọc view config `views.entity = 'stations'`
 - Export theo view_fields (column order, visible)
 - Dynamic columns từ field_definitions
 
 #### Bước 7.2: Import Stations
+- Sửa `excelService.js` → importPreview() + importConfirm()
 - Đọc form config `forms.entity = 'stations'`
 - Validate theo field_definitions
 - Preview → Confirm
 
 #### Bước 7.3: Export Proposals
+- Sửa `excelService.js` → exportProposals()
 - Đọc view config `views.entity = 'station_proposals'`
 - Export theo view_fields
 - Dynamic columns từ field_definitions
 
 #### Bước 7.4: Import Proposals
+- Sửa `excelService.js` → importPreview() + importConfirm()
 - Đọc form config `forms.entity = 'station_proposals'`
 - Validate theo field_definitions
 - Preview → Confirm
 
 #### Bước 7.5: Export Users
+- Thêm `excelService.js` → exportUsers()
 - Đọc view config `views.entity = 'users'`
 - Export theo view_fields
 - Dynamic columns từ field_definitions
 
 #### Bước 7.6: Import Users
+- Thêm `excelService.js` → importPreviewUsers() + importConfirmUsers()
 - Đọc form config `forms.entity = 'users'`
 - Validate theo field_definitions
 - Preview → Confirm
 
 #### Bước 7.7: Template download cho từng entity
+- Sửa `excelService.js` → getTemplate()
 - GET `/api/admin/excel/template?entity=stations`
 - GET `/api/admin/excel/template?entity=station_proposals`
 - GET `/api/admin/excel/template?entity=users`
 
 ### API endpoints hiện tại cần sửa
 
-| Endpoint | Thay đổi |
-|----------|----------|
-| `GET /api/admin/excel/export/stations` | Đọc view config thay vì hardcode |
-| `GET /api/admin/excel/export/proposals` | Đọc view config |
-| `GET /api/admin/excel/export/users` | **NEW** — Export users |
-| `GET /api/admin/excel/template` | Thêm param `?entity=` |
-| `POST /api/admin/excel/import/preview` | Validate theo form config |
-| `POST /api/admin/excel/import/confirm` | Import theo form config |
+| Endpoint | Thay đổi | File sửa |
+|----------|----------|----------|
+| `GET /api/admin/excel/export/stations` | Đọc view config thay vì hardcode | `services/excelService.js` |
+| `GET /api/admin/excel/export/proposals` | Đọc view config | `services/excelService.js` |
+| `GET /api/admin/excel/export/users` | **NEW** — Export users | `services/excelService.js` + `routes/excel.js` |
+| `GET /api/admin/excel/template` | Thêm param `?entity=` | `services/excelService.js` |
+| `POST /api/admin/excel/import/preview` | Validate theo form config | `services/excelService.js` |
+| `POST /api/admin/excel/import/confirm` | Import theo form config | `services/excelService.js` |
 
 ### Checklist Phase 7
 - [ ] Export stations theo view config

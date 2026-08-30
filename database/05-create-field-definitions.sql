@@ -1,0 +1,20 @@
+CREATE TABLE field_definitions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    entity VARCHAR(100) NOT NULL,
+    `key` VARCHAR(100) NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'text',
+    source_type VARCHAR(20) NOT NULL DEFAULT 'json',
+    required TINYINT(1) NOT NULL DEFAULT 0,
+    validation JSON DEFAULT NULL,
+    options JSON DEFAULT NULL,
+    formula VARCHAR(500) DEFAULT NULL,
+    placeholder VARCHAR(255) DEFAULT NULL,
+    help_text VARCHAR(500) DEFAULT NULL,
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_entity_key (entity, `key`),
+    INDEX idx_entity (entity),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
