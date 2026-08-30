@@ -19,6 +19,7 @@ Browser → Frontend → REST API → Backend → MySQL
 /backend     Node.js + Express
 /database    MySQL scripts
 /docker      Docker configs
+/swagger     http://localhost:3000/api-docs
 ```
 
 ## 3. Business Entities
@@ -73,7 +74,7 @@ API routes:              /api/[resource]
 
 ### General Rules
 - JavaScript (không dùng TypeScript)
-- Async/await cho异步操作
+- Async/await cho bất đồng bộ
 - Try-catch cho error handling
 - Không thêm comments trừ khi được yêu cầu
 
@@ -87,6 +88,7 @@ frontend/src/
 ├── services/       API calls
 ├── hooks/          custom hooks
 ├── layouts/        layout components
+├── contexts/       React contexts (AuthContext)
 ├── utils/          helper functions
 ├── App.jsx         root component
 └── main.jsx        entry point
@@ -95,13 +97,13 @@ frontend/src/
 ### Backend
 ```
 backend/src/
+├── app.js          entry point
+├── config/         swagger config
+├── middlewares/     auth, validation
 ├── routes/         API route definitions
 ├── controllers/    request handlers
 ├── services/       business logic
-├── middlewares/     auth, validation
-├── models/         database models
-├── utils/          helper functions
-└── app.js          entry point
+└── utils/          db connection, helpers
 ```
 
 ## 7. API Conventions
@@ -111,6 +113,8 @@ backend/src/
 - Admin endpoints require `ADMIN` role
 - Response format: `{ success, data, message, pagination? }`
 - Validation happens on backend, not frontend
+- Body size limit: 10MB
+- Rate limiting: Auth (10-30/min), Admin (60-120/min), Excel (10-30/min)
 
 ## 8. Database Rules
 
@@ -120,8 +124,20 @@ backend/src/
 - Use foreign keys where appropriate
 - **KHÔNG được DROP TABLE rồi CREATE TABLE lại**
 - **Không modify schema mà không có migration plan**
+- **KHÔNG dùng migration — schema quản lý thủ công qua SQL scripts**
 
-## 9. Docker Development
+## 9. Swagger & Documentation
+
+- Swagger UI: `http://localhost:3000/api-docs`
+- Swagger JSON: `http://localhost:3000/api-docs.json`
+- Khi thêm endpoint mới → phải thêm `@swagger` JSDoc trong route file
+- Docs folder:
+  - `docs/0/` — Backup
+  - `docs/1/` — Kế hoạch, đề xuất
+  - `docs/2/` — Bảo mật, Swagger
+  - `docs/3/` — Bug fixes
+
+## 10. Docker Development
 
 ```
 - Development uses Docker Compose
@@ -131,7 +147,7 @@ backend/src/
 - DO NOT use docker compose down -v unless requested
 ```
 
-## 10. Testing
+## 11. Testing
 
 After changing code:
 1. Check frontend build (`npm run build`)
@@ -139,10 +155,11 @@ After changing code:
 3. Check Docker containers running
 4. Manually verify the feature works
 5. Check existing features still work
+6. Check Swagger UI loads correctly
 
 When automated tests do not exist, perform manual verification.
 
-## 11. Definition of Done
+## 12. Definition of Done
 
 Task is complete when:
 - [ ] Feature works end-to-end
