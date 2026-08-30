@@ -60,6 +60,13 @@ const MapView = ({
   const [resolvingUrl, setResolvingUrl] = useState(false);
   const [myLocation, setMyLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState(null);
+
+  useEffect(() => {
+    if (highlightPosition) {
+      setSelectedPosition(highlightPosition);
+    }
+  }, [highlightPosition]);
 
   const fetchData = async () => {
     try {
@@ -79,7 +86,7 @@ const MapView = ({
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { if (refreshKey) fetchData(); }, [refreshKey]);
 
-  const handleMyLocation = () => {
+  const handleMyLocation = (openForm = false) => {
     if (!navigator.geolocation) {
       alert('Trình duyệt không hỗ trợ định vị');
       return;
@@ -91,6 +98,9 @@ const MapView = ({
         setMyLocation([latitude, longitude]);
         setLocationLoading(false);
         setShowCreateMenu(false);
+        if (openForm && onLocationSelected) {
+          onLocationSelected(latitude, longitude);
+        }
       },
       (error) => {
         setLocationLoading(false);
@@ -164,6 +174,20 @@ const MapView = ({
 
         {highlightPosition && <FlyToLocation position={highlightPosition} />}
         {myLocation && <FlyToLocation position={myLocation} />}
+        {selectedPosition && (
+          <Marker
+            position={selectedPosition}
+            icon={createCustomIcon('#ea4335')}
+          >
+            <Popup>
+              <div className="popup-content">
+                <h3>Vị trí đã chọn</h3>
+                <p><strong>Vĩ độ:</strong> {selectedPosition[0].toFixed(6)}</p>
+                <p><strong>Kinh độ:</strong> {selectedPosition[1].toFixed(6)}</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
         {myLocation && (
           <Marker
             position={myLocation}
@@ -245,7 +269,7 @@ const MapView = ({
         {/* Create Proposal Menu */}
         {showCreateMenu && (
           <div className="map-create-menu">
-            <button className="map-create-option" onClick={handleMyLocation} disabled={locationLoading}>
+            <button className="map-create-option" onClick={() => handleMyLocation(true)} disabled={locationLoading}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
                 <circle cx="12" cy="9" r="2.5"/>
@@ -288,7 +312,7 @@ const MapView = ({
         {/* My Location Button */}
         <button
           className="map-fab map-fab-location"
-          onClick={handleMyLocation}
+          onClick={() => handleMyLocation()}
           disabled={locationLoading}
           title="Vị trí của tôi"
         >
