@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
@@ -18,6 +19,10 @@ const dashboardRoutes = require('./routes/dashboard');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 1. Helmet — Security Headers
+app.use(helmet());
+
+// 2. CORS
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',')
   : ['http://localhost:5173', 'http://localhost:3000'];
@@ -26,12 +31,32 @@ app.use(cors({
   origin: corsOrigins,
   credentials: true
 }));
-app.use(express.json());
 
+// 3. Body parser với size limit — Chống payload attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 4. Rate Limiters
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'production' ? 10 : 30,
   message: { success: false, message: 'Quá nhiều yêu cầu, vui lòng thử lại sau' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 60 : 120,
+  message: { success: false, message: 'Quá nhiều yêu cầu admin, vui lòng thử lại sau' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const excelLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 10 : 30,
+  message: { success: false, message: 'Quá nhiều yêu cầu Excel, vui lòng thử lại sau' },
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -42,7 +67,6 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: 'Station Management API Docs'
 }));
 
-// Swagger JSON
 app.get('/api-docs.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerSpec);
@@ -53,11 +77,11 @@ app.use('/api', testRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/stations', stationsRoutes);
 app.use('/api/proposals', proposalsRoutes);
-app.use('/api/admin/proposals', adminProposalsRoutes);
+app.use('/api/admin/proposals', adminLimiter, adminProposalsRoutes);
 app.use('/api/my-proposals', myProposalsRoutes);
-app.use('/api/admin/users', adminUsersRoutes);
-app.use('/api/admin/excel', excelRoutes);
-app.use('/api/admin/dashboard', dashboardRoutes);
+app.use('/api/admin/users', adminLimiter, adminUsersRoutes);
+app.use('/api/admin/excel', adminLimiter, excelLimiter, excelRoutes);
+app.use('/api/admin/dashboard', adminLimiter, dashboardRoutes);
 app.use('/api/map', mapUtilsRoutes);
 
 // Health check
