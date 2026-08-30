@@ -1,4 +1,5 @@
 import L from 'leaflet';
+import { mapService } from '../services/api';
 
 export const MARKER_COLORS = {
   ACTIVE: '#22c55e',
@@ -80,13 +81,7 @@ export const parseGoogleMapsLink = (url) => {
 
 export const resolveGoogleMapsShortUrl = async (url) => {
   try {
-    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    const response = await fetch(`${API_BASE}/api/map/resolve-map-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    const result = await response.json();
+    const result = await mapService.resolveMapUrl(url);
     if (result.success && result.data) {
       return result.data;
     }

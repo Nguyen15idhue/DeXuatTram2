@@ -100,7 +100,6 @@ const AdminStationsPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
 
     if (!form.name || !form.latitude || !form.longitude || !form.address) {
       setError('Vui lòng nhập đầy đủ thông tin bắt buộc');

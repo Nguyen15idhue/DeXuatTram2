@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const testRoutes = require('./routes/test');
 const authRoutes = require('./routes/auth');
 const stationsRoutes = require('./routes/stations');
@@ -10,23 +11,39 @@ const myProposalsRoutes = require('./routes/myProposals');
 const adminUsersRoutes = require('./routes/adminUsers');
 const excelRoutes = require('./routes/excel');
 const mapUtilsRoutes = require('./routes/mapUtils');
+const dashboardRoutes = require('./routes/dashboard');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+app.use(cors({
+  origin: corsOrigins,
+  credentials: true
+}));
 app.use(express.json());
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 10 : 30,
+  message: { success: false, message: 'Quá nhiều yêu cầu, vui lòng thử lại sau' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // Routes
 app.use('/api', testRoutes);
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/stations', stationsRoutes);
 app.use('/api/proposals', proposalsRoutes);
 app.use('/api/admin/proposals', adminProposalsRoutes);
 app.use('/api/my-proposals', myProposalsRoutes);
 app.use('/api/admin/users', adminUsersRoutes);
 app.use('/api/admin/excel', excelRoutes);
+app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/map', mapUtilsRoutes);
 
 // Health check

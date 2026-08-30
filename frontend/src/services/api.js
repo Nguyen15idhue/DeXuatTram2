@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 export const api = {
   async get(endpoint) {
@@ -169,6 +169,9 @@ export const myProposalService = {
   },
   update(id, data, token) {
     return api.putWithAuth(`/my-proposals/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/my-proposals/${id}`, token);
   }
 };
 
@@ -199,6 +202,30 @@ export const adminUserService = {
   },
   changeRole(id, role, token) {
     return api.patchWithAuth(`/admin/users/${id}/role`, { role }, token);
+  }
+};
+
+export const authService = {
+  login(email, password) {
+    return api.post('/auth/login', { email, password });
+  },
+  register(full_name, email, phone, password) {
+    return api.post('/auth/register', { full_name, email, phone, password });
+  },
+  fetchUser(token) {
+    return api.getWithAuth('/auth/me', token);
+  }
+};
+
+export const mapService = {
+  resolveMapUrl(url) {
+    return api.post('/map/resolve-map-url', { url });
+  }
+};
+
+export const dashboardService = {
+  getStats(token) {
+    return api.getWithAuth('/admin/dashboard', token);
   }
 };
 

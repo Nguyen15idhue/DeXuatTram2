@@ -27,7 +27,7 @@ services:
       - DB_USER=root
       - DB_PASSWORD=password
       - DB_NAME=station_management
-      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - JWT_SECRET=station-mgmt-dev-secret-2024-xK9mPz
     depends_on:
       mysql:
         condition: service_healthy

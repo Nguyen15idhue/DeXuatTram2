@@ -261,6 +261,7 @@ router.post('/import/preview', requireAuth, requireAdmin, upload.single('file'),
 });
 
 router.post('/import/confirm', requireAuth, requireAdmin, async (req, res) => {
+  const connection = await pool.getConnection();
   try {
     const { rows } = req.body;
 
@@ -268,13 +269,15 @@ router.post('/import/confirm', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không có dữ liệu để import' });
     }
 
+    await connection.beginTransaction();
+
     let imported = 0;
     let failed = 0;
     const failDetails = [];
 
     for (const row of rows) {
       try {
-        await pool.query(
+        await connection.query(
           'INSERT INTO stations (name, latitude, longitude, address, status, description) VALUES (?, ?, ?, ?, ?, ?)',
           [row.name, row.latitude, row.longitude, row.address, row.status || 'ACTIVE', row.description || '']
         );
@@ -285,14 +288,28 @@ router.post('/import/confirm', requireAuth, requireAdmin, async (req, res) => {
       }
     }
 
+    if (failed > 0) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Import thất bại: ${failed} dòng lỗi. Tất cả đã được hoàn tác.`,
+        data: { imported: 0, failed, failDetails }
+      });
+    }
+
+    await connection.commit();
+
     res.json({
       success: true,
       data: { imported, failed, failDetails },
-      message: `Import thành công: ${imported} trạm${failed > 0 ? `, ${failed} trạm thất bại` : ''}`
+      message: `Import thành công: ${imported} trạm`
     });
   } catch (error) {
+    await connection.rollback();
     console.error('Confirm import error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  } finally {
+    connection.release();
   }
 });
 

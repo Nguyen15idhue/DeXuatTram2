@@ -92,7 +92,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateStation, async (req,
     }
 
     await pool.query(
-      'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ? WHERE id = ?',
+      'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ?, updated_at = NOW() WHERE id = ?',
       [name, latitude, longitude, address, status, description || '', id]
     );
 

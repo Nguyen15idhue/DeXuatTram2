@@ -1,8 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { authService } from '../services/api';
 
 const AuthContext = createContext(null);
-
-const API_URL = 'http://localhost:3000/api';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -27,12 +26,7 @@ export const AuthProvider = ({ children }) => {
 
   const fetchUser = async () => {
     try {
-      const response = await fetch(`${API_URL}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await response.json();
+      const data = await authService.fetchUser(token);
       
       if (data.success) {
         setUser(data.data.user);
@@ -48,12 +42,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (email, password) => {
-    const response = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await response.json();
+    const data = await authService.login(email, password);
     
     if (data.success) {
       localStorage.setItem('token', data.data.token);
@@ -65,12 +54,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (full_name, email, phone, password) => {
-    const response = await fetch(`${API_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ full_name, email, phone, password })
-    });
-    const data = await response.json();
+    const data = await authService.register(full_name, email, phone, password);
     
     if (data.success) {
       localStorage.setItem('token', data.data.token);

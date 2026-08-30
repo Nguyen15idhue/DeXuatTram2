@@ -80,7 +80,7 @@ router.put('/:id/status', requireAuth, requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
 
-    await pool.query('UPDATE station_proposals SET status = ? WHERE id = ?', [status, req.params.id]);
+    await pool.query('UPDATE station_proposals SET status = ?, updated_at = NOW() WHERE id = ?', [status, req.params.id]);
     const [proposal] = await pool.query(
       `SELECT p.*, u.full_name as user_name FROM station_proposals p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
       [req.params.id]

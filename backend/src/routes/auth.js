@@ -202,10 +202,10 @@ router.put('/profile', requireAuth, async (req, res) => {
       }
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(new_password, salt);
-      await pool.query('UPDATE users SET full_name = ?, phone = ?, password = ? WHERE id = ?',
+      await pool.query('UPDATE users SET full_name = ?, phone = ?, password = ?, updated_at = NOW() WHERE id = ?',
         [full_name, phone || '', hashedPassword, req.user.id]);
     } else {
-      await pool.query('UPDATE users SET full_name = ?, phone = ? WHERE id = ?',
+      await pool.query('UPDATE users SET full_name = ?, phone = ?, updated_at = NOW() WHERE id = ?',
         [full_name, phone || '', req.user.id]);
     }
 

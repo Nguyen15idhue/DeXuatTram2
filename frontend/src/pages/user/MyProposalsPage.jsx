@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { myProposalService } from '../../services/api';
 import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
@@ -21,6 +22,7 @@ const MyProposalsPage = () => {
     area: '', land_type: '', description: ''
   });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
 
   const loadProposals = useCallback(async (page = 1) => {
     try {
@@ -78,6 +80,26 @@ const MyProposalsPage = () => {
     }
   };
 
+  const handleDeleteClick = (id) => {
+    setConfirmDelete({ isOpen: true, id });
+  };
+
+  const handleConfirmDelete = async () => {
+    const { id } = confirmDelete;
+    setConfirmDelete({ isOpen: false, id: null });
+    try {
+      const res = await myProposalService.delete(id, token);
+      if (res.success) {
+        setToast({ message: 'Xóa đề xuất thành công', type: 'success' });
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Xóa thất bại');
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+    }
+  };
+
   if (loading && proposals.length === 0) return <Loading message="Đang tải đề xuất..." />;
 
   return (
@@ -86,6 +108,16 @@ const MyProposalsPage = () => {
         message={toast.message}
         type={toast.type}
         onClose={() => setToast({ message: '', type: 'success' })}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDelete.isOpen}
+        title="Xóa đề xuất"
+        message="Bạn có chắc chắn muốn xóa đề xuất này?"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null })}
+        confirmText="Xóa"
+        type="danger"
       />
 
       <div className="page-header">
@@ -174,7 +206,10 @@ const MyProposalsPage = () => {
                 <td>{new Date(p.created_at).toLocaleDateString('vi-VN')}</td>
                 <td>
                   {p.status === 'PENDING' && (
-                    <button className="btn btn-sm btn-edit" onClick={() => openEdit(p)}>Sửa</button>
+                    <>
+                      <button className="btn btn-sm btn-edit" onClick={() => openEdit(p)}>Sửa</button>
+                      <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(p.id)}>Xóa</button>
+                    </>
                   )}
                 </td>
               </tr>

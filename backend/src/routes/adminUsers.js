@@ -94,12 +94,12 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateUser, async (req, re
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
       await pool.query(
-        'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ? WHERE id = ?',
+        'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, updated_at = NOW() WHERE id = ?',
         [full_name, email, phone || '', hashedPassword, role, status, id]
       );
     } else {
       await pool.query(
-        'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ? WHERE id = ?',
+        'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, updated_at = NOW() WHERE id = ?',
         [full_name, email, phone || '', role, status, id]
       );
     }
@@ -130,6 +130,10 @@ router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không thể xóa admin' });
     }
 
+    if (parseInt(id) === req.user.id) {
+      return res.status(400).json({ success: false, message: 'Không thể xóa chính mình' });
+    }
+
     await pool.query('DELETE FROM users WHERE id = ?', [id]);
     res.json({ success: true, message: 'Xóa user thành công' });
   } catch (error) {
@@ -149,7 +153,7 @@ router.patch('/:id/lock', requireAuth, requireAdmin, async (req, res) => {
     }
 
     const newStatus = existing[0].status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
-    await pool.query('UPDATE users SET status = ? WHERE id = ?', [newStatus, id]);
+    await pool.query('UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?', [newStatus, id]);
 
     const [user] = await pool.query(
       'SELECT id, full_name, email, phone, role, status, created_at FROM users WHERE id = ?',
@@ -178,7 +182,7 @@ router.patch('/:id/role', requireAuth, requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    await pool.query('UPDATE users SET role = ? WHERE id = ?', [role, id]);
+    await pool.query('UPDATE users SET role = ?, updated_at = NOW() WHERE id = ?', [role, id]);
 
     const [user] = await pool.query(
       'SELECT id, full_name, email, phone, role, status, created_at FROM users WHERE id = ?',

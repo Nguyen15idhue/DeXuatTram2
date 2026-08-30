@@ -9,7 +9,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 
 const AdminUsersPage = () => {
-  const { token } = useAuth();
+  const { token, user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -269,7 +269,7 @@ const AdminUsersPage = () => {
                   <button className="btn btn-sm btn-lock" onClick={() => handleToggleLock(u.id)}>
                     {u.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
                   </button>
-                  {u.role !== 'ADMIN' && (
+                  {u.role !== 'ADMIN' && u.id !== currentUser.id && (
                     <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(u.id, u.full_name)}>Xóa</button>
                   )}
                 </td>

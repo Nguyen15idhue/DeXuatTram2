@@ -91,9 +91,6 @@ const MapView = ({
         setMyLocation([latitude, longitude]);
         setLocationLoading(false);
         setShowCreateMenu(false);
-        if (onLocationSelected) {
-          onLocationSelected(latitude, longitude);
-        }
       },
       (error) => {
         setLocationLoading(false);
@@ -144,13 +141,13 @@ const MapView = ({
     return <div className="map-loading">Đang tải bản đồ...</div>;
   }
 
-  const position = [10.7626, 106.6601];
+  const position = [14.0583, 108.2772];
 
   return (
     <div style={{ flex: 1, height: '100%', width: '100%', position: 'relative' }}>
       <MapContainer
         center={position}
-        zoom={12}
+        zoom={6}
         scrollWheelZoom={true}
         style={{ height: '100%', width: '100%' }}
       >
@@ -167,6 +164,20 @@ const MapView = ({
 
         {highlightPosition && <FlyToLocation position={highlightPosition} />}
         {myLocation && <FlyToLocation position={myLocation} />}
+        {myLocation && (
+          <Marker
+            position={myLocation}
+            icon={createCustomIcon('#4285f4')}
+          >
+            <Popup>
+              <div className="popup-content">
+                <h3>Vị trí của tôi</h3>
+                <p><strong>Vĩ độ:</strong> {myLocation[0].toFixed(6)}</p>
+                <p><strong>Kinh độ:</strong> {myLocation[1].toFixed(6)}</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {stations.map((station) => (
           <Marker

@@ -75,7 +75,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     await pool.query(
       `UPDATE station_proposals 
-       SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?
+       SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, updated_at = NOW()
        WHERE id = ? AND user_id = ?`,
       [owner_name, owner_phone, address, area || '', land_type || '', description || '', id, req.user.id]
     );
@@ -88,6 +88,33 @@ router.put('/:id', requireAuth, async (req, res) => {
     res.json({ success: true, data: proposal[0], message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
     console.error('Update my proposal error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
+
+// DELETE /api/my-proposals/:id - User delete own proposal (only PENDING status)
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [existing] = await pool.query(
+      'SELECT id, status FROM station_proposals WHERE id = ? AND user_id = ?',
+      [id, req.user.id]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+
+    if (existing[0].status !== 'PENDING') {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể xóa đề xuất đang ở trạng thái PENDING' });
+    }
+
+    await pool.query('DELETE FROM station_proposals WHERE id = ? AND user_id = ?', [id, req.user.id]);
+
+    res.json({ success: true, message: 'Xóa đề xuất thành công' });
+  } catch (error) {
+    console.error('Delete my proposal error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 });
