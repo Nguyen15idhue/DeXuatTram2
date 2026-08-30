@@ -20,6 +20,8 @@ const formsRoutes = require('./routes/forms');
 const formFieldsRoutes = require('./routes/formFields');
 const viewsRoutes = require('./routes/views');
 const viewFieldsRoutes = require('./routes/viewFields');
+const dynamicEngineRoutes = require('./routes/dynamicEngine');
+const filesRoutes = require('./routes/files');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -93,6 +95,12 @@ app.use('/api/forms', formsRoutes);
 app.use('/api/forms', formFieldsRoutes);
 app.use('/api/views', viewsRoutes);
 app.use('/api/views', viewFieldsRoutes);
+app.use('/api/dynamic', dynamicEngineRoutes);
+app.use('/api/files', filesRoutes);
+
+// Static file serving for uploads
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, '../storage/uploads')));
 
 // Health check
 app.get('/health', (req, res) => {

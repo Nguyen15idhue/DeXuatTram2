@@ -41,10 +41,11 @@ exports.generateToken = (id, email, role) => {
   return jwt.sign({ id, email, role }, JWT_SECRET, { expiresIn: '7d' });
 };
 
-exports.updateProfile = async (id, fullName, phone) => {
+exports.updateProfile = async (id, fullName, phone, customData) => {
+  const customDataJson = customData ? JSON.stringify(customData) : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, phone = ?, updated_at = NOW() WHERE id = ?',
-    [fullName, phone || '', id]
+    'UPDATE users SET full_name = ?, phone = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
+    [fullName, phone || '', customDataJson, id]
   );
 };
 

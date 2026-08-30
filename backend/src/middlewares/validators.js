@@ -1,6 +1,49 @@
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\d{10}$/;
 
+function parseOptions(optionsJson) {
+  if (!optionsJson) return [];
+  if (Array.isArray(optionsJson)) return optionsJson;
+  if (typeof optionsJson === 'string') {
+    try { return JSON.parse(optionsJson); } catch { return []; }
+  }
+  return optionsJson;
+}
+
+function validateDynamicFields(data, fieldDefs) {
+  if (!fieldDefs || fieldDefs.length === 0) return [];
+  const errors = [];
+
+  for (const fd of fieldDefs) {
+    const value = data[fd.key];
+    if (fd.required && (value === undefined || value === null || value === '')) {
+      errors.push(`${fd.label} là bắt buộc`);
+      continue;
+    }
+    if (value === undefined || value === null || value === '') continue;
+
+    switch (fd.type) {
+      case 'number':
+        if (isNaN(Number(value))) errors.push(`${fd.label} phải là số`);
+        break;
+      case 'email':
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) errors.push(`${fd.label} không hợp lệ`);
+        break;
+      case 'phone':
+        if (!/^\d{10}$/.test(value)) errors.push(`${fd.label} phải có đúng 10 chữ số`);
+        break;
+      case 'select':
+        const opts = parseOptions(fd.options);
+        if (opts.length > 0 && !opts.includes(value)) errors.push(`${fd.label} không hợp lệ`);
+        break;
+      case 'multiselect':
+        if (!Array.isArray(value)) errors.push(`${fd.label} phải là mảng`);
+        break;
+    }
+  }
+  return errors;
+}
+
 function validateEmail(email) {
   if (!email || typeof email !== 'string') return 'Email là bắt buộc';
   if (!EMAIL_REGEX.test(email.trim())) return 'Email không hợp lệ';
@@ -163,6 +206,7 @@ module.exports = {
   validateLongitude,
   validateRequired,
   validateEnum,
+  validateDynamicFields,
   validateRegister,
   validateLogin,
   validateCreateStation,

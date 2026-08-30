@@ -12,7 +12,7 @@
 |-------|------------|---------------|------------------|---------|
 | Phase 1: Database Migration | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 6 SQL files, 9 tables |
 | Phase 2: Backend CRUD Config | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 15 files, 27 endpoints |
-| Phase 3: Backend Engine | ⏳ Chưa bắt đầu | — | — | |
+| Phase 3: Backend Engine | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 7 files + 8 files modified |
 | Phase 4: Frontend Admin | ⏳ Chưa bắt đầu | — | — | |
 | Phase 5: Frontend Dynamic | ⏳ Chưa bắt đầu | — | — | |
 | Phase 6: Integration | ⏳ Chưa bắt đầu | — | — | |
@@ -194,42 +194,84 @@ Edge cases tested:
 ### Files đã tạo
 | File | Loại | Trạng thái | Dòng |
 |------|------|------------|------|
-| `services/dynamicUtils.js` | service (helper) | ⏳ | |
-| `routes/dynamicEngine.js` | route | ⏳ | |
-| `controllers/dynamicEngineController.js` | controller | ⏳ | |
-| `services/dynamicEngineService.js` | service | ⏳ | |
-| `routes/files.js` | route | ⏳ | |
-| `controllers/fileController.js` | controller | ⏳ | |
-| `services/fileService.js` | service | ⏳ | |
+| `services/dynamicUtils.js` | service (helper) | ✅ | 155 |
+| `routes/dynamicEngine.js` | route | ✅ | 95 |
+| `controllers/dynamicEngineController.js` | controller | ✅ | 80 |
+| `services/dynamicEngineService.js` | service | ✅ | 110 |
+| `routes/files.js` | route | ✅ | 100 |
+| `controllers/fileController.js` | controller | ✅ | 60 |
+| `services/fileService.js` | service | ✅ | 70 |
 
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `app.js` | ⏳ | Mount routes + static serving |
-| `services/stationService.js` | ⏳ | Hỗ trợ custom_data |
-| `services/proposalService.js` | ⏳ | Hỗ trợ custom_data |
-| `services/myProposalService.js` | ⏳ | Hỗ trợ custom_data |
-| `services/adminProposalService.js` | ⏳ | Hỗ trợ custom_data |
-| `services/adminUserService.js` | ⏳ | Hỗ trợ custom_data |
-| `services/authService.js` | ⏳ | Profile custom_data |
-| `middlewares/validators.js` | ⏳ | Dynamic validation |
-
-### API endpoints mới (4 endpoints)
-| Endpoint | Method | Auth | Test |
-|----------|--------|------|------|
-| `/api/dynamic/:entity/form/:formId` | GET | public | ⏳ |
-| `/api/dynamic/:entity/view/:viewId` | GET | public | ⏳ |
-| `/api/dynamic/:entity/validate` | POST | auth | ⏳ |
-| `/api/files/upload` | POST | auth | ⏳ |
-| `/api/files/:id` | GET | auth | ⏳ |
-| `/api/files/:id/download` | GET | auth | ⏳ |
-| `/api/files/:id` | DELETE | auth | ⏳ |
+| `app.js` | ✅ | Mount dynamicEngine + files routes + static serving |
+| `services/stationService.js` | ✅ | Hỗ trợ custom_data (split/merge) |
+| `services/proposalService.js` | ✅ | Hỗ trợ custom_data (split/merge) |
+| `services/myProposalService.js` | ✅ | Hỗ trợ custom_data (split/merge) |
+| `services/adminProposalService.js` | ✅ | Hỗ trợ custom_data (split/merge) |
+| `services/adminUserService.js` | ✅ | Hỗ trợ custom_data (split/merge) |
+| `services/authService.js` | ✅ | updateProfile hỗ trợ custom_data |
+| `middlewares/validators.js` | ✅ | Thêm validateDynamicFields |
 
 ### Files đã tạo (khác)
 | File | Trạng thái |
 |------|------------|
-| `storage/uploads/` | ⏳ |
-| `.gitignore` (thêm storage/uploads/*) | ⏳ |
+| `storage/uploads/` | ✅ |
+| `.gitignore` (thêm backend/storage/uploads/*) | ✅ |
+
+### API endpoints mới (7 endpoints)
+| Endpoint | Method | Auth | Test | Ghi chú |
+|----------|--------|------|------|---------|
+| `/api/dynamic/:entity/form/:formId` | GET | public | ✅ | Render form config |
+| `/api/dynamic/:entity/view/:viewId` | GET | public | ✅ | Render view config |
+| `/api/dynamic/:entity/validate` | POST | auth | ✅ | Validate data theo field_defs |
+| `/api/files/upload` | POST | auth | ✅ | Upload file (multer) |
+| `/api/files/:id` | GET | auth | ✅ | Get file metadata |
+| `/api/files/:id/download` | GET | auth | ✅ | Download file (binary stream) |
+| `/api/files/:id` | DELETE | auth | ✅ | Soft delete + physical delete |
+
+### dynamicUtils.js functions
+| Function | Mô tả | Test |
+|----------|-------|------|
+| `parseOptions(optionsJson)` | Parse JSON options | ✅ |
+| `validateField(fieldDef, value)` | Validate 1 field theo type | ✅ |
+| `validateData(entity, data, fieldDefs)` | Validate all fields | ✅ |
+| `splitData(entity, data, fieldDefs)` | Tách fixed vs dynamic | ✅ |
+| `mergeData(row, fieldDefs)` | Merge fixed + custom_data | ✅ |
+| `buildDynamicSetClause(data, fieldDefs)` | Build SQL SET JSON | ✅ |
+| `getFieldDefinitionsByEntity(entity)` | Get field defs từ DB | ✅ |
+
+### Service files modified
+| Service | Thay đổi | Test |
+|---------|----------|------|
+| `stationService.js` | getAll/getById/create/update dùng split/merge | ✅ |
+| `proposalService.js` | getAll/getById/create dùng split/merge | ✅ |
+| `myProposalService.js` | getAll/getById dùng split/merge | ✅ |
+| `adminProposalService.js` | getAll dùng split/merge | ✅ |
+| `adminUserService.js` | getAll dùng split/merge | ✅ |
+| `authService.js` | updateProfile hỗ trợ custom_data param | ✅ |
+
+### Files endpoints tested
+| Test | Kết quả |
+|------|---------|
+| Upload file →保存 trong storage/uploads/ | ✅ |
+| Download file → binary stream | ✅ |
+| Delete file → soft delete + physical delete | ✅ |
+| Storage key includes subdir path | ✅ |
+| Static serving /uploads/ | ✅ |
+
+### Regression test
+| Feature | Kết quả |
+|---------|---------|
+| Login | ✅ |
+| Health | ✅ |
+| Stations | ✅ |
+| Proposals | ✅ |
+| Admin Users | ✅ |
+| Dashboard | ✅ |
+| Field Definitions | ✅ |
+| Swagger | ✅ |
 
 ---
 

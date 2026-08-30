@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const dynamicUtils = require('./dynamicUtils');
 
 exports.getAllProposals = async (status, page, limit) => {
   const offset = (page - 1) * limit;
@@ -18,7 +19,7 @@ exports.getAllProposals = async (status, page, limit) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.created_at, u.full_name as user_name, u.email as user_email
+            p.custom_data, p.created_at, u.full_name as user_name, u.email as user_email
     FROM station_proposals p
     JOIN users u ON p.user_id = u.id
     ${whereClause}
@@ -27,8 +28,11 @@ exports.getAllProposals = async (status, page, limit) => {
     [...params, limit, offset]
   );
 
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const merged = proposals.map(p => dynamicUtils.mergeData(p, fieldDefs));
+
   return {
-    proposals,
+    proposals: merged,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
   };
 };

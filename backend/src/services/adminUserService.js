@@ -1,6 +1,7 @@
 const pool = require('../utils/db');
+const dynamicUtils = require('./dynamicUtils');
 
-const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, created_at FROM users';
+const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, custom_data, created_at FROM users';
 
 exports.getAllUsers = async (search, page, limit) => {
   const offset = (page - 1) * limit;
@@ -22,8 +23,11 @@ exports.getAllUsers = async (search, page, limit) => {
     [...params, limit, offset]
   );
 
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
+  const merged = users.map(u => dynamicUtils.mergeData(u, fieldDefs));
+
   return {
-    users,
+    users: merged,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
   };
 };
