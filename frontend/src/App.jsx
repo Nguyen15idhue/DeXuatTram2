@@ -20,6 +20,11 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminStationsPage from './pages/admin/AdminStationsPage';
 import AdminProposalsPage from './pages/admin/AdminProposalsPage';
+import AdminFieldsPage from './pages/admin/AdminFieldsPage';
+import AdminFormsPage from './pages/admin/AdminFormsPage';
+import AdminFormBuilderPage from './pages/admin/AdminFormBuilderPage';
+import AdminViewsPage from './pages/admin/AdminViewsPage';
+import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
 
 import './App.css';
 
@@ -47,6 +52,11 @@ function App() {
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<AdminProposalsPage />} />
+            <Route path="/admin/fields" element={<AdminFieldsPage />} />
+            <Route path="/admin/forms" element={<AdminFormsPage />} />
+            <Route path="/admin/forms/:id/edit" element={<AdminFormBuilderPage />} />
+            <Route path="/admin/views" element={<AdminViewsPage />} />
+            <Route path="/admin/views/:id/edit" element={<AdminViewBuilderPage />} />
           </Route>
 
           {/* Default redirect */}

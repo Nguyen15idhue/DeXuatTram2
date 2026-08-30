@@ -236,8 +236,17 @@ button:disabled {
 
 .sidebar-divider {
   height: 1px;
-  background: #34495e;
+  background: rgba(255, 255, 255, 0.1);
   margin: 8px 20px;
+}
+
+.sidebar-group-label {
+  padding: 8px 20px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
 }
 
 .sidebar-nav-link-user {
@@ -1806,4 +1815,216 @@ select:focus {
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     padding: 8px 12px;
   }
+}
+
+/* DragDropList */
+.drag-drop-list {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.drag-drop-add {
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+}
+.drag-drop-empty {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  background: #fafafa;
+}
+.drag-drop-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.drag-drop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: grab;
+  transition: background 0.15s;
+}
+.drag-drop-item:last-child {
+  border-bottom: none;
+}
+.drag-drop-item:hover {
+  background: #f5f7ff;
+}
+.drag-drop-item.dragging {
+  opacity: 0.4;
+  background: #e8f0fe;
+}
+.drag-drop-item.drag-over {
+  border-top: 2px solid #4a6cf7;
+}
+.drag-handle {
+  cursor: grab;
+  color: #bbb;
+  font-size: 16px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.drag-drop-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* FieldManager */
+.admin-fields-page .field-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.admin-fields-page .field-form .form-group.full-width {
+  grid-column: 1 / -1;
+}
+.admin-fields-page .field-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #e8f0fe;
+  color: #4a6cf7;
+}
+.admin-fields-page .field-entity-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+/* FormBuilder & ViewBuilder */
+.builder-layout {
+  display: flex;
+  gap: 20px;
+  min-height: 400px;
+}
+.builder-panel {
+  flex: 1;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.builder-panel-header {
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  font-size: 14px;
+}
+.builder-panel-body {
+  padding: 12px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+.builder-available-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.builder-available-item:hover {
+  border-color: #4a6cf7;
+  background: #f5f7ff;
+}
+.builder-assigned-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: #fff;
+}
+.builder-assigned-item .field-label {
+  flex: 1;
+  font-weight: 500;
+  font-size: 13px;
+}
+.builder-assigned-item .field-config {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.builder-assigned-item .field-config label {
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.builder-assigned-item .field-config input[type="number"] {
+  width: 60px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+.builder-assigned-item .field-config input[type="checkbox"] {
+  margin: 0;
+}
+.builder-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+.builder-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
+/* Admin pages with config sections */
+.admin-forms-page .form-list-item,
+.admin-views-page .view-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: #fff;
+  transition: box-shadow 0.15s;
+}
+.admin-forms-page .form-list-item:hover,
+.admin-views-page .view-list-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.admin-forms-page .form-info,
+.admin-views-page .view-info {
+  flex: 1;
+}
+.admin-forms-page .form-info h3,
+.admin-views-page .view-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+}
+.admin-forms-page .form-info p,
+.admin-views-page .view-info p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+.admin-forms-page .form-actions,
+.admin-views-page .view-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }

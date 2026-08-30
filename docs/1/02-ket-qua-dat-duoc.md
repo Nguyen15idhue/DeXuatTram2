@@ -13,7 +13,7 @@
 | Phase 1: Database Migration | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 6 SQL files, 9 tables |
 | Phase 2: Backend CRUD Config | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 15 files, 27 endpoints |
 | Phase 3: Backend Engine | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 7 files + 8 files modified |
-| Phase 4: Frontend Admin | ⏳ Chưa bắt đầu | — | — | |
+| Phase 4: Frontend Admin | ✅ Hoàn thành | 2026-08-30 | 2026-08-30 | 4 components + 5 pages |
 | Phase 5: Frontend Dynamic | ⏳ Chưa bắt đầu | — | — | |
 | Phase 6: Integration | ⏳ Chưa bắt đầu | — | — | |
 | Phase 7: Excel Dynamic | ⏳ Chưa bắt đầu | — | — | |
@@ -278,23 +278,100 @@ Edge cases tested:
 ## PHASE 4: FRONTEND ADMIN
 
 ### Files đã tạo
-| File | Trạng thái | Dòng |
-|------|------------|------|
-| `components/admin/DragDropList.jsx` | ⏳ | |
-| `components/admin/FieldManager.jsx` | ⏳ | |
-| `components/admin/FormBuilder.jsx` | ⏳ | |
-| `components/admin/ViewBuilder.jsx` | ⏳ | |
-| `pages/admin/AdminFieldsPage.jsx` | ⏳ | |
-| `pages/admin/AdminFormsPage.jsx` | ⏳ | |
-| `pages/admin/AdminFormBuilderPage.jsx` | ⏳ | |
-| `pages/admin/AdminViewsPage.jsx` | ⏳ | |
-| `pages/admin/AdminViewBuilderPage.jsx` | ⏳ | |
+| File | Loại | Trạng thái | Dòng |
+|------|------|------------|------|
+| `components/admin/DragDropList.jsx` | component | ✅ | ~80 |
+| `components/admin/FieldManager.jsx` | component | ✅ | ~200 |
+| `components/admin/FormBuilder.jsx` | component | ✅ | ~200 |
+| `components/admin/ViewBuilder.jsx` | component | ✅ | ~200 |
+| `pages/admin/AdminFieldsPage.jsx` | page | ✅ | ~5 |
+| `pages/admin/AdminFormsPage.jsx` | page | ✅ | ~140 |
+| `pages/admin/AdminFormBuilderPage.jsx` | page | ✅ | ~15 |
+| `pages/admin/AdminViewsPage.jsx` | page | ✅ | ~140 |
+| `pages/admin/AdminViewBuilderPage.jsx` | page | ✅ | ~15 |
 
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `App.jsx` | ⏳ | 5 routes mới |
-| `layouts/AdminLayout.jsx` | ⏳ | Menu "Cấu hình" + 5 submenu items |
+| `App.jsx` | ✅ | 5 imports + 5 routes mới |
+| `layouts/AdminLayout.jsx` | ✅ | Menu "Cấu hình" + 3 submenu items + group label rendering |
+| `App.css` | ✅ | CSS cho DragDropList, FieldManager, FormBuilder, ViewBuilder, sidebar-group-label |
+| `services/api.js` | ✅ | 7 API services mới (fieldDefinition, form, formField, view, viewField, dynamic) |
+
+### Component details
+
+**DragDropList.jsx:**
+- HTML5 Drag and Drop API
+- Props: items, onReorder, renderItem, onAdd, onRemove
+- States: dragIndex, overIndex, dragItem ref
+- Classes: .drag-drop-list, .drag-drop-item, .dragging, .drag-over, .drag-handle
+
+**FieldManager.jsx:**
+- Table field definitions với filter entity + status
+- Form create/edit: entity, key, label, type, placeholder, help_text, options, required
+- Toggle active/inactive bằng click badge
+- Pagination hoạt động
+- Field types: 13 loại (text, textarea, number, email, phone, url, date, datetime, boolean, select, multiselect, file, formula)
+
+**FormBuilder.jsx:**
+- Panel trái: available fields từ field_definitions (filter theo entity)
+- Panel phải: form layout với DragDropList
+- Config mỗi field: visible (checkbox), colSpan (number)
+- Header form: entity selector, name, description
+- Save → POST/PUT forms + POST/PUT form_fields
+
+**ViewBuilder.jsx:**
+- Panel trái: available fields
+- Panel phải: table columns với DragDropList
+- Config: visible, width, sortable, filterable
+- Save → POST/PUT views + POST/PUT view_fields
+
+### Pages details
+
+**AdminFieldsPage:** → render FieldManager component
+**AdminFormsPage:** Danh sách forms + filter entity + create modal + delete confirm + link vào builder
+**AdminFormBuilderPage:** Route `/admin/forms/:id/edit` → render FormBuilder
+**AdminViewsPage:** Danh sách views + filter entity + create modal + delete confirm + link vào builder
+**AdminViewBuilderPage:** Route `/admin/views/:id/edit` → render ViewBuilder
+
+### Routes mới
+| Route | Page | Mô tả |
+|-------|------|-------|
+| `/admin/fields` | AdminFieldsPage | Quản lý field definitions |
+| `/admin/forms` | AdminFormsPage | Danh sách forms |
+| `/admin/forms/:id/edit` | AdminFormBuilderPage | Chỉnh sửa form |
+| `/admin/views` | AdminViewsPage | Danh sách views |
+| `/admin/views/:id/edit` | AdminViewBuilderPage | Chỉnh sửa view |
+
+### Menu "Cấu hình"
+```
+⚙️ Cấu hình
+   ├── 📝 Field Definitions    → /admin/fields
+   ├── 📄 Forms Manager        → /admin/forms
+   └── 📊 Views Manager        → /admin/views
+```
+
+### API services mới (api.js)
+| Service | Methods |
+|---------|---------|
+| fieldDefinitionService | getAll, getById, getByEntity, create, update, delete, updateStatus |
+| formService | getAll, getById, create, update, delete |
+| formFieldService | getByForm, add, update, remove, reorder |
+| viewService | getAll, getById, create, update, delete |
+| viewFieldService | getByView, add, update, remove, reorder |
+| dynamicService | getFormConfig, getViewConfig, validate |
+
+### Test results
+| Test | Kết quả |
+|------|---------|
+| Frontend build (vite build) | ✅ 109 modules, 0 errors |
+| Login API | ✅ |
+| Field Definitions API (list, entity filter) | ✅ 9 records |
+| Forms API (list, detail, fields) | ✅ 3 forms |
+| Views API (list, detail, fields) | ✅ 2 views |
+| Dynamic engine form config | ✅ |
+| Swagger UI loads | ✅ 45 paths |
+| Hot reload | ✅ Docker volume mount |
 
 ---
 
@@ -389,14 +466,15 @@ Edge cases tested:
 ### Tổng số files
 | Loại | Số lượng |
 |------|----------|
-| Files mới backend (route) | ~8 |
-| Files mới backend (controller) | ~7 |
-| Files mới backend (service) | ~9 |
-| Files mới frontend | ~14 |
-| Files sửa backend (service) | ~7 |
-| Files sửa frontend | ~7 |
+| Files mới backend (route) | 8 |
+| Files mới backend (controller) | 7 |
+| Files mới backend (service) | 9 |
+| Files mới frontend (component) | 4 |
+| Files mới frontend (page) | 5 |
+| Files sửa backend (service) | 7 |
+| Files sửa frontend | 4 (App.jsx, AdminLayout, App.css, api.js) |
 | Files SQL | 6 |
-| **Tổng** | **~58** |
+| **Tổng** | **54** |
 
 ### Tổng số API endpoints
 | Loại | Số lượng |

@@ -229,6 +229,117 @@ export const dashboardService = {
   }
 };
 
+export const fieldDefinitionService = {
+  getAll(queryString, token) {
+    const query = queryString ? `?${queryString}` : '';
+    return api.getWithAuth(`/field-definitions${query}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/field-definitions/${id}`, token);
+  },
+  getByEntity(entity) {
+    return api.get(`/field-definitions/entity/${entity}`);
+  },
+  create(data, token) {
+    return api.postWithAuth('/field-definitions', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/field-definitions/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/field-definitions/${id}`, token);
+  },
+  updateStatus(id, status, token) {
+    return api.patchWithAuth(`/field-definitions/${id}/status`, { status }, token);
+  }
+};
+
+export const formService = {
+  getAll(queryString, token) {
+    const query = queryString ? `?${queryString}` : '';
+    return api.getWithAuth(`/forms${query}`, token);
+  },
+  getById(id) {
+    return api.get(`/forms/${id}`);
+  },
+  create(data, token) {
+    return api.postWithAuth('/forms', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/forms/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/forms/${id}`, token);
+  }
+};
+
+export const formFieldService = {
+  getByForm(formId) {
+    return api.get(`/forms/${formId}/fields`);
+  },
+  add(formId, data, token) {
+    return api.postWithAuth(`/forms/${formId}/fields`, data, token);
+  },
+  update(formId, id, data, token) {
+    return api.putWithAuth(`/forms/${formId}/fields/${id}`, data, token);
+  },
+  remove(formId, id, token) {
+    return api.deleteWithAuth(`/forms/${formId}/fields/${id}`, token);
+  },
+  reorder(formId, items, token) {
+    return api.putWithAuth(`/forms/${formId}/fields/reorder`, { items }, token);
+  }
+};
+
+export const viewService = {
+  getAll(queryString, token) {
+    const query = queryString ? `?${queryString}` : '';
+    return api.getWithAuth(`/views${query}`, token);
+  },
+  getById(id) {
+    return api.get(`/views/${id}`);
+  },
+  create(data, token) {
+    return api.postWithAuth('/views', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/views/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/views/${id}`, token);
+  }
+};
+
+export const viewFieldService = {
+  getByView(viewId) {
+    return api.get(`/views/${viewId}/fields`);
+  },
+  add(viewId, data, token) {
+    return api.postWithAuth(`/views/${viewId}/fields`, data, token);
+  },
+  update(viewId, id, data, token) {
+    return api.putWithAuth(`/views/${viewId}/fields/${id}`, data, token);
+  },
+  remove(viewId, id, token) {
+    return api.deleteWithAuth(`/views/${viewId}/fields/${id}`, token);
+  },
+  reorder(viewId, items, token) {
+    return api.putWithAuth(`/views/${viewId}/fields/reorder`, { items }, token);
+  }
+};
+
+export const dynamicService = {
+  getFormConfig(entity, formId) {
+    return api.get(`/dynamic/${entity}/form/${formId}`);
+  },
+  getViewConfig(entity, viewId) {
+    return api.get(`/dynamic/${entity}/view/${viewId}`);
+  },
+  validate(entity, data, token) {
+    return api.postWithAuth(`/dynamic/${entity}/validate`, data, token);
+  }
+};
+
 export const excelService = {
   async exportStations(token) {
     const response = await api.downloadWithAuth('/admin/excel/export/stations', token);

@@ -24,6 +24,11 @@ const AdminLayout = () => {
     { path: '/admin/users', label: 'Quản lý Users', icon: '👥' },
     { path: '/admin/stations', label: 'Quản lý Trạm', icon: '⚡' },
     { path: '/admin/proposals', label: 'Quản lý Đề xuất', icon: '📋' },
+    { divider: true },
+    { label: 'Cấu hình', icon: '⚙️', isGroup: true },
+    { path: '/admin/fields', label: 'Field Definitions', icon: '📝', parent: 'Cấu hình' },
+    { path: '/admin/forms', label: 'Forms Manager', icon: '📄', parent: 'Cấu hình' },
+    { path: '/admin/views', label: 'Views Manager', icon: '📊', parent: 'Cấu hình' },
   ];
 
   const handleNavClick = () => {
@@ -38,16 +43,29 @@ const AdminLayout = () => {
           <Link to="/admin" className="logo" onClick={handleNavClick}>Admin Panel</Link>
         </div>
         <nav className="sidebar-nav">
-          {menuItems.map(item => (
-            <Link 
-              key={item.path} 
-              to={item.path}
-              className={location.pathname === item.path ? 'active' : ''}
-              onClick={handleNavClick}
-            >
-              <span>{item.icon}</span> {item.label}
-            </Link>
-          ))}
+          {menuItems.map((item, idx) => {
+            if (item.divider) {
+              return <div key={`divider-${idx}`} className="sidebar-divider" />;
+            }
+            if (item.isGroup) {
+              return (
+                <div key={item.label} className="sidebar-group-label">
+                  <span>{item.icon}</span> {item.label}
+                </div>
+              );
+            }
+            const isActive = location.pathname === item.path || (item.path !== '/admin' && location.pathname.startsWith(item.path));
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={isActive ? 'active' : ''}
+                onClick={handleNavClick}
+              >
+                <span>{item.icon}</span> {item.label}
+              </Link>
+            );
+          })}
           <div className="sidebar-divider" />
           <Link
             to="/map"
