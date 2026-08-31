@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import FileListPopup from './FileListPopup';
+import FileViewer from './FileViewer';
 
-const FieldRenderer = ({ field, value }) => {
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+const getFileUrl = (file) => {
+  if (file.url) return file.url;
+  if (file.storage_key) return `${API_URL.replace('/api', '')}/uploads/${file.storage_key}`;
+  return null;
+};
+
+const FieldRenderer = ({ field, value, entity, entityId }) => {
   if (value === null || value === undefined || value === '') {
     return <span className="field-empty">-</span>;
   }
@@ -67,16 +76,38 @@ const FieldRenderer = ({ field, value }) => {
       const files = Array.isArray(value) ? value : [value];
       if (files.length === 0 || !files[0]) return <span className="field-empty">-</span>;
       const [showPopup, setShowPopup] = useState(false);
+      const [viewingFile, setViewingFile] = useState(null);
+      const handleDownload = () => {
+        files.forEach(file => {
+          const url = getFileUrl(file);
+          if (url) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.original_name || file.name || 'download';
+            a.click();
+          }
+        });
+      };
+      const handleOpenNewTab = () => {
+        window.open(`/admin/${entity}/${entityId}/files`, '_blank');
+      };
+      if (viewingFile) {
+        return <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />;
+      }
       return (
         <>
-          <span
-            className="field-file-button"
-            style={{ display: 'inline-block', padding: '2px 10px', fontSize: 12, background: '#e8f0fe', color: '#4a6cf7', borderRadius: 6, cursor: 'pointer' }}
-            onClick={() => setShowPopup(true)}
-          >
-            Xem file ({files.length})
-          </span>
-          {showPopup && <FileListPopup files={files} onClose={() => setShowPopup(false)} />}
+          <div className="field-file-actions">
+            <span className="field-file-btn view-btn" onClick={() => setShowPopup(true)} title="Xem file">
+              Xem ({files.length})
+            </span>
+            <span className="field-file-btn download-btn" onClick={handleDownload} title="Tải file">
+              Tải
+            </span>
+            <span className="field-file-btn open-btn" onClick={handleOpenNewTab} title="Mở tab mới">
+              Tab mới
+            </span>
+          </div>
+          {showPopup && <FileListPopup files={files} onClose={() => setShowPopup(false)} onPreview={(f) => { setShowPopup(false); setViewingFile(f); }} />}
         </>
       );
     }

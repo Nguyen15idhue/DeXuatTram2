@@ -20,10 +20,18 @@ const getFileIcon = (file) => {
   return '📁';
 };
 
-const FileListPopup = ({ files = [], onClose, title = 'Danh sách file' }) => {
+const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', onPreview }) => {
   const [viewingFile, setViewingFile] = useState(null);
 
   const list = Array.isArray(files) ? files : files ? [files] : [];
+
+  const handlePreview = (file) => {
+    if (onPreview) {
+      onPreview(file);
+    } else {
+      setViewingFile(file);
+    }
+  };
 
   if (viewingFile) {
     return (
@@ -63,7 +71,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file' }) => {
                     {url && (
                       <button
                         className="btn btn-sm btn-primary"
-                        onClick={() => setViewingFile(file)}
+                        onClick={() => handlePreview(file)}
                       >
                         Xem
                       </button>

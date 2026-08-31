@@ -90,6 +90,15 @@ exports.update = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy field definition' });
     }
 
+    if (existing.source_type === 'fixed') {
+      if (key && key.trim() !== existing.key) {
+        return res.status(400).json({ success: false, message: 'Không thể thay đổi key của field cố định' });
+      }
+      if (entity && entity.trim() !== existing.entity) {
+        return res.status(400).json({ success: false, message: 'Không thể thay đổi entity của field cố định' });
+      }
+    }
+
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
     }
@@ -131,6 +140,10 @@ exports.delete = async (req, res) => {
     const existing = await fieldDefinitionService.getFieldDefinitionById(id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy field definition' });
+    }
+
+    if (existing.source_type === 'fixed') {
+      return res.status(400).json({ success: false, message: 'Không thể xóa field cố định (fixed)' });
     }
 
     await fieldDefinitionService.deleteFieldDefinition(id);

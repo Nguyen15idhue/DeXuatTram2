@@ -9,6 +9,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
+import useFieldOptions from '../../hooks/useFieldOptions';
 
 const PROPOSALS_VIEW_ID = 8;
 
@@ -16,6 +17,8 @@ const MyProposalsPage = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { getSelectOptions } = useFieldOptions('station_proposals');
+  const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -123,10 +126,9 @@ const MyProposalsPage = () => {
         <h1>Đề xuất của tôi</h1>
         <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
           <option value="">Tất cả</option>
-          <option value="PENDING">PENDING</option>
-          <option value="REVIEWING">REVIEWING</option>
-          <option value="APPROVED">APPROVED</option>
-          <option value="REJECTED">REJECTED</option>
+          {statusOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
       </div>
 

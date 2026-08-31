@@ -183,6 +183,8 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
                       <FieldRenderer
                         field={col}
                         value={getFieldValue(row, col)}
+                        entity={entity}
+                        entityId={row.id}
                       />
                     </td>
                   );

@@ -2552,3 +2552,122 @@ select:focus {
   flex: 1;
   font-size: 14px;
 }
+
+/* Color Palette */
+.color-select {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+.color-selected {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid #d0d5dd;
+}
+.color-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  width: 140px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.color-select:hover .color-dropdown {
+  display: flex;
+}
+.color-option {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.color-option:hover {
+  border-color: #333;
+  transform: scale(1.2);
+}
+
+/* Badge for fixed fields */
+.badge-fixed {
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+/* Field file actions */
+.field-file-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.field-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #333;
+  transition: background 0.15s;
+}
+.field-file-btn:hover {
+  background: #f0f2f5;
+}
+.field-file-btn.view-btn { background: #e8f0fe; color: #4a6cf7; border-color: #4a6cf7; }
+.field-file-btn.download-btn { background: #f0fdf4; color: #16a34a; border-color: #16a34a; }
+.field-file-btn.open-btn { background: #fef3c7; color: #854d0e; border-color: #eab308; }
+
+/* Admin Record Files Page */
+.admin-record-files-page {
+  padding: 20px;
+}
+.admin-record-files-page h1 {
+  margin-bottom: 20px;
+}
+.file-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  transition: background 0.15s;
+}
+.file-card:hover {
+  background: #f0f2f5;
+}
+.file-card-icon { font-size: 28px; }
+.file-card-info { flex: 1; min-width: 0; }
+.file-card-name {
+  font-weight: 500;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-card-meta { font-size: 12px; color: #999; }
+.file-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.file-card-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #4a6cf7;
+  cursor: pointer;
+}

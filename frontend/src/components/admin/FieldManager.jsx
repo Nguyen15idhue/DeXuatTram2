@@ -13,6 +13,33 @@ const ENTITIES = ['stations', 'station_proposals', 'users'];
 const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
 
+const COLOR_PALETTE = [
+  { label: 'Xanh lá đậm', value: '#166534' },
+  { label: 'Xanh lá', value: '#16a34a' },
+  { label: 'Xanh lá nhạt', value: '#4ade80' },
+  { label: 'Xanh lá rất nhạt', value: '#bbf7d0' },
+  { label: 'Xanh dương đậm', value: '#1e40af' },
+  { label: 'Xanh dương', value: '#3b82f6' },
+  { label: 'Xanh dương nhạt', value: '#60a5fa' },
+  { label: 'Xanh dương rất nhạt', value: '#bfdbfe' },
+  { label: 'Đỏ đậm', value: '#991b1b' },
+  { label: 'Đỏ', value: '#dc2626' },
+  { label: 'Đỏ nhạt', value: '#f87171' },
+  { label: 'Đỏ rất nhạt', value: '#fecaca' },
+  { label: 'Vàng đậm', value: '#854d0e' },
+  { label: 'Vàng', value: '#eab308' },
+  { label: 'Vàng nhạt', value: '#facc15' },
+  { label: 'Vàng rất nhạt', value: '#fef08a' },
+  { label: 'Cam đậm', value: '#9a3412' },
+  { label: 'Cam', value: '#ea580c' },
+  { label: 'Cam nhạt', value: '#fb923c' },
+  { label: 'Cam rất nhạt', value: '#fed7aa' },
+  { label: 'Đen', value: '#1f2937' },
+  { label: 'Xám đậm', value: '#6b7280' },
+  { label: 'Xám', value: '#9ca3af' },
+  { label: 'Xám nhạt', value: '#d1d5db' },
+];
+
 const FieldManager = () => {
   const { token } = useAuth();
   const [fields, setFields] = useState([]);
@@ -260,8 +287,8 @@ const FieldManager = () => {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Key *</label>
-                  <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" />
+                  <label>Key * {editingId && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
+                  <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" disabled={!!editingId} />
                 </div>
                 <div className="form-group">
                   <label>Label *</label>
@@ -328,7 +355,20 @@ const FieldManager = () => {
                         <div key={idx} className="option-row">
                           <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
                           <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
-                          <input type="color" value={opt.color || '#666666'} onChange={(e) => updateOption(idx, 'color', e.target.value)} title="Màu sắc" />
+                          <div className="color-select" title="Màu sắc">
+                            <div className="color-selected" style={{ backgroundColor: opt.color || '#666666' }} />
+                            <div className="color-dropdown">
+                              {COLOR_PALETTE.map(c => (
+                                <div
+                                  key={c.value}
+                                  className="color-option"
+                                  style={{ backgroundColor: c.value }}
+                                  title={c.label}
+                                  onClick={() => updateOption(idx, 'color', c.value)}
+                                />
+                              ))}
+                            </div>
+                          </div>
                           <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
                             {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                           </select>
@@ -341,7 +381,20 @@ const FieldManager = () => {
                     <div className="form-row">
                       <div className="form-group">
                         <label>Default Color</label>
-                        <input type="color" value={form.option_style.defaultColor} onChange={(e) => updateOptionStyle('defaultColor', e.target.value)} />
+                        <div className="color-select">
+                          <div className="color-selected" style={{ backgroundColor: form.option_style.defaultColor }} />
+                          <div className="color-dropdown">
+                            {COLOR_PALETTE.map(c => (
+                              <div
+                                key={c.value}
+                                className="color-option"
+                                style={{ backgroundColor: c.value }}
+                                title={c.label}
+                                onClick={() => updateOptionStyle('defaultColor', c.value)}
+                              />
+                            ))}
+                          </div>
+                        </div>
                       </div>
                       <div className="form-group">
                         <label>Default Border Radius</label>
@@ -437,7 +490,10 @@ const FieldManager = () => {
               <tr key={f.id}>
                 <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td><span className="field-entity-badge">{f.entity}</span></td>
-                <td><code>{f.key}</code></td>
+                <td>
+                  <code>{f.key}</code>
+                  {f.source_type === 'fixed' && <span className="badge badge-fixed" title="Field cố định">🔒</span>}
+                </td>
                 <td>{f.label}</td>
                 <td><span className="field-type-badge">{f.type}</span></td>
                 <td>{f.required ? '✓' : ''}</td>
@@ -449,7 +505,9 @@ const FieldManager = () => {
                 <td>
                   <div className="action-buttons">
                     <button className="btn btn-sm btn-edit" onClick={() => openEdit(f)}>Sửa</button>
-                    <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(f.id, f.label)}>Xóa</button>
+                    {f.source_type !== 'fixed' && (
+                      <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(f.id, f.label)}>Xóa</button>
+                    )}
                   </div>
                 </td>
               </tr>

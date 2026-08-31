@@ -9,6 +9,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
+import useFieldOptions from '../../hooks/useFieldOptions';
 
 const PROPOSALS_VIEW_ID = 8;
 
@@ -16,6 +17,8 @@ const AdminProposalsPage = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { getSelectOptions } = useFieldOptions('station_proposals');
+  const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -119,10 +122,9 @@ const AdminProposalsPage = () => {
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/proposals/view=${row.id}`)}>Xem</button>
       <button className="btn btn-sm btn-edit" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>Sửa</button>
       <select value={row.status} onChange={(e) => handleStatusChange(row.id, e.target.value)} className="status-select btn-sm">
-        <option value="PENDING">PENDING</option>
-        <option value="REVIEWING">REVIEWING</option>
-        <option value="APPROVED">APPROVED</option>
-        <option value="REJECTED">REJECTED</option>
+        {statusOptions.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
       </select>
       <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
     </div>
@@ -139,10 +141,9 @@ const AdminProposalsPage = () => {
         <div className="page-header-actions">
           <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
             <option value="">Tất cả</option>
-            <option value="PENDING">PENDING</option>
-            <option value="REVIEWING">REVIEWING</option>
-            <option value="APPROVED">APPROVED</option>
-            <option value="REJECTED">REJECTED</option>
+            {statusOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
           <button className="btn btn-secondary" onClick={handleExportProposals}>Export Excel</button>
         </div>

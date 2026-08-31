@@ -25,6 +25,7 @@ import AdminFormsPage from './pages/admin/AdminFormsPage';
 import AdminFormBuilderPage from './pages/admin/AdminFormBuilderPage';
 import AdminViewsPage from './pages/admin/AdminViewsPage';
 import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
+import AdminRecordFilesPage from './pages/admin/AdminRecordFilesPage';
 
 import './App.css';
 
@@ -61,6 +62,7 @@ function App() {
             <Route path="/admin/forms/:id/edit" element={<AdminFormBuilderPage />} />
             <Route path="/admin/views" element={<AdminViewsPage />} />
             <Route path="/admin/views/:id/edit" element={<AdminViewBuilderPage />} />
+            <Route path="/admin/:entity/:id/files" element={<AdminRecordFilesPage />} />
           </Route>
 
           {/* Default redirect */}

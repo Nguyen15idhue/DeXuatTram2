@@ -11,6 +11,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
+import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
 
 const markerIcon = new L.Icon({
@@ -32,6 +33,8 @@ const AdminStationsPage = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { getSelectOptions } = useFieldOptions('stations');
+  const statusOptions = getSelectOptions('status');
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,7 +42,7 @@ const AdminStationsPage = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', latitude: '', longitude: '',
-    address: '', status: 'ACTIVE', description: ''
+    address: '', status: statusOptions[0]?.value || 'ACTIVE', description: ''
   });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [search, setSearch] = useState('');
@@ -262,8 +265,9 @@ const AdminStationsPage = () => {
         <input type="text" placeholder="Search theo tên hoặc địa chỉ..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
-          <option value="ACTIVE">ACTIVE</option>
-          <option value="DEPLOYING">DEPLOYING</option>
+          {statusOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
         <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
       </div>
@@ -348,8 +352,9 @@ const AdminStationsPage = () => {
               <div className="form-group">
                 <label>Trạng thái</label>
                 <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  <option value="ACTIVE">ACTIVE - Đang hoạt động</option>
-                  <option value="DEPLOYING">DEPLOYING - Đang triển khai</option>
+                  {statusOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.value} - {opt.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="form-group">
