@@ -11,6 +11,11 @@ const getFileUrl = (file) => {
   return null;
 };
 
+const getDownloadUrl = (file) => {
+  if (file.id) return `${API_URL}/files/${file.id}/download`;
+  return getFileUrl(file);
+};
+
 const getFileIcon = (file) => {
   const mime = file.mime_type || file.type || '';
   if (mime.startsWith('image/')) return '🖼️';
@@ -22,7 +27,7 @@ const getFileIcon = (file) => {
   return '📁';
 };
 
-const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity, entityId }) => {
+const FileListPopup = ({ files = [], onClose, title = 'Danh sách file' }) => {
   const [viewingFile, setViewingFile] = useState(null);
   const [selected, setSelected] = useState({});
   const [downloading, setDownloading] = useState(false);
@@ -50,21 +55,28 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
     try {
       if (filesToDownload.length === 1) {
         const file = filesToDownload[0];
-        const url = getFileUrl(file);
+        const url = getDownloadUrl(file);
         if (url) {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          saveAs(blob, file.original_name || file.name || 'download');
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = file.original_name || file.name || 'download';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
         }
       } else {
         const zip = new JSZip();
         const folder = zip.folder('files');
         const fetchPromises = filesToDownload.map(async (file) => {
-          const url = getFileUrl(file);
+          const url = getDownloadUrl(file);
           if (url) {
-            const response = await fetch(url);
-            const blob = await response.blob();
-            folder.file(file.original_name || file.name || `file_${Date.now()}`, blob);
+            try {
+              const response = await fetch(url);
+              const blob = await response.blob();
+              folder.file(file.original_name || file.name || `file_${Date.now()}`, blob);
+            } catch (err) {
+              console.error('Fetch file error:', err);
+            }
           }
         });
         await Promise.all(fetchPromises);
@@ -122,7 +134,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
               </label>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '60vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto' }}>
               {list.map((file, idx) => {
                 const name = file.original_name || file.name || `File ${idx + 1}`;
                 return (
@@ -148,7 +160,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
             </div>
 
             {selectedCount > 0 && (
-              <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <div style={{ marginTop: 16, textAlign: 'right', paddingTop: 12, borderTop: '1px solid #e0e0e0' }}>
                 <button
                   className="btn btn-primary"
                   onClick={handleDownloadSelected}
