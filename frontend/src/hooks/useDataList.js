@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import { dataListService } from '../services/api';
 
-export const useDataList = (dataListId) => {
+export const useDataList = (dataListId, token) => {
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [columns, setColumns] = useState([]);
@@ -16,7 +16,7 @@ export const useDataList = (dataListId) => {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await api.dataListService.getById(dataListId);
+        const res = await dataListService.getById(dataListId, token);
         if (!cancelled && res.success && res.data) {
           const cols = res.data.columns_config || [];
           setColumns(cols);
@@ -34,7 +34,7 @@ export const useDataList = (dataListId) => {
     };
     load();
     return () => { cancelled = true; };
-  }, [dataListId]);
+  }, [dataListId, token]);
 
   return { options, columns, loading };
 };

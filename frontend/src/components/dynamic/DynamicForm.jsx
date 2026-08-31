@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, dataListService } from '../../services/api';
 import DynamicField from './DynamicField';
@@ -82,7 +82,12 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     return map;
   }, [fields]);
 
+  const prevFormDataRef = useRef(formData);
+
   useEffect(() => {
+    let changed = false;
+    const next = { ...formData };
+
     Object.keys(parentFieldMap).forEach(parentKey => {
       const childKeys = parentFieldMap[parentKey];
       childKeys.forEach(childKey => {
@@ -90,16 +95,29 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
         if (childField && childField.type === 'select') {
           const parentVal = formData[parentKey];
           if (parentVal) {
-            setFormData(prev => {
-              if (prev[childKey] && !isOptionValidForParent(childField, parentVal, prev[childKey])) {
-                return { ...prev, [childKey]: '' };
-              }
-              return prev;
-            });
+            if (next[childKey] && !isOptionValidForParent(childField, parentVal, next[childKey])) {
+              next[childKey] = '';
+              changed = true;
+            }
           }
         }
       });
     });
+
+    fields.forEach(f => {
+      if (f.type === 'formula' && f.key) {
+        const val = computeFormula(f);
+        if (next[f.key] !== val) {
+          next[f.key] = val;
+          changed = true;
+        }
+      }
+    });
+
+    if (changed) {
+      setFormData(next);
+    }
+    prevFormDataRef.current = next;
   }, [formData, parentFieldMap, fields]);
 
   const isOptionValidForParent = (childField, parentVal, optionVal) => {
@@ -174,20 +192,6 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       return '';
     } catch { return ''; }
   };
-
-  useEffect(() => {
-    fields.forEach(f => {
-      if (f.type === 'formula' && f.key) {
-        const val = computeFormula(f);
-        setFormData(prev => {
-          if (prev[f.key] !== val) {
-            return { ...prev, [f.key]: val };
-          }
-          return prev;
-        });
-      }
-    });
-  }, [formData, fields]);
 
   const validate = () => {
     const newErrors = {};

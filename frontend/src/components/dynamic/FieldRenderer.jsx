@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import FileListPopup from './FileListPopup';
+import { useState, lazy, Suspense } from 'react';
+
+const FileListPopup = lazy(() => import('./FileListPopup'));
 
 const FieldRenderer = ({ field, value, entity, entityId }) => {
+  const [showFilePopup, setShowFilePopup] = useState(false);
+
   if (value === null || value === undefined || value === '') {
     return <span className="field-empty">-</span>;
   }
@@ -66,16 +69,19 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     case 'file': {
       const files = Array.isArray(value) ? value : [value];
       if (files.length === 0 || !files[0]) return <span className="field-empty">-</span>;
-      const [showPopup, setShowPopup] = useState(false);
       return (
         <>
           <span
             className="field-file-btn view-btn"
-            onClick={() => setShowPopup(true)}
+            onClick={() => setShowFilePopup(true)}
           >
             Xem file ({files.length})
           </span>
-          {showPopup && <FileListPopup files={files} onClose={() => setShowPopup(false)} entity={entity} entityId={entityId} />}
+          {showFilePopup && (
+            <Suspense fallback={<div className="loading">Đang tải...</div>}>
+              <FileListPopup files={files} onClose={() => setShowFilePopup(false)} entity={entity} entityId={entityId} />
+            </Suspense>
+          )}
         </>
       );
     }

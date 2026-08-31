@@ -1,32 +1,27 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 
-// Layouts
 import PublicLayout from './layouts/PublicLayout';
 import UserLayout from './layouts/UserLayout';
 import AdminLayout from './layouts/AdminLayout';
 
-// Auth Pages
-import LoginPage from './pages/auth/LoginPage';
-import RegisterPage from './pages/auth/RegisterPage';
-
-// User Pages
-import MapPage from './pages/user/MapPage';
-import MyProposalsPage from './pages/user/MyProposalsPage';
-import ProfilePage from './pages/user/ProfilePage';
-
-// Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsersPage from './pages/admin/AdminUsersPage';
-import AdminStationsPage from './pages/admin/AdminStationsPage';
-import AdminProposalsPage from './pages/admin/AdminProposalsPage';
-import AdminFieldsPage from './pages/admin/AdminFieldsPage';
-import AdminFormsPage from './pages/admin/AdminFormsPage';
-import AdminFormBuilderPage from './pages/admin/AdminFormBuilderPage';
-import AdminViewsPage from './pages/admin/AdminViewsPage';
-import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
-import AdminRecordFilesPage from './pages/admin/AdminRecordFilesPage';
-import AdminDataListsPage from './pages/admin/AdminDataListsPage';
+const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
+const MapPage = lazy(() => import('./pages/user/MapPage'));
+const MyProposalsPage = lazy(() => import('./pages/user/MyProposalsPage'));
+const ProfilePage = lazy(() => import('./pages/user/ProfilePage'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
+const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
+const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
+const AdminFormsPage = lazy(() => import('./pages/admin/AdminFormsPage'));
+const AdminFormBuilderPage = lazy(() => import('./pages/admin/AdminFormBuilderPage'));
+const AdminViewsPage = lazy(() => import('./pages/admin/AdminViewsPage'));
+const AdminViewBuilderPage = lazy(() => import('./pages/admin/AdminViewBuilderPage'));
+const AdminRecordFilesPage = lazy(() => import('./pages/admin/AdminRecordFilesPage'));
+const AdminDataListsPage = lazy(() => import('./pages/admin/AdminDataListsPage'));
 
 import './App.css';
 
@@ -34,14 +29,13 @@ function App() {
   return (
     <AuthProvider>
       <Router>
+        <Suspense fallback={<div className="loading">Đang tải...</div>}>
         <Routes>
-          {/* Public Routes */}
           <Route element={<PublicLayout />}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
           </Route>
 
-          {/* User Routes */}
           <Route element={<UserLayout />}>
             <Route path="/map" element={<MapPage />} />
             <Route path="/my-proposals" element={<MyProposalsPage />} />
@@ -49,7 +43,6 @@ function App() {
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 
-          {/* Admin Routes */}
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
@@ -68,10 +61,10 @@ function App() {
             <Route path="/admin/data-lists/:id" element={<AdminDataListsPage />} />
           </Route>
 
-          {/* Default redirect */}
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </Suspense>
       </Router>
     </AuthProvider>
   );
