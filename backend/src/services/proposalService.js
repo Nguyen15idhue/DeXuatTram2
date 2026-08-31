@@ -29,16 +29,16 @@ exports.getProposalById = async (id) => {
   return dynamicUtils.mergeData(proposals[0], fieldDefs);
 };
 
-exports.createProposal = async (userId, latitude, longitude, ownerName, ownerPhone, address, area, landType, description) => {
+exports.createProposal = async (userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', { latitude, longitude, owner_name: ownerName, owner_phone: ownerPhone, address, area, land_type: landType, description }, fieldDefs);
+  const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
   const [result] = await pool.query(
     `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address, fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
+    [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
   );
 
   const [proposal] = await pool.query(

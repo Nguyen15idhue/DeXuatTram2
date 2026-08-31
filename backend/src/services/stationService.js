@@ -59,15 +59,15 @@ exports.createStation = async (name, latitude, longitude, address, status, descr
   return dynamicUtils.mergeData(station[0], fieldDefs);
 };
 
-exports.updateStation = async (id, name, latitude, longitude, address, status, description) => {
+exports.updateStation = async (id, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
-  const { fixedData, dynamicData } = dynamicUtils.splitData('stations', { name, latitude, longitude, address, status, description }, fieldDefs);
+  const { fixedData, dynamicData } = dynamicUtils.splitData('stations', data, fieldDefs);
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
   await pool.query(
     'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
-    [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address, fixedData.status, fixedData.description || '', customData, id]
+    [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address || '', fixedData.status || 'ACTIVE', fixedData.description || '', customData, id]
   );
 };
 

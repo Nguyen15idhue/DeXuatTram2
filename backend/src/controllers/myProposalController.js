@@ -14,7 +14,7 @@ exports.getAll = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { owner_name, owner_phone, address, area, land_type, description } = req.body;
+    const { owner_name, owner_phone, address } = req.body;
 
     if (!owner_name || !owner_phone || !address) {
       return res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ thông tin bắt buộc' });
@@ -29,7 +29,7 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING' });
     }
 
-    await myProposalService.updateProposal(id, req.user.id, owner_name, owner_phone, address, area, land_type, description);
+    await myProposalService.updateProposal(id, req.user.id, req.body);
     const proposal = await myProposalService.getProposalById(id);
     res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {

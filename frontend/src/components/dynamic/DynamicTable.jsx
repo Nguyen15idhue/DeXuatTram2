@@ -10,10 +10,11 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
   const [error, setError] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
   const [filters, setFilters] = useState({});
+  const [configVersion, setConfigVersion] = useState(0);
 
   useEffect(() => {
     if (viewId) loadViewConfig();
-  }, [entity, viewId]);
+  }, [entity, viewId, configVersion]);
 
   const loadViewConfig = async () => {
     try {
@@ -29,8 +30,12 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
     }
   };
 
+  useEffect(() => {
+    if (columns.length > 0) setLoading(false);
+  }, [columns]);
+
   const getFieldValue = (row, field) => {
-    if (row[field.key] !== undefined) return row[field.key];
+    if (row[field.key] !== undefined && row[field.key] !== null) return row[field.key];
     if (row.custom_data) {
       try {
         const cd = typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data;
@@ -130,7 +135,7 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
                     onClick={() => sortable && handleSort(key)}
                     className={sortable ? 'sortable-th' : ''}
                   >
-                    {col.field_label || col.label}
+                    {col.label}
                     {sortable && <span className="sort-icon">{getSortIcon(key)}</span>}
                   </th>
                 );
@@ -175,7 +180,10 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
                   const key = col.field_key || col.key;
                   return (
                     <td key={key}>
-                      <FieldRenderer field={{ type: col.field_type || col.type, options: col.options }} value={getFieldValue(row, col)} />
+                      <FieldRenderer
+                        field={col}
+                        value={getFieldValue(row, col)}
+                      />
                     </td>
                   );
                 })}

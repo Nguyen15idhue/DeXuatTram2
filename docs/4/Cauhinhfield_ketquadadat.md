@@ -15,7 +15,7 @@
 | Bước 4: Dynamic Field Rewrite | ✅ | 2026-08-31 | 2026-08-31 | Config-aware rendering |
 | Bước 5: Field Renderer Rewrite | ✅ | 2026-08-31 | 2026-08-31 | Read-only display per rules |
 | Bước 6: File Upload & Viewer | ✅ | 2026-08-31 | 2026-08-31 | FileListPopup + FileViewer created |
-| Bước 7: Dynamic Table/Form/Popup | ⏳ | — | — | |
+| Bước 7: Dynamic Table/Form/Popup | ✅ | 2026-08-31 | 2026-08-31 | Bug fixes + config-aware rendering |
 | Bước 8: CSS Cleanup | ⏳ | — | — | |
 | Bước 9: Seed Data Update | ⏳ | — | — | |
 | Bước 10: Full Integration Test | ⏳ | — | — | |
@@ -250,30 +250,61 @@
 ## BƯỚC 7: DYNAMIC TABLE & FORM & POPUP
 
 ### Kết quả đã đạt
-- (chưa thực hiện)
+- Rewritten `DynamicTable.jsx`: passes full column config (option_style, number_format, etc.) to FieldRenderer
+- Rewritten `DynamicForm.jsx`: cascading select support (parent_field + source_config), formula auto-computation
+- Rewritten `RecordDetailPopup.jsx`: passes full field config to both FieldRenderer (view) and DynamicField (edit), updated record from API response after save
+
+### Bug fixes (root cause analysis + fix)
+
+**Bug 1: Labels/status changed in /admin/fields not reflected in admin/users table**
+- Root cause: DynamicTable line 178 only passed `{ type, options }` to FieldRenderer, missing option_style, number_format, etc.
+- Fix: Now passes the full `col` object to FieldRenderer
+
+**Bug 2: investment_cost and legal_document show null in proposals table**
+- Root cause 1: `adminProposalController.update` destructured only fixed fields — dropped dynamic fields from req.body
+- Root cause 2: `adminProposalService.getProposalWithUser` didn't call `dynamicUtils.mergeData()` — custom_data not flattened
+- Root cause 3: `proposalController.create` also dropped dynamic fields
+- Root cause 4: `myProposalController.update` didn't handle custom_data at all
+- Root cause 5: `stationController.update` dropped dynamic fields
+- Fix: All controllers now pass full `req.body` to services; `getProposalWithUser` calls `mergeData()`; `myProposalService.updateProposal` handles custom_data with `splitData`/`mergeData`
 
 ### Files đã tạo/sửa
 | File | Trạng thái |
 |------|------------|
-| `components/dynamic/DynamicTable.jsx` | ⏳ |
-| `components/dynamic/DynamicForm.jsx` | ⏳ |
-| `components/admin/RecordDetailPopup.jsx` | ⏳ |
+| `components/dynamic/DynamicTable.jsx` | ✅ (full config pass) |
+| `components/dynamic/DynamicForm.jsx` | ✅ (cascading + formula) |
+| `components/admin/RecordDetailPopup.jsx` | ✅ (full config + save response) |
+| `controllers/adminProposalController.js` | ✅ (bug fix) |
+| `services/adminProposalService.js` | ✅ (bug fix — mergeData) |
+| `controllers/proposalController.js` | ✅ (bug fix) |
+| `services/proposalService.js` | ✅ (bug fix) |
+| `controllers/myProposalController.js` | ✅ (bug fix) |
+| `services/myProposalService.js` | ✅ (bug fix — custom_data) |
+| `controllers/stationController.js` | ✅ (bug fix) |
+| `services/stationService.js` | ✅ (bug fix) |
 
 ### Kết quả kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Table: email text thường | ⏳ |
-| Table: URL màu xanh | ⏳ |
-| Table: boolean ✓/rỗng | ⏳ |
-| Table: file round avatar (chỉ avatar users) hoặc button "Xem file" | ⏳ |
-| Table: select badge | ⏳ |
-| Form: cascading select | ⏳ |
-| Form: formula readonly | ⏳ |
-| Popup: view mode | ⏳ |
-| Popup: edit mode | ⏳ |
+| Frontend build OK | ✅ |
+| DynamicTable: full config passed to FieldRenderer | ✅ |
+| DynamicTable: label from field_definitions used | ✅ |
+| DynamicForm: cascading select parent→child | ✅ |
+| DynamicForm: formula auto-compute | ✅ |
+| RecordDetailPopup: view mode uses full config | ✅ |
+| RecordDetailPopup: edit mode uses full config | ✅ |
+| PUT proposal saves investment_cost to custom_data | ✅ |
+| PUT proposal saves legal_document to custom_data | ✅ |
+| PUT proposal saves site_images to custom_data | ✅ |
+| GET proposals returns merged dynamic fields | ✅ |
+| GET getProposalWithUser returns merged data | ✅ |
+| PUT station handles dynamic fields | ✅ |
+| myProposal update handles custom_data | ✅ |
 
 ### Ghi chú
-- (điền sau khi thực hiện)
+- Bug fix involved 6 backend files (controllers + services) — the pattern was the same: hardcoded destructuring of req.body dropped dynamic fields
+- The fix pattern: pass full `req.body` to service → `splitData()` separates fixed/dynamic → `customData` saved to DB
+- `mergeData()` flattens `custom_data` JSON to top-level properties on read
 
 ---
 
@@ -354,15 +385,15 @@
 
 ## TỔNG KẾT
 
-### Tổng số files (hoàn thành bước 1-6)
+### Tổng số files (hoàn thành bước 1-7)
 | Loại | Số lượng | Chi tiết |
 |------|----------|----------|
 | Files mới backend | 1 | SQL migration |
-| Files mới frontend | 4 | FileListPopup, FileViewer, FileUpload (updated), FieldRenderer (rewritten) |
-| Files sửa backend | 4 | fieldDefinitionService, dynamicEngineService, dynamicUtils, fieldDefinitionController |
-| Files sửa frontend | 6 | FieldManager, DynamicField, DynamicForm, FieldRenderer, RecordDetailPopup, App.css |
+| Files mới frontend | 2 | FileListPopup, FileViewer |
+| Files sửa backend | 9 | fieldDefinitionService, dynamicEngineService, dynamicUtils, fieldDefinitionController, adminProposalController, adminProposalService, proposalController, proposalService, myProposalController, myProposalService, stationController, stationService |
+| Files sửa frontend | 8 | FieldManager, DynamicField, DynamicForm, FieldRenderer, RecordDetailPopup, DynamicTable, FileUpload, App.css |
 | Files SQL | 1 | 10-alter-field-definitions-add-config.sql |
-| **Tổng** | **16** | |
+| **Tổng** | **21** | |
 
 ### Ghi chú
 - Mỗi bước hoàn thành → cập nhật trạng thái tại đây

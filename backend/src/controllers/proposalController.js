@@ -25,9 +25,8 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { latitude, longitude, owner_name, owner_phone, address, area, land_type, description } = req.body;
     const user_id = req.user.id;
-    const proposal = await proposalService.createProposal(user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description);
+    const proposal = await proposalService.createProposal(user_id, req.body);
     res.status(201).json({ success: true, data: proposal, message: 'Tạo đề xuất thành công' });
   } catch (error) {
     console.error('Create proposal error:', error);

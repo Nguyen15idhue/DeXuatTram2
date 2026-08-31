@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService } from '../../services/api';
 import DynamicField from './DynamicField';
@@ -25,7 +25,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
         setFields(res.data.fields || []);
         const defaults = {};
         (res.data.fields || []).forEach(f => {
-          if (initialData[f.key] !== undefined) {
+          if (initialData[f.key] !== undefined && initialData[f.key] !== null) {
             defaults[f.key] = initialData[f.key];
           } else if (f.default_value !== undefined) {
             defaults[f.key] = f.default_value;
@@ -50,6 +50,95 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     setFormData(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: '' }));
   }, []);
+
+  const parentFieldMap = useMemo(() => {
+    const map = {};
+    fields.forEach(f => {
+      if (f.parent_field) {
+        if (!map[f.parent_field]) map[f.parent_field] = [];
+        map[f.parent_field].push(f.key);
+      }
+    });
+    return map;
+  }, [fields]);
+
+  useEffect(() => {
+    Object.keys(parentFieldMap).forEach(parentKey => {
+      const childKeys = parentFieldMap[parentKey];
+      childKeys.forEach(childKey => {
+        const childField = fields.find(f => f.key === childKey);
+        if (childField && childField.type === 'select') {
+          const parentVal = formData[parentKey];
+          if (parentVal) {
+            setFormData(prev => {
+              if (prev[childKey] && !isOptionValidForParent(childField, parentVal, prev[childKey])) {
+                return { ...prev, [childKey]: '' };
+              }
+              return prev;
+            });
+          }
+        }
+      });
+    });
+  }, [formData, parentFieldMap, fields]);
+
+  const isOptionValidForParent = (childField, parentVal, optionVal) => {
+    if (!childField.source_config) return true;
+    try {
+      const sc = typeof childField.source_config === 'string' ? JSON.parse(childField.source_config) : childField.source_config;
+      if (sc[parentVal]) {
+        return sc[parentVal].includes(optionVal);
+      }
+      return true;
+    } catch { return true; }
+  };
+
+  const getFilteredOptions = (field) => {
+    if (!field.parent_field || !field.source_config) return field.options || [];
+    const parentVal = formData[field.parent_field];
+    if (!parentVal) return [];
+    try {
+      const sc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
+      if (sc[parentVal]) {
+        const allowed = sc[parentVal];
+        return (field.options || []).filter(o => allowed.includes(o.value || o));
+      }
+      return field.options || [];
+    } catch { return field.options || []; }
+  };
+
+  const computeFormula = (field) => {
+    if (!field.formula_config || !field.formula_config.expression) return '';
+    try {
+      let expr = field.formula_config.expression;
+      fields.forEach(f => {
+        if (f.key !== field.key && f.type === 'number') {
+          const val = parseFloat(formData[f.key]) || 0;
+          expr = expr.replace(new RegExp(`\\b${f.key}\\b`, 'g'), val);
+        }
+      });
+      const result = Function(`"use strict"; return (${expr})`)();
+      if (typeof result === 'number' && !isNaN(result)) {
+        const dp = field.decimal_places ?? 2;
+        return result.toFixed(dp);
+      }
+      return '';
+    } catch { return ''; }
+  };
+
+  useEffect(() => {
+    fields.forEach(f => {
+      if (f.type === 'formula' && f.key) {
+        const val = computeFormula(f);
+        setFormData(prev => {
+          if (prev[f.key] !== val) {
+            return { ...prev, [f.key]: val };
+          }
+          return prev;
+        });
+      }
+    });
+  }, [formData, fields]);
 
   const validate = () => {
     const newErrors = {};
@@ -85,6 +174,33 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   if (error && !formConfig) return <div className="error-message">{error}</div>;
   if (!formConfig) return <div className="empty-state">Không tìm thấy form</div>;
 
+  const renderField = (field) => {
+    const fieldForRender = field.parent_field ? { ...field, options: getFilteredOptions(field) } : field;
+
+    if (field.type === 'formula') {
+      return (
+        <input
+          type="text"
+          className="form-control"
+          value={formData[field.key] || ''}
+          readOnly
+          disabled
+          placeholder="Tính tự động"
+        />
+      );
+    }
+
+    return (
+      <DynamicField
+        field={fieldForRender}
+        value={formData[field.key]}
+        onChange={(val) => handleChange(field.key, val)}
+        error={errors[field.key]}
+        entityType={entity}
+      />
+    );
+  };
+
   return (
     <form className="dynamic-form" onSubmit={handleSubmit}>
       {error && <div className="error-message">{error}</div>}
@@ -97,13 +213,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
                 {field.label}
                 {field.required && <span style={{ color: '#dc2626' }}> *</span>}
               </label>
-              <DynamicField
-                field={field}
-                value={formData[field.key]}
-                onChange={(val) => handleChange(field.key, val)}
-                error={errors[field.key]}
-                entityType={entity}
-              />
+              {renderField(field)}
               {field.help_text && <div className="field-help">{field.help_text}</div>}
               {errors[field.key] && <div className="field-error">{errors[field.key]}</div>}
             </div>

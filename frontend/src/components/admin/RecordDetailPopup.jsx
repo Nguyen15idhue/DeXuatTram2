@@ -130,7 +130,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       const res = await service.update(record.id, formData, token);
       if (res.success) {
         setToast({ message: 'Cập nhật thành công', type: 'success' });
-        setRecord({ ...record, ...formData });
+        setRecord({ ...record, ...formData, ...res.data });
         setMode('view');
         if (onSwitchMode) onSwitchMode('view');
         if (onSaved) onSaved();
@@ -198,7 +198,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                     entityType={entity}
                   />
                 ) : (
-                  <FieldRenderer field={{ type: field.field_type || field.type, options: field.options }} value={value} />
+                  <FieldRenderer field={field} value={value} />
                 )}
               </span>
             </div>

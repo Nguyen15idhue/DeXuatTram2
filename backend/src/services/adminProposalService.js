@@ -47,7 +47,9 @@ exports.getProposalWithUser = async (id) => {
     `SELECT p.*, u.full_name as user_name FROM station_proposals p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
     [id]
   );
-  return proposals.length > 0 ? proposals[0] : null;
+  if (proposals.length === 0) return null;
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  return dynamicUtils.mergeData(proposals[0], fieldDefs);
 };
 
 exports.deleteProposal = async (id) => {

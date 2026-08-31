@@ -52,12 +52,17 @@ exports.getProposalByIdAndUser = async (id, userId) => {
   return existing.length > 0 ? existing[0] : null;
 };
 
-exports.updateProposal = async (id, userId, ownerName, ownerPhone, address, area, landType, description) => {
+exports.updateProposal = async (id, userId, data) => {
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+
+  const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
+
   await pool.query(
     `UPDATE station_proposals
-     SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, updated_at = NOW()
+     SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, updated_at = NOW()
      WHERE id = ? AND user_id = ?`,
-    [ownerName, ownerPhone, address, area || '', landType || '', description || '', id, userId]
+    [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, id, userId]
   );
 };
 

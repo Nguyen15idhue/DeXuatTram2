@@ -37,7 +37,6 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const { name, latitude, longitude, address, status, description } = req.body;
     const { id } = req.params;
 
     const existing = await stationService.getStationById(id);
@@ -45,7 +44,7 @@ exports.update = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy trạm' });
     }
 
-    await stationService.updateStation(id, name, latitude, longitude, address, status, description);
+    await stationService.updateStation(id, req.body);
     const station = await stationService.getStationById(id);
     res.json({ success: true, data: station, message: 'Cập nhật trạm thành công' });
   } catch (error) {
