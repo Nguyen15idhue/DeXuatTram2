@@ -2,15 +2,16 @@ const pool = require('../utils/db');
 const fs = require('fs');
 const path = require('path');
 
-exports.uploadFile = async (file, userId) => {
+exports.uploadFile = async (file, userId, originalNameOverride) => {
   const storageKey = file.filename;
   const relativePath = file.path.replace(/\\/g, '/').split('storage/uploads/')[1] || file.filename;
+  const originalName = originalNameOverride || file.originalname || 'unknown';
 
   const [result] = await pool.query(
     `INSERT INTO files (original_name, storage_key, mime_type, size, checksum, uploaded_by, status)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
-      file.originalname,
+      originalName,
       relativePath,
       file.mimetype,
       file.size,

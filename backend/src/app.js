@@ -100,7 +100,21 @@ app.use('/api/files', filesRoutes);
 
 // Static file serving for uploads
 const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, '../storage/uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../storage/uploads'), {
+  setHeaders: (res, filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    const textExts = ['.txt', '.csv', '.json', '.xml', '.md', '.log', '.css', '.js', '.html', '.htm'];
+    if (textExts.includes(ext)) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    }
+    if (ext === '.svg') {
+      res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    }
+    if (ext === '.pdf') {
+      res.setHeader('Content-Type', 'application/pdf; charset=utf-8');
+    }
+  }
+}));
 
 // Health check
 app.get('/health', (req, res) => {

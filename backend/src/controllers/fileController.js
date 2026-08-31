@@ -7,7 +7,8 @@ exports.upload = async (req, res) => {
     }
 
     const userId = req.user ? req.user.id : null;
-    const file = await fileService.uploadFile(req.file, userId);
+    const originalNameOverride = req.body.originalName || null;
+    const file = await fileService.uploadFile(req.file, userId, originalNameOverride);
 
     res.status(201).json({
       success: true,
@@ -40,8 +41,15 @@ exports.download = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
     }
 
-    res.setHeader('Content-Type', result.file.mime_type);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.file.original_name)}"`);
+    const mime = result.file.mime_type || 'application/octet-stream';
+    const charset = mime.startsWith('text/') || mime.includes('json') || mime.includes('xml') ? '; charset=utf-8' : '';
+    res.setHeader('Content-Type', mime + charset);
+
+    const originalName = result.file.original_name || 'download';
+    const safeName = originalName.replace(/[^\w\s.\-()]/g, '_');
+    const encodedName = encodeURIComponent(originalName);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`);
+
     res.sendFile(result.filePath);
   } catch (error) {
     console.error('Download file error:', error);

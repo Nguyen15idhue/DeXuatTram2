@@ -16,6 +16,7 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
   const uploadFile = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('originalName', file.name);
     if (entityId) formData.append('entityId', entityId);
     if (entityType) formData.append('entityType', entityType);
     const res = await api.uploadWithAuth('/files/upload', formData, token);

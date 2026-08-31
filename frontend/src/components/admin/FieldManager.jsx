@@ -49,6 +49,7 @@ const FieldManager = () => {
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [editingId, setEditingId] = useState(null);
+  const [editingIsFixed, setEditingIsFixed] = useState(false);
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
@@ -87,6 +88,7 @@ const FieldManager = () => {
 
   const openCreate = () => {
     setEditingId(null);
+    setEditingIsFixed(false);
     setForm({ ...defaultForm, entity: filterEntity || 'stations' });
     setShowForm(true);
     setError('');
@@ -94,6 +96,7 @@ const FieldManager = () => {
 
   const openEdit = (field) => {
     setEditingId(field.id);
+    setEditingIsFixed(field.source_type === 'fixed');
     let parsedOptions = [];
     if (field.options) {
       try {
@@ -281,8 +284,8 @@ const FieldManager = () => {
               {error && <ErrorMessage message={error} />}
               <div className="field-form">
                 <div className="form-group">
-                  <label>Entity *</label>
-                  <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)}>
+                  <label>Entity * {editingIsFixed && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
+                  <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)} disabled={editingIsFixed}>
                     {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
                   </select>
                 </div>
@@ -295,8 +298,8 @@ const FieldManager = () => {
                   <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" />
                 </div>
                 <div className="form-group">
-                  <label>Type</label>
-                  <select value={form.type} onChange={(e) => updateForm('type', e.target.value)}>
+                  <label>Type {editingIsFixed && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
+                  <select value={form.type} onChange={(e) => updateForm('type', e.target.value)} disabled={editingIsFixed}>
                     {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
