@@ -9,6 +9,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
+import useFieldOptions from '../../hooks/useFieldOptions';
 
 const USERS_VIEW_ID = 7;
 
@@ -16,12 +17,16 @@ const AdminUsersPage = () => {
   const { token, user: currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { getSelectOptions } = useFieldOptions('users');
+  const statusOptions = getSelectOptions('status');
+  const roleOptions = getSelectOptions('role');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
 
@@ -57,6 +62,7 @@ const AdminUsersPage = () => {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
       if (search) params.append('search', search);
+      if (filterStatus) params.append('status', filterStatus);
       const res = await adminUserService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setUsers(res.data);
@@ -67,7 +73,7 @@ const AdminUsersPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, token]);
+  }, [search, filterStatus, token]);
 
   useEffect(() => { loadUsers(1); }, [loadUsers]);
 
@@ -142,6 +148,12 @@ const AdminUsersPage = () => {
 
       <div className="filter-bar">
         <input type="text" placeholder="Search theo tên, email, SĐT..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <option value="">Tất cả trạng thái</option>
+          {statusOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
         <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
       </div>
 
