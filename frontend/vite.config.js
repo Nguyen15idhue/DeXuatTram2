@@ -9,6 +9,9 @@ export default defineConfig({
     watch: {
       usePolling: true,
       interval: 1000
+    },
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate'
     }
   }
 })
