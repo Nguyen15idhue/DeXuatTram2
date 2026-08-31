@@ -45,19 +45,35 @@ exports.getFieldDefinitionsByEntity = async (entity) => {
 };
 
 exports.createFieldDefinition = async (data) => {
-  const { entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status } = data;
+  const {
+    entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
+    number_format, decimal_places, date_format, timezone,
+    source_config, parent_field, option_style, file_config, formula_config
+  } = data;
   const [result] = await pool.query(
-    `INSERT INTO field_definitions (entity, \`key\`, label, type, source_type, required, validation, options, formula, placeholder, help_text, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO field_definitions (
+      entity, \`key\`, label, type, number_format, decimal_places, date_format, timezone,
+      source_type, required, validation, options, source_config, parent_field, option_style,
+      file_config, formula_config, formula, placeholder, help_text, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entity,
       key,
       label,
       type || 'text',
+      number_format || null,
+      decimal_places != null ? decimal_places : null,
+      date_format || null,
+      timezone || null,
       source_type || 'json',
       required ? 1 : 0,
       validation ? JSON.stringify(validation) : null,
       options ? JSON.stringify(options) : null,
+      source_config ? JSON.stringify(source_config) : null,
+      parent_field || null,
+      option_style ? JSON.stringify(option_style) : null,
+      file_config ? JSON.stringify(file_config) : null,
+      formula_config ? JSON.stringify(formula_config) : null,
       formula || null,
       placeholder || null,
       help_text || null,
@@ -69,21 +85,39 @@ exports.createFieldDefinition = async (data) => {
 };
 
 exports.updateFieldDefinition = async (id, data) => {
-  const { entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status } = data;
+  const {
+    entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
+    number_format, decimal_places, date_format, timezone,
+    source_config, parent_field, option_style, file_config, formula_config
+  } = data;
   await pool.query(
-    `UPDATE field_definitions
-     SET entity = ?, \`key\` = ?, label = ?, type = ?, source_type = ?, required = ?,
-         validation = ?, options = ?, formula = ?, placeholder = ?, help_text = ?, status = ?, updated_at = NOW()
+    `UPDATE field_definitions SET
+      entity = ?, \`key\` = ?, label = ?, type = ?,
+      number_format = ?, decimal_places = ?, date_format = ?, timezone = ?,
+      source_type = ?, required = ?,
+      validation = ?, options = ?, source_config = ?, parent_field = ?,
+      option_style = ?, file_config = ?, formula_config = ?,
+      formula = ?, placeholder = ?, help_text = ?, status = ?,
+      updated_at = NOW()
      WHERE id = ?`,
     [
       entity,
       key,
       label,
       type,
+      number_format || null,
+      decimal_places != null ? decimal_places : null,
+      date_format || null,
+      timezone || null,
       source_type,
       required ? 1 : 0,
       validation ? JSON.stringify(validation) : null,
       options ? JSON.stringify(options) : null,
+      source_config ? JSON.stringify(source_config) : null,
+      parent_field || null,
+      option_style ? JSON.stringify(option_style) : null,
+      file_config ? JSON.stringify(file_config) : null,
+      formula_config ? JSON.stringify(formula_config) : null,
       formula || null,
       placeholder || null,
       help_text || null,

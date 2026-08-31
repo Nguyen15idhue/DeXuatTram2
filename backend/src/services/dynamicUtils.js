@@ -28,6 +28,13 @@ exports.validateField = (fieldDef, value) => {
       const num = Number(value);
       if (isNaN(num)) {
         errors.push(`${fieldDef.label} phải là số`);
+      } else if (fieldDef.number_format === 'integer' && !Number.isInteger(num)) {
+        errors.push(`${fieldDef.label} phải là số nguyên`);
+      } else if (fieldDef.decimal_places != null) {
+        const parts = String(num).split('.');
+        if (parts.length > 1 && parts[1].length > fieldDef.decimal_places) {
+          errors.push(`${fieldDef.label} tối đa ${fieldDef.decimal_places} chữ số thập phân`);
+        }
       }
       break;
 
@@ -87,6 +94,15 @@ exports.validateField = (fieldDef, value) => {
       break;
 
     case 'file':
+      if (fieldDef.file_config && fieldDef.file_config.maxSize && value) {
+        const files = Array.isArray(value) ? value : [value];
+        const maxSizeBytes = fieldDef.file_config.maxSize * 1024 * 1024;
+        for (const f of files) {
+          if (f.size && f.size > maxSizeBytes) {
+            errors.push(`${fieldDef.label}: file "${f.name || ''}" vượt quá ${fieldDef.file_config.maxSize}MB`);
+          }
+        }
+      }
       break;
     case 'textarea':
     case 'text':

@@ -13,7 +13,10 @@ exports.getFormConfig = async (entity, formId) => {
   const [fields] = await pool.query(
     `SELECT ff.order_index, ff.visible, ff.config,
             fd.id as field_id, fd.entity, fd.\`key\`, fd.label, fd.type,
+            fd.number_format, fd.decimal_places, fd.date_format, fd.timezone,
             fd.source_type, fd.required, fd.validation, fd.options,
+            fd.source_config, fd.parent_field, fd.option_style,
+            fd.file_config, fd.formula_config,
             fd.formula, fd.placeholder, fd.help_text
      FROM form_fields ff
      JOIN field_definitions fd ON ff.field_id = fd.id
@@ -35,10 +38,19 @@ exports.getFormConfig = async (entity, formId) => {
       key: f.key,
       label: f.label,
       type: f.type,
+      number_format: f.number_format,
+      decimal_places: f.decimal_places,
+      date_format: f.date_format,
+      timezone: f.timezone,
       source_type: f.source_type,
       required: !!f.required,
       validation: f.validation,
       options: f.options ? dynamicUtils.parseOptions(f.options) : [],
+      source_config: f.source_config ? dynamicUtils.parseOptions(f.source_config) : null,
+      parent_field: f.parent_field,
+      option_style: f.option_style ? dynamicUtils.parseOptions(f.option_style) : null,
+      file_config: f.file_config ? dynamicUtils.parseOptions(f.file_config) : null,
+      formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null,
       formula: f.formula,
       placeholder: f.placeholder,
       help_text: f.help_text,
@@ -61,7 +73,10 @@ exports.getViewConfig = async (entity, viewId) => {
   const [fields] = await pool.query(
     `SELECT vf.order_index, vf.visible, vf.width, vf.sortable, vf.filterable, vf.config,
             fd.id as field_id, fd.entity, fd.\`key\`, fd.label, fd.type,
-            fd.source_type, fd.required, fd.options
+            fd.number_format, fd.decimal_places, fd.date_format, fd.timezone,
+            fd.source_type, fd.required, fd.options,
+            fd.source_config, fd.parent_field, fd.option_style,
+            fd.file_config, fd.formula_config
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
      WHERE vf.view_id = ?
@@ -84,9 +99,18 @@ exports.getViewConfig = async (entity, viewId) => {
       key: f.key,
       label: f.label,
       type: f.type,
+      number_format: f.number_format,
+      decimal_places: f.decimal_places,
+      date_format: f.date_format,
+      timezone: f.timezone,
       source_type: f.source_type,
       required: !!f.required,
       options: f.options ? dynamicUtils.parseOptions(f.options) : [],
+      source_config: f.source_config ? dynamicUtils.parseOptions(f.source_config) : null,
+      parent_field: f.parent_field,
+      option_style: f.option_style ? dynamicUtils.parseOptions(f.option_style) : null,
+      file_config: f.file_config ? dynamicUtils.parseOptions(f.file_config) : null,
+      formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null,
       order_index: f.order_index,
       visible: !!f.visible,
       width: f.width,
@@ -99,9 +123,18 @@ exports.getViewConfig = async (entity, viewId) => {
       key: f.key,
       label: f.label,
       type: f.type,
+      number_format: f.number_format,
+      decimal_places: f.decimal_places,
+      date_format: f.date_format,
+      timezone: f.timezone,
       source_type: f.source_type,
       required: !!f.required,
-      options: f.options ? dynamicUtils.parseOptions(f.options) : []
+      options: f.options ? dynamicUtils.parseOptions(f.options) : [],
+      source_config: f.source_config ? dynamicUtils.parseOptions(f.source_config) : null,
+      parent_field: f.parent_field,
+      option_style: f.option_style ? dynamicUtils.parseOptions(f.option_style) : null,
+      file_config: f.file_config ? dynamicUtils.parseOptions(f.file_config) : null,
+      formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null
     }))
   };
 };

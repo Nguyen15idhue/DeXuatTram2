@@ -10,6 +10,8 @@ import Pagination from '../Pagination';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula'];
 const ENTITIES = ['stations', 'station_proposals', 'users'];
+const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
+const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
 
 const FieldManager = () => {
   const { token } = useAuth();
@@ -23,10 +25,18 @@ const FieldManager = () => {
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-  const [form, setForm] = useState({
+
+  const defaultForm = {
     entity: 'stations', key: '', label: '', type: 'text', source_type: 'json',
-    required: false, options: '', placeholder: '', help_text: ''
-  });
+    required: false, placeholder: '', help_text: '',
+    number_format: 'integer', decimal_places: 0,
+    date_format: 'DD/MM/YYYY',
+    options: [],
+    option_style: { defaultColor: '#666666', defaultBorderRadius: 'rounded' },
+    file_config: { images: true, videos: false, documents: true, maxSize: 5, multiple: false },
+    formula_config: { expression: '', referencedFields: [] }
+  };
+  const [form, setForm] = useState(defaultForm);
 
   const loadFields = useCallback(async (page = 1) => {
     try {
@@ -50,30 +60,86 @@ const FieldManager = () => {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm({
-      entity: filterEntity || 'stations', key: '', label: '', type: 'text', source_type: 'json',
-      required: false, options: '', placeholder: '', help_text: ''
-    });
+    setForm({ ...defaultForm, entity: filterEntity || 'stations' });
     setShowForm(true);
     setError('');
   };
 
   const openEdit = (field) => {
     setEditingId(field.id);
-    let opts = '';
+    let parsedOptions = [];
     if (field.options) {
       try {
         const parsed = typeof field.options === 'string' ? JSON.parse(field.options) : field.options;
-        opts = Array.isArray(parsed) ? parsed.map(o => o.label || o.value || o).join(', ') : '';
-      } catch { opts = ''; }
+        parsedOptions = Array.isArray(parsed) ? parsed : [];
+      } catch { parsedOptions = []; }
+    }
+    let parsedOptionStyle = { defaultColor: '#666666', defaultBorderRadius: 'rounded' };
+    if (field.option_style) {
+      try {
+        parsedOptionStyle = typeof field.option_style === 'string' ? JSON.parse(field.option_style) : field.option_style;
+      } catch {}
+    }
+    let parsedFileConfig = { images: true, videos: false, documents: true, maxSize: 5, multiple: false };
+    if (field.file_config) {
+      try {
+        parsedFileConfig = typeof field.file_config === 'string' ? JSON.parse(field.file_config) : field.file_config;
+      } catch {}
+    }
+    let parsedFormulaConfig = { expression: '', referencedFields: [] };
+    if (field.formula_config) {
+      try {
+        parsedFormulaConfig = typeof field.formula_config === 'string' ? JSON.parse(field.formula_config) : field.formula_config;
+      } catch {}
     }
     setForm({
       entity: field.entity, key: field.key, label: field.label, type: field.type,
-      source_type: field.source_type, required: !!field.required, options: opts,
-      placeholder: field.placeholder || '', help_text: field.help_text || ''
+      source_type: field.source_type || 'json', required: !!field.required,
+      placeholder: field.placeholder || '', help_text: field.help_text || '',
+      number_format: field.number_format || 'integer',
+      decimal_places: field.decimal_places ?? 0,
+      date_format: field.date_format || 'DD/MM/YYYY',
+      options: parsedOptions,
+      option_style: parsedOptionStyle,
+      file_config: parsedFileConfig,
+      formula_config: parsedFormulaConfig
     });
     setShowForm(true);
     setError('');
+  };
+
+  const updateForm = (key, value) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const updateFileConfig = (key, value) => {
+    setForm(prev => ({ ...prev, file_config: { ...prev.file_config, [key]: value } }));
+  };
+
+  const updateOptionStyle = (key, value) => {
+    setForm(prev => ({ ...prev, option_style: { ...prev.option_style, [key]: value } }));
+  };
+
+  const addOption = () => {
+    setForm(prev => ({
+      ...prev,
+      options: [...prev.options, { label: '', value: '', color: '#666666', borderRadius: 'rounded' }]
+    }));
+  };
+
+  const updateOption = (index, key, value) => {
+    setForm(prev => {
+      const newOptions = [...prev.options];
+      newOptions[index] = { ...newOptions[index], [key]: value };
+      return { ...prev, options: newOptions };
+    });
+  };
+
+  const removeOption = (index) => {
+    setForm(prev => ({
+      ...prev,
+      options: prev.options.filter((_, i) => i !== index)
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -83,11 +149,27 @@ const FieldManager = () => {
       setError('Vui lòng nhập đầy đủ entity, key, label');
       return;
     }
-    const payload = { ...form, required: form.required ? 1 : 0 };
-    if (form.options) {
-      payload.options = form.options.split(',').map(o => o.trim()).filter(Boolean).map(o => ({ label: o, value: o }));
-    } else {
-      payload.options = null;
+    const payload = {
+      entity: form.entity, key: form.key, label: form.label, type: form.type,
+      source_type: form.source_type, required: form.required ? 1 : 0,
+      placeholder: form.placeholder, help_text: form.help_text
+    };
+    if (form.type === 'number') {
+      payload.number_format = form.number_format;
+      payload.decimal_places = form.decimal_places;
+    }
+    if (form.type === 'date' || form.type === 'datetime') {
+      payload.date_format = form.date_format;
+    }
+    if (form.type === 'select' || form.type === 'multiselect') {
+      payload.options = form.options.length > 0 ? form.options : null;
+      payload.option_style = form.option_style;
+    }
+    if (form.type === 'file') {
+      payload.file_config = form.file_config;
+    }
+    if (form.type === 'formula') {
+      payload.formula_config = form.formula_config;
     }
     try {
       let res;
@@ -166,49 +248,152 @@ const FieldManager = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
             <h2>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}
               <div className="field-form">
                 <div className="form-group">
                   <label>Entity *</label>
-                  <select value={form.entity} onChange={(e) => setForm({ ...form, entity: e.target.value })}>
-                    {ENTITIES.map(e => <option key={e} value={e}>{e}</option>)}
+                  <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)}>
+                    {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label>Key *</label>
-                  <input type="text" value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="vi_du_field" />
+                  <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" />
                 </div>
                 <div className="form-group">
                   <label>Label *</label>
-                  <input type="text" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Tên hiển thị" />
+                  <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" />
                 </div>
                 <div className="form-group">
                   <label>Type</label>
-                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                  <select value={form.type} onChange={(e) => updateForm('type', e.target.value)}>
                     {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label>Placeholder</label>
-                  <input type="text" value={form.placeholder} onChange={(e) => setForm({ ...form, placeholder: e.target.value })} />
+                  <input type="text" value={form.placeholder} onChange={(e) => updateForm('placeholder', e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label>Help Text</label>
-                  <input type="text" value={form.help_text} onChange={(e) => setForm({ ...form, help_text: e.target.value })} />
-                </div>
-                <div className="form-group full-width">
-                  <label>Options (phân tách bằng dấu phẩy, cho select/multiselect)</label>
-                  <input type="text" value={form.options} onChange={(e) => setForm({ ...form, options: e.target.value })} placeholder="Tùy chọn 1, Tùy chọn 2" />
+                  <input type="text" value={form.help_text} onChange={(e) => updateForm('help_text', e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label>
-                    <input type="checkbox" checked={form.required} onChange={(e) => setForm({ ...form, required: e.target.checked })} style={{ marginRight: 6 }} />
+                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} style={{ marginRight: 6 }} />
                     Bắt buộc
                   </label>
                 </div>
+
+                {(form.type === 'number') && (
+                  <div className="form-group-section">
+                    <h4>Cấu hình Number</h4>
+                    <div className="form-group">
+                      <label>Number Format</label>
+                      <select value={form.number_format} onChange={(e) => updateForm('number_format', e.target.value)}>
+                        <option value="integer">Integer (số nguyên)</option>
+                        <option value="float">Float (số thập phân)</option>
+                        <option value="currency">Currency (tiền tệ)</option>
+                      </select>
+                    </div>
+                    {form.number_format !== 'integer' && (
+                      <div className="form-group">
+                        <label>Decimal Places</label>
+                        <input type="number" min="0" max="10" value={form.decimal_places} onChange={(e) => updateForm('decimal_places', parseInt(e.target.value) || 0)} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(form.type === 'date' || form.type === 'datetime') && (
+                  <div className="form-group-section">
+                    <h4>Cấu hình Date</h4>
+                    <div className="form-group">
+                      <label>Date Format</label>
+                      <select value={form.date_format} onChange={(e) => updateForm('date_format', e.target.value)}>
+                        {DATE_FORMAT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {(form.type === 'select' || form.type === 'multiselect') && (
+                  <div className="form-group-section">
+                    <h4>Options</h4>
+                    <div className="options-editor">
+                      {form.options.map((opt, idx) => (
+                        <div key={idx} className="option-row">
+                          <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
+                          <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
+                          <input type="color" value={opt.color || '#666666'} onChange={(e) => updateOption(idx, 'color', e.target.value)} title="Màu sắc" />
+                          <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
+                            {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                          <button type="button" className="btn btn-sm btn-delete" onClick={() => removeOption(idx)}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={addOption}>+ Thêm option</button>
+                    </div>
+                    <h4>Option Style</h4>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Default Color</label>
+                        <input type="color" value={form.option_style.defaultColor} onChange={(e) => updateOptionStyle('defaultColor', e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Default Border Radius</label>
+                        <select value={form.option_style.defaultBorderRadius} onChange={(e) => updateOptionStyle('defaultBorderRadius', e.target.value)}>
+                          {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(form.type === 'file') && (
+                  <div className="form-group-section">
+                    <h4>Cấu hình File</h4>
+                    <div className="form-row">
+                      <label>
+                        <input type="checkbox" checked={form.file_config.images} onChange={(e) => updateFileConfig('images', e.target.checked)} style={{ marginRight: 4 }} />
+                        Images
+                      </label>
+                      <label>
+                        <input type="checkbox" checked={form.file_config.videos} onChange={(e) => updateFileConfig('videos', e.target.checked)} style={{ marginRight: 4 }} />
+                        Videos
+                      </label>
+                      <label>
+                        <input type="checkbox" checked={form.file_config.documents} onChange={(e) => updateFileConfig('documents', e.target.checked)} style={{ marginRight: 4 }} />
+                        Documents
+                      </label>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Max Size (MB)</label>
+                        <input type="number" min="1" max="100" value={form.file_config.maxSize} onChange={(e) => updateFileConfig('maxSize', parseInt(e.target.value) || 5)} />
+                      </div>
+                      <div className="form-group">
+                        <label>
+                          <input type="checkbox" checked={form.file_config.multiple} onChange={(e) => updateFileConfig('multiple', e.target.checked)} style={{ marginRight: 4 }} />
+                          Multiple files
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(form.type === 'formula') && (
+                  <div className="form-group-section">
+                    <h4>Cấu hình Formula</h4>
+                    <div className="form-group full-width">
+                      <label>Formula Expression</label>
+                      <textarea value={form.formula_config.expression} onChange={(e) => updateForm('formula_config', { ...form.formula_config, expression: e.target.value })} placeholder="VD: price * quantity * (1 - discount)" rows={3} />
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
@@ -222,7 +407,7 @@ const FieldManager = () => {
       <div className="filter-bar">
         <select value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}>
           <option value="">Tất cả entity</option>
-          {ENTITIES.map(e => <option key={e} value={e}>{e}</option>)}
+          {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
         </select>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
@@ -275,8 +460,8 @@ const FieldManager = () => {
 
       <Pagination
         page={pagination.page}
-        totalPages={pagination.totalPages}
-        total={pagination.total}
+        totalPages={pagination.pagination?.totalPages || pagination.totalPages}
+        total={pagination.pagination?.total || pagination.total}
         onPageChange={loadFields}
       />
     </div>

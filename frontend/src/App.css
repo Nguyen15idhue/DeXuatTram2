@@ -1947,6 +1947,68 @@ select:focus {
   background: #f0fdf4;
   color: #16a34a;
 }
+.admin-fields-page .form-group-section {
+  grid-column: 1 / -1;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+}
+.admin-fields-page .form-group-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e0e0e0;
+}
+.admin-fields-page .form-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.admin-fields-page .form-row .form-group {
+  flex: 1;
+}
+.admin-fields-page .form-row label {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+}
+.admin-fields-page .options-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.admin-fields-page .option-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.admin-fields-page .option-row input[type="text"] {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.admin-fields-page .option-row input[type="color"] {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+}
+.admin-fields-page .option-row select {
+  padding: 6px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+}
 
 /* FormBuilder & ViewBuilder */
 .builder-layout {

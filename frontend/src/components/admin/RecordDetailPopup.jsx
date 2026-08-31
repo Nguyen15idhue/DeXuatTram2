@@ -191,9 +191,11 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
               <span className="popup-field-value">
                 {mode === 'edit' ? (
                   <DynamicField
-                    field={{ ...field, type: field.field_type || field.type }}
+                    field={field}
                     value={value}
                     onChange={(val) => handleFieldChange(key, val)}
+                    entityId={record.id}
+                    entityType={entity}
                   />
                 ) : (
                   <FieldRenderer field={{ type: field.field_type || field.type, options: field.options }} value={value} />

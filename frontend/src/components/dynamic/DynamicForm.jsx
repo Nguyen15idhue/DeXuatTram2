@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService } from '../../services/api';
 import DynamicField from './DynamicField';
-import FileUpload from './FileUpload';
 
 const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) => {
   const { token } = useAuth();
@@ -98,21 +97,13 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
                 {field.label}
                 {field.required && <span style={{ color: '#dc2626' }}> *</span>}
               </label>
-              {field.type === 'file' ? (
-                <FileUpload
-                  value={formData[field.key]}
-                  onChange={(val) => handleChange(field.key, val)}
-                  entityType={entity}
-                  multiple={field.config?.multiple}
-                />
-              ) : (
-                <DynamicField
-                  field={field}
-                  value={formData[field.key]}
-                  onChange={(val) => handleChange(field.key, val)}
-                  error={errors[field.key]}
-                />
-              )}
+              <DynamicField
+                field={field}
+                value={formData[field.key]}
+                onChange={(val) => handleChange(field.key, val)}
+                error={errors[field.key]}
+                entityType={entity}
+              />
               {field.help_text && <div className="field-help">{field.help_text}</div>}
               {errors[field.key] && <div className="field-error">{errors[field.key]}</div>}
             </div>

@@ -36,7 +36,11 @@ exports.getByEntity = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status } = req.body;
+    const {
+      entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
+      number_format, decimal_places, date_format, timezone,
+      source_config, parent_field, option_style, file_config, formula_config
+    } = req.body;
 
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
@@ -57,15 +61,9 @@ exports.create = async (req, res) => {
       entity: entity.trim(),
       key: key.trim(),
       label: label.trim(),
-      type,
-      source_type,
-      required,
-      validation,
-      options,
-      formula,
-      placeholder,
-      help_text,
-      status
+      type, source_type, required, validation, options, formula, placeholder, help_text, status,
+      number_format, decimal_places, date_format, timezone,
+      source_config, parent_field, option_style, file_config, formula_config
     });
 
     res.status(201).json({ success: true, data: field, message: 'Tạo field definition thành công' });
@@ -81,7 +79,11 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status } = req.body;
+    const {
+      entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
+      number_format, decimal_places, date_format, timezone,
+      source_config, parent_field, option_style, file_config, formula_config
+    } = req.body;
 
     const existing = await fieldDefinitionService.getFieldDefinitionById(id);
     if (!existing) {
@@ -107,15 +109,9 @@ exports.update = async (req, res) => {
       entity: entity.trim(),
       key: key.trim(),
       label: label.trim(),
-      type,
-      source_type,
-      required,
-      validation,
-      options,
-      formula,
-      placeholder,
-      help_text,
-      status
+      type, source_type, required, validation, options, formula, placeholder, help_text, status,
+      number_format, decimal_places, date_format, timezone,
+      source_config, parent_field, option_style, file_config, formula_config
     });
 
     res.json({ success: true, data: field, message: 'Cập nhật field definition thành công' });

@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import FileUpload from './FileUpload';
 
-const DynamicField = ({ field, value, onChange, error, disabled }) => {
-  const [options, setOptions] = useState([]);
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType }) => {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const parsedOptions = (() => {
     if (!field.options) return [];
@@ -14,12 +15,43 @@ const DynamicField = ({ field, value, onChange, error, disabled }) => {
     }
   })();
 
+  const optionStyle = (() => {
+    if (!field.option_style) return { defaultColor: '#666666', defaultBorderRadius: 'rounded' };
+    if (typeof field.option_style === 'object') return field.option_style;
+    try { return JSON.parse(field.option_style); } catch { return { defaultColor: '#666666', defaultBorderRadius: 'rounded' }; }
+  })();
+
+  const fileConfig = (() => {
+    if (!field.file_config) return { images: true, videos: false, documents: true, maxSize: 5, multiple: false };
+    if (typeof field.file_config === 'object') return field.file_config;
+    try { return JSON.parse(field.file_config); } catch { return { images: true, videos: false, documents: true, maxSize: 5, multiple: false }; }
+  })();
+
+  const buildAccept = () => {
+    const parts = [];
+    if (fileConfig.images) parts.push('image/*');
+    if (fileConfig.videos) parts.push('video/*');
+    if (fileConfig.documents) parts.push('application/pdf,.doc,.docx,.xls,.xlsx,.txt');
+    return parts.join(',') || undefined;
+  };
+
+  const getBadgeStyle = (opt) => {
+    const color = opt.color || optionStyle.defaultColor || '#666666';
+    const radius = opt.borderRadius || optionStyle.defaultBorderRadius || 'rounded';
+    const radiusMap = { square: '2px', 'rounded-sm': '4px', rounded: '8px', 'rounded-full': '9999px' };
+    return {
+      display: 'inline-block', padding: '2px 10px', fontSize: 12, fontWeight: 500,
+      color: '#fff', backgroundColor: color, borderRadius: radiusMap[radius] || '8px', cursor: 'pointer'
+    };
+  };
+
   const handleChange = (e) => {
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     onChange(val);
   };
 
   const baseClass = `form-control ${error ? 'is-invalid' : ''}`;
+  const step = field.type === 'number' ? (field.number_format === 'integer' ? '1' : (field.decimal_places > 0 ? '0.' + '0'.repeat(field.decimal_places - 1) + '1' : 'any')) : undefined;
 
   switch (field.type) {
     case 'textarea':
@@ -39,11 +71,11 @@ const DynamicField = ({ field, value, onChange, error, disabled }) => {
         <input
           type="number"
           className={baseClass}
-          value={value || ''}
+          value={value ?? ''}
           onChange={handleChange}
           placeholder={field.placeholder || ''}
           disabled={disabled}
-          step="any"
+          step={step || 'any'}
         />
       );
 
@@ -118,30 +150,72 @@ const DynamicField = ({ field, value, onChange, error, disabled }) => {
         </label>
       );
 
-    case 'select':
+    case 'select': {
+      const selectedOpt = parsedOptions.find(o => (o.value || o) === value);
       return (
-        <select className={baseClass} value={value || ''} onChange={handleChange} disabled={disabled}>
-          <option value="">-- Chọn --</option>
-          {parsedOptions.map((opt, idx) => (
-            <option key={idx} value={opt.value || opt}>{opt.label || opt}</option>
-          ))}
-        </select>
+        <div className="dynamic-field-select" style={{ position: 'relative' }}>
+          <div
+            className={baseClass}
+            style={{ cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}
+            onClick={() => !disabled && setDropdownOpen(!dropdownOpen)}
+          >
+            {value && selectedOpt ? (
+              <span style={getBadgeStyle(selectedOpt)}>{selectedOpt.label || value}</span>
+            ) : (
+              <span style={{ color: '#999' }}>-- Chọn --</span>
+            )}
+            <span style={{ marginLeft: 'auto', fontSize: 10 }}>▼</span>
+          </div>
+          {dropdownOpen && (
+            <div className="dynamic-select-dropdown" style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+              background: '#fff', border: '1px solid #d0d0d0', borderRadius: 6,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 200, overflow: 'auto', padding: 4
+            }}>
+              <div
+                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 13, color: '#999' }}
+                onClick={() => { onChange(''); setDropdownOpen(false); }}
+              >
+                -- Chọn --
+              </div>
+              {parsedOptions.map((opt, idx) => {
+                const optVal = opt.value || opt;
+                const optLabel = opt.label || opt;
+                const isSelected = value === optVal;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: '6px 10px', cursor: 'pointer', fontSize: 13,
+                      background: isSelected ? '#f0f0f0' : 'transparent'
+                    }}
+                    onClick={() => { onChange(optVal); setDropdownOpen(false); }}
+                  >
+                    <span style={getBadgeStyle(opt)}>{optLabel}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       );
+    }
 
-    case 'multiselect':
+    case 'multiselect': {
+      const selectedValues = Array.isArray(value) ? value : [];
       return (
-        <div className="dynamic-field-multiselect">
+        <div className="dynamic-field-multiselect" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {parsedOptions.map((opt, idx) => {
             const optVal = opt.value || opt;
             const optLabel = opt.label || opt;
-            const checked = Array.isArray(value) && value.includes(optVal);
+            const isSelected = selectedValues.includes(optVal);
             return (
-              <label key={idx} className="dynamic-field-checkbox">
+              <label key={idx} style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={checked}
+                  checked={isSelected}
                   onChange={(e) => {
-                    const current = Array.isArray(value) ? [...value] : [];
+                    const current = [...selectedValues];
                     if (e.target.checked) {
                       current.push(optVal);
                     } else {
@@ -151,22 +225,34 @@ const DynamicField = ({ field, value, onChange, error, disabled }) => {
                     onChange(current);
                   }}
                   disabled={disabled}
+                  style={{ display: 'none' }}
                 />
-                <span>{optLabel}</span>
+                <span style={{
+                  ...getBadgeStyle(opt),
+                  opacity: isSelected ? 1 : 0.5,
+                  outline: isSelected ? `2px solid ${opt.color || optionStyle.defaultColor || '#666'}` : 'none'
+                }}>
+                  {isSelected ? '✓ ' : ''}{optLabel}
+                </span>
               </label>
             );
           })}
+          {parsedOptions.length === 0 && <span style={{ color: '#999', fontSize: 13 }}>Không có options</span>}
         </div>
       );
+    }
 
     case 'file':
       return (
-        <input
-          type="file"
-          className={`form-control-file ${error ? 'is-invalid' : ''}`}
-          onChange={(e) => onChange(e.target.files)}
+        <FileUpload
+          value={value}
+          onChange={onChange}
+          entityId={entityId}
+          entityType={entityType}
+          multiple={fileConfig.multiple}
+          accept={buildAccept()}
           disabled={disabled}
-          multiple={field.config?.multiple || false}
+          fileConfig={fileConfig}
         />
       );
 

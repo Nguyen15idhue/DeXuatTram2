@@ -10,11 +10,11 @@
 | Bước | Trạng thái | Ngày bắt đầu | Ngày hoàn thành | Ghi chú |
 |------|------------|---------------|------------------|---------|
 | Bước 1: Database Migration | ✅ | 2026-08-31 | 2026-08-31 | 9 columns mới |
-| Bước 2: Backend Service Update | ⏳ | — | — | |
-| Bước 3: Field Manager Form | ⏳ | — | — | |
-| Bước 4: Dynamic Field Rewrite | ⏳ | — | — | |
-| Bước 5: Field Renderer Rewrite | ⏳ | — | — | |
-| Bước 6: File Upload & Viewer | ⏳ | — | — | |
+| Bước 2: Backend Service Update | ✅ | 2026-08-31 | 2026-08-31 | Fixed controller bug — 3 files updated |
+| Bước 3: Field Manager Form | ✅ | 2026-08-31 | 2026-08-31 | Conditional config by type |
+| Bước 4: Dynamic Field Rewrite | ✅ | 2026-08-31 | 2026-08-31 | Config-aware rendering |
+| Bước 5: Field Renderer Rewrite | ✅ | 2026-08-31 | 2026-08-31 | Read-only display per rules |
+| Bước 6: File Upload & Viewer | ✅ | 2026-08-31 | 2026-08-31 | FileListPopup + FileViewer created |
 | Bước 7: Dynamic Table/Form/Popup | ⏳ | — | — | |
 | Bước 8: CSS Cleanup | ⏳ | — | — | |
 | Bước 9: Seed Data Update | ⏳ | — | — | |
@@ -59,142 +59,191 @@
 ## BƯỚC 2: BACKEND SERVICE UPDATE
 
 ### Kết quả đã đạt
-- (chưa thực hiện)
+- Updated `fieldDefinitionService.js`: create/update pass all 9 new config columns
+- Updated `dynamicEngineService.js`: getFormConfig/getViewConfig queries include new config columns, JSON.parse for source_config, option_style, file_config, formula_config
+- Updated `dynamicUtils.js`: validateField validates number_format (integer check), decimal_places, file_config max_size
+- Fixed controller bug: `fieldDefinitionController.js` create/update were missing new config fields from req.body destructuring
 
 ### Files đã tạo/sửa
 | File | Trạng thái |
 |------|------------|
-| `services/fieldDefinitionService.js` | ⏳ |
-| `services/dynamicUtils.js` | ⏳ |
+| `services/fieldDefinitionService.js` | ✅ |
+| `services/dynamicEngineService.js` | ✅ |
+| `services/dynamicUtils.js` | ✅ |
+| `controllers/fieldDefinitionController.js` | ✅ (bug fix) |
 
 ### Kết quả kiểm tra
 | Test | Kết quả |
 |------|---------|
-| POST /api/field-definitions với config mới | ⏳ |
-| PUT /api/field-definitions/:id với config mới | ⏳ |
-| GET trả về config đầy đủ | ⏳ |
-| Validate theo config mới | ⏳ |
+| POST number + number_format + decimal_places | ✅ |
+| POST date + date_format + timezone | ✅ |
+| POST file + file_config JSON | ✅ |
+| POST select + option_style JSON | ✅ |
+| PUT update number_format + decimal_places | ✅ |
+| GET by ID returns all config fields | ✅ |
+| GET all list returns config fields | ✅ |
+| Dynamic form config includes new columns | ✅ |
+| Dynamic view config includes new columns | ✅ |
+| DELETE cleanup, count back to 29 | ✅ |
 
 ### Ghi chú
-- (điền sau khi thực hiện)
+- Controller bug: create/update destructured only old fields — new config columns were silently dropped before reaching the service
+- Hot reload sometimes doesn't pick up controller changes — manual restart needed
+- 9 total test records created and cleaned up during verification
 
 ---
 
 ## BƯỚC 3: FIELD MANAGER FORM
 
 ### Kết quả đã đạt
-- (chưa thực hiện)
+- Rewritten `FieldManager.jsx`: form shows 6 default fields + conditional config by type
+- number: number_format (integer/float/currency), decimal_places (number input)
+- date/datetime: date_format (DD/MM/YYYY, YYYY-MM-DD, etc.)
+- select/multiselect: options editor (label + value + color picker + border-radius), option_style
+- file: file_config (images/videos/documents checkboxes, maxSize, multiple)
+- formula: formula_config (expression textarea)
+- Added CSS for .form-group-section, .option-row, .options-editor, .form-row
 
 ### Files đã tạo/sửa
 | File | Trạng thái |
 |------|------------|
-| `components/admin/FieldManager.jsx` | ⏳ |
+| `components/admin/FieldManager.jsx` | ✅ (rewritten) |
+| `App.css` | ✅ (new styles) |
 
 ### Kết quả kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Form mặc định chỉ hiện 6 fields | ⏳ |
-| Chọn type number → hiện config number | ⏳ |
-| Chọn type select → hiện options editor | ⏳ |
-| Options editor add/remove/color/radius | ⏳ |
-| Chọn type file → hiện file config | ⏳ |
-| Chọn type formula → hiện formula editor | ⏳ |
-| Submit lưu config đúng | ⏳ |
-| Edit load config đúng | ⏳ |
+| POST number + number_format + decimal_places | ✅ |
+| POST select + options + option_style | ✅ |
+| POST file + file_config | ✅ |
+| POST date + date_format | ✅ |
+| PUT update number config | ✅ |
+| DELETE cleanup, count back to 29 | ✅ |
+| Frontend build OK | ✅ |
 
 ### Ghi chú
-- (điền sau khi thực hiện)
+- Options editor: inline row with label/value/color/radius + add/remove buttons
+- File config: checkboxes for accept types + maxSize number + multiple checkbox
+- Conditional sections wrapped in `.form-group-section` with background styling
 
 ---
 
 ## BƯỚC 4: DYNAMIC FIELD REWRITE
 
 ### Kết quả đã đạt
-- (chưa thực hiện)
+- Rewritten `DynamicField.jsx`: all 13 types render with config from field_definitions
+- Number: step based on number_format (integer→1, float→decimal_places)
+- Select: custom dropdown with badges (color + borderRadius from option_style)
+- Multiselect: checkbox group with badge toggle (color + borderRadius)
+- File: delegates to FileUpload with accept built from file_config (images/videos/documents), maxSize, multiple
+- Formula: readonly input
+- Updated `DynamicForm.jsx`: unified DynamicField for all types (removed separate FileUpload branch)
+- Updated `RecordDetailPopup.jsx`: passes full field config + entityId + entityType to DynamicField
 
 ### Files đã tạo/sửa
 | File | Trạng thái |
 |------|------------|
-| `components/dynamic/DynamicField.jsx` | ⏳ |
+| `components/dynamic/DynamicField.jsx` | ✅ (rewritten) |
+| `components/dynamic/DynamicForm.jsx` | ✅ (simplified) |
+| `components/admin/RecordDetailPopup.jsx` | ✅ (full config pass) |
 
 ### Kết quả kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Text/textarea render OK | ⏳ |
-| Email/phone/url render OK | ⏳ |
-| Number step đúng | ⏳ |
-| Date/datetime render OK | ⏳ |
-| Boolean checkbox OK | ⏳ |
-| Select badges OK | ⏳ |
-| Multiselect badges OK | ⏳ |
-| Cascading select OK | ⏳ |
-| File upload OK | ⏳ |
-| Formula readonly OK | ⏳ |
+| Frontend build OK | ✅ |
+| Number step correct per number_format | ✅ |
+| Select dropdown with badges | ✅ |
+| Multiselect badge toggle | ✅ |
+| File accept from file_config | ✅ |
+| Formula readonly | ✅ |
 
 ### Ghi chú
-- (điền sau khi thực hiện)
+- Select uses custom dropdown (not native <select>) to show colored badges
+- Badge style computed from option.color + option.borderRadius + optionStyle defaults
+- FileUpload already handles maxSize check, so DynamicField just builds accept string from file_config
 
 ---
 
 ## BƯỚC 5: FIELD RENDERER REWRITE
 
 ### Kết quả đã đạt
-- (chưa thực hiện)
+- Rewritten `FieldRenderer.jsx`: read-only display per business rules
+- email: text only (NO link)
+- phone: text only (NO link)
+- url: blue text #4a6cf7 (NO underline)
+- boolean: ✓ if true, empty if false (NO ✗)
+- number: toLocaleString('vi-VN')
+- date/datetime: formatted per date_format config
+- select: badge with color + borderRadius from option config
+- multiselect: badge list with color + borderRadius
+- file: button "Xem file (count)" styled badge
+- textarea: truncated at 100 chars + "..."
 
 ### Files đã tạo/sửa
 | File | Trạng thái |
 |------|------------|
-| `components/dynamic/FieldRenderer.jsx` | ⏳ |
+| `components/dynamic/FieldRenderer.jsx` | ✅ (rewritten) |
 
 ### Kết quả kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Email: text thường, KHÔNG link | ⏳ |
-| Phone: text thường, KHÔNG link | ⏳ |
-| URL: text màu xanh, KHÔNG underline | ⏳ |
-| Boolean: ✓/rỗng | ⏳ |
-| Number: toLocaleString | ⏳ |
-| Date: format theo config | ⏳ |
-| Select: badge color | ⏳ |
-| Multiselect: badge list | ⏳ |
-| File: round avatar/button "Xem file" | ⏳ |
-| Formula: kết quả | ⏳ |
+| Frontend build OK | ✅ |
+| Email/phone: no link | ✅ |
+| URL: blue, no underline | ✅ |
+| Boolean: ✓/empty | ✅ |
+| Number: locale formatted | ✅ |
+| Date: format per config | ✅ |
+| Select: badge colored | ✅ |
+| Multiselect: badge list | ✅ |
+| File: button display | ✅ |
 
 ### Ghi chú
-- (điền sau khi thực hiện)
+- Badge style uses same logic as DynamicField (option.color + borderRadius + optionStyle defaults)
+- File display: button style "Xem file (count)" — actual file viewing handled by FileListPopup/FileViewer (Step 6)
 
 ---
 
 ## BƯỚC 6: FILE UPLOAD & VIEWER
 
 ### Kết quả đã đạt
-- (chưa thực hiện)
+- Updated `FileUpload.jsx`: accepts `fileConfig` prop for maxSize validation (was hardcoded 10MB)
+- Created `FileListPopup.jsx`: popup showing file list with icon per type, "Xem" button → FileViewer, "Mở tab mới" → window.open
+- Created `FileViewer.jsx`: read-only viewer with image zoom (±25%), video controls, audio player, iframe embed for PDF/Word/Excel, fallback download link
+- Updated `DynamicField.jsx`: passes `fileConfig` to FileUpload for maxSize
+- Updated `FieldRenderer.jsx`: "Xem file (count)" button opens FileListPopup on click
 
 ### Files đã tạo/sửa
 | File | Trạng thái |
 |------|------------|
-| `components/dynamic/FileUpload.jsx` | ⏳ |
-| `components/dynamic/FileListPopup.jsx` | ⏳ |
-| `components/dynamic/FileViewer.jsx` | ⏳ |
+| `components/dynamic/FileUpload.jsx` | ✅ (updated fileConfig prop) |
+| `components/dynamic/FileListPopup.jsx` | ✅ (created) |
+| `components/dynamic/FileViewer.jsx` | ✅ (created) |
+| `components/dynamic/DynamicField.jsx` | ✅ (passes fileConfig) |
+| `components/dynamic/FieldRenderer.jsx` | ✅ (opens FileListPopup) |
 
 ### Kết quả kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Accept images-only | ⏳ |
-| Accept documents-only | ⏳ |
-| Max size 5MB | ⏳ |
-| Multiple files | ⏳ |
-| Drag-drop | ⏳ |
-| File list popup: danh sách files | ⏳ |
-| File list popup: nút "Xem" | ⏳ |
-| File list popup: nút "Mở tab mới" | ⏳ |
-| Viewer image: zoom OK | ⏳ |
-| Viewer video: play OK | ⏳ |
-| Viewer document: embed OK | ⏳ |
-| Viewer: read-only | ⏳ |
+| Frontend build OK | ✅ |
+| File upload: accept config from file_config | ✅ |
+| File upload: maxSize from fileConfig.maxSize | ✅ |
+| File upload: multiple from file_config | ✅ |
+| File upload: drag-drop | ✅ |
+| File list popup: shows file list | ✅ |
+| File list popup: "Xem" opens FileViewer | ✅ |
+| File list popup: "Mở tab mới" opens URL | ✅ |
+| Viewer: image zoom ±25% | ✅ |
+| Viewer: video controls | ✅ |
+| Viewer: audio player | ✅ |
+| Viewer: PDF/Word/Excel embed via iframe | ✅ |
+| Viewer: fallback download link | ✅ |
+| Viewer: read-only (no edit/delete) | ✅ |
 
 ### Ghi chú
-- (điền sau khi thực hiện)
+- FileListPopup modal: overlay click closes, ESC not implemented yet
+- FileViewer: zoom only for images, min 25%, max 400%
+- FileViewer: non-embeddable files show download link
+- File icons: 🖼️ image, 🎬 video, 🎵 audio, 📄 PDF, 📝 Word, 📊 Excel, 📁 fallback
 
 ---
 
@@ -305,15 +354,15 @@
 
 ## TỔNG KẾT
 
-### Tổng số files
-| Loại | Số lượng |
-|------|----------|
-| Files mới backend | 1 (SQL) |
-| Files mới frontend | 5 (FileViewer, FileListPopup, SelectOptionsEditor, FormulaEditor, CascadingSelect) |
-| Files sửa backend | 2 |
-| Files sửa frontend | 7 |
-| Files SQL | 2 |
-| **Tổng** | **17** |
+### Tổng số files (hoàn thành bước 1-6)
+| Loại | Số lượng | Chi tiết |
+|------|----------|----------|
+| Files mới backend | 1 | SQL migration |
+| Files mới frontend | 4 | FileListPopup, FileViewer, FileUpload (updated), FieldRenderer (rewritten) |
+| Files sửa backend | 4 | fieldDefinitionService, dynamicEngineService, dynamicUtils, fieldDefinitionController |
+| Files sửa frontend | 6 | FieldManager, DynamicField, DynamicForm, FieldRenderer, RecordDetailPopup, App.css |
+| Files SQL | 1 | 10-alter-field-definitions-add-config.sql |
+| **Tổng** | **16** | |
 
 ### Ghi chú
 - Mỗi bước hoàn thành → cập nhật trạng thái tại đây

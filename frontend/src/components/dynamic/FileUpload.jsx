@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled }) => {
+const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {} }) => {
   const { token } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -25,10 +25,10 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
 
   const handleFiles = async (fileList) => {
     setError('');
-    const max_size = 10 * 1024 * 1024;
+    const max_size = (fileConfig.maxSize || 10) * 1024 * 1024;
     for (const f of fileList) {
       if (f.size > max_size) {
-        setError(`File "${f.name}" vượt quá 10MB`);
+        setError(`File "${f.name}" vượt quá ${fileConfig.maxSize || 10}MB`);
         return;
       }
     }
