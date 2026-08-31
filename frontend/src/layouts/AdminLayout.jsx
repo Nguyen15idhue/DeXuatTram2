@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { preloadRoute } from '../App';
 
 const AdminLayout = () => {
   const { user, isAuthenticated, isAdmin, loading, logout } = useAuth();
@@ -62,6 +63,7 @@ const AdminLayout = () => {
                 to={item.path}
                 className={isActive ? 'active' : ''}
                 onClick={handleNavClick}
+                onMouseEnter={() => preloadRoute(item.path)}
               >
                 <span>{item.icon}</span> {item.label}
               </Link>

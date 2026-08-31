@@ -23,13 +23,33 @@ const AdminViewBuilderPage = lazy(() => import('./pages/admin/AdminViewBuilderPa
 const AdminRecordFilesPage = lazy(() => import('./pages/admin/AdminRecordFilesPage'));
 const AdminDataListsPage = lazy(() => import('./pages/admin/AdminDataListsPage'));
 
+const routePreloaders = {
+  '/admin': () => import('./pages/admin/AdminDashboard'),
+  '/admin/users': () => import('./pages/admin/AdminUsersPage'),
+  '/admin/stations': () => import('./pages/admin/AdminStationsPage'),
+  '/admin/proposals': () => import('./pages/admin/AdminProposalsPage'),
+  '/admin/fields': () => import('./pages/admin/AdminFieldsPage'),
+  '/admin/forms': () => import('./pages/admin/AdminFormsPage'),
+  '/admin/views': () => import('./pages/admin/AdminViewsPage'),
+  '/admin/data-lists': () => import('./pages/admin/AdminDataListsPage'),
+};
+
+export const preloadRoute = (path) => {
+  const exact = routePreloaders[path];
+  if (exact) { exact(); return; }
+  if (path.startsWith('/admin/forms/')) { import('./pages/admin/AdminFormBuilderPage'); return; }
+  if (path.startsWith('/admin/views/')) { import('./pages/admin/AdminViewBuilderPage'); return; }
+  if (path.includes('/files')) { import('./pages/admin/AdminRecordFilesPage'); return; }
+  if (path.startsWith('/admin/data-lists/')) { import('./pages/admin/AdminDataListsPage'); return; }
+};
+
 import './App.css';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
-        <Suspense fallback={<div className="loading">Đang tải...</div>}>
+        <Suspense fallback={null}>
         <Routes>
           <Route element={<PublicLayout />}>
             <Route path="/login" element={<LoginPage />} />
