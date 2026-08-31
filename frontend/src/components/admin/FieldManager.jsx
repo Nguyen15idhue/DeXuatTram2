@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { fieldDefinitionService } from '../../services/api';
+import { fieldDefinitionService, dataListService } from '../../services/api';
 import Loading from '../Loading';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
@@ -53,6 +53,7 @@ const FieldManager = () => {
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [dataLists, setDataLists] = useState([]);
 
   const defaultForm = {
     entity: 'stations', key: '', label: '', type: 'text', source_type: 'json',
@@ -62,7 +63,9 @@ const FieldManager = () => {
     options: [],
     option_style: { defaultColor: '#666666', defaultBorderRadius: 'rounded' },
     file_config: { images: true, videos: false, documents: true, maxSize: 5, multiple: false },
-    formula_config: { expression: '', referencedFields: [] }
+    formula_config: { expression: '', referencedFields: [] },
+    data_list_id: null,
+    data_list_column: ''
   };
   const [form, setForm] = useState(defaultForm);
 
@@ -86,10 +89,20 @@ const FieldManager = () => {
 
   useEffect(() => { loadFields(1); }, [loadFields]);
 
+  useEffect(() => {
+    const loadDataLists = async () => {
+      try {
+        const res = await dataListService.getAll('limit=100', token);
+        if (res.success) setDataLists(res.data);
+      } catch {}
+    };
+    if (token) loadDataLists();
+  }, [token]);
+
   const openCreate = () => {
     setEditingId(null);
     setEditingIsFixed(false);
-    setForm({ ...defaultForm, entity: filterEntity || 'stations' });
+    setForm({ ...defaultForm, entity: filterEntity || 'stations', data_list_id: null });
     setShowForm(true);
     setError('');
   };
@@ -132,7 +145,9 @@ const FieldManager = () => {
       options: parsedOptions,
       option_style: parsedOptionStyle,
       file_config: parsedFileConfig,
-      formula_config: parsedFormulaConfig
+      formula_config: parsedFormulaConfig,
+      data_list_id: field.data_list_id || null,
+      data_list_column: field.data_list_column || ''
     });
     setShowForm(true);
     setError('');
@@ -194,6 +209,8 @@ const FieldManager = () => {
     if (form.type === 'select' || form.type === 'multiselect') {
       payload.options = form.options.length > 0 ? form.options : null;
       payload.option_style = form.option_style;
+      payload.data_list_id = form.data_list_id || null;
+      payload.data_list_column = form.data_list_column || null;
     }
     if (form.type === 'file') {
       payload.file_config = form.file_config;
@@ -352,60 +369,106 @@ const FieldManager = () => {
 
                 {(form.type === 'select' || form.type === 'multiselect') && (
                   <div className="form-group-section">
-                    <h4>Options</h4>
-                    <div className="options-editor">
-                      {form.options.map((opt, idx) => (
-                        <div key={idx} className="option-row">
-                          <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
-                          <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
-                          <div className="color-select" title="Màu sắc">
-                            <div className="color-selected" style={{ backgroundColor: opt.color || '#666666' }} />
-                            <div className="color-dropdown">
-                              {COLOR_PALETTE.map(c => (
-                                <div
-                                  key={c.value}
-                                  className="color-option"
-                                  style={{ backgroundColor: c.value }}
-                                  title={c.label}
-                                  onClick={() => updateOption(idx, 'color', c.value)}
-                                />
-                              ))}
+                    <h4>Nguồn dữ liệu</h4>
+                    <div className="form-group">
+                      <select value={form.data_list_id ? 'data_list' : 'manual'} onChange={(e) => {
+                        if (e.target.value === 'manual') {
+                          setForm(prev => ({ ...prev, data_list_id: null }));
+                        } else {
+                          setForm(prev => ({ ...prev, data_list_id: dataLists.length > 0 ? dataLists[0].id : null }));
+                        }
+                      }}>
+                        <option value="manual">Tự nhập options</option>
+                        <option value="data_list">Từ Data List</option>
+                      </select>
+                    </div>
+
+                    {form.data_list_id ? (
+                      <>
+                        <div className="form-group">
+                          <label>Chọn Data List</label>
+                          <select value={form.data_list_id || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_id: parseInt(e.target.value) || null }))}>
+                            <option value="">-- Chọn data list --</option>
+                            {dataLists.map(dl => (
+                              <option key={dl.id} value={dl.id}>{dl.name} ({dl.row_count || 0} rows)</option>
+                            ))}
+                          </select>
+                          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                            Quản lý data list tại <a href="/admin/data-lists" target="_blank" rel="noopener noreferrer">/admin/data-lists</a>
+                          </p>
+                        </div>
+                        {form.data_list_id && (() => {
+                          const selectedDL = dataLists.find(dl => dl.id === form.data_list_id);
+                          const cols = selectedDL?.columns_config || [];
+                          return cols.length > 0 ? (
+                            <div className="form-group">
+                              <label>Column (cột dữ liệu cho field này)</label>
+                              <select value={form.data_list_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_column: e.target.value }))}>
+                                <option value="">-- Chọn column --</option>
+                                {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
+                              </select>
+                            </div>
+                          ) : null;
+                        })()}
+                      </>
+                    ) : (
+                      <>
+                        <h4>Options</h4>
+                        <div className="options-editor">
+                          {form.options.map((opt, idx) => (
+                            <div key={idx} className="option-row">
+                              <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
+                              <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
+                              <div className="color-select" title="Màu sắc">
+                                <div className="color-selected" style={{ backgroundColor: opt.color || '#666666' }} />
+                                <div className="color-dropdown">
+                                  {COLOR_PALETTE.map(c => (
+                                    <div
+                                      key={c.value}
+                                      className="color-option"
+                                      style={{ backgroundColor: c.value }}
+                                      title={c.label}
+                                      onClick={() => updateOption(idx, 'color', c.value)}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
+                                {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                              <button type="button" className="btn btn-sm btn-delete" onClick={() => removeOption(idx)}>✕</button>
+                            </div>
+                          ))}
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={addOption}>+ Thêm option</button>
+                        </div>
+                        <h4>Option Style</h4>
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label>Default Color</label>
+                            <div className="color-select">
+                              <div className="color-selected" style={{ backgroundColor: form.option_style.defaultColor }} />
+                              <div className="color-dropdown">
+                                {COLOR_PALETTE.map(c => (
+                                  <div
+                                    key={c.value}
+                                    className="color-option"
+                                    style={{ backgroundColor: c.value }}
+                                    title={c.label}
+                                    onClick={() => updateOptionStyle('defaultColor', c.value)}
+                                  />
+                                ))}
+                              </div>
                             </div>
                           </div>
-                          <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
-                            {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                          <button type="button" className="btn btn-sm btn-delete" onClick={() => removeOption(idx)}>✕</button>
-                        </div>
-                      ))}
-                      <button type="button" className="btn btn-sm btn-secondary" onClick={addOption}>+ Thêm option</button>
-                    </div>
-                    <h4>Option Style</h4>
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label>Default Color</label>
-                        <div className="color-select">
-                          <div className="color-selected" style={{ backgroundColor: form.option_style.defaultColor }} />
-                          <div className="color-dropdown">
-                            {COLOR_PALETTE.map(c => (
-                              <div
-                                key={c.value}
-                                className="color-option"
-                                style={{ backgroundColor: c.value }}
-                                title={c.label}
-                                onClick={() => updateOptionStyle('defaultColor', c.value)}
-                              />
-                            ))}
+                          <div className="form-group">
+                            <label>Default Border Radius</label>
+                            <select value={form.option_style.defaultBorderRadius} onChange={(e) => updateOptionStyle('defaultBorderRadius', e.target.value)}>
+                              {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
                           </div>
                         </div>
-                      </div>
-                      <div className="form-group">
-                        <label>Default Border Radius</label>
-                        <select value={form.option_style.defaultBorderRadius} onChange={(e) => updateOptionStyle('defaultBorderRadius', e.target.value)}>
-                          {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </div>
                 )}
 

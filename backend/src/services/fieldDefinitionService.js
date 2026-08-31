@@ -48,14 +48,14 @@ exports.createFieldDefinition = async (data) => {
   const {
     entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
     number_format, decimal_places, date_format, timezone,
-    source_config, parent_field, option_style, file_config, formula_config
+    source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
   } = data;
   const [result] = await pool.query(
     `INSERT INTO field_definitions (
       entity, \`key\`, label, type, number_format, decimal_places, date_format, timezone,
       source_type, required, validation, options, source_config, parent_field, option_style,
-      file_config, formula_config, formula, placeholder, help_text, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      file_config, formula_config, formula, placeholder, help_text, status, data_list_id, data_list_column
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entity,
       key,
@@ -77,7 +77,9 @@ exports.createFieldDefinition = async (data) => {
       formula || null,
       placeholder || null,
       help_text || null,
-      status || 'active'
+      status || 'active',
+      data_list_id || null,
+      data_list_column || null
     ]
   );
   const [rows] = await pool.query('SELECT * FROM field_definitions WHERE id = ?', [result.insertId]);
@@ -88,7 +90,7 @@ exports.updateFieldDefinition = async (id, data) => {
   const {
     entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
     number_format, decimal_places, date_format, timezone,
-    source_config, parent_field, option_style, file_config, formula_config
+    source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
   } = data;
   await pool.query(
     `UPDATE field_definitions SET
@@ -98,6 +100,7 @@ exports.updateFieldDefinition = async (id, data) => {
       validation = ?, options = ?, source_config = ?, parent_field = ?,
       option_style = ?, file_config = ?, formula_config = ?,
       formula = ?, placeholder = ?, help_text = ?, status = ?,
+      data_list_id = ?, data_list_column = ?,
       updated_at = NOW()
      WHERE id = ?`,
     [
@@ -122,6 +125,8 @@ exports.updateFieldDefinition = async (id, data) => {
       placeholder || null,
       help_text || null,
       status || 'active',
+      data_list_id || null,
+      data_list_column || null,
       id
     ]
   );

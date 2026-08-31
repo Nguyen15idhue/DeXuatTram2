@@ -29,6 +29,7 @@ const AdminLayout = () => {
     { path: '/admin/fields', label: 'Field Definitions', icon: '📝', parent: 'Cấu hình' },
     { path: '/admin/forms', label: 'Forms Manager', icon: '📄', parent: 'Cấu hình' },
     { path: '/admin/views', label: 'Views Manager', icon: '📊', parent: 'Cấu hình' },
+    { path: '/admin/data-lists', label: 'Data Lists', icon: '📋', parent: 'Cấu hình' },
   ];
 
   const handleNavClick = () => {

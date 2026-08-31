@@ -391,5 +391,33 @@ export const excelService = {
 
   confirmImport(rows, token) {
     return api.postWithAuth('/admin/excel/import/confirm', { rows }, token);
+  },
+
+};
+
+export const dataListService = {
+  getAll(params, token) {
+    return api.getWithAuth(`/admin/data-lists?${params}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/data-lists/${id}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/data-lists', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/data-lists/${id}`, data, token);
+  },
+  remove(id, token) {
+    return api.deleteWithAuth(`/admin/data-lists/${id}`, token);
+  },
+  addRows(id, rows, token) {
+    return api.postWithAuth(`/admin/data-lists/${id}/rows`, { rows }, token);
+  },
+  updateRow(id, rowId, data, token) {
+    return api.putWithAuth(`/admin/data-lists/${id}/rows/${rowId}`, { data }, token);
+  },
+  deleteRow(id, rowId, token) {
+    return api.deleteWithAuth(`/admin/data-lists/${id}/rows/${rowId}`, token);
   }
 };

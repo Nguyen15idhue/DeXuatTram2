@@ -22,6 +22,7 @@ const viewsRoutes = require('./routes/views');
 const viewFieldsRoutes = require('./routes/viewFields');
 const dynamicEngineRoutes = require('./routes/dynamicEngine');
 const filesRoutes = require('./routes/files');
+const dataListsRoutes = require('./routes/dataLists');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -97,6 +98,7 @@ app.use('/api/views', viewsRoutes);
 app.use('/api/views', viewFieldsRoutes);
 app.use('/api/dynamic', dynamicEngineRoutes);
 app.use('/api/files', filesRoutes);
+app.use('/api/admin/data-lists', adminLimiter, dataListsRoutes);
 
 // Static file serving for uploads
 const path = require('path');

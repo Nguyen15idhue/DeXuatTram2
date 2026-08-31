@@ -17,7 +17,8 @@ exports.getFormConfig = async (entity, formId) => {
             fd.source_type, fd.required, fd.validation, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
-            fd.formula, fd.placeholder, fd.help_text
+            fd.formula, fd.placeholder, fd.help_text,
+            fd.data_list_id, fd.data_list_column
      FROM form_fields ff
      JOIN field_definitions fd ON ff.field_id = fd.id
      WHERE ff.form_id = ?
@@ -56,7 +57,9 @@ exports.getFormConfig = async (entity, formId) => {
       help_text: f.help_text,
       order_index: f.order_index,
       visible: !!f.visible,
-      config: f.config
+      config: f.config,
+      data_list_id: f.data_list_id || null,
+      data_list_column: f.data_list_column || null
     }))
   };
 };
@@ -76,7 +79,8 @@ exports.getViewConfig = async (entity, viewId) => {
             fd.number_format, fd.decimal_places, fd.date_format, fd.timezone,
             fd.source_type, fd.required, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
-            fd.file_config, fd.formula_config
+            fd.file_config, fd.formula_config,
+            fd.data_list_id, fd.data_list_column
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
      WHERE vf.view_id = ?
@@ -116,7 +120,9 @@ exports.getViewConfig = async (entity, viewId) => {
       width: f.width,
       sortable: !!f.sortable,
       filterable: !!f.filterable,
-      config: f.config
+      config: f.config,
+      data_list_id: f.data_list_id || null,
+      data_list_column: f.data_list_column || null
     })),
     allFields: allFieldDefs.map(f => ({
       id: f.id,
@@ -134,7 +140,9 @@ exports.getViewConfig = async (entity, viewId) => {
       parent_field: f.parent_field,
       option_style: f.option_style ? dynamicUtils.parseOptions(f.option_style) : null,
       file_config: f.file_config ? dynamicUtils.parseOptions(f.file_config) : null,
-      formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null
+      formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null,
+      data_list_id: f.data_list_id || null,
+      data_list_column: f.data_list_column || null
     }))
   };
 };

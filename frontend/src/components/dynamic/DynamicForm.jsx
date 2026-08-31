@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { dynamicService } from '../../services/api';
+import { dynamicService, dataListService } from '../../services/api';
 import DynamicField from './DynamicField';
 
 const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) => {
@@ -11,6 +11,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   const [fields, setFields] = useState([]);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [dataListOptions, setDataListOptions] = useState({});
 
   useEffect(() => {
     if (formId) loadFormConfig();
@@ -38,6 +39,25 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
           }
         });
         setFormData(defaults);
+
+        const dlIds = [...new Set((res.data.fields || []).filter(f => f.data_list_id).map(f => f.data_list_id))];
+        if (dlIds.length > 0) {
+          const dlMap = {};
+          await Promise.all(dlIds.map(async (dlId) => {
+            try {
+              const dlRes = await dataListService.getById(dlId);
+              if (dlRes.success && dlRes.data) {
+                const cols = dlRes.data.columns_config || [];
+                dlMap[dlId] = (dlRes.data.rows || []).map(r => ({
+                  value: cols.length > 0 ? (r.data[cols[0].key] || '') : '',
+                  label: cols.length > 0 ? (r.data[cols[0].key] || '') : '',
+                  _raw: r.data
+                }));
+              }
+            } catch {}
+          }));
+          setDataListOptions(dlMap);
+        }
       }
     } catch {
       setError('Lỗi tải cấu hình form');
@@ -83,6 +103,10 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   }, [formData, parentFieldMap, fields]);
 
   const isOptionValidForParent = (childField, parentVal, optionVal) => {
+    if (childField.data_list_id) {
+      const childOpts = getFilteredOptions(childField);
+      return childOpts.some(o => (o.value || o) === optionVal);
+    }
     if (!childField.source_config) return true;
     try {
       const sc = typeof childField.source_config === 'string' ? JSON.parse(childField.source_config) : childField.source_config;
@@ -94,6 +118,31 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   };
 
   const getFilteredOptions = (field) => {
+    if (field.data_list_id && dataListOptions[field.data_list_id]) {
+      const allOpts = dataListOptions[field.data_list_id];
+      if (field.parent_field) {
+        const parentVal = formData[field.parent_field];
+        if (!parentVal) return [];
+        const parentField = fields.find(f => f.key === field.parent_field);
+        const parentCol = parentField?.data_list_column;
+        const myCol = field.data_list_column;
+        if (parentCol && myCol) {
+          return allOpts.filter(o => o._raw && o._raw[parentCol] === parentVal)
+            .map(o => ({ value: o._raw[myCol], label: o._raw[myCol], _raw: o._raw }));
+        }
+        return allOpts.filter(o => o._raw && Object.values(o._raw).includes(parentVal));
+      }
+      if (field.data_list_column) {
+        const col = field.data_list_column;
+        const seen = new Set();
+        return allOpts.filter(o => {
+          const v = o._raw?.[col];
+          if (v && !seen.has(v)) { seen.add(v); return true; }
+          return false;
+        }).map(o => ({ value: o._raw[col], label: o._raw[col], _raw: o._raw }));
+      }
+      return allOpts;
+    }
     if (!field.parent_field || !field.source_config) return field.options || [];
     const parentVal = formData[field.parent_field];
     if (!parentVal) return [];
@@ -175,7 +224,8 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   if (!formConfig) return <div className="empty-state">Không tìm thấy form</div>;
 
   const renderField = (field) => {
-    const fieldForRender = field.parent_field ? { ...field, options: getFilteredOptions(field) } : field;
+    const resolvedOptions = getFilteredOptions(field);
+    const fieldForRender = { ...field, options: resolvedOptions };
 
     if (field.type === 'formula') {
       return (
