@@ -45,18 +45,34 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
           const dlMap = {};
           await Promise.all(dlIds.map(async (dlId) => {
             try {
-              const dlRes = await dataListService.getById(dlId);
+              const dlRes = await dataListService.getById(dlId, token);
               if (dlRes.success && dlRes.data) {
                 const cols = dlRes.data.columns_config || [];
-                dlMap[dlId] = (dlRes.data.rows || []).map(r => ({
-                  value: cols.length > 0 ? (r.data[cols[0].key] || '') : '',
-                  label: cols.length > 0 ? (r.data[cols[0].key] || '') : '',
-                  _raw: r.data
-                }));
+                const rows = dlRes.data.rows || [];
+                const tree = {};
+                const unique = {};
+                cols.forEach(col => { tree[col.key] = {}; unique[col.key] = []; });
+                rows.forEach(r => {
+                  const data = r.data || {};
+                  cols.forEach(col => {
+                    const val = data[col.key];
+                    if (!val) return;
+                    if (!tree[col.key][val]) tree[col.key][val] = [];
+                    const firstCol = cols[0];
+                    tree[col.key][val].push({
+                      value: firstCol ? (data[firstCol.key] || '') : '',
+                      label: firstCol ? (data[firstCol.key] || '') : '',
+                      _raw: data
+                    });
+                    if (!unique[col.key].includes(val)) unique[col.key].push(val);
+                  });
+                });
+                dlMap[dlId] = { tree, unique };
               }
-            } catch {}
+            } catch (err) { console.error('[DynamicForm] Error loading data list', dlId, err); }
           }));
           setDataListOptions(dlMap);
+          console.log('[DynamicForm] dataListOptions built:', Object.keys(dlMap).map(id => `dl${id}: tree keys=${Object.keys(dlMap[id].tree).join(',')}`));
         }
       }
     } catch {
@@ -121,54 +137,52 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   }, [formData, parentFieldMap, fields]);
 
   const isOptionValidForParent = (childField, parentVal, optionVal) => {
-    if (childField.data_list_id) {
-      const childOpts = getFilteredOptions(childField);
-      return childOpts.some(o => (o.value || o) === optionVal);
+    if (!childField.data_list_id) return true;
+    const { tree } = dataListOptions[childField.data_list_id] || {};
+    if (!tree) return true;
+    const col = childField.data_list_column;
+    if (!col) return true;
+    const parentField = fields.find(f => f.key === childField.parent_field);
+    const parentCol = childField.relation_key || parentField?.data_list_column;
+    if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
+      return tree[parentCol][parentVal].some(r => r._raw?.[col] === optionVal);
     }
-    if (!childField.source_config) return true;
-    try {
-      const sc = typeof childField.source_config === 'string' ? JSON.parse(childField.source_config) : childField.source_config;
-      if (sc[parentVal]) {
-        return sc[parentVal].includes(optionVal);
-      }
-      return true;
-    } catch { return true; }
+    return true;
   };
 
   const getFilteredOptions = (field) => {
     if (field.data_list_id && dataListOptions[field.data_list_id]) {
-      const allOpts = dataListOptions[field.data_list_id];
+      const { tree, unique } = dataListOptions[field.data_list_id];
+      const col = field.data_list_column;
+      if (!col || !tree[col]) return [];
+
       if (field.parent_field) {
         const parentVal = formData[field.parent_field];
         if (!parentVal) return [];
         const parentField = fields.find(f => f.key === field.parent_field);
-        const parentCol = parentField?.data_list_column;
-        const myCol = field.data_list_column;
-        if (parentCol && myCol) {
-          return allOpts.filter(o => o._raw && o._raw[parentCol] === parentVal)
-            .map(o => ({ value: o._raw[myCol], label: o._raw[myCol], _raw: o._raw }));
+        const parentCol = field.relation_key || parentField?.data_list_column;
+        if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
+          const parentRows = tree[parentCol][parentVal];
+          const seen = new Set();
+          return parentRows.filter(r => {
+            const v = r._raw?.[col];
+            if (v && !seen.has(v)) { seen.add(v); return true; }
+            return false;
+          }).map(r => ({ value: r._raw[col], label: r._raw[col], _raw: r._raw }));
         }
-        return allOpts.filter(o => o._raw && Object.values(o._raw).includes(parentVal));
+        return [];
       }
-      if (field.data_list_column) {
-        const col = field.data_list_column;
-        const seen = new Set();
-        return allOpts.filter(o => {
-          const v = o._raw?.[col];
-          if (v && !seen.has(v)) { seen.add(v); return true; }
-          return false;
-        }).map(o => ({ value: o._raw[col], label: o._raw[col], _raw: o._raw }));
-      }
-      return allOpts;
+
+      return (unique[col] || []).map(v => ({ value: v, label: v }));
     }
+
     if (!field.parent_field || !field.source_config) return field.options || [];
     const parentVal = formData[field.parent_field];
     if (!parentVal) return [];
     try {
       const sc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
       if (sc[parentVal]) {
-        const allowed = sc[parentVal];
-        return (field.options || []).filter(o => allowed.includes(o.value || o));
+        return (field.options || []).filter(o => sc[parentVal].includes(o.value || o));
       }
       return field.options || [];
     } catch { return field.options || []; }

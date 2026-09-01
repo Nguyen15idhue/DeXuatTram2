@@ -324,7 +324,15 @@ Sau khi test thành công bước A8, test với file `test_files/Danh-muc-Phuon
 
 ---
 
-## PHASE B: FORMULA VISUAL EDITOR
+## PHASE B: FORMULA VISUAL EDITOR (CẬP NHẬT: PRE + POST)
+
+**Chi tiết:** Xem `docs/4/Formula_PrePost_ThietKe.md`
+
+### Nguyên tắc mới
+- **Pre-formula**: Tính trong lúc điền form (hiện tại)
+- **Post-formula**: Tính SAU khi record tạo xong, dùng record metadata (id, entity, base_url, created_at, user_id, user_email)
+- **formula_config mới**: Thêm `compute_mode: 'pre' | 'post'`
+- **Ví dụ post-formula**: `CONCAT(base_url, '/', entity, '/view=', id)` → tạo link xem record
 
 ---
 
@@ -341,7 +349,7 @@ Sau khi test thành công bước A8, test với file `test_files/Danh-muc-Phuon
 
 ---
 
-## BƯỚC B2: BACKEND — FORMULA VALIDATION
+## BƯỚC B2: BACKEND — FORMULA VALIDATION + POST-FORMULA COMPUTE
 
 ### Chi tiết cần làm
 
@@ -355,10 +363,18 @@ CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY
 **Tạo file `backend/src/services/formulaService.js`:**
 - validateFormula(expression, availableFields)
 - evaluateFormula(expression, scope)
+- evaluatePostFormula(expression, metadata) — MỚI: tính post-formula với record metadata
 
 **Tạo file `backend/src/routes/formulas.js`:**
 - POST /api/formulas/validate
 - POST /api/formulas/preview
+
+**Update `backend/src/services/dynamicUtils.js`:**
+- validateField: Skip post-formula fields khi insert (chưa có giá trị)
+
+**Update entity CRUD services:**
+- Insert: Skip post-formula fields → INSERT → Lấy ID → Compute post-formulas → UPDATE
+- Update: Nếu expression thay đổi → Recompute post-formulas
 
 **Update `backend/src/app.js`:** Thêm route
 
@@ -367,6 +383,8 @@ CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY
 - [ ] Validate expression sai → error rõ
 - [ ] Preview kết quả đúng
 - [ ] 30 custom functions hoạt động
+- [ ] Post-formula compute với record metadata
+- [ ] Insert record → post-formula auto-compute
 - [ ] Swagger docs
 
 ---
@@ -396,30 +414,40 @@ CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY
 
 ---
 
-## BƯỚC B4: FIELDMANAGER — INTEGRATE
+## BƯỚC B4: FIELDMANAGER — INTEGRATE + COMPUTE_MODE
 
 ### Chi tiết cần làm
 - Thay textarea bằng FormulaEditor
 - Truyền allFields, value, onChange
+- Thêm compute_mode selector: ○ Pre (mặc định) ○ Post
+- Nếu post: hiển thị available metadata variables ({id}, {entity}, {base_url}, ...)
+- FieldManager submit: lưu compute_mode vào formula_config
 
 ### Checklist test
 - [ ] Type formula → hiện FormulaEditor
 - [ ] Hiển thị fields từ cùng entity
+- [ ] Compute mode selector: Pre / Post
+- [ ] Post mode: hiển thị metadata variables
 - [ ] Lưu expression đúng
 - [ ] Load lại OK
 
 ---
 
-## BƯỚC B5: DYNAMICFORM — EVAL UPDATE
+## BƯỚC B5: DYNAMICFORM — EVAL UPDATE + POST-FORMULA
 
 ### Chi tiết cần làm
 - Import math.js + custom functions
-- Thay eval bằng math.evaluate()
+- Thay Function() eval bằng math.evaluate()
+- Pre-formula: compute real-time như hiện tại
+- Post-formula: sau khi onSubmit thành công, merge `_postFormulas` từ response vào formData
+- Hiển thị post-formula fields read-only
 
 ### Checklist test
-- [ ] Formula tính đúng
+- [ ] Pre-formula tính đúng
+- [ ] Post-formula compute sau khi insert
+- [ ] Post-formula hiển thị trong form sau khi save
 - [ ] Custom functions hoạt động
-- [ ] Real-time update
+- [ ] Real-time update (pre)
 - [ ] Error handling
 
 ---
@@ -438,7 +466,112 @@ CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY
 
 ---
 
-## PHASE C: INTEGRATION
+## PHASE D: EXCEL THEO VIEW
+
+**Chi tiết:** Xem `docs/4/Excel_TheoView_ThietKe.md`
+
+### Nguyên tắc
+- Excel export/import dùng View Columns + Available Fields từ admin/views
+- Template tự động tạo từ view config
+- Dynamic fields (json) được export/import
+- Admin thay đổi view → Excel tự cập nhật
+
+---
+
+## BƯỚC D1: BACKEND — EXPORT THEO VIEW
+
+### Chi tiết cần làm
+**Sửa `backend/src/services/excelService.js`:**
+- Tạo hàm `exportByView(entity, viewId)`:
+  - Fetch view config từ dynamicEngineService.getViewConfig()
+  - Lấy visible fields
+  - Query data: fixed fields + custom_data JSON fields
+  - Render Excel với field labels làm headers
+- Route: `GET /api/admin/excel/export/{entity}?viewId={viewId}`
+
+### Checklist test
+- [ ] Export stations theo view ID=6
+- [ ] Export proposals theo view ID=8
+- [ ] Export users theo view ID=7
+- [ ] Dynamic fields (json) được export
+- [ ] Labels lấy từ field_definitions
+- [ ] Visible=false fields KHÔNG xuất
+
+---
+
+## BƯỚC D2: BACKEND — TEMPLATE THEO VIEW
+
+### Chi tiết cần làm
+**Sửa `backend/src/services/excelService.js`:**
+- Tạo hàm `getTemplateByView(entity, viewId)`:
+  - Fetch view config
+  - Tạo Excel với headers = field labels
+  - Thêm 1 sample row (hoặc trống)
+- Route: `GET /api/admin/excel/template/{entity}?viewId={viewId}`
+
+### Checklist test
+- [ ] Template stations có headers đúng view config
+- [ ] Template proposals có headers đúng view config
+- [ ] Template users có headers đúng view config
+
+---
+
+## BƯỚC D3: BACKEND — IMPORT THEO VIEW
+
+### Chi tiết cần làm
+**Sửa `backend/src/services/excelService.js`:**
+- Tạo hàm `importPreviewByView(entity, viewId, file)`:
+  - Fetch view config
+  - Map Excel headers → field labels → field keys
+  - Validate data theo field types
+  - Return valid/error rows
+- Tạo hàm `importConfirmByView(entity, viewId, rows)`:
+  - Separate fixed fields vs dynamic fields
+  - INSERT fixed columns + custom_data JSON
+  - Transaction: all-or-nothing
+- Route: POST `/api/admin/excel/import/preview/{entity}?viewId={viewId}`
+- Route: POST `/api/admin/excel/import/confirm/{entity}?viewId={viewId}`
+
+### Checklist test
+- [ ] Import stations theo view ID=6
+- [ ] Dynamic fields lưu vào custom_data
+- [ ] Validate field types
+- [ ] Transaction rollback khi có lỗi
+- [ ] Old endpoints backward compatible
+
+---
+
+## BƯỚC D4: FRONTEND — EXCELSERVICE + ADMIN PAGES
+
+### Chi tiết cần làm
+**Sửa `frontend/src/services/api.js`:**
+- Thêm excelService functions: exportByView, templateByView, previewByView, confirmByView
+
+**Sửa admin pages:**
+- AdminStationsPage: Dùng view ID=6 cho export/import/template
+- AdminProposalsPage: Dùng view ID=8 cho export
+- AdminUsersPage: Dùng view ID=7 cho export
+
+### Checklist test
+- [ ] Export stations button hoạt động
+- [ ] Export proposals button hoạt động
+- [ ] Export users button hoạt động
+- [ ] Import stations hoạt động
+- [ ] Download template hoạt động
+
+---
+
+## BƯỚC D5: INTEGRATION TEST
+
+### Chi tiết cần làm
+- Test full flow export/import với view config thay đổi
+- Test backward compatibility với old endpoints
+
+### Checklist test
+- [ ] Export → Import → Data khớp
+- [ ] Thêm column vào view → Export tự thêm cột
+- [ ] Bỏ column khỏi view → Export tự bỏ cột
+- [ ] Old endpoints vẫn hoạt động
 
 ---
 

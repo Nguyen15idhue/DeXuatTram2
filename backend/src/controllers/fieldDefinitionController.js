@@ -39,7 +39,7 @@ exports.create = async (req, res) => {
     const {
       entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     } = req.body;
 
     if (!entity || !entity.trim()) {
@@ -63,7 +63,7 @@ exports.create = async (req, res) => {
       label: label.trim(),
       type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     });
 
     res.status(201).json({ success: true, data: field, message: 'Tạo field definition thành công' });
@@ -82,7 +82,7 @@ exports.update = async (req, res) => {
     const {
       entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     } = req.body;
 
     const existing = await fieldDefinitionService.getFieldDefinitionById(id);
@@ -120,7 +120,7 @@ exports.update = async (req, res) => {
       label: label.trim(),
       type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     });
 
     res.json({ success: true, data: field, message: 'Cập nhật field definition thành công' });

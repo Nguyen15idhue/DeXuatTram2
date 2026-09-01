@@ -412,6 +412,58 @@ field.data_list.data  → Chỉ dùng khi admin chọn "Nguồn: Data List"
 
 ---
 
+## PHASE B (CẬP NHẬT): FORMULA PRE + POST
+
+**Ngày cập nhật:** 2026-09-01
+**Chi tiết:** Xem `docs/4/Formula_PrePost_ThietKe.md`
+
+### Tóm tắt
+- **Pre-formula**: Tính trong lúc điền form (hiện tại)
+- **Post-formula**: Tính SAU khi record tạo xong, dùng record metadata (id, entity, base_url, ...)
+- **Ví dụ post-formula**: `http://localhost:5173/admin/proposals/view=14`
+
+### Trạng thái
+
+| Bước | Trạng thái | Ghi chú |
+|------|------------|---------|
+| B1: Cài math.js | ⏳ | |
+| B2: Backend formula validation | ⏳ | |
+| B3: Backend post-formula compute | ⏳ | Mới |
+| B4: Backend skip post-formula khi insert | ⏳ | Mới |
+| B5: Frontend FormulaEditor | ⏳ | |
+| B6: FieldManager compute_mode selector | ⏳ | Mới |
+| B7: DynamicForm handle post-formula response | ⏳ | Mới |
+| B8: RecordDetailPopup display post-formula | ⏳ | Mới |
+| B9: CSS + Swagger + Test | ⏳ | |
+
+---
+
+## PHASE D (MỚI): EXCEL THEO VIEW
+
+**Ngày tạo:** 2026-09-01
+**Chi tiết:** Xem `docs/4/Excel_TheoView_ThietKe.md`
+
+### Tóm tắt
+- Excel export/import dùng View Columns + Available Fields từ admin/views
+- Template tự động tạo từ view config
+- Dynamic fields (json) được export/import
+- Admin thay đổi view → Excel tự cập nhật
+
+### Trạng thái
+
+| Bước | Trạng thái | Ghi chú |
+|------|------------|---------|
+| D1: Backend export theo view | ⏳ | |
+| D2: Backend template theo view | ⏳ | |
+| D3: Backend import theo view | ⏳ | |
+| D4: Handle custom_data JSON trong import | ⏳ | |
+| D5: Frontend excelService updates | ⏳ | |
+| D6: Frontend admin pages updates | ⏳ | |
+| D7: Backward compatible old endpoints | ⏳ | |
+| D8: Test | ⏳ | |
+
+---
+
 ## PHASE C: INTEGRATION
 
 ---

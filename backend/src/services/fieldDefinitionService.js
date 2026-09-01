@@ -48,14 +48,14 @@ exports.createFieldDefinition = async (data) => {
   const {
     entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
     number_format, decimal_places, date_format, timezone,
-    source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
+    source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
   } = data;
   const [result] = await pool.query(
     `INSERT INTO field_definitions (
       entity, \`key\`, label, type, number_format, decimal_places, date_format, timezone,
       source_type, required, validation, options, source_config, parent_field, option_style,
-      file_config, formula_config, formula, placeholder, help_text, status, data_list_id, data_list_column
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      file_config, formula_config, formula, placeholder, help_text, status, data_list_id, data_list_column, relation_key
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entity,
       key,
@@ -79,7 +79,8 @@ exports.createFieldDefinition = async (data) => {
       help_text || null,
       status || 'active',
       data_list_id || null,
-      data_list_column || null
+      data_list_column || null,
+      relation_key || null
     ]
   );
   const [rows] = await pool.query('SELECT * FROM field_definitions WHERE id = ?', [result.insertId]);
@@ -90,7 +91,7 @@ exports.updateFieldDefinition = async (id, data) => {
   const {
     entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
     number_format, decimal_places, date_format, timezone,
-    source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column
+    source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
   } = data;
   await pool.query(
     `UPDATE field_definitions SET
@@ -100,7 +101,7 @@ exports.updateFieldDefinition = async (id, data) => {
       validation = ?, options = ?, source_config = ?, parent_field = ?,
       option_style = ?, file_config = ?, formula_config = ?,
       formula = ?, placeholder = ?, help_text = ?, status = ?,
-      data_list_id = ?, data_list_column = ?,
+      data_list_id = ?, data_list_column = ?, relation_key = ?,
       updated_at = NOW()
      WHERE id = ?`,
     [
@@ -127,6 +128,7 @@ exports.updateFieldDefinition = async (id, data) => {
       status || 'active',
       data_list_id || null,
       data_list_column || null,
+      relation_key || null,
       id
     ]
   );

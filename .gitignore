@@ -4,3 +4,6 @@ frontend/node_modules
 backend/node_modules
 .env
 backend/storage/uploads/*
+10
+test_api.js
+test_files/

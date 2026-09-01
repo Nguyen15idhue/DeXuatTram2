@@ -18,7 +18,7 @@ exports.getFormConfig = async (entity, formId) => {
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
             fd.formula, fd.placeholder, fd.help_text,
-            fd.data_list_id, fd.data_list_column
+            fd.data_list_id, fd.data_list_column, fd.relation_key
      FROM form_fields ff
      JOIN field_definitions fd ON ff.field_id = fd.id
      WHERE ff.form_id = ?
@@ -59,7 +59,8 @@ exports.getFormConfig = async (entity, formId) => {
       visible: !!f.visible,
       config: f.config,
       data_list_id: f.data_list_id || null,
-      data_list_column: f.data_list_column || null
+      data_list_column: f.data_list_column || null,
+      relation_key: f.relation_key || null
     }))
   };
 };
@@ -80,7 +81,7 @@ exports.getViewConfig = async (entity, viewId) => {
             fd.source_type, fd.required, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
-            fd.data_list_id, fd.data_list_column
+            fd.data_list_id, fd.data_list_column, fd.relation_key
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
      WHERE vf.view_id = ?
@@ -122,7 +123,8 @@ exports.getViewConfig = async (entity, viewId) => {
       filterable: !!f.filterable,
       config: f.config,
       data_list_id: f.data_list_id || null,
-      data_list_column: f.data_list_column || null
+      data_list_column: f.data_list_column || null,
+      relation_key: f.relation_key || null
     })),
     allFields: allFieldDefs.map(f => ({
       id: f.id,
@@ -142,7 +144,8 @@ exports.getViewConfig = async (entity, viewId) => {
       file_config: f.file_config ? dynamicUtils.parseOptions(f.file_config) : null,
       formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null,
       data_list_id: f.data_list_id || null,
-      data_list_column: f.data_list_column || null
+      data_list_column: f.data_list_column || null,
+      relation_key: f.relation_key || null
     }))
   };
 };

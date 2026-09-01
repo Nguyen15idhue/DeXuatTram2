@@ -54,6 +54,7 @@ const FieldManager = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [dataLists, setDataLists] = useState([]);
+  const [entityFields, setEntityFields] = useState([]);
 
   const defaultForm = {
     entity: 'stations', key: '', label: '', type: 'text', source_type: 'json',
@@ -65,7 +66,9 @@ const FieldManager = () => {
     file_config: { images: true, videos: false, documents: true, maxSize: 5, multiple: false },
     formula_config: { expression: '', referencedFields: [] },
     data_list_id: null,
-    data_list_column: ''
+    data_list_column: '',
+    parent_field: '',
+    relation_key: ''
   };
   const [form, setForm] = useState(defaultForm);
 
@@ -98,6 +101,17 @@ const FieldManager = () => {
     };
     if (token) loadDataLists();
   }, [token]);
+
+  useEffect(() => {
+    if (!showForm || !form.entity) { setEntityFields([]); return; }
+    const loadEntityFields = async () => {
+      try {
+        const res = await fieldDefinitionService.getAll(`entity=${form.entity}&limit=100`, token);
+        if (res.success) setEntityFields(res.data || []);
+      } catch { setEntityFields([]); }
+    };
+    loadEntityFields();
+  }, [showForm, form.entity, token]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -147,7 +161,9 @@ const FieldManager = () => {
       file_config: parsedFileConfig,
       formula_config: parsedFormulaConfig,
       data_list_id: field.data_list_id || null,
-      data_list_column: field.data_list_column || ''
+      data_list_column: field.data_list_column || '',
+      parent_field: field.parent_field || '',
+      relation_key: field.relation_key || ''
     });
     setShowForm(true);
     setError('');
@@ -211,6 +227,8 @@ const FieldManager = () => {
       payload.option_style = form.option_style;
       payload.data_list_id = form.data_list_id || null;
       payload.data_list_column = form.data_list_column || null;
+      payload.parent_field = form.parent_field || null;
+      payload.relation_key = form.relation_key || null;
     }
     if (form.type === 'file') {
       payload.file_config = form.file_config;
@@ -408,6 +426,42 @@ const FieldManager = () => {
                                 {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
                               </select>
                             </div>
+                          ) : null;
+                        })()}
+                        {form.data_list_id && (() => {
+                          const selectFields = entityFields.filter(f => 
+                            f.type === 'select' && f.key !== form.key && f.id !== editingId
+                            && !f.parent_field && f.data_list_id
+                          );
+                          return selectFields.length > 0 ? (
+                            <>
+                              <div className="form-group">
+                                <label>Field cha (parent_field)</label>
+                                <select value={form.parent_field || ''} onChange={(e) => setForm(prev => ({ ...prev, parent_field: e.target.value, relation_key: '' }))}>
+                                  <option value="">-- Không có parent --</option>
+                                  {selectFields.map(f => <option key={f.id} value={f.key}>{f.label} ({f.key})</option>)}
+                                </select>
+                                <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                                  Field hiện tại sẽ phụ thuộc vào field cha
+                                </p>
+                              </div>
+                              {form.parent_field && (() => {
+                                const selectedDL = dataLists.find(dl => dl.id === form.data_list_id);
+                                const cols = selectedDL?.columns_config || [];
+                                return cols.length > 0 ? (
+                                  <div className="form-group">
+                                    <label>Link key (column chứa FK về parent)</label>
+                                    <select value={form.relation_key || ''} onChange={(e) => setForm(prev => ({ ...prev, relation_key: e.target.value }))}>
+                                      <option value="">-- Chọn column --</option>
+                                      {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
+                                    </select>
+                                    <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                                      Column trong data list chứa giá trị link về parent field
+                                    </p>
+                                  </div>
+                                ) : null;
+                              })()}
+                            </>
                           ) : null;
                         })()}
                       </>
