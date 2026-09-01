@@ -57,26 +57,33 @@ exports.findByIdWithStatus = async (id) => {
   return users.length > 0 ? users[0] : null;
 };
 
-exports.createUser = async (fullName, email, phone, hashedPassword, role, status) => {
+exports.createUser = async (fullName, email, phone, hashedPassword, role, status, customData) => {
+  const cd = (customData && typeof customData === 'object') ? JSON.stringify(customData) : null;
   const [result] = await pool.query(
-    'INSERT INTO users (full_name, email, phone, password, role, status) VALUES (?, ?, ?, ?, ?, ?)',
-    [fullName, email, phone || '', hashedPassword, role || 'USER', status || 'ACTIVE']
+    'INSERT INTO users (full_name, email, phone, password, role, status, custom_data) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [fullName, email, phone || '', hashedPassword, role || 'USER', status || 'ACTIVE', cd]
   );
   const [user] = await pool.query(`${USER_SELECT} WHERE id = ?`, [result.insertId]);
   return user[0];
 };
 
-exports.updateUser = async (id, fullName, email, phone, role, status) => {
+exports.updateUser = async (id, fullName, email, phone, role, status, customData) => {
+  const cd = (customData !== undefined && customData !== null)
+    ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
+    : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, updated_at = NOW() WHERE id = ?',
-    [fullName, email, phone || '', role, status, id]
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
+    [fullName, email, phone || '', role, status, cd, id]
   );
 };
 
-exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPassword, role, status) => {
+exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPassword, role, status, customData) => {
+  const cd = (customData !== undefined && customData !== null)
+    ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
+    : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, updated_at = NOW() WHERE id = ?',
-    [fullName, email, phone || '', hashedPassword, role, status, id]
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
+    [fullName, email, phone || '', hashedPassword, role, status, cd, id]
   );
 };
 

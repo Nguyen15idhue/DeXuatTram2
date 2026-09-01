@@ -127,7 +127,17 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         setSaving(false);
         return;
       }
-      const res = await service.update(record.id, formData, token);
+      const fixedKeys = ['id', 'created_at', 'updated_at', 'password'];
+      const jsonFields = allFields.filter(f => f.source_type === 'json');
+      const customData = {};
+      jsonFields.forEach(f => {
+        if (formData[f.key] !== undefined) {
+          customData[f.key] = formData[f.key];
+        }
+      });
+      const payload = { ...formData, custom_data: Object.keys(customData).length > 0 ? customData : undefined };
+      fixedKeys.forEach(k => { delete payload[k]; });
+      const res = await service.update(record.id, payload, token);
       if (res.success) {
         setToast({ message: 'Cập nhật thành công', type: 'success' });
         setRecord({ ...record, ...formData, ...res.data });

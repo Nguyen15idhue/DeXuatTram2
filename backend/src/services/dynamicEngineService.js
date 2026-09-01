@@ -33,7 +33,8 @@ exports.getFormConfig = async (entity, formId) => {
       entity: form.entity,
       name: form.name,
       description: form.description,
-      status: form.status
+      status: form.status,
+      layout_config: form.layout_config
     },
     fields: fields.map(f => ({
       field_id: f.field_id,

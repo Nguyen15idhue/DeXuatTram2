@@ -56,9 +56,22 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       const res = await dynamicService.getFormConfig(entity, formId);
       if (res.success) {
         setFormConfig(res.data.form);
-        setFields(res.data.fields || []);
+        const fieldList = (res.data.fields || []).map(f => {
+          const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
+          return {
+            ...f,
+            config: cfg,
+            conditions: cfg.conditions || [],
+            conditionLogic: cfg.conditionLogic || 'AND',
+            readonly: cfg.readonly || false,
+            labelOverride: cfg.labelOverride || '',
+            placeholderOverride: cfg.placeholderOverride || '',
+            requiredOverride: cfg.requiredOverride
+          };
+        });
+        setFields(fieldList);
         const defaults = {};
-        (res.data.fields || []).forEach(f => {
+        fieldList.forEach(f => {
           if (initialData[f.key] !== undefined && initialData[f.key] !== null) {
             defaults[f.key] = initialData[f.key];
           } else if (f.default_value !== undefined) {
@@ -73,7 +86,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
         });
         setFormData(defaults);
 
-        const dlIds = [...new Set((res.data.fields || []).filter(f => f.data_list_id).map(f => f.data_list_id))];
+        const dlIds = [...new Set(fieldList.filter(f => f.data_list_id).map(f => f.data_list_id))];
         if (dlIds.length > 0) {
           const dlMap = {};
           await Promise.all(dlIds.map(async (dlId) => {
@@ -105,7 +118,6 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
             } catch (err) { console.error('[DynamicForm] Error loading data list', dlId, err); }
           }));
           setDataListOptions(dlMap);
-          console.log('[DynamicForm] dataListOptions built:', Object.keys(dlMap).map(id => `dl${id}: tree keys=${Object.keys(dlMap[id].tree).join(',')}`));
         }
       }
     } catch {
@@ -248,16 +260,40 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     } catch { return ''; }
   };
 
+  const isFieldVisible = useCallback((field) => {
+    if (!field.conditions || field.conditions.length === 0) return true;
+    const results = field.conditions.map(cond => {
+      if (!cond.field || cond.field === '') return true;
+      const val = formData[cond.field];
+      const checkVal = cond.value || '';
+      switch (cond.operator) {
+        case '=': return String(val || '') === checkVal;
+        case '!=': return String(val || '') !== checkVal;
+        case 'contains': return String(val || '').toLowerCase().includes(checkVal.toLowerCase());
+        case '>': return Number(val) > Number(checkVal);
+        case '<': return Number(val) < Number(checkVal);
+        case 'empty': return val === '' || val === null || val === undefined;
+        case 'not_empty': return val !== '' && val !== null && val !== undefined;
+        default: return true;
+      }
+    });
+    return field.conditionLogic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+  }, [formData]);
+
   const validate = () => {
     const newErrors = {};
     fields.forEach(f => {
-      if (f.required) {
+      if (!isFieldVisible(f)) return;
+      const isRequired = f.requiredOverride !== undefined ? f.requiredOverride : f.required;
+      if (isRequired) {
         const val = formData[f.key];
         if (val === '' || val === null || val === undefined) {
-          newErrors[f.key] = `${f.label} là bắt buộc`;
+          const label = f.labelOverride || f.label;
+          newErrors[f.key] = `${label} là bắt buộc`;
         }
         if (f.type === 'multiselect' && Array.isArray(val) && val.length === 0) {
-          newErrors[f.key] = `${f.label} là bắt buộc`;
+          const label = f.labelOverride || f.label;
+          newErrors[f.key] = `${label} là bắt buộc`;
         }
       }
     });
@@ -283,7 +319,18 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
 
   const renderField = (field) => {
     const resolvedOptions = getFilteredOptions(field);
-    const fieldForRender = { ...field, options: resolvedOptions };
+    const displayLabel = field.labelOverride || field.label;
+    const displayPlaceholder = field.placeholderOverride || '';
+    const isRequired = field.requiredOverride !== undefined ? field.requiredOverride : field.required;
+
+    const fieldForRender = {
+      ...field,
+      label: displayLabel,
+      placeholder: displayPlaceholder,
+      required: isRequired,
+      options: resolvedOptions,
+      readonly: field.readonly || false
+    };
 
     if (field.type === 'formula') {
       const isPost = field.formula_config?.compute_mode === 'post';
@@ -310,17 +357,89 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     );
   };
 
-  return (
-    <form className="dynamic-form" onSubmit={handleSubmit}>
-      {error && <div className="error-message">{error}</div>}
+  const layoutConfig = formConfig?.layout_config
+    ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+    : null;
+  const hasLayout = layoutConfig && layoutConfig.rows && layoutConfig.rows.length > 0;
+
+  const fieldsByKey = {};
+  fields.forEach(f => { fieldsByKey[f.key] = f; });
+  const fieldsById = {};
+  fields.forEach(f => { fieldsById[f.id || f.fieldId] = f; });
+
+  const fieldInCell = {};
+  fields.forEach(f => {
+    if (f.config?.rowId) {
+      fieldInCell[`${f.config.rowId}-${f.config.colIndex}`] = f;
+    }
+  });
+
+  const getCellField = (rowId, colIndex) => {
+    return fieldInCell[`${rowId}-${colIndex}`] || null;
+  };
+
+  const renderLayoutForm = () => {
+    return (
+      <>
+        {layoutConfig.rows.map((row) => {
+          const desktopCol = parseInt(row.columns.split(':')[1]);
+          return (
+            <div key={row.id} className={`form-row form-row-${row.columns}`} data-cols={row.columns}>
+              {Array.from({ length: desktopCol }).map((_, colIdx) => {
+                const cellField = getCellField(row.id, colIdx);
+                if (!cellField || !isFieldVisible(cellField)) {
+                  return <div key={colIdx} className="form-cell-empty" />;
+                }
+                return (
+                  <div key={colIdx} className="form-cell-content">
+                    <div className="dynamic-form-field">
+                      <label>
+                        {cellField.labelOverride || cellField.label}
+                        {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                      </label>
+                      {renderField(cellField)}
+                      {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
+                      {errors[cellField.key] && <div className="field-error">{errors[cellField.key]}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+
+        {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).length > 0 && (
+          <div className="dynamic-form-row">
+            {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).map(field => {
+              const colSpan = field.config?.colSpan || 1;
+              return (
+                <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+                  <label>
+                    {field.labelOverride || field.label}
+                    {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                  </label>
+                  {renderField(field)}
+                  {field.help_text && <div className="field-help">{field.help_text}</div>}
+                  {errors[field.key] && <div className="field-error">{errors[field.key]}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const renderFlatForm = () => {
+    return (
       <div className="dynamic-form-row">
-        {fields.map(field => {
+        {fields.filter(f => isFieldVisible(f)).map(field => {
           const colSpan = field.config?.colSpan || 1;
           return (
             <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
               <label>
-                {field.label}
-                {field.required && <span style={{ color: '#dc2626' }}> *</span>}
+                {field.labelOverride || field.label}
+                {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span style={{ color: '#dc2626' }}> *</span>}
               </label>
               {renderField(field)}
               {field.help_text && <div className="field-help">{field.help_text}</div>}
@@ -329,15 +448,35 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
           );
         })}
       </div>
-      {children ? (
-        <div className="form-actions">
-          {children}
-          <button type="submit" className="btn btn-primary">Lưu</button>
-        </div>
-      ) : (
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary">Lưu</button>
-        </div>
+    );
+  };
+
+  const renderNoLayoutMessage = () => {
+    return (
+      <div className="form-no-layout">
+        <div className="form-no-layout-icon">⚙️</div>
+        <h3>Chưa cấu hình layout</h3>
+        <p>Vui lòng vào <strong>Admin → Forms</strong> để cấu hình layout cho form này.</p>
+        <p>Sau khi cấu hình layout, form sẽ hiển thị các trường nhập liệu.</p>
+      </div>
+    );
+  };
+
+  return (
+    <form className="dynamic-form" onSubmit={handleSubmit}>
+      {error && <div className="error-message">{error}</div>}
+      {hasLayout ? renderLayoutForm() : renderNoLayoutMessage()}
+      {hasLayout && (
+        children ? (
+          <div className="form-actions">
+            {children}
+            <button type="submit" className="btn btn-primary">Lưu</button>
+          </div>
+        ) : (
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary">Lưu</button>
+          </div>
+        )
       )}
     </form>
   );

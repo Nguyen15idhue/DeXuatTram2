@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { stationService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
+import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -27,6 +28,7 @@ function MapClickHandler({ onMapClick }) {
 }
 
 const STATIONS_VIEW_ID = 6;
+const STATIONS_FORM_ID = 7;
 
 const AdminStationsPage = () => {
   const { token } = useAuth();
@@ -39,10 +41,7 @@ const AdminStationsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [form, setForm] = useState({
-    name: '', latitude: '', longitude: '',
-    address: '', status: statusOptions[0]?.value || 'ACTIVE', description: ''
-  });
+  const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -101,33 +100,31 @@ const AdminStationsPage = () => {
   const handleSearch = () => { loadStations(1); };
 
   const openCreate = () => {
-    setForm({ name: '', latitude: '', longitude: '', address: '', status: 'ACTIVE', description: '' });
+    setMapCoords({ latitude: '', longitude: '' });
     setShowCreateForm(true);
     setError('');
   };
 
   const handleMapClick = (latlng) => {
-    setForm({ ...form, latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
+    setMapCoords({ latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
   };
 
-  const handleCreateSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!form.name || !form.latitude || !form.longitude || !form.address) {
-      setError('Vui lòng nhập đầy đủ thông tin bắt buộc');
-      return;
+  const handleCreateSubmit = async (formData) => {
+    const submitData = {
+      ...formData,
+      latitude: mapCoords.latitude || formData.latitude || '',
+      longitude: mapCoords.longitude || formData.longitude || ''
+    };
+    if (!submitData.name || !submitData.latitude || !submitData.longitude || !submitData.address) {
+      throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc (Tên, Vĩ độ, Kinh độ, Địa chỉ)');
     }
-    try {
-      const res = await stationService.create(form, token);
-      if (res.success) {
-        setToast({ message: 'Tạo trạm thành công', type: 'success' });
-        setShowCreateForm(false);
-        loadStations(pagination.page);
-      } else {
-        setError(res.message || 'Thao tác thất bại');
-      }
-    } catch {
-      setError('Lỗi kết nối server');
+    const res = await stationService.create(submitData, token);
+    if (res.success) {
+      setToast({ message: 'Tạo trạm thành công', type: 'success' });
+      setShowCreateForm(false);
+      loadStations(pagination.page);
+    } else {
+      throw new Error(res.message || 'Thao tác thất bại');
     }
   };
 
@@ -316,53 +313,33 @@ const AdminStationsPage = () => {
       {showCreateForm && (
         <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
           <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
-            <h2>Thêm trạm mới</h2>
-            <form onSubmit={handleCreateSubmit}>
-              <div className="form-group">
-                <label>Tên trạm *</label>
-                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Latitude *</label>
-                  <input type="text" readOnly value={form.latitude} placeholder="Click trên bản đồ" />
+            <div className="modal-header-flex">
+              <h2>Thêm trạm mới</h2>
+              <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>
+            </div>
+            <div className="map-picker">
+              <label>Chọn vị trí trên bản đồ (click để chọn)</label>
+              <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                <MapClickHandler onMapClick={handleMapClick} />
+                {mapCoords.latitude && mapCoords.longitude && (
+                  <Marker position={[parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)]} icon={markerIcon} />
+                )}
+              </MapContainer>
+              {mapCoords.latitude && mapCoords.longitude && (
+                <div className="form-coords-info">
+                  Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
                 </div>
-                <div className="form-group">
-                  <label>Longitude *</label>
-                  <input type="text" readOnly value={form.longitude} placeholder="Click trên bản đồ" />
-                </div>
-              </div>
-              <div className="map-picker">
-                <label>Chọn vị trí trên bản đồ</label>
-                <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '250px', width: '100%' }}>
-                  <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-                  <MapClickHandler onMapClick={handleMapClick} />
-                  {form.latitude && form.longitude && (
-                    <Marker position={[parseFloat(form.latitude), parseFloat(form.longitude)]} icon={markerIcon} />
-                  )}
-                </MapContainer>
-              </div>
-              <div className="form-group">
-                <label>Địa chỉ *</label>
-                <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-              </div>
-              <div className="form-group">
-                <label>Trạng thái</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  {statusOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.value} - {opt.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Mô tả</label>
-                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" />
-              </div>
-              <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
-                <button type="submit" className="btn btn-primary">Tạo mới</button>
-              </div>
-            </form>
+              )}
+            </div>
+            <DynamicForm
+              entity="stations"
+              formId={STATIONS_FORM_ID}
+              onSubmit={handleCreateSubmit}
+              initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
+            >
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
+            </DynamicForm>
           </div>
         </div>
       )}
@@ -388,6 +365,7 @@ const AdminStationsPage = () => {
         viewId={STATIONS_VIEW_ID}
         data={stations}
         actions={renderActions}
+        startIndex={(pagination.page - 1) * pagination.limit}
       />
 
       <Pagination

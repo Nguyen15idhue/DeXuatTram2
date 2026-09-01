@@ -1,16 +1,34 @@
 import { useState, useEffect, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { myProposalService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
+import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import 'leaflet/dist/leaflet.css';
+
+const markerIcon = new L.Icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({ click(e) { onMapClick(e.latlng); } });
+  return null;
+}
 
 const PROPOSALS_VIEW_ID = 8;
+const PROPOSALS_FORM_ID = 9;
 
 const MyProposalsPage = () => {
   const { token } = useAuth();
@@ -31,6 +49,8 @@ const MyProposalsPage = () => {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
 
   useEffect(() => {
     const match = location.pathname.match(/\/my-proposals\/(view|edit)=(\d+)/);
@@ -112,6 +132,40 @@ const MyProposalsPage = () => {
       await excelService.downloadTemplate('station_proposals', token);
     } catch {
       setError('Lỗi download template');
+    }
+  };
+
+  const openCreate = () => {
+    setMapCoords({ latitude: '', longitude: '' });
+    setShowCreateForm(true);
+    setError('');
+  };
+
+  const handleMapClick = (latlng) => {
+    setMapCoords({ latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
+  };
+
+  const handleCreateProposal = async (formData) => {
+    const submitData = {
+      latitude: mapCoords.latitude || formData.latitude || '',
+      longitude: mapCoords.longitude || formData.longitude || '',
+      owner_name: formData.owner_name || formData.full_name || '',
+      owner_phone: formData.owner_phone || formData.phone || '',
+      address: formData.address || '',
+      area: formData.area || '',
+      land_type: formData.land_type || '',
+      description: formData.description || ''
+    };
+    if (!submitData.latitude || !submitData.longitude || !submitData.owner_name || !submitData.owner_phone || !submitData.address) {
+      throw new Error('Vui lòng chọn vị trí trên bản đồ và nhập đầy đủ thông tin bắt buộc');
+    }
+    const res = await myProposalService.create(submitData, token);
+    if (res.success) {
+      setToast({ message: 'Tạo đề xuất thành công', type: 'success' });
+      setShowCreateForm(false);
+      loadProposals(1);
+    } else {
+      throw new Error(res.message || 'Tạo đề xuất thất bại');
     }
   };
 
@@ -203,10 +257,47 @@ const MyProposalsPage = () => {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
-        <button className="btn btn-secondary" onClick={handleExport}>Export Excel</button>
-        <button className="btn btn-secondary" onClick={openImport}>Import Excel</button>
+        <div className="page-header-actions">
+          <button className="btn btn-primary" onClick={openCreate}>+ Tạo đề xuất</button>
+          <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
+          <button className="btn btn-secondary" onClick={handleExport}>Export Excel</button>
+          <button className="btn btn-secondary" onClick={openImport}>Import Excel</button>
+        </div>
       </div>
+
+      {showCreateForm && (
+        <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
+          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header-flex">
+              <h2>Tạo đề xuất mới</h2>
+              <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>
+            </div>
+            <div className="map-picker">
+              <label>Chọn vị trí trên bản đồ (click để chọn)</label>
+              <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                <MapClickHandler onMapClick={handleMapClick} />
+                {mapCoords.latitude && mapCoords.longitude && (
+                  <Marker position={[parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)]} icon={markerIcon} />
+                )}
+              </MapContainer>
+              {mapCoords.latitude && mapCoords.longitude && (
+                <div className="form-coords-info">
+                  Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
+                </div>
+              )}
+            </div>
+            <DynamicForm
+              entity="station_proposals"
+              formId={PROPOSALS_FORM_ID}
+              onSubmit={handleCreateProposal}
+              initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
+            >
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
+            </DynamicForm>
+          </div>
+        </div>
+      )}
 
       {showImport && (
         <div className="modal-overlay" onClick={() => setShowImport(false)}>
@@ -273,6 +364,7 @@ const MyProposalsPage = () => {
         viewId={PROPOSALS_VIEW_ID}
         data={proposals}
         actions={renderActions}
+        startIndex={(pagination.page - 1) * pagination.limit}
       />
 
       <Pagination

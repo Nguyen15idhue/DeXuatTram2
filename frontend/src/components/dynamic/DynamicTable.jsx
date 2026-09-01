@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { dynamicService } from '../../services/api';
 import FieldRenderer from './FieldRenderer';
 
-const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
+const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 0 }) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -171,7 +171,7 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
               </tr>
             ) : sortedData.map((row, idx) => (
               <tr key={row.id || idx}>
-                <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                <td style={{ textAlign: 'center' }}>{startIndex + idx + 1}</td>
                 {visibleColumns.map(col => {
                   const key = col.field_key || col.key;
                   return (

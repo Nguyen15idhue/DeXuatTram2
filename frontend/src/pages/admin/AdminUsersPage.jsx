@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
+import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -11,6 +12,7 @@ import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 
 const USERS_VIEW_ID = 7;
+const USERS_FORM_ID = 8;
 
 const AdminUsersPage = () => {
   const { token, user: currentUser } = useAuth();
@@ -33,6 +35,7 @@ const AdminUsersPage = () => {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -132,6 +135,38 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleCreateUser = async (formData) => {
+    const payload = {
+      full_name: formData.full_name || '',
+      email: formData.email || '',
+      phone: formData.phone || '',
+      password: formData.password || '123456',
+      role: formData.role || 'USER',
+      status: formData.status || 'ACTIVE'
+    };
+    const customData = {};
+    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status'];
+    Object.keys(formData).forEach(k => {
+      if (!fixedKeys.includes(k) && formData[k] !== undefined && formData[k] !== '') {
+        customData[k] = formData[k];
+      }
+    });
+    if (Object.keys(customData).length > 0) {
+      payload.custom_data = customData;
+    }
+    if (!payload.full_name || !payload.email) {
+      throw new Error('Vui lòng nhập đầy đủ họ tên và email');
+    }
+    const res = await adminUserService.create(payload, token);
+    if (res.success) {
+      setToast({ message: 'Tạo user thành công', type: 'success' });
+      setShowCreateForm(false);
+      loadUsers(1);
+    } else {
+      throw new Error(res.message || 'Tạo user thất bại');
+    }
+  };
+
   const openImport = () => {
     setShowImport(true);
     setImportFile(null);
@@ -205,6 +240,9 @@ const AdminUsersPage = () => {
 
       <div className="page-header">
         <h1>Quản lý Users</h1>
+        <div className="page-header-actions">
+          <button className="btn btn-primary" onClick={() => setShowCreateForm(true)}>+ Tạo user</button>
+        </div>
       </div>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(1); }} />}
@@ -275,6 +313,25 @@ const AdminUsersPage = () => {
         </div>
       )}
 
+      {showCreateForm && (
+        <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
+          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header-flex">
+              <h2>Tạo user mới</h2>
+              <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>
+            </div>
+            <DynamicForm
+              entity="users"
+              formId={USERS_FORM_ID}
+              onSubmit={handleCreateUser}
+              initialData={{ role: 'USER', status: 'ACTIVE', password: '123456' }}
+            >
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
+            </DynamicForm>
+          </div>
+        </div>
+      )}
+
       {popup.open && (
         <RecordDetailPopup
           entity="users"
@@ -296,6 +353,7 @@ const AdminUsersPage = () => {
         viewId={USERS_VIEW_ID}
         data={users}
         actions={renderActions}
+        startIndex={(pagination.page - 1) * pagination.limit}
       />
 
       <Pagination

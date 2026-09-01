@@ -3,8 +3,27 @@ import { formatNumber } from '../../utils/formatNumber';
 
 const FileListPopup = lazy(() => import('./FileListPopup'));
 
+const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+
+const isImageFile = (file) => {
+  if (!file) return false;
+  const name = (file.original_name || file.name || '').toLowerCase();
+  return IMAGE_EXTS.some(ext => name.endsWith(ext));
+};
+
+const getFileUrl = (file, entity, entityId) => {
+  if (!file) return '';
+  if (file.link) return file.link;
+  if (file.id) {
+    const base = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    return `${base}/files/${file.id}/image`;
+  }
+  return '';
+};
+
 const FieldRenderer = ({ field, value, entity, entityId }) => {
   const [showFilePopup, setShowFilePopup] = useState(false);
+  const [showAvatarPopup, setShowAvatarPopup] = useState(false);
 
   if (value === null || value === undefined || value === '') {
     return <span className="field-empty">-</span>;
@@ -81,6 +100,34 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     case 'file': {
       const files = Array.isArray(value) ? value : [value];
       if (files.length === 0 || !files[0]) return <span className="field-empty">-</span>;
+      const firstFile = files[0];
+      if (isImageFile(firstFile)) {
+        const imgUrl = getFileUrl(firstFile, entity, entityId);
+        return (
+          <>
+            <div
+              className="avatar-mini"
+              onClick={() => setShowAvatarPopup(true)}
+              title={firstFile.original_name || firstFile.name || 'Xem ảnh'}
+            >
+              {imgUrl ? (
+                <img src={imgUrl} alt={firstFile.original_name || ''} />
+              ) : (
+                <span className="avatar-placeholder">?</span>
+              )}
+            </div>
+            {showAvatarPopup && (
+              <div className="avatar-popup-overlay" onClick={() => setShowAvatarPopup(false)}>
+                <div className="avatar-popup" onClick={(e) => e.stopPropagation()}>
+                  <button className="avatar-popup-close" onClick={() => setShowAvatarPopup(false)}>✕</button>
+                  <img src={imgUrl} alt={firstFile.original_name || ''} />
+                  <div className="avatar-popup-name">{firstFile.original_name || ''}</div>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      }
       return (
         <>
           <span

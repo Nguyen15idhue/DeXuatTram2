@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { requireAuth } = require('../middlewares/auth');
 const fileController = require('../controllers/fileController');
+const fileService = require('../services/fileService');
 
 const uploadDir = path.join(__dirname, '../../storage/uploads');
 
@@ -106,6 +107,43 @@ router.get('/:id', requireAuth, fileController.getById);
  *         description: Không tìm thấy file
  */
 router.get('/:id/download', requireAuth, fileController.download);
+
+/**
+ * @swagger
+ * /api/files/{id}/image:
+ *   get:
+ *     tags: [Files]
+ *     summary: Xem file ảnh (public, không cần auth)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: File ảnh binary
+ *       404:
+ *         description: Không tìm thấy file
+ */
+router.get('/:id/image', async (req, res) => {
+  try {
+    const result = await fileService.getFilePath(req.params.id);
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
+    }
+    const mime = result.file.mime_type || 'application/octet-stream';
+    if (!mime.startsWith('image/')) {
+      return res.status(400).json({ success: false, message: 'File không phải ảnh' });
+    }
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(result.filePath);
+  } catch (error) {
+    console.error('Image file error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+});
 
 /**
  * @swagger

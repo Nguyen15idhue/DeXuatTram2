@@ -56,20 +56,20 @@ exports.getFormById = async (id) => {
 };
 
 exports.createForm = async (data) => {
-  const { entity, name, description, status } = data;
+  const { entity, name, description, status, layout_config } = data;
   const [result] = await pool.query(
-    'INSERT INTO forms (entity, name, description, status) VALUES (?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active']
+    'INSERT INTO forms (entity, name, description, status, layout_config) VALUES (?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null]
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [result.insertId]);
   return rows[0];
 };
 
 exports.updateForm = async (id, data) => {
-  const { entity, name, description, status } = data;
+  const { entity, name, description, status, layout_config } = data;
   await pool.query(
-    'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, updated_at = NOW() WHERE id = ?',
-    [entity, name, description || null, status || 'active', id]
+    'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, layout_config = ?, updated_at = NOW() WHERE id = ?',
+    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, id]
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [id]);
   return rows[0];

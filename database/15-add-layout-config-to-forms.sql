@@ -1,0 +1,1 @@
+ALTER TABLE forms ADD COLUMN layout_config JSON DEFAULT NULL;

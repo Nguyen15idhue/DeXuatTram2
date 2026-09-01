@@ -1,8 +1,20 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 
 const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen]);
 
   const parsedOptions = (() => {
     if (!field.options) return [];
@@ -153,7 +165,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     case 'select': {
       const selectedOpt = parsedOptions.find(o => (o.value || o) === value);
       return (
-        <div className="dynamic-field-select" style={{ position: 'relative' }}>
+        <div className="dynamic-field-select" style={{ position: 'relative' }} ref={dropdownRef}>
           <div
             className={baseClass}
             style={{ cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}

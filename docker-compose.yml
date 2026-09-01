@@ -8,6 +8,7 @@ services:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.js:/app/vite.config.js
+      - ./frontend/.env:/app/.env
     depends_on:
       - backend
     networks:

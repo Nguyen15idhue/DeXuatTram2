@@ -91,6 +91,20 @@ router.get('/:id', formController.getById);
  *                 type: string
  *                 enum: [active, inactive]
  *                 default: active
+ *               layout_config:
+ *                 type: object
+ *                 description: Layout rows config
+ *                 properties:
+ *                   rows:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         columns:
+ *                           type: string
+ *                           enum: ['1:1', '1:2', '2:1', '2:2']
  *     responses:
  *       201:
  *         description: Tạo thành công
@@ -133,6 +147,20 @@ router.post('/', requireAuth, requireAdmin, formController.create);
  *                 type: string
  *               status:
  *                 type: string
+ *               layout_config:
+ *                 type: object
+ *                 description: Layout rows config
+ *                 properties:
+ *                   rows:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         columns:
+ *                           type: string
+ *                           enum: ['1:1', '1:2', '2:1', '2:2']
  *     responses:
  *       200:
  *         description: Cập nhật thành công

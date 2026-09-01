@@ -14,7 +14,7 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { full_name, email, phone, password, role, status } = req.body;
+    const { full_name, email, phone, password, role, status, custom_data } = req.body;
 
     const existing = await adminUserService.findByEmail(email);
     if (existing) {
@@ -23,7 +23,7 @@ exports.create = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status);
+    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data);
     res.status(201).json({ success: true, data: user, message: 'Tạo user thành công' });
   } catch (error) {
     console.error('Admin create user error:', error);
@@ -33,7 +33,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const { full_name, email, phone, password, role, status } = req.body;
+    const { full_name, email, phone, password, role, status, custom_data } = req.body;
     const { id } = req.params;
 
     const existing = await adminUserService.findById(id);
@@ -46,12 +46,14 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email đã tồn tại' });
     }
 
+    const cd = custom_data !== undefined ? custom_data : existing.custom_data;
+
     if (password) {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
-      await adminUserService.updateUserWithPassword(id, full_name, email, phone, hashedPassword, role, status);
+      await adminUserService.updateUserWithPassword(id, full_name, email, phone, hashedPassword, role, status, cd);
     } else {
-      await adminUserService.updateUser(id, full_name, email, phone, role, status);
+      await adminUserService.updateUser(id, full_name, email, phone, role, status, cd);
     }
 
     const user = await adminUserService.findById(id);

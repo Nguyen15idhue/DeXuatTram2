@@ -170,6 +170,9 @@ export const myProposalService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/my-proposals?${queryString}`, token);
   },
+  create(data, token) {
+    return api.postWithAuth('/proposals', data, token);
+  },
   update(id, data, token) {
     return api.putWithAuth(`/my-proposals/${id}`, data, token);
   },

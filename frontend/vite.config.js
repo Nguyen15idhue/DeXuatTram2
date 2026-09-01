@@ -12,6 +12,12 @@ export default defineConfig({
     },
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate'
+    },
+    proxy: {
+      '/api': {
+        target: 'http://backend:3000',
+        changeOrigin: true
+      }
     }
   },
   build: {

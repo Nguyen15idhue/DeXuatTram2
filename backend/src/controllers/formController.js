@@ -26,7 +26,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { entity, name, description, status } = req.body;
+    const { entity, name, description, status, layout_config } = req.body;
 
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
@@ -44,7 +44,8 @@ exports.create = async (req, res) => {
       entity: entity.trim(),
       name: name.trim(),
       description,
-      status
+      status,
+      layout_config
     });
 
     res.status(201).json({ success: true, data: form, message: 'Tạo form thành công' });
@@ -57,7 +58,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { entity, name, description, status } = req.body;
+    const { entity, name, description, status, layout_config } = req.body;
 
     const existing = await formService.getFormById(id);
     if (!existing) {
@@ -80,7 +81,8 @@ exports.update = async (req, res) => {
       entity: entity.trim(),
       name: name.trim(),
       description,
-      status
+      status,
+      layout_config
     });
 
     res.json({ success: true, data: form, message: 'Cập nhật form thành công' });
