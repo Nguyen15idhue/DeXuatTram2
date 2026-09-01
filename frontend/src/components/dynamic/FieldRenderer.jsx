@@ -1,4 +1,5 @@
 import { useState, lazy, Suspense } from 'react';
+import { formatNumber } from '../../utils/formatNumber';
 
 const FileListPopup = lazy(() => import('./FileListPopup'));
 
@@ -39,13 +40,21 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
       return <span className={value ? 'field-true' : 'field-false'}>{value ? '✓' : ''}</span>;
 
     case 'number': {
-      const formatted = Number(value).toLocaleString('vi-VN');
+      const formatted = formatNumber(value, {
+        format: field.display_format || field.number_format || 'plain',
+        decimalPlaces: field.decimal_places,
+        unit: field.unit
+      });
       return <span>{formatted}</span>;
     }
 
     case 'select': {
       const opt = parsedOptions.find(o => (o.value || o) === value);
       if (!opt) return <span>{value}</span>;
+      if (opt.optionType === 'number') {
+        const displayVal = formatNumber(value, { format: opt.numberFormat || field.number_format || 'plain' });
+        return <span style={getBadgeStyle(opt)}>{displayVal}</span>;
+      }
       return <span style={getBadgeStyle(opt)}>{opt.label || value}</span>;
     }
 
@@ -56,11 +65,14 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
         <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4 }}>
           {vals.map((v, i) => {
             const opt = parsedOptions.find(o => (o.value || o) === v);
-            return opt ? (
-              <span key={i} style={getBadgeStyle(opt)}>{opt.label || v}</span>
-            ) : (
-              <span key={i} style={{ fontSize: 12, color: '#666' }}>{v}</span>
-            );
+            if (opt) {
+              if (opt.optionType === 'number') {
+                const displayVal = formatNumber(v, { format: opt.numberFormat || field.number_format || 'plain' });
+                return <span key={i} style={getBadgeStyle(opt)}>{displayVal}</span>;
+              }
+              return <span key={i} style={getBadgeStyle(opt)}>{opt.label || v}</span>;
+            }
+            return <span key={i} style={{ fontSize: 12, color: '#666' }}>{v}</span>;
           })}
         </span>
       );
@@ -127,6 +139,14 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
 
     case 'textarea':
       return <span title={value}>{String(value).substring(0, 100)}{String(value).length > 100 ? '...' : ''}</span>;
+
+    case 'formula': {
+      if (!field.formula_config) return <span>{String(value)}</span>;
+      if (field.formula_config.outputType === 'url') {
+        return <a href={value} target="_blank" rel="noopener noreferrer" style={{ color: '#4a6cf7' }}>{field.formula_config.label || value}</a>;
+      }
+      return <span>{String(value)}</span>;
+    }
 
     default:
       return <span>{String(value)}</span>;

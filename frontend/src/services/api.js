@@ -421,3 +421,15 @@ export const dataListService = {
     return api.deleteWithAuth(`/admin/data-lists/${id}/rows/${rowId}`, token);
   }
 };
+
+export const formulaService = {
+  validate(expression, fields, token) {
+    return api.postWithAuth('/formulas/validate', { expression, fields }, token);
+  },
+  preview(expression, scope = {}, token) {
+    return api.postWithAuth('/formulas/preview', { expression, scope }, token);
+  },
+  previewPost(expression, metadata, token) {
+    return api.postWithAuth('/formulas/preview', { expression, metadata }, token);
+  }
+};

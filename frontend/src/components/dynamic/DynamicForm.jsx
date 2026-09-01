@@ -2,6 +2,39 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, dataListService } from '../../services/api';
 import DynamicField from './DynamicField';
+import { create, all } from 'mathjs';
+import { formatNumber } from '../../utils/formatNumber';
+
+const math = create(all);
+const customFunctions = {
+  ROUNDUP: (x, d = 0) => Math.ceil(x * Math.pow(10, d)) / Math.pow(10, d),
+  ROUNDDOWN: (x, d = 0) => Math.floor(x * Math.pow(10, d)) / Math.pow(10, d),
+  MOD: (a, b) => a % b,
+  IF: (condition, trueVal, falseVal) => condition ? trueVal : falseVal,
+  AND: (...args) => args.every(Boolean),
+  OR: (...args) => args.some(Boolean),
+  NOT: (x) => !x,
+  IFERROR: (val, fallback) => (val === null || val === undefined || isNaN(val) || val === Infinity) ? fallback : val,
+  COUNT: (...args) => args.filter(v => v !== null && v !== undefined && !isNaN(v)).length,
+  COUNTA: (...args) => args.filter(v => v !== null && v !== undefined && v !== '').length,
+  AVERAGE: (...args) => { const nums = args.flat().filter(v => v !== null && v !== undefined && !isNaN(v)); return nums.length === 0 ? 0 : nums.reduce((s, v) => s + Number(v), 0) / nums.length; },
+  CONCAT: (...args) => args.map(v => v ?? '').join(''),
+  LEN: (s) => String(s ?? '').length,
+  LEFT: (s, n = 1) => String(s ?? '').substring(0, n),
+  RIGHT: (s, n = 1) => { const str = String(s ?? ''); return str.substring(str.length - n); },
+  UPPER: (s) => String(s ?? '').toUpperCase(),
+  LOWER: (s) => String(s ?? '').toLowerCase(),
+  TRIM: (s) => String(s ?? '').trim(),
+  LPAD: (s, len, ch = '0') => String(s ?? '').padStart(len, ch),
+  RPAD: (s, len, ch = ' ') => String(s ?? '').padEnd(len, ch),
+  YEAR: (d) => new Date(d).getFullYear(),
+  MONTH: (d) => new Date(d).getMonth() + 1,
+  DAY: (d) => new Date(d).getDate(),
+  TODAY: () => new Date().toISOString().split('T')[0],
+  NOW: () => new Date().toISOString(),
+  DATE: (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+};
+math.import(customFunctions, { override: false });
 
 const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) => {
   const { token } = useAuth();
@@ -190,20 +223,28 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
 
   const computeFormula = (field) => {
     if (!field.formula_config || !field.formula_config.expression) return '';
+    if (field.formula_config.compute_mode === 'post') return '';
     try {
-      let expr = field.formula_config.expression;
+      const scope = {};
       fields.forEach(f => {
-        if (f.key !== field.key && f.type === 'number') {
-          const val = parseFloat(formData[f.key]) || 0;
-          expr = expr.replace(new RegExp(`\\b${f.key}\\b`, 'g'), val);
+        if (f.key !== field.key) {
+          const val = formData[f.key];
+          if (val !== undefined && val !== '') {
+            scope[f.key] = f.type === 'number' ? (parseFloat(val) || 0) : val;
+          }
         }
       });
-      const result = Function(`"use strict"; return (${expr})`)();
-      if (typeof result === 'number' && !isNaN(result)) {
-        const dp = field.decimal_places ?? 2;
-        return result.toFixed(dp);
+      const result = math.evaluate(field.formula_config.expression, scope);
+      if (result === null || result === undefined) return '';
+      const outputType = field.formula_config.outputType || 'auto';
+      if (outputType === 'number' || (outputType === 'auto' && typeof result === 'number')) {
+        return formatNumber(result, {
+          format: field.formula_config.numberFormat || 'plain',
+          decimalPlaces: field.formula_config.decimalPlaces,
+          unit: field.formula_config.unit
+        });
       }
-      return '';
+      return String(result);
     } catch { return ''; }
   };
 
@@ -245,6 +286,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     const fieldForRender = { ...field, options: resolvedOptions };
 
     if (field.type === 'formula') {
+      const isPost = field.formula_config?.compute_mode === 'post';
       return (
         <input
           type="text"
@@ -252,7 +294,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
           value={formData[field.key] || ''}
           readOnly
           disabled
-          placeholder="Tính tự động"
+          placeholder={isPost ? 'Tính sau khi lưu' : 'Tính tự động'}
         />
       );
     }

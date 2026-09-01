@@ -38,7 +38,7 @@ exports.create = async (req, res) => {
   try {
     const {
       entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
-      number_format, decimal_places, date_format, timezone,
+      number_format, decimal_places, display_format, unit, date_format, timezone,
       source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     } = req.body;
 
@@ -62,7 +62,7 @@ exports.create = async (req, res) => {
       key: key.trim(),
       label: label.trim(),
       type, source_type, required, validation, options, formula, placeholder, help_text, status,
-      number_format, decimal_places, date_format, timezone,
+      number_format, decimal_places, display_format, unit, date_format, timezone,
       source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     });
 
@@ -81,7 +81,7 @@ exports.update = async (req, res) => {
     const { id } = req.params;
     const {
       entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
-      number_format, decimal_places, date_format, timezone,
+      number_format, decimal_places, display_format, unit, date_format, timezone,
       source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     } = req.body;
 
@@ -119,7 +119,7 @@ exports.update = async (req, res) => {
       key: key.trim(),
       label: label.trim(),
       type, source_type, required, validation, options, formula, placeholder, help_text, status,
-      number_format, decimal_places, date_format, timezone,
+      number_format, decimal_places, display_format, unit, date_format, timezone,
       source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
     });
 

@@ -168,6 +168,14 @@ const DataListManager = () => {
                         <option value="text">Text</option>
                         <option value="number">Number</option>
                       </select>
+                      {col.type === 'number' && (
+                        <select value={col.number_format || 'plain'} onChange={e => updateColumn(i, 'number_format', e.target.value)} style={{ padding: '6px 8px' }} title="Định dạng số">
+                          <option value="plain">1000</option>
+                          <option value="comma">1,000</option>
+                          <option value="dot">1.000</option>
+                          <option value="space">1 000</option>
+                        </select>
+                      )}
                       {form.columns_config.length > 1 && (
                         <button type="button" className="btn btn-sm btn-delete" onClick={() => removeColumn(i)}>✕</button>
                       )}

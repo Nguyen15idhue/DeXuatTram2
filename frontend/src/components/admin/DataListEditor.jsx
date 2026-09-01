@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dataListService } from '../../services/api';
+import { formatNumber } from '../../utils/formatNumber';
 import Loading from '../Loading';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
@@ -139,7 +140,11 @@ const DataListEditor = () => {
                         style={{ width: '100%', padding: '4px 8px', border: '1px solid #3b82f6', borderRadius: 4, fontSize: 14 }}
                       />
                     ) : (
-                      <span style={{ cursor: 'pointer' }}>{row.data[col.key] || '—'}</span>
+                      <span style={{ cursor: 'pointer' }}>
+                        {col.type === 'number' && row.data[col.key]
+                          ? formatNumber(row.data[col.key], { format: col.number_format || 'plain', decimalPlaces: col.decimal_places })
+                          : (row.data[col.key] || '—')}
+                      </span>
                     )}
                   </td>
                 ))}

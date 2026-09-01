@@ -47,15 +47,15 @@ exports.getFieldDefinitionsByEntity = async (entity) => {
 exports.createFieldDefinition = async (data) => {
   const {
     entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
-    number_format, decimal_places, date_format, timezone,
+    number_format, decimal_places, display_format, unit, date_format, timezone,
     source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
   } = data;
   const [result] = await pool.query(
     `INSERT INTO field_definitions (
-      entity, \`key\`, label, type, number_format, decimal_places, date_format, timezone,
+      entity, \`key\`, label, type, number_format, decimal_places, display_format, unit, date_format, timezone,
       source_type, required, validation, options, source_config, parent_field, option_style,
       file_config, formula_config, formula, placeholder, help_text, status, data_list_id, data_list_column, relation_key
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entity,
       key,
@@ -63,6 +63,8 @@ exports.createFieldDefinition = async (data) => {
       type || 'text',
       number_format || null,
       decimal_places != null ? decimal_places : null,
+      display_format || 'plain',
+      unit || null,
       date_format || null,
       timezone || null,
       source_type || 'json',
@@ -90,13 +92,13 @@ exports.createFieldDefinition = async (data) => {
 exports.updateFieldDefinition = async (id, data) => {
   const {
     entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
-    number_format, decimal_places, date_format, timezone,
+    number_format, decimal_places, display_format, unit, date_format, timezone,
     source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, relation_key
   } = data;
   await pool.query(
     `UPDATE field_definitions SET
       entity = ?, \`key\` = ?, label = ?, type = ?,
-      number_format = ?, decimal_places = ?, date_format = ?, timezone = ?,
+      number_format = ?, decimal_places = ?, display_format = ?, unit = ?, date_format = ?, timezone = ?,
       source_type = ?, required = ?,
       validation = ?, options = ?, source_config = ?, parent_field = ?,
       option_style = ?, file_config = ?, formula_config = ?,
@@ -111,6 +113,8 @@ exports.updateFieldDefinition = async (id, data) => {
       type,
       number_format || null,
       decimal_places != null ? decimal_places : null,
+      display_format || 'plain',
+      unit || null,
       date_format || null,
       timezone || null,
       source_type,

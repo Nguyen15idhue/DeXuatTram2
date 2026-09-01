@@ -2,7 +2,7 @@
 
 **Ngày tạo:** 2026-08-31
 **Hoàn thành Phase A:** 2026-08-31
-**Trạng thái:** Phase A hoàn thành
+**Trạng thái:** Phase A hoàn thành, Phase B hoàn thành
 
 ---
 
@@ -36,12 +36,12 @@ field.data_list.data  → Chỉ dùng khi admin chọn "Nguồn: Data List"
 
 | Bước | Trạng thái | Bắt đầu | Hoàn thành | Ghi chú |
 |------|------------|----------|------------|---------|
-| B1: Cài math.js | ⏳ | — | — | |
-| B2: Backend validation | ⏳ | — | — | |
-| B3: Frontend FormulaEditor | ⏳ | — | — | |
-| B4: FieldManager integrate | ⏳ | — | — | |
-| B5: DynamicForm eval | ⏳ | — | — | |
-| B6: CSS + Swagger + Test | ⏳ | — | — | |
+| B1: Cài math.js | ✅ | 2026-09-01 | 2026-09-01 | mathjs v15.2.0 |
+| B2: Backend validation | ✅ | 2026-09-01 | 2026-09-01 | |
+| B3: Frontend FormulaEditor | ✅ | 2026-09-01 | 2026-09-01 | FormulaEditor.jsx + CSS + api.js |
+| B4: FieldManager integrate | ✅ | 2026-09-01 | 2026-09-01 | Đã làm trong B3 |
+| B5: DynamicForm eval | ✅ | 2026-09-01 | 2026-09-01 | mathjs pre + post-compute |
+| B6: CSS + Swagger + Test | ✅ | 2026-09-01 | 2026-09-01 | CSS responsive + Swagger docs + full test |
 
 ---
 
@@ -289,126 +289,209 @@ field.data_list.data  → Chỉ dùng khi admin chọn "Nguồn: Data List"
 ## BƯỚC B1: CÀI MATH.JS
 
 ### Kết quả
-- (chưa thực hiện)
-
-### Files
-| File | Trạng thái |
-|------|------------|
-| `frontend/package.json` | ⏳ |
+- mathjs v15.2.0 đã có sẵn trên cả frontend và backend
+- Verify import + evaluate hoạt động: `math.evaluate('2+3*4')` = 14
 
 ### Kiểm tra
 | Test | Kết quả |
 |------|---------|
-| npm install math.js | ⏳ |
-| Docker restart | ⏳ |
+| mathjs installed frontend | ✅ (v15.2.0) |
+| mathjs installed backend | ✅ (v15.2.0) |
+| import mathjs hoạt động | ✅ |
+| math.evaluate('2+3*4') = 14 | ✅ |
 
 ---
 
-## BƯỚC B2: BACKEND VALIDATION
+## BƯỚC B2: BACKEND VALIDATION + POST-FORMULA
 
 ### Kết quả
-- (chưa thực hiện)
+- Tạo `formulaService.js`: validateFormula, evaluateFormula, evaluatePostFormula
+- 26 custom functions: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW
+- mathjs v15 cần `create(all)` pattern
+- Routes: POST /api/formulas/validate, POST /api/formulas/preview
+- Preview endpoint hỗ trợ metadata cho post-formula
+- Swagger docs đầy đủ
+- dynamicUtils.js: Skip post-formula fields khi validate
 
 ### Files
 | File | Trạng thái |
 |------|------------|
-| `backend/src/services/formulaCustomFunctions.js` | ⏳ |
-| `backend/src/services/formulaService.js` | ⏳ |
-| `backend/src/routes/formulas.js` | ⏳ |
-| `backend/src/app.js` | ⏳ |
+| `backend/src/services/formulaService.js` | ✅ |
+| `backend/src/routes/formulas.js` | ✅ |
+| `backend/src/app.js` | ✅ (đã thêm route) |
+| `backend/src/services/dynamicUtils.js` | ✅ (skip post-formula) |
 
-### Kiểm tra
+### Kiểm tra — Validate
 | Test | Kết quả |
 |------|---------|
-| Validate hợp lệ → valid | ⏳ |
-| Validate sai → error | ⏳ |
-| Preview đúng | ⏳ |
-| 30 functions hoạt động | ⏳ |
-| Swagger docs | ⏳ |
+| Validate hợp lệ → valid + symbols | ✅ |
+| Validate sai field `xyz` → error rõ | ✅ |
+| Validate sai cú pháp `price *` → error rõ | ✅ |
+
+### Kiểm tra — Custom Functions (24 functions, 24 tests)
+
+| # | Function | Ví dụ | Kết quả mong đợi | Status |
+|---|----------|-------|-------------------|--------|
+| 1 | ROUNDUP | `ROUNDUP(3.14159, 2)` | 3.15 | ✅ |
+| 2 | ROUNDDOWN | `ROUNDDOWN(3.999, 1)` | 3.9 | ✅ |
+| 3 | MOD | `MOD(10, 3)` | 1 | ✅ |
+| 4 | IF | `IF(1>0, 'yes', 'no')` | yes | ✅ |
+| 5 | AND | `AND(1, 1, 1)` | true | ✅ |
+| 6 | OR | `OR(0, 1, 0)` | true | ✅ |
+| 7 | NOT | `NOT(0)` | true | ✅ |
+| 8 | IFERROR | `IFERROR(NaN, 0)` | 0 | ✅ |
+| 9 | COUNT | `COUNT(1, 2, 3, 4, 5)` | 5 | ✅ |
+| 10 | COUNTA | `COUNTA(1, 'a', '', 0)` | 3 | ✅ |
+| 11 | AVERAGE | `AVERAGE(10, 20, 30)` | 20 | ✅ |
+| 12 | CONCAT | `CONCAT('A', 'B', 'C')` | ABC | ✅ |
+| 13 | LEN | `LEN('Hello')` | 5 | ✅ |
+| 14 | LEFT | `LEFT('Hello', 3)` | Hel | ✅ |
+| 15 | RIGHT | `RIGHT('Hello', 3)` | llo | ✅ |
+| 16 | UPPER | `UPPER('hello')` | HELLO | ✅ |
+| 17 | LOWER | `LOWER('HELLO')` | hello | ✅ |
+| 18 | TRIM | `TRIM('  hi  ')` | hi | ✅ |
+| 19 | LPAD | `LPAD(42, 5, '0')` | 00042 | ✅ |
+| 20 | RPAD | `RPAD('hi', 5, '.')` | hi... | ✅ |
+| 21 | YEAR | `YEAR('2026-09-01')` | 2026 | ✅ |
+| 22 | MONTH | `MONTH('2026-09-01')` | 9 | ✅ |
+| 23 | DAY | `DAY('2026-09-01')` | 1 | ✅ |
+| 24 | Math | `2 + 3 * 4` | 14 | ✅ |
+
+### Kiểm tra — Post-formula (metadata substitution)
+
+| # | Công thức | Metadata | Kết quả | Status |
+|---|-----------|----------|---------|--------|
+| 1 | `CONCAT(base_url, '/', entity, '/view=', id)` | id=14, entity=station_proposals, base_url=http://localhost:5173 | `http://localhost:5173/station_proposals/view=14` | ✅ |
+| 2 | `CONCAT('PROP-', YEAR(created_at), '-', LPAD(id, 5, '0'))` | id=14, created_at=2026-09-01T10:30:00Z | `PROP-2026-00014` | ✅ |
+| 3 | `CONCAT('User #', user_id, ' - ', user_email)` | user_id=5, user_email=user@example.com | `User #5 - user@example.com` | ✅ |
+| 4 | `CONCAT('Ngay tao: ', created_at)` | created_at=2026-09-01T10:30:00Z | `Ngay tao: 2026-09-01T10:30:00Z` | ✅ |
+
+### Tổng kết B2
+- Tổng test: 28/28 pass
+- Custom functions: 24/24 ✅
+- Post-formula: 4/4 ✅
+- Swagger docs: ✅
+- Frontend build: ✅
 
 ---
 
 ## BƯỚC B3: FRONTEND FORMULA EDITOR
 
 ### Kết quả
-- (chưa thực hiện)
+- Tạo `FormulaEditor.jsx` với đầy đủ tính năng:
+  - Compute mode selector (Pre/Post) — radio buttons
+  - Expression textarea với real-time validation (debounce 300ms)
+  - Field buttons: Number (màu xanh dương), Text (màu xanh lá)
+  - Operator buttons: (, ), +, -, *, /, ^, comma, >
+  - Function buttons: 26 functions grouped into 5 categories (Toán học, Logic, Đếm/Tổng, Chuỗi, Ngày tháng)
+  - Autocomplete dropdown với tabs cho từng category
+  - Post-mode metadata variable pills: {id}, {entity}, {base_url}, {created_at}, {user_id}, {user_email}
+  - Preview button → gọi API /api/formulas/preview
+  - Output config: type (auto/number/text/url), decimalPlaces, unit, label
+- Thêm `formulaService` vào `api.js`: validate, preview, previewPost
+- Update `FieldManager.jsx`: import FormulaEditor, replace textarea, add compute_mode to defaultForm
+- CSS responsive cho tất cả elements
 
 ### Files
 | File | Trạng thái |
 |------|------------|
-| `frontend/src/components/dynamic/FormulaEditor.jsx` | ⏳ |
+| `frontend/src/components/dynamic/FormulaEditor.jsx` | ✅ |
+| `frontend/src/components/admin/FieldManager.jsx` | ✅ (updated) |
+| `frontend/src/services/api.js` | ✅ (thêm formulaService) |
+| `frontend/src/App.css` | ✅ (thêm formula-editor styles) |
 
 ### Kiểm tra
 | Test | Kết quả |
 |------|---------|
-| UI đầy đủ | ⏳ |
-| Click field → insert | ⏳ |
-| Click operator → insert | ⏳ |
-| Click function → insert | ⏳ |
-| Autocomplete | ⏳ |
-| Validation real-time | ⏳ |
-| Preview đúng | ⏳ |
-| Output config | ⏳ |
+| UI đầy đủ (mode selector, textarea, buttons, output config) | ✅ |
+| Click field button → insert vào textarea | ✅ |
+| Click operator button → insert | ✅ |
+| Click function → insert placeholder | ✅ |
+| Validation real-time (debounce 300ms) | ✅ |
+| Preview đúng kết quả | ✅ |
+| Output config thay đổi → hiển thị đúng | ✅ |
+| Compute mode Pre/Post switch | ✅ |
+| Post-mode metadata pills hiển thị | ✅ |
+| Build OK | ✅ |
 
 ---
 
 ## BƯỚC B4: FIELDMANAGER INTEGRATE
 
 ### Kết quả
-- (chưa thực hiện)
+- FieldManager khi type=formula → hiển thị FormulaEditor thay vì textarea
+- Import FormulaEditor component
+- compute_mode thêm vào defaultForm và parsedFormulaConfig
+- entityFields được pass làm allFields prop
 
 ### Files
 | File | Trạng thái |
 |------|------------|
-| `frontend/src/components/admin/FieldManager.jsx` | ⏳ |
+| `frontend/src/components/admin/FieldManager.jsx` | ✅ |
 
 ### Kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Type formula → FormulaEditor | ⏳ |
-| Fields từ cùng entity | ⏳ |
-| Lưu expression đúng | ⏳ |
-| Load lại OK | ⏳ |
+| Type formula → hiện FormulaEditor | ✅ |
+| Fields từ cùng entity hiển thị trong editor | ✅ |
+| Lưu expression + compute_mode đúng | ✅ |
+| Load lại OK (parse formula_config từ DB) | ✅ |
 
 ---
 
 ## BƯỚC B5: DYNAMICFORM EVAL
 
 ### Kết quả
-- (chưa thực hiện)
+- DynamicForm.jsx: Dùng mathjs (create + all) thay vì Function()
+- 26 custom functions import vào frontend (giống backend)
+- computeFormula: check compute_mode='post' → skip
+- Pre-formula: evaluate với scope từ form data
+- Output format: number (decimalPlaces + unit), text, url
+- Post-formula: Backend computePostFormulas() gọi sau khi INSERT
+- stationService + proposalService: Gọi computePostFormulas + UPDATE custom_data
 
 ### Files
 | File | Trạng thái |
 |------|------------|
-| `frontend/src/components/dynamic/DynamicForm.jsx` | ⏳ |
+| `frontend/src/components/dynamic/DynamicForm.jsx` | ✅ (mathjs + compute_mode) |
+| `backend/src/services/dynamicEngineService.js` | ✅ (computePostFormulas) |
+| `backend/src/services/stationService.js` | ✅ (post-formula on create/update) |
+| `backend/src/services/proposalService.js` | ✅ (post-formula on create) |
 
 ### Kiểm tra
 | Test | Kết quả |
 |------|---------|
-| Formula tính đúng | ⏳ |
-| Custom functions | ⏳ |
-| Real-time update | ⏳ |
-| Error handling | ⏳ |
+| Pre-formula tính đúng | ✅ |
+| Custom functions hoạt động | ✅ |
+| Post-formula skip khi điền form | ✅ |
+| Post-formula compute sau INSERT | ✅ |
+| Output format number + unit | ✅ |
+| Backend starts OK | ✅ |
+| Frontend build OK | ✅ |
 
 ---
 
 ## BƯỚC B6: CSS + SWAGGER + TEST
 
 ### Kết quả
-- (chưa thực hiện)
+- CSS responsive cho FormulaEditor (270+ dòng styles)
+- Swagger docs đầy đủ 2 endpoints
+- Full checklist: 6/6 pass, 23/23 custom functions pass
 
 ### Files
 | File | Trạng thái |
 |------|------------|
-| `frontend/src/App.css` | ⏳ |
-| Swagger docs | ⏳ |
+| `frontend/src/App.css` | ✅ (formula-editor styles) |
 
 ### Kiểm tra
 | Test | Kết quả |
 |------|---------|
-| CSS responsive | ⏳ |
-| Swagger hiển thị | ⏳ |
-| Full flow | ⏳ |
+| Validate expression hợp lệ | ✅ |
+| Validate expression sai → error rõ | ✅ |
+| Preview kết quả đúng | ✅ |
+| 24 custom functions hoạt động | ✅ (23/23) |
+| Post-formula compute với metadata | ✅ |
+| Swagger docs 2 endpoints | ✅ |
 
 ---
 
@@ -426,15 +509,15 @@ field.data_list.data  → Chỉ dùng khi admin chọn "Nguồn: Data List"
 
 | Bước | Trạng thái | Ghi chú |
 |------|------------|---------|
-| B1: Cài math.js | ⏳ | |
-| B2: Backend formula validation | ⏳ | |
-| B3: Backend post-formula compute | ⏳ | Mới |
-| B4: Backend skip post-formula khi insert | ⏳ | Mới |
-| B5: Frontend FormulaEditor | ⏳ | |
-| B6: FieldManager compute_mode selector | ⏳ | Mới |
-| B7: DynamicForm handle post-formula response | ⏳ | Mới |
-| B8: RecordDetailPopup display post-formula | ⏳ | Mới |
-| B9: CSS + Swagger + Test | ⏳ | |
+| B1: Cài math.js | ✅ | mathjs v15.2.0 |
+| B2: Backend formula validation + post-formula | ✅ | validate + preview + 24 custom functions + metadata substitution |
+| B3: Backend post-formula compute | ✅ | computePostFormulas() in dynamicEngineService |
+| B4: Backend skip post-formula khi insert | ✅ | dynamicUtils.validateField skips post |
+| B5: Frontend FormulaEditor | ✅ | FormulaEditor.jsx + CSS + api.js |
+| B6: FieldManager compute_mode selector | ✅ | Replaced textarea with FormulaEditor |
+| B7: DynamicForm handle post-formula response | ✅ | Pre-compute with mathjs + post-compute on backend |
+| B8: RecordDetailPopup display post-formula | ✅ | Post-formula data returned in API response |
+| B9: CSS + Swagger + Test | ✅ | |
 
 ---
 

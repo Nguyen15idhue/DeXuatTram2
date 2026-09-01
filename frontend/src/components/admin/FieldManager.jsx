@@ -7,6 +7,7 @@ import ConfirmDialog from '../ConfirmDialog';
 import EmptyState from '../EmptyState';
 import ErrorMessage from '../ErrorMessage';
 import Pagination from '../Pagination';
+import FormulaEditor from '../dynamic/FormulaEditor';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula'];
 const ENTITIES = ['stations', 'station_proposals', 'users'];
@@ -59,12 +60,12 @@ const FieldManager = () => {
   const defaultForm = {
     entity: 'stations', key: '', label: '', type: 'text', source_type: 'json',
     required: false, placeholder: '', help_text: '',
-    number_format: 'integer', decimal_places: 0,
+    number_format: 'integer', decimal_places: 0, display_format: 'plain', unit: '',
     date_format: 'DD/MM/YYYY',
     options: [],
     option_style: { defaultColor: '#666666', defaultBorderRadius: 'rounded' },
     file_config: { images: true, videos: false, documents: true, maxSize: 5, multiple: false },
-    formula_config: { expression: '', referencedFields: [] },
+    formula_config: { expression: '', referencedFields: [], compute_mode: 'pre', outputType: 'auto', outputFormat: '', decimalPlaces: 0, unit: '', label: '' },
     data_list_id: null,
     data_list_column: '',
     parent_field: '',
@@ -143,7 +144,7 @@ const FieldManager = () => {
         parsedFileConfig = typeof field.file_config === 'string' ? JSON.parse(field.file_config) : field.file_config;
       } catch {}
     }
-    let parsedFormulaConfig = { expression: '', referencedFields: [] };
+    let parsedFormulaConfig = { expression: '', referencedFields: [], compute_mode: 'pre', outputType: 'auto', outputFormat: '', decimalPlaces: 0, unit: '', label: '' };
     if (field.formula_config) {
       try {
         parsedFormulaConfig = typeof field.formula_config === 'string' ? JSON.parse(field.formula_config) : field.formula_config;
@@ -155,6 +156,8 @@ const FieldManager = () => {
       placeholder: field.placeholder || '', help_text: field.help_text || '',
       number_format: field.number_format || 'integer',
       decimal_places: field.decimal_places ?? 0,
+      display_format: field.display_format || 'plain',
+      unit: field.unit || '',
       date_format: field.date_format || 'DD/MM/YYYY',
       options: parsedOptions,
       option_style: parsedOptionStyle,
@@ -218,6 +221,8 @@ const FieldManager = () => {
     if (form.type === 'number') {
       payload.number_format = form.number_format;
       payload.decimal_places = form.decimal_places;
+      payload.display_format = form.display_format || 'plain';
+      payload.unit = form.unit || null;
     }
     if (form.type === 'date' || form.type === 'datetime') {
       payload.date_format = form.date_format;
@@ -370,6 +375,19 @@ const FieldManager = () => {
                         <input type="number" min="0" max="10" value={form.decimal_places} onChange={(e) => updateForm('decimal_places', parseInt(e.target.value) || 0)} />
                       </div>
                     )}
+                    <div className="form-group">
+                      <label>Hiển thị</label>
+                      <select value={form.display_format || 'plain'} onChange={(e) => updateForm('display_format', e.target.value)}>
+                        <option value="plain">1000</option>
+                        <option value="comma">1,000</option>
+                        <option value="dot">1.000</option>
+                        <option value="space">1 000</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Đơn vị (tùy chọn)</label>
+                      <input type="text" value={form.unit || ''} onChange={(e) => updateForm('unit', e.target.value)} placeholder="VND, %, kg..." />
+                    </div>
                   </div>
                 )}
 
@@ -473,6 +491,18 @@ const FieldManager = () => {
                             <div key={idx} className="option-row">
                               <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
                               <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
+                              <select value={opt.optionType || 'text'} onChange={(e) => updateOption(idx, 'optionType', e.target.value)} title="Loại dữ liệu">
+                                <option value="text">Text</option>
+                                <option value="number">Number</option>
+                              </select>
+                              {opt.optionType === 'number' && (
+                                <select value={opt.numberFormat || 'plain'} onChange={(e) => updateOption(idx, 'numberFormat', e.target.value)} title="Định dạng số">
+                                  <option value="plain">1000</option>
+                                  <option value="comma">1,000</option>
+                                  <option value="dot">1.000</option>
+                                  <option value="space">1 000</option>
+                                </select>
+                              )}
                               <div className="color-select" title="Màu sắc">
                                 <div className="color-selected" style={{ backgroundColor: opt.color || '#666666' }} />
                                 <div className="color-dropdown">
@@ -521,6 +551,17 @@ const FieldManager = () => {
                             </select>
                           </div>
                         </div>
+                        {form.options.some(o => o.optionType === 'number') && (
+                          <div className="form-group">
+                            <label>Định dạng số (cho option number)</label>
+                            <select value={form.number_format || 'plain'} onChange={(e) => setForm(prev => ({ ...prev, number_format: e.target.value }))}>
+                              <option value="plain">1000</option>
+                              <option value="comma">1,000</option>
+                              <option value="dot">1.000</option>
+                              <option value="space">1 000</option>
+                            </select>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -561,10 +602,11 @@ const FieldManager = () => {
                 {(form.type === 'formula') && (
                   <div className="form-group-section">
                     <h4>Cấu hình Formula</h4>
-                    <div className="form-group full-width">
-                      <label>Formula Expression</label>
-                      <textarea value={form.formula_config.expression} onChange={(e) => updateForm('formula_config', { ...form.formula_config, expression: e.target.value })} placeholder="VD: price * quantity * (1 - discount)" rows={3} />
-                    </div>
+                    <FormulaEditor
+                      value={form.formula_config}
+                      onChange={(cfg) => updateForm('formula_config', cfg)}
+                      allFields={entityFields}
+                    />
                   </div>
                 )}
               </div>

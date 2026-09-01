@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const dynamicEngineService = require('./dynamicEngineService');
 
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
@@ -41,12 +42,26 @@ exports.createProposal = async (userId, data) => {
     [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
   );
 
+  const recordId = result.insertId;
+
+  const postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, userId, null);
+  if (Object.keys(postResults).length > 0) {
+    const updatedDynamic = { ...dynamicData, ...postResults };
+    const updatedCustomData = JSON.stringify(updatedDynamic);
+    await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+  }
+
   const [proposal] = await pool.query(
     `SELECT p.*, u.full_name as user_name
      FROM station_proposals p
      JOIN users u ON p.user_id = u.id
      WHERE p.id = ?`,
-    [result.insertId]
+    [recordId]
   );
-  return dynamicUtils.mergeData(proposal[0], fieldDefs);
+
+  const finalData = dynamicUtils.mergeData(proposal[0], fieldDefs);
+  if (Object.keys(postResults).length > 0) {
+    Object.assign(finalData, postResults);
+  }
+  return finalData;
 };

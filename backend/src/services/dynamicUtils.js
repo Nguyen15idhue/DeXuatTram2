@@ -107,6 +107,12 @@ exports.validateField = (fieldDef, value) => {
     case 'textarea':
     case 'text':
     case 'formula':
+      if (fieldDef.type === 'formula') {
+        const fc = typeof fieldDef.formula_config === 'string'
+          ? (() => { try { return JSON.parse(fieldDef.formula_config); } catch { return {}; } })()
+          : (fieldDef.formula_config || {});
+        if (fc.compute_mode === 'post') return errors;
+      }
     default:
       break;
   }

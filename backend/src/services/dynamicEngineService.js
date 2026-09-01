@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const formulaService = require('./formulaService');
 
 exports.getFormConfig = async (entity, formId) => {
   const [forms] = await pool.query(
@@ -13,7 +14,7 @@ exports.getFormConfig = async (entity, formId) => {
   const [fields] = await pool.query(
     `SELECT ff.order_index, ff.visible, ff.config,
             fd.id as field_id, fd.entity, fd.\`key\`, fd.label, fd.type,
-            fd.number_format, fd.decimal_places, fd.date_format, fd.timezone,
+            fd.number_format, fd.decimal_places, fd.display_format, fd.unit, fd.date_format, fd.timezone,
             fd.source_type, fd.required, fd.validation, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
@@ -41,6 +42,8 @@ exports.getFormConfig = async (entity, formId) => {
       type: f.type,
       number_format: f.number_format,
       decimal_places: f.decimal_places,
+      display_format: f.display_format || 'plain',
+      unit: f.unit || null,
       date_format: f.date_format,
       timezone: f.timezone,
       source_type: f.source_type,
@@ -77,7 +80,7 @@ exports.getViewConfig = async (entity, viewId) => {
   const [fields] = await pool.query(
     `SELECT vf.order_index, vf.visible, vf.width, vf.sortable, vf.filterable, vf.config,
             fd.id as field_id, fd.entity, fd.\`key\`, fd.label, fd.type,
-            fd.number_format, fd.decimal_places, fd.date_format, fd.timezone,
+            fd.number_format, fd.decimal_places, fd.display_format, fd.unit, fd.date_format, fd.timezone,
             fd.source_type, fd.required, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
@@ -106,6 +109,8 @@ exports.getViewConfig = async (entity, viewId) => {
       type: f.type,
       number_format: f.number_format,
       decimal_places: f.decimal_places,
+      display_format: f.display_format || 'plain',
+      unit: f.unit || null,
       date_format: f.date_format,
       timezone: f.timezone,
       source_type: f.source_type,
@@ -133,6 +138,8 @@ exports.getViewConfig = async (entity, viewId) => {
       type: f.type,
       number_format: f.number_format,
       decimal_places: f.decimal_places,
+      display_format: f.display_format || 'plain',
+      unit: f.unit || null,
       date_format: f.date_format,
       timezone: f.timezone,
       source_type: f.source_type,
@@ -153,4 +160,37 @@ exports.getViewConfig = async (entity, viewId) => {
 exports.validateEntityData = async (entity, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
   return dynamicUtils.validateData(entity, data, fieldDefs);
+};
+
+exports.computePostFormulas = async (entity, recordId, recordData, userId, userEmail) => {
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
+  const postFormulaFields = fieldDefs.filter(f => {
+    if (f.type !== 'formula' || !f.formula_config) return false;
+    const fc = typeof f.formula_config === 'string' ? (() => { try { return JSON.parse(f.formula_config); } catch { return {}; } })() : f.formula_config;
+    return fc.compute_mode === 'post';
+  });
+  if (postFormulaFields.length === 0) return {};
+
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const createdAt = new Date().toISOString();
+  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail };
+
+  const results = {};
+  for (const field of postFormulaFields) {
+    const fc = typeof field.formula_config === 'string' ? (() => { try { return JSON.parse(field.formula_config); } catch { return {}; } })() : field.formula_config;
+    if (!fc.expression) continue;
+    const result = formulaService.evaluatePostFormula(fc.expression, metadata);
+    if (result !== null && result !== undefined) {
+      const decimalPlaces = fc.decimalPlaces ?? 2;
+      if (fc.outputType === 'number' || (fc.outputType === 'auto' && typeof result === 'number')) {
+        let formatted = Number(result);
+        if (decimalPlaces > 0) formatted = formatted.toFixed(decimalPlaces);
+        if (fc.unit) formatted += ' ' + fc.unit;
+        results[field.key] = String(formatted);
+      } else {
+        results[field.key] = String(result);
+      }
+    }
+  }
+  return results;
 };

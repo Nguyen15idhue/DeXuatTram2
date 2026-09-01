@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const dynamicEngineService = require('./dynamicEngineService');
 
 exports.getAllStations = async (search, status, page, limit) => {
   const offset = (page - 1) * limit;
@@ -55,8 +56,22 @@ exports.createStation = async (name, latitude, longitude, address, status, descr
     'INSERT INTO stations (name, latitude, longitude, address, status, description, custom_data) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address, fixedData.status || 'ACTIVE', fixedData.description || '', customData]
   );
-  const [station] = await pool.query('SELECT * FROM stations WHERE id = ?', [result.insertId]);
-  return dynamicUtils.mergeData(station[0], fieldDefs);
+
+  const recordId = result.insertId;
+
+  const postResults = await dynamicEngineService.computePostFormulas('stations', recordId, dynamicData, null, null);
+  if (Object.keys(postResults).length > 0) {
+    const updatedDynamic = { ...dynamicData, ...postResults };
+    const updatedCustomData = JSON.stringify(updatedDynamic);
+    await pool.query('UPDATE stations SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+  }
+
+  const [station] = await pool.query('SELECT * FROM stations WHERE id = ?', [recordId]);
+  const finalData = dynamicUtils.mergeData(station[0], fieldDefs);
+  if (Object.keys(postResults).length > 0) {
+    Object.assign(finalData, postResults);
+  }
+  return finalData;
 };
 
 exports.updateStation = async (id, data) => {
@@ -69,6 +84,14 @@ exports.updateStation = async (id, data) => {
     'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
     [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address || '', fixedData.status || 'ACTIVE', fixedData.description || '', customData, id]
   );
+
+  const postResults = await dynamicEngineService.computePostFormulas('stations', id, dynamicData, null, null);
+  if (Object.keys(postResults).length > 0) {
+    const [currentStation] = await pool.query('SELECT custom_data FROM stations WHERE id = ?', [id]);
+    const currentDynamic = currentStation[0]?.custom_data ? (typeof currentStation[0].custom_data === 'string' ? JSON.parse(currentStation[0].custom_data) : currentStation[0].custom_data) : {};
+    const updatedDynamic = { ...currentDynamic, ...postResults };
+    await pool.query('UPDATE stations SET custom_data = ?, updated_at = NOW() WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
+  }
 };
 
 exports.deleteStation = async (id) => {
