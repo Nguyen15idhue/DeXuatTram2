@@ -266,16 +266,15 @@ exports.exportDynamic = async (req, res) => {
         if (value == null) return '';
 
         if (col.type === 'file') {
+          const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
           const files = Array.isArray(value) ? value : [value];
-          const fileLinks = files.filter(f => f && f.name).map(f => {
-            const fileName = f.name || '';
-            if (f.storage_key) {
-              const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
-              return `${fileName} (${baseUrl}/uploads/${f.storage_key})`;
-            }
-            return fileName;
-          });
-          return fileLinks.join(', ');
+          const fileData = files.filter(f => f && f.original_name).map(f => ({
+            original_name: f.original_name,
+            link: f.storage_key ? `${baseUrl}/uploads/${f.storage_key}` : null
+          }));
+          if (fileData.length === 0) return '';
+          if (fileData.length === 1) return JSON.stringify(fileData[0]);
+          return JSON.stringify(fileData);
         }
 
         if (typeof value === 'object' && value.result !== undefined) {

@@ -264,41 +264,98 @@ const DataListManager = () => {
 
       {showImport && (
         <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>Import Data List từ Excel</h2>
+          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
             {importStep === 'upload' && (
-              <div className="import-upload">
-                <label>Chọn file Excel (.xlsx)</label>
-                <input type="file" accept=".xlsx,.xls" onChange={handleDLFileSelect} />
-                {importFile && (
-                  <div className="import-file-info">
-                    <p>File: <strong>{importFile.name}</strong></p>
-                    <p>Kích thước: {(importFile.size / 1024).toFixed(1)} KB</p>
+              <>
+                <div className="import-modal-header">
+                  <div className="import-icon">📥</div>
+                  <div>
+                    <h2>Import Data List</h2>
+                    <p className="import-subtitle">
+                      Danh sách: <strong>{lists.find(l => l.id === importListId)?.name || ''}</strong>
+                    </p>
                   </div>
-                )}
-                <div className="import-actions">
+                </div>
+                <div className="import-dropzone" onClick={() => document.getElementById('dl-file-input').click()}>
+                  <input
+                    id="dl-file-input"
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleDLFileSelect}
+                    style={{ display: 'none' }}
+                  />
+                  {importFile ? (
+                    <div className="import-file-selected">
+                      <div className="import-file-icon">📄</div>
+                      <div className="import-file-details">
+                        <p className="import-file-name">{importFile.name}</p>
+                        <p className="import-file-size">{(importFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                      <button type="button" className="btn btn-sm btn-delete" onClick={(e) => { e.stopPropagation(); setImportFile(null); }}>✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="import-dropzone-icon">📁</div>
+                      <p className="import-dropzone-text">Kéo thả hoặc click để chọn file</p>
+                      <p className="import-dropzone-hint">Hỗ trợ file .xlsx, .xls (tối đa 10MB)</p>
+                    </>
+                  )}
+                </div>
+                <div className="form-actions">
                   <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
                   <button type="button" className="btn btn-primary" onClick={handleDLPreviewImport} disabled={!importFile || importLoading}>
-                    {importLoading ? 'Đang đọc...' : 'Xem trước'}
+                    {importLoading ? 'Đang phân tích...' : 'Xem trước'}
                   </button>
                 </div>
-              </div>
+              </>
             )}
             {importStep === 'preview' && importPreview && (
-              <div className="import-preview">
-                <div className="import-summary">
-                  <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
-                  <p className="success-text">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
-                  {importPreview.errorRows > 0 && <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
+              <>
+                <div className="import-modal-header">
+                  <div className="import-icon">✅</div>
+                  <div>
+                    <h2>Kết quả phân tích</h2>
+                    <p className="import-subtitle">
+                      Danh sách: <strong>{lists.find(l => l.id === importListId)?.name || ''}</strong>
+                    </p>
+                  </div>
                 </div>
-                <div className="import-actions">
+                <div className="import-result-cards">
+                  <div className="import-card import-card-total">
+                    <span className="import-card-value">{importPreview.totalRows}</span>
+                    <span className="import-card-label">Tổng dòng</span>
+                  </div>
+                  <div className="import-card import-card-success">
+                    <span className="import-card-value">{importPreview.validRows}</span>
+                    <span className="import-card-label">Hợp lệ</span>
+                  </div>
+                  {importPreview.errorRows > 0 && (
+                    <div className="import-card import-card-error">
+                      <span className="import-card-value">{importPreview.errorRows}</span>
+                      <span className="import-card-label">Lỗi</span>
+                    </div>
+                  )}
+                </div>
+                {importPreview.errorRows > 0 && importPreview.errors && importPreview.errors.length > 0 && (
+                  <div className="import-errors-list">
+                    {importPreview.errors.slice(0, 5).map((err, i) => (
+                      <div key={i} className="import-error-item">
+                        <span className="import-error-row">Dòng {err.row}:</span> {err.error}
+                      </div>
+                    ))}
+                    {importPreview.errors.length > 5 && (
+                      <div className="import-error-more">... và {importPreview.errors.length - 5} lỗi khác</div>
+                    )}
+                  </div>
+                )}
+                <div className="form-actions">
                   <button type="button" className="btn btn-secondary" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
                   <button type="button" className="btn btn-primary" onClick={handleDLConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} dòng`}
                   </button>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>

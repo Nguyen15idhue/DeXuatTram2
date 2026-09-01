@@ -1151,6 +1151,182 @@ select:focus {
   color: #c00;
 }
 
+/* Import Modal */
+.import-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.import-modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #1a202c;
+}
+
+.import-subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #718096;
+}
+
+.import-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.import-dropzone {
+  border: 2px dashed #cbd5e0;
+  border-radius: 12px;
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f7fafc;
+  margin-bottom: 20px;
+}
+
+.import-dropzone:hover {
+  border-color: #667eea;
+  background: #f0f4ff;
+}
+
+.import-dropzone-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.import-dropzone-text {
+  font-size: 16px;
+  color: #4a5568;
+  margin: 0 0 6px;
+  font-weight: 500;
+}
+
+.import-dropzone-hint {
+  font-size: 13px;
+  color: #a0aec0;
+  margin: 0;
+}
+
+.import-file-selected {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+
+.import-file-icon {
+  font-size: 36px;
+  flex-shrink: 0;
+}
+
+.import-file-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-file-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-file-size {
+  font-size: 13px;
+  color: #718096;
+  margin: 0;
+}
+
+.import-result-cards {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.import-card {
+  flex: 1;
+  padding: 16px;
+  border-radius: 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.import-card-total {
+  background: #edf2f7;
+}
+
+.import-card-success {
+  background: #f0fff4;
+}
+
+.import-card-error {
+  background: #fff5f5;
+}
+
+.import-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.import-card-total .import-card-value { color: #4a5568; }
+.import-card-success .import-card-value { color: #38a169; }
+.import-card-error .import-card-value { color: #e53e3e; }
+
+.import-card-label {
+  font-size: 13px;
+  color: #718096;
+  font-weight: 500;
+}
+
+.import-errors-list {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.import-error-item {
+  font-size: 13px;
+  color: #c53030;
+  padding: 4px 0;
+  border-bottom: 1px solid #fed7d7;
+}
+
+.import-error-item:last-child {
+  border-bottom: none;
+}
+
+.import-error-row {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.import-error-more {
+  font-size: 13px;
+  color: #718096;
+  font-style: italic;
+  padding-top: 6px;
+}
+
 .import-table-section,
 .import-errors-section {
   margin-bottom: 20px;
@@ -1633,6 +1809,21 @@ select:focus {
 
   .modal-lg {
     max-width: 100%;
+  }
+
+  .import-result-cards {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .import-card {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .import-card-value {
+    font-size: 22px;
   }
 
   .form-row {
