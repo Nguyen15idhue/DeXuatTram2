@@ -612,18 +612,168 @@ Edge cases tested:
 ### Files đã sửa
 | File | Trạng thái | Thay đổi |
 |------|------------|----------|
-| `services/excelService.js` | ⏳ | Export/Import 3 entities theo dynamic config |
-| `routes/excel.js` | ⏳ | Thêm export users endpoint |
+| `services/excelService.js` | ⏳ | Viết lại hoàn toàn — 7 functions |
+| `routes/excel.js` | ⏳ | Sửa endpoints + thêm export users |
+| `routes/dataLists.js` | ⏳ | Thêm 3 endpoints Excel |
+| `frontend/src/services/api.js` | ⏳ | excelService rewrite (6 functions) |
+
+### Files mới
+| File | Loại | Trạng thái |
+|------|------|------------|
+| — | — | Không có file mới |
+
+### Files sửa (frontend pages)
+| File | Trạng thái | Thay đổi |
+|------|------------|----------|
+| `AdminStationsPage.jsx` | ⏳ | Import/Export buttons hoạt động |
+| `AdminUsersPage.jsx` | ⏳ | Import/Export buttons hoạt động |
+| `AdminProposalsPage.jsx` | ⏳ | Chỉ Export button |
+| `MyProposalsPage.jsx` | ⏳ | Import/Export buttons hoạt động |
+| `DataListManager.jsx` | ⏳ | Import/Export buttons cho data list |
+
+### Scope theo trang
+
+| Trang | Entity | Import | Export | Ghi chú |
+|-------|--------|--------|--------|---------|
+| AdminStationsPage | stations | ✅ | ✅ | View ID = 6 |
+| AdminUsersPage | users | ✅ | ✅ | View ID = 7 |
+| AdminProposalsPage | station_proposals | ❌ | ✅ | Chỉ export |
+| MyProposalsPage | station_proposals | ✅ | ✅ | View ID = 8 |
+| DataListManager | data_lists | ✅ | ✅ | Theo data list structure |
+
+### Cột Excel
+
+Thứ tự cột (áp dụng cho tất cả):
+```
+Cột 1: STT (tự tăng, system-generated)
+Cột 2+: Table Columns (view_fields theo order_index)
+Cột N+: Available Fields (field_definitions chưa có trong view)
+```
+
+Ví dụ stations:
+```
+| STT | Name | Latitude | Longitude | Address | Status | Description | antenna_height | tower_type | power_capacity |
+```
+
+### Backend — excelService.js functions
+
+| Function | Mô tả |
+|----------|-------|
+| `exportDynamic(entity, viewId)` | Export Excel từ view config + all fields |
+| `importPreviewDynamic(entity, file)` | Preview import — validate headers + rows |
+| `importConfirmDynamic(entity, rows)` | Import transaction — INSERT fixed + UPDATE custom_data |
+| `getTemplateDynamic(entity)` | Template với STT + all fields + sample row |
+| `exportDataList(listId)` | Export data list theo columns_config |
+| `importDataListPreview(listId, file)` | Preview import data list |
+| `importDataListConfirm(listId, rows)` | Import data list rows |
+
+### Backend — Helper functions
+
+| Function | Mô tả |
+|----------|-------|
+| `buildExportColumns(entity, viewId)` | STT + view_fields + remaining fields |
+| `buildImportColumns(entity)` | STT + all field_definitions |
+| `parseExcelRow(row, columns)` | Parse Excel → fixedData + dynamicData + errors |
+| `getAllData(entity)` | SELECT * FROM entity table |
 
 ### Endpoints mới/sửa
-| Endpoint | Method | Entity | Trạng thái |
-|----------|--------|--------|------------|
-| `/api/admin/excel/export/stations` | GET | stations | ⏳ |
-| `/api/admin/excel/export/proposals` | GET | proposals | ⏳ |
-| `/api/admin/excel/export/users` | GET | users | ⏳ NEW |
-| `/api/admin/excel/template` | GET | all (param ?entity=) | ⏳ |
-| `/api/admin/excel/import/preview` | POST | all | ⏳ |
-| `/api/admin/excel/import/confirm` | POST | all | ⏳ |
+
+| Endpoint | Method | Auth | Thay đổi |
+|----------|--------|------|----------|
+| `/api/admin/excel/export/stations` | GET | admin | Sửa → exportDynamic('stations', 6) |
+| `/api/admin/excel/export/proposals` | GET | admin | Sửa → exportDynamic('station_proposals', 8) |
+| `/api/admin/excel/export/users` | GET | admin | **Thêm** → exportDynamic('users', 7) |
+| `/api/admin/excel/template` | GET | admin | Sửa → thêm `?entity=`, dùng getTemplateDynamic |
+| `/api/admin/excel/import/preview` | POST | admin | Sửa → thêm `?entity=`, dùng importPreviewDynamic |
+| `/api/admin/excel/import/confirm` | POST | admin | Sửa → thêm `?entity=`, dùng importConfirmDynamic |
+| `/api/admin/data-lists/:id/export` | GET | admin | **Thêm** → exportDataList |
+| `/api/admin/data-lists/:id/import/preview` | POST | admin | **Thêm** → importDataListPreview |
+| `/api/admin/data-lists/:id/import/confirm` | POST | admin | **Thêm** → importDataListConfirm |
+
+### Frontend — excelService functions
+
+| Function | Mô tả |
+|----------|-------|
+| `exportData(entity, token)` | Export entity ra Excel |
+| `downloadTemplate(entity, token)` | Download template cho entity |
+| `previewImport(entity, file, token)` | Preview import |
+| `confirmImport(entity, rows, token)` | Confirm import |
+| `exportDataList(listId, token)` | Export data list |
+| `previewDataListImport(listId, file, token)` | Preview import data list |
+| `confirmDataListImport(listId, rows, token)` | Confirm import data list |
+
+### Endpoints Swagger docs
+- Thêm `@swagger` JSDoc cho tất cả endpoints mới/sửa
+- Swagger UI hiển thị đầy đủ
+
+### Endpoints test
+| Endpoint | Method | Entity | Trạng thái | Ghi chú |
+|----------|--------|--------|------------|---------|
+| `/api/admin/excel/export/stations` | GET | stations | ⏳ | exportDynamic |
+| `/api/admin/excel/export/proposals` | GET | proposals | ⏳ | exportDynamic |
+| `/api/admin/excel/export/users` | GET | users | ⏳ NEW | exportDynamic |
+| `/api/admin/excel/template` | GET | all | ⏳ | getTemplateDynamic |
+| `/api/admin/excel/import/preview` | POST | all | ⏳ | importPreviewDynamic |
+| `/api/admin/excel/import/confirm` | POST | all | ⏳ | importConfirmDynamic |
+| `/api/admin/data-lists/:id/export` | GET | — | ⏳ NEW | exportDataList |
+| `/api/admin/data-lists/:id/import/preview` | POST | — | ⏳ NEW | importDataListPreview |
+| `/api/admin/data-lists/:id/import/confirm` | POST | — | ⏳ NEW | importDataListConfirm |
+
+### Swagger docs
+| Endpoint | Trạng thái | Ghi chú |
+|----------|------------|---------|
+| Export stations (dynamic) | ⏳ | View-driven columns |
+| Export proposals (dynamic) | ⏳ | View-driven columns |
+| Export users (dynamic) | ⏳ NEW | View-driven columns |
+| Template (dynamic) | ⏳ | All field definitions |
+| Import preview (dynamic) | ⏳ | Validate headers + rows |
+| Import confirm (dynamic) | ⏳ | Transaction bulk insert |
+| Data List export | ⏳ NEW | columns_config driven |
+| Data List import preview | ⏳ NEW | Validate columns_config |
+| Data List import confirm | ⏳ NEW | Bulk add rows |
+
+### Style
+- Header: background tím, bold, border
+- Auto-width columns
+- STT column: centered, auto-numbered
+- Number format: theo display_format config
+
+### Frontend pages
+| Page | Import | Export | Template | Ghi chú |
+|------|--------|--------|----------|---------|
+| AdminStationsPage | ✅ | ✅ | ✅ | Import/Export buttons |
+| AdminUsersPage | ✅ | ✅ | ✅ | Import/Export buttons |
+| AdminProposalsPage | ❌ | ✅ | ✅ | Chỉ Export button |
+| MyProposalsPage | ✅ | ✅ | ✅ | Import/Export buttons |
+| DataListManager | ✅ | ✅ | — | Import/Export per data list |
+
+### Components
+| Component | Trạng thái | Thay đổi |
+|-----------|------------|----------|
+| ExcelImportDialog | ⏳ | Hiển thị preview + validation errors |
+| ExcelExportDialog | ⏳ | Hiển thị columns preview + download |
+| DataListImportDialog | ⏳ | Hiển thị preview theo columns_config |
+
+### Import Flow
+1. User chọn file Excel → frontend gọi previewImport(entity, file)
+2. Backend validate headers + rows → trả về { validRows, errors, columns }
+3. Frontend hiển thị preview dialog: thông tin columns, rows hợp lệ, rows lỗi
+4. User confirm → frontend gọi confirmImport(entity, rows)
+5. Backend transaction: INSERT fixed columns + UPDATE custom_data JSON
+6. Frontend reload data + hiển thị toast thành công
+
+### Export Flow
+1. User click Export → frontend gọi exportData(entity)
+2. Backend: buildExportColumns(entity, viewId) → getAllData(entity) → tạo workbook
+3. Header: STT + Table Columns labels + Available Fields labels
+4. Data: each row → STT + fixed values + custom_data values
+5. Return buffer → frontend download .xlsx
+
+### Data List Flow
+1. Export: User click Export trên DataListManager → exportDataList(listId)
+2. Backend: columns_config → header → data rows → buffer
+3. Import: User chọn file → preview → validate headers (phải khớp labels) → validate data types
+4. Confirm: bulk add rows → dataListService.addRows()
 
 ---
 

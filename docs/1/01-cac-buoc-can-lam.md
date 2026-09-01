@@ -603,77 +603,424 @@ Thêm: fieldDefinitionService, formService, formFieldService, viewService, viewF
 ## PHASE 7: EXCEL DYNAMIC
 
 ### Yêu cầu
-- Sửa `services/excelService.js`: export + import cho cả 3 entity (stations, proposals, users)
-- Export theo view config (view_fields)
-- Import theo form config (field_definitions)
-- Template download cho từng entity
+- Export/Import dùng tất cả field definitions (fixed + json/custom_data)
+- STT luôn là cột đầu tiên
+- Thứ tự cột: Table Columns (view_fields) trước, sau đó Available Fields (các field chưa có trong view)
+- **Admin Stations / Admin Users / My Proposals:** Import + Export
+- **Admin Proposals:** Chỉ Export (không Import)
+- **Data Lists:** Import/Export theo cấu trúc data list (cột đầu là STT)
+
+### Scope theo trang
+
+| Trang | Entity | Import | Export | Ghi chú |
+|-------|--------|--------|--------|---------|
+| AdminStationsPage | stations | ✅ | ✅ | View ID = 6 |
+| AdminUsersPage | users | ✅ | ✅ | View ID = 7 |
+| AdminProposalsPage | station_proposals | ❌ | ✅ | View ID = 8 |
+| MyProposalsPage | station_proposals | ✅ | ✅ | View ID = 8 |
+| DataListManager | data_lists | ✅ | ✅ | Theo data list structure |
+
+### Thứ tự cột Excel (áp dụng cho tất cả)
+
+```
+Cột 1: STT (mới, tự tăng)
+Cột 2+: Table Columns (view_fields theo order_index)
+Cột N+: Available Fields (field_definitions chưa có trong view)
+```
+
+Ví dụ stations:
+```
+| STT | Name | Latitude | Longitude | Address | Status | Description | antenna_height | tower_type | power_capacity |
+```
+- 7 cột từ View Stations (view_id=6): name, latitude, longitude, address, status, description, antenna_height
+- 3 cột Available Fields: tower_type, power_capacity (chưa thêm vào view)
+
+---
 
 ### Bước thực hiện
 
-#### Bước 7.1: Export Stations
-- Sửa `excelService.js` → exportStations()
-- Đọc view config `views.entity = 'stations'`
-- Export theo view_fields (column order, visible)
-- Dynamic columns từ field_definitions
+#### Bước 7.1: Tạo `services/excelService.js` mới
 
-#### Bước 7.2: Import Stations
-- Sửa `excelService.js` → importPreview() + importConfirm()
-- Đọc form config `forms.entity = 'stations'`
-- Validate theo field_definitions
-- Preview → Confirm
+**Thay vì sửa file cũ → Viết lại hoàn toàn** vì logic khác hoàn toàn.
 
-#### Bước 7.3: Export Proposals
-- Sửa `excelService.js` → exportProposals()
-- Đọc view config `views.entity = 'station_proposals'`
-- Export theo view_fields
-- Dynamic columns từ field_definitions
+```
+exports.exportDynamic(entity, viewId)     → Export theo view config + all fields
+exports.importPreviewDynamic(entity, file) → Preview import với tất cả fields
+exports.importConfirmDynamic(entity, rows) → Import data + custom_data
+exports.getTemplateDynamic(entity)         → Template với tất cả fields
+exports.exportDataList(listId)             → Export data list theo columns_config
+exports.importDataListPreview(listId, file) → Preview import data list
+exports.importDataListConfirm(listId, rows) → Import data list rows
+```
 
-#### Bước 7.4: Import Proposals
-- Sửa `excelService.js` → importPreview() + importConfirm()
-- Đọc form config `forms.entity = 'station_proposals'`
-- Validate theo field_definitions
-- Preview → Confirm
+#### Bước 7.2: Backend — Helper functions
 
-#### Bước 7.5: Export Users
-- Thêm `excelService.js` → exportUsers()
-- Đọc view config `views.entity = 'users'`
-- Export theo view_fields
-- Dynamic columns từ field_definitions
+**`buildExportColumns(entity, viewId)`:**
+1. Lấy view_fields theo viewId (order_index ASC, visible=true)
+2. Lấy allFields từ field_definitions (entity, status=active)
+3. Filter out fields đã có trong view → còn lại là availableFields
+4. Trả về: `[{ key, label, type, source_type, isInView, width? }]`
+5. Luôn thêm cột `{ key: '_stt', label: 'STT', type: 'number', source_type: 'system', isInView: true }` ở vị trí đầu
 
-#### Bước 7.6: Import Users
-- Thêm `excelService.js` → importPreviewUsers() + importConfirmUsers()
-- Đọc form config `forms.entity = 'users'`
-- Validate theo field_definitions
-- Preview → Confirm
+**`buildImportColumns(entity)`:**
+1. Lấy tất cả field_definitions theo entity (status=active)
+2. Trả về: `[{ key, label, type, source_type, required }]`
+3. Luôn thêm cột `{ key: '_stt', label: 'STT', type: 'number', source_type: 'system' }` ở vị trí đầu
 
-#### Bước 7.7: Template download cho từng entity
-- Sửa `excelService.js` → getTemplate()
-- GET `/api/admin/excel/template?entity=stations`
-- GET `/api/admin/excel/template?entity=station_proposals`
-- GET `/api/admin/excel/template?entity=users`
+**`parseExcelRow(row, columns)`:**
+- Đọc dữ liệu từ Excel row theo thứ tự columns
+- Trả về: `{ fixedData: {...}, dynamicData: {...}, errors: [] }`
 
-### API endpoints hiện tại cần sửa
+#### Bước 7.3: Backend — Export Dynamic
 
-| Endpoint | Thay đổi | File sửa |
-|----------|----------|----------|
-| `GET /api/admin/excel/export/stations` | Đọc view config thay vì hardcode | `services/excelService.js` |
-| `GET /api/admin/excel/export/proposals` | Đọc view config | `services/excelService.js` |
-| `GET /api/admin/excel/export/users` | **NEW** — Export users | `services/excelService.js` + `routes/excel.js` |
-| `GET /api/admin/excel/template` | Thêm param `?entity=` | `services/excelService.js` |
-| `POST /api/admin/excel/import/preview` | Validate theo form config | `services/excelService.js` |
-| `POST /api/admin/excel/import/confirm` | Import theo form config | `services/excelService.js` |
+**Logic export:**
+```javascript
+exports.exportDynamic = async (entity, viewId) => {
+  // 1. Build columns từ view config
+  const columns = await buildExportColumns(entity, viewId);
+
+  // 2. Query data (SELECT fixed columns + custom_data)
+  const rows = await getAllData(entity); // stations/users/station_proposals
+
+  // 3. Tạo workbook
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(entity);
+
+  // 4. Header row (STT + labels)
+  sheet.addRow(columns.map(c => c.label));
+
+  // 5. Data rows
+  rows.forEach((row, idx) => {
+    const values = columns.map(col => {
+      if (col.key === '_stt') return idx + 1;
+      if (col.source_type === 'fixed') return row[col.key];
+      // json field → custom_data
+      const custom = JSON.parse(row.custom_data || '{}');
+      return custom[col.key] ?? '';
+    });
+    sheet.addRow(values);
+  });
+
+  // 6. Style header (tím, bold, border)
+  // 7. Auto-width columns
+  // 8. Return buffer
+};
+```
+
+**Helper — getAllData(entity):**
+```javascript
+async function getAllData(entity) {
+  const tableMap = { stations: 'stations', users: 'users', station_proposals: 'station_proposals' };
+  const table = tableMap[entity];
+  // SELECT all columns + custom_data FROM table
+  const [rows] = await db.query(`SELECT * FROM ${table}`);
+  return rows;
+}
+```
+
+#### Bước 7.4: Backend — Import Dynamic Preview
+
+**Logic preview:**
+```javascript
+exports.importPreviewDynamic = async (entity, file) => {
+  // 1. Build columns từ field_definitions
+  const columns = await buildImportColumns(entity);
+
+  // 2. Read Excel file
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(file.buffer);
+  const sheet = workbook.getWorksheet(1);
+
+  // 3. Validate header row (so sánh với columns labels)
+  const headerRow = sheet.getRow(1);
+  const headerErrors = validateHeaders(headerRow, columns);
+
+  // 4. Validate data rows
+  const validRows = [];
+  const errors = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // skip header
+    const parsed = parseExcelRow(row, columns);
+    if (parsed.errors.length > 0) {
+      errors.push({ row: rowNumber, errors: parsed.errors });
+    } else {
+      validRows.push({ rowNumber, fixedData: parsed.fixedData, dynamicData: parsed.dynamicData });
+    }
+  });
+
+  return { columns, validRows, errors, totalRows: sheet.rowCount - 1 };
+};
+```
+
+#### Bước 7.5: Backend — Import Dynamic Confirm
+
+**Logic confirm (transaction):**
+```javascript
+exports.importConfirmDynamic = async (entity, rows) => {
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
+  try {
+    for (const row of rows) {
+      const fixedData = row.fixedData;
+      const dynamicData = row.dynamicData;
+
+      // 1. INSERT INTO entity table (fixed columns)
+      const columns = Object.keys(fixedData);
+      const values = Object.values(fixedData);
+      const placeholders = columns.map(() => '?').join(', ');
+      const [result] = await connection.query(
+        `INSERT INTO ${entity} (${columns.join(', ')}) VALUES (${placeholders})`,
+        values
+      );
+
+      // 2. UPDATE custom_data JSON (nếu có dynamic fields)
+      if (Object.keys(dynamicData).length > 0) {
+        await connection.query(
+          `UPDATE ${entity} SET custom_data = ? WHERE id = ?`,
+          [JSON.stringify(dynamicData), result.insertId]
+        );
+      }
+    }
+
+    await connection.commit();
+    return { imported: rows.length };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  }
+};
+```
+
+#### Bước 7.6: Backend — Template Dynamic
+
+**Logic template:**
+```javascript
+exports.getTemplateDynamic = async (entity) => {
+  const columns = await buildImportColumns(entity);
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(entity);
+
+  // Header row
+  sheet.addRow(columns.map(c => c.label));
+
+  // Sample row (empty hoặc dummy data)
+  sheet.addRow(columns.map(c => getSampleValue(c)));
+
+  // Style header
+  // Auto-width
+  return workbook.xlsx.writeBuffer();
+};
+
+function getSampleValue(col) {
+  switch (col.type) {
+    case 'number': return 0;
+    case 'email': return 'example@email.com';
+    case 'phone': return '0901234567';
+    case 'date': return '01/01/2026';
+    case 'datetime': return '01/01/2026 12:00';
+    case 'boolean': return 'true/false';
+    case 'select': return 'option1';
+    case 'multiselect': return 'option1,option2';
+    default: return '';
+  }
+}
+```
+
+#### Bước 7.7: Backend — Data List Export/Import
+
+**Export Data List:**
+```javascript
+exports.exportDataList = async (listId) => {
+  // 1. Lấy data list metadata + columns_config
+  const list = await dataListService.getById(listId);
+  const columnsConfig = JSON.parse(list.columns_config); // [{key, label, type}]
+
+  // 2. Lấy rows
+  const rows = await dataListService.getAllRows(listId);
+
+  // 3. Build columns: STT + columnsConfig
+  const columns = [
+    { key: '_stt', label: 'STT', type: 'number' },
+    ...columnsConfig.map(c => ({ key: c.key, label: c.label, type: c.type }))
+  ];
+
+  // 4. Tạo workbook
+  // 5. Header: column labels
+  // 6. Data: rows.map(r => columns.map(c => c.key === '_stt' ? i+1 : r.data[c.key]))
+  // 7. Return buffer
+};
+```
+
+**Import Data List Preview:**
+```javascript
+exports.importDataListPreview = async (listId, file) => {
+  // 1. Lấy columns_config từ data list
+  const list = await dataListService.getById(listId);
+  const columnsConfig = JSON.parse(list.columns_config);
+  const columns = [
+    { key: '_stt', label: 'STT', type: 'number' },
+    ...columnsConfig
+  ];
+
+  // 2. Read Excel, validate headers (phải khớp với columnsConfig labels)
+  // 3. Validate rows (number type check, required check)
+  // 4. Return { columns, validRows, errors }
+};
+```
+
+**Import Data List Confirm:**
+```javascript
+exports.importDataListConfirm = async (listId, rows) => {
+  // 1. Lấy columns_config để biết keys
+  const list = await dataListService.getById(listId);
+  const columnsConfig = JSON.parse(list.columns_config);
+
+  // 2. Bulk add rows
+  const insertRows = rows.map(row => {
+    const data = {};
+    columnsConfig.forEach(col => {
+      data[col.key] = row.dynamicData[col.key] ?? row[col.key];
+    });
+    return { data: JSON.stringify(data), parent_row_id: row.parent_row_id || null };
+  });
+
+  await dataListService.addRows(listId, insertRows);
+  return { imported: rows.length };
+};
+```
+
+#### Bước 7.8: Backend — Routes mới
+
+**File: `routes/excel.js`** — Sửa endpoints hiện tại + thêm mới:
+
+| Method | Endpoint | Auth | Thay đổi |
+|--------|----------|------|----------|
+| GET | `/api/admin/excel/export/stations` | admin | **Sửa** → dùng exportDynamic(entity, viewId=6) |
+| GET | `/api/admin/excel/export/proposals` | admin | **Sửa** → dùng exportDynamic(entity, viewId=8) |
+| GET | `/api/admin/excel/export/users` | admin | **Thêm** → dùng exportDynamic(entity, viewId=7) |
+| GET | `/api/admin/excel/template` | admin | **Sửa** → thêm param `?entity=`, dùng getTemplateDynamic(entity) |
+| POST | `/api/admin/excel/import/preview` | admin | **Sửa** → thêm param `?entity=`, dùng importPreviewDynamic(entity, file) |
+| POST | `/api/admin/excel/import/confirm` | admin | **Sửa** → thêm param `?entity=`, dùng importConfirmDynamic(entity, rows) |
+
+**File: `routes/dataLists.js`** — Thêm Excel endpoints:
+
+| Method | Endpoint | Auth | Mô tả |
+|--------|----------|------|-------|
+| GET | `/api/admin/data-lists/:id/export` | admin | Export data list ra Excel |
+| POST | `/api/admin/data-lists/:id/import/preview` | admin | Preview import data list |
+| POST | `/api/admin/data-lists/:id/import/confirm` | admin | Confirm import data list |
+
+#### Bước 7.9: Frontend — excelService updates
+
+**File: `services/api.js`** — Sửa excelService:
+
+```javascript
+export const excelService = {
+  // Export — thêm entity param
+  async exportData(entity, token) {
+    const response = await api.downloadWithAuth(`/admin/excel/export/${entity}`, token);
+    // ... blob download pattern
+  },
+
+  // Template — thêm entity param
+  async downloadTemplate(entity, token) {
+    const response = await api.downloadWithAuth(`/admin/excel/template?entity=${entity}`, token);
+    // ... blob download
+  },
+
+  // Import preview — thêm entity param
+  previewImport(entity, file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.uploadWithAuth(`/admin/excel/import/preview?entity=${entity}`, formData, token);
+  },
+
+  // Import confirm — thêm entity param
+  confirmImport(entity, rows, token) {
+    return api.postWithAuth(`/admin/excel/import/confirm?entity=${entity}`, { rows }, token);
+  },
+
+  // Data List export
+  async exportDataList(listId, token) {
+    const response = await api.downloadWithAuth(`/admin/data-lists/${listId}/export`, token);
+    // ... blob download
+  },
+
+  // Data List import preview
+  previewDataListImport(listId, file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.uploadWithAuth(`/admin/data-lists/${listId}/import/preview`, formData, token);
+  },
+
+  // Data List import confirm
+  confirmDataListImport(listId, rows, token) {
+    return api.postWithAuth(`/admin/data-lists/${listId}/import/confirm`, { rows }, token);
+  },
+};
+```
+
+#### Bước 7.10: Frontend — Admin pages updates
+
+**AdminStationsPage.jsx:**
+- Import: Nút "Import" → open modal → chọn file → previewImport('stations', file) → confirmImport('stations', rows)
+- Export: Nút "Export" → exportData('stations', token)
+- Template: Nút "Template" → downloadTemplate('stations', token)
+
+**AdminUsersPage.jsx:**
+- Tương tự stations
+- Import: importPreview + confirm với entity='users'
+- Export: exportData('users')
+
+**AdminProposalsPage.jsx:**
+- **Chỉ Export** (không Import button)
+- Export: exportData('station_proposals')
+- Template: downloadTemplate('station_proposals') — vẫn giữ cho user download nếu cần
+
+**MyProposalsPage.jsx:**
+- Import + Export với entity='station_proposals'
+- Import: importPreview + confirm với entity='station_proposals'
+- Export: exportData('station_proposals')
+
+**DataListManager.jsx:**
+- Mỗi data list có nút Import/Export
+- Export: exportDataList(listId)
+- Import: previewDataListImport(listId, file) → confirmDataListImport(listId, rows)
+- Import dialog: hiển thị preview với validation errors
+- Export dialog: download file
+
+#### Bước 7.11: Swagger docs
+
+Thêm `@swagger` JSDoc cho tất cả endpoints mới/sửa trong `routes/excel.js` và `routes/dataLists.js`.
+
+---
 
 ### Checklist Phase 7
-- [ ] Export stations theo view config
-- [ ] Export proposals theo view config
-- [ ] Export users theo view config (NEW)
-- [ ] Import stations theo form config
-- [ ] Import proposals theo form config (NEW)
-- [ ] Import users theo form config (NEW)
-- [ ] Template stations đúng format
-- [ ] Template proposals đúng format (NEW)
-- [ ] Template users đúng format (NEW)
-- [ ] File Excel đúng format cho cả 3 entity
+- [ ] excelService.js viết lại hoàn toàn (7 functions)
+- [ ] Helper: buildExportColumns() — STT + view_fields + remaining fields
+- [ ] Helper: buildImportColumns() — STT + all field definitions
+- [ ] Helper: parseExcelRow() — parse Excel → fixedData + dynamicData
+- [ ] Export stations theo view config (view_id=6) + all fields
+- [ ] Export users theo view config (view_id=7) + all fields
+- [ ] Export proposals theo view config (view_id=8) + all fields (chỉ admin export)
+- [ ] Import stations: preview + confirm + custom_data JSON
+- [ ] Import users: preview + confirm + custom_data JSON
+- [ ] Import proposals: preview + confirm + custom_data JSON (user my-proposals)
+- [ ] Template stations/users/proposals với sample data
+- [ ] Data List export theo columns_config + STT
+- [ ] Data List import preview (validate headers + data)
+- [ ] Data List import confirm (bulk add rows)
+- [ ] Frontend excelService updates (6 functions)
+- [ ] AdminStationsPage: Import/Export buttons hoạt động
+- [ ] AdminUsersPage: Import/Export buttons hoạt động
+- [ ] AdminProposalsPage: Chỉ Export button
+- [ ] MyProposalsPage: Import/Export buttons hoạt động
+- [ ] DataListManager: Import/Export buttons hoạt động
+- [ ] Swagger docs cho tất cả endpoints
+- [ ] Header style: tím, bold, border
+- [ ] Auto-width columns
+- [ ] Existing Excel features không bị regress
 
 ---
 
