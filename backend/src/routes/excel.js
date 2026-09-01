@@ -23,7 +23,7 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
 
 /**
  * @swagger
- * /api/admin/excel/export/proposals:
+ * /api/admin/excel/export/station_proposals:
  *   get:
  *     tags: [Admin - Excel]
  *     summary: Xuất danh sách đề xuất ra file Excel (dynamic columns)
@@ -37,7 +37,7 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/export/proposals', requireAuth, requireAdmin, excelService.exportProposals);
+router.get('/export/station_proposals', requireAuth, requireAdmin, excelService.exportProposals);
 
 /**
  * @swagger

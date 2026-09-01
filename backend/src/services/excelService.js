@@ -126,6 +126,7 @@ function getSampleValue(col) {
     case 'boolean': return 'true';
     case 'select': return 'option1';
     case 'multiselect': return 'option1,option2';
+    case 'file': return '(file upload - không import được)';
     default: return '';
   }
 }
@@ -166,6 +167,7 @@ function parseExcelRow(row, columns, entity) {
 
   columns.forEach(col => {
     if (col.key === '_stt') return;
+    if (col.type === 'file') return;
 
     const entry = colMap[col.key];
     let value = entry ? entry.cell.value : '';
@@ -252,12 +254,35 @@ exports.exportDynamic = async (req, res) => {
     rows.forEach((row, idx) => {
       const values = columns.map(col => {
         if (col.key === '_stt') return idx + 1;
+
+        let value;
         if (col.source_type === 'fixed') {
-          const val = row[col.key];
-          return val != null ? val : '';
+          value = row[col.key];
+        } else {
+          const custom = row.custom_data ? (typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data) : {};
+          value = custom[col.key];
         }
-        const custom = row.custom_data ? (typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data) : {};
-        return custom[col.key] != null ? custom[col.key] : '';
+
+        if (value == null) return '';
+
+        if (col.type === 'file') {
+          const files = Array.isArray(value) ? value : [value];
+          const fileLinks = files.filter(f => f && f.name).map(f => {
+            const fileName = f.name || '';
+            if (f.storage_key) {
+              const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
+              return `${fileName} (${baseUrl}/uploads/${f.storage_key})`;
+            }
+            return fileName;
+          });
+          return fileLinks.join(', ');
+        }
+
+        if (typeof value === 'object' && value.result !== undefined) {
+          value = value.result;
+        }
+
+        return value;
       });
       sheet.addRow(values);
     });
