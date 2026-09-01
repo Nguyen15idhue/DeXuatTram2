@@ -117,7 +117,8 @@ API routes:              /api/[resource]
 frontend/src/
 ├── components/
 │   ├── dynamic/        DynamicForm, DynamicTable, DynamicField, FieldRenderer,
-│   │                   FileUpload, FileViewer, FileListPopup, DynamicFilter
+│   │                   FileUpload, FileViewer, FileListPopup, DynamicFilter,
+│   │                   FormulaEditor
 │   ├── admin/          FieldManager, FormBuilder, ViewBuilder, DragDropList,
 │   │                   DataListManager, DataListEditor, RecordDetailPopup
 │   └── (common)        Toast, Pagination, ErrorMessage, Loading, EmptyState,
@@ -132,7 +133,7 @@ frontend/src/
 ├── hooks/              useFieldOptions, useDataList
 ├── layouts/            PublicLayout, UserLayout, AdminLayout
 ├── contexts/           AuthContext
-├── utils/              mapHelpers
+├── utils/              mapHelpers, formatNumber
 ├── App.jsx             routing + lazy page imports
 └── main.jsx            entry point
 ```
@@ -146,12 +147,12 @@ backend/src/
 ├── routes/             auth, stations, proposals, myProposals, adminProposals,
 │                       adminUsers, dashboard, excel, mapUtils, fieldDefinitions,
 │                       forms, formFields, views, viewFields, dynamicEngine,
-│                       files, dataLists
+│                       files, dataLists, formulas
 ├── controllers/        (matching routes)
 ├── services/           auth, station, proposal, myProposal, adminProposal,
 │                       adminUser, dashboard, map, fieldDefinition, form,
 │                       formField, view, viewField, dynamicEngine, dynamicUtils,
-│                       file, excel, dataList
+│                       file, excel, dataList, formula
 └── utils/              db.js (MySQL pool)
 ```
 
@@ -191,6 +192,9 @@ backend/src/
 | `data_lists` | Danh sách dữ liệu (columns_config JSON) |
 | `data_list_rows` | Rows trong data list (data JSON) |
 
+### Database Migrations
+- `database/14-alter-field-definitions-add-display-format-unit.sql` — Thêm `display_format` và `unit` vào `field_definitions`
+
 ## 9. Swagger & Documentation
 
 - Swagger UI: `http://localhost:3000/api-docs`
@@ -227,7 +231,7 @@ backend/src/
 
 ### Field Types
 - 13 types: text, textarea, number, email, phone, url, date, datetime, boolean, select, multiselect, file, formula
-- Each type has specific config (number_format, date_format, file_config, formula_config, option_style)
+- Each type has specific config (number_format, decimal_places, display_format, unit, date_format, file_config, formula_config, option_style)
 - Fields stored in `field_definitions` table
 
 ### Form/View Builder
@@ -258,8 +262,23 @@ DynamicField render: custom dropdown with badge styling
 - **Pre-compute**: Tính trong lúc điền form, trước khi submit
 - **Post-compute**: Tính SAU khi record tạo xong, dùng record metadata (id, entity, base_url, created_at)
 - Config: `formula_config = { compute_mode, expression, referencedFields, outputType, outputFormat, decimalPlaces, unit }`
-- Pre: `computeFormula()` dùng `Function()` evaluator (planned: math.js)
+- Pre: `computeFormula()` dùng mathjs v15.2.0 evaluator
 - Post: Backend compute sau INSERT → update record → return kết quả
+- 26 custom functions: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW
+
+### Formula Visual Editor
+- Component: `FormulaEditor.jsx` — inline editor với compute mode selector, field/operator/function buttons
+- Features: autocomplete dropdown (detect word at cursor, keyboard navigation), collapsible sections, operators-grid-3, function hints
+- Output config: numberFormat selector (plain/comma/dot/space), decimalPlaces, unit
+- API: `POST /api/formulas/validate`, `POST /api/formulas/preview`
+
+### Number Formatting
+- Utility: `frontend/src/utils/formatNumber.js`
+- `formatNumber(value, { format, decimalPlaces, unit })` — format số theo cấu hình
+- 4 display formats: `plain` (1000), `comma` (1,000), `dot` (1.000), `space` (1 000)
+- `parseFormattedNumber(str)` — parse formatted string về number
+- Applied in: FieldRenderer, FormulaEditor output, DynamicForm computeFormula, DataListEditor cells
+- DB: `display_format` VARCHAR(20) DEFAULT 'plain', `unit` VARCHAR(50) trong `field_definitions`
 
 ### File Management
 - Upload: `POST /api/files/upload` (multer disk storage, 10MB limit)

@@ -218,7 +218,7 @@ Backend xây dựng bằng Node.js + Express, kết nối MySQL (MySQL2), phục
 - `text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`
 
 ### Extended Properties per Field
-- `number_format`, `decimal_places`, `date_format`, `timezone`
+- `number_format`, `decimal_places`, `display_format`, `unit`, `date_format`, `timezone`
 - `source_type` (json/fixed), `source_config`, `parent_field`, `option_style`
 - `file_config`, `formula_config`, `formula`
 - `data_list_id`, `data_list_column`, `relation_key`
@@ -307,10 +307,31 @@ Backend xây dựng bằng Node.js + Express, kết nối MySQL (MySQL2), phục
 | `POST /:entity/validate` | Auth | Validate data theo field definitions |
 
 ### Business Rules
-- **getFormConfig**: Trả form metadata + tất cả fields với full config (type, options, validation rules, number_format, date_format, ...)
+- **getFormConfig**: Trả form metadata + tất cả fields với full config (type, options, validation rules, number_format, decimal_places, display_format, unit, date_format, ...)
 - **getViewConfig**: Trả view metadata + configured fields + `allFields` (tất cả active fields của entity, để add thêm columns)
 - **validateData**: Chạy `dynamicUtils.validateEntityData()` — validate từng field value theo type definition
 - Entity validation: chỉ chấp nhận `stations`, `station_proposals`, `users`
+
+---
+
+## 17. Formulas (`/api/formulas`)
+
+| Endpoint | Auth | Mô tả |
+|----------|------|-------|
+| `POST /validate` | Admin | Validate formula expression |
+| `POST /preview` | Admin | Preview formula result với sample data |
+
+### Business Rules
+- **validate**: Kiểm tra expression bằng mathjs parser, trả về `valid`, `referencedFields`, `outputType`
+- **preview**: Tính toán formula với data mẫu, hỗ trợ pre-compute và post-compute (cung cấp record metadata: id, entity, base_url, created_at)
+- **Pre-compute**: Tính trong lúc điền form, trước khi submit
+- **Post-compute**: Tính SAU khi record tạo xong, dùng record metadata (id, entity, base_url, created_at), lưu kết quả vào custom_data
+
+### Supported Functions (26 custom)
+`ROUNDUP`, `ROUNDDOWN`, `MOD`, `IF`, `AND`, `OR`, `NOT`, `IFERROR`, `COUNT`, `COUNTA`, `COUNTIF`, `SUMIF`, `AVERAGE`, `CONCAT`, `LEN`, `LEFT`, `RIGHT`, `UPPER`, `LOWER`, `TRIM`, `DATE`, `TODAY`, `LPAD`, `RPAD`, `YEAR`, `MONTH`, `DAY`, `NOW`
+
+### Dependencies
+- mathjs v15.2.0 (backend: `formulaService.js`)
 
 ---
 
@@ -388,7 +409,7 @@ Backend xây dựng bằng Node.js + Express, kết nối MySQL (MySQL2), phục
 ### Key Columns
 - Tất cả bảng chính đều có `id` (PK), `created_at`, `updated_at`
 - `stations`, `station_proposals`, `users` có cột `custom_data` (JSON) cho dữ liệu động
-- `field_definitions` có 15+ extended columns cho cấu hình chi tiết
+- `field_definitions` có 17+ extended columns cho cấu hình chi tiết (bao gồm `display_format`, `unit`)
 
 ---
 

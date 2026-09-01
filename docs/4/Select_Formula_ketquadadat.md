@@ -554,4 +554,43 @@ field.data_list.data  → Chỉ dùng khi admin chọn "Nguồn: Data List"
 ## BƯỚC C1-C3: ROUTES + TEST + COMMIT
 
 ### Kết quả
-- (chưa thực hiện)
+- Routes `/api/formulas` đã đăng ký trong app.js
+- Swagger docs cho 2 endpoints (validate, preview)
+- mathjs v15.2.0 cài trên cả frontend và backend
+- 28/28 tests pass (24 custom functions + 4 post-formula)
+
+---
+
+## PHASE E: FORMULA EDITOR OPTIMIZATION + NUMBER FORMATTING
+
+**Ngày tạo:** 2026-09-01
+**Chi tiết:** Xem `docs/4/FormulaEditor_ToiUu_KeHoach.md`
+
+### Tóm tắt
+- REQ-1: Operator buttons layout (operators-grid-3, 3 columns)
+- REQ-2: Collapsible sections (Phép toán & Hàm, Fields, Metadata)
+- REQ-3: Autocomplete dropdown (detect word at cursor, keyboard navigation)
+- REQ-4a: optionType cho select/multiselect (per-option number format)
+- REQ-4b: formatNumber utility (plain/comma/dot/space + unit)
+- REQ-4c: FieldManager number config (display_format, unit)
+- REQ-4d: DynamicField + FieldRenderer format (formatNumber for number, select, multiselect)
+- REQ-4e: FormulaEditor output format (formatResult with formatNumber)
+- REQ-4f: DataListEditor number format (formatNumber for cells + number_format per column)
+- Backend: display_format + unit in field_definitions (ALTER TABLE + CRUD updates)
+- Backend: dynamicEngineService SELECT/response mapping updated
+
+### Trạng thái
+
+| Bước | Trạng thái | Ghi chú |
+|------|------------|---------|
+| REQ-1: Operator layout | ✅ | operators-grid-3, flex wrap |
+| REQ-2: Collapsible sections | ✅ | CollapsibleSection component |
+| REQ-3: Autocomplete | ✅ | Keyboard nav (Arrow, Enter, Escape) |
+| REQ-4a: optionType select | ✅ | Per-option optionType + numberFormat |
+| REQ-4b: formatNumber utility | ✅ | formatNumber.js, parseFormattedNumber() |
+| REQ-4c: FieldManager number | ✅ | display_format + unit config |
+| REQ-4d: FieldRenderer format | ✅ | formatNumber for number/select/multiselect/formula |
+| REQ-4e: FormulaEditor output | ✅ | formatResult() with formatNumber |
+| REQ-4f: DataListEditor format | ✅ | Cell format + number_format per column |
+| Backend: display_format/unit | ✅ | ALTER TABLE + controller/service/engine |
+| Build test | ✅ | frontend build passes |

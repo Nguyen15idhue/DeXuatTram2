@@ -188,7 +188,7 @@ Frontend React 18 + React Router v6, sử dụng Leaflet cho bản đồ, cấu 
 - Default values: `initialData` hoặc field `default_value`
 - Data list integration: Tree-structured option filtering
 - Parent-child cascading: Auto-filter options
-- Formula computation: Auto-compute khi form data thay đổi
+- Formula computation: Auto-compute khi form data thay đổi (mathjs v15.2.0)
 - Layout: Configurable colSpan (1-4 columns CSS grid)
 - Validation: Required field validation, inline errors
 - Children slot: Custom action buttons
@@ -203,9 +203,27 @@ Frontend React 18 + React Router v6, sử dụng Leaflet cho bản đồ, cấu 
 - Column visibility control
 
 ### FieldRenderer (Read-only Display)
-- Type-aware display: badge cho select, ✓ cho boolean, formatted number
+- Type-aware display: badge cho select, ✓ cho boolean, formatNumber() cho number, select number options
 - File: "Xem file (N)" → FileListPopup
 - React.lazy + Suspense cho FileListPopup
+- Formula: formatNumber() với output config (URL → link)
+
+### FormulaEditor (Visual Formula Builder)
+- Inline editor với compute mode selector (pre/post)
+- Field buttons: danh sách fields của entity
+- Operator buttons: 9 operators trong operators-grid-3 (3 columns)
+- Function buttons: 26 custom functions với hints tiếng Việt
+- Autocomplete dropdown: detect word at cursor, keyboard navigation (Arrow/Enter/Escape)
+- Collapsible sections: "Phép toán & Hàm", "Fields", "Metadata"
+- Output config: numberFormat selector (plain/comma/dot/space), decimalPlaces, unit
+- Real-time validation (debounce 300ms) + preview
+
+### Number Formatting (formatNumber utility)
+- 4 display formats: `plain` (1000), `comma` (1,000), `dot` (1.000), `space` (1 000)
+- Configurable unit display (VD: "1.000 m", "1,000 kW")
+- parseFormattedNumber(): parse formatted string về number
+- Applied in: FieldRenderer, FormulaEditor output, DynamicForm computeFormula, DataListEditor cells
+- DB: `display_format` VARCHAR(20) DEFAULT 'plain', `unit` VARCHAR(50) trong `field_definitions`
 
 ### FileUpload
 - Drag & drop zone với visual feedback

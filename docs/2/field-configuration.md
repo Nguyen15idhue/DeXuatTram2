@@ -54,6 +54,8 @@ Không có cấu hình đặc biệt除了 thuộc tính chung.
 |------------|-------|---------|
 | `number_format` | Định dạng số | `integer`, `float`, `currency` |
 | `decimal_places` | Số chữ số thập phân | 0-10 |
+| `display_format` | Hiển thị số | `plain` (1000), `comma` (1,000), `dot` (1.000), `space` (1 000) |
+| `unit` | Đơn vị đo lường | String (VD: `m`, `km`, `W`, `kW`) |
 
 ### 3.3 Date / Datetime
 
@@ -128,13 +130,18 @@ Khi field A là parent của field B:
 
 | Thuộc tính | Mô tả |
 |------------|-------|
-| `formula_config` | `{ expression: string, referencedFields: [] }` |
-| `formula_config.expression` | Biểu thức tính toán (VD: `price * quantity * (1 - discount)`) |
+| `formula_config` | `{ compute_mode, expression, referencedFields, outputType, outputFormat, decimalPlaces, unit }` |
+| `formula_config.compute_mode` | `pre` (tính khi điền form) hoặc `post` (tính sau khi tạo record) |
+| `formula_config.expression` | Biểu thức tính toán (VD: `ROUNDUP(price * quantity, 2)`) |
+| `formula_config.outputType` | Kiểu kết quả: `number`, `text`, `date` |
+| `formula_config.outputFormat` | Định dạng hiển thị kết quả (VD: `comma`, `dot`) |
+| `formula_config.decimalPlaces` | Số chữ số thập phân hiển thị |
+| `formula_config.unit` | Đơn vị hiển thị kết quả |
 
 **Cách hoạt động:**
-- Frontend thay thế field keys bằng values từ form data
-- Tính toán bằng `Function()` evaluator
-- Hiển thị kết quả read-only với số chữ số thập phân cấu hình
+- **Pre-compute**: Frontend dùng mathjs evaluator tính giá trị khi form data thay đổi, hiển thị read-only
+- **Post-compute**: Backend tính SAU khi INSERT record, dùng record metadata (id, entity, base_url, created_at), lưu kết quả vào `custom_data`
+- mathjs v15.2.0 với 26 custom functions (ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW)
 
 ---
 
@@ -246,10 +253,11 @@ Dùng trong DynamicTable và RecordDetailPopup:
 
 | Loại | Hiển thị |
 |------|----------|
-| `select` | Badge màu với option styling |
-| `multiselect` | Nhiều badge trong flex wrap |
+| `select` | Badge màu với option styling (format number nếu optionType=number) |
+| `multiselect` | Nhiều badge trong flex wrap (format number nếu optionType=number) |
 | `boolean` | ✓ hoặc khoảng trắng |
-| `number` | `toLocaleString('vi-VN')` |
+| `number` | formatNumber() với display_format + unit (VD: "1.000 m") |
+| `formula` | formatNumber() với output config (nếu URL → link) |
 | `date/datetime` | Format theo date_format |
 | `textarea` | Cắt 100 ký tự + "...", hover hiển thị đầy đủ |
 | `url` | Blue link text |
