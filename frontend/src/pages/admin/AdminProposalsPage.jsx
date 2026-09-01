@@ -4,7 +4,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { adminProposalService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
-import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -129,8 +128,6 @@ const AdminProposalsPage = () => {
       <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
     </div>
   );
-
-  if (loading && proposals.length === 0) return <Loading message="Đang tải danh sách đề xuất..." />;
 
   return (
     <div className="admin-proposals-page">

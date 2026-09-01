@@ -30,10 +30,6 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
     }
   };
 
-  useEffect(() => {
-    if (columns.length > 0) setLoading(false);
-  }, [columns]);
-
   const getFieldValue = (row, field) => {
     if (row[field.key] !== undefined && row[field.key] !== null) return row[field.key];
     if (row.custom_data) {
@@ -110,9 +106,8 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
     navigate(`/admin/${entityPath}/edit=${row.id}`);
   };
 
-  if (loading) return <div className="loading">Đang tải bảng...</div>;
   if (error) return <div className="error-message">{error}</div>;
-  if (columns.length === 0) return <div className="empty-state">Chưa có cột nào được cấu hình</div>;
+  if (columns.length === 0 && !loading) return <div className="empty-state">Chưa có cột nào được cấu hình</div>;
 
   const visibleColumns = columns.filter(c => c.visible);
   const hasFilters = visibleColumns.some(c => c.filterable);
@@ -120,6 +115,7 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions }) => {
   return (
     <div className="dynamic-table-container">
       <div className="table-container">
+        {loading && <div style={{ padding: 8, fontSize: 13, color: '#888', borderBottom: '1px solid #eee' }}>Đang tải cấu hình...</div>}
         <table>
           <thead>
             <tr>

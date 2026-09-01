@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, adminProposalService, stationService, adminUserService } from '../../services/api';
 import FileViewer from '../../components/dynamic/FileViewer';
-import Loading from '../../components/Loading';
 import ErrorMessage from '../../components/ErrorMessage';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -135,8 +134,8 @@ const AdminRecordFilesPage = () => {
     if (url) window.open(url, '_blank');
   };
 
-  if (loading) return <Loading message="Đang tải file..." />;
   if (error) return <div className="admin-record-files-page"><ErrorMessage message={error} /><div style={{ marginTop: 12 }}><button className="btn btn-secondary" onClick={() => navigate(-1)}>Quay lại</button></div></div>;
+  if (loading) return <div className="admin-record-files-page"><h1>Files của bản ghi #{id}</h1><p>Đang tải...</p></div>;
   if (allFiles.length === 0) return (
     <div className="admin-record-files-page">
       <h1>Files của bản ghi #{id}</h1>

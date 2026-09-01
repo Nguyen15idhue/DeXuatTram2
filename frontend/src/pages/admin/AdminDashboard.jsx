@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { dashboardService } from '../../services/api';
-import Loading from '../../components/Loading';
 import ErrorMessage from '../../components/ErrorMessage';
 
 const AdminDashboard = () => {
@@ -29,27 +28,25 @@ const AdminDashboard = () => {
     fetchStats();
   }, [token]);
 
-  if (loading) return <Loading message="Đang tải thống kê..." />;
-  if (error) return <ErrorMessage message={error} />;
-
   return (
     <div className="admin-dashboard">
       <h1>Dashboard</h1>
+      {error && <ErrorMessage message={error} />}
       <div className="stats-grid">
         <div className="stat-card">
           <h3>Users</h3>
-          <p className="stat-number">{stats?.users?.total ?? '-'}</p>
-          <p className="stat-detail">Active: {stats?.users?.active ?? 0} | Locked: {stats?.users?.locked ?? 0}</p>
+          <p className="stat-number">{loading ? '...' : (stats?.users?.total ?? '-')}</p>
+          {!loading && <p className="stat-detail">Active: {stats?.users?.active ?? 0} | Locked: {stats?.users?.locked ?? 0}</p>}
         </div>
         <div className="stat-card">
           <h3>Stations</h3>
-          <p className="stat-number">{stats?.stations?.total ?? '-'}</p>
-          <p className="stat-detail">Active: {stats?.stations?.active ?? 0} | Deploying: {stats?.stations?.deploying ?? 0}</p>
+          <p className="stat-number">{loading ? '...' : (stats?.stations?.total ?? '-')}</p>
+          {!loading && <p className="stat-detail">Active: {stats?.stations?.active ?? 0} | Deploying: {stats?.stations?.deploying ?? 0}</p>}
         </div>
         <div className="stat-card">
           <h3>Proposals</h3>
-          <p className="stat-number">{stats?.proposals?.total ?? '-'}</p>
-          <p className="stat-detail">Pending: {stats?.proposals?.pending ?? 0} | Approved: {stats?.proposals?.approved ?? 0} | Rejected: {stats?.proposals?.rejected ?? 0}</p>
+          <p className="stat-number">{loading ? '...' : (stats?.proposals?.total ?? '-')}</p>
+          {!loading && <p className="stat-detail">Pending: {stats?.proposals?.pending ?? 0} | Approved: {stats?.proposals?.approved ?? 0} | Rejected: {stats?.proposals?.rejected ?? 0}</p>}
         </div>
       </div>
     </div>

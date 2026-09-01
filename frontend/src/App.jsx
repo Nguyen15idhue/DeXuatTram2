@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 
@@ -6,42 +5,24 @@ import PublicLayout from './layouts/PublicLayout';
 import UserLayout from './layouts/UserLayout';
 import AdminLayout from './layouts/AdminLayout';
 
-const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
-const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
-const MapPage = lazy(() => import('./pages/user/MapPage'));
-const MyProposalsPage = lazy(() => import('./pages/user/MyProposalsPage'));
-const ProfilePage = lazy(() => import('./pages/user/ProfilePage'));
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
-const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
-const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
-const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
-const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
-const AdminFormsPage = lazy(() => import('./pages/admin/AdminFormsPage'));
-const AdminFormBuilderPage = lazy(() => import('./pages/admin/AdminFormBuilderPage'));
-const AdminViewsPage = lazy(() => import('./pages/admin/AdminViewsPage'));
-const AdminViewBuilderPage = lazy(() => import('./pages/admin/AdminViewBuilderPage'));
-const AdminRecordFilesPage = lazy(() => import('./pages/admin/AdminRecordFilesPage'));
-const AdminDataListsPage = lazy(() => import('./pages/admin/AdminDataListsPage'));
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
 
-const routePreloaders = {
-  '/admin': () => import('./pages/admin/AdminDashboard'),
-  '/admin/users': () => import('./pages/admin/AdminUsersPage'),
-  '/admin/stations': () => import('./pages/admin/AdminStationsPage'),
-  '/admin/proposals': () => import('./pages/admin/AdminProposalsPage'),
-  '/admin/fields': () => import('./pages/admin/AdminFieldsPage'),
-  '/admin/forms': () => import('./pages/admin/AdminFormsPage'),
-  '/admin/views': () => import('./pages/admin/AdminViewsPage'),
-  '/admin/data-lists': () => import('./pages/admin/AdminDataListsPage'),
-};
+import MapPage from './pages/user/MapPage';
+import MyProposalsPage from './pages/user/MyProposalsPage';
+import ProfilePage from './pages/user/ProfilePage';
 
-export const preloadRoute = (path) => {
-  const exact = routePreloaders[path];
-  if (exact) { exact(); return; }
-  if (path.startsWith('/admin/forms/')) { import('./pages/admin/AdminFormBuilderPage'); return; }
-  if (path.startsWith('/admin/views/')) { import('./pages/admin/AdminViewBuilderPage'); return; }
-  if (path.includes('/files')) { import('./pages/admin/AdminRecordFilesPage'); return; }
-  if (path.startsWith('/admin/data-lists/')) { import('./pages/admin/AdminDataListsPage'); return; }
-};
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminStationsPage from './pages/admin/AdminStationsPage';
+import AdminProposalsPage from './pages/admin/AdminProposalsPage';
+import AdminFieldsPage from './pages/admin/AdminFieldsPage';
+import AdminFormsPage from './pages/admin/AdminFormsPage';
+import AdminFormBuilderPage from './pages/admin/AdminFormBuilderPage';
+import AdminViewsPage from './pages/admin/AdminViewsPage';
+import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
+import AdminRecordFilesPage from './pages/admin/AdminRecordFilesPage';
+import AdminDataListsPage from './pages/admin/AdminDataListsPage';
 
 import './App.css';
 
@@ -49,7 +30,6 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <Suspense fallback={null}>
         <Routes>
           <Route element={<PublicLayout />}>
             <Route path="/login" element={<LoginPage />} />
@@ -84,7 +64,6 @@ function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
-        </Suspense>
       </Router>
     </AuthProvider>
   );

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { viewService } from '../../services/api';
-import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -84,8 +83,6 @@ const AdminViewsPage = () => {
       setError('Lỗi kết nối server');
     }
   };
-
-  if (loading) return <Loading message="Đang tải danh sách views..." />;
 
   return (
     <div className="admin-views-page">

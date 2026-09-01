@@ -4,7 +4,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
-import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -123,8 +122,6 @@ const AdminUsersPage = () => {
       )}
     </div>
   );
-
-  if (loading && users.length === 0) return <Loading message="Đang tải danh sách users..." />;
 
   return (
     <div className="admin-users-page">

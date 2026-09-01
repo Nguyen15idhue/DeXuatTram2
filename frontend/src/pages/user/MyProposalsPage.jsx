@@ -4,7 +4,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { myProposalService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
-import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -105,8 +104,6 @@ const MyProposalsPage = () => {
       )}
     </div>
   );
-
-  if (loading && proposals.length === 0) return <Loading message="Đang tải đề xuất..." />;
 
   return (
     <div className="proposals-page">

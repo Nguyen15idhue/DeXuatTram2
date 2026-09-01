@@ -13,5 +13,14 @@ export default defineConfig({
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate'
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'leaflet': ['leaflet', 'react-leaflet'],
+        }
+      }
+    }
   }
 })

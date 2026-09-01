@@ -6,7 +6,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { stationService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
-import Loading from '../../components/Loading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -232,8 +231,6 @@ const AdminStationsPage = () => {
       <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id, row.name)}>Xóa</button>
     </div>
   );
-
-  if (loading && stations.length === 0) return <Loading message="Đang tải danh sách trạm..." />;
 
   return (
     <div className="admin-stations-page">

@@ -223,9 +223,8 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     }
   };
 
-  if (loading) return <div className="loading">Đang tải form...</div>;
   if (error && !formConfig) return <div className="error-message">{error}</div>;
-  if (!formConfig) return <div className="empty-state">Không tìm thấy form</div>;
+  if (!formConfig) return <div className="empty-state">{loading ? 'Đang tải form...' : 'Không tìm thấy form'}</div>;
 
   const renderField = (field) => {
     const resolvedOptions = getFilteredOptions(field);
