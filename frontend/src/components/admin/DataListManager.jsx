@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { dataListService } from '../../services/api';
+import { dataListService, excelService } from '../../services/api';
 import Loading from '../Loading';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
@@ -21,6 +21,12 @@ const DataListManager = () => {
   const [form, setForm] = useState({ name: '', description: '', columns_config: [{ key: '', label: '', type: 'text' }] });
   const [editingId, setEditingId] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [showImport, setShowImport] = useState(false);
+  const [importListId, setImportListId] = useState(null);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStep, setImportStep] = useState('upload');
 
   const loadLists = useCallback(async (page = 1) => {
     try {
@@ -102,6 +108,70 @@ const DataListManager = () => {
       setToast({ message: 'Lỗi server', type: 'error' });
     }
     setConfirmDelete({ isOpen: false, id: null, name: '' });
+  };
+
+  const handleExportDataList = async (listId) => {
+    try {
+      await excelService.exportDataList(listId, token);
+      setToast({ message: 'Export thành công', type: 'success' });
+    } catch {
+      setToast({ message: 'Lỗi export', type: 'error' });
+    }
+  };
+
+  const openImportDataList = (listId) => {
+    setImportListId(listId);
+    setShowImport(true);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportStep('upload');
+    setError('');
+  };
+
+  const handleDLFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImportFile(file);
+      setImportPreview(null);
+      setImportStep('upload');
+    }
+  };
+
+  const handleDLPreviewImport = async () => {
+    if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    try {
+      setImportLoading(true);
+      const res = await excelService.previewDataListImport(importListId, importFile, token);
+      if (res.success) {
+        setImportPreview(res.data);
+        setImportStep('preview');
+      } else {
+        setError(res.message || 'Lỗi đọc file Excel');
+      }
+    } catch {
+      setError('Lỗi đọc file Excel');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleDLConfirmImport = async () => {
+    if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    try {
+      setImportLoading(true);
+      const res = await excelService.confirmDataListImport(importListId, importPreview.rows, token);
+      if (res.success) {
+        setShowImport(false);
+        setToast({ message: res.message, type: 'success' });
+        loadLists(pagination.page);
+      } else {
+        setError(res.message || 'Lỗi import');
+      }
+    } catch {
+      setError('Lỗi import');
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   const addColumn = () => {
@@ -192,6 +262,48 @@ const DataListManager = () => {
         </div>
       )}
 
+      {showImport && (
+        <div className="modal-overlay" onClick={() => setShowImport(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Import Data List từ Excel</h2>
+            {importStep === 'upload' && (
+              <div className="import-upload">
+                <label>Chọn file Excel (.xlsx)</label>
+                <input type="file" accept=".xlsx,.xls" onChange={handleDLFileSelect} />
+                {importFile && (
+                  <div className="import-file-info">
+                    <p>File: <strong>{importFile.name}</strong></p>
+                    <p>Kích thước: {(importFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                )}
+                <div className="import-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary" onClick={handleDLPreviewImport} disabled={!importFile || importLoading}>
+                    {importLoading ? 'Đang đọc...' : 'Xem trước'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {importStep === 'preview' && importPreview && (
+              <div className="import-preview">
+                <div className="import-summary">
+                  <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
+                  <p className="success-text">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
+                  {importPreview.errorRows > 0 && <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
+                </div>
+                <div className="import-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => setImportStep('upload')}>Quay lại</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary" onClick={handleDLConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                    {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} dòng`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="table-container">
         <table>
           <thead>
@@ -218,6 +330,8 @@ const DataListManager = () => {
                   <div className="action-buttons">
                     <button className="btn btn-sm btn-edit" onClick={() => openEdit(list)}>Sửa</button>
                     <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/data-lists/${list.id}`)}>Dữ liệu</button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => handleExportDataList(list.id)}>Export</button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => openImportDataList(list.id)}>Import</button>
                     <button className="btn btn-sm btn-delete" onClick={() => setConfirmDelete({ isOpen: true, id: list.id, name: list.name })}>Xóa</button>
                   </div>
                 </td>

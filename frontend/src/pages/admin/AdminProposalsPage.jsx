@@ -109,7 +109,7 @@ const AdminProposalsPage = () => {
 
   const handleExportProposals = async () => {
     try {
-      await excelService.exportProposals(token);
+      await excelService.exportData('station_proposals', token);
       setToast({ message: 'Export proposals thành công', type: 'success' });
     } catch {
       setError('Lỗi export proposals');

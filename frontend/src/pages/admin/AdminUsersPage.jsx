@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminUserService } from '../../services/api';
+import { adminUserService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
@@ -28,6 +28,11 @@ const AdminUsersPage = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStep, setImportStep] = useState('upload');
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -110,6 +115,77 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      await excelService.exportData('users', token);
+      setToast({ message: 'Export users thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export users');
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      await excelService.downloadTemplate('users', token);
+    } catch {
+      setError('Lỗi download template');
+    }
+  };
+
+  const openImport = () => {
+    setShowImport(true);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportStep('upload');
+    setError('');
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImportFile(file);
+      setImportPreview(null);
+      setImportStep('upload');
+    }
+  };
+
+  const handlePreviewImport = async () => {
+    if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    try {
+      setImportLoading(true);
+      const res = await excelService.previewImport('users', importFile, token);
+      if (res.success) {
+        setImportPreview(res.data);
+        setImportStep('preview');
+      } else {
+        setError(res.message || 'Lỗi đọc file Excel');
+      }
+    } catch {
+      setError('Lỗi đọc file Excel. Vui lòng kiểm tra lại định dạng file.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    try {
+      setImportLoading(true);
+      const res = await excelService.confirmImport('users', importPreview.rows, token);
+      if (res.success) {
+        setShowImport(false);
+        setToast({ message: res.message, type: 'success' });
+        loadUsers(1);
+      } else {
+        setError(res.message || 'Lỗi import');
+      }
+    } catch {
+      setError('Lỗi import');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const renderActions = (row) => (
     <div className="action-buttons">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
@@ -152,7 +228,52 @@ const AdminUsersPage = () => {
           ))}
         </select>
         <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
+        <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
+        <button className="btn btn-secondary" onClick={handleExport}>Export Excel</button>
+        <button className="btn btn-secondary" onClick={openImport}>Import Excel</button>
       </div>
+
+      {showImport && (
+        <div className="modal-overlay" onClick={() => setShowImport(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Import Users từ Excel</h2>
+            {importStep === 'upload' && (
+              <div className="import-upload">
+                <label>Chọn file Excel (.xlsx)</label>
+                <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect} />
+                {importFile && (
+                  <div className="import-file-info">
+                    <p>File: <strong>{importFile.name}</strong></p>
+                    <p>Kích thước: {(importFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                )}
+                <div className="import-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                    {importLoading ? 'Đang đọc...' : 'Xem trước'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {importStep === 'preview' && importPreview && (
+              <div className="import-preview">
+                <div className="import-summary">
+                  <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
+                  <p className="success-text">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
+                  {importPreview.errorRows > 0 && <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
+                </div>
+                <div className="import-actions">
+                  <button type="button" className="btn btn-secondary" onClick={() => setImportStep('upload')}>Quay lại</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                    {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} user`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {popup.open && (
         <RecordDetailPopup

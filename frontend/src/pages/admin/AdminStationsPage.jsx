@@ -153,7 +153,7 @@ const AdminStationsPage = () => {
 
   const handleExportStations = async () => {
     try {
-      await excelService.exportStations(token);
+      await excelService.exportData('stations', token);
       setToast({ message: 'Export stations thành công', type: 'success' });
     } catch {
       setError('Lỗi export stations');
@@ -162,7 +162,7 @@ const AdminStationsPage = () => {
 
   const handleDownloadTemplate = async () => {
     try {
-      await excelService.downloadTemplate(token);
+      await excelService.downloadTemplate('stations', token);
     } catch {
       setError('Lỗi download template');
     }
@@ -190,7 +190,7 @@ const AdminStationsPage = () => {
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.previewImport(importFile, token);
+      const res = await excelService.previewImport('stations', importFile, token);
       if (res.success) {
         setImportPreview(res.data);
         setImportStep('preview');
@@ -209,7 +209,7 @@ const AdminStationsPage = () => {
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.confirmImport(importPreview.rows, token);
+      const res = await excelService.confirmImport('stations', importPreview.rows, token);
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
         setShowImport(false);

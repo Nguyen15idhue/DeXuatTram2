@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireAdmin } = require('../middlewares/auth');
 const dataListController = require('../controllers/dataListController');
+const excelService = require('../services/excelService');
 
 /**
  * @swagger
@@ -196,5 +197,87 @@ router.put('/:id/rows/:rowId', requireAuth, requireAdmin, dataListController.upd
  *         description: Thành công
  */
 router.delete('/:id/rows/:rowId', requireAuth, requireAdmin, dataListController.deleteRow);
+
+/**
+ * @swagger
+ * /api/data-lists/{id}/export:
+ *   get:
+ *     tags: [Data Lists]
+ *     summary: Xuất data list ra file Excel
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       404:
+ *         description: Không tìm thấy
+ */
+router.get('/:id/export', requireAuth, requireAdmin, excelService.exportDataList);
+
+/**
+ * @swagger
+ * /api/data-lists/{id}/import/preview:
+ *   post:
+ *     tags: [Data Lists]
+ *     summary: Preview import data list từ file Excel
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Preview kết quả
+ *       400:
+ *         description: File không hợp lệ
+ */
+router.post('/:id/import/preview', requireAuth, requireAdmin, excelService.uploadMiddleware, excelService.importDataListPreview);
+
+/**
+ * @swagger
+ * /api/data-lists/{id}/import/confirm:
+ *   post:
+ *     tags: [Data Lists]
+ *     summary: Xác nhận import data list
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rows]
+ *             properties:
+ *               rows:
+ *                 type: array
+ *     responses:
+ *       200:
+ *         description: Import thành công
+ */
+router.post('/:id/import/confirm', requireAuth, requireAdmin, excelService.importDataListConfirm);
 
 module.exports = router;

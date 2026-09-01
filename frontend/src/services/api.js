@@ -344,55 +344,50 @@ export const dynamicService = {
 };
 
 export const excelService = {
-  async exportStations(token) {
-    const response = await api.downloadWithAuth('/admin/excel/export/stations', token);
+  async downloadBlob(url, token, filename) {
+    const response = await api.downloadWithAuth(url, token);
     const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
+    const objUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'stations.xlsx';
+    a.href = objUrl;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    window.URL.revokeObjectURL(url);
+    window.URL.revokeObjectURL(objUrl);
   },
 
-  async exportProposals(token) {
-    const response = await api.downloadWithAuth('/admin/excel/export/proposals', token);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'proposals.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+  async exportData(entity, token) {
+    await this.downloadBlob(`/admin/excel/export/${entity}`, token, `${entity}_export.xlsx`);
   },
 
-  async downloadTemplate(token) {
-    const response = await api.downloadWithAuth('/admin/excel/template', token);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'station_import_template.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+  async downloadTemplate(entity, token) {
+    await this.downloadBlob(`/admin/excel/template?entity=${entity}`, token, `${entity}_template.xlsx`);
   },
 
-  previewImport(file, token) {
+  previewImport(entity, file, token) {
     const formData = new FormData();
     formData.append('file', file);
-    return api.uploadWithAuth('/admin/excel/import/preview', formData, token);
+    return api.uploadWithAuth(`/admin/excel/import/preview?entity=${entity}`, formData, token);
   },
 
-  confirmImport(rows, token) {
-    return api.postWithAuth('/admin/excel/import/confirm', { rows }, token);
+  confirmImport(entity, rows, token) {
+    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows }, token);
   },
 
+  async exportDataList(listId, token) {
+    await this.downloadBlob(`/admin/data-lists/${listId}/export`, token, `datalist_${listId}.xlsx`);
+  },
+
+  previewDataListImport(listId, file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.uploadWithAuth(`/admin/data-lists/${listId}/import/preview`, formData, token);
+  },
+
+  confirmDataListImport(listId, rows, token) {
+    return api.postWithAuth(`/admin/data-lists/${listId}/import/confirm`, { rows }, token);
+  },
 };
 
 export const dataListService = {
