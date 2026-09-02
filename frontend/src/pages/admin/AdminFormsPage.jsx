@@ -5,11 +5,12 @@ import { formService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, FileText } from 'lucide-react';
 
 const ENTITIES = [
-  { key: 'stations', label: 'Stations', icon: '⚡', desc: 'Quản lý trạm sạc' },
-  { key: 'station_proposals', label: 'Proposals', icon: '📋', desc: 'Đề xuất trạm mới' },
-  { key: 'users', label: 'Users', icon: '👥', desc: 'Quản lý người dùng' },
+  { key: 'stations', label: 'Stations', icon: Zap, desc: 'Quản lý trạm sạc' },
+  { key: 'station_proposals', label: 'Proposals', icon: ClipboardList, desc: 'Đề xuất trạm mới' },
+  { key: 'users', label: 'Users', icon: Users, desc: 'Quản lý người dùng' },
 ];
 
 const ENTITY_NAMES = {
@@ -85,11 +86,12 @@ const AdminFormsPage = () => {
   };
 
   return (
-    <div className="admin-forms-page">
+    <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="page-header">
-        <h1>Forms Manager</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <FileText size={24} className="text-primary" />
+        <h1 className="text-2xl font-bold">Forms Manager</h1>
       </div>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadForms(); }} />}
@@ -104,47 +106,62 @@ const AdminFormsPage = () => {
         type="danger"
       />
 
-      <div className="entity-grid">
-        {ENTITIES.map(ent => {
-          const existingForm = getFormForEntity(ent.key);
-          return (
-            <div key={ent.key} className="entity-card">
-              <div className="entity-card-header">
-                <span className="entity-icon">{ent.icon}</span>
-                <h3>{ent.label}</h3>
-                <span className="entity-key">{ent.key}</span>
-              </div>
-              <p className="entity-desc">{ent.desc}</p>
-              {existingForm ? (
-                <div className="entity-card-status">
-                  <span className="badge badge-active">Đã tạo</span>
-                  <span className="entity-field-count">{existingForm.field_count || 0} fields</span>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {ENTITIES.map(ent => {
+            const existingForm = getFormForEntity(ent.key);
+            return (
+              <div key={ent.key} className="card bg-base-100 shadow-sm border border-base-300">
+                <div className="card-body">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <ent.icon size={20} className="text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="card-title text-base">{ent.label}</h3>
+                      <span className="text-xs text-base-content/50">{ent.key}</span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-base-content/60">{ent.desc}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {existingForm ? (
+                      <>
+                        <span className="badge badge-success badge-sm">Đã tạo</span>
+                        <span className="text-xs text-base-content/50">{existingForm.field_count || 0} fields</span>
+                      </>
+                    ) : (
+                      <span className="badge badge-ghost badge-sm">Chưa tạo</span>
+                    )}
+                  </div>
+                  <div className="card-actions justify-end mt-4">
+                    {existingForm ? (
+                      <>
+                        <button className="btn btn-primary btn-sm gap-1" onClick={() => navigate(`/admin/forms/${existingForm.id}/edit`)}>
+                          <Pencil size={14} />
+                          Chỉnh sửa
+                        </button>
+                        <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(existingForm.id, existingForm.name, ent.key)}>
+                          <Trash2 size={14} />
+                          Xóa
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary btn-sm gap-1" onClick={() => handleCreate(ent.key)}>
+                        <Plus size={14} />
+                        Tạo form
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <div className="entity-card-status">
-                  <span className="badge badge-pending">Chưa tạo</span>
-                </div>
-              )}
-              <div className="entity-card-actions">
-                {existingForm ? (
-                  <>
-                    <button className="btn btn-primary btn-sm" onClick={() => navigate(`/admin/forms/${existingForm.id}/edit`)}>
-                      Chỉnh sửa
-                    </button>
-                    <button className="btn btn-delete btn-sm" onClick={() => handleDeleteClick(existingForm.id, existingForm.name, ent.key)}>
-                      Xóa
-                    </button>
-                  </>
-                ) : (
-                  <button className="btn btn-primary btn-sm" onClick={() => handleCreate(ent.key)}>
-                    + Tạo form
-                  </button>
-                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

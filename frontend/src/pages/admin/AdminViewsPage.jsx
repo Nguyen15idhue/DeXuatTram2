@@ -5,11 +5,12 @@ import { viewService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, LayoutGrid } from 'lucide-react';
 
 const ENTITIES = [
-  { key: 'stations', label: 'Stations', icon: '⚡', desc: 'Bảng quản lý trạm' },
-  { key: 'station_proposals', label: 'Proposals', icon: '📋', desc: 'Bảng đề xuất trạm' },
-  { key: 'users', label: 'Users', icon: '👥', desc: 'Bảng quản lý người dùng' },
+  { key: 'stations', label: 'Stations', icon: Zap, desc: 'Bảng quản lý trạm' },
+  { key: 'station_proposals', label: 'Proposals', icon: ClipboardList, desc: 'Bảng đề xuất trạm' },
+  { key: 'users', label: 'Users', icon: Users, desc: 'Bảng quản lý người dùng' },
 ];
 
 const ENTITY_NAMES = {
@@ -85,11 +86,12 @@ const AdminViewsPage = () => {
   };
 
   return (
-    <div className="admin-views-page">
+    <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="page-header">
-        <h1>Views Manager</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <LayoutGrid size={24} className="text-primary" />
+        <h1 className="text-2xl font-bold">Views Manager</h1>
       </div>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadViews(); }} />}
@@ -104,47 +106,62 @@ const AdminViewsPage = () => {
         type="danger"
       />
 
-      <div className="entity-grid">
-        {ENTITIES.map(ent => {
-          const existingView = getViewForEntity(ent.key);
-          return (
-            <div key={ent.key} className="entity-card">
-              <div className="entity-card-header">
-                <span className="entity-icon">{ent.icon}</span>
-                <h3>{ent.label}</h3>
-                <span className="entity-key">{ent.key}</span>
-              </div>
-              <p className="entity-desc">{ent.desc}</p>
-              {existingView ? (
-                <div className="entity-card-status">
-                  <span className="badge badge-active">Đã tạo</span>
-                  <span className="entity-field-count">{existingView.field_count || 0} columns</span>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {ENTITIES.map(ent => {
+            const existingView = getViewForEntity(ent.key);
+            return (
+              <div key={ent.key} className="card bg-base-100 shadow-sm border border-base-300">
+                <div className="card-body">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <ent.icon size={20} className="text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="card-title text-base">{ent.label}</h3>
+                      <span className="text-xs text-base-content/50">{ent.key}</span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-base-content/60">{ent.desc}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {existingView ? (
+                      <>
+                        <span className="badge badge-success badge-sm">Đã tạo</span>
+                        <span className="text-xs text-base-content/50">{existingView.field_count || 0} columns</span>
+                      </>
+                    ) : (
+                      <span className="badge badge-ghost badge-sm">Chưa tạo</span>
+                    )}
+                  </div>
+                  <div className="card-actions justify-end mt-4">
+                    {existingView ? (
+                      <>
+                        <button className="btn btn-primary btn-sm gap-1" onClick={() => navigate(`/admin/views/${existingView.id}/edit`)}>
+                          <Pencil size={14} />
+                          Chỉnh sửa
+                        </button>
+                        <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(existingView.id, existingView.name, ent.key)}>
+                          <Trash2 size={14} />
+                          Xóa
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary btn-sm gap-1" onClick={() => handleCreate(ent.key)}>
+                        <Plus size={14} />
+                        Tạo view
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <div className="entity-card-status">
-                  <span className="badge badge-pending">Chưa tạo</span>
-                </div>
-              )}
-              <div className="entity-card-actions">
-                {existingView ? (
-                  <>
-                    <button className="btn btn-primary btn-sm" onClick={() => navigate(`/admin/views/${existingView.id}/edit`)}>
-                      Chỉnh sửa
-                    </button>
-                    <button className="btn btn-delete btn-sm" onClick={() => handleDeleteClick(existingView.id, existingView.name, ent.key)}>
-                      Xóa
-                    </button>
-                  </>
-                ) : (
-                  <button className="btn btn-primary btn-sm" onClick={() => handleCreate(ent.key)}>
-                    + Tạo view
-                  </button>
-                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
