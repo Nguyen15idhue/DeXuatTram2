@@ -1,3 +1,5 @@
+/* App.css — wrapped in @layer base so Tailwind utilities can override */
+@layer base {
 /* Reset & Base */
 * {
   margin: 0;
@@ -4045,3 +4047,4 @@ select:focus {
     width: 100%;
   }
 }
+} /* end @layer base */
