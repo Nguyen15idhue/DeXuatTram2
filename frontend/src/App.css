@@ -181,7 +181,7 @@ button:disabled {
   flex: 1;
   padding: 30px;
   background: #f5f6fa;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
@@ -313,39 +313,7 @@ button:disabled {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
-/* Profile */
-.profile-card {
-  margin-top: 20px;
-}
-
-.profile-field {
-  display: flex;
-  padding: 15px 0;
-  border-bottom: 1px solid #eee;
-}
-
-.profile-field label {
-  width: 150px;
-  font-weight: 500;
-  color: #666;
-}
-
-.profile-field input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  font-size: 14px;
-}
-
-.profile-field input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.profile-email {
-  color: #999;
-}
+/* Profile (old styles removed, see "Profile Page" section below) */
 
 .profile-divider {
   padding: 15px 0;
@@ -3878,26 +3846,212 @@ select:focus {
 .marker-label-tooltip::before {
   border-top-color: rgba(33, 33, 33, 0.9);
 }
-/* ===== Proposals Toolbar ===== */
-.proposals-toolbar {
+/* ===== Profile Page ===== */
+.profile-page {
+  width: 100%;
+}
+.profile-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+.profile-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.profile-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 20px;
+  background: #e8f0fe;
+  border-radius: 12px;
+  color: #1a73e8;
+  text-align: center;
+  position: relative;
+}
+.profile-avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: 3px solid #1a73e8;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-avatar-wrapper {
+  position: relative;
+  cursor: pointer;
+  width: 90px;
+  height: 90px;
+}
+.profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.profile-avatar-wrapper:hover .profile-avatar-overlay {
+  opacity: 1;
+}
+.avatar-upload-icon {
+  color: white;
+  font-size: 28px;
+}
+.avatar-upload-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.profile-avatar-initials {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #c2d9f7;
+  font-size: 30px;
+  font-weight: 700;
+}
+.profile-info h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #1a73e8;
+}
+.profile-info p {
+  margin: 4px 0 0;
+  color: #5f6368;
+  font-size: 14px;
+}
+.profile-role-badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 14px;
+  background: #d2e3fc;
+  color: #1a73e8;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.profile-edit-btn {
+  margin-top: 4px;
+}
+.profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.profile-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  padding: 24px;
+}
+.profile-card h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #333;
+}
+.profile-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
-.proposals-toolbar .toolbar-left h1 {
+.profile-card-header h3 {
   margin: 0;
-  font-size: 1.5rem;
-  white-space: nowrap;
 }
-.proposals-toolbar .toolbar-right {
+.profile-field-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  padding: 11px 0;
+  border-bottom: 1px solid #f0f0f0;
 }
+.profile-field-row:last-child {
+  border-bottom: none;
+}
+.profile-field-label {
+  color: #888;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.profile-field-value {
+  font-weight: 500;
+  font-size: 14px;
+  text-align: right;
+  color: #333;
+}
+.profile-field-value .form-control {
+  max-width: 300px;
+}
+/* Mobile */
+@media (max-width: 768px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
+  }
+  .profile-header {
+    flex-direction: row;
+    text-align: left;
+    padding: 20px;
+  }
+  .profile-avatar-wrapper {
+    width: 64px;
+    height: 64px;
+  }
+  .profile-avatar {
+    width: 64px;
+    height: 64px;
+  }
+  .profile-avatar-initials {
+    font-size: 22px;
+  }
+  .profile-edit-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+  .profile-field-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .profile-field-value {
+    text-align: left;
+    width: 100%;
+  }
+  .profile-field-value .form-control {
+    max-width: 100%;
+  }
+}
+@media (max-width: 480px) {
+  .profile-header {
+    flex-direction: column;
+    text-align: center;
+  }
+  .profile-edit-btn {
+    position: static;
+  }
+}
+/* ===== Proposals Toolbar (unused, kept for reference) ===== */
+/* proposals-toolbar replaced by page-header + filter-bar layout */
 /* ===== Map Admin Button ===== */
 .popup-content .btn-primary {
   margin-top: 8px;
@@ -3950,5 +4104,15 @@ select:focus {
     right: 12px;
     transform: none;
     bottom: 90px;
+  }
+  .proposals-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .proposals-toolbar .toolbar-right {
+    flex-direction: column;
+  }
+  .proposals-toolbar .toolbar-right > * {
+    width: 100%;
   }
 }

@@ -108,7 +108,7 @@ exports.getMe = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { full_name, phone, current_password, new_password } = req.body;
+    const { full_name, phone, current_password, new_password, avatar } = req.body;
 
     if (!full_name) {
       return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
@@ -117,6 +117,15 @@ exports.updateProfile = async (req, res) => {
     const user = await authService.findByIdFull(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+
+    let customData = {};
+    try {
+      customData = user.custom_data ? JSON.parse(user.custom_data) : {};
+    } catch { customData = {}; }
+
+    if (avatar !== undefined) {
+      customData.avatar = avatar;
     }
 
     if (new_password) {
@@ -132,7 +141,7 @@ exports.updateProfile = async (req, res) => {
       }
       await authService.updatePassword(req.user.id, full_name, phone, new_password);
     } else {
-      await authService.updateProfile(req.user.id, full_name, phone);
+      await authService.updateProfile(req.user.id, full_name, phone, customData);
     }
 
     const updated = await authService.findById(req.user.id);

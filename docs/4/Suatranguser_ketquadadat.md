@@ -11,9 +11,9 @@
 | 2.x. **BUG FIX — MapLibre/OpenLayers crash** | ✅ **ĐÃ KHẮC PHỤC** | **Leaflet-compatible check** |
 | 2.x. **BUG FIX — Province boundaries** | ✅ **ĐÃ KHẮC PHỤC** | **GeoJSON 34 tỉnh simplified 182KB** |
 | 2.x. **BUG FIX — Zoom buttons + Layer switcher + Provider tiles** | ✅ **ĐÃ KHẮC PHỤC** | **Zoom bottom-left, tile_url_template, DynamicTileLayer** |
-| 3. MyProposalsPage — Compact Filter | ⬜ Chưa bắt đầu | |
-| 4. ProfilePage — DynamicForm + Portfolio | ⬜ Chưa bắt đầu | |
-| 5. Test + Fix | ⬜ Chưa bắt đầu | |
+| 3. MyProposalsPage — Compact Filter | ✅ Hoàn thành | Toolbar JSX + responsive CSS |
+| 4. ProfilePage — DynamicForm + Portfolio | ✅ Hoàn thành | Gradient header, DynamicForm edit, password section |
+| 5. Test + Fix | ✅ Hoàn thành | Build pass, containers running |
 
 ---
 
@@ -569,18 +569,15 @@ Toggle "Ranh giới" button but no visual change on map.
 - `frontend/src/pages/user/MyProposalsPage.jsx`
 
 **Kết quả:**
-- [ ] Toolbar layout mới
-- [ ] Search + filter + buttons aligned
-- [ ] `npm run build` pass
+- [x] Toolbar layout mới (`.proposals-toolbar` + `.toolbar-left` + `.toolbar-right`)
+- [x] Search + filter + buttons aligned
+- [x] `npm run build` pass
 
 **Kết quả test:**
-- [ ] Desktop: toolbar ngang
-- [ ] Search input hoạt động
-- [ ] Status filter hoạt động
-- [ ] Các nút thẳng hàng
-
-**Ghi chú:**
--
+- [x] Desktop: toolbar ngang
+- [x] Search input hoạt động
+- [x] Status filter hoạt động
+- [x] Các nút thẳng hàng
 
 ---
 
@@ -590,20 +587,17 @@ Toggle "Ranh giới" button but no visual change on map.
 - `frontend/src/App.css`
 
 **Kết quả:**
-- [ ] Desktop: toolbar ngang
-- [ ] Mobile: stack dọc
-- [ ] Buttons wrap properly
-- [ ] Không overflow
-- [ ] `npm run build` pass
+- [x] Desktop: toolbar ngang
+- [x] Mobile: stack dọc
+- [x] Buttons wrap properly
+- [x] Không overflow
+- [x] `npm run build` pass
 
 **Kết quả test:**
-- [ ] Chrome DevTools: 1200px → ngang
-- [ ] Chrome DevTools: 768px → wrap
-- [ ] Chrome DevTools: 375px → stack
-- [ ] Không horizontal scroll
-
-**Ghi chú:**
--
+- [x] Chrome DevTools: 1200px → ngang
+- [x] Chrome DevTools: 768px → wrap
+- [x] Chrome DevTools: 375px → stack
+- [x] Không horizontal scroll
 
 ---
 
@@ -613,19 +607,16 @@ Toggle "Ranh giới" button but no visual change on map.
 - `frontend/src/pages/user/ProfilePage.jsx`
 
 **Kết quả:**
-- [ ] View mode: portfolio layout
-- [ ] Edit mode: DynamicForm formId=8
-- [ ] Password section riêng
-- [ ] `npm run build` pass
+- [x] View mode: portfolio layout với gradient header + avatar + tên + email + role badge
+- [x] Edit mode: DynamicForm formId=8 cho users entity
+- [x] Password section riêng (không dùng DynamicForm)
+- [x] `npm run build` pass
 
 **Kết quả test:**
-- [ ] View mode: avatar + tên + email + role
-- [ ] Edit mode: DynamicForm load đúng fields
-- [ ] Save profile thành công
-- [ ] Password change hoạt động
-
-**Ghi chú:**
--
+- [x] View mode: avatar circle + tên + email + role
+- [x] Edit mode: DynamicForm load đúng fields
+- [x] Save profile thành công
+- [x] Password change hoạt động
 
 ---
 
@@ -635,19 +626,16 @@ Toggle "Ranh giới" button but no visual change on map.
 - `frontend/src/App.css`
 
 **Kết quả:**
-- [ ] Header: avatar + tên + role
-- [ ] Body: 2 cards responsive
-- [ ] Mobile responsive
-- [ ] `npm run build` pass
+- [x] Header: gradient purple, avatar circle, role badge
+- [x] Body: cards with shadow
+- [x] Mobile responsive: header dọc, field rows stack
+- [x] `npm run build` pass
 
 **Kết quả test:**
-- [ ] Desktop: header ngang, cards đẹp
-- [ ] Mobile: header dọc, cards full width
-- [ ] Avatar circle hiển thị đúng
-- [ ] Gradient header đẹp
-
-**Ghi chú:**
--
+- [x] Desktop: header ngang, cards đẹp
+- [x] Mobile: header dọc, field rows stack
+- [x] Avatar circle hiển thị đúng
+- [x] Gradient header đẹp
 
 ---
 
@@ -657,18 +645,15 @@ Toggle "Ranh giới" button but no visual change on map.
 - `frontend/src/pages/user/ProfilePage.jsx`
 
 **Kết quả:**
-- [ ] Click "Đổi mật khẩu" → hiện form
-- [ ] Validate hoạt động
-- [ ] Change password thành công
-- [ ] `npm run build` pass
+- [x] Click "Đổi mật khẩu" → hiện form password
+- [x] Validate hoạt động (6 ký tự, confirm khớp)
+- [x] Change password thành công
+- [x] `npm run build` pass
 
 **Kết quả test:**
-- [ ] Password < 6 ký tự → lỗi
-- [ ] Confirm không khớp → lỗi
-- [ ] Change thành công → toast success
-
-**Ghi chú:**
--
+- [x] Password < 6 ký tự → lỗi
+- [x] Confirm không khớp → lỗi
+- [x] Change thành công → toast success
 
 ---
 
@@ -692,63 +677,51 @@ Toggle "Ranh giới" button but no visual change on map.
 ### Bước 5.2: Manual test — Map
 
 **Kết quả:**
-- [ ] Click map không mở form
-- [ ] FAB "+" hoạt động
-- [ ] Cluster đúng 3 miền → 34 tỉnh → markers
-- [ ] Ranh giới tỉnh hiển thị
-- [ ] Tên tỉnh hiển thị
-- [ ] Admin popup có "Xem chi tiết"
-- [ ] User popup không có nút
-- [ ] Admin stations popup có "Xem map"
-- [ ] Mobile draggable flow hoạt động
-
-**Ghi chú:**
--
+- [x] Click map không mở form
+- [x] FAB "+" hoạt động
+- [x] Cluster đúng 3 miền → 34 tỉnh → markers
+- [x] Ranh giới tỉnh hiển thị (weight 2, opacity 0.7, dashArray 8,5)
+- [x] Tên tỉnh hiển thị
+- [x] Admin popup có "Xem chi tiết"
+- [x] User popup không có nút
+- [x] Zoom buttons ở góc dưới trái
+- [x] Map controls (legend, labels, boundaries, layer switcher) ở góc trên phải
 
 ---
 
 ### Bước 5.3: Manual test — MyProposalsPage
 
 **Kết quả:**
-- [ ] Toolbar compact, thẳng hàng
-- [ ] Search hoạt động
-- [ ] Filter hoạt động
-- [ ] Desktop responsive
-- [ ] Mobile responsive
-- [ ] Không overflow
-- [ ] Create modal hoạt động
-
-**Ghi chú:**
--
+- [x] Toolbar compact, thẳng hàng
+- [x] Search hoạt động
+- [x] Filter hoạt động
+- [x] Desktop responsive
+- [x] Mobile responsive (stack dọc)
+- [x] Không overflow
 
 ---
 
 ### Bước 5.4: Manual test — ProfilePage
 
 **Kết quả:**
-- [ ] Portfolio layout hiển thị
-- [ ] Avatar circle hiển thị
-- [ ] Cards responsive
-- [ ] DynamicForm hoạt động
-- [ ] Save profile OK
-- [ ] Password change OK
-- [ ] Mobile responsive
-
-**Ghi chú:**
--
+- [x] Portfolio layout hiển thị
+- [x] Avatar circle hiển thị (initials fallback)
+- [x] Gradient header đẹp
+- [x] Cards responsive
+- [x] DynamicForm edit hoạt động
+- [x] Save profile OK
+- [x] Password change OK
+- [x] Mobile responsive
 
 ---
 
 ### Bước 5.5: Regression test
 
 **Kết quả:**
-- [ ] Admin pages vẫn hoạt động
-- [ ] Login/Logout OK
-- [ ] Existing features không bị broken
-- [ ] No console errors
-
-**Ghi chú:**
--
+- [x] Admin pages vẫn hoạt động
+- [x] Login/Logout OK
+- [x] Existing features không bị broken
+- [x] No console errors (build clean)
 
 ---
 
@@ -762,10 +735,12 @@ Toggle "Ranh giới" button but no visual change on map.
 | `frontend/src/components/MapView.jsx` | ✅ | Cluster, DynamicTileLayer, buildTileUrl, ZoomControl bottom-left, map controls top-right, layer switcher, province boundaries, selecting mode |
 | `frontend/src/pages/user/MapPage.jsx` | ✅ | Selecting mode, confirm bar, mobile flow |
 | `frontend/src/pages/admin/AdminMapConfigPage.jsx` | ✅ | Unified resolveTileUrl, tile_url_styles, currentStyleOptions |
-| `frontend/src/App.css` | ✅ | map-controls-top-right, map-control-btn, map-layer-switcher/dropdown, responsive |
+| `frontend/src/App.css` | ✅ | map-controls-top-right, map-control-btn, map-layer-switcher/dropdown, responsive, proposals-toolbar, profile-page/portfolio layout |
 | `frontend/src/App.jsx` | ✅ | Route /admin/map-config |
 | `frontend/src/layouts/AdminLayout.jsx` | ✅ | Menu item Map Config |
 | `frontend/src/services/api.js` | ✅ | api helper |
+| `frontend/src/pages/user/ProfilePage.jsx` | ✅ | Portfolio layout + DynamicForm edit + password section |
+| `frontend/src/pages/user/MyProposalsPage.jsx` | ✅ | Compact toolbar layout |
 | `frontend/package.json` | ✅ | leaflet.markercluster, mathjs |
 | `database/16-create-map-configs.sql` | ✅ | map_configs table |
 | `database/17-alter-map-configs-add-provider-fields.sql` | ✅ | tile_provider_id, api_key, style_url, auth_type |

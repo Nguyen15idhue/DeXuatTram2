@@ -52,6 +52,8 @@ const MyProposalsPage = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
 
+  const [search, setSearch] = useState('');
+
   useEffect(() => {
     const match = location.pathname.match(/\/my-proposals\/(view|edit)=(\d+)/);
     if (match) {
@@ -84,6 +86,7 @@ const MyProposalsPage = () => {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
       if (filter) params.append('status', filter);
+      if (search) params.append('search', search);
       const res = await myProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
@@ -94,7 +97,7 @@ const MyProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, token]);
+  }, [filter, search, token]);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
@@ -235,6 +238,10 @@ const MyProposalsPage = () => {
     </div>
   );
 
+  const handleSearch = () => {
+    loadProposals(1);
+  };
+
   return (
     <div className="proposals-page">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
@@ -249,22 +256,25 @@ const MyProposalsPage = () => {
         type="danger"
       />
 
-      <div className="proposals-toolbar">
-        <div className="toolbar-left">
-          <h1>Đề xuất của tôi</h1>
+      <div className="page-header">
+        <h1>Đề xuất của tôi</h1>
+        <div className="page-header-actions">
+          <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
+          <button className="btn btn-secondary" onClick={handleExport}>Export</button>
+          <button className="btn btn-secondary" onClick={openImport}>Import</button>
+          <button className="btn btn-primary" onClick={openCreate}>+ Tạo đề xuất</button>
         </div>
-        <div className="toolbar-right">
-          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
-            <option value="">Tất cả</option>
-            {statusOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <button className="btn btn-primary btn-sm" onClick={openCreate}>+ Tạo đề xuất</button>
-          <button className="btn btn-secondary btn-sm" onClick={handleDownloadTemplate}>Template</button>
-          <button className="btn btn-secondary btn-sm" onClick={handleExport}>Export</button>
-          <button className="btn btn-secondary btn-sm" onClick={openImport}>Import</button>
-        </div>
+      </div>
+
+      <div className="filter-bar">
+        <input type="text" placeholder="Search theo địa chỉ..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <option value="">Tất cả trạng thái</option>
+          {statusOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
       </div>
 
       {showCreateForm && (
