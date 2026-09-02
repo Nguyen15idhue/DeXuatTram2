@@ -75,23 +75,7 @@ body {
   cursor: not-allowed;
 }
 
-button {
-  padding: 12px;
-  border: none;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-button:hover {
-  background: #5a6fd6;
-}
-
-button:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
+/* Old button styles - scoped to legacy-only */
 
 .error-message {
   background: #fee;
@@ -796,39 +780,13 @@ button:disabled {
   margin-right: 5px;
 }
 
-/* Buttons */
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background 0.3s;
-  width: auto;
-}
-
-.btn-primary {
-  background: #667eea;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #5a6fd6;
-}
-
-.btn-secondary {
-  background: #95a5a6;
-  color: white;
-}
-
-.btn-secondary:hover {
-  background: #7f8c8d;
-}
-
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 12px;
-}
+/* Buttons - using daisyUI */
+/* .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background 0.3s; } */
+/* .btn-primary { background: #667eea; color: white; } */
+/* .btn-primary:hover { background: #5a6fd6; } */
+/* .btn-secondary { background: #95a5a6; color: white; } */
+/* .btn-secondary:hover { background: #7f8c8d; } */
+/* .btn-sm { padding: 6px 12px; font-size: 12px; } */
 
 .btn-edit {
   background: #3498db;
@@ -1442,10 +1400,7 @@ select:focus {
   color: #666;
 }
 
-.btn-secondary:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
+/* .btn-secondary:disabled { background: #ccc; cursor: not-allowed; } */
 
 /* Hamburger Button */
 .hamburger-btn {
@@ -1656,23 +1611,10 @@ select:focus {
   min-width: 100px;
 }
 
-.btn-danger {
-  background: #dc3545;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #c82333;
-}
-
-.btn-warning {
-  background: #ffc107;
-  color: #212529;
-}
-
-.btn-warning:hover {
-  background: #e0a800;
-}
+/* .btn-danger { background: #dc3545; color: white; } */
+/* .btn-danger:hover { background: #c82333; } */
+/* .btn-warning { background: #ffc107; color: #212529; } */
+/* .btn-warning:hover { background: #e0a800; } */
 
 /* Empty State */
 .empty-state {
@@ -4053,21 +3995,8 @@ select:focus {
 /* ===== Proposals Toolbar (unused, kept for reference) ===== */
 /* proposals-toolbar replaced by page-header + filter-bar layout */
 /* ===== Map Admin Button ===== */
-.popup-content .btn-primary {
-  margin-top: 8px;
-  padding: 6px 12px;
-  background: #4a6cf7;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: background 0.2s;
-}
-.popup-content .btn-primary:hover {
-  background: #3a5ce5;
-}
+/* .popup-content .btn-primary { margin-top: 8px; padding: 6px 12px; background: #4a6cf7; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: background 0.2s; } */
+/* .popup-content .btn-primary:hover { background: #3a5ce5; } */
 
 /* Map Confirm Bar (selecting mode) */
 .map-confirm-bar {
