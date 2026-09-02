@@ -42,7 +42,7 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="card bg-base-100 shadow-xl">
+    <div className="card bg-base-100 shadow-xl w-full max-w-md">
       <div className="card-body p-6 sm:p-8">
         <h2 className="card-title text-2xl font-bold justify-center mb-2">
           Đăng ký
@@ -50,8 +50,8 @@ const RegisterPage = () => {
 
         {error && <ErrorMessage message={error} />}
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="form-control">
+        <form onSubmit={handleSubmit}>
+          <div className="form-control mb-3">
             <label className="label py-1">
               <span className="label-text font-medium">Họ tên</span>
             </label>
@@ -66,7 +66,7 @@ const RegisterPage = () => {
             />
           </div>
 
-          <div className="form-control">
+          <div className="form-control mb-3">
             <label className="label py-1">
               <span className="label-text font-medium">Email</span>
             </label>
@@ -81,7 +81,7 @@ const RegisterPage = () => {
             />
           </div>
 
-          <div className="form-control">
+          <div className="form-control mb-3">
             <label className="label py-1">
               <span className="label-text font-medium">Số điện thoại</span>
             </label>
@@ -95,7 +95,7 @@ const RegisterPage = () => {
             />
           </div>
 
-          <div className="form-control">
+          <div className="form-control mb-3">
             <label className="label py-1">
               <span className="label-text font-medium">Mật khẩu</span>
             </label>
@@ -110,7 +110,7 @@ const RegisterPage = () => {
             />
           </div>
 
-          <div className="form-control">
+          <div className="form-control mb-4">
             <label className="label py-1">
               <span className="label-text font-medium">Xác nhận mật khẩu</span>
             </label>
@@ -125,19 +125,21 @@ const RegisterPage = () => {
             />
           </div>
 
-          <button
-            type="submit"
-            className={`btn btn-primary w-full gap-2 mt-2 ${loading ? 'btn-disabled' : ''}`}
-            disabled={loading}
-          >
-            <UserPlus size={18} />
-            {loading ? 'Đang đăng ký...' : 'Đăng ký'}
-          </button>
+          <div className="form-control">
+            <button
+              type="submit"
+              className={`btn btn-primary w-full gap-2 ${loading ? 'btn-disabled' : ''}`}
+              disabled={loading}
+            >
+              <UserPlus size={18} />
+              {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+            </button>
+          </div>
         </form>
 
         <div className="divider my-2">HOẶC</div>
 
-        <p className="text-center text-sm text-base-content/60 pb-2">
+        <p className="text-center text-sm text-base-content/60">
           Đã có tài khoản?{' '}
           <Link to="/login" className="link link-primary font-medium">
             Đăng nhập

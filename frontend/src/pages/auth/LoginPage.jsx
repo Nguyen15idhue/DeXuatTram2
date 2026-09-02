@@ -28,7 +28,7 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="card bg-base-100 shadow-xl">
+    <div className="card bg-base-100 shadow-xl w-full max-w-md">
       <div className="card-body p-6 sm:p-8">
         <h2 className="card-title text-2xl font-bold justify-center mb-2">
           Đăng nhập
@@ -36,8 +36,8 @@ const LoginPage = () => {
 
         {error && <ErrorMessage message={error} />}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="form-control">
+        <form onSubmit={handleSubmit}>
+          <div className="form-control mb-3">
             <label className="label py-1">
               <span className="label-text font-medium">Email</span>
             </label>
@@ -51,7 +51,7 @@ const LoginPage = () => {
             />
           </div>
 
-          <div className="form-control">
+          <div className="form-control mb-4">
             <label className="label py-1">
               <span className="label-text font-medium">Mật khẩu</span>
             </label>
@@ -65,19 +65,21 @@ const LoginPage = () => {
             />
           </div>
 
-          <button
-            type="submit"
-            className={`btn btn-primary w-full gap-2 ${loading ? 'btn-disabled' : ''}`}
-            disabled={loading}
-          >
-            <LogIn size={18} />
-            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
-          </button>
+          <div className="form-control">
+            <button
+              type="submit"
+              className={`btn btn-primary w-full gap-2 ${loading ? 'btn-disabled' : ''}`}
+              disabled={loading}
+            >
+              <LogIn size={18} />
+              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            </button>
+          </div>
         </form>
 
         <div className="divider my-2">HOẶC</div>
 
-        <p className="text-center text-sm text-base-content/60 pb-2">
+        <p className="text-center text-sm text-base-content/60">
           Chưa có tài khoản?{' '}
           <Link to="/register" className="link link-primary font-medium">
             Đăng ký
