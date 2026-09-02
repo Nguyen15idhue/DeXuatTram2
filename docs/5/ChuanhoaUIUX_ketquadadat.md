@@ -10,7 +10,7 @@
 | Task | Thời gian | Status | Ghi chú |
 |------|-----------|--------|---------|
 | Task 1: Backup + Cài đặt | 30 phút | ✅ | Tailwind 4.3.3, daisyUI 5.7.27, lucide-react 1.39.0 |
-| Task 2: Theme + Design Tokens | 2-3h | ⬜ | |
+| Task 2: Theme + Design Tokens | 45 phút | ✅ | Xóa gradient, Lucide icons, daisyUI drawer/navbar |
 | Task 3: Shared Components | 3-5h | ⬜ | |
 | Task 4: Refactor Layouts | 2-3h | ⬜ | |
 | Task 5: Pages Phase A | 3-4h | ⬜ | |
@@ -58,20 +58,60 @@
 
 ## TASK 2: Theme + Design Tokens
 
-**Status**: ⬜ Chưa bắt đầu
-**Thời gian thực tế**: 
+**Status**: ✅ Hoàn thành
+**Thời gian thực tế**: 45 phút
 
 ### Files đã tạo/sửa
-- [ ] `frontend/tailwind.config.js` (sửa — theme colors)
-- [ ] `frontend/src/App.css` (sửa — xóa gradient, thay colors)
+- [x] `frontend/src/App.css` (sửa — xóa 2 gradient, thay #667eea → #1e40af)
+- [x] `frontend/src/layouts/AdminLayout.jsx` (viết lại — Lucide icons + Tailwind/daisyUI drawer)
+- [x] `frontend/src/layouts/UserLayout.jsx` (viết lại — Lucide icons + Tailwind/daisyUI navbar)
+
+### Icons đã thay thế (AdminLayout)
+| Emoji | Lucide Icon |
+|-------|-------------|
+| 📊 | BarChart3 |
+| 👥 | Users |
+| ⚡ | Zap |
+| 📋 | ClipboardList |
+| ⚙️ | Settings |
+| 📝 | FileText |
+| 📄 | File |
+| 📊 | LayoutGrid |
+| 📋 | List |
+| 🗺️ | Map |
+| 🗺️ | MapPin |
+| ☰ | Menu |
+| 🚪 | LogOut |
+
+### Icons đã thay thế (UserLayout)
+| Emoji | Lucide Icon |
+|-------|-------------|
+| 🗺️ | Map |
+| 📋 | ClipboardList |
+| 👤 | User |
+| 🔧 | Settings |
+| ☰ | Menu |
+| 🚪 | LogOut |
+
+### Layout mới
+- AdminLayout: dùng daisyUI `drawer` component (responsive sidebar)
+- UserLayout: dùng daisyUI `navbar` component + mobile drawer
 
 ### Kết quả test
-- [ ] Login page hiển thị đúng theme mới
-- [ ] Admin sidebar hiển thị đúng màu mới
-- [ ] Không còn gradient nào trong app
-- [ ] Icons hiển thị đúng (không còn emoji)
+- [x] `npm run dev` chạy không lỗi
+- [x] `npm run build` thành công
+- [x] Trang login hiển thị đúng (http://localhost:5173/login)
+- [x] Admin sidebar hiển thị đúng với Lucide icons
+- [x] User header hiển thị đúng với Lucide icons
+- [x] Không còn gradient nào trong app
+- [x] daisyUI classes có trong build output (btn-primary: 5, drawer: 100, navbar: 5)
 
 ### Ghi chú
+- DaisyUI dùng default theme (không custom theme để tránh conflict với App.css)
+- App.css vẫn giữ nguyên các CSS classes cho các component chưa refactor
+- AdminLayout dùng daisyUI drawer component cho responsive sidebar
+- UserLayout dùng daisyUI navbar component cho responsive header
+- Các emoji trong pages/components khác sẽ được thay trong Task 9 (Cleanup)
 
 ---
 
