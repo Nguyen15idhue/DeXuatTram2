@@ -13,6 +13,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
+import { ClipboardList, Download, Upload, Plus, Search, X, MapPin } from 'lucide-react';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -227,12 +228,12 @@ const MyProposalsPage = () => {
   };
 
   const renderActions = (row) => (
-    <div className="action-buttons">
+    <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
       {row.status === 'PENDING' && (
         <>
-          <button className="btn btn-sm btn-edit" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
-          <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
+          <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
+          <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
         </>
       )}
     </div>
@@ -243,7 +244,7 @@ const MyProposalsPage = () => {
   };
 
   return (
-    <div className="proposals-page">
+    <div className="p-4 md:p-6">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <ConfirmDialog
@@ -256,36 +257,57 @@ const MyProposalsPage = () => {
         type="danger"
       />
 
-      <div className="page-header">
-        <h1>Đề xuất của tôi</h1>
-        <div className="page-header-actions">
-          <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
-          <button className="btn btn-secondary" onClick={handleExport}>Export</button>
-          <button className="btn btn-secondary" onClick={openImport}>Import</button>
-          <button className="btn btn-primary" onClick={openCreate}>+ Tạo đề xuất</button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h1 className="text-xl font-bold flex items-center gap-2">
+          <ClipboardList size={22} /> Đề xuất của tôi
+        </h1>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-secondary btn-sm gap-1" onClick={handleDownloadTemplate}>
+            <Download size={14} /> Template
+          </button>
+          <button className="btn btn-secondary btn-sm gap-1" onClick={handleExport}>
+            <Download size={14} /> Export
+          </button>
+          <button className="btn btn-secondary btn-sm gap-1" onClick={openImport}>
+            <Upload size={14} /> Import
+          </button>
+          <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
+            <Plus size={14} /> Tạo đề xuất
+          </button>
         </div>
       </div>
 
-      <div className="filter-bar">
-        <input type="text" placeholder="Search theo địa chỉ..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
-        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <input
+          type="text"
+          placeholder="Search theo địa chỉ..."
+          className="input input-bordered input-sm flex-1"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+        />
+        <select className="select select-bordered select-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           {statusOptions.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
+        <button className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
+          <Search size={14} /> Tìm
+        </button>
       </div>
 
       {showCreateForm && (
         <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
           <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header-flex">
-              <h2>Tạo đề xuất mới</h2>
-              <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold m-0">Tạo đề xuất mới</h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateForm(false)}>
+                <X size={16} />
+              </button>
             </div>
-            <div className="map-picker">
-              <label>Chọn vị trí trên bản đồ (click để chọn)</label>
+            <div className="border border-base-300 rounded-lg p-3 mb-4">
+              <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
               <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
                 <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
                 <MapClickHandler onMapClick={handleMapClick} />
@@ -294,7 +316,8 @@ const MyProposalsPage = () => {
                 )}
               </MapContainer>
               {mapCoords.latitude && mapCoords.longitude && (
-                <div className="form-coords-info">
+                <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+                  <MapPin size={14} />
                   Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
                 </div>
               )}
@@ -313,37 +336,42 @@ const MyProposalsPage = () => {
 
       {showImport && (
         <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>Import Đề xuất từ Excel</h2>
+          <div className="legacy-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold m-0">Import Đề xuất từ Excel</h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(false)}>
+                <X size={16} />
+              </button>
+            </div>
             {importStep === 'upload' && (
-              <div className="import-upload">
-                <label>Chọn file Excel (.xlsx)</label>
-                <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect} />
+              <div className="flex flex-col gap-3">
+                <label className="text-sm font-medium">Chọn file Excel (.xlsx)</label>
+                <input type="file" accept=".xlsx,.xls" className="file-input file-input-bordered w-full" onChange={handleFileSelect} />
                 {importFile && (
-                  <div className="import-file-info">
+                  <div className="bg-base-200 rounded-lg p-3 text-sm">
                     <p>File: <strong>{importFile.name}</strong></p>
                     <p>Kích thước: {(importFile.size / 1024).toFixed(1)} KB</p>
                   </div>
                 )}
-                <div className="import-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button type="button" className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
                     {importLoading ? 'Đang đọc...' : 'Xem trước'}
                   </button>
                 </div>
               </div>
             )}
             {importStep === 'preview' && importPreview && (
-              <div className="import-preview">
-                <div className="import-summary">
+              <div className="flex flex-col gap-3">
+                <div className="bg-base-200 rounded-lg p-3 text-sm">
                   <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
-                  <p className="success-text">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
-                  {importPreview.errorRows > 0 && <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
+                  <p className="text-success font-semibold">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
+                  {importPreview.errorRows > 0 && <p className="text-error font-semibold">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
                 </div>
-                <div className="import-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => setImportStep('upload')}>Quay lại</button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button type="button" className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setImportStep('upload')}>Quay lại</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} đề xuất`}
                   </button>
                 </div>

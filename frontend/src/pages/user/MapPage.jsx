@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Toast from '../../components/Toast';
+import { MapPin, X } from 'lucide-react';
 
 const PROPOSALS_FORM_ID = 9;
 
@@ -84,7 +85,7 @@ const MapPage = () => {
   };
 
   return (
-    <div className="map-page">
+    <div className="relative h-full">
       <Toast
         message={toast.message}
         type={toast.type}
@@ -102,13 +103,13 @@ const MapPage = () => {
         user={user}
       />
 
-      {/* Confirm position button (selecting mode) */}
       {selectingLocation && highlightPosition && (
-        <div className="map-confirm-bar">
-          <div className="map-confirm-info">
-            📍 {highlightPosition[0].toFixed(6)}, {highlightPosition[1].toFixed(6)}
-          </div>
-          <div className="map-confirm-actions">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1001] bg-white rounded-xl shadow-lg border border-base-300 px-4 py-3 flex items-center gap-4">
+          <span className="flex items-center gap-1.5 text-sm text-base-content/70">
+            <MapPin size={14} />
+            {highlightPosition[0].toFixed(6)}, {highlightPosition[1].toFixed(6)}
+          </span>
+          <div className="flex gap-2">
             <button className="btn btn-secondary btn-sm" onClick={() => { setSelectingLocation(false); setHighlightPosition(null); }}>Hủy</button>
             <button className="btn btn-primary btn-sm" onClick={handleConfirmPosition}>Xác nhận</button>
           </div>
@@ -118,19 +119,22 @@ const MapPage = () => {
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
           <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
-            <div className="popup-header">
-              <h2>Đề xuất trạm mới</h2>
-              <button className="btn btn-sm btn-secondary" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>✕ Đóng</button>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold m-0">Đề xuất trạm mới</h2>
+              <button className="btn btn-sm btn-secondary" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
+                <X size={14} /> Đóng
+              </button>
             </div>
 
             <div className="popup-body">
               <div className="popup-section">
-                <div style={{ padding: '8px 12px', background: '#f0f7ff', borderRadius: 6, marginBottom: 12, fontSize: 13 }}>
-                  📍 Tọa độ: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80 mb-3">
+                  <MapPin size={14} />
+                  Tọa độ: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
                 </div>
               </div>
 
-              {error && <div className="error-message">{error}</div>}
+              {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
 
               <DynamicForm
                 entity="station_proposals"

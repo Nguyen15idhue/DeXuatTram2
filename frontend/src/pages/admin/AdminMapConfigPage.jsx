@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { MapContainer, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { TILE_PROVIDERS, getProviderById, TILE_CATEGORIES } from '../../utils/tileProviders';
 import { useAuth } from '../../contexts/AuthContext';
+import Toast from '../../components/Toast';
+import { Settings, Save, Wifi, WifiOff } from 'lucide-react';
 
 const FALLBACK_TILE = 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 
@@ -18,7 +20,6 @@ function getSafeTileUrl(url) {
   if (isValidTileUrl(url)) return url;
   return FALLBACK_TILE;
 }
-import Toast from '../../components/Toast';
 
 const AdminMapConfigPage = () => {
   const { token } = useAuth();
@@ -37,7 +38,6 @@ const AdminMapConfigPage = () => {
   const [filterType, setFilterType] = useState('all');
   const [testStatus, setTestStatus] = useState(null);
   const [testUrl, setTestUrl] = useState('');
-  const [previewBounds, setPreviewBounds] = useState(null);
 
   useEffect(() => { loadConfig(); }, []);
 
@@ -137,11 +137,7 @@ const AdminMapConfigPage = () => {
       const timeout = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(testTileUrl, { method: 'HEAD', signal: controller.signal });
       clearTimeout(timeout);
-      if (res.ok) {
-        setTestStatus('success');
-      } else {
-        setTestStatus('error');
-      }
+      setTestStatus(res.ok ? 'success' : 'error');
     } catch {
       setTestStatus('error');
     }
@@ -192,8 +188,8 @@ const AdminMapConfigPage = () => {
     setConfig(prev => ({ ...prev, [key]: prev[key] ? 0 : 1 }));
   };
 
-  if (loading) return <div className="loading-container"><div className="spinner" /><p>Đang tải...</p></div>;
-  if (!config) return <div className="error-alert"><span>Không tìm thấy cấu hình</span></div>;
+  if (loading) return <div className="flex items-center justify-center h-64"><span className="loading loading-spinner loading-lg" /><p className="ml-3 text-base-content/60">Đang tải...</p></div>;
+  if (!config) return <div className="alert alert-error"><span>Không tìm thấy cấu hình</span></div>;
 
   const tile = getActiveTileConfig();
   const safeTileUrl = getSafeTileUrl(tile.url);
@@ -206,81 +202,69 @@ const AdminMapConfigPage = () => {
   const showCustomInputs = isCustom || (selectedProvider && (selectedProvider.type === 'self-hosted'));
 
   return (
-    <div className="admin-page">
+    <div className="p-4 md:p-6">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} duration={3000} />
-      <h1 style={{ marginBottom: 20 }}>Cấu hình Bản đồ</h1>
+      <h1 className="text-xl font-bold mb-5 flex items-center gap-2">
+        <Settings size={22} /> Cấu hình Bản đồ
+      </h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Left: Config */}
-        <div>
+        <div className="flex flex-col gap-4">
           {/* Map Provider */}
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>Map Provider</h3>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          <div className="bg-white border border-base-300 rounded-lg p-4">
+            <h3 className="text-base font-bold mb-3">Map Provider</h3>
+            <div className="flex flex-wrap gap-1.5 mb-3">
               {[{ id: 'all', label: 'Tất cả' }, ...TILE_CATEGORIES].map(cat => (
-                <button key={cat.id} className={`btn btn-sm ${filterType === cat.id ? 'btn-primary' : 'btn-secondary'}`}
+                <button key={cat.id} className={`btn btn-xs ${filterType === cat.id ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setFilterType(cat.id)}>{cat.label}</button>
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
               {filteredProviders.map(p => (
                 <div key={p.id} onClick={() => { setIsCustom(false); setSelectedProviderId(p.id); setSelectedStyle(p.tile_url_styles?.[0]?.value || p.style_options?.[0]?.value || ''); setPreviewKey(k => k + 1); setTestStatus(null); }}
-                  style={{
-                    padding: '10px 12px', border: `2px solid ${!isCustom && selectedProviderId === p.id ? '#4a6cf7' : '#e0e0e0'}`,
-                    borderRadius: 8, cursor: 'pointer', background: !isCustom && selectedProviderId === p.id ? '#f5f7ff' : '#fff', transition: 'all 0.15s'
-                  }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{p.description}</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6, fontSize: 10 }}>
-                    <span style={{ background: p.type === 'free' ? '#e8f5e9' : p.type === 'self-hosted' ? '#fff3e0' : '#e3f2fd', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                  className={`p-2.5 rounded-lg cursor-pointer border-2 transition-all ${!isCustom && selectedProviderId === p.id ? 'border-primary bg-primary/5' : 'border-base-300 bg-white hover:border-primary/40'}`}>
+                  <div className="text-sm font-semibold">{p.name}</div>
+                  <div className="text-xs text-base-content/50 mt-0.5">{p.description}</div>
+                  <div className="flex gap-1.5 mt-1.5 text-[10px]">
+                    <span className={`px-1.5 py-0.5 rounded font-semibold ${p.type === 'free' ? 'bg-success/10 text-success' : p.type === 'self-hosted' ? 'bg-warning/10 text-warning' : 'bg-info/10 text-info'}`}>
                       {p.type === 'free' ? 'Miễn phí' : p.type === 'self-hosted' ? 'Tự host' : 'API'}
                     </span>
-                    {p.requires_key && <span style={{ color: '#f57c00', fontWeight: 600 }}>Cần Key</span>}
-                    {p.has_cluster && <span style={{ color: '#388e3c', fontWeight: 600 }}>Cluster: {p.cluster_method}</span>}
+                    {p.requires_key && <span className="text-warning font-semibold">Cần Key</span>}
+                    {p.has_cluster && <span className="text-success font-semibold">Cluster: {p.cluster_method}</span>}
                   </div>
                 </div>
               ))}
             </div>
-            {/* Custom tile option */}
             <div onClick={() => { setIsCustom(true); setSelectedProviderId('custom'); setPreviewKey(k => k + 1); setTestStatus(null); }}
-              style={{
-                marginTop: 8, padding: '10px 12px', border: `2px solid ${isCustom ? '#4a6cf7' : '#e0e0e0'}`,
-                borderRadius: 8, cursor: 'pointer', background: isCustom ? '#f5f7ff' : '#fff'
-              }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>Tùy chỉnh thủ công (Custom)</div>
-              <div style={{ fontSize: 11, color: '#888' }}>Nhập tile URL, attribution, subdomains thủ công</div>
+              className={`mt-2 p-2.5 rounded-lg cursor-pointer border-2 transition-all ${isCustom ? 'border-primary bg-primary/5' : 'border-base-300 bg-white hover:border-primary/40'}`}>
+              <div className="text-sm font-semibold">Tùy chỉnh thủ công (Custom)</div>
+              <div className="text-xs text-base-content/50">Nhập tile URL, attribution, subdomains thủ công</div>
             </div>
           </div>
 
           {/* Authentication */}
           {showApiKeyInput && (
-            <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>Authentication</h3>
-              <div>
-                <label style={labelStyle}>API Key / Token</label>
-                <input className="form-control" value={apiKey} onChange={e => { setApiKey(e.target.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
-                  placeholder={selectedProvider.api_key_placeholder || 'Nhập API Key'} />
-                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{selectedProvider.description}</div>
-              </div>
+            <div className="bg-white border border-base-300 rounded-lg p-4">
+              <h3 className="text-base font-bold mb-3">Authentication</h3>
+              <label className="text-sm font-semibold block mb-1.5">API Key / Token</label>
+              <input className="input input-bordered input-sm w-full" value={apiKey} onChange={e => { setApiKey(e.target.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
+                placeholder={selectedProvider.api_key_placeholder || 'Nhập API Key'} />
+              <div className="text-xs text-base-content/50 mt-1">{selectedProvider.description}</div>
             </div>
           )}
 
           {/* Map Config */}
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>Map Config</h3>
+          <div className="bg-white border border-base-300 rounded-lg p-4">
+            <h3 className="text-base font-bold mb-3">Map Config</h3>
 
-            {/* Style selector */}
             {showStyleSelect && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Style</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div className="mb-3">
+                <label className="text-sm font-semibold block mb-1.5">Style</label>
+                <div className="grid grid-cols-2 gap-1.5">
                   {currentStyleOptions.map(s => (
                     <div key={s.value} onClick={() => { setSelectedStyle(s.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
-                      style={{
-                        padding: '8px 10px', border: `2px solid ${selectedStyle === s.value ? '#4a6cf7' : '#e0e0e0'}`,
-                        borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500,
-                        background: selectedStyle === s.value ? '#f5f7ff' : '#fff'
-                      }}>
+                      className={`px-2.5 py-2 rounded-md cursor-pointer text-xs font-medium border-2 transition-all ${selectedStyle === s.value ? 'border-primary bg-primary/5' : 'border-base-300 bg-white'}`}>
                       {s.label}
                     </div>
                   ))}
@@ -288,92 +272,91 @@ const AdminMapConfigPage = () => {
               </div>
             )}
 
-            {/* Custom/Self-hosted tile inputs */}
             {showCustomInputs && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+              <div className="flex flex-col gap-2.5 mb-3">
                 <div>
-                  <label style={labelStyle}>Tile URL</label>
-                  <input className="form-control" value={customTileUrl} onChange={e => { setCustomTileUrl(e.target.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
+                  <label className="text-sm font-semibold block mb-1.5">Tile URL</label>
+                  <input className="input input-bordered input-sm w-full" value={customTileUrl} onChange={e => { setCustomTileUrl(e.target.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
                     placeholder="https://{s}.example.com/{z}/{x}/{y}.png" />
                 </div>
                 <div>
-                  <label style={labelStyle}>Attribution</label>
-                  <input className="form-control" value={customAttribution} onChange={e => setCustomAttribution(e.target.value)}
+                  <label className="text-sm font-semibold block mb-1.5">Attribution</label>
+                  <input className="input input-bordered input-sm w-full" value={customAttribution} onChange={e => setCustomAttribution(e.target.value)}
                     placeholder="&copy; Example" />
                 </div>
                 <div>
-                  <label style={labelStyle}>Subdomains (phẩy cách)</label>
-                  <input className="form-control" value={customSubdomains} onChange={e => setCustomSubdomains(e.target.value)}
+                  <label className="text-sm font-semibold block mb-1.5">Subdomains (phẩy cách)</label>
+                  <input className="input input-bordered input-sm w-full" value={customSubdomains} onChange={e => setCustomSubdomains(e.target.value)}
                     placeholder="a,b,c" />
                 </div>
               </div>
             )}
 
             {/* Connection Test */}
-            <div style={{ marginBottom: 12, padding: '10px 12px', background: '#f8f9fa', borderRadius: 6, border: '1px solid #e0e0e0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <button className="btn btn-sm btn-secondary" onClick={handleTestConnection} disabled={testStatus === 'testing'}>
-                  {testStatus === 'testing' ? 'Đang test...' : 'Test kết nối'}
+            <div className="mb-3 p-2.5 bg-base-200 rounded-md border border-base-300">
+              <div className="flex items-center gap-2 mb-1.5">
+                <button className="btn btn-xs btn-secondary gap-1" onClick={handleTestConnection} disabled={testStatus === 'testing'}>
+                  {testStatus === 'testing' ? 'Đang test...' : <><Wifi size={12} /> Test kết nối</>}
                 </button>
-                {testStatus === 'success' && <span style={{ color: '#388e3c', fontWeight: 600, fontSize: 12 }}>Kết nối OK</span>}
-                {testStatus === 'error' && <span style={{ color: '#d32f2f', fontWeight: 600, fontSize: 12 }}>Lỗi kết nối</span>}
+                {testStatus === 'success' && <span className="text-success font-semibold text-xs">Kết nối OK</span>}
+                {testStatus === 'error' && <span className="text-error font-semibold text-xs">Lỗi kết nối</span>}
               </div>
               {testUrl && (
-                <div style={{ fontSize: 11, color: '#666', wordBreak: 'break-all', fontFamily: 'monospace', background: '#fff', padding: '4px 8px', borderRadius: 4, border: '1px solid #eee' }}>
+                <div className="text-[11px] text-base-content/60 break-all font-mono bg-white px-2 py-1 rounded border border-base-300">
                   {testUrl}
                 </div>
               )}
             </div>
 
             {/* Display toggles */}
-            <div style={{ borderTop: '1px solid #eee', paddingTop: 12 }}>
-              <label style={labelStyle}>Hiển thị</label>
+            <div className="border-t border-base-300 pt-3">
+              <label className="text-sm font-semibold block mb-1.5">Hiển thị</label>
               {[
                 { key: 'show_province_labels', label: 'Tên tỉnh trên bản đồ' },
                 { key: 'show_boundaries', label: 'Ranh giới tỉnh (nét đứt)' },
                 { key: 'show_cluster', label: 'Gộp marker (Cluster)' },
               ].map(item => (
-                <label key={item.key} className="checkbox-label" style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" checked={!!config[item.key]} onChange={() => toggleConfig(item.key)} />
-                  <span style={{ fontSize: 13 }}>{item.label}</span>
+                <label key={item.key} className="flex items-center gap-2 mb-1.5 cursor-pointer">
+                  <input type="checkbox" className="checkbox checkbox-sm" checked={!!config[item.key]} onChange={() => toggleConfig(item.key)} />
+                  <span className="text-sm">{item.label}</span>
                 </label>
               ))}
             </div>
 
             {/* Center + Zoom */}
-            <div style={{ marginTop: 12, borderTop: '1px solid #eee', paddingTop: 12 }}>
-              <label style={labelStyle}>Trung tâm & Zoom</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 6 }}>
+            <div className="mt-3 border-t border-base-300 pt-3">
+              <label className="text-sm font-semibold block mb-1.5">Trung tâm & Zoom</label>
+              <div className="grid grid-cols-3 gap-2 mt-1.5">
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>Vĩ độ</label>
-                  <input className="form-control" type="number" step="0.01" value={config.center_lat}
+                  <label className="text-[11px] text-base-content/50">Vĩ độ</label>
+                  <input className="input input-bordered input-sm w-full" type="number" step="0.01" value={config.center_lat}
                     onChange={e => setConfig(prev => ({ ...prev, center_lat: e.target.value }))} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>Kinh độ</label>
-                  <input className="form-control" type="number" step="0.01" value={config.center_lng}
+                  <label className="text-[11px] text-base-content/50">Kinh độ</label>
+                  <input className="input input-bordered input-sm w-full" type="number" step="0.01" value={config.center_lng}
                     onChange={e => setConfig(prev => ({ ...prev, center_lng: e.target.value }))} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#888' }}>Zoom</label>
-                  <input className="form-control" type="number" min="1" max="18" value={config.default_zoom}
+                  <label className="text-[11px] text-base-content/50">Zoom</label>
+                  <input className="input input-bordered input-sm w-full" type="number" min="1" max="18" value={config.default_zoom}
                     onChange={e => setConfig(prev => ({ ...prev, default_zoom: parseInt(e.target.value) || 6 }))} />
                 </div>
               </div>
             </div>
           </div>
 
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ width: '100%' }}>
-            {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+          <button className="btn btn-primary w-full gap-1" onClick={handleSave} disabled={saving}>
+            <Save size={16} /> {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
           </button>
         </div>
 
         {/* Right: Preview Map + Info */}
-        <div>
-          <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
-            <div style={{ padding: '10px 16px', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>Xem trước bản đồ</span>
-              <span style={{ fontSize: 11, color: '#888' }}>
+        <div className="flex flex-col gap-4">
+          <div className="bg-white border border-base-300 rounded-lg overflow-hidden">
+            <div className="px-4 py-2.5 bg-base-200 border-b border-base-300 flex justify-between items-center">
+              <span className="text-sm font-semibold">Xem trước bản đồ</span>
+              <span className="text-[11px] text-base-content/50">
                 {safeTileUrl ? `Tile: ${safeTileUrl.substring(0, 40)}...` : 'Chưa có tile URL hợp lệ'}
               </span>
             </div>
@@ -382,24 +365,23 @@ const AdminMapConfigPage = () => {
                 <TileLayer attribution={tile.attribution} url={safeTileUrl} subdomains={subdomains} />
               </MapContainer>
             ) : (
-              <div style={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 14 }}>
+              <div className="h-[400px] flex items-center justify-center text-base-content/40 text-sm">
                 Nhập tile URL để xem preview
               </div>
             )}
           </div>
 
-          {/* Provider Info */}
           {selectedProvider && !isCustom && (
-            <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>Thông tin Provider</h3>
-              <table style={{ width: '100%', fontSize: 13 }}>
+            <div className="bg-white border border-base-300 rounded-lg p-4">
+              <h3 className="text-base font-bold mb-3">Thông tin Provider</h3>
+              <table className="w-full text-sm">
                 <tbody>
-                  <tr><td style={tdLabel}>Tên</td><td style={tdValue}>{selectedProvider.name}</td></tr>
-                  <tr><td style={tdLabel}>Loại</td><td style={tdValue}>{selectedProvider.type === 'free' ? 'Miễn phí' : selectedProvider.type === 'self-hosted' ? 'Tự host' : 'API'}</td></tr>
-                  <tr><td style={tdLabel}>Xác thực</td><td style={tdValue}>{selectedProvider.auth_type === 'none' ? 'Không cần' : 'API Key / Token'}</td></tr>
-                  <tr><td style={tdLabel}>Cluster</td><td style={tdValue}>{selectedProvider.has_cluster ? `Có (${selectedProvider.cluster_method})` : 'Không'}</td></tr>
-                  {selectedProvider.style_url && <tr><td style={tdLabel}>Style URL</td><td style={{ ...tdValue, wordBreak: 'break-all' }}>{selectedProvider.style_url}</td></tr>}
-                  <tr><td style={tdLabel}>Tile URL</td><td style={{ ...tdValue, wordBreak: 'break-all', fontSize: 11, fontFamily: 'monospace' }}>{tile.url || '—'}</td></tr>
+                  <tr><td className="py-1 text-base-content/50 w-[30%]">Tên</td><td className="py-1 font-semibold">{selectedProvider.name}</td></tr>
+                  <tr><td className="py-1 text-base-content/50">Loại</td><td className="py-1 font-semibold">{selectedProvider.type === 'free' ? 'Miễn phí' : selectedProvider.type === 'self-hosted' ? 'Tự host' : 'API'}</td></tr>
+                  <tr><td className="py-1 text-base-content/50">Xác thực</td><td className="py-1 font-semibold">{selectedProvider.auth_type === 'none' ? 'Không cần' : 'API Key / Token'}</td></tr>
+                  <tr><td className="py-1 text-base-content/50">Cluster</td><td className="py-1 font-semibold">{selectedProvider.has_cluster ? `Có (${selectedProvider.cluster_method})` : 'Không'}</td></tr>
+                  {selectedProvider.style_url && <tr><td className="py-1 text-base-content/50">Style URL</td><td className="py-1 font-semibold break-all">{selectedProvider.style_url}</td></tr>}
+                  <tr><td className="py-1 text-base-content/50">Tile URL</td><td className="py-1 font-semibold break-all text-[11px] font-mono">{tile.url || '—'}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -409,11 +391,5 @@ const AdminMapConfigPage = () => {
     </div>
   );
 };
-
-const sectionStyle = { background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 };
-const sectionTitleStyle = { margin: '0 0 12px', fontSize: 15, fontWeight: 700 };
-const labelStyle = { fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 };
-const tdLabel = { padding: '4px 0', color: '#888', width: '30%' };
-const tdValue = { padding: '4px 0', fontWeight: 600 };
 
 export default AdminMapConfigPage;
