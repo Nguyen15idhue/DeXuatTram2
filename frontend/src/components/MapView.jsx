@@ -1,9 +1,40 @@
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import { useEffect, useState, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { stationService, proposalService } from '../services/api';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import 'leaflet.markercluster';
+import { stationService, proposalService, api } from '../services/api';
 import { getMarkerColor, createCustomIcon, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
+import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
+import { getProviderById } from '../utils/tileProviders';
+
+const FALLBACK_TILES = [
+  'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+];
+
+function resolveTileUrl(template, apiKey, styleValue) {
+  if (!template) return '';
+  let url = template.replace('{key}', apiKey || '');
+  url = url.replace('{style}', styleValue || '');
+  return url;
+}
+
+function isValidTileUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const placeholderPattern = /\{[^}]+\}/g;
+  const matches = url.match(placeholderPattern) || [];
+  const validPlaceholders = ['{z}', '{x}', '{y}', '{s}', '{r}'];
+  return matches.every(m => validPlaceholders.includes(m));
+}
+
+function getSafeTileUrl(url) {
+  if (isValidTileUrl(url)) return url;
+  return FALLBACK_TILES[0];
+}
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -12,19 +43,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-function MapClickHandler({ onMapClick, selectingLocation, onLocationSelected }) {
-  useMapEvents({
-    click(e) {
-      if (selectingLocation) {
-        onLocationSelected(e.latlng.lat, e.latlng.lng);
-      } else if (onMapClick) {
-        onMapClick(e.latlng.lat, e.latlng.lng);
-      }
-    }
-  });
-  return null;
-}
-
 function FlyToLocation({ position }) {
   const map = useMap();
   useEffect(() => {
@@ -32,6 +50,17 @@ function FlyToLocation({ position }) {
       map.flyTo(position, 16, { duration: 1.5 });
     }
   }, [position, map]);
+  return null;
+}
+
+function MapEventsHandler({ selectingLocation, onMapSelectClick }) {
+  useMapEvents({
+    click(e) {
+      if (selectingLocation && onMapSelectClick) {
+        onMapSelectClick(e.latlng.lat, e.latlng.lng);
+      }
+    }
+  });
   return null;
 }
 
@@ -44,13 +73,251 @@ const MAP_LEGEND = [
   { status: 'REJECTED', label: 'Từ chối' },
 ];
 
+function getProvinceIcon(province) {
+  return L.divIcon({
+    className: 'province-label-icon',
+    html: `<div class="province-label">${province.name}</div>`,
+    iconSize: [120, 24],
+    iconAnchor: [60, 12],
+  });
+}
+
+function DynamicTileLayer({ tileUrl, attribution, subdomains }) {
+  const map = useMap();
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+    if (!tileUrl) return;
+    const layer = L.tileLayer(tileUrl, {
+      attribution: attribution || '',
+      subdomains: subdomains || '',
+      maxZoom: 20,
+    });
+    layer.addTo(map);
+    layerRef.current = layer;
+    return () => {
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+    };
+  }, [map, tileUrl, attribution, subdomains]);
+
+  return null;
+}
+
+function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
+  return (
+    <button
+      className={`map-control-btn ${active ? 'map-control-btn-active' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+      title={tooltip}
+    >
+      {icon}
+    </button>
+  );
+}
+
+function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  if (!layers || layers.length <= 1) return null;
+
+  return (
+    <div className="map-layer-switcher" ref={ref}>
+      <button
+        className={`map-control-btn ${open ? 'map-control-btn-active' : ''}`}
+        onClick={() => setOpen(v => !v)}
+        title="Chuyển layer"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </button>
+      {open && (
+        <div className="map-layer-dropdown">
+          {layers.map((layer, idx) => (
+            <button
+              key={idx}
+              className={`map-layer-option ${idx === activeIdx ? 'map-layer-option-active' : ''}`}
+              onClick={() => { onSwitch(idx); setOpen(false); }}
+            >
+              {layer.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MapLayerController({ stations, proposals, onMarkerClick, user, showStationLabels }) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(map.getZoom());
+  const clusterRef = useRef(null);
+
+  useEffect(() => {
+    const handleZoom = () => setZoom(map.getZoom());
+    map.on('zoomend', handleZoom);
+    return () => map.off('zoomend', handleZoom);
+  }, [map]);
+
+  useEffect(() => {
+    if (clusterRef.current) {
+      map.removeLayer(clusterRef.current);
+      clusterRef.current = null;
+    }
+
+    const cluster = L.markerClusterGroup({
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+    });
+
+    const allItems = [
+      ...stations.map(s => ({ ...s, _type: 'station' })),
+      ...proposals.map(p => ({ ...p, _type: 'proposal' })),
+    ];
+
+    allItems.forEach(item => {
+      const lat = parseFloat(item.latitude);
+      const lng = parseFloat(item.longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      const marker = L.marker([lat, lng], {
+        icon: createCustomIcon(getMarkerColor(item.status)),
+      });
+
+      if (showStationLabels) {
+        const label = item._type === 'station' ? (item.name || `Trạm #${item.id}`) : `Đề xuất #${item.id}`;
+        marker.bindTooltip(label, { permanent: false, direction: 'top', offset: [0, -8], className: 'marker-label-tooltip' });
+      }
+
+      let popupHtml = '<div class="popup-content">';
+      if (item._type === 'station') {
+        popupHtml += `<h3>${item.name}</h3>`;
+        popupHtml += `<p><strong>Địa chỉ:</strong> ${item.address || ''}</p>`;
+        popupHtml += `<p><strong>Trạng thái:</strong> <span style="color:${getMarkerColor(item.status)}">${item.status}</span></p>`;
+        if (item.description) popupHtml += `<p><strong>Mô tả:</strong> ${item.description}</p>`;
+        if (user?.role === 'ADMIN') {
+          popupHtml += `<button class="btn btn-sm btn-primary" onclick="window.location.href='/admin/stations/view=${item.id}'">Xem chi tiết</button>`;
+        }
+      } else {
+        popupHtml += `<h3>Đề xuất #${item.id}</h3>`;
+        popupHtml += `<p><strong>Chủ sở hữu:</strong> ${item.owner_name || ''}</p>`;
+        popupHtml += `<p><strong>SĐT:</strong> ${item.owner_phone || ''}</p>`;
+        popupHtml += `<p><strong>Địa chỉ:</strong> ${item.address || ''}</p>`;
+        popupHtml += `<p><strong>Trạng thái:</strong> <span style="color:${getMarkerColor(item.status)}">${item.status}</span></p>`;
+        if (item.description) popupHtml += `<p><strong>Mô tả:</strong> ${item.description}</p>`;
+        popupHtml += `<p><strong>Người đề xuất:</strong> ${item.user_name || ''}</p>`;
+      }
+      popupHtml += '</div>';
+      marker.bindPopup(popupHtml);
+      marker.on('click', () => onMarkerClick && onMarkerClick(item, item._type));
+      cluster.addLayer(marker);
+    });
+
+    map.addLayer(cluster);
+    clusterRef.current = cluster;
+
+    return () => {
+      if (clusterRef.current) {
+        map.removeLayer(clusterRef.current);
+        clusterRef.current = null;
+      }
+    };
+  }, [map, stations, proposals, onMarkerClick, user, zoom, showStationLabels]);
+
+  return null;
+}
+
+function ProvinceBoundaryLayer({ show }) {
+  const map = useMap();
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    if (!show) {
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch('/vietnam-provinces.geojson')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(geojson => {
+        if (cancelled) return;
+        const layer = L.geoJSON(geojson, {
+          style: {
+            color: '#1565C0',
+            weight: 2,
+            opacity: 0.7,
+            dashArray: '8, 5',
+            fillColor: 'transparent',
+            fillOpacity: 0,
+          },
+          onEachFeature: (feature, layer) => {
+            if (feature.properties?.name) {
+              layer.bindTooltip(feature.properties.name, {
+                sticky: true,
+                className: 'province-boundary-tooltip',
+              });
+            }
+          },
+        });
+        layer.addTo(map);
+        layerRef.current = layer;
+      })
+      .catch(err => {
+        console.error('Failed to load province boundaries:', err);
+      });
+
+    return () => {
+      cancelled = true;
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+    };
+  }, [map, show]);
+
+  return null;
+}
+
 const MapView = ({
   onMarkerClick,
-  onMapClick,
   selectingLocation,
   onLocationSelected,
+  onMapSelectClick,
   highlightPosition,
-  refreshKey
+  refreshKey,
+  user
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
@@ -61,6 +328,27 @@ const MapView = ({
   const [myLocation, setMyLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(null);
+  const [showStationLabels, setShowStationLabels] = useState(true);
+  const [showProvinceLabels, setShowProvinceLabels] = useState(true);
+  const [showBoundaries, setShowBoundaries] = useState(true);
+  const [showLegend, setShowLegend] = useState(true);
+  const [activeLayerIdx, setActiveLayerIdx] = useState(0);
+  const [resolvedTileUrl, setResolvedTileUrl] = useState(FALLBACK_TILES[0]);
+  const [resolvedAttribution, setResolvedAttribution] = useState('&copy; CARTO &copy; OpenStreetMap contributors');
+  const [resolvedSubdomains, setResolvedSubdomains] = useState('a,b,c,d');
+  const [config, setConfig] = useState({
+    tile_provider_id: 'leaflet-osm',
+    tile_url: FALLBACK_TILES[0],
+    tile_attribution: '&copy; CARTO &copy; OpenStreetMap contributors',
+    tile_subdomains: '',
+    api_key: '',
+    show_boundaries: true,
+    show_province_labels: true,
+    show_cluster: true,
+    center_lat: VIETNAM_CENTER.lat,
+    center_lng: VIETNAM_CENTER.lng,
+    default_zoom: VIETNAM_DEFAULT_ZOOM,
+  });
 
   useEffect(() => {
     if (highlightPosition) {
@@ -83,8 +371,73 @@ const MapView = ({
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const buildTileUrl = (providerId, apiKey, styleIdx) => {
+    const provider = getProviderById(providerId);
+    if (!provider) return { url: FALLBACK_TILES[0], attribution: '', subdomains: '' };
+
+    const tileUrlStyles = provider.tile_url_styles || [];
+    const selectedStyle = tileUrlStyles[styleIdx] || tileUrlStyles[0];
+
+    if (provider.tile_url_template && selectedStyle) {
+      return {
+        url: resolveTileUrl(provider.tile_url_template, apiKey, selectedStyle.value),
+        attribution: provider.attribution,
+        subdomains: provider.subdomains || '',
+      };
+    }
+
+    if (provider.tile_url && isValidTileUrl(provider.tile_url)) {
+      return {
+        url: provider.tile_url,
+        attribution: provider.attribution,
+        subdomains: provider.subdomains || '',
+      };
+    }
+
+    return { url: FALLBACK_TILES[0], attribution: '&copy; CARTO &copy; OpenStreetMap contributors', subdomains: 'a,b,c,d' };
+  };
+
+  const fetchConfig = async () => {
+    try {
+      const data = await api.get('/map-configs?entity=stations');
+      if (data.success && data.data) {
+        const d = data.data;
+        const providerId = d.tile_provider_id || d.tile_provider || 'leaflet-osm';
+        const apiKey = d.api_key || '';
+        const tile = buildTileUrl(providerId, apiKey, 0);
+
+        setResolvedTileUrl(tile.url);
+        setResolvedAttribution(tile.attribution);
+        setResolvedSubdomains(tile.subdomains);
+
+        setConfig(prev => ({
+          ...prev,
+          ...d,
+          tile_provider_id: providerId,
+          api_key: apiKey,
+          center_lat: parseFloat(d.center_lat) || prev.center_lat,
+          center_lng: parseFloat(d.center_lng) || prev.center_lng,
+          default_zoom: parseInt(d.default_zoom) || prev.default_zoom,
+        }));
+        setShowProvinceLabels(d.show_province_labels !== false);
+        setShowBoundaries(d.show_boundaries !== false);
+        setActiveLayerIdx(0);
+      }
+    } catch (e) {
+      // Use defaults
+    }
+  };
+
+  useEffect(() => { fetchData(); fetchConfig(); }, []);
   useEffect(() => { if (refreshKey) fetchData(); }, [refreshKey]);
+
+  useEffect(() => {
+    if (activeLayerIdx === 0 && !config.api_key) return;
+    const tile = buildTileUrl(config.tile_provider_id, config.api_key, activeLayerIdx);
+    setResolvedTileUrl(tile.url);
+    setResolvedAttribution(tile.attribution);
+    setResolvedSubdomains(tile.subdomains);
+  }, [activeLayerIdx, config.tile_provider_id, config.api_key]);
 
   const handleMyLocation = (openForm = false) => {
     if (!navigator.geolocation) {
@@ -116,33 +469,25 @@ const MapView = ({
 
   const handleGoogleMapSubmit = async () => {
     if (!googleMapUrl.trim()) return;
-
     setResolvingUrl(true);
     const result = parseGoogleMapsLink(googleMapUrl);
-
     if (result && !result.needResolve) {
       setGoogleMapUrl('');
       setResolvingUrl(false);
       setShowCreateMenu(false);
-      if (onLocationSelected) {
-        onLocationSelected(result.lat, result.lng);
-      }
+      if (onLocationSelected) onLocationSelected(result.lat, result.lng);
       return;
     }
-
     if (result && result.needResolve) {
       const resolved = await resolveGoogleMapsShortUrl(result.url);
       setResolvingUrl(false);
       if (resolved && !resolved.needResolve) {
         setGoogleMapUrl('');
         setShowCreateMenu(false);
-        if (onLocationSelected) {
-          onLocationSelected(resolved.lat, resolved.lng);
-        }
+        if (onLocationSelected) onLocationSelected(resolved.lat, resolved.lng);
         return;
       }
     }
-
     setResolvingUrl(false);
     alert('Không thể đọc tọa độ từ link này. Vui lòng kiểm tra lại định dạng link.');
   };
@@ -151,34 +496,39 @@ const MapView = ({
     return <div className="map-loading">Đang tải bản đồ...</div>;
   }
 
-  const position = [14.0583, 108.2772];
+  const center = [config.center_lat || VIETNAM_CENTER.lat, config.center_lng || VIETNAM_CENTER.lng];
+  const zoom = config.default_zoom || VIETNAM_DEFAULT_ZOOM;
+
+  const currentProvider = getProviderById(config.tile_provider_id);
+  const tileUrlStyles = currentProvider?.tile_url_styles || [];
+  const layerOptions = tileUrlStyles.length > 1 ? tileUrlStyles : [];
 
   return (
     <div style={{ flex: 1, height: '100%', width: '100%', position: 'relative' }}>
       <MapContainer
-        center={position}
-        zoom={6}
+        center={center}
+        zoom={zoom}
         scrollWheelZoom={true}
+        zoomControl={false}
         style={{ height: '100%', width: '100%' }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        <ZoomControl position="bottomleft" />
+
+        <DynamicTileLayer
+          tileUrl={resolvedTileUrl}
+          attribution={resolvedAttribution}
+          subdomains={resolvedSubdomains}
         />
 
-        <MapClickHandler
-          onMapClick={onMapClick}
+        <MapEventsHandler
           selectingLocation={selectingLocation}
-          onLocationSelected={onLocationSelected}
+          onMapSelectClick={onMapSelectClick}
         />
 
         {highlightPosition && <FlyToLocation position={highlightPosition} />}
         {myLocation && <FlyToLocation position={myLocation} />}
         {selectedPosition && (
-          <Marker
-            position={selectedPosition}
-            icon={createCustomIcon('#ea4335')}
-          >
+          <Marker position={selectedPosition} icon={createCustomIcon('#ea4335')}>
             <Popup>
               <div className="popup-content">
                 <h3>Vị trí đã chọn</h3>
@@ -189,10 +539,7 @@ const MapView = ({
           </Marker>
         )}
         {myLocation && (
-          <Marker
-            position={myLocation}
-            icon={createCustomIcon('#4285f4')}
-          >
+          <Marker position={myLocation} icon={createCustomIcon('#4285f4')}>
             <Popup>
               <div className="popup-content">
                 <h3>Vị trí của tôi</h3>
@@ -203,70 +550,80 @@ const MapView = ({
           </Marker>
         )}
 
-        {stations.map((station) => (
-          <Marker
-            key={`station-${station.id}`}
-            position={[parseFloat(station.latitude), parseFloat(station.longitude)]}
-            icon={createCustomIcon(getMarkerColor(station.status))}
-            eventHandlers={{
-              click: () => onMarkerClick && onMarkerClick(station, 'station')
-            }}
-          >
-            <Popup>
-              <div className="popup-content">
-                <h3>{station.name}</h3>
-                <p><strong>Địa chỉ:</strong> {station.address}</p>
-                <p><strong>Trạng thái:</strong> <span style={{ color: getMarkerColor(station.status) }}>{station.status}</span></p>
-                {station.description && <p><strong>Mô tả:</strong> {station.description}</p>}
-                <p><strong>Loại:</strong> Trạm sạc</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        <MapLayerController
+          stations={stations}
+          proposals={proposals}
+          onMarkerClick={onMarkerClick}
+          user={user}
+          showStationLabels={showStationLabels}
+        />
 
-        {proposals.map((proposal) => (
+        <ProvinceBoundaryLayer show={showBoundaries} />
+
+        {showProvinceLabels && PROVINCES.map((p) => (
           <Marker
-            key={`proposal-${proposal.id}`}
-            position={[parseFloat(proposal.latitude), parseFloat(proposal.longitude)]}
-            icon={createCustomIcon(getMarkerColor(proposal.status))}
-            eventHandlers={{
-              click: () => onMarkerClick && onMarkerClick(proposal, 'proposal')
-            }}
-          >
-            <Popup>
-              <div className="popup-content">
-                <h3>Đề xuất #{proposal.id}</h3>
-                <p><strong>Chủ sở hữu:</strong> {proposal.owner_name}</p>
-                <p><strong>SĐT:</strong> {proposal.owner_phone}</p>
-                <p><strong>Địa chỉ:</strong> {proposal.address}</p>
-                <p><strong>Diện tích:</strong> {proposal.area}</p>
-                <p><strong>Loại đất:</strong> {proposal.land_type}</p>
-                <p><strong>Trạng thái:</strong> <span style={{ color: getMarkerColor(proposal.status) }}>{proposal.status}</span></p>
-                {proposal.description && <p><strong>Mô tả:</strong> {proposal.description}</p>}
-                <p><strong>Người đề xuất:</strong> {proposal.user_name}</p>
-              </div>
-            </Popup>
-          </Marker>
+            key={`province-${p.name}`}
+            position={[p.lat, p.lng]}
+            icon={getProvinceIcon(p)}
+            interactive={false}
+          />
         ))}
       </MapContainer>
 
-      {/* Map Legend - top left */}
-      <div className="map-legend">
-        <div className="map-legend-title">Chú thích</div>
-        {MAP_LEGEND.map((item) => (
-          <div key={item.status} className="map-legend-item">
-            <span
-              className="map-legend-dot"
-              style={{ backgroundColor: getMarkerColor(item.status) }}
-            />
-            <span className="map-legend-label">{item.label}</span>
-          </div>
-        ))}
+      {/* Map Controls - Top Right */}
+      <div className="map-controls-top-right">
+        <MapControlButton
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>}
+          tooltip="Chú thích"
+          active={showLegend}
+          onClick={() => setShowLegend(v => !v)}
+        />
+
+        <MapControlButton
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>}
+          tooltip="Tên trạm"
+          active={showStationLabels}
+          onClick={() => setShowStationLabels(v => !v)}
+        />
+
+        <MapControlButton
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>}
+          tooltip="Tên tỉnh"
+          active={showProvinceLabels}
+          onClick={() => setShowProvinceLabels(v => !v)}
+        />
+
+        <MapControlButton
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 2"/></svg>}
+          tooltip="Ranh giới"
+          active={showBoundaries}
+          onClick={() => setShowBoundaries(v => !v)}
+        />
+
+        {layerOptions.length > 0 && (
+          <MapLayerSwitcher
+            layers={layerOptions}
+            activeIdx={activeLayerIdx}
+            onSwitch={(idx) => setActiveLayerIdx(idx)}
+          />
+        )}
       </div>
+
+      {/* Map Legend */}
+      {showLegend && (
+        <div className="map-legend">
+          <div className="map-legend-title">Chú thích</div>
+          {MAP_LEGEND.map((item) => (
+            <div key={item.status} className="map-legend-item">
+              <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.status) }} />
+              <span className="map-legend-label">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Floating Action Buttons - bottom right */}
       <div className="map-fab-group">
-        {/* Create Proposal Menu */}
         {showCreateMenu && (
           <div className="map-create-menu">
             <button className="map-create-option" onClick={() => handleMyLocation(true)} disabled={locationLoading}>
@@ -278,7 +635,7 @@ const MapView = ({
             </button>
             <button
               className="map-create-option"
-              onClick={() => { setShowCreateMenu(false); if (onMapClick) onMapClick(null, null, 'select'); }}
+              onClick={() => { setShowCreateMenu(false); if (onLocationSelected) onLocationSelected(null, null, 'select'); }}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
@@ -309,7 +666,6 @@ const MapView = ({
           </div>
         )}
 
-        {/* My Location Button */}
         <button
           className="map-fab map-fab-location"
           onClick={() => handleMyLocation()}
@@ -322,7 +678,6 @@ const MapView = ({
           </svg>
         </button>
 
-        {/* Create Proposal Button */}
         <button
           className={`map-fab map-fab-create ${showCreateMenu ? 'map-fab-active' : ''}`}
           onClick={() => setShowCreateMenu(!showCreateMenu)}

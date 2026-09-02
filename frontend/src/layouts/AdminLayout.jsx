@@ -30,6 +30,7 @@ const AdminLayout = () => {
     { path: '/admin/forms', label: 'Forms Manager', icon: '📄', parent: 'Cấu hình' },
     { path: '/admin/views', label: 'Views Manager', icon: '📊', parent: 'Cấu hình' },
     { path: '/admin/data-lists', label: 'Data Lists', icon: '📋', parent: 'Cấu hình' },
+    { path: '/admin/map-config', label: 'Map Config', icon: '🗺️', parent: 'Cấu hình' },
   ];
 
   const handleNavClick = () => {

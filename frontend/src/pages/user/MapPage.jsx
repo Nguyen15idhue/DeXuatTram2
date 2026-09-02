@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import MapView from '../../components/MapView';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
@@ -8,7 +8,7 @@ import Toast from '../../components/Toast';
 const PROPOSALS_FORM_ID = 9;
 
 const MapPage = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [coords, setCoords] = useState({ lat: 0, lng: 0 });
   const [error, setError] = useState('');
@@ -16,6 +16,14 @@ const MapPage = () => {
   const [mapKey, setMapKey] = useState(0);
   const [selectingLocation, setSelectingLocation] = useState(false);
   const [highlightPosition, setHighlightPosition] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (toast.message) {
@@ -24,34 +32,34 @@ const MapPage = () => {
     }
   }, [toast.message]);
 
-  const openProposalForm = (lat, lng) => {
+  const openProposalForm = useCallback((lat, lng) => {
     setCoords({ lat, lng });
     setHighlightPosition([lat, lng]);
     setError('');
     setShowForm(true);
     setSelectingLocation(false);
-  };
+  }, []);
 
-  const handleMapClick = (lat, lng, mode) => {
+  const handleLocationSelected = useCallback((lat, lng, mode) => {
     if (mode === 'select') {
       setSelectingLocation(true);
-      setToast({ message: 'Di chuyển bản đồ đến vị trí cần chọn, sau đó click để xác nhận', type: 'info' });
+      setToast({ message: isMobile ? 'Kéo marker đến vị trí cần chọn, sau đó ấn Xác nhận' : 'Click trên bản đồ để chọn vị trí', type: 'info' });
       return;
     }
-
-    if (selectingLocation && lat !== null) {
-      openProposalForm(lat, lng);
-      return;
-    }
-
     if (lat !== null && lng !== null) {
       openProposalForm(lat, lng);
     }
-  };
+  }, [isMobile, openProposalForm]);
 
-  const handleLocationSelected = (lat, lng) => {
-    openProposalForm(lat, lng);
-  };
+  const handleMapSelectClick = useCallback((lat, lng) => {
+    setHighlightPosition([lat, lng]);
+  }, []);
+
+  const handleConfirmPosition = useCallback(() => {
+    if (highlightPosition) {
+      openProposalForm(highlightPosition[0], highlightPosition[1]);
+    }
+  }, [highlightPosition, openProposalForm]);
 
   const handleSubmit = async (formData) => {
     setError('');
@@ -86,12 +94,26 @@ const MapPage = () => {
 
       <MapView
         key={mapKey}
-        onMapClick={handleMapClick}
         selectingLocation={selectingLocation}
         onLocationSelected={handleLocationSelected}
+        onMapSelectClick={handleMapSelectClick}
         highlightPosition={highlightPosition}
         refreshKey={mapKey}
+        user={user}
       />
+
+      {/* Confirm position button (selecting mode) */}
+      {selectingLocation && highlightPosition && (
+        <div className="map-confirm-bar">
+          <div className="map-confirm-info">
+            📍 {highlightPosition[0].toFixed(6)}, {highlightPosition[1].toFixed(6)}
+          </div>
+          <div className="map-confirm-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => { setSelectingLocation(false); setHighlightPosition(null); }}>Hủy</button>
+            <button className="btn btn-primary btn-sm" onClick={handleConfirmPosition}>Xác nhận</button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>

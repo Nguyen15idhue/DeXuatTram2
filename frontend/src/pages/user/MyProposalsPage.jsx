@@ -249,19 +249,21 @@ const MyProposalsPage = () => {
         type="danger"
       />
 
-      <div className="page-header">
-        <h1>Đề xuất của tôi</h1>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
-          <option value="">Tất cả</option>
-          {statusOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <div className="page-header-actions">
-          <button className="btn btn-primary" onClick={openCreate}>+ Tạo đề xuất</button>
-          <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
-          <button className="btn btn-secondary" onClick={handleExport}>Export Excel</button>
-          <button className="btn btn-secondary" onClick={openImport}>Import Excel</button>
+      <div className="proposals-toolbar">
+        <div className="toolbar-left">
+          <h1>Đề xuất của tôi</h1>
+        </div>
+        <div className="toolbar-right">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
+            <option value="">Tất cả</option>
+            {statusOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <button className="btn btn-primary btn-sm" onClick={openCreate}>+ Tạo đề xuất</button>
+          <button className="btn btn-secondary btn-sm" onClick={handleDownloadTemplate}>Template</button>
+          <button className="btn btn-secondary btn-sm" onClick={handleExport}>Export</button>
+          <button className="btn btn-secondary btn-sm" onClick={openImport}>Import</button>
         </div>
       </div>
 

@@ -487,6 +487,100 @@ button:disabled {
   color: #333;
 }
 
+/* Map Controls - Top Right */
+.map-controls-top-right {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.map-control-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: white;
+  color: #555;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.map-control-btn:hover {
+  background: #f0f0f0;
+  border-color: #bbb;
+}
+
+.map-control-btn-active {
+  background: #1976D2;
+  color: white;
+  border-color: #1565C0;
+}
+
+.map-control-btn-active:hover {
+  background: #1565C0;
+}
+
+.map-control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Map Layer Switcher */
+.map-layer-switcher {
+  position: relative;
+}
+
+.map-layer-dropdown {
+  position: absolute;
+  right: 44px;
+  top: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  padding: 4px;
+  min-width: 140px;
+  z-index: 1001;
+  animation: fadeInRight 0.15s ease;
+}
+
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.map-layer-option {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: #333;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.map-layer-option:hover {
+  background: #f0f0f0;
+}
+
+.map-layer-option-active {
+  background: #e3f2fd;
+  color: #1976D2;
+  font-weight: 600;
+}
+
 /* Map Legend - top left */
 .map-legend {
   position: absolute;
@@ -1872,6 +1966,32 @@ select:focus {
 
   .map-legend-title {
     font-size: 11px;
+  }
+
+  .map-controls-top-right {
+    top: 10px;
+    right: 12px;
+    gap: 4px;
+  }
+
+  .map-control-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .map-control-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .map-layer-dropdown {
+    right: 40px;
+    min-width: 120px;
+  }
+
+  .map-layer-option {
+    padding: 6px 10px;
+    font-size: 12px;
   }
 
   .map-fab-group {
@@ -3687,4 +3807,148 @@ select:focus {
   border: 1px solid #d1d5da;
   border-radius: 4px;
   font-size: 13px;
+}
+
+/* ===== Province Labels & Map Clusters ===== */
+.province-label-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.province-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #333;
+  text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;
+  white-space: nowrap;
+  pointer-events: none;
+  text-align: center;
+  line-height: 1.2;
+}
+.region-cluster-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.region-cluster {
+  background: white;
+  border: 2px solid;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  text-align: center;
+}
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+  background: rgba(74, 108, 247, 0.2) !important;
+}
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  background: rgba(74, 108, 247, 0.7) !important;
+  color: white !important;
+  font-weight: 600;
+}
+.province-boundary-tooltip {
+  background: rgba(25, 118, 210, 0.9);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.province-boundary-tooltip::before {
+  border-top-color: rgba(25, 118, 210, 0.9);
+}
+.marker-label-tooltip {
+  background: rgba(33, 33, 33, 0.9);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.marker-label-tooltip::before {
+  border-top-color: rgba(33, 33, 33, 0.9);
+}
+/* ===== Proposals Toolbar ===== */
+.proposals-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.proposals-toolbar .toolbar-left h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  white-space: nowrap;
+}
+.proposals-toolbar .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* ===== Map Admin Button ===== */
+.popup-content .btn-primary {
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: #4a6cf7;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.popup-content .btn-primary:hover {
+  background: #3a5ce5;
+}
+
+/* Map Confirm Bar (selecting mode) */
+.map-confirm-bar {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+}
+.map-confirm-info {
+  font-size: 13px;
+  color: #333;
+  font-weight: 500;
+  flex: 1;
+}
+.map-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 768px) {
+  .map-confirm-bar {
+    flex-direction: column;
+    min-width: auto;
+    width: calc(100% - 24px);
+    left: 12px;
+    right: 12px;
+    transform: none;
+    bottom: 90px;
+  }
 }

@@ -23,6 +23,7 @@ import AdminViewsPage from './pages/admin/AdminViewsPage';
 import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
 import AdminRecordFilesPage from './pages/admin/AdminRecordFilesPage';
 import AdminDataListsPage from './pages/admin/AdminDataListsPage';
+import AdminMapConfigPage from './pages/admin/AdminMapConfigPage';
 
 import './App.css';
 
@@ -59,6 +60,7 @@ function App() {
             <Route path="/admin/:entity/:id/files" element={<AdminRecordFilesPage />} />
             <Route path="/admin/data-lists" element={<AdminDataListsPage />} />
             <Route path="/admin/data-lists/:id" element={<AdminDataListsPage />} />
+            <Route path="/admin/map-config" element={<AdminMapConfigPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/login" replace />} />
