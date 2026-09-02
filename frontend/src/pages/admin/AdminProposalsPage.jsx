@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import { ClipboardList, Download, Eye, Pencil, Trash2 } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
@@ -50,9 +51,7 @@ const AdminProposalsPage = () => {
     } catch { /* silent */ }
   };
 
-  useEffect(() => {
-    loadProposals(1);
-  }, []);
+  useEffect(() => { loadProposals(1); }, []);
 
   const loadProposals = useCallback(async (page = 1) => {
     try {
@@ -117,32 +116,51 @@ const AdminProposalsPage = () => {
   };
 
   const renderActions = (row) => (
-    <div className="action-buttons">
-      <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/proposals/view=${row.id}`)}>Xem</button>
-      <button className="btn btn-sm btn-edit" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>Sửa</button>
-      <select value={row.status} onChange={(e) => handleStatusChange(row.id, e.target.value)} className="status-select btn-sm">
+    <div className="flex flex-wrap gap-1 items-center">
+      <button className="btn btn-primary btn-xs gap-1" onClick={() => navigate(`/admin/proposals/view=${row.id}`)}>
+        <Eye size={12} />
+        Xem
+      </button>
+      <button className="btn btn-warning btn-xs gap-1" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>
+        <Pencil size={12} />
+        Sửa
+      </button>
+      <select
+        value={row.status}
+        onChange={(e) => handleStatusChange(row.id, e.target.value)}
+        className="select select-bordered select-xs"
+      >
         {statusOptions.map(opt => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
-      <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
+      <button className="btn btn-error btn-outline btn-xs gap-1" onClick={() => handleDeleteClick(row.id)}>
+        <Trash2 size={12} />
+        Xóa
+      </button>
     </div>
   );
 
   return (
-    <div className="admin-proposals-page">
+    <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="page-header">
-        <h1>Quản lý Đề xuất</h1>
-        <div className="page-header-actions">
-          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="filter-select">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <ClipboardList size={24} className="text-primary" />
+          <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
+        </div>
+        <div className="flex gap-2">
+          <select className="select select-bordered select-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">Tất cả</option>
             {statusOptions.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <button className="btn btn-secondary" onClick={handleExportProposals}>Export Excel</button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
+            <Download size={14} />
+            Export Excel
+          </button>
         </div>
       </div>
 

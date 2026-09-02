@@ -4,9 +4,9 @@ import { profileService, api } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Toast from '../../components/Toast';
 import ErrorMessage from '../../components/ErrorMessage';
+import { User, Mail, Phone, Shield, CheckCircle, Camera, Lock, Pencil, X } from 'lucide-react';
 
 const USERS_FORM_ID = 8;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const ProfilePage = () => {
   const { user, updateUser, token } = useAuth();
@@ -140,122 +140,174 @@ const ProfilePage = () => {
   const avatarUrl = getAvatarUrl();
 
   return (
-    <div className="profile-page">
+    <div className="max-w-4xl mx-auto">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       {error && <ErrorMessage message={error} />}
 
-      <div className="profile-layout">
-        <div className="profile-sidebar">
-          <div className="profile-header">
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
-            <div className="profile-avatar-wrapper" onClick={handleAvatarClick} title="Click để thay đổi ảnh">
-              <div className="profile-avatar">
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Sidebar - Avatar & Info */}
+        <div className="lg:w-80 flex-shrink-0">
+          <div className="card bg-base-100 shadow-sm border border-base-300">
+            <div className="card-body items-center text-center">
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+              <div
+                className="relative w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center cursor-pointer group"
+                onClick={handleAvatarClick}
+                title="Click để thay đổi ảnh"
+              >
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt={user?.full_name} />
+                  <img src={avatarUrl} alt={user?.full_name} className="w-24 h-24 rounded-full object-cover" />
                 ) : (
-                  <div className="profile-avatar-initials">{getInitials(user?.full_name)}</div>
+                  <span className="text-3xl font-bold text-primary">{getInitials(user?.full_name)}</span>
                 )}
+                <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {uploading ? (
+                    <span className="loading loading-spinner loading-sm text-white"></span>
+                  ) : (
+                    <Camera size={20} className="text-white" />
+                  )}
+                </div>
               </div>
-              <div className="profile-avatar-overlay">
-                {uploading ? (
-                  <span className="avatar-upload-spinner"></span>
-                ) : (
-                  <span className="avatar-upload-icon">&#128247;</span>
-                )}
-              </div>
+
+              <h2 className="card-title mt-2">{user?.full_name || 'Chưa cập nhật'}</h2>
+              <p className="text-sm text-base-content/60">{user?.email}</p>
+              <span className={`badge ${user?.role === 'ADMIN' ? 'badge-primary' : 'badge-ghost'}`}>
+                {user?.role === 'ADMIN' ? 'Quản trị viên' : 'Người dùng'}
+              </span>
+
+              {!isEditing && (
+                <button className="btn btn-primary btn-sm gap-1 mt-2 w-full" onClick={() => setIsEditing(true)}>
+                  <Pencil size={14} />
+                  Chỉnh sửa
+                </button>
+              )}
             </div>
-            <div className="profile-info">
-              <h2>{user?.full_name || 'Chưa cập nhật'}</h2>
-              <p>{user?.email}</p>
-              <span className="profile-role-badge">{user?.role === 'ADMIN' ? 'Quản trị viên' : 'Người dùng'}</span>
-            </div>
-            {!isEditing && (
-              <button className="btn btn-primary profile-edit-btn" onClick={() => setIsEditing(true)}>Chỉnh sửa</button>
-            )}
           </div>
         </div>
 
-        <div className="profile-main">
+        {/* Main Content */}
+        <div className="flex-1 min-w-0">
           {isEditing ? (
-            <div className="profile-card">
-              <h3>Chỉnh sửa thông tin</h3>
-              <DynamicForm
-                entity="users"
-                formId={USERS_FORM_ID}
-                onSubmit={handleEditSubmit}
-                initialData={user}
-                mode="edit"
-              >
-                <div className="popup-footer">
-                  <button type="button" className="btn btn-secondary" onClick={() => setIsEditing(false)}>Hủy</button>
-                </div>
-              </DynamicForm>
+            <div className="card bg-base-100 shadow-sm border border-base-300">
+              <div className="card-body">
+                <h3 className="card-title">Chỉnh sửa thông tin</h3>
+                <DynamicForm
+                  entity="users"
+                  formId={USERS_FORM_ID}
+                  onSubmit={handleEditSubmit}
+                  initialData={user}
+                  mode="edit"
+                >
+                  <div className="flex justify-end gap-2 mt-4">
+                    <button type="button" className="btn btn-ghost" onClick={() => setIsEditing(false)}>
+                      <X size={14} />
+                      Hủy
+                    </button>
+                  </div>
+                </DynamicForm>
+              </div>
             </div>
           ) : (
             <>
-              <div className="profile-card">
-                <h3>Thông tin cá nhân</h3>
-                <div className="profile-field-row">
-                  <span className="profile-field-label">Họ tên</span>
-                  <span className="profile-field-value">{user?.full_name || 'Chưa cập nhật'}</span>
-                </div>
-                <div className="profile-field-row">
-                  <span className="profile-field-label">Email</span>
-                  <span className="profile-field-value">{user?.email}</span>
-                </div>
-                <div className="profile-field-row">
-                  <span className="profile-field-label">Số điện thoại</span>
-                  <span className="profile-field-value">{user?.phone || 'Chưa cập nhật'}</span>
-                </div>
-                <div className="profile-field-row">
-                  <span className="profile-field-label">Vai trò</span>
-                  <span className="profile-field-value">{user?.role === 'ADMIN' ? 'Quản trị viên' : 'Người dùng'}</span>
-                </div>
-                <div className="profile-field-row">
-                  <span className="profile-field-label">Trạng thái</span>
-                  <span className="profile-field-value">{user?.status === 'ACTIVE' ? 'Hoạt động' : 'Khóa'}</span>
+              {/* Personal Info */}
+              <div className="card bg-base-100 shadow-sm border border-base-300 mb-6">
+                <div className="card-body">
+                  <h3 className="card-title">Thông tin cá nhân</h3>
+                  <div className="divide-y divide-base-300">
+                    <div className="flex items-center gap-3 py-3">
+                      <User size={16} className="text-base-content/50" />
+                      <span className="text-sm text-base-content/50 w-32">Họ tên</span>
+                      <span className="font-medium">{user?.full_name || 'Chưa cập nhật'}</span>
+                    </div>
+                    <div className="flex items-center gap-3 py-3">
+                      <Mail size={16} className="text-base-content/50" />
+                      <span className="text-sm text-base-content/50 w-32">Email</span>
+                      <span className="font-medium">{user?.email}</span>
+                    </div>
+                    <div className="flex items-center gap-3 py-3">
+                      <Phone size={16} className="text-base-content/50" />
+                      <span className="text-sm text-base-content/50 w-32">Số điện thoại</span>
+                      <span className="font-medium">{user?.phone || 'Chưa cập nhật'}</span>
+                    </div>
+                    <div className="flex items-center gap-3 py-3">
+                      <Shield size={16} className="text-base-content/50" />
+                      <span className="text-sm text-base-content/50 w-32">Vai trò</span>
+                      <span className="font-medium">{user?.role === 'ADMIN' ? 'Quản trị viên' : 'Người dùng'}</span>
+                    </div>
+                    <div className="flex items-center gap-3 py-3">
+                      <CheckCircle size={16} className="text-base-content/50" />
+                      <span className="text-sm text-base-content/50 w-32">Trạng thái</span>
+                      <span className={`badge badge-sm ${user?.status === 'ACTIVE' ? 'badge-success' : 'badge-error'}`}>
+                        {user?.status === 'ACTIVE' ? 'Hoạt động' : 'Khóa'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="profile-card">
-                <div className="profile-card-header">
-                  <h3>Bảo mật</h3>
-                  {!showPassword && (
-                    <button className="btn btn-sm btn-primary" onClick={() => setShowPassword(true)}>Đổi mật khẩu</button>
+              {/* Security */}
+              <div className="card bg-base-100 shadow-sm border border-base-300">
+                <div className="card-body">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="card-title">Bảo mật</h3>
+                    {!showPassword && (
+                      <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowPassword(true)}>
+                        <Lock size={14} />
+                        Đổi mật khẩu
+                      </button>
+                    )}
+                  </div>
+                  {showPassword && (
+                    <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text font-medium">Mật khẩu hiện tại *</span>
+                        </label>
+                        <input
+                          type="password"
+                          className="input input-bordered"
+                          value={passwordForm.current_password}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                          placeholder="Nhập mật khẩu hiện tại"
+                        />
+                      </div>
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text font-medium">Mật khẩu mới *</span>
+                        </label>
+                        <input
+                          type="password"
+                          className="input input-bordered"
+                          value={passwordForm.new_password}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+                          placeholder="Ít nhất 6 ký tự"
+                        />
+                      </div>
+                      <div className="form-control">
+                        <label className="label">
+                          <span className="label-text font-medium">Xác nhận mật khẩu *</span>
+                        </label>
+                        <input
+                          type="password"
+                          className="input input-bordered"
+                          value={passwordForm.confirm_password}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                          placeholder="Nhập lại mật khẩu mới"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button type="button" className="btn btn-ghost" onClick={() => {
+                          setShowPassword(false);
+                          setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
+                          setError('');
+                        }}>
+                          Hủy
+                        </button>
+                        <button type="submit" className="btn btn-primary">Đổi mật khẩu</button>
+                      </div>
+                    </form>
                   )}
                 </div>
-                {showPassword && (
-                  <form onSubmit={handlePasswordSubmit}>
-                    <div className="profile-field-row">
-                      <span className="profile-field-label">Mật khẩu hiện tại *</span>
-                      <span className="profile-field-value">
-                        <input type="password" className="form-control" value={passwordForm.current_password}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
-                          placeholder="Nhập mật khẩu hiện tại" />
-                      </span>
-                    </div>
-                    <div className="profile-field-row">
-                      <span className="profile-field-label">Mật khẩu mới *</span>
-                      <span className="profile-field-value">
-                        <input type="password" className="form-control" value={passwordForm.new_password}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
-                          placeholder="Ít nhất 6 ký tự" />
-                      </span>
-                    </div>
-                    <div className="profile-field-row">
-                      <span className="profile-field-label">Xác nhận mật khẩu *</span>
-                      <span className="profile-field-value">
-                        <input type="password" className="form-control" value={passwordForm.confirm_password}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
-                          placeholder="Nhập lại mật khẩu mới" />
-                      </span>
-                    </div>
-                    <div className="popup-footer">
-                      <button type="button" className="btn btn-secondary" onClick={() => { setShowPassword(false); setPasswordForm({ current_password: '', new_password: '', confirm_password: '' }); setError(''); }}>Hủy</button>
-                      <button type="submit" className="btn btn-primary">Đổi mật khẩu</button>
-                    </div>
-                  </form>
-                )}
               </div>
             </>
           )}
