@@ -943,6 +943,17 @@ tr:hover {
 }
 
 /* Modal */
+/* Override daisyUI .modal when inside our .modal-overlay */
+.modal-overlay > .modal,
+.modal-overlay > .popup-detail {
+  position: static !important;
+  inset: auto !important;
+  z-index: auto !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
