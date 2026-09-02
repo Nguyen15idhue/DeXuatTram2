@@ -54,7 +54,7 @@ const UserHeader = ({ onMenuToggle }) => {
 
       <div className="navbar-end gap-2">
         <span className="text-sm text-base-content/70 hidden sm:inline">{user?.full_name}</span>
-        <button onClick={logout} className="btn btn-sm btn-error btn-outline gap-2">
+        <button onClick={logout} className="btn btn-sm btn-ghost text-error gap-2">
           <LogOut size={14} />
           <span className="hidden sm:inline">Đăng xuất</span>
         </button>

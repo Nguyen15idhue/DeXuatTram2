@@ -26,7 +26,7 @@ const RegisterPage = () => {
     setError('');
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Password không khớp');
+      setError('Mật khẩu không khớp');
       return;
     }
 
@@ -43,8 +43,8 @@ const RegisterPage = () => {
 
   return (
     <div className="card bg-base-100 shadow-xl">
-      <div className="card-body">
-        <h2 className="card-title text-2xl font-bold text-center justify-center mb-4">
+      <div className="card-body p-6 sm:p-8">
+        <h2 className="card-title text-2xl font-bold justify-center mb-2">
           Đăng ký
         </h2>
 
@@ -52,7 +52,7 @@ const RegisterPage = () => {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="form-control">
-            <label className="label">
+            <label className="label py-1">
               <span className="label-text font-medium">Họ tên</span>
             </label>
             <input
@@ -67,7 +67,7 @@ const RegisterPage = () => {
           </div>
 
           <div className="form-control">
-            <label className="label">
+            <label className="label py-1">
               <span className="label-text font-medium">Email</span>
             </label>
             <input
@@ -82,7 +82,7 @@ const RegisterPage = () => {
           </div>
 
           <div className="form-control">
-            <label className="label">
+            <label className="label py-1">
               <span className="label-text font-medium">Số điện thoại</span>
             </label>
             <input
@@ -96,8 +96,8 @@ const RegisterPage = () => {
           </div>
 
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Password</span>
+            <label className="label py-1">
+              <span className="label-text font-medium">Mật khẩu</span>
             </label>
             <input
               type="password"
@@ -111,8 +111,8 @@ const RegisterPage = () => {
           </div>
 
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Xác nhận Password</span>
+            <label className="label py-1">
+              <span className="label-text font-medium">Xác nhận mật khẩu</span>
             </label>
             <input
               type="password"
@@ -127,7 +127,7 @@ const RegisterPage = () => {
 
           <button
             type="submit"
-            className={`btn btn-primary w-full gap-2 mt-4 ${loading ? 'btn-disabled' : ''}`}
+            className={`btn btn-primary w-full gap-2 mt-2 ${loading ? 'btn-disabled' : ''}`}
             disabled={loading}
           >
             <UserPlus size={18} />
@@ -135,9 +135,9 @@ const RegisterPage = () => {
           </button>
         </form>
 
-        <div className="divider">HOẶC</div>
+        <div className="divider my-2">HOẶC</div>
 
-        <p className="text-center text-sm text-base-content/70">
+        <p className="text-center text-sm text-base-content/60 pb-2">
           Đã có tài khoản?{' '}
           <Link to="/login" className="link link-primary font-medium">
             Đăng nhập

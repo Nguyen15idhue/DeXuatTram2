@@ -29,8 +29,8 @@ const LoginPage = () => {
 
   return (
     <div className="card bg-base-100 shadow-xl">
-      <div className="card-body">
-        <h2 className="card-title text-2xl font-bold text-center justify-center mb-4">
+      <div className="card-body p-6 sm:p-8">
+        <h2 className="card-title text-2xl font-bold justify-center mb-2">
           Đăng nhập
         </h2>
 
@@ -38,7 +38,7 @@ const LoginPage = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="form-control">
-            <label className="label">
+            <label className="label py-1">
               <span className="label-text font-medium">Email</span>
             </label>
             <input
@@ -52,8 +52,8 @@ const LoginPage = () => {
           </div>
 
           <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Password</span>
+            <label className="label py-1">
+              <span className="label-text font-medium">Mật khẩu</span>
             </label>
             <input
               type="password"
@@ -75,9 +75,9 @@ const LoginPage = () => {
           </button>
         </form>
 
-        <div className="divider">HOẶC</div>
+        <div className="divider my-2">HOẶC</div>
 
-        <p className="text-center text-sm text-base-content/70">
+        <p className="text-center text-sm text-base-content/60 pb-2">
           Chưa có tài khoản?{' '}
           <Link to="/register" className="link link-primary font-medium">
             Đăng ký
