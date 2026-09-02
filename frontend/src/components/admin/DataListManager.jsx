@@ -214,7 +214,7 @@ const DataListManager = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
             <h2>{editingId ? 'Sửa danh sách' : 'Tạo danh sách mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}
@@ -264,7 +264,7 @@ const DataListManager = () => {
 
       {showImport && (
         <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
             {importStep === 'upload' && (
               <>
                 <div className="import-modal-header">

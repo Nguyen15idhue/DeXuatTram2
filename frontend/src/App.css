@@ -942,44 +942,7 @@ tr:hover {
   color: #721c24;
 }
 
-/* Modal */
-/* Override daisyUI .modal when inside our .modal-overlay */
-.modal-overlay > .modal,
-.modal-overlay > .popup-detail {
-  position: static !important;
-  inset: auto !important;
-  z-index: auto !important;
-  transform: none !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: white;
-  padding: 30px;
-  border-radius: 10px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal h2 {
-  margin-bottom: 20px;
-}
+/* Modal — moved to public/legacy-modal.css */
 
 .form-row {
   display: grid;
@@ -1817,15 +1780,6 @@ select:focus {
 
   th, td {
     padding: 8px 10px;
-  }
-
-  .modal {
-    width: 95%;
-    padding: 20px;
-  }
-
-  .modal-lg {
-    max-width: 100%;
   }
 
   .import-result-cards {

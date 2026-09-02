@@ -170,7 +170,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   if (loading) return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+      <div className="legacy-modal legacy-modal-lg" onClick={e => e.stopPropagation()}>
         <div className="loading">Đang tải...</div>
       </div>
     </div>
@@ -178,7 +178,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   if (!record) return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+      <div className="legacy-modal legacy-modal-lg" onClick={e => e.stopPropagation()}>
         <div className="empty-state">{error || 'Không tìm thấy bản ghi'}</div>
         <div className="popup-footer">
           <button className="btn btn-secondary" onClick={handleClose}>Đóng</button>
@@ -221,7 +221,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   return (
     <div className="modal-overlay" onClick={handleClose}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
-      <div className="modal modal-lg popup-detail" onClick={e => e.stopPropagation()}>
+      <div className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
         <div className="popup-header">
           <h2>{ENTITY_LABELS[entity] || entity} #{record.id} {mode === 'edit' && '(chỉnh sửa)'}</h2>
           <button className="btn btn-sm btn-secondary" onClick={handleClose}>✕ Đóng</button>

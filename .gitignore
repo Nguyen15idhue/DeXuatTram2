@@ -7,3 +7,5 @@ backend/storage/uploads/*
 10
 test_api.js
 test_files/
+
+frontend/dist/

@@ -117,7 +117,7 @@ const MapPage = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
-          <div className="modal modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
             <div className="popup-header">
               <h2>Đề xuất trạm mới</h2>
               <button className="btn btn-sm btn-secondary" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>✕ Đóng</button>

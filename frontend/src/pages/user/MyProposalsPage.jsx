@@ -279,7 +279,7 @@ const MyProposalsPage = () => {
 
       {showCreateForm && (
         <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
-          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header-flex">
               <h2>Tạo đề xuất mới</h2>
               <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>

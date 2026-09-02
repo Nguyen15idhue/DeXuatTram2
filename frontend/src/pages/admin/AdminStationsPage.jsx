@@ -268,7 +268,7 @@ const AdminStationsPage = () => {
 
       {showImport && (
         <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
             <h2>Import Stations từ Excel</h2>
             {importStep === 'upload' && (
               <div className="import-upload">
@@ -312,7 +312,7 @@ const AdminStationsPage = () => {
 
       {showCreateForm && (
         <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
-          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header-flex">
               <h2>Thêm trạm mới</h2>
               <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>

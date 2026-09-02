@@ -107,7 +107,7 @@ const FileViewer = ({ file, onClose }) => {
   if (!url) {
     return (
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="legacy-modal" onClick={(e) => e.stopPropagation()}>
           <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>Không thể hiển thị file</div>
           <div className="form-actions">
             <button className="btn btn-secondary" onClick={onClose}>Đóng</button>
@@ -225,7 +225,7 @@ const FileViewer = ({ file, onClose }) => {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 950, maxHeight: '92vh' }}>
+      <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 950, maxHeight: '92vh' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{name}</h3>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

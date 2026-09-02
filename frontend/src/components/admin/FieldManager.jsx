@@ -318,7 +318,7 @@ const FieldManager = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
             <h2>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}

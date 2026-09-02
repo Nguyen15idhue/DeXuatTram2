@@ -187,7 +187,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
+      <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ margin: 0 }}>{title}</h2>
           <button className="btn btn-sm btn-secondary" onClick={onClose}>✕</button>
