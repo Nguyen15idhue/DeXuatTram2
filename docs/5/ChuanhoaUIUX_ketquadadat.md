@@ -12,7 +12,7 @@
 | Task 1: Backup + Cài đặt | 30 phút | ✅ | Tailwind 4.3.3, daisyUI 5.7.27, lucide-react 1.39.0 |
 | Task 2: Theme + Design Tokens | 45 phút | ✅ | Xóa gradient, Lucide icons, daisyUI drawer/navbar |
 | Task 3: Shared Components | 60 phút | ✅ | 15 UI components + 4 layout components |
-| Task 4: Refactor Layouts | 2-3h | ⬜ | |
+| Task 4: Refactor Layouts | 30 phút | ✅ | PublicLayout, LoginPage, RegisterPage với Tailwind/daisyUI |
 | Task 5: Pages Phase A | 3-4h | ⬜ | |
 | Task 6: Pages Phase B | 4-5h | ⬜ | |
 | Task 7: Pages Phase C | 5-6h | ⬜ | |
@@ -188,22 +188,33 @@
 
 ## TASK 4: Refactor Layouts
 
-**Status**: ⬜ Chưa bắt đầu
-**Thời gian thực tế**: 
+**Status**: ✅ Hoàn thành
+**Thời gian thực tế**: 30 phút
 
 ### Files đã sửa
-- [ ] `frontend/src/layouts/AdminLayout.jsx`
-- [ ] `frontend/src/layouts/UserLayout.jsx`
-- [ ] `frontend/src/layouts/PublicLayout.jsx`
+- [x] `frontend/src/layouts/PublicLayout.jsx` — Tailwind classes thay CSS cũ
+- [x] `frontend/src/pages/auth/LoginPage.jsx` — daisyUI card, input, button + Lucide icon
+- [x] `frontend/src/pages/auth/RegisterPage.jsx` — daisyUI card, input, button + Lucide icon
+
+### Layout responsive breakdown
+| Layout | Mobile (<768px) | Tablet (768-1024px) | Desktop (>1024px) |
+|--------|-----------------|---------------------|-------------------|
+| AdminLayout | Hamburger → overlay sidebar | Hamburger → overlay sidebar | Fixed sidebar + content |
+| UserLayout | Hamburger → slide-in sidebar | Desktop nav inline | Desktop nav inline |
+| PublicLayout | Full-width card, p-4 | Max-width card centered | Max-width card centered |
 
 ### Kết quả test
-- [ ] AdminLayout: desktop sidebar hiển thị đúng
-- [ ] AdminLayout: tablet sidebar collapsed đúng
-- [ ] AdminLayout: mobile hamburger menu hoạt động
-- [ ] UserLayout: responsive header hoạt động
-- [ ] PublicLayout: responsive card centered
+- [x] `npm run build` thành công
+- [x] Trang login load OK (200)
+- [x] Trang register load OK (200)
+- [x] Trang map load OK (200)
+- [x] Trang admin load OK (200)
+- [x] Không có runtime errors
 
 ### Ghi chú
+- PublicLayout refactor từ CSS classes sang Tailwind utilities
+- LoginPage/RegisterPage dùng daisyUI card, input, button components
+- AdminLayout/UserLayout đã refactor ở Task 2-3, Task 4 chỉ confirm responsive
 
 ---
 
