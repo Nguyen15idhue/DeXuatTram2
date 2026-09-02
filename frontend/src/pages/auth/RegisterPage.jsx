@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import ErrorMessage from '../../components/ErrorMessage';
+import { UserPlus } from 'lucide-react';
 
 const RegisterPage = () => {
   const [formData, setFormData] = useState({
@@ -31,7 +32,7 @@ const RegisterPage = () => {
 
     setLoading(true);
     const result = await register(formData.full_name, formData.email, formData.phone, formData.password);
-    
+
     if (result.success) {
       navigate('/map');
     } else {
@@ -41,66 +42,106 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1>Đăng ký</h1>
+    <div className="card bg-base-100 shadow-xl">
+      <div className="card-body">
+        <h2 className="card-title text-2xl font-bold text-center justify-center mb-4">
+          Đăng ký
+        </h2>
+
         {error && <ErrorMessage message={error} />}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Họ tên</label>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium">Họ tên</span>
+            </label>
             <input
               type="text"
               name="full_name"
+              placeholder="Nguyễn Văn A"
+              className="input input-bordered w-full"
               value={formData.full_name}
               onChange={handleChange}
               required
             />
           </div>
-          <div className="form-group">
-            <label>Email</label>
+
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium">Email</span>
+            </label>
             <input
               type="email"
               name="email"
+              placeholder="email@example.com"
+              className="input input-bordered w-full"
               value={formData.email}
               onChange={handleChange}
               required
             />
           </div>
-          <div className="form-group">
-            <label>Số điện thoại</label>
+
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium">Số điện thoại</span>
+            </label>
             <input
               type="tel"
               name="phone"
+              placeholder="0912 345 678"
+              className="input input-bordered w-full"
               value={formData.phone}
               onChange={handleChange}
             />
           </div>
-          <div className="form-group">
-            <label>Password</label>
+
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium">Password</span>
+            </label>
             <input
               type="password"
               name="password"
+              placeholder="••••••••"
+              className="input input-bordered w-full"
               value={formData.password}
               onChange={handleChange}
               required
             />
           </div>
-          <div className="form-group">
-            <label>Xác nhận Password</label>
+
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text font-medium">Xác nhận Password</span>
+            </label>
             <input
               type="password"
               name="confirmPassword"
+              placeholder="••••••••"
+              className="input input-bordered w-full"
               value={formData.confirmPassword}
               onChange={handleChange}
               required
             />
           </div>
-          <button type="submit" disabled={loading}>
+
+          <button
+            type="submit"
+            className={`btn btn-primary w-full gap-2 mt-4 ${loading ? 'btn-disabled' : ''}`}
+            disabled={loading}
+          >
+            <UserPlus size={18} />
             {loading ? 'Đang đăng ký...' : 'Đăng ký'}
           </button>
         </form>
-        <p className="auth-link">
-          Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
+
+        <div className="divider">HOẶC</div>
+
+        <p className="text-center text-sm text-base-content/70">
+          Đã có tài khoản?{' '}
+          <Link to="/login" className="link link-primary font-medium">
+            Đăng nhập
+          </Link>
         </p>
       </div>
     </div>
