@@ -184,7 +184,7 @@ const AdminProposalsPage = () => {
           viewId={PROPOSALS_VIEW_ID}
           mode={popup.mode}
           onClose={() => navigate('/admin/proposals')}
-          onSaved={() => { loadProposals(pagination.page); navigate('/admin/proposals'); }}
+          onSaved={() => loadProposals(pagination.page)}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/admin/proposals/${newMode}=${id}`, { replace: true });

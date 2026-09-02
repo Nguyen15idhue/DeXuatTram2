@@ -142,7 +142,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         setToast({ message: 'Cập nhật thành công', type: 'success' });
         setRecord({ ...record, ...formData, ...res.data });
         setMode('view');
-        if (onSwitchMode) onSwitchMode('view');
         if (onSaved) onSaved();
       } else {
         setError(res.message || 'Lỗi cập nhật');
@@ -208,7 +207,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                     entityType={entity}
                   />
                 ) : (
-                  <FieldRenderer field={field} value={value} />
+                  <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} />
                 )}
               </span>
             </div>

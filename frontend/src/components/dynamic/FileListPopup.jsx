@@ -26,7 +26,7 @@ const getFileIcon = (file) => {
   return '📁';
 };
 
-const FileListPopup = ({ files = [], onClose, title = 'Danh sách file' }) => {
+const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity, entityId }) => {
   const { token } = useAuth();
   const [viewingFile, setViewingFile] = useState(null);
   const [selected, setSelected] = useState({});
@@ -181,6 +181,8 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
       <FileViewer
         file={viewingFile}
         onClose={() => setViewingFile(null)}
+        entity={entity}
+        entityId={entityId}
       />
     );
   }

@@ -388,7 +388,7 @@ const AdminUsersPage = () => {
           viewId={USERS_VIEW_ID}
           mode={popup.mode}
           onClose={() => navigate('/admin/users')}
-          onSaved={() => { loadUsers(pagination.page); navigate('/admin/users'); }}
+          onSaved={() => loadUsers(pagination.page)}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/admin/users/${newMode}=${id}`, { replace: true });

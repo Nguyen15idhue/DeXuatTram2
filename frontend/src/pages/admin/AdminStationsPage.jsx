@@ -352,7 +352,7 @@ const AdminStationsPage = () => {
           viewId={STATIONS_VIEW_ID}
           mode={popup.mode}
           onClose={() => navigate('/admin/stations')}
-          onSaved={() => { loadStations(pagination.page); navigate('/admin/stations'); }}
+          onSaved={() => loadStations(pagination.page)}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/admin/stations/${newMode}=${id}`, { replace: true });

@@ -363,7 +363,7 @@ const MyProposalsPage = () => {
           viewId={PROPOSALS_VIEW_ID}
           mode={popup.mode}
           onClose={() => navigate('/my-proposals')}
-          onSaved={() => { loadProposals(pagination.page); navigate('/my-proposals'); }}
+          onSaved={() => loadProposals(pagination.page)}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/my-proposals/${newMode}=${id}`, { replace: true });
