@@ -40,7 +40,7 @@ const AdminLayout = () => {
       </div>
 
       {/* Sidebar */}
-      <div className="drawer-side z-40">
+      <div className="drawer-side z-40 h-screen">
         <label className="drawer-overlay" onClick={() => setSidebarOpen(false)} />
         <AdminSidebar onNavClick={handleNavClick} />
       </div>

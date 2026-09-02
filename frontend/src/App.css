@@ -76,10 +76,7 @@ body {
 }
 
 button {
-  width: 100%;
   padding: 12px;
-  background: #667eea;
-  color: white;
   border: none;
   border-radius: 5px;
   font-size: 16px;

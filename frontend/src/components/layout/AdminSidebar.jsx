@@ -24,7 +24,7 @@ const AdminSidebar = ({ onNavClick }) => {
   const location = useLocation();
 
   return (
-    <aside className="bg-neutral text-neutral-content w-64 min-h-screen flex flex-col">
+    <aside className="bg-neutral text-neutral-content w-64 h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <Link to="/admin" className="text-xl font-bold text-white" onClick={onNavClick}>
