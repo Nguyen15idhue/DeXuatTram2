@@ -9,7 +9,7 @@
 
 | Task | Thời gian | Status | Ghi chú |
 |------|-----------|--------|---------|
-| Task 1: Backup + Cài đặt | 1h | ⬜ | |
+| Task 1: Backup + Cài đặt | 30 phút | ✅ | Tailwind 4.3.3, daisyUI 5.7.27, lucide-react 1.39.0 |
 | Task 2: Theme + Design Tokens | 2-3h | ⬜ | |
 | Task 3: Shared Components | 3-5h | ⬜ | |
 | Task 4: Refactor Layouts | 2-3h | ⬜ | |
@@ -24,19 +24,35 @@
 
 ## TASK 1: Backup + Cài đặt
 
-**Status**: ⬜ Chưa bắt đầu
-**Thời gian thực tế**: 
+**Status**: ✅ Hoàn thành
+**Thời gian thực tế**: 30 phút
 
 ### Files đã tạo/sửa
-- [ ] `frontend/tailwind.config.js` (tạo mới)
-- [ ] `frontend/vite.config.js` (sửa)
-- [ ] `frontend/src/index.css` (sửa)
+- [x] `frontend/vite.config.js` (sửa — thêm @tailwindcss/vite plugin)
+- [x] `frontend/src/index.css` (sửa — thêm @import "tailwindcss" và @plugin "daisyui")
+- [x] `frontend/package.json` (sửa — thêm dependencies mới)
+- [x] `frontend/package-lock.json` (tự động cập nhật)
+
+### Versions đã cài
+| Package | Version | Location |
+|---------|---------|----------|
+| tailwindcss | 4.3.3 | devDependencies |
+| @tailwindcss/vite | 4.3.3 | devDependencies |
+| daisyui | 5.7.27 | dependencies |
+| lucide-react | 1.39.0 | dependencies |
 
 ### Kết quả test
-- [ ] `npm run dev` chạy không lỗi
-- [ ] Trang login hiển thị đúng
+- [x] `npm run dev` chạy không lỗi
+- [x] `npm run build` thành công
+- [x] Trang login hiển thị đúng (http://localhost:5173/login)
+- [x] DaisyUI CSS loaded (173.26 kB)
+- [x] Lucide React hoạt động (6143 icons available)
+- [x] Hot reload hoạt động (vite restart khi đổi vite.config.js)
 
 ### Ghi chú
+- Docker container dùng named volume cho node_modules → cần cài packages bên trong container
+- Packages đã cài cả local (package.json) và container (docker exec)
+- Branch `ui-redesign` đã tạo từ main
 
 ---
 
