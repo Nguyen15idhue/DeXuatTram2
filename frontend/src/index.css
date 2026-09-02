@@ -1,1 +1,2 @@
-/* Reset handled by App.css */
+@import "tailwindcss";
+@plugin "daisyui";

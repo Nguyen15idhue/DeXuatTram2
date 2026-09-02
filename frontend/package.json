@@ -9,10 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "daisyui": "^5.7.27",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
+    "lucide-react": "^1.39.0",
     "mammoth": "^1.12.2",
     "mathjs": "^15.2.0",
     "react": "^18.2.0",
@@ -22,9 +24,11 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@vitejs/plugin-react": "^4.2.0",
+    "tailwindcss": "^4.3.3",
     "vite": "^5.0.0"
   }
 }
