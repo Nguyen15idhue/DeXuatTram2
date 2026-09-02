@@ -22,6 +22,7 @@ services:
       - "3000:3000"
     volumes:
       - ./backend/src:/app/src
+      - ./backend/storage/uploads:/app/storage/uploads
     environment:
       - PORT=3000
       - DB_HOST=mysql
