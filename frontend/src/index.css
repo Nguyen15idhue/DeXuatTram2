@@ -1,2 +1,18 @@
 @import "tailwindcss";
 @plugin "daisyui";
+
+/* Override Tailwind preflight for Leaflet */
+@layer base {
+  .leaflet-container,
+  .leaflet-pane,
+  .leaflet-tile,
+  .leaflet-marker-icon,
+  .leaflet-marker-shadow,
+  .leaflet-overlay-pane,
+  .leaflet-shadow-pane,
+  .leaflet-marker-pane,
+  .leaflet-tooltip-pane,
+  .leaflet-popup-pane {
+    position: absolute !important;
+  }
+}

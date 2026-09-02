@@ -25,7 +25,7 @@ const UserLayout = () => {
   const handleNavClick = () => setMenuOpen(false);
 
   return (
-    <div className="min-h-screen flex flex-col bg-base-200">
+    <div className="h-screen flex flex-col bg-base-200 overflow-hidden">
       {/* Header */}
       <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-4">
         <div className="navbar-start">
@@ -120,7 +120,7 @@ const UserLayout = () => {
       )}
 
       {/* Content */}
-      <main className="flex-1 p-4 lg:p-6">
+      <main className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
         <Outlet />
       </main>
     </div>

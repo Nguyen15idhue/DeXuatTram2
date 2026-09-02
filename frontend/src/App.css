@@ -418,7 +418,10 @@ button:disabled {
 .leaflet-container {
   height: 100% !important;
   width: 100% !important;
+  min-height: 400px;
   background: #e5e3df;
+  position: relative;
+  z-index: 1;
 }
 
 .map-loading {
