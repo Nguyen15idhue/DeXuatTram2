@@ -112,6 +112,10 @@
 - AdminLayout dùng daisyUI drawer component cho responsive sidebar
 - UserLayout dùng daisyUI navbar component cho responsive header
 - Các emoji trong pages/components khác sẽ được thay trong Task 9 (Cleanup)
+- **Fix**: Map page trắng → do Tailwind preflight reset position/height. Đã fix bằng cách:
+  - UserLayout: `h-screen` + `overflow-hidden` + `minHeight: 0` cho main
+  - App.css: thêm `min-height: 400px`, `position: relative`, `z-index: 1` cho `.leaflet-container`
+  - index.css: override Tailwind preflight cho Leaflet elements
 
 ---
 
