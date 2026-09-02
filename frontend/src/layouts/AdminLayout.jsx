@@ -32,9 +32,9 @@ const AdminLayout = () => {
       />
 
       {/* Content */}
-      <div className="drawer-content flex flex-col">
+      <div className="drawer-content flex flex-col min-h-screen">
         <AdminHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 p-4 lg:p-6 bg-base-200 min-h-screen">
+        <main className="flex-1 p-4 lg:p-6 bg-base-200">
           <Outlet />
         </main>
       </div>

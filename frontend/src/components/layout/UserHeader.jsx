@@ -12,7 +12,7 @@ const UserHeader = ({ onMenuToggle }) => {
   const { user, isAdmin, logout } = useAuth();
 
   return (
-    <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-4">
+    <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-4 lg:px-6">
       <div className="navbar-start">
         <label className="btn btn-square btn-ghost lg:hidden" onClick={onMenuToggle}>
           <Menu size={20} />

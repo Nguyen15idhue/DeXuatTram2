@@ -75,9 +75,9 @@ const AdminSidebar = ({ onNavClick }) => {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-white/10">
-        <div className="mb-2">
-          <div className="text-sm font-medium text-white">{user?.full_name}</div>
+      <div className="p-4 border-t border-white/10 mt-auto bg-neutral">
+        <div className="mb-3">
+          <div className="text-sm font-medium text-white truncate">{user?.full_name}</div>
           <div className="text-xs text-white/50">{user?.role}</div>
         </div>
         <button onClick={logout} className="btn btn-sm btn-error btn-outline w-full gap-2">
