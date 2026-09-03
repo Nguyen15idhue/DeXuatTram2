@@ -143,6 +143,13 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     return map;
   }, [fields]);
 
+  const getParentValue = useCallback((parentCol) => {
+    if (formData[parentCol] !== undefined) return formData[parentCol];
+    const parentFieldDef = fields.find(f => f.data_list_column === parentCol && f.key !== parentCol);
+    if (parentFieldDef) return formData[parentFieldDef.key];
+    return undefined;
+  }, [fields, formData]);
+
   const prevFormDataRef = useRef(formData);
 
   useEffect(() => {
@@ -154,7 +161,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       childKeys.forEach(childKey => {
         const childField = fields.find(f => f.key === childKey);
         if (childField && childField.type === 'select') {
-          const parentVal = formData[parentKey];
+          const parentVal = getParentValue(parentKey);
           if (parentVal) {
             if (next[childKey] && !isOptionValidForParent(childField, parentVal, next[childKey])) {
               next[childKey] = '';
@@ -187,8 +194,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     if (!tree) return true;
     const col = childField.data_list_column;
     if (!col) return true;
-    const parentField = fields.find(f => f.key === childField.parent_field);
-    const parentCol = childField.relation_key || parentField?.data_list_column;
+    const parentCol = childField.parent_field;
     if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
       return tree[parentCol][parentVal].some(r => r._raw?.[col] === optionVal);
     }
@@ -202,10 +208,9 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       if (!col || !tree[col]) return [];
 
       if (field.parent_field) {
-        const parentVal = formData[field.parent_field];
+        const parentVal = getParentValue(field.parent_field);
         if (!parentVal) return [];
-        const parentField = fields.find(f => f.key === field.parent_field);
-        const parentCol = field.relation_key || parentField?.data_list_column;
+        const parentCol = field.parent_field;
         if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
           const parentRows = tree[parentCol][parentVal];
           const seen = new Set();
@@ -222,7 +227,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     }
 
     if (!field.parent_field || !field.source_config) return field.options || [];
-    const parentVal = formData[field.parent_field];
+    const parentVal = getParentValue(field.parent_field);
     if (!parentVal) return [];
     try {
       const sc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;

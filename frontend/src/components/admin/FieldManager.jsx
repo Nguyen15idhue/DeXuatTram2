@@ -437,48 +437,24 @@ const FieldManager = () => {
                           const selectedDL = dataLists.find(dl => dl.id === form.data_list_id);
                           const cols = selectedDL?.columns_config || [];
                           return cols.length > 0 ? (
-                            <div className="form-group">
-                              <label>Column (cột dữ liệu cho field này)</label>
-                              <select value={form.data_list_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_column: e.target.value }))}>
-                                <option value="">-- Chọn column --</option>
-                                {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
-                              </select>
-                            </div>
-                          ) : null;
-                        })()}
-                        {form.data_list_id && (() => {
-                          const selectFields = entityFields.filter(f => 
-                            f.type === 'select' && f.key !== form.key && f.id !== editingId
-                            && !f.parent_field && f.data_list_id === form.data_list_id
-                          );
-                          return selectFields.length > 0 ? (
                             <>
+                              <div className="form-group">
+                                <label>Column (cột dữ liệu cho field này)</label>
+                                <select value={form.data_list_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_column: e.target.value }))}>
+                                  <option value="">-- Chọn column --</option>
+                                  {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
+                                </select>
+                              </div>
                               <div className="form-group">
                                 <label>Field cha (parent_field)</label>
                                 <select value={form.parent_field || ''} onChange={(e) => setForm(prev => ({ ...prev, parent_field: e.target.value, relation_key: '' }))}>
                                   <option value="">-- Không có parent --</option>
-                                  {selectFields.map(f => <option key={f.id} value={f.key}>{f.label} ({f.key})</option>)}
+                                  {cols.filter(c => c.key !== form.data_list_column).map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
                                 </select>
                                 <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
                                   Field hiện tại sẽ phụ thuộc vào field cha
                                 </p>
                               </div>
-                              {form.parent_field && (() => {
-                                const selectedDL = dataLists.find(dl => dl.id === form.data_list_id);
-                                const cols = selectedDL?.columns_config || [];
-                                return cols.length > 0 ? (
-                                  <div className="form-group">
-                                    <label>Link key (column chứa FK về parent)</label>
-                                    <select value={form.relation_key || ''} onChange={(e) => setForm(prev => ({ ...prev, relation_key: e.target.value }))}>
-                                      <option value="">-- Chọn column --</option>
-                                      {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
-                                    </select>
-                                    <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
-                                      Column trong data list chứa giá trị link về parent field
-                                    </p>
-                                  </div>
-                                ) : null;
-                              })()}
                             </>
                           ) : null;
                         })()}
