@@ -198,12 +198,10 @@ const ProfilePage = () => {
                   initialData={user}
                   mode="edit"
                 >
-                  <div className="flex justify-end gap-2 mt-4">
-                    <button type="button" className="btn btn-ghost" onClick={() => setIsEditing(false)}>
-                      <X size={14} />
-                      Hủy
-                    </button>
-                  </div>
+                  <button type="button" className="btn btn-ghost" onClick={() => setIsEditing(false)}>
+                    <X size={14} />
+                    Hủy
+                  </button>
                 </DynamicForm>
               </div>
             </div>

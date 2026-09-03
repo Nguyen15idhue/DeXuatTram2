@@ -135,9 +135,7 @@ const MapPage = () => {
                 onSubmit={handleSubmit}
                 initialData={{ latitude: coords.lat, longitude: coords.lng }}
               >
-                <div className="modal-action">
-                  <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>Hủy</button>
-                </div>
+                <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>Hủy</button>
               </DynamicForm>
             </div>
           </div>

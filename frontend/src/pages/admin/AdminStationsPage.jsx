@@ -372,9 +372,7 @@ const AdminStationsPage = () => {
               onSubmit={handleCreateSubmit}
               initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
             >
-              <div className="modal-action">
-                <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
-              </div>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
             </DynamicForm>
           </div>
           <form method="dialog" className="modal-backdrop">
