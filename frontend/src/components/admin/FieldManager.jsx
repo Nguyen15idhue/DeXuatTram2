@@ -449,7 +449,7 @@ const FieldManager = () => {
                         {form.data_list_id && (() => {
                           const selectFields = entityFields.filter(f => 
                             f.type === 'select' && f.key !== form.key && f.id !== editingId
-                            && !f.parent_field
+                            && !f.parent_field && f.data_list_id === form.data_list_id
                           );
                           return selectFields.length > 0 ? (
                             <>
