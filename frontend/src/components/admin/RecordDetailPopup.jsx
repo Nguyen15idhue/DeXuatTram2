@@ -3,6 +3,7 @@ import { dynamicService, stationService, adminUserService, adminProposalService 
 import { useAuth } from '../../contexts/AuthContext';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
+import useDataListMap from '../../hooks/useDataListMap';
 import Toast from '../Toast';
 
 const ENTITY_LABELS = {
@@ -30,6 +31,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [record, setRecord] = useState(recordProp || null);
   const [mode, setMode] = useState(modeProp || 'view');
   const [formData, setFormData] = useState({});
+  const dataListOptions = useDataListMap([...viewFields, ...allFields].map(f => f.data_list_id));
 
   useEffect(() => {
     if (modeProp) setMode(modeProp);
@@ -117,6 +119,51 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
+  const getParentValue = (parentCol) => {
+    if (formData[parentCol] !== undefined) return formData[parentCol];
+    const all = [...viewFields, ...allFields];
+    const parentDef = all.find(f => f.data_list_column === parentCol);
+    if (parentDef) return formData[parentDef.field_key || parentDef.key];
+    return undefined;
+  };
+
+  const resolveFieldOptions = (field) => {
+    const dlId = field.data_list_id;
+    if (dlId && dataListOptions[dlId]) {
+      const { tree, unique } = dataListOptions[dlId];
+      const col = field.data_list_column;
+      if (col && unique[col]) {
+        if (field.parent_field) {
+          const parentVal = getParentValue(field.parent_field);
+          if (!parentVal) return [];
+          const parentCol = field.parent_field;
+          if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
+            const seen = new Set();
+            return tree[parentCol][parentVal]
+              .filter(r => {
+                const v = r._raw?.[col];
+                if (v && !seen.has(v)) { seen.add(v); return true; }
+                return false;
+              })
+              .map(r => ({ value: r._raw[col], label: r._raw[col], _raw: r._raw }));
+          }
+          return [];
+        }
+        return unique[col].map(v => ({ value: v, label: v }));
+      }
+    }
+    if (!field.parent_field || !field.source_config) return field.options || [];
+    const parentVal = getParentValue(field.parent_field);
+    if (!parentVal) return [];
+    try {
+      const sc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
+      if (sc[parentVal]) {
+        return (field.options || []).filter(o => sc[parentVal].includes(o.value || o));
+      }
+      return field.options || [];
+    } catch { return field.options || []; }
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -200,14 +247,14 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
               <span className="popup-field-value">
                 {mode === 'edit' ? (
                   <DynamicField
-                    field={field}
+                    field={{ ...field, options: resolveFieldOptions(field) }}
                     value={value}
                     onChange={(val) => handleFieldChange(key, val)}
                     entityId={record.id}
                     entityType={entity}
                   />
                 ) : (
-                  <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} />
+                  <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
                 )}
               </span>
             </div>

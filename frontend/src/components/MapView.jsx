@@ -11,9 +11,9 @@ import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provin
 import { getProviderById } from '../utils/tileProviders';
 
 const FALLBACK_TILES = [
-  'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-  'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-  'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
 ];
 
 function resolveTileUrl(template, apiKey, styleValue) {
@@ -82,20 +82,34 @@ function getProvinceIcon(province) {
   });
 }
 
-function DynamicTileLayer({ tileUrl, attribution, subdomains }) {
+function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
   const map = useMap();
   const layerRef = useRef(null);
+  const errCountRef = useRef(0);
+  const firedRef = useRef(false);
 
   useEffect(() => {
     if (layerRef.current) {
       map.removeLayer(layerRef.current);
       layerRef.current = null;
     }
+    errCountRef.current = 0;
+    firedRef.current = false;
     if (!tileUrl) return;
     const layer = L.tileLayer(tileUrl, {
       attribution: attribution || '',
       subdomains: subdomains || '',
       maxZoom: 20,
+    });
+    layer.on('tileerror', () => {
+      errCountRef.current += 1;
+      if (errCountRef.current >= 6 && !firedRef.current) {
+        firedRef.current = true;
+        if (onTileError) onTileError();
+      }
+    });
+    layer.on('tileload', () => {
+      errCountRef.current = 0;
     });
     layer.addTo(map);
     layerRef.current = layer;
@@ -334,12 +348,13 @@ const MapView = ({
   const [showLegend, setShowLegend] = useState(true);
   const [activeLayerIdx, setActiveLayerIdx] = useState(0);
   const [resolvedTileUrl, setResolvedTileUrl] = useState(FALLBACK_TILES[0]);
-  const [resolvedAttribution, setResolvedAttribution] = useState('&copy; CARTO &copy; OpenStreetMap contributors');
-  const [resolvedSubdomains, setResolvedSubdomains] = useState('a,b,c,d');
+  const [resolvedAttribution, setResolvedAttribution] = useState('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors');
+  const [resolvedSubdomains, setResolvedSubdomains] = useState('a,b,c');
+  const [tileWarning, setTileWarning] = useState('');
   const [config, setConfig] = useState({
     tile_provider_id: 'leaflet-osm',
     tile_url: FALLBACK_TILES[0],
-    tile_attribution: '&copy; CARTO &copy; OpenStreetMap contributors',
+    tile_attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     tile_subdomains: '',
     api_key: '',
     show_boundaries: true,
@@ -372,17 +387,34 @@ const MapView = ({
   };
 
   const buildTileUrl = (providerId, apiKey, styleIdx) => {
+    const fallback = { url: FALLBACK_TILES[0], attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', subdomains: 'a,b,c', warning: '' };
     const provider = getProviderById(providerId);
-    if (!provider) return { url: FALLBACK_TILES[0], attribution: '', subdomains: '' };
+    if (!provider) return { ...fallback, warning: 'Không tìm thấy provider đã lưu, đang dùng bản đồ mặc định.' };
+    if (provider.incompatible_with_leaflet) {
+      return { ...fallback, warning: `${provider.name} không dùng được với Leaflet, đang dùng bản đồ mặc định. Vào Admin → Cấu hình bản đồ để đổi provider.` };
+    }
+    if (provider.requires_key && !apiKey) {
+      return { ...fallback, warning: `${provider.name} yêu cầu API Key nhưng chưa cấu hình, đang dùng bản đồ mặc định. Vào Admin → Cấu hình bản đồ để nhập key.` };
+    }
 
     const tileUrlStyles = provider.tile_url_styles || [];
     const selectedStyle = tileUrlStyles[styleIdx] || tileUrlStyles[0];
+
+    if (selectedStyle && selectedStyle.url) {
+      return {
+        url: resolveTileUrl(selectedStyle.url, apiKey, selectedStyle.value),
+        attribution: selectedStyle.attribution || provider.attribution,
+        subdomains: selectedStyle.subdomains ?? provider.subdomains ?? '',
+        warning: '',
+      };
+    }
 
     if (provider.tile_url_template && selectedStyle) {
       return {
         url: resolveTileUrl(provider.tile_url_template, apiKey, selectedStyle.value),
         attribution: provider.attribution,
         subdomains: provider.subdomains || '',
+        warning: '',
       };
     }
 
@@ -391,10 +423,22 @@ const MapView = ({
         url: provider.tile_url,
         attribution: provider.attribution,
         subdomains: provider.subdomains || '',
+        warning: '',
       };
     }
 
-    return { url: FALLBACK_TILES[0], attribution: '&copy; CARTO &copy; OpenStreetMap contributors', subdomains: 'a,b,c,d' };
+    return fallback;
+  };
+
+  const applyFallback = (message) => {
+    setResolvedTileUrl(FALLBACK_TILES[0]);
+    setResolvedAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors');
+    setResolvedSubdomains('a,b,c');
+    setTileWarning(message);
+  };
+
+  const handleTileError = () => {
+    applyFallback('Tile server lỗi liên tục, đã tự chuyển về bản đồ mặc định.');
   };
 
   const fetchConfig = async () => {
@@ -409,6 +453,7 @@ const MapView = ({
         setResolvedTileUrl(tile.url);
         setResolvedAttribution(tile.attribution);
         setResolvedSubdomains(tile.subdomains);
+        setTileWarning(tile.warning || '');
 
         setConfig(prev => ({
           ...prev,
@@ -437,6 +482,7 @@ const MapView = ({
     setResolvedTileUrl(tile.url);
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
+    setTileWarning(tile.warning || '');
   }, [activeLayerIdx, config.tile_provider_id, config.api_key]);
 
   const handleMyLocation = (openForm = false) => {
@@ -518,7 +564,16 @@ const MapView = ({
           tileUrl={resolvedTileUrl}
           attribution={resolvedAttribution}
           subdomains={resolvedSubdomains}
+          onTileError={handleTileError}
         />
+
+        {tileWarning && (
+          <div className="alert alert-warning text-xs shadow-lg"
+            style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, maxWidth: '90%' }}>
+            <span>{tileWarning}</span>
+            <button className="btn btn-xs btn-ghost" onClick={() => setTileWarning('')}>✕</button>
+          </div>
+        )}
 
         <MapEventsHandler
           selectingLocation={selectingLocation}

@@ -353,7 +353,7 @@ const AdminStationsPage = () => {
             <div className="border border-base-300 rounded-lg p-3 mb-4">
               <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
               <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors" />
                 <MapClickHandler onMapClick={handleMapClick} />
                 {mapCoords.latitude && mapCoords.longitude && (
                   <Marker position={[parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)]} icon={markerIcon} />

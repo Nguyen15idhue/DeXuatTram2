@@ -7,6 +7,7 @@ import ConfirmDialog from '../ConfirmDialog';
 import EmptyState from '../EmptyState';
 import ErrorMessage from '../ErrorMessage';
 import Pagination from '../Pagination';
+import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
 import FormulaEditor from '../dynamic/FormulaEditor';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula'];
@@ -255,6 +256,7 @@ const FieldManager = () => {
       if (res.success) {
         setToast({ message: editingId ? 'Cập nhật field thành công' : 'Tạo field thành công', type: 'success' });
         setShowForm(false);
+        clearFieldOptionsCache(form.entity);
         loadFields(pagination.page);
       } else {
         setError(res.message || 'Thao tác thất bại');
@@ -275,6 +277,7 @@ const FieldManager = () => {
       const res = await fieldDefinitionService.delete(id, token);
       if (res.success) {
         setToast({ message: 'Xóa field thành công', type: 'success' });
+        clearFieldOptionsCache();
         loadFields(pagination.page);
       } else {
         setError(res.message || 'Xóa thất bại');
@@ -290,6 +293,7 @@ const FieldManager = () => {
       const res = await fieldDefinitionService.updateStatus(id, newStatus, token);
       if (res.success) {
         setToast({ message: `Field đã chuyển sang ${newStatus}`, type: 'success' });
+        clearFieldOptionsCache();
         loadFields(pagination.page);
       }
     } catch {

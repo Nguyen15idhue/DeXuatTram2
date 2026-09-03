@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Toast from '../../components/Toast';
 import { Settings, Save, Wifi, WifiOff } from 'lucide-react';
 
-const FALLBACK_TILE = 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+const FALLBACK_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 function isValidTileUrl(url) {
   if (!url || typeof url !== 'string') return false;
@@ -94,20 +94,35 @@ const AdminMapConfigPage = () => {
 
   const selectedProvider = isCustom ? null : getProviderById(selectedProviderId);
 
-  const CARTO_LIGHT = 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-  const CARTO_ATTR = '&copy; CARTO &copy; OpenStreetMap contributors';
+  const OSM_LIGHT = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
   const resolveTileUrl = (providerId, style, key) => {
     const p = getProviderById(providerId);
-    if (!p) return CARTO_LIGHT;
+    if (!p) return OSM_LIGHT;
     if (p.incompatible_with_leaflet) return '';
+    const styleObj = (p.tile_url_styles || []).find(s => s.value === style) || (p.tile_url_styles || [])[0];
+    if (styleObj && styleObj.url) {
+      let url = styleObj.url.replace('{key}', key || '');
+      url = url.replace('{style}', style || '');
+      return url;
+    }
     if (p.tile_url_template) {
       let url = p.tile_url_template.replace('{key}', key || '');
       url = url.replace('{style}', style || '');
       return url;
     }
     if (p.tile_url && !p.tile_url.includes('{domain}')) return p.tile_url;
-    return CARTO_LIGHT;
+    return OSM_LIGHT;
+  };
+
+  const resolveStyleMeta = (providerId, style) => {
+    const p = getProviderById(providerId);
+    const styleObj = p ? ((p.tile_url_styles || []).find(s => s.value === style) || (p.tile_url_styles || [])[0]) : null;
+    return {
+      attribution: (styleObj && styleObj.attribution) || p?.attribution || OSM_ATTR,
+      subdomains: (styleObj && styleObj.subdomains !== undefined) ? styleObj.subdomains : (p?.subdomains || ''),
+    };
   };
 
   const isLeafletIncompatible = selectedProvider?.incompatible_with_leaflet && !isCustom;
@@ -117,9 +132,10 @@ const AdminMapConfigPage = () => {
       const url = getSafeTileUrl(customTileUrl);
       return { url, attribution: customAttribution, subdomains: customSubdomains };
     }
-    if (!selectedProvider) return { url: CARTO_LIGHT, attribution: CARTO_ATTR, subdomains: 'a,b,c,d' };
+    if (!selectedProvider) return { url: OSM_LIGHT, attribution: OSM_ATTR, subdomains: 'a,b,c' };
     const url = resolveTileUrl(selectedProviderId, selectedStyle, apiKey);
-    return { url, attribution: selectedProvider.attribution || CARTO_ATTR, subdomains: selectedProvider.subdomains || '' };
+    const meta = resolveStyleMeta(selectedProviderId, selectedStyle);
+    return { url, attribution: meta.attribution, subdomains: meta.subdomains };
   };
 
   const handleTestConnection = async () => {
@@ -147,6 +163,19 @@ const AdminMapConfigPage = () => {
   };
 
   const handleSave = async () => {
+    if (!isCustom && selectedProvider?.incompatible_with_leaflet) {
+      setToast({ message: `${selectedProvider.name} không dùng được với Leaflet. Hãy chọn provider khác.`, type: 'error' });
+      return;
+    }
+    if (!isCustom && selectedProvider?.requires_key && !apiKey.trim()) {
+      setToast({ message: `${selectedProvider.name} yêu cầu API Key. Hãy nhập key trước khi lưu.`, type: 'error' });
+      return;
+    }
+    const preTile = getActiveTileConfig();
+    if (!isCustom && preTile.url.includes('{domain}')) {
+      setToast({ message: 'Tự host cần nhập Tile URL cụ thể qua mục "Tùy chỉnh thủ công".', type: 'error' });
+      return;
+    }
     setSaving(true);
     const tile = getActiveTileConfig();
     const body = {
@@ -198,7 +227,9 @@ const AdminMapConfigPage = () => {
   const safeTileUrl = getSafeTileUrl(tile.url);
   const center = [parseFloat(config.center_lat) || 16, parseFloat(config.center_lng) || 108];
   const subdomains = tile.subdomains ? tile.subdomains.split(',') : [];
-  const filteredProviders = filterType === 'all' ? TILE_PROVIDERS : TILE_PROVIDERS.filter(p => p.type === filterType);
+  const leafletProviders = TILE_PROVIDERS.filter(p => !p.incompatible_with_leaflet);
+  const otherRenderers = TILE_PROVIDERS.filter(p => p.incompatible_with_leaflet);
+  const filteredProviders = filterType === 'all' ? leafletProviders : leafletProviders.filter(p => p.type === filterType);
   const showApiKeyInput = selectedProvider?.requires_key && !isCustom;
   const showStyleSelect = (selectedProvider?.style_options || selectedProvider?.tile_url_styles) && !isCustom;
   const currentStyleOptions = selectedProvider?.tile_url_styles || selectedProvider?.style_options || [];
@@ -244,6 +275,16 @@ const AdminMapConfigPage = () => {
               <div className="alert alert-warning text-sm mt-2">
                 <span>{selectedProvider.name} không tương thích với Leaflet TileLayer. Dùng renderer tương ứng ({selectedProvider.name}) hoặc chọn provider khác.</span>
               </div>
+            )}
+            {otherRenderers.length > 0 && (
+              <details className="mt-2 text-xs text-base-content/60">
+                <summary className="cursor-pointer font-semibold">Renderer khác (tham khảo — chưa hỗ trợ, không chọn được)</summary>
+                <ul className="mt-1 ml-4 list-disc">
+                  {otherRenderers.map(p => (
+                    <li key={p.id}><span className="font-semibold">{p.name}</span> — {p.description}</li>
+                  ))}
+                </ul>
+              </details>
             )}
             <div onClick={() => { setIsCustom(true); setSelectedProviderId('custom'); setPreviewKey(k => k + 1); setTestStatus(null); }}
               className={`mt-2 p-2.5 rounded-lg cursor-pointer border-2 transition-all ${isCustom ? 'border-primary bg-primary/5' : 'border-base-300 bg-white hover:border-primary/40'}`}>

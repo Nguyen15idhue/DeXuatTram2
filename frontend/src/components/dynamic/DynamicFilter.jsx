@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const DynamicFilter = ({ columns, filters, onChange }) => {
+const DynamicFilter = ({ columns, filters, onChange, dataListOptions = {} }) => {
   const [localFilters, setLocalFilters] = useState(filters || {});
 
   const filterableColumns = columns.filter(c => c.filterable);
@@ -37,6 +37,10 @@ const DynamicFilter = ({ columns, filters, onChange }) => {
 
         if (type === 'select') {
           const parsedOptions = (() => {
+            if (col.data_list_id && dataListOptions[col.data_list_id]) {
+              const uniq = dataListOptions[col.data_list_id].unique?.[col.data_list_column] || [];
+              if (uniq.length > 0) return uniq.map(v => ({ value: v, label: v }));
+            }
             if (!col.options) return [];
             if (Array.isArray(col.options)) return col.options;
             try {

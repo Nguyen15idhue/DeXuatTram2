@@ -13,7 +13,7 @@ const getFileUrl = (file, entity, entityId) => {
   return '';
 };
 
-const FieldRenderer = ({ field, value, entity, entityId }) => {
+const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} }) => {
   const [showFilePopup, setShowFilePopup] = useState(false);
   const [showAvatarPopup, setShowAvatarPopup] = useState(false);
 
@@ -46,6 +46,15 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     } catch { return []; }
   })();
 
+  const resolveOption = (val) => {
+    if (field.data_list_id && dataListOptions[field.data_list_id]) {
+      const col = field.data_list_column;
+      const uniq = dataListOptions[field.data_list_id].unique?.[col] || [];
+      if (uniq.includes(val)) return { value: val, label: val };
+    }
+    return parsedOptions.find(o => (o.value || o) === val) || null;
+  };
+
   switch (field.type) {
     case 'boolean':
       return <span className={value ? 'field-true' : 'field-false'}>{value ? '✓' : ''}</span>;
@@ -60,7 +69,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     }
 
     case 'select': {
-      const opt = parsedOptions.find(o => (o.value || o) === value);
+      const opt = resolveOption(value);
       if (!opt) return <span>{value}</span>;
       if (opt.optionType === 'number') {
         const displayVal = formatNumber(value, { format: opt.numberFormat || field.number_format || 'plain' });
@@ -75,7 +84,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
       return (
         <span className="inline-flex flex-wrap gap-1">
           {vals.map((v, i) => {
-            const opt = parsedOptions.find(o => (o.value || o) === v);
+            const opt = resolveOption(v);
             if (opt) {
               if (opt.optionType === 'number') {
                 const displayVal = formatNumber(v, { format: opt.numberFormat || field.number_format || 'plain' });

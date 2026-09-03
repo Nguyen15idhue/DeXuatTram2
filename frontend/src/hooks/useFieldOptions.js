@@ -3,6 +3,14 @@ import { fieldDefinitionService } from '../services/api';
 
 const cache = {};
 
+export const clearFieldOptionsCache = (entity) => {
+  if (entity) {
+    delete cache[entity];
+  } else {
+    Object.keys(cache).forEach(k => delete cache[k]);
+  }
+};
+
 const useFieldOptions = (entity) => {
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
