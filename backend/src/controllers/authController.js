@@ -63,6 +63,12 @@ exports.login = async (req, res) => {
       });
     }
 
+    let avatar = null;
+    try {
+      const cd = user.custom_data ? JSON.parse(user.custom_data) : {};
+      avatar = cd.avatar || null;
+    } catch {}
+
     const token = authService.generateToken(user.id, user.email, user.role);
 
     res.json({
@@ -75,7 +81,8 @@ exports.login = async (req, res) => {
           email: user.email,
           phone: user.phone,
           role: user.role,
-          status: user.status
+          status: user.status,
+          avatar
         },
         token
       }
@@ -96,9 +103,15 @@ exports.getMe = async (req, res) => {
       });
     }
 
+    let avatar = null;
+    try {
+      const cd = user.custom_data ? JSON.parse(user.custom_data) : {};
+      avatar = cd.avatar || null;
+    } catch {}
+
     res.json({
       success: true,
-      data: { user }
+      data: { user: { ...user, avatar, custom_data: undefined } }
     });
   } catch (error) {
     console.error('Get me error:', error);
@@ -146,7 +159,13 @@ exports.updateProfile = async (req, res) => {
 
     const updated = await authService.findById(req.user.id);
 
-    res.json({ success: true, data: updated, message: 'Cập nhật hồ sơ thành công' });
+    let updatedAvatar = null;
+    try {
+      const cd = updated.custom_data ? JSON.parse(updated.custom_data) : {};
+      updatedAvatar = cd.avatar || null;
+    } catch {}
+
+    res.json({ success: true, data: { ...updated, avatar: updatedAvatar, custom_data: undefined }, message: 'Cập nhật hồ sơ thành công' });
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

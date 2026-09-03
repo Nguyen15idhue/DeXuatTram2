@@ -22,14 +22,16 @@ const ProfilePage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const fileInputRef = useRef(null);
 
+  const [avatarVersion, setAvatarVersion] = useState(0);
+
   const getAvatarUrl = () => {
     if (!user?.avatar) return null;
     const avatar = user.avatar;
     if (typeof avatar === 'object' && avatar.id) {
-      return `/api/files/${avatar.id}/image`;
+      return `/api/files/${avatar.id}/image?v=${avatarVersion}`;
     }
     if (typeof avatar === 'number') {
-      return `/api/files/${avatar}/image`;
+      return `/api/files/${avatar}/image?v=${avatarVersion}`;
     }
     return null;
   };
@@ -67,6 +69,7 @@ const ProfilePage = () => {
       }, token);
       if (profileRes.success) {
         setToast({ message: 'Cập nhật ảnh đại diện thành công', type: 'success' });
+        setAvatarVersion(prev => prev + 1);
         if (updateUser) updateUser(profileRes.data);
       } else {
         throw new Error(profileRes.message || 'Cập nhật thất bại');

@@ -13,7 +13,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
-import { ClipboardList, Download, Upload, Plus, Search, MapPin } from 'lucide-react';
+import { ClipboardList, Download, Upload, Search, MapPin } from 'lucide-react';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -270,9 +270,6 @@ const MyProposalsPage = () => {
           </button>
           <button className="btn btn-secondary btn-sm gap-1" onClick={openImport}>
             <Upload size={14} /> Import
-          </button>
-          <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
-            <Plus size={14} /> Tạo đề xuất
           </button>
         </div>
       </div>

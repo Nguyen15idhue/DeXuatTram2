@@ -10,7 +10,7 @@ exports.findByEmail = async (email) => {
 
 exports.findById = async (id) => {
   const [users] = await pool.query(
-    'SELECT id, full_name, email, phone, role, status, created_at FROM users WHERE id = ?',
+    'SELECT id, full_name, email, phone, role, status, custom_data, created_at FROM users WHERE id = ?',
     [id]
   );
   return users.length > 0 ? users[0] : null;
