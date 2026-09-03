@@ -65,7 +65,7 @@ exports.createFieldDefinition = async (data) => {
       entity, \`key\`, label, type, number_format, decimal_places, display_format, unit, date_format, timezone,
       source_type, required, validation, options, source_config, parent_field, option_style,
       file_config, formula_config, formula, placeholder, help_text, status, data_list_id, data_list_column, relation_key
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entity,
       key,
@@ -127,7 +127,7 @@ exports.updateFieldDefinition = async (id, data) => {
       unit || null,
       date_format || null,
       timezone || null,
-      source_type,
+      source_type || 'json',
       required ? 1 : 0,
       validation ? JSON.stringify(validation) : null,
       options ? JSON.stringify(options) : null,

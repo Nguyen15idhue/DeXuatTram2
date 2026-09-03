@@ -194,7 +194,14 @@ const FormBuilder = ({ formId, onSaved }) => {
   // ===== Drag & Drop: Fields =====
   const handleFieldDragStart = (e, fieldId) => {
     e.dataTransfer.setData('fieldId', String(fieldId));
+    e.dataTransfer.setData('sourceType', 'field');
     e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleAvailableFieldDragStart = (e, field) => {
+    e.dataTransfer.setData('fieldId', String(field.id));
+    e.dataTransfer.setData('sourceType', 'available');
+    e.dataTransfer.effectAllowed = 'copyMove';
   };
 
   const handleDrop = (e, rowId, colIndex) => {
@@ -202,6 +209,19 @@ const FormBuilder = ({ formId, onSaved }) => {
     setDragOverCell(null);
     const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
     if (!fieldId) return;
+
+    const isAlreadyAssigned = assignedFields.find(f => f.fieldId === fieldId);
+    if (!isAlreadyAssigned) {
+      const field = availableFields.find(f => f.id === fieldId);
+      if (field) {
+        setAssignedFields(prev => [...prev, {
+          fieldId: field.id, label: field.label, key: field.key, type: field.type,
+          orderIndex: prev.length, visible: true, config: { rowId, rowIndex: layoutConfig.rows.findIndex(r => r.id === rowId), colIndex }
+        }]);
+        return;
+      }
+    }
+
     assignFieldToCell(fieldId, rowId, colIndex);
   };
 
@@ -378,7 +398,27 @@ const FormBuilder = ({ formId, onSaved }) => {
               }}
             >
               {layoutConfig.rows.length === 0 && (
-                <div className="builder-empty mb-3">Chưa có hàng nào. Nhấn nút bên dưới để thêm hàng đầu tiên.</div>
+                <div
+                  className="builder-empty mb-3"
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                    if (!fieldId) return;
+                    const field = availableFields.find(f => f.id === fieldId);
+                    if (!field) return;
+                    const newId = `r${Date.now()}`;
+                    setLayoutConfig({ rows: [{ id: newId, columns: '1:1' }] });
+                    setTimeout(() => {
+                      setAssignedFields(prev => [...prev, {
+                        fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                        orderIndex: 0, visible: true, config: { rowId: newId, rowIndex: 0, colIndex: 0 }
+                      }]);
+                    }, 0);
+                  }}
+                >
+                  Kéo field vào đây để tạo hàng mới
+                </div>
               )}
 
               {layoutConfig.rows.map((row, rowIdx) => {
@@ -391,7 +431,29 @@ const FormBuilder = ({ formId, onSaved }) => {
                       className={`insert-row-zone ${dragOverRow === `before-${row.id}` ? 'drag-over' : ''}`}
                       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`before-${row.id}`); }}
                       onDragLeave={handleRowDragLeave}
-                      onDrop={(e) => { e.preventDefault(); setDragOverRow(null); setDraggedRowId(null); addRow(rowIdx); }}
+                      onDrop={(e) => {
+                        e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
+                        const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                        if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
+                          const field = availableFields.find(f => f.id === fieldId);
+                          if (field) {
+                            const newId = `r${Date.now()}`;
+                            setLayoutConfig(prev => {
+                              const rows = [...prev.rows];
+                              rows.splice(rowIdx, 0, { id: newId, columns: '1:1' });
+                              return { ...prev, rows };
+                            });
+                            setTimeout(() => {
+                              setAssignedFields(prev => [...prev, {
+                                fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                                orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: rowIdx, colIndex: 0 }
+                              }]);
+                            }, 0);
+                            return;
+                          }
+                        }
+                        addRow(rowIdx);
+                      }}
                     >
                       <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => addRow(rowIdx)}>
                         <Plus size={12} /> Thêm hàng
@@ -484,7 +546,25 @@ const FormBuilder = ({ formId, onSaved }) => {
                   className={`insert-row-zone ${dragOverRow === 'after-last' ? 'drag-over' : ''}`}
                   onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow('after-last'); }}
                   onDragLeave={handleRowDragLeave}
-                  onDrop={(e) => { e.preventDefault(); setDragOverRow(null); setDraggedRowId(null); addRow(); }}
+                  onDrop={(e) => {
+                    e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
+                    const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                    if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
+                      const field = availableFields.find(f => f.id === fieldId);
+                      if (field) {
+                        const newId = `r${Date.now()}`;
+                        setLayoutConfig(prev => ({ ...prev, rows: [...prev.rows, { id: newId, columns: '1:1' }] }));
+                        setTimeout(() => {
+                          setAssignedFields(prev => [...prev, {
+                            fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                            orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: layoutConfig.rows.length, colIndex: 0 }
+                          }]);
+                        }, 0);
+                        return;
+                      }
+                    }
+                    addRow();
+                  }}
                 >
                   <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => addRow()}>
                     <Plus size={12} /> Thêm hàng
@@ -522,7 +602,7 @@ const FormBuilder = ({ formId, onSaved }) => {
             ) : filteredAvailable.map(field => (
               <div key={field.id} className="builder-available-item"
                 draggable
-                onDragStart={(e) => handleFieldDragStart(e, field.id)}
+                onDragStart={(e) => handleAvailableFieldDragStart(e, field)}
                 onClick={() => handleAddField(field)}>
                 <div>
                   <strong>{field.label}</strong>

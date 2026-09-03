@@ -25,7 +25,7 @@ const DataListEditor = () => {
     try {
       setLoading(true);
       const params = `row_page=${rowPage}&row_limit=20`;
-      const res = await dataListService.getById(id, params, token);
+      const res = await dataListService.getById(id, token, params);
       if (res.success) {
         setList(res.data);
         setRows(res.data.rows || []);
