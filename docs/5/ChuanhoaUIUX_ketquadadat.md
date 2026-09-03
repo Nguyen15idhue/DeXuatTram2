@@ -16,7 +16,7 @@
 | Task 5: Pages Phase A | 30 phút | ✅ | 6 pages refactor với Tailwind/daisyUI/Lucide |
 | Task 6: Pages Phase B | 30 phút | ✅ | 3 pages refactor (Users, Proposals, Profile) |
 | Task 7: Pages Phase C | ~45 phút | ✅ | 4 pages refactor (AdminStations, AdminMapConfig, MyProposals, MapPage) |
-| Task 8: Responsive System | 3-4h | ⬜ | |
+| Task 8: Responsive System | ~30 phút | ✅ | Layout fix + daisyUI modals + DynamicTable responsive |
 | Task 9: Dọn dẹp | 2-3h | ⬜ | |
 | Task 10: Visual Audit | 2h | ⬜ | |
 
@@ -325,22 +325,35 @@
 
 ## TASK 8: Responsive System
 
-**Status**: ⬜ Chưa bắt đầu
-**Thời gian thực tế**: 
+**Status**: ✅ Hoàn thành
+**Thời gian thực tế**: ~30 phút
 
 ### Files đã sửa
-- [ ] Các layout files (đã đếm ở Task 4)
-- [ ] Các page files (đã đếm ở Task 5-7)
+- [x] `frontend/src/pages/admin/AdminStationsPage.jsx` — Layout matches other admin pages, daisyUI modals, filter bar with action buttons
+- [x] `frontend/src/pages/user/MyProposalsPage.jsx` — legacy-modal → daisyUI modal (import + create)
+- [x] `frontend/src/pages/user/MapPage.jsx` — legacy-modal → daisyUI modal (proposal form)
+- [x] `frontend/src/components/dynamic/DynamicTable.jsx` — inline styles → Tailwind, overflow-x-auto responsive, table-zebra, daisyUI filter inputs
+- [x] `frontend/src/App.css` — fix map-legend z-index
+
+### Responsive patterns applied
+| Component | Pattern |
+|-----------|---------|
+| AdminDashboard | Grid: 1 col (mobile) → 2 col (md) → 3 col (xl) |
+| DynamicTable | overflow-x-auto horizontal scroll on mobile |
+| Page headers | flex-col sm:flex-row (stack on mobile, inline on desktop) |
+| Filter bars | flex-col sm:flex-row (stack on mobile, inline on desktop) |
+| Action buttons | flex-wrap for wrapping on small screens |
+| Modals | daisyUI modal (consistent across all pages) |
 
 ### Kết quả test
-- [ ] Desktop (1280px+) hiển thị đúng
-- [ ] Tablet (768-1024px) hiển thị đúng
-- [ ] Mobile (<768px) hiển thị đúng
-- [ ] Sidebar responsive hoạt động
-- [ ] Tables responsive
-- [ ] Forms responsive
+- [x] `npm run build` thành công
+- [x] AdminStationsPage layout matches AdminProposalsPage/AdminUsersPage
+- [x] Import/Create modals use daisyUI modal (consistent look)
+- [x] DynamicTable responsive with horizontal scroll
+- [x] All buttons/popups work correctly
 
 ### Ghi chú
+- RecordDetailPopup, FileViewer, FileListPopup, FieldManager, DataListManager vẫn dùng legacy-modal (CSS từ legacy-modal.css loaded via `<link>`) — chuyển sang daisyUI modal là Task 9
 
 ---
 
