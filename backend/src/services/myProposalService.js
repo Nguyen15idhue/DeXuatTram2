@@ -1,7 +1,7 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 
-exports.getUserProposals = async (userId, status, page, limit) => {
+exports.getUserProposals = async (userId, status, search, page, limit) => {
   const offset = (page - 1) * limit;
   let where = ['p.user_id = ?'];
   let params = [userId];
@@ -9,6 +9,11 @@ exports.getUserProposals = async (userId, status, page, limit) => {
   if (status) {
     where.push('p.status = ?');
     params.push(status);
+  }
+
+  if (search) {
+    where.push('(p.owner_name LIKE ? OR p.address LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
   }
 
   const whereClause = 'WHERE ' + where.join(' AND ');

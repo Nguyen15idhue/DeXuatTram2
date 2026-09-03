@@ -398,14 +398,12 @@ const DataListManager = () => {
         </table>
       </div>
 
-      {pagination.totalPages > 1 && (
-        <Pagination
-          page={pagination.page}
-          totalPages={pagination.totalPages}
-          total={pagination.total}
-          onPageChange={loadLists}
-        />
-      )}
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={loadLists}
+      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 const pool = require('../utils/db');
 
-exports.getAllFieldDefinitions = async (entity, status, page, limit) => {
+exports.getAllFieldDefinitions = async (entity, status, search, type, page, limit) => {
   const offset = (page - 1) * limit;
   let where = [];
   let params = [];
@@ -13,6 +13,16 @@ exports.getAllFieldDefinitions = async (entity, status, page, limit) => {
   if (status) {
     where.push('status = ?');
     params.push(status);
+  }
+
+  if (search) {
+    where.push('(label LIKE ? OR `key` LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  if (type) {
+    where.push('type = ?');
+    params.push(type);
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';

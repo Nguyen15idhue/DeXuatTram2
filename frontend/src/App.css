@@ -639,38 +639,6 @@ select:focus {
   width: auto;
 }
 
-/* Filter Bar */
-.filter-bar {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  align-items: center;
-}
-
-.filter-bar input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  font-size: 14px;
-}
-
-.filter-bar input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.filter-bar select {
-  width: auto;
-  padding: 8px 12px;
-  font-size: 14px;
-}
-
-.filter-bar .btn {
-  width: auto;
-  padding: 8px 16px;
-}
-
 /* Map Picker */
 .map-picker {
   margin-bottom: 15px;
@@ -1142,16 +1110,6 @@ select:focus {
     gap: 12px;
   }
 
-  .filter-bar {
-    flex-direction: column;
-  }
-
-  .filter-bar input,
-  .filter-bar select,
-  .filter-bar .btn {
-    width: 100%;
-  }
-
   .table-container {
     overflow-x: auto;
   }
@@ -1574,11 +1532,9 @@ select:focus {
 .preview-container .form-row {
   display: flex;
   gap: 12px;
-  margin-bottom: 12px;
-  border: 1px dashed #d0d7de;
-  border-radius: 8px;
+  margin-bottom: 0;
   padding: 8px;
-  background: #fafbfc;
+  background: transparent;
   transition: all 0.15s;
 }
 .preview-container.mobile-mode .form-row {
@@ -1668,6 +1624,61 @@ select:focus {
 }
 .field-chip:active { cursor: grabbing; }
 .field-chip .btn-sm { padding: 2px 6px; font-size: 10px; border-radius: 10px; }
+
+/* Row header (inline layout controls) */
+.preview-row {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: white;
+  transition: all 0.15s;
+}
+.preview-row.row-drag-over {
+  border-color: #4a6cf7;
+  box-shadow: 0 0 0 2px rgba(74, 108, 247, 0.15);
+}
+.row-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 8px 8px 0 0;
+  font-size: 12px;
+}
+.row-drag-handle {
+  cursor: grab;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+}
+.row-drag-handle:active { cursor: grabbing; }
+.row-label { font-weight: 500; color: #666; white-space: nowrap; }
+.row-actions { display: flex; gap: 2px; }
+.insert-row-zone {
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.insert-row-zone .insert-row-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.insert-row-zone:hover .insert-row-btn,
+.insert-row-zone.drag-over .insert-row-btn {
+  opacity: 1;
+}
+.insert-row-zone.drag-over {
+  height: 28px;
+  background: rgba(74, 108, 247, 0.08);
+  border: 1px dashed #4a6cf7;
+  border-radius: 6px;
+  margin: 4px 0;
+}
 
 /* Field Config Panel */
 .field-config-panel {
@@ -2767,3 +2778,51 @@ select:focus {
 }
 
 } /* end @layer base */
+
+/* Filter Bar — unlayered to override daisyUI .input width */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.filter-bar input {
+  flex: 1;
+  width: auto;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.filter-bar input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.filter-bar select {
+  width: auto;
+  padding: 8px 28px 8px 12px;
+  font-size: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+}
+
+.filter-bar .btn {
+  width: auto;
+  padding: 8px 16px;
+}
+
+@media (max-width: 768px) {
+  .filter-bar {
+    flex-direction: column;
+  }
+  .filter-bar input,
+  .filter-bar select,
+  .filter-bar .btn {
+    width: 100%;
+  }
+}

@@ -19,10 +19,23 @@ exports.getAll = async (page = 1, limit = 50) => {
   return { data: parsed, pagination: { page, limit, total: countResult[0].total, totalPages: Math.ceil(countResult[0].total / limit) } };
 };
 
-exports.getById = async (id) => {
+exports.getById = async (id, rowPage, rowLimit) => {
   const [lists] = await pool.query('SELECT * FROM data_lists WHERE id = ?', [id]);
   if (lists.length === 0) return null;
   const list = { ...lists[0], columns_config: parseJsonField(lists[0].columns_config) };
+
+  if (rowPage && rowLimit) {
+    const offset = (rowPage - 1) * rowLimit;
+    const [countResult] = await pool.query('SELECT COUNT(*) as total FROM data_list_rows WHERE list_id = ?', [id]);
+    const [rows] = await pool.query(
+      'SELECT * FROM data_list_rows WHERE list_id = ? ORDER BY sort_order, id LIMIT ? OFFSET ?',
+      [id, rowLimit, offset]
+    );
+    const parsedRows = rows.map(r => ({ ...r, data: parseJsonField(r.data) }));
+    const total = countResult[0].total;
+    return { ...list, rows: parsedRows, rowPagination: { page: rowPage, limit: rowLimit, total, totalPages: Math.ceil(total / rowLimit) } };
+  }
+
   const [rows] = await pool.query(
     'SELECT * FROM data_list_rows WHERE list_id = ? ORDER BY sort_order, id',
     [id]

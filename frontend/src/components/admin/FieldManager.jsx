@@ -53,6 +53,8 @@ const FieldManager = () => {
   const [editingIsFixed, setEditingIsFixed] = useState(false);
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [dataLists, setDataLists] = useState([]);
   const [entityFields, setEntityFields] = useState([]);
@@ -79,6 +81,8 @@ const FieldManager = () => {
       const params = new URLSearchParams({ page, limit: 10 });
       if (filterEntity) params.append('entity', filterEntity);
       if (filterStatus) params.append('status', filterStatus);
+      if (searchText) params.append('search', searchText);
+      if (filterType) params.append('type', filterType);
       const res = await fieldDefinitionService.getAll(params.toString(), token);
       if (res.success) {
         setFields(res.data);
@@ -89,7 +93,7 @@ const FieldManager = () => {
     } finally {
       setLoading(false);
     }
-  }, [filterEntity, filterStatus, token]);
+  }, [filterEntity, filterStatus, searchText, filterType, token]);
 
   useEffect(() => { loadFields(1); }, [loadFields]);
 
@@ -596,11 +600,23 @@ const FieldManager = () => {
       )}
 
       <div className="filter-bar">
-        <select value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}>
+        <input
+          type="text"
+          className="input input-bordered input-sm"
+          placeholder="Tìm theo Label hoặc Key..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && loadFields(1)}
+        />
+        <select className="select select-bordered select-sm" value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}>
           <option value="">Tất cả entity</option>
           {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
         </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+        <select className="select select-bordered select-sm" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+          <option value="">Tất cả type</option>
+          {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select className="select select-bordered select-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>

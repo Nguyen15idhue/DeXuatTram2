@@ -2,8 +2,8 @@ const myProposalService = require('../services/myProposalService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
-    const result = await myProposalService.getUserProposals(req.user.id, status, parseInt(page), parseInt(limit));
+    const { status, search, page = 1, limit = 10 } = req.query;
+    const result = await myProposalService.getUserProposals(req.user.id, status, search, parseInt(page), parseInt(limit));
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Get my proposals error:', error);

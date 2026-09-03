@@ -397,8 +397,9 @@ export const dataListService = {
   getAll(params, token) {
     return api.getWithAuth(`/admin/data-lists?${params}`, token);
   },
-  getById(id, token) {
-    return api.getWithAuth(`/admin/data-lists/${id}`, token);
+  getById(id, params = '', token) {
+    const query = params ? `?${params}` : '';
+    return api.getWithAuth(`/admin/data-lists/${id}${query}`, token);
   },
   create(data, token) {
     return api.postWithAuth('/admin/data-lists', data, token);

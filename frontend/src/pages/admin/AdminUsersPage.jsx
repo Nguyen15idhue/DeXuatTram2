@@ -61,8 +61,6 @@ const AdminUsersPage = () => {
     } catch { /* silent */ }
   };
 
-  useEffect(() => { loadUsers(1); }, []);
-
   const loadUsers = useCallback(async (page = 1) => {
     try {
       setLoading(true);

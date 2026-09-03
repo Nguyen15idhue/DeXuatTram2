@@ -2,8 +2,8 @@ const fieldDefinitionService = require('../services/fieldDefinitionService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { entity, status, page = 1, limit = 50 } = req.query;
-    const result = await fieldDefinitionService.getAllFieldDefinitions(entity, status, parseInt(page), parseInt(limit));
+    const { entity, status, search, type, page = 1, limit = 50 } = req.query;
+    const result = await fieldDefinitionService.getAllFieldDefinitions(entity, status, search, type, parseInt(page), parseInt(limit));
     res.json({ success: true, data: result.fieldDefinitions, pagination: result.pagination });
   } catch (error) {
     console.error('Get field definitions error:', error);

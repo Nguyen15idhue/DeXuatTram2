@@ -22,6 +22,7 @@ const AdminProposalsPage = () => {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
@@ -51,13 +52,12 @@ const AdminProposalsPage = () => {
     } catch { /* silent */ }
   };
 
-  useEffect(() => { loadProposals(1); }, []);
-
   const loadProposals = useCallback(async (page = 1) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
       if (filter) params.append('status', filter);
+      if (search) params.append('search', search);
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
@@ -68,7 +68,7 @@ const AdminProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, token]);
+  }, [filter, search, token]);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
@@ -151,6 +151,14 @@ const AdminProposalsPage = () => {
           <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
         </div>
         <div className="flex gap-2">
+          <input
+            type="text"
+            className="input input-bordered input-sm"
+            placeholder="Tìm theo tên, địa chỉ, người tạo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && loadProposals(1)}
+          />
           <select className="select select-bordered select-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">Tất cả</option>
             {statusOptions.map(opt => (

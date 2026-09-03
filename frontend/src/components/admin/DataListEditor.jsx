@@ -6,6 +6,7 @@ import { formatNumber } from '../../utils/formatNumber';
 import Loading from '../Loading';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
+import Pagination from '../Pagination';
 
 const DataListEditor = () => {
   const { token } = useAuth();
@@ -18,14 +19,19 @@ const DataListEditor = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [editingCell, setEditingCell] = useState(null);
   const [newRow, setNewRow] = useState(null);
+  const [rowPagination, setRowPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
 
-  const loadList = useCallback(async () => {
+  const loadList = useCallback(async (rowPage = 1) => {
     try {
       setLoading(true);
-      const res = await dataListService.getById(id, token);
+      const params = `row_page=${rowPage}&row_limit=20`;
+      const res = await dataListService.getById(id, params, token);
       if (res.success) {
         setList(res.data);
         setRows(res.data.rows || []);
+        if (res.data.rowPagination) {
+          setRowPagination(res.data.rowPagination);
+        }
       } else {
         setError(res.message || 'Lỗi tải dữ liệu');
       }
@@ -36,7 +42,7 @@ const DataListEditor = () => {
     }
   }, [id, token]);
 
-  useEffect(() => { loadList(); }, [loadList]);
+  useEffect(() => { loadList(1); }, [loadList]);
 
   const columns = list?.columns_config || [];
 
@@ -67,9 +73,9 @@ const DataListEditor = () => {
     try {
       const res = await dataListService.addRows(id, [{ data: newRow, sort_order: rows.length }], token);
       if (res.success) {
-        setRows([...rows, ...res.data.filter(r => !rows.find(exist => exist.id === r.id))]);
         setNewRow(null);
         setToast({ message: 'Đã thêm dòng', type: 'success' });
+        loadList(rowPagination.page);
       } else {
         setToast({ message: res.message || 'Lỗi thêm', type: 'error' });
       }
@@ -82,8 +88,8 @@ const DataListEditor = () => {
     try {
       const res = await dataListService.deleteRow(id, rowId, token);
       if (res.success) {
-        setRows(rows.filter(r => r.id !== rowId));
         setToast({ message: 'Đã xóa dòng', type: 'success' });
+        loadList(rowPagination.page);
       } else {
         setToast({ message: res.message || 'Lỗi xóa', type: 'error' });
       }
@@ -127,7 +133,7 @@ const DataListEditor = () => {
           <tbody>
             {rows.map((row, i) => (
               <tr key={row.id}>
-                <td>{i + 1}</td>
+                <td>{(rowPagination.page - 1) * rowPagination.limit + i + 1}</td>
                 {columns.map(col => (
                   <td key={col.key}
                     onDoubleClick={() => setEditingCell({ rowId: row.id, colKey: col.key })}>
@@ -183,8 +189,15 @@ const DataListEditor = () => {
         </table>
       </div>
 
+      <Pagination
+        page={rowPagination.page}
+        totalPages={rowPagination.totalPages}
+        total={rowPagination.total}
+        onPageChange={loadList}
+      />
+
       <p className="mt-2.5 text-[13px] text-gray-500">
-        Double-click để chỉnh sửa ô. Enter để lưu, Esc để hủy. Tổng: {rows.length} dòng
+        Double-click để chỉnh sửa ô. Enter để lưu, Esc để hủy. Tổng: {rowPagination.total} dòng
       </p>
     </div>
   );

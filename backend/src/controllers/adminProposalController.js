@@ -2,8 +2,8 @@ const adminProposalService = require('../services/adminProposalService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
-    const result = await adminProposalService.getAllProposals(status, parseInt(page), parseInt(limit));
+    const { status, search, page = 1, limit = 10 } = req.query;
+    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit));
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);

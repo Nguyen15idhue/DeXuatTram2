@@ -100,6 +100,7 @@ const AdminMapConfigPage = () => {
   const resolveTileUrl = (providerId, style, key) => {
     const p = getProviderById(providerId);
     if (!p) return CARTO_LIGHT;
+    if (p.incompatible_with_leaflet) return '';
     if (p.tile_url_template) {
       let url = p.tile_url_template.replace('{key}', key || '');
       url = url.replace('{style}', style || '');
@@ -108,6 +109,8 @@ const AdminMapConfigPage = () => {
     if (p.tile_url && !p.tile_url.includes('{domain}')) return p.tile_url;
     return CARTO_LIGHT;
   };
+
+  const isLeafletIncompatible = selectedProvider?.incompatible_with_leaflet && !isCustom;
 
   const getActiveTileConfig = () => {
     if (isCustom) {
@@ -232,10 +235,16 @@ const AdminMapConfigPage = () => {
                     </span>
                     {p.requires_key && <span className="text-warning font-semibold">Cần Key</span>}
                     {p.has_cluster && <span className="text-success font-semibold">Cluster: {p.cluster_method}</span>}
+                    {p.incompatible_with_leaflet && <span className="text-error font-semibold">Không tương thích Leaflet</span>}
                   </div>
                 </div>
               ))}
             </div>
+            {isLeafletIncompatible && (
+              <div className="alert alert-warning text-sm mt-2">
+                <span>{selectedProvider.name} không tương thích với Leaflet TileLayer. Dùng renderer tương ứng ({selectedProvider.name}) hoặc chọn provider khác.</span>
+              </div>
+            )}
             <div onClick={() => { setIsCustom(true); setSelectedProviderId('custom'); setPreviewKey(k => k + 1); setTestStatus(null); }}
               className={`mt-2 p-2.5 rounded-lg cursor-pointer border-2 transition-all ${isCustom ? 'border-primary bg-primary/5' : 'border-base-300 bg-white hover:border-primary/40'}`}>
               <div className="text-sm font-semibold">Tùy chỉnh thủ công (Custom)</div>

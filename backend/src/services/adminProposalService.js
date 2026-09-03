@@ -1,7 +1,7 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 
-exports.getAllProposals = async (status, page, limit) => {
+exports.getAllProposals = async (status, search, page, limit) => {
   const offset = (page - 1) * limit;
   let where = [];
   let params = [];
@@ -11,9 +11,18 @@ exports.getAllProposals = async (status, page, limit) => {
     params.push(status);
   }
 
-  const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+  if (search) {
+    where.push('(p.owner_name LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
 
-  const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM station_proposals p ${whereClause}`, params);
+  const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+  const needsJoin = search;
+
+  const [countResult] = await pool.query(
+    `SELECT COUNT(*) as total FROM station_proposals p ${needsJoin ? 'JOIN users u ON p.user_id = u.id' : ''} ${whereClause}`,
+    params
+  );
   const total = countResult[0].total;
 
   const [proposals] = await pool.query(
