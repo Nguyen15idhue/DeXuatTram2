@@ -173,7 +173,7 @@ const ViewBuilder = ({ viewId, onSaved }) => {
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       {error && <ErrorMessage message={error} />}
 
-      <div style={{ marginBottom: 16 }}>
+      <div className="mb-4">
         <div className="form-row">
           <div className="form-group">
             <label>Entity</label>
@@ -202,9 +202,9 @@ const ViewBuilder = ({ viewId, onSaved }) => {
               <div key={field.id} className="builder-available-item" onClick={() => handleAddField(field)}>
                 <div>
                   <strong>{field.label}</strong>
-                  <div style={{ fontSize: 12, color: '#888' }}>{field.key} · {field.type}</div>
+                  <div className="text-xs text-gray-400">{field.key} · {field.type}</div>
                 </div>
-                <span style={{ color: '#4a6cf7', fontSize: 20 }}>+</span>
+                <span className="text-indigo-500 text-xl">+</span>
               </div>
             ))}
           </div>
@@ -223,7 +223,7 @@ const ViewBuilder = ({ viewId, onSaved }) => {
                 renderItem={(item) => (
                   <div className="builder-assigned-item">
                     <span className="drag-handle">⠿</span>
-                    <div className="field-label">{item.label} <code style={{ fontSize: 11, color: '#888' }}>{item.key}</code></div>
+                    <div className="field-label">{item.label} <code className="text-[11px] text-gray-400">{item.key}</code></div>
                     <div className="field-config">
                       <label>
                         <input type="checkbox" checked={item.visible} onChange={(e) => handleFieldConfigChange(item.fieldId, 'visible', e.target.checked)} />

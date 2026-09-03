@@ -97,7 +97,7 @@ const DynamicFilter = ({ columns, filters, onChange }) => {
           </div>
         );
       })}
-      <div className="dynamic-filter-item" style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-end' }}>
+      <div className="dynamic-filter-item flex-row gap-1.5 items-end">
         <button className="btn btn-primary btn-sm" onClick={handleApply}>Lọc</button>
         <button className="btn btn-secondary btn-sm" onClick={handleReset}>Đặt lại</button>
       </div>

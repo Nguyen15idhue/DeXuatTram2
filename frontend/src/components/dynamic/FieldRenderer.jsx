@@ -81,7 +81,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
       const vals = Array.isArray(value) ? value : [];
       if (vals.length === 0) return <span className="field-empty">-</span>;
       return (
-        <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4 }}>
+        <span className="inline-flex flex-wrap gap-1">
           {vals.map((v, i) => {
             const opt = parsedOptions.find(o => (o.value || o) === v);
             if (opt) {
@@ -91,7 +91,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
               }
               return <span key={i} style={getBadgeStyle(opt)}>{opt.label || v}</span>;
             }
-            return <span key={i} style={{ fontSize: 12, color: '#666' }}>{v}</span>;
+            return <span key={i} className="text-xs text-gray-500">{v}</span>;
           })}
         </span>
       );
@@ -176,7 +176,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     }
 
     case 'url':
-      return <span style={{ color: '#4a6cf7' }}>{value}</span>;
+      return <span className="text-indigo-500">{value}</span>;
 
     case 'email':
       return <span>{value}</span>;
@@ -190,7 +190,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     case 'formula': {
       if (!field.formula_config) return <span>{String(value)}</span>;
       if (field.formula_config.outputType === 'url') {
-        return <a href={value} target="_blank" rel="noopener noreferrer" style={{ color: '#4a6cf7' }}>{field.formula_config.label || value}</a>;
+        return <a href={value} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{field.formula_config.label || value}</a>;
       }
       return <span>{String(value)}</span>;
     }

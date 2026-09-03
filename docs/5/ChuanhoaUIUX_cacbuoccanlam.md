@@ -521,14 +521,14 @@ xl: 1280px   /* Large desktop */
 
 | Task | Thời gian | Status |
 |------|-----------|--------|
-| Task 1: Backup + Cài đặt | 1h | ⬜ |
-| Task 2: Theme + Design Tokens | 2-3h | ⬜ |
-| Task 3: Shared Components | 3-5h | ⬜ |
-| Task 4: Refactor Layouts | 2-3h | ⬜ |
-| Task 5: Pages Phase A | 3-4h | ⬜ |
-| Task 6: Pages Phase B | 4-5h | ⬜ |
-| Task 7: Pages Phase C | 5-6h | ⬜ |
-| Task 8: Responsive System | 3-4h | ⬜ |
-| Task 9: Dọn dẹp | 2-3h | ⬜ |
-| Task 10: Visual Audit | 2h | ⬜ |
-| **Tổng** | **27-38h** | |
+| Task 1: Backup + Cài đặt | 30 phút | ✅ |
+| Task 2: Theme + Design Tokens | 45 phút | ✅ |
+| Task 3: Shared Components | 60 phút | ✅ |
+| Task 4: Refactor Layouts | 30 phút | ✅ |
+| Task 5: Pages Phase A | 30 phút | ✅ |
+| Task 6: Pages Phase B | 30 phút | ✅ |
+| Task 7: Pages Phase C | ~45 phút | ✅ |
+| Task 8: Responsive System | ~30 phút | ✅ |
+| Task 9: Dọn dẹp | ~30 phút | ✅ |
+| Task 10: Visual Audit | ~20 phút | ✅ |
+| **Tổng** | **~5.5h** | **✅ ALL DONE** |

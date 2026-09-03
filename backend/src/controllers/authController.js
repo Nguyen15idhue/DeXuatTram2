@@ -63,11 +63,8 @@ exports.login = async (req, res) => {
       });
     }
 
-    let avatar = null;
-    try {
-      const cd = user.custom_data ? JSON.parse(user.custom_data) : {};
-      avatar = cd.avatar || null;
-    } catch {}
+    const loginCd = parseCustomData(user.custom_data);
+    const avatar = loginCd.avatar || null;
 
     const token = authService.generateToken(user.id, user.email, user.role);
 
@@ -93,6 +90,12 @@ exports.login = async (req, res) => {
   }
 };
 
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
 exports.getMe = async (req, res) => {
   try {
     const user = await authService.findById(req.user.id);
@@ -103,11 +106,8 @@ exports.getMe = async (req, res) => {
       });
     }
 
-    let avatar = null;
-    try {
-      const cd = user.custom_data ? JSON.parse(user.custom_data) : {};
-      avatar = cd.avatar || null;
-    } catch {}
+    const cd = parseCustomData(user.custom_data);
+    const avatar = cd.avatar || null;
 
     res.json({
       success: true,
@@ -132,10 +132,7 @@ exports.updateProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    let customData = {};
-    try {
-      customData = user.custom_data ? JSON.parse(user.custom_data) : {};
-    } catch { customData = {}; }
+    let customData = parseCustomData(user.custom_data);
 
     if (avatar !== undefined) {
       customData.avatar = avatar;
@@ -159,11 +156,8 @@ exports.updateProfile = async (req, res) => {
 
     const updated = await authService.findById(req.user.id);
 
-    let updatedAvatar = null;
-    try {
-      const cd = updated.custom_data ? JSON.parse(updated.custom_data) : {};
-      updatedAvatar = cd.avatar || null;
-    } catch {}
+    const updatedCd = parseCustomData(updated.custom_data);
+    const updatedAvatar = updatedCd.avatar || null;
 
     res.json({ success: true, data: { ...updated, avatar: updatedAvatar, custom_data: undefined }, message: 'Cập nhật hồ sơ thành công' });
   } catch (error) {

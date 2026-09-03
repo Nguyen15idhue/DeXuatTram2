@@ -108,7 +108,7 @@ const FileViewer = ({ file, onClose }) => {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="legacy-modal" onClick={(e) => e.stopPropagation()}>
-          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>Không thể hiển thị file</div>
+          <div className="text-center p-6 text-gray-400">Không thể hiển thị file</div>
           <div className="form-actions">
             <button className="btn btn-secondary" onClick={onClose}>Đóng</button>
           </div>
@@ -119,11 +119,11 @@ const FileViewer = ({ file, onClose }) => {
 
   const renderContent = () => {
     if (loading) {
-      return <div style={{ padding: 40, textAlign: 'center', color: '#fff' }}>Đang tải...</div>;
+      return <div className="p-10 text-center text-white">Đang tải...</div>;
     }
     if (error) {
       return (
-        <div style={{ padding: 40, textAlign: 'center', color: '#f87171' }}>
+        <div className="p-10 text-center text-red-400">
           <p>{error}</p>
         </div>
       );
@@ -141,46 +141,46 @@ const FileViewer = ({ file, onClose }) => {
 
       case 'video':
         return objectUrl ? (
-          <video src={objectUrl} controls style={{ maxWidth: '100%', maxHeight: '70vh' }}>Trình duyệt không hỗ trợ video.</video>
+          <video src={objectUrl} controls className="max-w-full max-h-[70vh]">Trình duyệt không hỗ trợ video.</video>
         ) : null;
 
       case 'audio':
         return objectUrl ? (
-          <div style={{ padding: 40, textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🎵</div>
-            <audio src={objectUrl} controls style={{ width: '100%', maxWidth: 400 }} />
+          <div className="p-10 text-center">
+            <div className="text-5xl mb-4">🎵</div>
+            <audio src={objectUrl} controls className="w-full max-w-[400px]" />
           </div>
         ) : null;
 
       case 'pdf':
         return objectUrl ? (
-          <iframe src={objectUrl} style={{ width: '100%', height: '70vh', border: 'none' }} title={name} />
+          <iframe src={objectUrl} className="w-full h-[70vh] border-none" title={name} />
         ) : null;
 
       case 'word':
         return (
-          <div style={{ width: '100%', padding: 20, background: '#fff', color: '#000', overflow: 'auto', maxHeight: '70vh' }}>
+          <div className="w-full p-5 bg-white text-black overflow-auto max-h-[70vh]">
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>
         );
 
       case 'excel':
         if (!xlsxData || xlsxData.length === 0) {
-          return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>Không có dữ liệu</div>;
+          return <div className="p-10 text-center text-gray-400">Không có dữ liệu</div>;
         }
         return (
-          <div style={{ width: '100%', overflow: 'auto', maxHeight: '70vh', padding: 10 }}>
+          <div className="w-full overflow-auto max-h-[70vh] p-2.5">
             {xlsxData.map((sheet, si) => (
-              <div key={si} style={{ marginBottom: 20 }}>
-                <div style={{ fontWeight: 600, color: '#fff', marginBottom: 8, padding: '4px 8px', background: '#4a6cf7', borderRadius: 4, display: 'inline-block' }}>
+              <div key={si} className="mb-5">
+                <div className="font-semibold text-white mb-2 px-2 py-1 bg-indigo-500 rounded inline-block">
                   {sheet.name}
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', fontSize: 13 }}>
+                <table className="w-full border-collapse bg-white text-[13px]">
                   <tbody>
                     {sheet.data.map((row, ri) => (
                       <tr key={ri}>
                         {row.map((cell, ci) => (
-                          <td key={ci} style={{ border: '1px solid #e0e0e0', padding: '4px 8px', background: ri === 0 ? '#f0f2f5' : '#fff' }}>
+                          <td key={ci} className={`border border-gray-200 px-2 py-1 ${ri === 0 ? 'bg-gray-100' : 'bg-white'}`}>
                             {cell != null ? String(cell) : ''}
                           </td>
                         ))}
@@ -195,7 +195,7 @@ const FileViewer = ({ file, onClose }) => {
 
       case 'text':
         return (
-          <div style={{ width: '100%', padding: 20, boxSizing: 'border-box' }}>
+          <div className="w-full p-5">
             <pre style={{ margin: 0, color: '#d4d4d4', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: "'Consolas', 'Monaco', monospace" }}>
               {textContent}
             </pre>
@@ -205,16 +205,16 @@ const FileViewer = ({ file, onClose }) => {
       default:
         if (objectUrl) {
           return (
-            <div style={{ padding: 40, textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
-              <p style={{ color: '#ccc' }}>Định dạng này không hỗ trợ xem trước</p>
-              <p style={{ color: '#888', fontSize: 13 }}>File đã được tải. Bạn có thể kéo thả ra桌mình hoặc dùng nút tải xuống.</p>
+            <div className="p-10 text-center">
+              <div className="text-5xl mb-4">📁</div>
+              <p className="text-gray-300">Định dạng này không hỗ trợ xem trước</p>
+              <p className="text-gray-400 text-[13px]">File đã được tải. Bạn có thể kéo thả ra桌mình hoặc dùng nút tải xuống.</p>
             </div>
           );
         }
         return (
-          <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
+          <div className="p-10 text-center text-gray-400">
+            <div className="text-5xl mb-4">📁</div>
             <p>Không thể xem trước định dạng này</p>
           </div>
         );
@@ -225,14 +225,14 @@ const FileViewer = ({ file, onClose }) => {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 950, maxHeight: '92vh' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{name}</h3>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div className="legacy-modal max-w-[950px] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="m-0 text-base overflow-hidden text-ellipsis whitespace-nowrap flex-1">{name}</h3>
+          <div className="flex gap-1.5 items-center">
             {fileType === 'image' && (
               <>
                 <button className="btn btn-sm btn-secondary" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))}>−</button>
-                <span style={{ fontSize: 12, color: '#666', minWidth: 40, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+                <span className="text-xs text-gray-500 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
                 <button className="btn btn-sm btn-secondary" onClick={() => setZoom(z => Math.min(4, z + 0.25))}>+</button>
               </>
             )}

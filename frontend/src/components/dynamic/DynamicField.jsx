@@ -165,7 +165,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     case 'select': {
       const selectedOpt = parsedOptions.find(o => (o.value || o) === value);
       return (
-        <div className="dynamic-field-select" style={{ position: 'relative' }} ref={dropdownRef}>
+        <div className="dynamic-field-select relative" ref={dropdownRef}>
           <div
             className={baseClass}
             style={{ cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}
@@ -174,18 +174,14 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             {value && selectedOpt ? (
               <span style={getBadgeStyle(selectedOpt)}>{selectedOpt.label || value}</span>
             ) : (
-              <span style={{ color: '#999' }}>-- Chọn --</span>
+              <span className="text-gray-400">-- Chọn --</span>
             )}
-            <span style={{ marginLeft: 'auto', fontSize: 10 }}>▼</span>
+            <span className="ml-auto text-[10px]">▼</span>
           </div>
           {dropdownOpen && (
-            <div className="dynamic-select-dropdown" style={{
-              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-              background: '#fff', border: '1px solid #d0d0d0', borderRadius: 6,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 200, overflow: 'auto', padding: 4
-            }}>
+            <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[200px] overflow-auto p-1">
               <div
-                style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 13, color: '#999' }}
+                className="px-2.5 py-1.5 cursor-pointer text-[13px] text-gray-400"
                 onClick={() => { onChange(''); setDropdownOpen(false); }}
               >
                 -- Chọn --
@@ -216,7 +212,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     case 'multiselect': {
       const selectedValues = Array.isArray(value) ? value : [];
       return (
-        <div className="dynamic-field-multiselect" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div className="dynamic-field-multiselect flex flex-wrap gap-1.5">
           {parsedOptions.map((opt, idx) => {
             const optVal = opt.value || opt;
             const optLabel = opt.label || opt;
@@ -237,7 +233,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                     onChange(current);
                   }}
                   disabled={disabled}
-                  style={{ display: 'none' }}
+                  className="hidden"
                 />
                 <span style={{
                   ...getBadgeStyle(opt),
@@ -249,7 +245,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
               </label>
             );
           })}
-          {parsedOptions.length === 0 && <span style={{ color: '#999', fontSize: 13 }}>Không có options</span>}
+          {parsedOptions.length === 0 && <span className="text-gray-400 text-[13px]">Không có options</span>}
         </div>
       );
     }

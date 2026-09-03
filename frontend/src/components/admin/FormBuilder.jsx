@@ -315,7 +315,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       {error && <ErrorMessage message={error} />}
 
-      <div style={{ marginBottom: 16 }}>
+      <div className="mb-4">
         <div className="form-row">
           <div className="form-group">
             <label>Entity</label>
@@ -360,7 +360,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       </div>
 
       <div className="builder-layout">
-        <div className="builder-panel" style={{ flex: 2 }}>
+        <div className="builder-panel flex-[2]">
           <div className="builder-panel-header">Form Preview</div>
           <div className="builder-panel-body">
             <div
@@ -424,7 +424,7 @@ const FormBuilder = ({ formId, onSaved }) => {
           </div>
         </div>
 
-        <div className="builder-panel" style={{ flex: 1 }}>
+        <div className="builder-panel flex-1">
           <div className="builder-panel-header">Available Fields ({filteredAvailable.length})</div>
           <div className="builder-panel-body">
             {filteredAvailable.length === 0 ? (
@@ -436,9 +436,9 @@ const FormBuilder = ({ formId, onSaved }) => {
                 onClick={() => handleAddField(field)}>
                 <div>
                   <strong>{field.label}</strong>
-                  <div style={{ fontSize: 12, color: '#888' }}>{field.key} · {field.type}</div>
+                  <div className="text-xs text-gray-400">{field.key} · {field.type}</div>
                 </div>
-                <span style={{ color: '#4a6cf7', fontSize: 20 }}>+</span>
+                <span className="text-indigo-500 text-xl">+</span>
               </div>
             ))}
           </div>
@@ -508,7 +508,7 @@ const FormBuilder = ({ formId, onSaved }) => {
               ))}
               <button className="btn btn-sm btn-secondary" onClick={() => addCondition(selectedField.fieldId)}>+ Thêm điều kiện</button>
               {(selectedField.config?.conditions || []).length > 1 && (
-                <div className="form-group" style={{ marginTop: 8 }}>
+                <div className="form-group mt-2">
                   <label>Logic</label>
                   <select value={selectedField.config?.conditionLogic || 'AND'} onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'conditionLogic', e.target.value)}>
                     <option value="AND">AND (tất cả)</option>

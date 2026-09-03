@@ -214,7 +214,7 @@ const DataListManager = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="legacy-modal max-w-[640px]" onClick={(e) => e.stopPropagation()}>
             <h2>{editingId ? 'Sửa danh sách' : 'Tạo danh sách mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}
@@ -229,17 +229,17 @@ const DataListManager = () => {
                 </div>
                 <div className="form-group-section">
                   <h4>Columns (cấu trúc dữ liệu)</h4>
-                  <button type="button" className="btn btn-sm btn-secondary" onClick={addColumn} style={{ marginBottom: 8 }}>+ Thêm column</button>
+                  <button type="button" className="btn btn-sm btn-secondary mb-2" onClick={addColumn}>+ Thêm column</button>
                   {form.columns_config.map((col, i) => (
-                    <div key={i} className="form-row" style={{ alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <input type="text" value={col.key} onChange={e => updateColumn(i, 'key', e.target.value)} placeholder="key (vd: tinh)" style={{ flex: 1 }} />
-                      <input type="text" value={col.label} onChange={e => updateColumn(i, 'label', e.target.value)} placeholder="Label (vd: Tỉnh)" style={{ flex: 1 }} />
-                      <select value={col.type} onChange={e => updateColumn(i, 'type', e.target.value)} style={{ padding: '6px 8px' }}>
+                    <div key={i} className="form-row items-center gap-2 mb-1.5">
+                      <input type="text" value={col.key} onChange={e => updateColumn(i, 'key', e.target.value)} placeholder="key (vd: tinh)" className="flex-1" />
+                      <input type="text" value={col.label} onChange={e => updateColumn(i, 'label', e.target.value)} placeholder="Label (vd: Tỉnh)" className="flex-1" />
+                      <select value={col.type} onChange={e => updateColumn(i, 'type', e.target.value)} className="px-2 py-1.5">
                         <option value="text">Text</option>
                         <option value="number">Number</option>
                       </select>
                       {col.type === 'number' && (
-                        <select value={col.number_format || 'plain'} onChange={e => updateColumn(i, 'number_format', e.target.value)} style={{ padding: '6px 8px' }} title="Định dạng số">
+                        <select value={col.number_format || 'plain'} onChange={e => updateColumn(i, 'number_format', e.target.value)} className="px-2 py-1.5" title="Định dạng số">
                           <option value="plain">1000</option>
                           <option value="comma">1,000</option>
                           <option value="dot">1.000</option>
@@ -282,7 +282,7 @@ const DataListManager = () => {
                     type="file"
                     accept=".xlsx,.xls"
                     onChange={handleDLFileSelect}
-                    style={{ display: 'none' }}
+                    className="hidden"
                   />
                   {importFile ? (
                     <div className="import-file-selected">

@@ -318,19 +318,19 @@ const FieldManager = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="legacy-modal max-w-[640px]" onClick={(e) => e.stopPropagation()}>
             <h2>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}
               <div className="field-form">
                 <div className="form-group">
-                  <label>Entity * {editingIsFixed && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
+                  <label>Entity * {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
                   <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)} disabled={editingIsFixed}>
                     {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Key * {editingId && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
+                  <label>Key * {editingId && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
                   <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" disabled={!!editingId} />
                 </div>
                 <div className="form-group">
@@ -338,7 +338,7 @@ const FieldManager = () => {
                   <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" />
                 </div>
                 <div className="form-group">
-                  <label>Type {editingIsFixed && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
+                  <label>Type {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
                   <select value={form.type} onChange={(e) => updateForm('type', e.target.value)} disabled={editingIsFixed}>
                     {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -353,7 +353,7 @@ const FieldManager = () => {
                 </div>
                 <div className="form-group">
                   <label>
-                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} style={{ marginRight: 6 }} />
+                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} className="mr-1.5" />
                     Bắt buộc
                   </label>
                 </div>
@@ -429,7 +429,7 @@ const FieldManager = () => {
                               <option key={dl.id} value={dl.id}>{dl.name} ({dl.row_count || 0} rows)</option>
                             ))}
                           </select>
-                          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                          <p className="text-xs text-gray-500 mt-1">
                             Quản lý data list tại <a href="/admin/data-lists" target="_blank" rel="noopener noreferrer">/admin/data-lists</a>
                           </p>
                         </div>
@@ -451,7 +451,7 @@ const FieldManager = () => {
                                   <option value="">-- Không có parent --</option>
                                   {cols.filter(c => c.key !== form.data_list_column).map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
                                 </select>
-                                <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                                <p className="text-xs text-gray-500 mt-1">
                                   Field hiện tại sẽ phụ thuộc vào field cha
                                 </p>
                               </div>
@@ -548,15 +548,15 @@ const FieldManager = () => {
                     <h4>Cấu hình File</h4>
                     <div className="form-row">
                       <label>
-                        <input type="checkbox" checked={form.file_config.images} onChange={(e) => updateFileConfig('images', e.target.checked)} style={{ marginRight: 4 }} />
+                        <input type="checkbox" checked={form.file_config.images} onChange={(e) => updateFileConfig('images', e.target.checked)} className="mr-1" />
                         Images
                       </label>
                       <label>
-                        <input type="checkbox" checked={form.file_config.videos} onChange={(e) => updateFileConfig('videos', e.target.checked)} style={{ marginRight: 4 }} />
+                        <input type="checkbox" checked={form.file_config.videos} onChange={(e) => updateFileConfig('videos', e.target.checked)} className="mr-1" />
                         Videos
                       </label>
                       <label>
-                        <input type="checkbox" checked={form.file_config.documents} onChange={(e) => updateFileConfig('documents', e.target.checked)} style={{ marginRight: 4 }} />
+                        <input type="checkbox" checked={form.file_config.documents} onChange={(e) => updateFileConfig('documents', e.target.checked)} className="mr-1" />
                         Documents
                       </label>
                     </div>
@@ -567,7 +567,7 @@ const FieldManager = () => {
                       </div>
                       <div className="form-group">
                         <label>
-                          <input type="checkbox" checked={form.file_config.multiple} onChange={(e) => updateFileConfig('multiple', e.target.checked)} style={{ marginRight: 4 }} />
+                          <input type="checkbox" checked={form.file_config.multiple} onChange={(e) => updateFileConfig('multiple', e.target.checked)} className="mr-1" />
                           Multiple files
                         </label>
                       </div>
@@ -636,7 +636,7 @@ const FieldManager = () => {
                 <td><span className="field-type-badge">{f.type}</span></td>
                 <td>{f.required ? '✓' : ''}</td>
                 <td>
-                  <span className={`badge badge-${f.status === 'active' ? 'active' : 'inactive'}`} style={{ cursor: 'pointer' }} onClick={() => handleToggleStatus(f.id, f.status)}>
+                  <span className={`badge badge-${f.status === 'active' ? 'active' : 'inactive'} cursor-pointer`} onClick={() => handleToggleStatus(f.id, f.status)}>
                     {f.status}
                   </span>
                 </td>

@@ -91,7 +91,7 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
           accept={accept}
           multiple={multiple}
           disabled={disabled || uploading}
-          style={{ display: 'none' }}
+          className="hidden"
         />
         {uploading ? (
           <span>Đang upload...</span>

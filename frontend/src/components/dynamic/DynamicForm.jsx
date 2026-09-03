@@ -400,7 +400,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
                     <div className="dynamic-form-field">
                       <label>
                         {cellField.labelOverride || cellField.label}
-                        {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                        {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span className="text-red-600"> *</span>}
                       </label>
                       {renderField(cellField)}
                       {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
@@ -421,7 +421,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
                 <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
                   <label>
                     {field.labelOverride || field.label}
-                    {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                    {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span className="text-red-600"> *</span>}
                   </label>
                   {renderField(field)}
                   {field.help_text && <div className="field-help">{field.help_text}</div>}
@@ -444,7 +444,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
             <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
               <label>
                 {field.labelOverride || field.label}
-                {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span className="text-red-600"> *</span>}
               </label>
               {renderField(field)}
               {field.help_text && <div className="field-help">{field.help_text}</div>}
