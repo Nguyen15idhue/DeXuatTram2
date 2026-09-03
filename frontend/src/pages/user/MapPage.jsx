@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Toast from '../../components/Toast';
-import { MapPin, X } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 
 const PROPOSALS_FORM_ID = 9;
 
@@ -117,24 +117,17 @@ const MapPage = () => {
       )}
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
-          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold m-0">Đề xuất trạm mới</h2>
-              <button className="btn btn-sm btn-secondary" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
-                <X size={14} /> Đóng
-              </button>
-            </div>
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4">Đề xuất trạm mới</h3>
 
-            <div className="popup-body">
-              <div className="popup-section">
-                <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80 mb-3">
-                  <MapPin size={14} />
-                  Tọa độ: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-                </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+                <MapPin size={14} />
+                Tọa độ: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
               </div>
 
-              {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
+              {error && <div className="alert alert-error text-sm">{error}</div>}
 
               <DynamicForm
                 entity="station_proposals"
@@ -142,11 +135,16 @@ const MapPage = () => {
                 onSubmit={handleSubmit}
                 initialData={{ latitude: coords.lat, longitude: coords.lng }}
               >
-                <button type="button" className="btn btn-secondary" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>Hủy</button>
+                <div className="modal-action">
+                  <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>Hủy</button>
+                </div>
               </DynamicForm>
             </div>
           </div>
-        </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => { setShowForm(false); setSelectingLocation(false); }}>close</button>
+          </form>
+        </dialog>
       )}
     </div>
   );

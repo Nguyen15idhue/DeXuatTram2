@@ -13,7 +13,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
-import { ClipboardList, Download, Upload, Plus, Search, X, MapPin } from 'lucide-react';
+import { ClipboardList, Download, Upload, Plus, Search, MapPin } from 'lucide-react';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -298,14 +298,9 @@ const MyProposalsPage = () => {
       </div>
 
       {showCreateForm && (
-        <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
-          <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold m-0">Tạo đề xuất mới</h2>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateForm(false)}>
-                <X size={16} />
-              </button>
-            </div>
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4">Tạo đề xuất mới</h3>
             <div className="border border-base-300 rounded-lg p-3 mb-4">
               <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
               <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
@@ -328,57 +323,76 @@ const MyProposalsPage = () => {
               onSubmit={handleCreateProposal}
               initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
             >
-              <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
+              <div className="modal-action">
+                <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
+              </div>
             </DynamicForm>
           </div>
-        </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowCreateForm(false)}>close</button>
+          </form>
+        </dialog>
       )}
 
       {showImport && (
-        <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="legacy-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold m-0">Import Đề xuất từ Excel</h2>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(false)}>
-                <X size={16} />
-              </button>
-            </div>
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Import Đề xuất từ Excel</h3>
             {importStep === 'upload' && (
-              <div className="flex flex-col gap-3">
-                <label className="text-sm font-medium">Chọn file Excel (.xlsx)</label>
-                <input type="file" accept=".xlsx,.xls" className="file-input file-input-bordered w-full" onChange={handleFileSelect} />
+              <div className="space-y-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Chọn file Excel (.xlsx)</span>
+                  </label>
+                  <input type="file" accept=".xlsx,.xls" className="file-input file-input-bordered w-full" onChange={handleFileSelect} />
+                </div>
                 {importFile && (
-                  <div className="bg-base-200 rounded-lg p-3 text-sm">
-                    <p>File: <strong>{importFile.name}</strong></p>
-                    <p>Kích thước: {(importFile.size / 1024).toFixed(1)} KB</p>
+                  <div className="alert alert-info">
+                    <span>File: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                 )}
-                <div className="flex justify-end gap-2">
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                <div className="modal-action">
+                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                    {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang đọc...' : 'Xem trước'}
                   </button>
                 </div>
               </div>
             )}
             {importStep === 'preview' && importPreview && (
-              <div className="flex flex-col gap-3">
-                <div className="bg-base-200 rounded-lg p-3 text-sm">
-                  <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
-                  <p className="text-success font-semibold">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
-                  {importPreview.errorRows > 0 && <p className="text-error font-semibold">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
+              <div className="space-y-4">
+                <div className="stats shadow w-full">
+                  <div className="stat">
+                    <div className="stat-title">Tổng dòng</div>
+                    <div className="stat-value text-lg">{importPreview.totalRows}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title text-success">Hợp lệ</div>
+                    <div className="stat-value text-lg text-success">{importPreview.validRows}</div>
+                  </div>
+                  {importPreview.errorRows > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-error">Lỗi</div>
+                      <div className="stat-value text-lg text-error">{importPreview.errorRows}</div>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-end gap-2">
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setImportStep('upload')}>Quay lại</button>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                <div className="modal-action">
+                  <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
+                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                    {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} đề xuất`}
                   </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowImport(false)}>close</button>
+          </form>
+        </dialog>
       )}
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}

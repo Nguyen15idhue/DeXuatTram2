@@ -106,40 +106,38 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 
     navigate(`/admin/${entityPath}/edit=${row.id}`);
   };
 
-  if (error) return <div className="error-message">{error}</div>;
-  if (columns.length === 0 && !loading) return <div className="empty-state">Chưa có cột nào được cấu hình</div>;
+  if (error) return <div className="alert alert-error"><span>{error}</span></div>;
+  if (columns.length === 0 && !loading) return <div className="text-center py-8 text-base-content/40">Chưa có cột nào được cấu hình</div>;
 
   const visibleColumns = columns.filter(c => c.visible);
   const hasFilters = visibleColumns.some(c => c.filterable);
 
   return (
     <div className="dynamic-table-container">
-      <div className="table-container">
-        {loading && <div style={{ padding: 8, fontSize: 13, color: '#888', borderBottom: '1px solid #eee' }}>Đang tải cấu hình...</div>}
-        <table>
+      <div className="overflow-x-auto">
+        {loading && <div className="px-2 py-1 text-xs text-base-content/50 border-b border-base-300">Đang tải cấu hình...</div>}
+        <table className="table table-zebra w-full text-sm">
           <thead>
             <tr>
-              <th style={{ width: 50, textAlign: 'center' }}>STT</th>
+              <th className="text-center w-12">STT</th>
               {visibleColumns.map(col => {
                 const key = col.field_key || col.key;
                 const sortable = col.sortable;
-                const colWidth = col.width ? parseInt(col.width) : undefined;
                 return (
                   <th
                     key={key}
-                    style={colWidth ? { minWidth: colWidth, width: colWidth } : undefined}
                     onClick={() => sortable && handleSort(key)}
-                    className={sortable ? 'sortable-th' : ''}
+                    className={sortable ? 'cursor-pointer select-none' : ''}
                   >
                     {col.label}
-                    {sortable && <span className="sort-icon">{getSortIcon(key)}</span>}
+                    {sortable && <span className="ml-1 text-xs">{getSortIcon(key)}</span>}
                   </th>
                 );
               })}
-              <th style={{ minWidth: 200, width: 200, textAlign: 'center' }}>Thao tác</th>
+              <th className="text-center min-w-[200px]">Thao tác</th>
             </tr>
             {hasFilters && (
-              <tr className="filter-row">
+              <tr className="bg-base-200">
                 <th></th>
                 {visibleColumns.map(col => {
                   const key = col.field_key || col.key;
@@ -148,7 +146,7 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 
                       {col.filterable ? (
                         <input
                           type="text"
-                          className="filter-input"
+                          className="input input-bordered input-xs w-full"
                           placeholder="Lọc..."
                           value={filters[key] || ''}
                           onClick={e => e.stopPropagation()}
@@ -165,13 +163,13 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 
           <tbody>
             {!sortedData || sortedData.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + 2} style={{ textAlign: 'center', padding: 40, color: '#999' }}>
+                <td colSpan={visibleColumns.length + 2} className="text-center py-10 text-base-content/40">
                   Không có dữ liệu
                 </td>
               </tr>
             ) : sortedData.map((row, idx) => (
-              <tr key={row.id || idx}>
-                <td style={{ textAlign: 'center' }}>{startIndex + idx + 1}</td>
+              <tr key={row.id || idx} className="hover">
+                <td className="text-center">{startIndex + idx + 1}</td>
                 {visibleColumns.map(col => {
                   const key = col.field_key || col.key;
                   return (
@@ -189,10 +187,10 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 
                   {actions ? (
                     actions(row)
                   ) : (
-                    <div className="action-buttons">
-                      <button className="btn btn-sm btn-primary" onClick={() => handleViewClick(row)}>Xem</button>
+                    <div className="flex gap-1 flex-wrap">
+                      <button className="btn btn-primary btn-xs" onClick={() => handleViewClick(row)}>Xem</button>
                       {onRowClick && (
-                        <button className="btn btn-sm btn-edit" onClick={() => handleEditClick(row)}>Sửa</button>
+                        <button className="btn btn-warning btn-xs" onClick={() => handleEditClick(row)}>Sửa</button>
                       )}
                     </div>
                   )}
