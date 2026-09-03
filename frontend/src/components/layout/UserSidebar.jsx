@@ -12,6 +12,11 @@ const UserSidebar = ({ isOpen, onClose }) => {
   const { user, isAdmin, logout } = useAuth();
   const location = useLocation();
 
+  const isActive = (path) => {
+    if (path === '/map') return location.pathname === '/map';
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
+
   return (
     <>
       {/* Overlay */}
@@ -36,7 +41,7 @@ const UserSidebar = ({ isOpen, onClose }) => {
               key={item.path}
               to={item.path}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors ${
-                location.pathname === item.path
+                isActive(item.path)
                   ? 'bg-primary text-white'
                   : 'text-base-content hover:bg-base-200'
               }`}

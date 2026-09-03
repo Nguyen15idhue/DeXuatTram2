@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Map, ClipboardList, User, Settings, Menu, LogOut } from 'lucide-react';
 
@@ -10,6 +10,12 @@ const navItems = [
 
 const UserHeader = ({ onMenuToggle }) => {
   const { user, isAdmin, logout } = useAuth();
+  const location = useLocation();
+
+  const isActive = (path) => {
+    if (path === '/map') return location.pathname === '/map';
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
 
   return (
     <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-4 lg:px-6">
@@ -29,7 +35,7 @@ const UserHeader = ({ onMenuToggle }) => {
             key={item.path}
             to={item.path}
             className={`btn btn-ghost btn-sm gap-2 ${
-              location.pathname === item.path ? 'btn-active text-primary' : 'text-base-content/70'
+              isActive(item.path) ? 'btn-active text-primary' : 'text-base-content/70'
             }`}
           >
             <item.icon size={16} />
@@ -42,7 +48,7 @@ const UserHeader = ({ onMenuToggle }) => {
             <Link
               to="/admin"
               className={`btn btn-ghost btn-sm gap-2 ${
-                location.pathname.startsWith('/admin') ? 'btn-active text-primary' : 'text-base-content/70'
+                location.pathname === '/admin' || location.pathname.startsWith('/admin/') ? 'btn-active text-primary' : 'text-base-content/70'
               }`}
             >
               <Settings size={16} />
