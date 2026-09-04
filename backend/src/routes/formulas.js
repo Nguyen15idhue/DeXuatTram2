@@ -64,11 +64,11 @@ router.post('/validate', requireAuth, (req, res) => {
  *       200:
  *         description: Preview result
  */
-router.post('/preview', requireAuth, (req, res) => {
+router.post('/preview', requireAuth, async (req, res) => {
   const { expression, scope = {}, metadata } = req.body;
   let result;
   if (metadata) {
-    result = formulaService.evaluatePostFormula(expression, metadata);
+    result = await formulaService.evaluatePostFormulaAsync(expression, metadata, scope, { dryRun: true });
   } else {
     result = formulaService.evaluateFormula(expression, scope);
   }

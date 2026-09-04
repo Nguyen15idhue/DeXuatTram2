@@ -3,6 +3,7 @@ const multer = require('multer');
 const pool = require('../utils/db');
 const fieldDefinitionService = require('./fieldDefinitionService');
 const dataListService = require('./dataListService');
+const proximityService = require('./proximityService');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -73,12 +74,17 @@ function buildImportColumns(entity, fieldDefs) {
   ];
 
   fieldDefs.forEach(f => {
+    let formulaConfig = null;
+    if (f.formula_config) {
+      try { formulaConfig = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config; } catch { formulaConfig = null; }
+    }
     columns.push({
       key: f.key,
       label: f.label,
       type: f.type,
       source_type: f.source_type,
-      required: !!f.required
+      required: !!f.required,
+      computeMode: formulaConfig ? (formulaConfig.compute_mode || 'pre') : null
     });
   });
 
@@ -117,6 +123,7 @@ function autoWidthColumns(sheet, columns) {
 }
 
 function getSampleValue(col) {
+  if (col.type === 'formula' && col.computeMode === 'post') return '';
   switch (col.type) {
     case 'number': return 0;
     case 'email': return 'example@email.com';
@@ -151,26 +158,38 @@ function validateHeaders(headerRow, columns, skipFirst = true) {
   return errors;
 }
 
-function parseExcelRow(row, columns, entity) {
+function buildHeaderMap(headerRow, columns) {
+  const map = {};
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const label = String(cell.value == null ? '' : cell.value).trim().toLowerCase();
+    if (!label) return;
+    const matched = columns.find(c => c.key !== '_stt' && c.label.toLowerCase() === label);
+    if (matched) map[colNumber] = matched.key;
+  });
+  return map;
+}
+
+function parseExcelRow(row, columns, entity, headerMap) {
   const fixedData = {};
   const dynamicData = {};
   const errors = [];
 
-  const colMap = {};
-  row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const cellLabel = String(cell.value || '').trim().toLowerCase();
-    const matched = columns.find(c => c.key !== '_stt' && c.label.toLowerCase() === cellLabel);
-    if (matched) {
-      colMap[matched.key] = { cell, col: matched };
-    }
-  });
+  const byKey = {};
+  columns.forEach(c => { byKey[c.key] = c; });
+  const valueByKey = {};
+  if (headerMap) {
+    Object.entries(headerMap).forEach(([colNumber, key]) => {
+      const cell = row.getCell(Number(colNumber));
+      valueByKey[key] = cell ? cell.value : '';
+    });
+  }
 
   columns.forEach(col => {
     if (col.key === '_stt') return;
     if (col.type === 'file') return;
+    if (col.type === 'formula' && col.computeMode === 'post') return;
 
-    const entry = colMap[col.key];
-    let value = entry ? entry.cell.value : '';
+    let value = Object.prototype.hasOwnProperty.call(valueByKey, col.key) ? valueByKey[col.key] : '';
 
     if (value && typeof value === 'object' && value.result !== undefined) {
       value = value.result;
@@ -184,6 +203,11 @@ function parseExcelRow(row, columns, entity) {
       value = value.toISOString().split('T')[0];
     } else {
       value = String(value).trim();
+    }
+
+    if (value === '' && col.required) {
+      errors.push(`${col.label} là bắt buộc`);
+      return;
     }
 
     if (col.source_type === 'fixed') {
@@ -310,7 +334,7 @@ exports.importPreviewDynamic = async (req, res) => {
     }
 
     const [fieldDefs] = await pool.query(
-      'SELECT `key`, label, type, source_type, required FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
+      'SELECT `key`, label, type, source_type, required, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
       [entity]
     );
     const columns = buildImportColumns(entity, fieldDefs);
@@ -330,6 +354,7 @@ exports.importPreviewDynamic = async (req, res) => {
 
     const validRows = [];
     const errors = [];
+    const headerMap = buildHeaderMap(sheet.getRow(1), columns);
 
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
@@ -337,7 +362,7 @@ exports.importPreviewDynamic = async (req, res) => {
       const isEmpty = row.values.every((v, i) => i === 0 || v == null || v === '');
       if (isEmpty) return;
 
-      const parsed = parseExcelRow(row, columns, entity);
+      const parsed = parseExcelRow(row, columns, entity, headerMap);
 
       if (parsed.errors.length > 0) {
         errors.push({ row: rowNumber, errors: parsed.errors });
@@ -349,6 +374,28 @@ exports.importPreviewDynamic = async (req, res) => {
         });
       }
     });
+
+    if (entity === 'station_proposals') {
+      const kept = [];
+      for (const vr of validRows) {
+        const lat = parseFloat(vr.fixedData.latitude);
+        const lng = parseFloat(vr.fixedData.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          try {
+            const nearby = await proximityService.checkNearby(lat, lng, 200);
+            if (nearby.is_duplicate) {
+              const n = nearby.nearest;
+              const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
+              errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m), không cho import`] });
+              continue;
+            }
+          } catch { /* silent */ }
+        }
+        kept.push(vr);
+      }
+      validRows.length = 0;
+      validRows.push(...kept);
+    }
 
     res.json({
       success: true,
@@ -383,6 +430,21 @@ exports.importConfirmDynamic = async (req, res) => {
     const table = ENTITY_TABLE_MAP[entity];
     await connection.beginTransaction();
 
+    const dynamicEngineService = require('./dynamicEngineService');
+    const [allDefs] = await connection.query(
+      'SELECT `key`, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\'',
+      [entity]
+    );
+    const postFormulaKeys = new Set(
+      allDefs.filter(f => {
+        if (!f.formula_config) return false;
+        try {
+          const fc = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config;
+          return fc.compute_mode === 'post';
+        } catch { return false; }
+      }).map(f => f.key)
+    );
+
     let imported = 0;
     let failed = 0;
     const failDetails = [];
@@ -391,6 +453,11 @@ exports.importConfirmDynamic = async (req, res) => {
       try {
         const fixedData = row.fixedData || {};
         const dynamicData = row.dynamicData || {};
+        postFormulaKeys.forEach(k => { delete dynamicData[k]; });
+
+        if (entity === 'station_proposals' && req.user && req.user.id) {
+          fixedData.user_id = req.user.id;
+        }
 
         const fixedCols = Object.keys(fixedData);
         const fixedValues = Object.values(fixedData);
@@ -407,10 +474,12 @@ exports.importConfirmDynamic = async (req, res) => {
           fixedValues
         );
 
-        if (Object.keys(dynamicData).length > 0) {
+        const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, req.user ? req.user.id : null, null, { connection });
+        const mergedDynamic = { ...dynamicData, ...postResults };
+        if (Object.keys(mergedDynamic).length > 0) {
           await connection.query(
             `UPDATE ${table} SET custom_data = ? WHERE id = ?`,
-            [JSON.stringify(dynamicData), result.insertId]
+            [JSON.stringify(mergedDynamic), result.insertId]
           );
         }
 
@@ -454,7 +523,7 @@ exports.getTemplateDynamic = async (req, res) => {
     }
 
     const [fieldDefs] = await pool.query(
-      'SELECT `key`, label, type, source_type, required FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
+      'SELECT `key`, label, type, source_type, required, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
       [entity]
     );
     const columns = buildImportColumns(entity, fieldDefs);
@@ -465,7 +534,12 @@ exports.getTemplateDynamic = async (req, res) => {
     sheet.addRow(columns.map(c => c.label));
     styleHeaderRow(sheet);
 
-    sheet.addRow(columns.map(c => getSampleValue(c)));
+    const sampleRow = sheet.addRow(columns.map(c => getSampleValue(c)));
+    columns.forEach((c, idx) => {
+      if (c.type === 'formula' && c.computeMode === 'post') {
+        sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự sinh sau khi lưu';
+      }
+    });
 
     autoWidthColumns(sheet, columns);
 

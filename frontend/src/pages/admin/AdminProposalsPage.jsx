@@ -1,15 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminProposalService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
+import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import { ClipboardList, Download, Eye, Pencil, Trash2 } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
@@ -28,6 +29,9 @@ const AdminProposalsPage = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [dupMode, setDupMode] = useState(false);
+  const dupRef = useRef(null);
+  const tableRef = useRef(null);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/proposals\/(view|edit)=(\d+)/);
@@ -52,12 +56,14 @@ const AdminProposalsPage = () => {
     } catch { /* silent */ }
   };
 
-  const loadProposals = useCallback(async (page = 1) => {
+  const loadProposals = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
-      if (filter) params.append('status', filter);
-      if (search) params.append('search', search);
+      const f = overrides.filter !== undefined ? overrides.filter : filter;
+      const s = overrides.search !== undefined ? overrides.search : search;
+      if (f) params.append('status', f);
+      if (s) params.append('search', s);
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
@@ -104,6 +110,16 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
     }
+  };
+
+  const handleReset = () => {
+    setSearch('');
+    setFilter('');
+    if (dupRef.current) dupRef.current.reset();
+    setDupMode(false);
+    if (tableRef.current) tableRef.current.clearFilters();
+    setError('');
+    loadProposals(1, { filter: '', search: '' });
   };
 
   const handleExportProposals = async () => {
@@ -169,8 +185,20 @@ const AdminProposalsPage = () => {
             <Download size={14} />
             Export Excel
           </button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
+            <RotateCcw size={14} />
+            Reset
+          </button>
         </div>
       </div>
+
+      <DuplicateCheckPanel
+        ref={dupRef}
+        fetchDuplicates={(minM, maxM) => adminProposalService.duplicates(minM, maxM, token)}
+        getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
+        getStationViewUrl={(id) => `/admin/stations/view=${id}`}
+        onModeChange={setDupMode}
+      />
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
 
@@ -200,7 +228,10 @@ const AdminProposalsPage = () => {
         />
       )}
 
+      {!dupMode && (
+      <>
       <DynamicTable
+        ref={tableRef}
         entity="station_proposals"
         viewId={PROPOSALS_VIEW_ID}
         data={proposals}
@@ -214,6 +245,8 @@ const AdminProposalsPage = () => {
         total={pagination.total}
         onPageChange={loadProposals}
       />
+      </>
+      )}
     </div>
   );
 };

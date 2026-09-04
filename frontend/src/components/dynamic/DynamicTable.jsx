@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dynamicService } from '../../services/api';
 import FieldRenderer from './FieldRenderer';
 import useDataListMap from '../../hooks/useDataListMap';
 
-const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 0 }) => {
+const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0 }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -13,6 +13,13 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 
   const [filters, setFilters] = useState({});
   const [configVersion, setConfigVersion] = useState(0);
   const dataListOptions = useDataListMap(columns.map(c => c.data_list_id));
+
+  useImperativeHandle(ref, () => ({
+    clearFilters() {
+      setFilters({});
+      setSortConfig({ key: null, direction: null });
+    }
+  }));
 
   useEffect(() => {
     if (viewId) loadViewConfig();
@@ -205,6 +212,6 @@ const DynamicTable = ({ entity, viewId, data, onRowClick, actions, startIndex = 
       </div>
     </div>
   );
-};
+});
 
 export default DynamicTable;

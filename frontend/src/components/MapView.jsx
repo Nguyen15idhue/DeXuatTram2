@@ -331,7 +331,9 @@ const MapView = ({
   onMapSelectClick,
   highlightPosition,
   refreshKey,
-  user
+  user,
+  highlightIds = null,
+  readOnly = false
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
@@ -606,8 +608,8 @@ const MapView = ({
         )}
 
         <MapLayerController
-          stations={stations}
-          proposals={proposals}
+          stations={highlightIds ? stations.filter(s => highlightIds.stations.includes(s.id)) : stations}
+          proposals={highlightIds ? proposals.filter(p => highlightIds.proposals.includes(p.id)) : proposals}
           onMarkerClick={onMarkerClick}
           user={user}
           showStationLabels={showStationLabels}
@@ -678,6 +680,7 @@ const MapView = ({
       )}
 
       {/* Floating Action Buttons - bottom right */}
+      {!readOnly && (
       <div className="map-fab-group">
         {showCreateMenu && (
           <div className="map-create-menu">
@@ -740,10 +743,11 @@ const MapView = ({
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
         </button>
       </div>
+      )}
     </div>
   );
 };

@@ -61,7 +61,21 @@ exports.updateProposal = async (id, userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
 
-  const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
+  const postKeys = new Set(fieldDefs.filter(f => {
+    if (f.type !== 'formula' || !f.formula_config) return false;
+    try {
+      const fc = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config;
+      return fc.compute_mode === 'post';
+    } catch { return false; }
+  }).map(f => f.key));
+  Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
+
+  const [existing] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const current = existing.length > 0 && existing[0].custom_data
+    ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
+    : {};
+  const mergedDynamic = { ...current, ...dynamicData };
+  const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
   await pool.query(
     `UPDATE station_proposals

@@ -36,19 +36,33 @@ exports.createProposal = async (userId, data) => {
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
-  const [result] = await pool.query(
-    `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
-  );
+  const conn = await pool.getConnection();
+  let recordId;
+  let postResults = {};
+  try {
+    await conn.beginTransaction();
 
-  const recordId = result.insertId;
+    const [result] = await conn.query(
+      `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
+    );
 
-  const postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, userId, null);
-  if (Object.keys(postResults).length > 0) {
-    const updatedDynamic = { ...dynamicData, ...postResults };
-    const updatedCustomData = JSON.stringify(updatedDynamic);
-    await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+    recordId = result.insertId;
+
+    postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, userId, null, { connection: conn });
+    if (Object.keys(postResults).length > 0) {
+      const updatedDynamic = { ...dynamicData, ...postResults };
+      const updatedCustomData = JSON.stringify(updatedDynamic);
+      await conn.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+    }
+
+    await conn.commit();
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* silent */ }
+    throw err;
+  } finally {
+    conn.release();
   }
 
   const [proposal] = await pool.query(

@@ -71,6 +71,7 @@ const FieldManager = () => {
     formula_config: { expression: '', referencedFields: [], compute_mode: 'pre', outputType: 'auto', outputFormat: '', decimalPlaces: 0, unit: '', label: '' },
     data_list_id: null,
     data_list_column: '',
+    data_list_label_column: '',
     parent_field: '',
     relation_key: ''
   };
@@ -170,6 +171,7 @@ const FieldManager = () => {
       formula_config: parsedFormulaConfig,
       data_list_id: field.data_list_id || null,
       data_list_column: field.data_list_column || '',
+      data_list_label_column: field.data_list_label_column || '',
       parent_field: field.parent_field || '',
       relation_key: field.relation_key || ''
     });
@@ -237,6 +239,7 @@ const FieldManager = () => {
       payload.option_style = form.option_style;
       payload.data_list_id = form.data_list_id || null;
       payload.data_list_column = form.data_list_column || null;
+      payload.data_list_label_column = form.data_list_label_column || null;
       payload.parent_field = form.parent_field || null;
       payload.relation_key = form.relation_key || null;
     }
@@ -452,6 +455,16 @@ const FieldManager = () => {
                                   <option value="">-- Chọn column --</option>
                                   {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
                                 </select>
+                              </div>
+                              <div className="form-group">
+                                <label>Cột hiển thị (label)</label>
+                                <select value={form.data_list_label_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_label_column: e.target.value }))}>
+                                  <option value="">-- Mặc định (hiện giá trị) --</option>
+                                  {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Form/table sẽ hiện giá trị cột này thay vì mã lưu trong DB
+                                </p>
                               </div>
                               <div className="form-group">
                                 <label>Field cha (parent_field)</label>

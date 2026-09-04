@@ -1,4 +1,5 @@
 const proposalService = require('../services/proposalService');
+const proximityService = require('../services/proximityService');
 
 exports.getAll = async (req, res) => {
   try {
@@ -31,5 +32,15 @@ exports.create = async (req, res) => {
   } catch (error) {
     console.error('Create proposal error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.checkNearby = async (req, res) => {
+  try {
+    const { latitude, longitude, radius_m = 200, exclude_id = null } = req.body;
+    const result = await proximityService.checkNearby(latitude, longitude, radius_m, exclude_id);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

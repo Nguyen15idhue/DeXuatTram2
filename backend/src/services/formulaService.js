@@ -1,5 +1,6 @@
 const { create, all } = require('mathjs');
 const math = create(all);
+const pool = require('../utils/db');
 
 const customFunctions = {
   ROUNDUP: (x, d = 0) => Math.ceil(x * Math.pow(10, d)) / Math.pow(10, d),
@@ -49,6 +50,8 @@ math.import(customFunctions, { override: false });
 
 exports.customFunctions = customFunctions;
 
+const DB_FUNCTIONS = new Set(['SEQ']);
+
 exports.validateFormula = (expression, availableFields = []) => {
   if (!expression || typeof expression !== 'string') {
     return { valid: false, error: 'Công thức không được để trống' };
@@ -57,14 +60,16 @@ exports.validateFormula = (expression, availableFields = []) => {
   try {
     const node = math.parse(expression);
     const symbols = new Set();
+    const funcNames = new Set();
     node.traverse(n => {
-      if (n.isSymbolNode && !customFunctions[n.name.toUpperCase()]) {
+      if (n.isFunctionNode && n.fn && n.fn.name) funcNames.add(n.fn.name);
+      if (n.isSymbolNode && !customFunctions[n.name.toUpperCase()] && !DB_FUNCTIONS.has(n.name.toUpperCase())) {
         symbols.add(n.name);
       }
     });
 
     const fieldKeys = new Set(availableFields.map(f => f.key));
-    const unknown = [...symbols].filter(s => !fieldKeys.has(s));
+    const unknown = [...symbols].filter(s => !fieldKeys.has(s) && !funcNames.has(s));
     if (unknown.length > 0) {
       return { valid: false, error: `Trường không tồn tại: ${unknown.join(', ')}` };
     }
@@ -84,16 +89,73 @@ exports.evaluateFormula = (expression, scope = {}) => {
 };
 
 exports.evaluatePostFormula = (expression, metadata = {}) => {
-  let expr = expression;
-  expr = expr.replace(/\bid\b/g, String(metadata.id ?? ''));
-  expr = expr.replace(/\bentity\b/g, `'${metadata.entity || ''}'`);
-  expr = expr.replace(/\bbase_url\b/g, `'${metadata.base_url || ''}'`);
-  expr = expr.replace(/\bcreated_at\b/g, `'${metadata.created_at || ''}'`);
-  expr = expr.replace(/\buser_id\b/g, String(metadata.user_id ?? ''));
-  expr = expr.replace(/\buser_email\b/g, `'${metadata.user_email || ''}'`);
-
+  const scope = exports.buildPostScope(metadata, {});
   try {
-    return math.evaluate(expr);
+    return math.evaluate(expression, scope);
+  } catch {
+    return null;
+  }
+};
+
+exports.buildPostScope = (metadata = {}, recordData = {}) => {
+  const scope = {};
+  if (recordData && typeof recordData === 'object' && !Array.isArray(recordData)) {
+    for (const [k, v] of Object.entries(recordData)) {
+      scope[k] = (v === null || v === undefined) ? '' : v;
+    }
+  }
+  scope.id = metadata.id ?? '';
+  scope.entity = metadata.entity || '';
+  scope.base_url = metadata.base_url || '';
+  scope.created_at = metadata.created_at || '';
+  scope.user_id = metadata.user_id ?? '';
+  scope.user_email = metadata.user_email || '';
+  return scope;
+};
+
+exports.getNextSequence = async (prefix, connection) => {
+  const p = String(prefix ?? '').slice(0, 20);
+  if (!p) throw new Error('SEQ thiếu prefix');
+  const run = async (db) => {
+    await db.query('INSERT IGNORE INTO proposal_sequences (prefix, last_number) VALUES (?, 0)', [p]);
+    await db.query('UPDATE proposal_sequences SET last_number = LAST_INSERT_ID(last_number + 1) WHERE prefix = ?', [p]);
+    const [rows] = await db.query('SELECT LAST_INSERT_ID() AS n');
+    return rows[0].n;
+  };
+  let n;
+  if (connection) {
+    n = await run(connection);
+  } else {
+    const conn = await pool.getConnection();
+    try {
+      n = await run(conn);
+    } finally {
+      conn.release();
+    }
+  }
+  return String(n).padStart(4, '0');
+};
+
+exports.evaluatePostFormulaAsync = async (expression, metadata = {}, recordData = {}, options = {}) => {
+  const scope = exports.buildPostScope(metadata, recordData);
+  let node;
+  try {
+    node = math.parse(expression);
+  } catch {
+    return null;
+  }
+  const seqNodes = node.filter(n => n.isFunctionNode && n.fn && (n.fn.name || '').toUpperCase() === 'SEQ');
+  const values = new Map();
+  for (const seqNode of seqNodes) {
+    if (!seqNode.args || seqNode.args.length === 0) throw new Error('SEQ thiếu prefix');
+    const prefix = String(math.evaluate(seqNode.args[0].toString(), scope));
+    values.set(seqNode, options.dryRun ? '0001' : await exports.getNextSequence(prefix, options.connection));
+  }
+  const transformed = values.size > 0
+    ? node.transform(n => (values.has(n) ? new math.ConstantNode(values.get(n)) : n))
+    : node;
+  try {
+    return transformed.compile().evaluate(scope);
   } catch {
     return null;
   }

@@ -120,4 +120,44 @@ router.get('/:id', proposalController.getById);
  */
 router.post('/', requireAuth, validateCreateProposal, proposalController.create);
 
+/**
+ * @swagger
+ * /api/proposals/check-nearby:
+ *   post:
+ *     tags: [Proposals]
+ *     summary: Kiểm tra điểm trùng vị trí trong bán kính cho trước
+ *     description: So tọa độ với toàn bộ trạm và đề xuất (trừ REJECTED). Dùng khi điền form, chặn lưu nếu quá gần.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [latitude, longitude]
+ *             properties:
+ *               latitude:
+ *                 type: number
+ *                 example: 21.0285
+ *               longitude:
+ *                 type: number
+ *                 example: 105.8542
+ *               radius_m:
+ *                 type: number
+ *                 default: 200
+ *                 description: Bán kính kiểm tra (m, tối đa 5000)
+ *               exclude_id:
+ *                 type: integer
+ *                 description: Bỏ qua đề xuất có id này (khi sửa)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ */
+router.post('/check-nearby', requireAuth, proposalController.checkNearby);
+
 module.exports = router;

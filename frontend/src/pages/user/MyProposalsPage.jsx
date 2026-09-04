@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { myProposalService, excelService } from '../../services/api';
+import { myProposalService, excelService, proposalService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
+import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
@@ -13,7 +14,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
-import { ClipboardList, Download, Upload, Search, MapPin } from 'lucide-react';
+import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw } from 'lucide-react';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -52,6 +53,10 @@ const MyProposalsPage = () => {
   const [importStep, setImportStep] = useState('upload');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
+  const [nearbyWarning, setNearbyWarning] = useState('');
+  const [dupMode, setDupMode] = useState(false);
+  const dupRef = useRef(null);
+  const tableRef = useRef(null);
 
   const [search, setSearch] = useState('');
 
@@ -82,12 +87,14 @@ const MyProposalsPage = () => {
     loadProposals(1);
   }, []);
 
-  const loadProposals = useCallback(async (page = 1) => {
+  const loadProposals = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
-      if (filter) params.append('status', filter);
-      if (search) params.append('search', search);
+      const f = overrides.filter !== undefined ? overrides.filter : filter;
+      const s = overrides.search !== undefined ? overrides.search : search;
+      if (f) params.append('status', f);
+      if (s) params.append('search', s);
       const res = await myProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
@@ -149,19 +156,61 @@ const MyProposalsPage = () => {
     setMapCoords({ latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
   };
 
+  useEffect(() => {
+    if (!showCreateForm) {
+      setNearbyWarning('');
+      return;
+    }
+    const lat = Number(mapCoords.latitude);
+    const lng = Number(mapCoords.longitude);
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+      setNearbyWarning('');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const nearby = await proposalService.checkNearby({ latitude: lat, longitude: lng, radius_m: 200 }, token);
+        if (cancelled) return;
+        if (nearby.success && nearby.data && nearby.data.is_duplicate) {
+          const n = nearby.data.nearest;
+          const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
+          setNearbyWarning(`Cảnh báo: vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Bạn vẫn có thể nhập form nhưng sẽ không lưu được.`);
+        } else {
+          setNearbyWarning('');
+        }
+      } catch {
+        if (!cancelled) setNearbyWarning('');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showCreateForm, mapCoords.latitude, mapCoords.longitude, token]);
+
   const handleCreateProposal = async (formData) => {
+    const { latitude: fLat, longitude: fLng, owner_name, full_name, owner_phone, phone, address, area, land_type, description, ...dynamicRest } = formData || {};
     const submitData = {
-      latitude: mapCoords.latitude || formData.latitude || '',
-      longitude: mapCoords.longitude || formData.longitude || '',
-      owner_name: formData.owner_name || formData.full_name || '',
-      owner_phone: formData.owner_phone || formData.phone || '',
-      address: formData.address || '',
-      area: formData.area || '',
-      land_type: formData.land_type || '',
-      description: formData.description || ''
+      latitude: mapCoords.latitude || fLat || '',
+      longitude: mapCoords.longitude || fLng || '',
+      owner_name: owner_name || full_name || '',
+      owner_phone: owner_phone || phone || '',
+      address: address || '',
+      area: area || '',
+      land_type: land_type || '',
+      description: description || '',
+      ...dynamicRest
     };
     if (!submitData.latitude || !submitData.longitude || !submitData.owner_name || !submitData.owner_phone || !submitData.address) {
       throw new Error('Vui lòng chọn vị trí trên bản đồ và nhập đầy đủ thông tin bắt buộc');
+    }
+    const nearby = await proposalService.checkNearby({
+      latitude: submitData.latitude,
+      longitude: submitData.longitude,
+      radius_m: 200
+    }, token);
+    if (nearby.success && nearby.data && nearby.data.is_duplicate) {
+      const n = nearby.data.nearest;
+      const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
+      throw new Error(`Vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Vui lòng chọn vị trí khác.`);
     }
     const res = await myProposalService.create(submitData, token);
     if (res.success) {
@@ -243,6 +292,16 @@ const MyProposalsPage = () => {
     loadProposals(1);
   };
 
+  const handleReset = () => {
+    setSearch('');
+    setFilter('');
+    if (dupRef.current) dupRef.current.reset();
+    setDupMode(false);
+    if (tableRef.current) tableRef.current.clearFilters();
+    setError('');
+    loadProposals(1, { filter: '', search: '' });
+  };
+
   return (
     <div className="p-4 md:p-6">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
@@ -292,7 +351,17 @@ const MyProposalsPage = () => {
         <button className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
           <Search size={14} /> Tìm
         </button>
+        <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
+          <RotateCcw size={14} /> Reset
+        </button>
       </div>
+
+      <DuplicateCheckPanel
+        ref={dupRef}
+        fetchDuplicates={(minM, maxM) => myProposalService.duplicates(minM, maxM, token)}
+        getProposalViewUrl={(id) => `/my-proposals/view=${id}`}
+        onModeChange={setDupMode}
+      />
 
       {showCreateForm && (
         <dialog className="modal modal-open">
@@ -313,6 +382,7 @@ const MyProposalsPage = () => {
                   Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
                 </div>
               )}
+              {nearbyWarning && <div className="alert alert-warning text-sm mt-2">{nearbyWarning}</div>}
             </div>
             <DynamicForm
               entity="station_proposals"
@@ -408,7 +478,10 @@ const MyProposalsPage = () => {
         />
       )}
 
+      {!dupMode && (
+      <>
       <DynamicTable
+        ref={tableRef}
         entity="station_proposals"
         viewId={PROPOSALS_VIEW_ID}
         data={proposals}
@@ -422,6 +495,8 @@ const MyProposalsPage = () => {
         total={pagination.total}
         onPageChange={loadProposals}
       />
+      </>
+      )}
     </div>
   );
 };

@@ -140,6 +140,9 @@ export const proposalService = {
   },
   create(proposal, token) {
     return api.postWithAuth('/proposals', proposal, token);
+  },
+  checkNearby(data, token) {
+    return api.postWithAuth('/proposals/check-nearby', data, token);
   }
 };
 
@@ -159,6 +162,9 @@ export const adminProposalService = {
   },
   delete(id, token) {
     return api.deleteWithAuth(`/admin/proposals/${id}`, token);
+  },
+  duplicates(minM, maxM, token) {
+    return api.getWithAuth(`/admin/proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
   }
 };
 
@@ -178,6 +184,9 @@ export const myProposalService = {
   },
   delete(id, token) {
     return api.deleteWithAuth(`/my-proposals/${id}`, token);
+  },
+  duplicates(minM, maxM, token) {
+    return api.getWithAuth(`/my-proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
   }
 };
 

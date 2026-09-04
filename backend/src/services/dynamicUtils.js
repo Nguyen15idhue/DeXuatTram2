@@ -73,7 +73,7 @@ exports.validateField = (fieldDef, value) => {
       break;
 
     case 'select':
-      const options = exports.parseOptions(fieldDef.options);
+      const options = exports.parseOptions(fieldDef.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
       if (options.length > 0 && !options.includes(value)) {
         errors.push(`${fieldDef.label} không hợp lệ`);
       }
@@ -83,7 +83,7 @@ exports.validateField = (fieldDef, value) => {
       if (!Array.isArray(value)) {
         errors.push(`${fieldDef.label} phải là mảng`);
       } else {
-        const multiOptions = exports.parseOptions(fieldDef.options);
+        const multiOptions = exports.parseOptions(fieldDef.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
         if (multiOptions.length > 0) {
           const invalid = value.filter(v => !multiOptions.includes(v));
           if (invalid.length > 0) {

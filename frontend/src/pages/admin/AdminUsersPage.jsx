@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService, excelService } from '../../services/api';
@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import { Users, Plus, Search, Download, Upload, FileSpreadsheet, X } from 'lucide-react';
+import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X } from 'lucide-react';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 8;
@@ -37,6 +37,7 @@ const AdminUsersPage = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const tableRef = useRef(null);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -61,12 +62,14 @@ const AdminUsersPage = () => {
     } catch { /* silent */ }
   };
 
-  const loadUsers = useCallback(async (page = 1) => {
+  const loadUsers = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
-      if (search) params.append('search', search);
-      if (filterStatus) params.append('status', filterStatus);
+      const s = overrides.search !== undefined ? overrides.search : search;
+      const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
+      if (s) params.append('search', s);
+      if (st) params.append('status', st);
       const res = await adminUserService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setUsers(res.data);
@@ -82,6 +85,14 @@ const AdminUsersPage = () => {
   useEffect(() => { loadUsers(1); }, [loadUsers]);
 
   const handleSearch = () => { loadUsers(1); };
+
+  const handleReset = () => {
+    setSearch('');
+    setFilterStatus('');
+    if (tableRef.current) tableRef.current.clearFilters();
+    setError('');
+    loadUsers(1, { search: '', filterStatus: '' });
+  };
 
   const handleDeleteClick = (id, name) => {
     setConfirmDelete({ isOpen: true, id, name });
@@ -280,6 +291,10 @@ const AdminUsersPage = () => {
           <Search size={14} />
           Tìm
         </button>
+        <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
+          <RotateCcw size={14} />
+          Reset
+        </button>
         <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
           <FileSpreadsheet size={14} />
           Template
@@ -393,6 +408,7 @@ const AdminUsersPage = () => {
       )}
 
       <DynamicTable
+        ref={tableRef}
         entity="users"
         viewId={USERS_VIEW_ID}
         data={users}

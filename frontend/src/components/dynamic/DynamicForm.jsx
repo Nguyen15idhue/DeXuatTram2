@@ -4,6 +4,7 @@ import { dynamicService, dataListService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
 import { formatNumber } from '../../utils/formatNumber';
+import { getDataListLabel } from '../../utils/dataListLabel';
 
 const math = create(all);
 const customFunctions = {
@@ -218,12 +219,15 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
             const v = r._raw?.[col];
             if (v && !seen.has(v)) { seen.add(v); return true; }
             return false;
-          }).map(r => ({ value: r._raw[col], label: r._raw[col], _raw: r._raw }));
+          }).map(r => ({ value: r._raw[col], label: getDataListLabel(field, r._raw, r._raw[col]), _raw: r._raw }));
         }
         return [];
       }
 
-      return (unique[col] || []).map(v => ({ value: v, label: v }));
+      return (unique[col] || []).map(v => {
+        const raw = tree[col][v] && tree[col][v][0] ? tree[col][v][0]._raw : null;
+        return { value: v, label: getDataListLabel(field, raw, v) };
+      });
     }
 
     if (!field.parent_field || !field.source_config) return field.options || [];

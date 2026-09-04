@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,7 +13,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
-import { Zap, Download, Upload, Plus, Search, MapPin } from 'lucide-react';
+import { Zap, Download, Upload, Plus, Search, MapPin, RotateCcw } from 'lucide-react';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -48,6 +48,7 @@ const AdminStationsPage = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const tableRef = useRef(null);
 
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -78,12 +79,14 @@ const AdminStationsPage = () => {
     } catch { /* silent */ }
   };
 
-  const loadStations = useCallback(async (page = 1) => {
+  const loadStations = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
-      if (search) params.append('search', search);
-      if (filterStatus) params.append('status', filterStatus);
+      const s = overrides.search !== undefined ? overrides.search : search;
+      const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
+      if (s) params.append('search', s);
+      if (st) params.append('status', st);
       const res = await stationService.getAllWithParams(params.toString());
       if (res.success) {
         setStations(res.data);
@@ -99,6 +102,14 @@ const AdminStationsPage = () => {
   useEffect(() => { loadStations(1); }, [loadStations]);
 
   const handleSearch = () => { loadStations(1); };
+
+  const handleReset = () => {
+    setSearch('');
+    setFilterStatus('');
+    if (tableRef.current) tableRef.current.clearFilters();
+    setError('');
+    loadStations(1, { search: '', filterStatus: '' });
+  };
 
   const openCreate = () => {
     setMapCoords({ latitude: '', longitude: '' });
@@ -274,6 +285,9 @@ const AdminStationsPage = () => {
         <button className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
           <Search size={14} /> Tìm
         </button>
+        <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
+          <RotateCcw size={14} /> Reset
+        </button>
         <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
           <Download size={14} /> Template
         </button>
@@ -398,6 +412,7 @@ const AdminStationsPage = () => {
       )}
 
       <DynamicTable
+        ref={tableRef}
         entity="stations"
         viewId={STATIONS_VIEW_ID}
         data={stations}

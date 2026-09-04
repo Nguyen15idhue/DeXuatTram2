@@ -19,7 +19,7 @@ exports.getFormConfig = async (entity, formId) => {
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
             fd.formula, fd.placeholder, fd.help_text,
-            fd.data_list_id, fd.data_list_column, fd.relation_key
+            fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.relation_key
      FROM form_fields ff
      JOIN field_definitions fd ON ff.field_id = fd.id
      WHERE ff.form_id = ?
@@ -64,6 +64,7 @@ exports.getFormConfig = async (entity, formId) => {
       config: f.config,
       data_list_id: f.data_list_id || null,
       data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
       relation_key: f.relation_key || null
     }))
   };
@@ -85,7 +86,7 @@ exports.getViewConfig = async (entity, viewId) => {
             fd.source_type, fd.required, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
-            fd.data_list_id, fd.data_list_column, fd.relation_key
+            fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.relation_key
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
      WHERE vf.view_id = ?
@@ -130,6 +131,7 @@ exports.getViewConfig = async (entity, viewId) => {
       config: f.config,
       data_list_id: f.data_list_id || null,
       data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
       relation_key: f.relation_key || null
     })),
     allFields: allFieldDefs.map(f => ({
@@ -153,6 +155,7 @@ exports.getViewConfig = async (entity, viewId) => {
       formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null,
       data_list_id: f.data_list_id || null,
       data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
       relation_key: f.relation_key || null
     }))
   };
@@ -163,7 +166,7 @@ exports.validateEntityData = async (entity, data) => {
   return dynamicUtils.validateData(entity, data, fieldDefs);
 };
 
-exports.computePostFormulas = async (entity, recordId, recordData, userId, userEmail) => {
+exports.computePostFormulas = async (entity, recordId, recordData, userId, userEmail, options = {}) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
   const postFormulaFields = fieldDefs.filter(f => {
     if (f.type !== 'formula' || !f.formula_config) return false;
@@ -180,7 +183,11 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
   for (const field of postFormulaFields) {
     const fc = typeof field.formula_config === 'string' ? (() => { try { return JSON.parse(field.formula_config); } catch { return {}; } })() : field.formula_config;
     if (!fc.expression) continue;
-    const result = formulaService.evaluatePostFormula(fc.expression, metadata);
+    if (Array.isArray(fc.referencedFields) && fc.referencedFields.length > 0) {
+      const missing = fc.referencedFields.some(k => recordData?.[k] === undefined || recordData?.[k] === null || recordData?.[k] === '');
+      if (missing) continue;
+    }
+    const result = await formulaService.evaluatePostFormulaAsync(fc.expression, metadata, recordData, { connection: options.connection });
     if (result !== null && result !== undefined) {
       const decimalPlaces = fc.decimalPlaces ?? 2;
       if (fc.outputType === 'number' || (fc.outputType === 'auto' && typeof result === 'number')) {

@@ -36,6 +36,18 @@ export const parseGoogleMapsLink = (url) => {
 
   const trimmed = url.trim();
 
+  // Data parameters pattern first: !3dlat!4dlng is the actual pin,
+  // @lat,lng may only be the camera center (can be hundreds of meters off)
+  const dataPattern = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/;
+  const dataMatch = trimmed.match(dataPattern);
+  if (dataMatch) {
+    const lat = parseFloat(dataMatch[1]);
+    const lng = parseFloat(dataMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng };
+    }
+  }
+
   // Standard patterns: @lat,lng ?q=lat,lng etc.
   const patterns = [
     /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,
@@ -57,17 +69,6 @@ export const parseGoogleMapsLink = (url) => {
           return { lat, lng };
         }
       }
-    }
-  }
-
-  // Data parameters pattern: !3dlat!4dlng (from short URL redirects)
-  const dataPattern = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/;
-  const dataMatch = trimmed.match(dataPattern);
-  if (dataMatch) {
-    const lat = parseFloat(dataMatch[1]);
-    const lng = parseFloat(dataMatch[2]);
-    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-      return { lat, lng };
     }
   }
 

@@ -1,5 +1,6 @@
 import { useState, lazy, Suspense } from 'react';
 import { formatNumber } from '../../utils/formatNumber';
+import { getDataListLabelFromMap } from '../../utils/dataListLabel';
 
 const FileListPopup = lazy(() => import('./FileListPopup'));
 
@@ -48,9 +49,10 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
 
   const resolveOption = (val) => {
     if (field.data_list_id && dataListOptions[field.data_list_id]) {
+      const map = dataListOptions[field.data_list_id];
       const col = field.data_list_column;
-      const uniq = dataListOptions[field.data_list_id].unique?.[col] || [];
-      if (uniq.includes(val)) return { value: val, label: val };
+      const uniq = map.unique?.[col] || [];
+      if (uniq.includes(val)) return { value: val, label: getDataListLabelFromMap(map, field, val) };
     }
     return parsedOptions.find(o => (o.value || o) === val) || null;
   };

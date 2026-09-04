@@ -50,6 +50,38 @@ router.get('/', requireAuth, myProposalController.getAll);
 
 /**
  * @swagger
+ * /api/my-proposals/duplicates:
+ *   get:
+ *     tags: [My Proposals]
+ *     summary: Tìm đề xuất của tôi trùng lặp theo khoảng cách
+ *     description: So tọa độ đề xuất của user với toàn bộ đề xuất (trừ REJECTED) và toàn bộ trạm. Khoảng cách Haversine, tính bằng mét.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: min_m
+ *         schema:
+ *           type: number
+ *           default: 200
+ *         description: Khoảng cách tối thiểu (m)
+ *       - in: query
+ *         name: max_m
+ *         schema:
+ *           type: number
+ *           default: 2000
+ *         description: Khoảng cách tối đa (m, tối đa 5000)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Tham số không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ */
+router.get('/duplicates', requireAuth, myProposalController.duplicates);
+
+/**
+ * @swagger
  * /api/my-proposals/{id}:
  *   put:
  *     tags: [My Proposals]

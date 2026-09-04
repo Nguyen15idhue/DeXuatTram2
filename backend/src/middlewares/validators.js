@@ -33,11 +33,18 @@ function validateDynamicFields(data, fieldDefs) {
         if (!/^\d{10}$/.test(value)) errors.push(`${fd.label} phải có đúng 10 chữ số`);
         break;
       case 'select':
-        const opts = parseOptions(fd.options);
+        const opts = parseOptions(fd.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
         if (opts.length > 0 && !opts.includes(value)) errors.push(`${fd.label} không hợp lệ`);
         break;
       case 'multiselect':
         if (!Array.isArray(value)) errors.push(`${fd.label} phải là mảng`);
+        else {
+          const mOpts = parseOptions(fd.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
+          if (mOpts.length > 0) {
+            const invalid = value.filter(v => !mOpts.includes(v));
+            if (invalid.length > 0) errors.push(`${fd.label} chứa giá trị không hợp lệ: ${invalid.join(', ')}`);
+          }
+        }
         break;
     }
   }
