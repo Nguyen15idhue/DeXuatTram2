@@ -131,7 +131,7 @@ const MyProposalsPage = () => {
 
   const handleExport = async () => {
     try {
-      await excelService.exportData('station_proposals', token);
+      await excelService.exportData('station_proposals', token, { search, status: filter });
       setToast({ message: 'Export đề xuất thành công', type: 'success' });
     } catch {
       setError('Lỗi export đề xuất');
@@ -361,6 +361,8 @@ const MyProposalsPage = () => {
         fetchDuplicates={(minM, maxM) => myProposalService.duplicates(minM, maxM, token)}
         getProposalViewUrl={(id) => `/my-proposals/view=${id}`}
         onModeChange={setDupMode}
+        exportDuplicatesUrl="/my-proposals/duplicates/export"
+        exportToken={token}
       />
 
       {showCreateForm && (

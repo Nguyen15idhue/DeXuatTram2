@@ -11,6 +11,18 @@ const excelService = require('../services/excelService');
  *     summary: Xuất danh sách trạm ra file Excel (dynamic columns)
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên hoặc địa chỉ (bỏ trống = tất cả)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, DEPLOYING]
+ *         description: Lọc theo trạng thái (bỏ trống = tất cả)
  *     responses:
  *       200:
  *         description: File Excel
@@ -29,6 +41,18 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *     summary: Xuất danh sách đề xuất ra file Excel (dynamic columns)
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, địa chỉ, người tạo (bỏ trống = tất cả)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *         description: Lọc theo trạng thái (bỏ trống = tất cả)
  *     responses:
  *       200:
  *         description: File Excel
@@ -47,6 +71,18 @@ router.get('/export/station_proposals', requireAuth, requireAdmin, excelService.
  *     summary: Xuất danh sách người dùng ra file Excel (dynamic columns)
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, email, SĐT (bỏ trống = tất cả)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, LOCKED]
+ *         description: Lọc theo trạng thái (bỏ trống = tất cả)
  *     responses:
  *       200:
  *         description: File Excel
@@ -156,5 +192,39 @@ router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMid
  *         description: Không có quyền Admin
  */
 router.post('/import/confirm', requireAuth, requireAdmin, excelService.importConfirm);
+
+/**
+ * @swagger
+ * /api/admin/excel/export/duplicates:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất file Excel 3 sheets cho kết quả check trùng
+ *     description: Sheet ketqua (Bên A, Bên B, Khoảng cách) + sheet Ben A + sheet Ben B (full columns như export tất cả).
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               min_m:
+ *                 type: number
+ *                 default: 200
+ *               max_m:
+ *                 type: number
+ *                 default: 2000
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       400:
+ *         description: Tham số không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
+router.post('/export/duplicates', requireAuth, requireAdmin, (req, res) => excelService.exportDuplicates(req, res));
 
 module.exports = router;

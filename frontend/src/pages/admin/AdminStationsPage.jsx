@@ -162,7 +162,7 @@ const AdminStationsPage = () => {
 
   const handleExportStations = async () => {
     try {
-      await excelService.exportData('stations', token);
+      await excelService.exportData('stations', token, { search, status: filterStatus });
       setToast({ message: 'Export stations thành công', type: 'success' });
     } catch {
       setError('Lỗi export stations');

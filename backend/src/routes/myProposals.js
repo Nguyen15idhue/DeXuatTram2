@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middlewares/auth');
 const myProposalController = require('../controllers/myProposalController');
+const excelService = require('../services/excelService');
 
 /**
  * @swagger
@@ -79,6 +80,38 @@ router.get('/', requireAuth, myProposalController.getAll);
  *         description: Chưa xác thực
  */
 router.get('/duplicates', requireAuth, myProposalController.duplicates);
+
+/**
+ * @swagger
+ * /api/my-proposals/duplicates/export:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Xuất file Excel 3 sheets cho đề xuất trùng của tôi
+ *     description: Sheet ketqua (Bên A, Bên B, Khoảng cách) + sheet Ben A + sheet Ben B. Chỉ các cặp liên quan đề xuất của user.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               min_m:
+ *                 type: number
+ *                 default: 200
+ *               max_m:
+ *                 type: number
+ *                 default: 2000
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       400:
+ *         description: Tham số không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ */
+router.post('/duplicates/export', requireAuth, (req, res) => excelService.exportDuplicates(req, res, req.user.id));
 
 /**
  * @swagger

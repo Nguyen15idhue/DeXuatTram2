@@ -369,8 +369,40 @@ export const excelService = {
     window.URL.revokeObjectURL(objUrl);
   },
 
-  async exportData(entity, token) {
-    await this.downloadBlob(`/admin/excel/export/${entity}`, token, `${entity}_export.xlsx`);
+  async exportData(entity, token, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) params.append('status', filters.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${entity}_export.xlsx`);
+  },
+
+  async exportDuplicatesBlob(url, body, token, filename) {
+    const response = await fetch(`${API_URL}${url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      let message = 'Export thất bại';
+      try {
+        const err = await response.json();
+        if (err.message) message = err.message;
+      } catch { /* silent */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const objUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(objUrl);
   },
 
   async downloadTemplate(entity, token) {

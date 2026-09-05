@@ -91,9 +91,36 @@ function buildImportColumns(entity, fieldDefs) {
   return columns;
 }
 
-function getAllData(entity) {
+function getAllData(entity, filters = {}) {
   const table = ENTITY_TABLE_MAP[entity];
   if (!table) throw new Error(`Entity không hợp lệ: ${entity}`);
+  const { search = '', status = '' } = filters;
+  const like = `%${search}%`;
+  if (entity === 'stations') {
+    const where = [];
+    const params = [];
+    if (search) { where.push('(s.name LIKE ? OR s.address LIKE ?)'); params.push(like, like); }
+    if (status) { where.push('s.status = ?'); params.push(status); }
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+    return pool.query(`SELECT * FROM stations s ${whereClause} ORDER BY id DESC`, params);
+  }
+  if (entity === 'station_proposals') {
+    const where = [];
+    const params = [];
+    if (status) { where.push('p.status = ?'); params.push(status); }
+    if (search) { where.push('(p.owner_name LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)'); params.push(like, like, like); }
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+    const join = search ? 'JOIN users u ON p.user_id = u.id' : '';
+    return pool.query(`SELECT p.* FROM station_proposals p ${join} ${whereClause} ORDER BY p.id DESC`, params);
+  }
+  if (entity === 'users') {
+    const where = [];
+    const params = [];
+    if (search) { where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)'); params.push(like, like, like); }
+    if (status) { where.push('status = ?'); params.push(status); }
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+    return pool.query(`SELECT * FROM users ${whereClause} ORDER BY id DESC`, params);
+  }
   return pool.query(`SELECT * FROM ${table} ORDER BY id DESC`);
 }
 
@@ -187,7 +214,6 @@ function parseExcelRow(row, columns, entity, headerMap) {
   columns.forEach(col => {
     if (col.key === '_stt') return;
     if (col.type === 'file') return;
-    if (col.type === 'formula' && col.computeMode === 'post') return;
 
     let value = Object.prototype.hasOwnProperty.call(valueByKey, col.key) ? valueByKey[col.key] : '';
 
@@ -259,9 +285,62 @@ function parseExcelRow(row, columns, entity, headerMap) {
   return { fixedData, dynamicData, errors };
 }
 
+function exportRowToValues(row, columns, idx) {
+  return columns.map(col => {
+    if (col.key === '_stt') return idx + 1;
+
+    let value;
+    if (col.source_type === 'fixed') {
+      value = row[col.key];
+    } else {
+      const custom = row.custom_data ? (typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data) : {};
+      value = custom[col.key];
+    }
+
+    if (value == null) return '';
+
+    if (col.type === 'file') {
+      const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
+      const files = Array.isArray(value) ? value : [value];
+      const fileData = files.filter(f => f && f.original_name).map(f => ({
+        original_name: f.original_name,
+        link: f.storage_key ? `${baseUrl}/uploads/${f.storage_key}` : null
+      }));
+      if (fileData.length === 0) return '';
+      if (fileData.length === 1) return JSON.stringify(fileData[0]);
+      return JSON.stringify(fileData);
+    }
+
+    if (typeof value === 'object' && value.result !== undefined) {
+      value = value.result;
+    }
+
+    return value;
+  });
+}
+
+function mergeExportColumns(listOfColumns) {
+  const merged = [];
+  const seen = new Set();
+  listOfColumns.forEach(cols => {
+    (cols || []).forEach(c => {
+      if (!seen.has(c.key)) {
+        seen.add(c.key);
+        merged.push(c);
+      }
+    });
+  });
+  return merged;
+}
+
+function pairLabel(p) {
+  if (p.code) return p.code;
+  return p.kind === 'station' ? `Trạm #${p.id}` : `Đề xuất #${p.id}`;
+}
+
 exports.exportDynamic = async (req, res) => {
   try {
-    const { entity } = req.query;
+    const { entity, search = '', status = '' } = req.query;
     const viewIdMap = { stations: 6, users: 7, station_proposals: 8 };
     const viewId = viewIdMap[entity];
 
@@ -270,7 +349,7 @@ exports.exportDynamic = async (req, res) => {
     }
 
     const columns = await buildExportColumns(entity, viewId);
-    const [rows] = await getAllData(entity);
+    const [rows] = await getAllData(entity, { search, status });
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(entity);
@@ -279,38 +358,7 @@ exports.exportDynamic = async (req, res) => {
     styleHeaderRow(sheet);
 
     rows.forEach((row, idx) => {
-      const values = columns.map(col => {
-        if (col.key === '_stt') return idx + 1;
-
-        let value;
-        if (col.source_type === 'fixed') {
-          value = row[col.key];
-        } else {
-          const custom = row.custom_data ? (typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data) : {};
-          value = custom[col.key];
-        }
-
-        if (value == null) return '';
-
-        if (col.type === 'file') {
-          const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
-          const files = Array.isArray(value) ? value : [value];
-          const fileData = files.filter(f => f && f.original_name).map(f => ({
-            original_name: f.original_name,
-            link: f.storage_key ? `${baseUrl}/uploads/${f.storage_key}` : null
-          }));
-          if (fileData.length === 0) return '';
-          if (fileData.length === 1) return JSON.stringify(fileData[0]);
-          return JSON.stringify(fileData);
-        }
-
-        if (typeof value === 'object' && value.result !== undefined) {
-          value = value.result;
-        }
-
-        return value;
-      });
-      sheet.addRow(values);
+      sheet.addRow(exportRowToValues(row, columns, idx));
     });
 
     autoWidthColumns(sheet, columns);
@@ -322,6 +370,99 @@ exports.exportDynamic = async (req, res) => {
   } catch (error) {
     console.error('Export dynamic error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.exportDuplicates = async (req, res, ownUserId = null) => {
+  try {
+    const { min_m = 200, max_m = 2000 } = req.body || {};
+    const proximityService = require('./proximityService');
+    const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m, ownUserId });
+    const { pairs } = result;
+
+    const oriented = pairs.map(pr => {
+      if (pr.a.kind === 'station' && pr.b.kind === 'proposal') {
+        return { a: pr.b, b: pr.a, distance_m: pr.distance_m };
+      }
+      return pr;
+    });
+
+    const collectSide = (side) => {
+      const seen = new Set();
+      const items = [];
+      oriented.forEach(pr => {
+        const p = pr[side];
+        const k = `${p.kind}:${p.id}`;
+        if (!seen.has(k)) {
+          seen.add(k);
+          items.push(p);
+        }
+      });
+      return items;
+    };
+    const sideA = collectSide('a');
+    const sideB = collectSide('b');
+
+    const loadRecords = async (items) => {
+      const byId = {};
+      const proposalIds = items.filter(i => i.kind === 'proposal').map(i => i.id);
+      const stationIds = items.filter(i => i.kind === 'station').map(i => i.id);
+      if (proposalIds.length > 0) {
+        const [rows] = await pool.query(
+          `SELECT * FROM station_proposals WHERE id IN (${proposalIds.map(() => '?').join(',')})`,
+          proposalIds
+        );
+        rows.forEach(r => { byId[`proposal:${r.id}`] = r; });
+      }
+      if (stationIds.length > 0) {
+        const [rows] = await pool.query(
+          `SELECT * FROM stations WHERE id IN (${stationIds.map(() => '?').join(',')})`,
+          stationIds
+        );
+        rows.forEach(r => { byId[`station:${r.id}`] = r; });
+      }
+      return byId;
+    };
+    const recordsA = await loadRecords(sideA);
+    const recordsB = await loadRecords(sideB);
+
+    const proposalColumns = await buildExportColumns('station_proposals', 8);
+    const stationColumns = await buildExportColumns('stations', 6);
+    const columnsA = mergeExportColumns([proposalColumns, stationColumns].filter((_, i) =>
+      (i === 0 && sideA.some(x => x.kind === 'proposal')) || (i === 1 && sideA.some(x => x.kind === 'station'))));
+    const columnsB = mergeExportColumns([proposalColumns, stationColumns].filter((_, i) =>
+      (i === 0 && sideB.some(x => x.kind === 'proposal')) || (i === 1 && sideB.some(x => x.kind === 'station'))));
+
+    const workbook = new ExcelJS.Workbook();
+
+    const ketqua = workbook.addWorksheet('ketqua');
+    ketqua.addRow(['STT', 'Bên A', 'Bên B', 'Khoảng cách (m)']);
+    styleHeaderRow(ketqua);
+    oriented.forEach((pr, idx) => {
+      ketqua.addRow([idx + 1, pairLabel(pr.a), pairLabel(pr.b), pr.distance_m]);
+    });
+    autoWidthColumns(ketqua, [{ label: 'STT' }, { label: 'Bên A' }, { label: 'Bên B' }, { label: 'Khoảng cách (m)' }]);
+
+    const fillSide = (name, side, records, columns) => {
+      const sheet = workbook.addWorksheet(name);
+      sheet.addRow(columns.map(c => c.label));
+      styleHeaderRow(sheet);
+      side.forEach((item, idx) => {
+        const row = records[`${item.kind}:${item.id}`];
+        sheet.addRow(row ? exportRowToValues(row, columns, idx) : columns.map(() => ''));
+      });
+      autoWidthColumns(sheet, columns);
+    };
+    fillSide('Ben A', sideA, recordsA, columnsA.length > 0 ? columnsA : proposalColumns);
+    fillSide('Ben B', sideB, recordsB, columnsB.length > 0 ? columnsB : proposalColumns);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=duplicates_export.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export duplicates error:', error);
+    res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };
 
@@ -403,6 +544,27 @@ exports.importPreviewDynamic = async (req, res) => {
       validRows.push(...kept);
     }
 
+    if (entity === 'stations') {
+      const [existing] = await pool.query(
+        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) AS code FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) IS NOT NULL`
+      );
+      const used = new Set(existing.map(r => r.code));
+      const keptRows = [];
+      for (const vr of validRows) {
+        const code = vr.dynamicData.ma_tram;
+        if (code) {
+          if (used.has(code)) {
+            errors.push({ row: vr.rowNumber, errors: [`Mã trạm "${code}" đã tồn tại, không cho import`] });
+            continue;
+          }
+          used.add(code);
+        }
+        keptRows.push(vr);
+      }
+      validRows.length = 0;
+      validRows.push(...keptRows);
+    }
+
     res.json({
       success: true,
       data: {
@@ -450,6 +612,7 @@ exports.importConfirmDynamic = async (req, res) => {
         } catch { return false; }
       }).map(f => f.key)
     );
+    const keepProvidedPost = entity === 'stations' ? new Set(['ma_tram']) : new Set();
 
     let imported = 0;
     let failed = 0;
@@ -459,10 +622,20 @@ exports.importConfirmDynamic = async (req, res) => {
       try {
         const fixedData = row.fixedData || {};
         const dynamicData = row.dynamicData || {};
-        postFormulaKeys.forEach(k => { delete dynamicData[k]; });
+        const keptPost = {};
+        postFormulaKeys.forEach(k => {
+          if (keepProvidedPost.has(k) && dynamicData[k] !== undefined && dynamicData[k] !== null && dynamicData[k] !== '') {
+            keptPost[k] = dynamicData[k];
+          }
+          delete dynamicData[k];
+        });
 
-        if (entity === 'station_proposals') {
-          await dataListService.applyDiaGioi(dynamicData);
+        if (entity === 'station_proposals' || entity === 'stations') {
+          if (dynamicData.province && String(dynamicData.province).trim() !== '') {
+            await dataListService.applyDiaGioi(dynamicData);
+          } else if (!dynamicData.ma_tinh) {
+            throw new Error('Vui lòng chọn Tỉnh/Thành phố');
+          }
         }
 
         if (entity === 'station_proposals' && req.user && req.user.id) {
@@ -484,8 +657,8 @@ exports.importConfirmDynamic = async (req, res) => {
           fixedValues
         );
 
-        const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, req.user ? req.user.id : null, null, { connection });
-        const mergedDynamic = { ...dynamicData, ...postResults };
+        const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, req.user ? req.user.id : null, null, { connection, excludeKeys: Object.keys(keptPost) });
+        const mergedDynamic = { ...dynamicData, ...postResults, ...keptPost };
         if (Object.keys(mergedDynamic).length > 0) {
           await connection.query(
             `UPDATE ${table} SET custom_data = ? WHERE id = ?`,
@@ -507,6 +680,25 @@ exports.importConfirmDynamic = async (req, res) => {
         message: `Import thất bại: ${failed} dòng lỗi. Tất cả đã được hoàn tác.`,
         data: { imported: 0, failed, failDetails }
       });
+    }
+
+    if (entity === 'stations') {
+      const [codeRows] = await connection.query(
+        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) AS code FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) IS NOT NULL`
+      );
+      const maxByPrefix = {};
+      for (const r of codeRows) {
+        const m = /^E\.([A-Z]+)(\d+)$/.exec(r.code || '');
+        if (!m) continue;
+        const prefix = 'E.' + m[1];
+        maxByPrefix[prefix] = Math.max(maxByPrefix[prefix] || 0, parseInt(m[2], 10));
+      }
+      for (const [prefix, max] of Object.entries(maxByPrefix)) {
+        await connection.query(
+          'INSERT INTO proposal_sequences (prefix, last_number) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_number = GREATEST(last_number, VALUES(last_number))',
+          [prefix, max]
+        );
+      }
     }
 
     await connection.commit();
@@ -567,17 +759,17 @@ exports.getTemplateDynamic = async (req, res) => {
 };
 
 exports.exportStations = async (req, res) => {
-  req.query = { entity: 'stations' };
+  req.query.entity = 'stations';
   return exports.exportDynamic(req, res);
 };
 
 exports.exportProposals = async (req, res) => {
-  req.query = { entity: 'station_proposals' };
+  req.query.entity = 'station_proposals';
   return exports.exportDynamic(req, res);
 };
 
 exports.exportUsers = async (req, res) => {
-  req.query = { entity: 'users' };
+  req.query.entity = 'users';
   return exports.exportDynamic(req, res);
 };
 

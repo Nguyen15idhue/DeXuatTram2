@@ -1927,6 +1927,8 @@ select:focus {
 }
 .form-control {
   width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d0d5dd;
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.15s;
@@ -2773,6 +2775,23 @@ select:focus {
 }
 .marker-label-tooltip::before {
   border-top-color: rgba(33, 33, 33, 0.9);
+}
+.dup-distance-label {
+  background: #fff;
+  border: 1px solid #f97316;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #c2410c;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.dup-distance-label::before {
+  display: none;
+}
+.hide-dup-labels .dup-distance-label {
+  display: none;
 }
 
 } /* end @layer base */

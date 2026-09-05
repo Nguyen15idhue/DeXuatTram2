@@ -26,11 +26,13 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { name, latitude, longitude, address, status, description } = req.body;
-    const station = await stationService.createStation(name, latitude, longitude, address, status, description);
+    const station = await stationService.createStation(req.body);
     res.status(201).json({ success: true, data: station, message: 'Tạo trạm thành công' });
   } catch (error) {
     console.error('Create station error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };
@@ -49,6 +51,9 @@ exports.update = async (req, res) => {
     res.json({ success: true, data: station, message: 'Cập nhật trạm thành công' });
   } catch (error) {
     console.error('Update station error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

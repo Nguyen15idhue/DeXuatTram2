@@ -16,23 +16,33 @@ exports.haversineM = (lat1, lng1, lat2, lng2) => {
 
 exports.roundM = (m) => Math.round(Number(m) * 10) / 10;
 
+function parseCustomData(customData) {
+  if (!customData) return {};
+  if (typeof customData === 'object') return customData;
+  try { return JSON.parse(customData); } catch { return {}; }
+}
+
 async function loadPoints() {
   const [stations] = await pool.query(
-    'SELECT id, latitude, longitude, status FROM stations'
+    'SELECT id, name, latitude, longitude, status, custom_data FROM stations'
   );
   const [proposals] = await pool.query(
-    "SELECT id, latitude, longitude, status, user_id FROM station_proposals WHERE status != 'REJECTED'"
+    "SELECT id, owner_name, latitude, longitude, status, user_id, custom_data FROM station_proposals WHERE status != 'REJECTED'"
   );
   return {
     stations: stations.map(s => ({
       kind: 'station', id: s.id,
       latitude: Number(s.latitude), longitude: Number(s.longitude),
-      status: s.status
+      status: s.status,
+      code: parseCustomData(s.custom_data).ma_tram || null,
+      name: s.name || ''
     })),
     proposals: proposals.map(p => ({
       kind: 'proposal', id: p.id,
       latitude: Number(p.latitude), longitude: Number(p.longitude),
-      status: p.status, user_id: p.user_id
+      status: p.status, user_id: p.user_id,
+      code: parseCustomData(p.custom_data).ma_de_xuat || null,
+      name: p.owner_name || ''
     }))
   };
 }
@@ -59,7 +69,7 @@ exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposal
     if (isNaN(p.latitude) || isNaN(p.longitude)) continue;
     const d = exports.haversineM(lat, lng, p.latitude, p.longitude);
     if (d < radius && (!nearest || d < nearest.distance_m)) {
-      nearest = { kind: p.kind, id: p.id, status: p.status, distance_m: exports.roundM(d) };
+      nearest = { kind: p.kind, id: p.id, code: p.code || null, name: p.name || '', status: p.status, distance_m: exports.roundM(d) };
     }
   }
 
@@ -91,11 +101,8 @@ exports.findDuplicates = async ({ minM = 200, maxM = 2000, ownUserId = null }) =
 
   const pushPair = (a, b, d) => {
     const distance_m = exports.roundM(d);
-    pairs.push({
-      a: { kind: a.kind, id: a.id, status: a.status, latitude: a.latitude, longitude: a.longitude },
-      b: { kind: b.kind, id: b.id, status: b.status, latitude: b.latitude, longitude: b.longitude },
-      distance_m
-    });
+    const toItem = (p) => ({ kind: p.kind, id: p.id, code: p.code || null, name: p.name || '', status: p.status, latitude: p.latitude, longitude: p.longitude });
+    pairs.push({ a: toItem(a), b: toItem(b), distance_m });
     [a, b].forEach(p => {
       if (p.kind === 'proposal') proposalIds.add(p.id);
       else stationIds.add(p.id);

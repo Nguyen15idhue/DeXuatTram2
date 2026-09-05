@@ -180,9 +180,11 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
   const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail };
 
   const results = {};
+  const excludeKeys = new Set(options.excludeKeys || []);
   for (const field of postFormulaFields) {
     const fc = typeof field.formula_config === 'string' ? (() => { try { return JSON.parse(field.formula_config); } catch { return {}; } })() : field.formula_config;
     if (!fc.expression) continue;
+    if (excludeKeys.has(field.key)) continue;
     if (Array.isArray(fc.referencedFields) && fc.referencedFields.length > 0) {
       const missing = fc.referencedFields.some(k => recordData?.[k] === undefined || recordData?.[k] === null || recordData?.[k] === '');
       if (missing) continue;

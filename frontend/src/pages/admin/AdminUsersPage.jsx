@@ -128,7 +128,7 @@ const AdminUsersPage = () => {
 
   const handleExport = async () => {
     try {
-      await excelService.exportData('users', token);
+      await excelService.exportData('users', token, { search, status: filterStatus });
       setToast({ message: 'Export users thành công', type: 'success' });
     } catch {
       setError('Lỗi export users');

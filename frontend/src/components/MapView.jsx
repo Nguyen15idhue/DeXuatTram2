@@ -53,6 +53,57 @@ function FlyToLocation({ position }) {
   return null;
 }
 
+const dupLabelOf = (p) => {
+  if (p.code) return p.code;
+  return p.kind === 'station' ? `Trạm #${p.id}` : `Đề xuất #${p.id}`;
+};
+
+function DuplicateLines({ pairs }) {
+  const map = useMap();
+  const layerRef = useRef(null);
+  const ZOOM_SHOW_LABEL = 12;
+
+  useEffect(() => {
+    const updateLabels = () => {
+      map.getContainer().classList.toggle('hide-dup-labels', map.getZoom() < ZOOM_SHOW_LABEL);
+    };
+    updateLabels();
+    map.on('zoomend', updateLabels);
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+    if (!pairs || pairs.length === 0) return;
+
+    const group = L.layerGroup();
+    pairs.forEach(pr => {
+      const aLat = parseFloat(pr.a?.latitude);
+      const aLng = parseFloat(pr.a?.longitude);
+      const bLat = parseFloat(pr.b?.latitude);
+      const bLng = parseFloat(pr.b?.longitude);
+      if ([aLat, aLng, bLat, bLng].some(v => isNaN(v))) return;
+      const color = pr.distance_m < 500 ? '#ef4444' : '#f97316';
+      const line = L.polyline([[aLat, aLng], [bLat, bLng]], { color, weight: 3, opacity: 0.85 });
+      line.bindTooltip(`${pr.distance_m}m`, { permanent: true, direction: 'center', className: 'dup-distance-label' });
+      line.bindPopup(`<div class="popup-content"><h3>${dupLabelOf(pr.a)} ↔ ${dupLabelOf(pr.b)}</h3><p><strong>Khoảng cách:</strong> ${pr.distance_m}m</p></div>`);
+      group.addLayer(line);
+    });
+    group.addTo(map);
+    layerRef.current = group;
+
+    return () => {
+      map.off('zoomend', updateLabels);
+      map.getContainer().classList.remove('hide-dup-labels');
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
+    };
+  }, [map, pairs]);
+
+  return null;
+}
+
 function MapEventsHandler({ selectingLocation, onMapSelectClick }) {
   useMapEvents({
     click(e) {
@@ -333,7 +384,8 @@ const MapView = ({
   refreshKey,
   user,
   highlightIds = null,
-  readOnly = false
+  readOnly = false,
+  pairs = []
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
@@ -614,6 +666,8 @@ const MapView = ({
           user={user}
           showStationLabels={showStationLabels}
         />
+
+        <DuplicateLines pairs={pairs} />
 
         <ProvinceBoundaryLayer show={showBoundaries} />
 

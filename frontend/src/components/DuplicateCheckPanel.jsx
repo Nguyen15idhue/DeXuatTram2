@@ -1,16 +1,22 @@
 import { useState, forwardRef, useImperativeHandle } from 'react';
 import MapView from './MapView';
-import { MapPinned, Map as MapIcon, X } from 'lucide-react';
+import { excelService } from '../services/api';
+import { MapPinned, Map as MapIcon, X, Download } from 'lucide-react';
 
 const DuplicateCheckPanel = forwardRef(({
   fetchDuplicates,
   getProposalViewUrl,
   getStationViewUrl,
-  onModeChange
+  onModeChange,
+  onViewItem,
+  exportDuplicatesUrl = null,
+  exportToken = null
 }, ref) => {
   const [maxM, setMaxM] = useState(2000);
+  const [appliedMaxM, setAppliedMaxM] = useState(2000);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [showMap, setShowMap] = useState(false);
 
@@ -20,6 +26,7 @@ const DuplicateCheckPanel = forwardRef(({
       setShowMap(false);
       setError('');
       setMaxM(2000);
+      setAppliedMaxM(2000);
       if (onModeChange) onModeChange(false);
     },
     hasResult() {
@@ -43,6 +50,7 @@ const DuplicateCheckPanel = forwardRef(({
       const res = await fetchDuplicates(200, m);
       if (res.success) {
         setResult(res.data);
+        setAppliedMaxM(m);
         if (onModeChange) onModeChange(true);
       } else {
         setError(res.message || 'Check trùng thất bại');
@@ -54,11 +62,43 @@ const DuplicateCheckPanel = forwardRef(({
     }
   };
 
-  const labelOf = (p) => (p.kind === 'station' ? `Trạm #${p.id}` : `Đề xuất #${p.id}`);
+  const handleExport = async () => {
+    if (!exportDuplicatesUrl || !exportToken) return;
+    setError('');
+    setExporting(true);
+    try {
+      await excelService.exportDuplicatesBlob(
+        exportDuplicatesUrl,
+        { min_m: 200, max_m: appliedMaxM },
+        exportToken,
+        'duplicates_export.xlsx'
+      );
+    } catch (err) {
+      setError(err.message || 'Export thất bại');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const labelOf = (p) => {
+    if (p.code) return p.code;
+    return p.kind === 'station' ? `Trạm #${p.id}` : `Đề xuất #${p.id}`;
+  };
 
   const viewUrlOf = (p) => {
     if (p.kind === 'station') return getStationViewUrl ? getStationViewUrl(p.id) : null;
     return getProposalViewUrl ? getProposalViewUrl(p.id) : null;
+  };
+
+  const renderViewButton = (p, side) => {
+    const url = viewUrlOf(p);
+    if (onViewItem) {
+      return <button className="btn btn-primary btn-xs" onClick={() => onViewItem(p.kind, p.id)}>{side}</button>;
+    }
+    if (url) {
+      return <a className="btn btn-primary btn-xs" href={url}>{side}</a>;
+    }
+    return <span className="text-base-content/30 text-xs">{side}</span>;
   };
 
   return (
@@ -84,6 +124,12 @@ const DuplicateCheckPanel = forwardRef(({
           <button className="btn btn-info btn-sm gap-1" onClick={() => setShowMap(true)}>
             <MapIcon size={14} />
             View map ({result.duplicate_proposal_ids.length + result.duplicate_station_ids.length} điểm)
+          </button>
+        )}
+        {result && exportDuplicatesUrl && (
+          <button className="btn btn-secondary btn-sm gap-1" onClick={handleExport} disabled={exporting}>
+            <Download size={14} />
+            {exporting ? 'Đang xuất...' : 'Export trùng'}
           </button>
         )}
         {result && (
@@ -115,8 +161,6 @@ const DuplicateCheckPanel = forwardRef(({
                 </tr>
               )}
               {result.pairs.map((pair, idx) => {
-                const urlA = viewUrlOf(pair.a);
-                const urlB = viewUrlOf(pair.b);
                 return (
                   <tr key={idx} className="hover">
                     <td className="text-center">{idx + 1}</td>
@@ -125,12 +169,8 @@ const DuplicateCheckPanel = forwardRef(({
                     <td className="font-medium">{pair.distance_m}m</td>
                     <td className="text-center">
                       <div className="flex gap-1 justify-center">
-                        {urlA
-                          ? <a className="btn btn-primary btn-xs" href={urlA}>A</a>
-                          : <span className="text-base-content/30 text-xs">A</span>}
-                        {urlB
-                          ? <a className="btn btn-primary btn-xs" href={urlB}>B</a>
-                          : <span className="text-base-content/30 text-xs">B</span>}
+                        {renderViewButton(pair.a, 'A')}
+                        {renderViewButton(pair.b, 'B')}
                       </div>
                     </td>
                   </tr>
@@ -157,6 +197,7 @@ const DuplicateCheckPanel = forwardRef(({
                   proposals: result.duplicate_proposal_ids,
                   stations: result.duplicate_station_ids
                 }}
+                pairs={result.pairs}
               />
             </div>
           </div>

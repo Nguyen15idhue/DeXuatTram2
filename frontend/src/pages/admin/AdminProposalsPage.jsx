@@ -124,7 +124,7 @@ const AdminProposalsPage = () => {
 
   const handleExportProposals = async () => {
     try {
-      await excelService.exportData('station_proposals', token);
+      await excelService.exportData('station_proposals', token, { search, status: filter });
       setToast({ message: 'Export proposals thành công', type: 'success' });
     } catch {
       setError('Lỗi export proposals');
@@ -198,6 +198,8 @@ const AdminProposalsPage = () => {
         getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
         getStationViewUrl={(id) => `/admin/stations/view=${id}`}
         onModeChange={setDupMode}
+        exportDuplicatesUrl="/admin/excel/export/duplicates"
+        exportToken={token}
       />
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}

@@ -1,6 +1,7 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
+const dataListService = require('./dataListService');
 
 exports.getAllStations = async (search, status, page, limit) => {
   const offset = (page - 1) * limit;
@@ -46,24 +47,39 @@ exports.getStationById = async (id) => {
   return dynamicUtils.mergeData(stations[0], fieldDefs);
 };
 
-exports.createStation = async (name, latitude, longitude, address, status, description) => {
+exports.createStation = async (data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
-  const { fixedData, dynamicData } = dynamicUtils.splitData('stations', { name, latitude, longitude, address, status, description }, fieldDefs);
+  const { fixedData, dynamicData } = dynamicUtils.splitData('stations', data, fieldDefs);
+  await dataListService.applyDiaGioi(dynamicData);
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
-  const [result] = await pool.query(
-    'INSERT INTO stations (name, latitude, longitude, address, status, description, custom_data) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address, fixedData.status || 'ACTIVE', fixedData.description || '', customData]
-  );
+  const conn = await pool.getConnection();
+  let recordId;
+  let postResults = {};
+  try {
+    await conn.beginTransaction();
 
-  const recordId = result.insertId;
+    const [result] = await conn.query(
+      'INSERT INTO stations (name, latitude, longitude, address, status, description, custom_data) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address, fixedData.status || 'ACTIVE', fixedData.description || '', customData]
+    );
 
-  const postResults = await dynamicEngineService.computePostFormulas('stations', recordId, dynamicData, null, null);
-  if (Object.keys(postResults).length > 0) {
-    const updatedDynamic = { ...dynamicData, ...postResults };
-    const updatedCustomData = JSON.stringify(updatedDynamic);
-    await pool.query('UPDATE stations SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+    recordId = result.insertId;
+
+    postResults = await dynamicEngineService.computePostFormulas('stations', recordId, dynamicData, null, null, { connection: conn });
+    if (Object.keys(postResults).length > 0) {
+      const updatedDynamic = { ...dynamicData, ...postResults };
+      const updatedCustomData = JSON.stringify(updatedDynamic);
+      await conn.query('UPDATE stations SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+    }
+
+    await conn.commit();
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* silent */ }
+    throw err;
+  } finally {
+    conn.release();
   }
 
   const [station] = await pool.query('SELECT * FROM stations WHERE id = ?', [recordId]);
@@ -77,21 +93,30 @@ exports.createStation = async (name, latitude, longitude, address, status, descr
 exports.updateStation = async (id, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
   const { fixedData, dynamicData } = dynamicUtils.splitData('stations', data, fieldDefs);
+  if (dynamicData.province !== undefined && dynamicData.province !== null && String(dynamicData.province).trim() !== '') {
+    await dataListService.applyDiaGioi(dynamicData);
+  }
 
-  const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
+  const postKeys = new Set(fieldDefs.filter(f => {
+    if (f.type !== 'formula' || !f.formula_config) return false;
+    try {
+      const fc = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config;
+      return fc.compute_mode === 'post';
+    } catch { return false; }
+  }).map(f => f.key));
+  Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
+
+  const [existing] = await pool.query('SELECT custom_data FROM stations WHERE id = ?', [id]);
+  const current = existing.length > 0 && existing[0].custom_data
+    ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
+    : {};
+  const mergedDynamic = { ...current, ...dynamicData };
+  const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
   await pool.query(
     'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
     [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address || '', fixedData.status || 'ACTIVE', fixedData.description || '', customData, id]
   );
-
-  const postResults = await dynamicEngineService.computePostFormulas('stations', id, dynamicData, null, null);
-  if (Object.keys(postResults).length > 0) {
-    const [currentStation] = await pool.query('SELECT custom_data FROM stations WHERE id = ?', [id]);
-    const currentDynamic = currentStation[0]?.custom_data ? (typeof currentStation[0].custom_data === 'string' ? JSON.parse(currentStation[0].custom_data) : currentStation[0].custom_data) : {};
-    const updatedDynamic = { ...currentDynamic, ...postResults };
-    await pool.query('UPDATE stations SET custom_data = ?, updated_at = NOW() WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
-  }
 };
 
 exports.deleteStation = async (id) => {
