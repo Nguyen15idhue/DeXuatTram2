@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {} }) => {
+const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {}, uploadUrl = '/files/upload' }) => {
   const { token } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -19,8 +19,14 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
     formData.append('originalName', file.name);
     if (entityId) formData.append('entityId', entityId);
     if (entityType) formData.append('entityType', entityType);
-    const res = await api.uploadWithAuth('/files/upload', formData, token);
-    if (res.success) return res.data;
+    let res;
+    if (token) {
+      res = await api.uploadWithAuth(uploadUrl, formData, token);
+    } else {
+      const response = await fetch(`${API_URL}${uploadUrl}`, { method: 'POST', body: formData });
+      res = await response.json();
+    }
+    if (res.success) return Array.isArray(res.data) ? res.data[0] : res.data;
     throw new Error(res.message || 'Upload failed');
   };
 

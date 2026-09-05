@@ -69,7 +69,7 @@ exports.validateFormula = (expression, availableFields = []) => {
     });
 
     const fieldKeys = new Set(availableFields.map(f => f.key));
-    const unknown = [...symbols].filter(s => !fieldKeys.has(s) && !funcNames.has(s));
+    const unknown = [...symbols].filter(s => !fieldKeys.has(s) && !funcNames.has(s) && !POST_METADATA.has(s));
     if (unknown.length > 0) {
       return { valid: false, error: `Trường không tồn tại: ${unknown.join(', ')}` };
     }
@@ -110,8 +110,11 @@ exports.buildPostScope = (metadata = {}, recordData = {}) => {
   scope.created_at = metadata.created_at || '';
   scope.user_id = metadata.user_id ?? '';
   scope.user_email = metadata.user_email || '';
+  scope.user_name = metadata.user_name || '';
   return scope;
 };
+
+const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name']);
 
 exports.getNextSequence = async (prefix, connection) => {
   const p = String(prefix ?? '').slice(0, 20);
@@ -134,6 +137,35 @@ exports.getNextSequence = async (prefix, connection) => {
     }
   }
   return n;
+};
+
+exports.reconcileSequences = async () => {
+  const targets = [
+    { table: 'station_proposals', key: 'ma_de_xuat' },
+    { table: 'stations', key: 'ma_tram' }
+  ];
+  const maxByPrefix = {};
+  for (const t of targets) {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) AS code FROM ${t.table} WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) IS NOT NULL`
+    );
+    for (const r of rows) {
+      const m = /^(.*)(\d{4})$/.exec(String(r.code || ''));
+      if (!m) continue;
+      const prefix = m[1].replace(/_+$/, '').slice(0, 20);
+      if (!prefix) continue;
+      maxByPrefix[prefix] = Math.max(maxByPrefix[prefix] || 0, parseInt(m[2], 10));
+    }
+  }
+  let fixed = 0;
+  for (const [prefix, max] of Object.entries(maxByPrefix)) {
+    await pool.query(
+      'INSERT INTO proposal_sequences (prefix, last_number) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_number = GREATEST(last_number, VALUES(last_number))',
+      [prefix, max]
+    );
+    fixed++;
+  }
+  return { prefixes: fixed };
 };
 
 exports.evaluatePostFormulaAsync = async (expression, metadata = {}, recordData = {}, options = {}) => {

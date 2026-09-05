@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middlewares/auth');
+const { guestSubmitLimiter, guestTrackLimiter } = require('../middlewares/rateLimits');
 const { validateCreateProposal } = require('../middlewares/validators');
 const proposalController = require('../controllers/proposalController');
 
@@ -159,5 +160,90 @@ router.post('/', requireAuth, validateCreateProposal, proposalController.create)
  *         description: Chưa xác thực
  */
 router.post('/check-nearby', requireAuth, proposalController.checkNearby);
+
+/**
+ * @swagger
+ * /api/proposals/guest:
+ *   post:
+ *     tags: [Proposals]
+ *     summary: Khách vãng lai gửi đề xuất (không cần đăng nhập)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [latitude, longitude, owner_name, owner_phone, address]
+ *             properties:
+ *               latitude:
+ *                 type: number
+ *               longitude:
+ *                 type: number
+ *               owner_name:
+ *                 type: string
+ *               owner_phone:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *               captcha_token:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Gửi thành công, trả tracking_code + ma_de_xuat
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *       429:
+ *         description: Quá nhiều yêu cầu
+ */
+router.post('/guest', guestSubmitLimiter, validateCreateProposal, proposalController.createGuest);
+
+/**
+ * @swagger
+ * /api/proposals/check-nearby-public:
+ *   post:
+ *     tags: [Proposals]
+ *     summary: Kiểm tra trùng vị trí (public, cho form guest)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [latitude, longitude]
+ *             properties:
+ *               latitude:
+ *                 type: number
+ *               longitude:
+ *                 type: number
+ *               radius_m:
+ *                 type: number
+ *                 default: 200
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ */
+router.post('/check-nearby-public', guestTrackLimiter, proposalController.checkNearbyPublic);
+
+/**
+ * @swagger
+ * /api/proposals/track/{code}:
+ *   get:
+ *     tags: [Proposals]
+ *     summary: Tra cứu đề xuất bằng tracking code (public)
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/track/:code', guestTrackLimiter, proposalController.trackByCode);
 
 module.exports = router;

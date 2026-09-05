@@ -2,14 +2,17 @@ const pool = require('../utils/db');
 const fs = require('fs');
 const path = require('path');
 
-exports.uploadFile = async (file, userId, originalNameOverride) => {
+exports.uploadFile = async (file, userId, originalNameOverride, submitterIp) => {
   const storageKey = file.filename;
   const relativePath = file.path.replace(/\\/g, '/').split('storage/uploads/')[1] || file.filename;
-  const originalName = originalNameOverride || file.originalname || 'unknown';
+  const rawName = originalNameOverride || file.originalname || 'unknown';
+  const originalName = originalNameOverride
+    ? rawName
+    : Buffer.from(rawName, 'latin1').toString('utf8');
 
   const [result] = await pool.query(
-    `INSERT INTO files (original_name, storage_key, mime_type, size, checksum, uploaded_by, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO files (original_name, storage_key, mime_type, size, checksum, uploaded_by, submitter_ip, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       originalName,
       relativePath,
@@ -17,6 +20,7 @@ exports.uploadFile = async (file, userId, originalNameOverride) => {
       file.size,
       null,
       userId || null,
+      submitterIp || null,
       'active'
     ]
   );
@@ -65,4 +69,36 @@ exports.deleteFile = async (id) => {
   }
 
   return file;
+};
+
+exports.cleanupOrphanGuestFiles = async (ttlHours) => {
+  const ttl = Number(ttlHours) || 24;
+  const [candidates] = await pool.query(
+    `SELECT id FROM files
+     WHERE uploaded_by IS NULL AND submitter_ip IS NOT NULL AND status = 'active'
+     AND created_at < (NOW() - INTERVAL ? HOUR)`,
+    [ttl]
+  );
+  if (candidates.length === 0) return { deleted: 0 };
+
+  const [proposalRows] = await pool.query('SELECT custom_data FROM station_proposals');
+  const [stationRows] = await pool.query('SELECT custom_data FROM stations');
+  const usedIds = new Set();
+  [...proposalRows, ...stationRows].forEach(r => {
+    try {
+      const cd = typeof r.custom_data === 'string' ? JSON.parse(r.custom_data) : (r.custom_data || {});
+      Object.values(cd).forEach(v => {
+        const arr = Array.isArray(v) ? v : (v ? [v] : []);
+        arr.forEach(f => { if (f && f.id) usedIds.add(Number(f.id)); });
+      });
+    } catch { /* silent */ }
+  });
+
+  let deleted = 0;
+  for (const row of candidates) {
+    if (usedIds.has(Number(row.id))) continue;
+    const removed = await exports.deleteFile(row.id);
+    if (removed) deleted++;
+  }
+  return { deleted };
 };

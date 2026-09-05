@@ -80,6 +80,7 @@ const POST_METADATA = [
   { key: 'created_at', label: '{created_at}', desc: 'Thời gian tạo' },
   { key: 'user_id', label: '{user_id}', desc: 'ID người tạo' },
   { key: 'user_email', label: '{user_email}', desc: 'Email người tạo' },
+  { key: 'user_name', label: '{user_name}', desc: 'Tên người tạo (trống với khách)' },
 ];
 
 const OUTPUT_TYPES = [

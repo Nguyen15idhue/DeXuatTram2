@@ -31,6 +31,9 @@ services:
       - DB_PASSWORD=password
       - DB_NAME=station_management
       - JWT_SECRET=station-mgmt-dev-secret-2024-xK9mPz
+      - CAPTCHA_ENABLED=false
+      - TURNSTILE_SECRET_KEY=
+      - ORPHAN_FILE_TTL_HOURS=24
     depends_on:
       mysql:
         condition: service_healthy
@@ -61,3 +64,5 @@ volumes:
 networks:
   station-network:
     driver: bridge
+
+

@@ -294,7 +294,7 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
         popupHtml += `<p><strong>Địa chỉ:</strong> ${item.address || ''}</p>`;
         popupHtml += `<p><strong>Trạng thái:</strong> <span style="color:${getMarkerColor(item.status)}">${item.status}</span></p>`;
         if (item.description) popupHtml += `<p><strong>Mô tả:</strong> ${item.description}</p>`;
-        popupHtml += `<p><strong>Người đề xuất:</strong> ${item.user_name || ''}</p>`;
+        popupHtml += `<p><strong>Người đề xuất:</strong> ${item.user_name || 'Khách'}</p>`;
       }
       popupHtml += '</div>';
       marker.bindPopup(popupHtml);

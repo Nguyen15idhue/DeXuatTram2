@@ -143,6 +143,15 @@ export const proposalService = {
   },
   checkNearby(data, token) {
     return api.postWithAuth('/proposals/check-nearby', data, token);
+  },
+  createGuest(data) {
+    return api.post('/proposals/guest', data);
+  },
+  checkNearbyPublic(data) {
+    return api.post('/proposals/check-nearby-public', data);
+  },
+  trackByCode(code) {
+    return api.get(`/proposals/track/${encodeURIComponent(code)}`);
   }
 };
 
@@ -440,6 +449,7 @@ export const dataListService = {
   },
   getById(id, token, params = '') {
     const query = params ? `?${params}` : '';
+    if (!token) return api.get(`/data-lists/${id}${query}`);
     return api.getWithAuth(`/admin/data-lists/${id}${query}`, token);
   },
   create(data, token) {

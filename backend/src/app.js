@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { authLimiter, adminLimiter, excelLimiter } = require('./middlewares/rateLimits');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 const testRoutes = require('./routes/test');
@@ -23,6 +23,7 @@ const viewFieldsRoutes = require('./routes/viewFields');
 const dynamicEngineRoutes = require('./routes/dynamicEngine');
 const filesRoutes = require('./routes/files');
 const dataListsRoutes = require('./routes/dataLists');
+const dataListsPublicRoutes = require('./routes/dataListsPublic');
 const formulasRoutes = require('./routes/formulas');
 const mapConfigsRoutes = require('./routes/mapConfigs');
 
@@ -46,30 +47,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 4. Rate Limiters
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 10 : 30,
-  message: { success: false, message: 'Quá nhiều yêu cầu, vui lòng thử lại sau' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-const adminLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 60 : 120,
-  message: { success: false, message: 'Quá nhiều yêu cầu admin, vui lòng thử lại sau' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-const excelLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 10 : 30,
-  message: { success: false, message: 'Quá nhiều yêu cầu Excel, vui lòng thử lại sau' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+// 4. Rate Limiters (xem middlewares/rateLimits.js)
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -101,6 +79,7 @@ app.use('/api/views', viewFieldsRoutes);
 app.use('/api/dynamic', dynamicEngineRoutes);
 app.use('/api/files', filesRoutes);
 app.use('/api/admin/data-lists', adminLimiter, dataListsRoutes);
+app.use('/api/data-lists', dataListsPublicRoutes);
 app.use('/api/formulas', formulasRoutes);
 app.use('/api/map-configs', mapConfigsRoutes);
 
@@ -132,5 +111,29 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
 });
+
+const fileService = require('./services/fileService');
+const formulaService = require('./services/formulaService');
+const runOrphanCleanup = async () => {
+  try {
+    const ttl = Number(process.env.ORPHAN_FILE_TTL_HOURS) || 24;
+    const result = await fileService.cleanupOrphanGuestFiles(ttl);
+    if (result.deleted > 0) console.log(`Orphan guest files cleaned: ${result.deleted}`);
+  } catch (err) {
+    console.error('Orphan cleanup error:', err.message);
+  }
+};
+runOrphanCleanup();
+setInterval(runOrphanCleanup, 24 * 60 * 60 * 1000);
+
+const runSequenceReconcile = async () => {
+  try {
+    const result = await formulaService.reconcileSequences();
+    if (result.prefixes > 0) console.log(`Sequences reconciled: ${result.prefixes} prefixes`);
+  } catch (err) {
+    console.error('Sequence reconcile error:', err.message);
+  }
+};
+runSequenceReconcile();
 
 module.exports = app;

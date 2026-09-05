@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './contexts/AuthContext';
 
 import PublicLayout from './layouts/PublicLayout';
+import GuestLayout from './layouts/GuestLayout';
 import UserLayout from './layouts/UserLayout';
 import AdminLayout from './layouts/AdminLayout';
 
@@ -10,6 +11,7 @@ import RegisterPage from './pages/auth/RegisterPage';
 
 import MapPage from './pages/user/MapPage';
 import MyProposalsPage from './pages/user/MyProposalsPage';
+import GuestProposalPage from './pages/user/GuestProposalPage';
 import ProfilePage from './pages/user/ProfilePage';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -35,6 +37,10 @@ function App() {
           <Route element={<PublicLayout />}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+          </Route>
+
+          <Route element={<GuestLayout />}>
+            <Route path="/de-xuat" element={<GuestProposalPage />} />
           </Route>
 
           <Route element={<UserLayout />}>

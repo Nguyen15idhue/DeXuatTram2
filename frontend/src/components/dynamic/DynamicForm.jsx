@@ -37,7 +37,7 @@ const customFunctions = {
 };
 math.import(customFunctions, { override: false });
 
-const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) => {
+const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, guestMode = false }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -362,6 +362,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
         onChange={(val) => handleChange(field.key, val)}
         error={errors[field.key]}
         entityType={entity}
+        uploadUrl={guestMode ? '/files/guest-upload' : '/files/upload'}
       />
     );
   };

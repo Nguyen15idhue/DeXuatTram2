@@ -177,7 +177,15 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
 
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   const createdAt = new Date().toISOString();
-  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail };
+  const resolveUserId = recordData?.user_id ?? userId;
+  let userName = '';
+  if (resolveUserId !== undefined && resolveUserId !== null && resolveUserId !== '') {
+    try {
+      const [users] = await pool.query('SELECT full_name FROM users WHERE id = ?', [resolveUserId]);
+      if (users.length > 0) userName = users[0].full_name || '';
+    } catch { /* silent */ }
+  }
+  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName };
 
   const results = {};
   const excludeKeys = new Set(options.excludeKeys || []);

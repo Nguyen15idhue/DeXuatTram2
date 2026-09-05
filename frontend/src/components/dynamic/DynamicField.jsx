@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 
-const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType }) => {
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload' }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -261,6 +261,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           accept={buildAccept()}
           disabled={disabled}
           fileConfig={fileConfig}
+          uploadUrl={uploadUrl}
         />
       );
 

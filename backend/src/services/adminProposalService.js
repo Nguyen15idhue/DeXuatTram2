@@ -21,7 +21,7 @@ exports.getAllProposals = async (status, search, page, limit) => {
   const needsJoin = search;
 
   const [countResult] = await pool.query(
-    `SELECT COUNT(*) as total FROM station_proposals p ${needsJoin ? 'JOIN users u ON p.user_id = u.id' : ''} ${whereClause}`,
+    `SELECT COUNT(*) as total FROM station_proposals p ${needsJoin ? 'LEFT JOIN users u ON p.user_id = u.id' : ''} ${whereClause}`,
     params
   );
   const total = countResult[0].total;
@@ -31,7 +31,7 @@ exports.getAllProposals = async (status, search, page, limit) => {
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, u.full_name as user_name, u.email as user_email
     FROM station_proposals p
-    JOIN users u ON p.user_id = u.id
+    LEFT JOIN users u ON p.user_id = u.id
     ${whereClause}
     ORDER BY p.created_at DESC
     LIMIT ? OFFSET ?`,
@@ -54,7 +54,7 @@ exports.getProposalById = async (id) => {
 
 exports.getProposalWithUser = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.*, u.full_name as user_name FROM station_proposals p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
+    `SELECT p.*, u.full_name as user_name FROM station_proposals p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
     [id]
   );
   if (proposals.length === 0) return null;

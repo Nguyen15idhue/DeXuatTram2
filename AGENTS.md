@@ -68,7 +68,7 @@ Browser → Frontend → REST API → Backend → MySQL
 3. User KHÔNG được truy cập admin API (`/admin/*`)
 
 ### Data Rules
-4. Proposal phải lưu `user_id` của người tạo
+4. Proposal phải lưu `user_id` của người tạo (`user_id` được NULL với guest qua `POST /api/proposals/guest`)
 5. Latitude/Longitude lấy từ vị trí click trên map (không nhập thủ công)
 
 ### Map Marker Rules
