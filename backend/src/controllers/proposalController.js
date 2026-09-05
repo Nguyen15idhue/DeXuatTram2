@@ -31,6 +31,9 @@ exports.create = async (req, res) => {
     res.status(201).json({ success: true, data: proposal, message: 'Tạo đề xuất thành công' });
   } catch (error) {
     console.error('Create proposal error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

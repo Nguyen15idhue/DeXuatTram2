@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const dataListService = require('./dataListService');
 
 exports.getUserProposals = async (userId, status, search, page, limit) => {
   const offset = (page - 1) * limit;
@@ -60,6 +61,9 @@ exports.getProposalByIdAndUser = async (id, userId) => {
 exports.updateProposal = async (id, userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+  if (dynamicData.province !== undefined && dynamicData.province !== null && String(dynamicData.province).trim() !== '') {
+    await dataListService.applyDiaGioi(dynamicData);
+  }
 
   const postKeys = new Set(fieldDefs.filter(f => {
     if (f.type !== 'formula' || !f.formula_config) return false;

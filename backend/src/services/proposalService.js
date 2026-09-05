@@ -1,6 +1,7 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
+const dataListService = require('./dataListService');
 
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
@@ -33,6 +34,7 @@ exports.getProposalById = async (id) => {
 exports.createProposal = async (userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+  await dataListService.applyDiaGioi(dynamicData);
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 

@@ -268,7 +268,7 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
         scope[f.key] = f.type === 'number' ? 100 : 'sample';
       });
       if (config.compute_mode === 'post') {
-        const resp = await formulaService.previewPost(config.expression, { id: 1, entity: 'test', base_url: window.location.origin, created_at: new Date().toISOString(), user_id: 1, user_email: 'test@example.com' }, token);
+        const resp = await formulaService.previewPost(config.expression, { id: 1, entity: 'test', base_url: window.location.origin, created_at: new Date().toISOString(), user_id: 1, user_email: 'test@example.com' }, scope, token);
         if (resp.success) setPreview(resp.data.result);
       } else {
         const resp = await formulaService.preview(config.expression, scope, token);

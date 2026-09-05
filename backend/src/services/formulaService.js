@@ -133,7 +133,7 @@ exports.getNextSequence = async (prefix, connection) => {
       conn.release();
     }
   }
-  return String(n).padStart(4, '0');
+  return n;
 };
 
 exports.evaluatePostFormulaAsync = async (expression, metadata = {}, recordData = {}, options = {}) => {
@@ -147,9 +147,13 @@ exports.evaluatePostFormulaAsync = async (expression, metadata = {}, recordData 
   const seqNodes = node.filter(n => n.isFunctionNode && n.fn && (n.fn.name || '').toUpperCase() === 'SEQ');
   const values = new Map();
   for (const seqNode of seqNodes) {
-    if (!seqNode.args || seqNode.args.length === 0) throw new Error('SEQ thiếu prefix');
-    const prefix = String(math.evaluate(seqNode.args[0].toString(), scope));
-    values.set(seqNode, options.dryRun ? '0001' : await exports.getNextSequence(prefix, options.connection));
+    try {
+      if (!seqNode.args || seqNode.args.length === 0) return null;
+      const prefix = String(math.evaluate(seqNode.args[0].toString(), scope));
+      values.set(seqNode, options.dryRun ? 1 : await exports.getNextSequence(prefix, options.connection));
+    } catch {
+      return null;
+    }
   }
   const transformed = values.size > 0
     ? node.transform(n => (values.has(n) ? new math.ConstantNode(values.get(n)) : n))

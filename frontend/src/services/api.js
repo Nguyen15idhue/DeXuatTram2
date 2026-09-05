@@ -437,7 +437,7 @@ export const formulaService = {
   preview(expression, scope = {}, token) {
     return api.postWithAuth('/formulas/preview', { expression, scope }, token);
   },
-  previewPost(expression, metadata, token) {
-    return api.postWithAuth('/formulas/preview', { expression, metadata }, token);
+  previewPost(expression, metadata, scope = {}, token) {
+    return api.postWithAuth('/formulas/preview', { expression, metadata, scope }, token);
   }
 };

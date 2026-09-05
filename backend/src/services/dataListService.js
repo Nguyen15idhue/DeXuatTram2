@@ -106,3 +106,47 @@ exports.deleteRow = async (listId, rowId) => {
 exports.deleteAllRows = async (listId) => {
   await pool.query('DELETE FROM data_list_rows WHERE list_id = ?', [listId]);
 };
+
+exports.applyDiaGioi = async (dynamicData) => {
+  const province = dynamicData ? dynamicData.province : null;
+  if (province === undefined || province === null || String(province).trim() === '') {
+    const err = new Error('Vui lòng chọn Tỉnh/Thành phố');
+    err.statusCode = 400;
+    throw err;
+  }
+  const found = await exports.getDiaGioiByTenTinh(province);
+  if (!found) {
+    const err = new Error(`Tỉnh/Thành phố "${province}" không có trong danh mục`);
+    err.statusCode = 400;
+    throw err;
+  }
+  dynamicData.ma_tinh = found.ma_tinh;
+  dynamicData.vung_mien = found.vung_mien;
+  return dynamicData;
+};
+
+exports.getDiaGioiByTenTinh = async (tenTinh) => {
+  const name = String(tenTinh || '').trim();
+  if (!name) return null;
+  const pick = (row) => {
+    if (!row) return null;
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (!data || !data.ma_tinh) return null;
+    return { ma_tinh: data.ma_tinh, vung_mien: data.vung_mien || '', ten_tinh: data.ten_tinh || '' };
+  };
+  const [exact] = await pool.query(
+    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id
+     WHERE l.name = 'dm_tinh' AND JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.ten_tinh')) = ? LIMIT 1`,
+    [name]
+  );
+  if (exact.length > 0) return pick(exact[0]);
+  const [all] = await pool.query(
+    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name = 'dm_tinh'`
+  );
+  const lowered = name.toLowerCase();
+  for (const row of all) {
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (data && String(data.ten_tinh || '').trim().toLowerCase() === lowered) return pick(row);
+  }
+  return null;
+};

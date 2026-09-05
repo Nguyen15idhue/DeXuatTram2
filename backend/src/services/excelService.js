@@ -206,6 +206,9 @@ function parseExcelRow(row, columns, entity, headerMap) {
     }
 
     if (value === '' && col.required) {
+      if (entity === 'station_proposals' && (col.key === 'ma_tinh' || col.key === 'vung_mien') && dynamicData.province) {
+        return;
+      }
       errors.push(`${col.label} là bắt buộc`);
       return;
     }
@@ -347,7 +350,10 @@ exports.importPreviewDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'File Excel trống hoặc không có dữ liệu' });
     }
 
-    const headerErrors = validateHeaders(sheet.getRow(1), columns);
+    const headerColumns = entity === 'station_proposals'
+      ? columns.filter(c => c.key !== 'ma_tinh' && c.key !== 'vung_mien')
+      : columns;
+    const headerErrors = validateHeaders(sheet.getRow(1), headerColumns);
     if (headerErrors.length > 0) {
       return res.status(400).json({ success: false, message: `Lỗi header: ${headerErrors.join('; ')}` });
     }
@@ -455,6 +461,10 @@ exports.importConfirmDynamic = async (req, res) => {
         const dynamicData = row.dynamicData || {};
         postFormulaKeys.forEach(k => { delete dynamicData[k]; });
 
+        if (entity === 'station_proposals') {
+          await dataListService.applyDiaGioi(dynamicData);
+        }
+
         if (entity === 'station_proposals' && req.user && req.user.id) {
           fixedData.user_id = req.user.id;
         }
@@ -538,6 +548,9 @@ exports.getTemplateDynamic = async (req, res) => {
     columns.forEach((c, idx) => {
       if (c.type === 'formula' && c.computeMode === 'post') {
         sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự sinh sau khi lưu';
+      }
+      if (entity === 'station_proposals' && (c.key === 'ma_tinh' || c.key === 'vung_mien')) {
+        sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự suy từ Tỉnh thành';
       }
     });
 

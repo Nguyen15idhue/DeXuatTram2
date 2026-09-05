@@ -72,6 +72,9 @@ exports.update = async (req, res) => {
     res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
     console.error('Admin update proposal error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };
