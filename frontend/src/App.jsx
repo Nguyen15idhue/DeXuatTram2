@@ -26,6 +26,10 @@ import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
 import AdminRecordFilesPage from './pages/admin/AdminRecordFilesPage';
 import AdminDataListsPage from './pages/admin/AdminDataListsPage';
 import AdminMapConfigPage from './pages/admin/AdminMapConfigPage';
+import AdminRolesPage from './pages/admin/AdminRolesPage';
+import RoleRoute from './components/RoleRoute';
+
+const SUPER_ONLY = ['SUPER_ADMIN'];
 
 import './App.css';
 
@@ -58,15 +62,16 @@ function App() {
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<AdminProposalsPage />} />
             <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
-            <Route path="/admin/fields" element={<AdminFieldsPage />} />
-            <Route path="/admin/forms" element={<AdminFormsPage />} />
-            <Route path="/admin/forms/:id/edit" element={<AdminFormBuilderPage />} />
-            <Route path="/admin/views" element={<AdminViewsPage />} />
-            <Route path="/admin/views/:id/edit" element={<AdminViewBuilderPage />} />
+            <Route path="/admin/fields" element={<RoleRoute allowed={SUPER_ONLY}><AdminFieldsPage /></RoleRoute>} />
+            <Route path="/admin/forms" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormsPage /></RoleRoute>} />
+            <Route path="/admin/forms/:id/edit" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormBuilderPage /></RoleRoute>} />
+            <Route path="/admin/views" element={<RoleRoute allowed={SUPER_ONLY}><AdminViewsPage /></RoleRoute>} />
+            <Route path="/admin/views/:id/edit" element={<RoleRoute allowed={SUPER_ONLY}><AdminViewBuilderPage /></RoleRoute>} />
             <Route path="/admin/:entity/:id/files" element={<AdminRecordFilesPage />} />
-            <Route path="/admin/data-lists" element={<AdminDataListsPage />} />
-            <Route path="/admin/data-lists/:id" element={<AdminDataListsPage />} />
-            <Route path="/admin/map-config" element={<AdminMapConfigPage />} />
+            <Route path="/admin/data-lists" element={<RoleRoute allowed={SUPER_ONLY}><AdminDataListsPage /></RoleRoute>} />
+            <Route path="/admin/data-lists/:id" element={<RoleRoute allowed={SUPER_ONLY}><AdminDataListsPage /></RoleRoute>} />
+            <Route path="/admin/map-config" element={<RoleRoute allowed={SUPER_ONLY}><AdminMapConfigPage /></RoleRoute>} />
+            <Route path="/admin/roles" element={<RoleRoute allowed={SUPER_ONLY}><AdminRolesPage /></RoleRoute>} />
           </Route>
 
           <Route path="/" element={<Navigate to="/login" replace />} />

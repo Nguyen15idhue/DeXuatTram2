@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const dataListController = require('../controllers/dataListController');
 const excelService = require('../services/excelService');
 
@@ -23,7 +23,7 @@ const excelService = require('../services/excelService');
  *       200:
  *         description: Thành công
  */
-router.get('/', requireAuth, requireAdmin, dataListController.getAll);
+router.get('/', requireAuth, requireSuperAdmin, dataListController.getAll);
 
 /**
  * @swagger
@@ -44,7 +44,7 @@ router.get('/', requireAuth, requireAdmin, dataListController.getAll);
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/:id', requireAuth, requireAdmin, dataListController.getById);
+router.get('/:id', requireAuth, dataListController.getById);
 
 /**
  * @swagger
@@ -78,7 +78,7 @@ router.get('/:id', requireAuth, requireAdmin, dataListController.getById);
  *       201:
  *         description: Thành công
  */
-router.post('/', requireAuth, requireAdmin, dataListController.create);
+router.post('/', requireAuth, requireSuperAdmin, dataListController.create);
 
 /**
  * @swagger
@@ -97,7 +97,7 @@ router.post('/', requireAuth, requireAdmin, dataListController.create);
  *       200:
  *         description: Thành công
  */
-router.put('/:id', requireAuth, requireAdmin, dataListController.update);
+router.put('/:id', requireAuth, requireSuperAdmin, dataListController.update);
 
 /**
  * @swagger
@@ -116,7 +116,7 @@ router.put('/:id', requireAuth, requireAdmin, dataListController.update);
  *       200:
  *         description: Thành công
  */
-router.delete('/:id', requireAuth, requireAdmin, dataListController.remove);
+router.delete('/:id', requireAuth, requireSuperAdmin, dataListController.remove);
 
 /**
  * @swagger
@@ -150,7 +150,7 @@ router.delete('/:id', requireAuth, requireAdmin, dataListController.remove);
  *       201:
  *         description: Thành công
  */
-router.post('/:id/rows', requireAuth, requireAdmin, dataListController.addRows);
+router.post('/:id/rows', requireAuth, requireSuperAdmin, dataListController.addRows);
 
 /**
  * @swagger
@@ -173,7 +173,7 @@ router.post('/:id/rows', requireAuth, requireAdmin, dataListController.addRows);
  *       200:
  *         description: Thành công
  */
-router.put('/:id/rows/:rowId', requireAuth, requireAdmin, dataListController.updateRow);
+router.put('/:id/rows/:rowId', requireAuth, requireSuperAdmin, dataListController.updateRow);
 
 /**
  * @swagger
@@ -196,7 +196,7 @@ router.put('/:id/rows/:rowId', requireAuth, requireAdmin, dataListController.upd
  *       200:
  *         description: Thành công
  */
-router.delete('/:id/rows/:rowId', requireAuth, requireAdmin, dataListController.deleteRow);
+router.delete('/:id/rows/:rowId', requireAuth, requireSuperAdmin, dataListController.deleteRow);
 
 /**
  * @swagger
@@ -217,7 +217,7 @@ router.delete('/:id/rows/:rowId', requireAuth, requireAdmin, dataListController.
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/:id/export', requireAuth, requireAdmin, excelService.exportDataList);
+router.get('/:id/export', requireAuth, requireSuperAdmin, excelService.exportDataList);
 
 /**
  * @swagger
@@ -249,7 +249,7 @@ router.get('/:id/export', requireAuth, requireAdmin, excelService.exportDataList
  *       400:
  *         description: File không hợp lệ
  */
-router.post('/:id/import/preview', requireAuth, requireAdmin, excelService.uploadMiddleware, excelService.importDataListPreview);
+router.post('/:id/import/preview', requireAuth, requireSuperAdmin, excelService.uploadMiddleware, excelService.importDataListPreview);
 
 /**
  * @swagger
@@ -278,6 +278,6 @@ router.post('/:id/import/preview', requireAuth, requireAdmin, excelService.uploa
  *       200:
  *         description: Import thành công
  */
-router.post('/:id/import/confirm', requireAuth, requireAdmin, excelService.importDataListConfirm);
+router.post('/:id/import/confirm', requireAuth, requireSuperAdmin, excelService.importDataListConfirm);
 
 module.exports = router;

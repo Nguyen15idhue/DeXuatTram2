@@ -34,7 +34,7 @@ const options = {
             full_name: { type: 'string', example: 'Nguyen Van A' },
             email: { type: 'string', example: 'user@example.com' },
             phone: { type: 'string', example: '0912345678' },
-            role: { type: 'string', enum: ['USER', 'ADMIN'], example: 'USER' },
+            role: { type: 'string', enum: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'], example: 'CTV' },
             status: { type: 'string', enum: ['ACTIVE', 'LOCKED'], example: 'ACTIVE' },
             created_at: { type: 'string', format: 'date-time' }
           }

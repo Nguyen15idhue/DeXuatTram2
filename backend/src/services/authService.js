@@ -27,7 +27,7 @@ exports.createUser = async (fullName, email, phone, password) => {
 
   const [result] = await pool.query(
     'INSERT INTO users (full_name, email, phone, password, role, status) VALUES (?, ?, ?, ?, ?, ?)',
-    [fullName, email, phone, hashedPassword, 'USER', 'ACTIVE']
+    [fullName, email, phone, hashedPassword, 'CTV', 'ACTIVE']
   );
 
   return { id: result.insertId };

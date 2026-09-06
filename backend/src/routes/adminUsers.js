@@ -1,6 +1,6 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
 const { validateCreateUser, validateUpdateUser } = require('../middlewares/validators');
 const adminUserController = require('../controllers/adminUserController');
 
@@ -86,7 +86,7 @@ router.get('/', requireAuth, requireAdmin, adminUserController.getAll);
  *                 example: 123456
  *               role:
  *                 type: string
- *                 enum: [USER, ADMIN]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
  *                 default: USER
  *               status:
  *                 type: string
@@ -111,7 +111,7 @@ router.get('/', requireAuth, requireAdmin, adminUserController.getAll);
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireAdmin, validateCreateUser, adminUserController.create);
+router.post('/', requireAuth, requireUserManager, validateCreateUser, adminUserController.create);
 
 /**
  * @swagger
@@ -146,7 +146,7 @@ router.post('/', requireAuth, requireAdmin, validateCreateUser, adminUserControl
  *                 description: Để trống nếu không đổi mật khẩu
  *               role:
  *                 type: string
- *                 enum: [USER, ADMIN]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
  *               status:
  *                 type: string
  *                 enum: [ACTIVE, LOCKED]
@@ -252,7 +252,7 @@ router.patch('/:id/lock', requireAuth, requireAdmin, adminUserController.toggleL
  *             properties:
  *               role:
  *                 type: string
- *                 enum: [USER, ADMIN]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
  *     responses:
  *       200:
  *         description: Đổi role thành công
@@ -266,5 +266,44 @@ router.patch('/:id/lock', requireAuth, requireAdmin, adminUserController.toggleL
  *         description: Không tìm thấy user
  */
 router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeRole);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/password:
+ *   patch:
+ *     tags: [Admin - Users]
+ *     summary: Admin đổi mật khẩu user (không trả về mật khẩu)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [password]
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *     responses:
+ *       200:
+ *         description: Đổi mật khẩu thành công
+ *       400:
+ *         description: Mật khẩu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.patch('/:id/password', requireAuth, requireAdmin, adminUserController.changePassword);
 
 module.exports = router;

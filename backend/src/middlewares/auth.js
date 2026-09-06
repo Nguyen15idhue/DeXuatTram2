@@ -31,12 +31,34 @@ const requireAuth = (req, res, next) => {
   }
 };
 
-// Middleware: Check admin role
+// Middleware: Check admin-level role (ADMIN hoặc SUPER_ADMIN)
 const requireAdmin = (req, res, next) => {
-  if (req.user.role !== 'ADMIN') {
-    return res.status(403).json({ 
-      success: false, 
-      message: 'Không có quyền truy cập' 
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
+// Middleware: Check super admin role (chỉ SUPER_ADMIN - trang cấu hình)
+const requireSuperAdmin = (req, res, next) => {
+  if (req.user.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập tài nguyên này'
+    });
+  }
+  next();
+};
+
+// Middleware: Check quyền quản lý users (ADMIN, SUPER_ADMIN, SALES - sales chỉ tạo CTV, check tiếp ở controller)
+const requireUserManager = (req, res, next) => {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
     });
   }
   next();
@@ -58,4 +80,4 @@ const optionalAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { requireAuth, requireAdmin, optionalAuth, JWT_SECRET };
+module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager, optionalAuth, JWT_SECRET };

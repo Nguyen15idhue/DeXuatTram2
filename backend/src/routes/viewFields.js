@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const viewFieldController = require('../controllers/viewFieldController');
 
 /**
@@ -64,7 +64,7 @@ router.get('/:viewId/fields', viewFieldController.getFields);
  *       404:
  *         description: Không tìm thấy view
  */
-router.put('/:viewId/fields/reorder', requireAuth, requireAdmin, viewFieldController.reorder);
+router.put('/:viewId/fields/reorder', requireAuth, requireSuperAdmin, viewFieldController.reorder);
 
 /**
  * @swagger
@@ -117,7 +117,7 @@ router.put('/:viewId/fields/reorder', requireAuth, requireAdmin, viewFieldContro
  *       404:
  *         description: Không tìm thấy view
  */
-router.post('/:viewId/fields', requireAuth, requireAdmin, viewFieldController.addField);
+router.post('/:viewId/fields', requireAuth, requireSuperAdmin, viewFieldController.addField);
 
 /**
  * @swagger
@@ -167,7 +167,7 @@ router.post('/:viewId/fields', requireAuth, requireAdmin, viewFieldController.ad
  *       404:
  *         description: Không tìm thấy
  */
-router.put('/:viewId/fields/:id', requireAuth, requireAdmin, viewFieldController.updateField);
+router.put('/:viewId/fields/:id', requireAuth, requireSuperAdmin, viewFieldController.updateField);
 
 /**
  * @swagger
@@ -198,6 +198,6 @@ router.put('/:viewId/fields/:id', requireAuth, requireAdmin, viewFieldController
  *       404:
  *         description: Không tìm thấy
  */
-router.delete('/:viewId/fields/:id', requireAuth, requireAdmin, viewFieldController.deleteField);
+router.delete('/:viewId/fields/:id', requireAuth, requireSuperAdmin, viewFieldController.deleteField);
 
 module.exports = router;

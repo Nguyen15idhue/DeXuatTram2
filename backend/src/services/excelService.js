@@ -119,7 +119,7 @@ function getAllData(entity, filters = {}) {
     if (search) { where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)'); params.push(like, like, like); }
     if (status) { where.push('status = ?'); params.push(status); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-    return pool.query(`SELECT * FROM users ${whereClause} ORDER BY id DESC`, params);
+    return pool.query(`SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at, updated_at FROM users ${whereClause} ORDER BY id DESC`, params);
   }
   return pool.query(`SELECT * FROM ${table} ORDER BY id DESC`);
 }

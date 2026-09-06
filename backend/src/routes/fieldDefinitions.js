@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const fieldDefinitionController = require('../controllers/fieldDefinitionController');
 
 /**
@@ -43,7 +43,7 @@ const fieldDefinitionController = require('../controllers/fieldDefinitionControl
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, fieldDefinitionController.getAll);
+router.get('/', requireAuth, requireSuperAdmin, fieldDefinitionController.getAll);
 
 /**
  * @swagger
@@ -89,7 +89,7 @@ router.get('/entity/:entity', fieldDefinitionController.getByEntity);
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/:id', requireAuth, requireAdmin, fieldDefinitionController.getById);
+router.get('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.getById);
 
 /**
  * @swagger
@@ -145,7 +145,7 @@ router.get('/:id', requireAuth, requireAdmin, fieldDefinitionController.getById)
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireAdmin, fieldDefinitionController.create);
+router.post('/', requireAuth, requireSuperAdmin, fieldDefinitionController.create);
 
 /**
  * @swagger
@@ -195,7 +195,7 @@ router.post('/', requireAuth, requireAdmin, fieldDefinitionController.create);
  *       404:
  *         description: Không tìm thấy
  */
-router.put('/:id', requireAuth, requireAdmin, fieldDefinitionController.update);
+router.put('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.update);
 
 /**
  * @swagger
@@ -221,7 +221,7 @@ router.put('/:id', requireAuth, requireAdmin, fieldDefinitionController.update);
  *       404:
  *         description: Không tìm thấy
  */
-router.delete('/:id', requireAuth, requireAdmin, fieldDefinitionController.delete);
+router.delete('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.delete);
 
 /**
  * @swagger
@@ -260,6 +260,6 @@ router.delete('/:id', requireAuth, requireAdmin, fieldDefinitionController.delet
  *       404:
  *         description: Không tìm thấy
  */
-router.patch('/:id/status', requireAuth, requireAdmin, fieldDefinitionController.updateStatus);
+router.patch('/:id/status', requireAuth, requireSuperAdmin, fieldDefinitionController.updateStatus);
 
 module.exports = router;

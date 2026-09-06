@@ -9,7 +9,7 @@ const menuItems = [
 ];
 
 const UserSidebar = ({ isOpen, onClose }) => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, canAccessPanel, logout } = useAuth();
   const location = useLocation();
 
   const isActive = (path) => {
@@ -51,7 +51,7 @@ const UserSidebar = ({ isOpen, onClose }) => {
               {item.label}
             </Link>
           ))}
-          {isAdmin && (
+          {canAccessPanel && (
             <>
               <div className="border-t border-base-300 my-2"></div>
               <Link

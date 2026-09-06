@@ -13,7 +13,7 @@ exports.register = async (req, res) => {
     }
 
     const result = await authService.createUser(full_name, email, phone, password);
-    const token = authService.generateToken(result.id, email, 'USER');
+    const token = authService.generateToken(result.id, email, 'CTV');
 
     res.status(201).json({
       success: true,
@@ -24,7 +24,7 @@ exports.register = async (req, res) => {
           full_name,
           email,
           phone,
-          role: 'USER',
+          role: 'CTV',
           status: 'ACTIVE'
         },
         token

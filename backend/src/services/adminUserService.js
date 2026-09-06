@@ -57,11 +57,11 @@ exports.findByIdWithStatus = async (id) => {
   return users.length > 0 ? users[0] : null;
 };
 
-exports.createUser = async (fullName, email, phone, hashedPassword, role, status, customData) => {
+exports.createUser = async (fullName, email, phone, hashedPassword, role, status, customData, parentId = null) => {
   const cd = (customData && typeof customData === 'object') ? JSON.stringify(customData) : null;
   const [result] = await pool.query(
-    'INSERT INTO users (full_name, email, phone, password, role, status, custom_data) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [fullName, email, phone || '', hashedPassword, role || 'USER', status || 'ACTIVE', cd]
+    'INSERT INTO users (full_name, email, phone, password, role, status, custom_data, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [fullName, email, phone || '', hashedPassword, role || 'CTV', status || 'ACTIVE', cd, parentId]
   );
   const [user] = await pool.query(`${USER_SELECT} WHERE id = ?`, [result.insertId]);
   return user[0];
@@ -97,4 +97,8 @@ exports.updateStatus = async (id, status) => {
 
 exports.updateRole = async (id, role) => {
   await pool.query('UPDATE users SET role = ?, updated_at = NOW() WHERE id = ?', [role, id]);
+};
+
+exports.updatePassword = async (id, hashedPassword) => {
+  await pool.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPassword, id]);
 };

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const formController = require('../controllers/formController');
 
 /**
@@ -41,7 +41,7 @@ const formController = require('../controllers/formController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, formController.getAll);
+router.get('/', requireAuth, requireSuperAdmin, formController.getAll);
 
 /**
  * @swagger
@@ -115,7 +115,7 @@ router.get('/:id', formController.getById);
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireAdmin, formController.create);
+router.post('/', requireAuth, requireSuperAdmin, formController.create);
 
 /**
  * @swagger
@@ -173,7 +173,7 @@ router.post('/', requireAuth, requireAdmin, formController.create);
  *       404:
  *         description: Không tìm thấy
  */
-router.put('/:id', requireAuth, requireAdmin, formController.update);
+router.put('/:id', requireAuth, requireSuperAdmin, formController.update);
 
 /**
  * @swagger
@@ -199,6 +199,6 @@ router.put('/:id', requireAuth, requireAdmin, formController.update);
  *       404:
  *         description: Không tìm thấy
  */
-router.delete('/:id', requireAuth, requireAdmin, formController.delete);
+router.delete('/:id', requireAuth, requireSuperAdmin, formController.delete);
 
 module.exports = router;

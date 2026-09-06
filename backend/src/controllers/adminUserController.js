@@ -14,7 +14,29 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { full_name, email, phone, password, role, status, custom_data } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data } = req.body;
+    const creatorRole = req.user.role;
+
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
+    }
+
+    let parentId = null;
+    if (creatorRole === 'SALES') {
+      if (role && role !== 'CTV') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      role = 'CTV';
+      parentId = req.user.id;
+    } else if (creatorRole === 'ADMIN') {
+      if (role === 'SUPER_ADMIN') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      role = role || 'CTV';
+    } else {
+      role = role || 'CTV';
+    }
 
     const existing = await adminUserService.findByEmail(email);
     if (existing) {
@@ -23,7 +45,7 @@ exports.create = async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data);
+    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data, parentId);
     res.status(201).json({ success: true, data: user, message: 'Tạo user thành công' });
   } catch (error) {
     console.error('Admin create user error:', error);
@@ -73,7 +95,7 @@ exports.delete = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    if (existing.role === 'ADMIN') {
+    if (existing.role === 'SUPER_ADMIN' || existing.role === 'ADMIN') {
       return res.status(400).json({ success: false, message: 'Không thể xóa admin' });
     }
 
@@ -114,7 +136,7 @@ exports.changeRole = async (req, res) => {
     const { id } = req.params;
     const { role } = req.body;
 
-    if (!['USER', 'ADMIN'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
 
@@ -123,11 +145,48 @@ exports.changeRole = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
+    if (role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    if (existing.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
     await adminUserService.updateRole(id, role);
     const user = await adminUserService.findById(id);
     res.json({ success: true, data: user, message: 'Đổi role thành công' });
   } catch (error) {
     console.error('Admin change role error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+    }
+
+    const existing = await adminUserService.findByIdWithRole(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+
+    if (existing.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    await adminUserService.updatePassword(id, hashedPassword);
+    const user = await adminUserService.findById(id);
+    res.json({ success: true, data: user, message: 'Đổi mật khẩu thành công' });
+  } catch (error) {
+    console.error('Admin change password error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

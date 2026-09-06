@@ -37,6 +37,11 @@ const AdminUsersPage = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
+  const [pw1, setPw1] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState('');
   const tableRef = useRef(null);
 
   useEffect(() => {
@@ -98,6 +103,32 @@ const AdminUsersPage = () => {
     setConfirmDelete({ isOpen: true, id, name });
   };
 
+  const openPasswordModal = (id, name) => {
+    setPwModal({ open: true, id, name });
+    setPw1('');
+    setPw2('');
+    setPwError('');
+  };
+
+  const handleChangePassword = async () => {
+    if (!pw1 || pw1.length < 6) { setPwError('Mật khẩu phải có ít nhất 6 ký tự'); return; }
+    if (pw1 !== pw2) { setPwError('Nhập lại mật khẩu chưa khớp'); return; }
+    try {
+      setPwLoading(true);
+      const res = await adminUserService.changePassword(pwModal.id, pw1, token);
+      if (res.success) {
+        setPwModal({ open: false, id: null, name: '' });
+        setToast({ message: 'Đổi mật khẩu thành công', type: 'success' });
+      } else {
+        setPwError(res.message || 'Đổi mật khẩu thất bại');
+      }
+    } catch {
+      setPwError('Lỗi kết nối server');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     const { id } = confirmDelete;
     setConfirmDelete({ isOpen: false, id: null, name: '' });
@@ -149,7 +180,7 @@ const AdminUsersPage = () => {
       email: formData.email || '',
       phone: formData.phone || '',
       password: formData.password || '123456',
-      role: formData.role || 'USER',
+      role: formData.role === 'USER' ? 'CTV' : (formData.role || 'CTV'),
       status: formData.status || 'ACTIVE'
     };
     const customData = {};
@@ -233,10 +264,11 @@ const AdminUsersPage = () => {
     <div className="flex flex-wrap gap-1">
       <button className="btn btn-primary btn-xs" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
       <button className="btn btn-warning btn-xs" onClick={() => navigate(`/admin/users/edit=${row.id}`)}>Sửa</button>
+      <button className="btn btn-ghost btn-xs" onClick={() => openPasswordModal(row.id, row.full_name)}>Đổi MK</button>
       <button className="btn btn-sm btn-ghost" onClick={() => handleToggleLock(row.id)}>
         {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
       </button>
-      {row.role !== 'ADMIN' && row.id !== currentUser.id && (
+      {!['ADMIN', 'SUPER_ADMIN'].includes(row.role) && row.id !== currentUser.id && (
         <button className="btn btn-error btn-outline btn-xs" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
       )}
     </div>
@@ -380,7 +412,7 @@ const AdminUsersPage = () => {
               entity="users"
               formId={USERS_FORM_ID}
               onSubmit={handleCreateUser}
-              initialData={{ role: 'USER', status: 'ACTIVE', password: '123456' }}
+              initialData={{ role: 'CTV', status: 'ACTIVE', password: '123456' }}
             >
               <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
             </DynamicForm>
@@ -391,9 +423,36 @@ const AdminUsersPage = () => {
         </dialog>
       )}
 
+      {pwModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Đổi mật khẩu — {pwModal.name}</h3>
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label"><span className="label-text">Mật khẩu mới (ít nhất 6 ký tự)</span></label>
+                <input type="password" autoComplete="new-password" className="input input-bordered w-full" value={pw1} onChange={(e) => setPw1(e.target.value)} />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Nhập lại mật khẩu mới</span></label>
+                <input type="password" autoComplete="new-password" className="input input-bordered w-full" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+              </div>
+              {pwError && <div className="alert alert-error"><span>{pwError}</span></div>}
+              <div className="modal-action">
+                <button className="btn btn-ghost" onClick={() => setPwModal({ open: false, id: null, name: '' })}>Hủy</button>
+                <button className="btn btn-primary" onClick={handleChangePassword} disabled={pwLoading}>
+                  {pwLoading ? 'Đang lưu...' : 'Đổi mật khẩu'}
+                </button>
+              </div>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setPwModal({ open: false, id: null, name: '' })}>close</button>
+          </form>
+        </dialog>
+      )}
+
       {popup.open && (
-        <RecordDetailPopup
-          entity="users"
+        <RecordDetailPopup          entity="users"
           record={popup.record}
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
           viewId={USERS_VIEW_ID}

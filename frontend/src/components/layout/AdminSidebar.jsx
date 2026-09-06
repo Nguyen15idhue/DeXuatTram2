@@ -2,26 +2,28 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   BarChart3, Users, Zap, ClipboardList, Settings,
-  FileText, File, LayoutGrid, List, Map, MapPin, LogOut
+  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck
 } from 'lucide-react';
 
 const menuItems = [
-  { path: '/admin', label: 'Dashboard', icon: BarChart3 },
-  { path: '/admin/users', label: 'Quản lý Users', icon: Users },
-  { path: '/admin/stations', label: 'Quản lý Trạm', icon: Zap },
-  { path: '/admin/proposals', label: 'Quản lý Đề xuất', icon: ClipboardList },
-  { divider: true },
-  { label: 'Cấu hình', isGroup: true },
-  { path: '/admin/fields', label: 'Field Definitions', icon: FileText },
-  { path: '/admin/forms', label: 'Forms Manager', icon: File },
-  { path: '/admin/views', label: 'Views Manager', icon: LayoutGrid },
-  { path: '/admin/data-lists', label: 'Data Lists', icon: List },
-  { path: '/admin/map-config', label: 'Map Config', icon: Map },
+  { path: '/admin', label: 'Dashboard', icon: BarChart3, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
+  { path: '/admin/users', label: 'Quản lý Users', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
+  { path: '/admin/stations', label: 'Quản lý Trạm', icon: Zap, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
+  { path: '/admin/proposals', label: 'Quản lý Đề xuất', icon: ClipboardList, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
+  { divider: true, roles: ['SUPER_ADMIN'] },
+  { label: 'Cấu hình', isGroup: true, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/fields', label: 'Field Definitions', icon: FileText, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/forms', label: 'Forms Manager', icon: File, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/views', label: 'Views Manager', icon: LayoutGrid, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/data-lists', label: 'Data Lists', icon: List, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/map-config', label: 'Map Config', icon: Map, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/roles', label: 'Phân quyền', icon: ShieldCheck, roles: ['SUPER_ADMIN'] },
 ];
 
 const AdminSidebar = ({ onNavClick }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const visibleItems = menuItems.filter((item) => !item.roles || item.roles.includes(user?.role));
 
   return (
     <aside className="w-64 h-full flex flex-col bg-base-100 border-r border-base-300">
@@ -34,7 +36,7 @@ const AdminSidebar = ({ onNavClick }) => {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
-        {menuItems.map((item, idx) => {
+        {visibleItems.map((item, idx) => {
           if (item.divider) {
             return <div key={`divider-${idx}`} className="border-t border-base-300 my-3 mx-1" />;
           }

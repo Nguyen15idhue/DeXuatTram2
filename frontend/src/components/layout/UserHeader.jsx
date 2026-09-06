@@ -9,7 +9,7 @@ const navItems = [
 ];
 
 const UserHeader = ({ onMenuToggle }) => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, canAccessPanel, logout } = useAuth();
   const location = useLocation();
 
   const isActive = (path) => {
@@ -42,7 +42,7 @@ const UserHeader = ({ onMenuToggle }) => {
             {item.label}
           </Link>
         ))}
-        {isAdmin && (
+        {canAccessPanel && (
           <>
             <div className="divider divider-horizontal mx-1 h-6"></div>
             <Link

@@ -25,7 +25,8 @@ Browser → Frontend → REST API → Backend → MySQL
 ## 3. Business Entities
 
 ### User
-- Roles: `USER`, `ADMIN`
+- Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV` (file 25, thay `USER`/`ADMIN` cũ)
+- `CTV.parent_id` trỏ `SALES` quản lý; `external_id` map hệ ngoài
 - Status: `ACTIVE`, `LOCKED`
 
 ### Station (trạm đã được tạo)
@@ -62,10 +63,11 @@ Browser → Frontend → REST API → Backend → MySQL
 
 ## 4. Business Rules
 
-### Permission Rules
-1. User chỉ được xem/sửa/xóa proposal của chính mình
-2. Admin được quản lý tất cả proposals và stations
-3. User KHÔNG được truy cập admin API (`/admin/*`)
+### Permission Rules (file 25)
+1. CTV chỉ được xem/sửa/xóa proposal của chính mình (= `USER` cũ)
+2. Super/Admin được quản lý tất cả proposals và stations
+3. CTV KHÔNG được truy cập admin API (`/admin/*`); Sales chỉ 4 trang (`/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`)
+4. Chỉ `SUPER_ADMIN` được vào trang cấu hình (`/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`) + tạo super admin
 
 ### Data Rules
 4. Proposal phải lưu `user_id` của người tạo (`user_id` được NULL với guest qua `POST /api/proposals/guest`)

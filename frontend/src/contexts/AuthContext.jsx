@@ -75,8 +75,11 @@ export const AuthProvider = ({ children }) => {
     setUser(prev => ({ ...prev, ...userData }));
   };
 
-  const isAdmin = user?.role === 'ADMIN';
-  const isUser = user?.role === 'USER';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const isSales = user?.role === 'SALES';
+  const isUser = user?.role === 'CTV';
+  const canAccessPanel = ['SUPER_ADMIN', 'ADMIN', 'SALES'].includes(user?.role);
   const isAuthenticated = !!user;
 
   return (
@@ -89,7 +92,10 @@ export const AuthProvider = ({ children }) => {
       logout,
       updateUser,
       isAdmin,
+      isSuperAdmin,
+      isSales,
       isUser,
+      canAccessPanel,
       isAuthenticated
     }}>
       {children}

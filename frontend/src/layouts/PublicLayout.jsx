@@ -2,10 +2,10 @@ import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const PublicLayout = () => {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, canAccessPanel } = useAuth();
 
   if (isAuthenticated) {
-    return <Navigate to={isAdmin ? '/admin' : '/map'} replace />;
+    return <Navigate to={canAccessPanel ? '/admin' : '/map'} replace />;
   }
 
   return (

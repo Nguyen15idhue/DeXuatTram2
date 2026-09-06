@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const mapConfigController = require('../controllers/mapConfigController');
 
 /**
@@ -49,7 +49,7 @@ router.get('/', mapConfigController.getConfig);
  *       201:
  *         description: Tạo thành công
  */
-router.post('/', requireAuth, requireAdmin, mapConfigController.createConfig);
+router.post('/', requireAuth, requireSuperAdmin, mapConfigController.createConfig);
 
 /**
  * @swagger
@@ -69,7 +69,7 @@ router.post('/', requireAuth, requireAdmin, mapConfigController.createConfig);
  *       200:
  *         description: Cập nhật thành công
  */
-router.put('/:id', requireAuth, requireAdmin, mapConfigController.updateConfig);
+router.put('/:id', requireAuth, requireSuperAdmin, mapConfigController.updateConfig);
 
 /**
  * @swagger
@@ -89,6 +89,6 @@ router.put('/:id', requireAuth, requireAdmin, mapConfigController.updateConfig);
  *       200:
  *         description: Xoá thành công
  */
-router.delete('/:id', requireAuth, requireAdmin, mapConfigController.deleteConfig);
+router.delete('/:id', requireAuth, requireSuperAdmin, mapConfigController.deleteConfig);
 
 module.exports = router;

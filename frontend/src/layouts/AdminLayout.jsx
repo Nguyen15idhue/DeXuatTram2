@@ -1,12 +1,30 @@
-import { useState } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import AdminSidebar from '../components/layout/AdminSidebar';
 import AdminHeader from '../components/layout/AdminHeader';
+import Toast from '../components/Toast';
 
 const AdminLayout = () => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const { isAuthenticated, canAccessPanel, loading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [toast, setToast] = useState({ message: '', type: 'error' });
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (location.state?.denied) {
+      setToast({ message: 'Không có quyền truy cập', type: 'error' });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (toast.message) {
+      const t = setTimeout(() => setToast({ message: '', type: 'error' }), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toast.message]);
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen text-base-content">Đang tải...</div>;
@@ -16,7 +34,7 @@ const AdminLayout = () => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!isAdmin) {
+  if (!canAccessPanel) {
     return <Navigate to="/map" replace />;
   }
 
@@ -38,6 +56,7 @@ const AdminLayout = () => {
           <Outlet />
         </main>
       </div>
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'error' })} duration={3000} />
 
       {/* Sidebar */}
       <div className="drawer-side z-40 h-screen">

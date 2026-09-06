@@ -226,6 +226,9 @@ export const adminUserService = {
   },
   changeRole(id, role, token) {
     return api.patchWithAuth(`/admin/users/${id}/role`, { role }, token);
+  },
+  changePassword(id, password, token) {
+    return api.patchWithAuth(`/admin/users/${id}/password`, { password }, token);
   }
 };
 

@@ -1,5 +1,7 @@
 # Chuẩn bị Deploy lên VPS
 
+> **Chốt 05/09/2026**: storage uploads dùng **Cách A — named volume** (`uploads_data`). MySQL giữ container + named volume `mysql_data` + cron `mysqldump`. Chi tiết vòng đời/backup ở mục 9.
+
 ## 1. Tổng quan thay đổi khi deploy
 
 Khi đẩy lên VPS, **code backend/frontend không đổi**, chỉ thay đổi cách build và serve:
@@ -39,19 +41,11 @@ services:
   backend:
     build: ./backend
     container_name: station-backend
-    ports:
-      - "3000:3000"
+    command: ["npm", "start"]
+    env_file:
+      - .env
     volumes:
-      - ./backend/src:/app/src
-      - ./backend/storage/uploads:/app/storage/uploads
-    environment:
-      - PORT=3000
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_USER=root
-      - DB_PASSWORD=password
-      - DB_NAME=station_management
-      - JWT_SECRET=station-mgmt-dev-secret-2024-xK9mPz
+      - uploads_data:/app/storage/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -61,11 +55,8 @@ services:
   mysql:
     image: mysql:8.0
     container_name: station-mysql
-    ports:
-      - "3306:3306"
-    environment:
-      - MYSQL_ROOT_PASSWORD=password
-      - MYSQL_DATABASE=station_management
+    env_file:
+      - .env
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -78,11 +69,16 @@ services:
 
 volumes:
   mysql_data:
+  uploads_data:
 
 networks:
   station-network:
     driver: bridge
 ```
+
+**Quy ước file `.env` trên VPS (không commit, xem mục 7):**
+`PORT, DB_HOST=mysql, DB_PORT, DB_USER, DB_PASSWORD(mạnh), DB_NAME, JWT_SECRET(random), TURNSTILE_SECRET_KEY, CAPTCHA_ENABLED=true, ORPHAN_FILE_TTL_HOURS=24, CORS_ORIGINS, MYSQL_ROOT_PASSWORD(mạnh), MYSQL_DATABASE`.
+Secrets dev trong compose cũ (`password`, `station-mgmt-dev-secret-2024-xK9mPz`) **không dùng lại**.
 
 ## 3. Frontend Dockerfile.prod
 
@@ -138,8 +134,9 @@ server {
 ## 5. Backend có cần đổi không?
 
 **Không cần đổi code.** Chỉ cần đảm bảo:
-- `backend/storage/uploads` được mount ra host (đã làm trong docker-compose.yml)
-- `mathjs` đã trong `package.json` (đã làm)
+- Chạy `npm start` (không `--watch`).
+- `uploads` mount bằng **named volume `uploads_data`** (mục 2), không bind source, không để file trong image.
+- `mathjs` đã trong `package.json` (đã làm).
 
 ## 6. .env.production
 
@@ -174,8 +171,29 @@ certbot --nginx -d yourdomain.com
 
 ## 8. Lưu ý khi deploy
 
-- **Database**: Dùng MySQL managed service (AWS RDS, DigitalOcean Managed DB) thay vì MySQL container để data không mất khi restart
-- **Storage**: Mount `backend/storage/uploads` ra volume persistent (NFS, S3) để file upload không mất
-- **Environment variables**: Không hardcode trong docker-compose.prod.yml, dùng `.env` file hoặc CI/CD secrets
-- **SSL**: Luôn dùng HTTPS trên production (Let's Encrypt miễn phí)
-- **Backup**: Định kỳ backup database và storage uploads
+- **Database**: MySQL container + named volume `mysql_data` + **cron `mysqldump` hàng ngày** (mục 9). Không expose port 3306 ra ngoài.
+- **Storage**: named volume `uploads_data` (Cách A, mục 9) — redeploy không mất file.
+- **Environment variables**: Không hardcode trong docker-compose.prod.yml, dùng file `.env` trên VPS (mục 2).
+- **SSL**: Luôn dùng HTTPS trên production (Let's Encrypt miễn phí). Turnstile và geolocation trình duyệt đòi secure context.
+- **Swagger** (`/api-docs`): cân nhắc tắt hoặc chặn IP trên production.
+
+## 9. Storage Cách A — vòng đời, backup, restore (đã chốt)
+
+- Volume `uploads_data:/app/storage/uploads` sống độc lập với image/code: build lại, `git pull`, recreate container đều **không mất file**. Chỉ mất khi chủ động `docker volume rm` / `down -v` (**cấm trên production**).
+- Không nhìn file trực tiếp trên host; cần xem thì `docker exec station-backend ls storage/uploads/...`.
+- **Backup uploads (cron hàng ngày, giữ 7 bản)**:
+```bash
+docker run --rm -v uploads_data:/data -v /root/backups:/backup busybox \
+  tar czf /backup/uploads-$(date +%F).tar.gz -C /data .
+```
+- **Restore**:
+```bash
+docker run --rm -v uploads_data:/data -v /root/backups:/backup busybox \
+  tar xzf /backup/uploads-2026-09-05.tar.gz -C /data
+```
+- **Backup MySQL (cron hàng ngày)**:
+```bash
+docker exec station-mysql mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" station_management \
+  | gzip > /root/backups/db-$(date +%F).sql.gz
+```
+- **Khởi tạo DB mới**: chạy `database/01` → `26` lần lượt 1 lần duy nhất (làm tay, như quy ước SQL thủ công của dự án); sau này chỉ thêm script mới.
