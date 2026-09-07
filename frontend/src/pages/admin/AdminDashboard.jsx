@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { dashboardService } from '../../services/api';
 import ErrorMessage from '../../components/ErrorMessage';
-import { Users, Zap, ClipboardList } from 'lucide-react';
+import { Users, Zap, ClipboardList, TrendingUp, Clock } from 'lucide-react';
 
 const AdminDashboard = () => {
   const { token, isSales } = useAuth();
@@ -54,6 +54,22 @@ const AdminDashboard = () => {
       color: 'text-warning',
       bg: 'bg-warning/10',
     },
+    {
+      title: 'Tỷ lệ duyệt',
+      icon: TrendingUp,
+      total: stats?.proposals?.total > 0 ? `${stats?.proposals?.approvalRate ?? 0}%` : '-',
+      detail: `Approved: ${stats?.proposals?.approved ?? 0} / Total: ${stats?.proposals?.total ?? 0}`,
+      color: 'text-info',
+      bg: 'bg-info/10',
+    },
+    {
+      title: 'Đề xuất mới (7 ngày)',
+      icon: Clock,
+      total: stats?.proposals?.new7d ?? 0,
+      detail: 'Đề xuất trong 7 ngày gần nhất',
+      color: 'text-secondary',
+      bg: 'bg-secondary/10',
+    },
   ];
 
   return (
@@ -61,6 +77,7 @@ const AdminDashboard = () => {
       <div className="flex items-center gap-3 mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         {isSales && <span className="badge badge-info">Nhánh của bạn</span>}
+        {!isSales && <span className="badge badge-ghost">Toàn hệ thống</span>}
       </div>
       {error && <ErrorMessage message={error} />}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

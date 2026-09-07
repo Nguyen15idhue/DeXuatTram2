@@ -11,7 +11,7 @@ import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provin
 import { getProviderById } from '../utils/tileProviders';
 
 const FALLBACK_TILES = [
-  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
   'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
 ];

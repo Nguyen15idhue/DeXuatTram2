@@ -7,12 +7,12 @@ export const TILE_PROVIDERS = [
     requires_key: false,
     has_cluster: true,
     cluster_method: 'plugin',
-    tile_url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    tile_url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     tile_url_template: '',
     tile_url_styles: [
       {
         value: 'osm-standard', label: 'Sáng (OSM)',
-        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         subdomains: 'a,b,c',
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       },

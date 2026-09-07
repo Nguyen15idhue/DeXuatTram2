@@ -36,6 +36,16 @@ exports.getDashboardStats = async (scope = {}) => {
     branchParams()
   );
 
+  const [[{ newProposals7d }]] = await pool.query(
+    `SELECT COUNT(*) as newProposals7d FROM station_proposals WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)${inBranch('user_id')}`,
+    branchParams()
+  );
+
+  const [[{ approvalRate }]] = await pool.query(
+    `SELECT COUNT(*) as total, SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END) as approved FROM station_proposals WHERE 1=1${inBranch('user_id')}`,
+    branchParams()
+  );
+
   const userScope = isSales ? ` AND (id IN (${branchIds.map(() => '?').join(',')}))` : '';
   const [[{ activeUsers }]] = await pool.query(
     `SELECT COUNT(*) as activeUsers FROM users WHERE status = 'ACTIVE'${userScope}`,
@@ -50,6 +60,10 @@ exports.getDashboardStats = async (scope = {}) => {
     scope: isSales ? 'branch' : 'all',
     users: { total: totalUsers, active: activeUsers, locked: lockedUsers },
     stations: { total: totalStations, active: activeStations, deploying: deployingStations },
-    proposals: { total: totalProposals, pending: pendingProposals, approved: approvedProposals, rejected: rejectedProposals }
+    proposals: {
+      total: totalProposals, pending: pendingProposals, approved: approvedProposals,
+      rejected: rejectedProposals, new7d: newProposals7d,
+      approvalRate: totalProposals > 0 ? Math.round((approvedProposals / totalProposals) * 100) : 0
+    }
   };
 };
