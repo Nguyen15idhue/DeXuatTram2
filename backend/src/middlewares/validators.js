@@ -32,6 +32,9 @@ function validateDynamicFields(data, fieldDefs) {
       case 'phone':
         if (!/^\d{10}$/.test(value)) errors.push(`${fd.label} phải có đúng 10 chữ số`);
         break;
+      case 'password':
+        if (typeof value !== 'string' || value.length < 6) errors.push(`${fd.label} phải có ít nhất 6 ký tự`);
+        break;
       case 'select':
         const opts = parseOptions(fd.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
         if (opts.length > 0 && !opts.includes(value)) errors.push(`${fd.label} không hợp lệ`);

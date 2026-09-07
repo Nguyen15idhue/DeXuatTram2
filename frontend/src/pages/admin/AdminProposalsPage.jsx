@@ -15,7 +15,7 @@ import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw } from 'lucide-
 const PROPOSALS_VIEW_ID = 8;
 
 const AdminProposalsPage = () => {
-  const { token } = useAuth();
+  const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { getSelectOptions } = useFieldOptions('station_proposals');
@@ -137,23 +137,29 @@ const AdminProposalsPage = () => {
         <Eye size={12} />
         Xem
       </button>
-      <button className="btn btn-warning btn-xs gap-1" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>
-        <Pencil size={12} />
-        Sửa
-      </button>
-      <select
-        value={row.status}
-        onChange={(e) => handleStatusChange(row.id, e.target.value)}
-        className="select select-bordered select-xs"
-      >
-        {statusOptions.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-      <button className="btn btn-error btn-outline btn-xs gap-1" onClick={() => handleDeleteClick(row.id)}>
-        <Trash2 size={12} />
-        Xóa
-      </button>
+      {!isSales && (
+        <button className="btn btn-warning btn-xs gap-1" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>
+          <Pencil size={12} />
+          Sửa
+        </button>
+      )}
+      {!isSales && (
+        <select
+          value={row.status}
+          onChange={(e) => handleStatusChange(row.id, e.target.value)}
+          className="select select-bordered select-xs"
+        >
+          {statusOptions.map(opt => (
+            <option key={opt.value} value={opt.label}>{opt.label}</option>
+          ))}
+        </select>
+      )}
+      {!isSales && (
+        <button className="btn btn-error btn-outline btn-xs gap-1" onClick={() => handleDeleteClick(row.id)}>
+          <Trash2 size={12} />
+          Xóa
+        </button>
+      )}
     </div>
   );
 
@@ -181,10 +187,12 @@ const AdminProposalsPage = () => {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
-            <Download size={14} />
-            Export Excel
-          </button>
+          {!isSales && (
+            <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
+              <Download size={14} />
+              Export Excel
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
             <RotateCcw size={14} />
             Reset
@@ -192,15 +200,17 @@ const AdminProposalsPage = () => {
         </div>
       </div>
 
-      <DuplicateCheckPanel
-        ref={dupRef}
-        fetchDuplicates={(minM, maxM) => adminProposalService.duplicates(minM, maxM, token)}
-        getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
-        getStationViewUrl={(id) => `/admin/stations/view=${id}`}
-        onModeChange={setDupMode}
-        exportDuplicatesUrl="/admin/excel/export/duplicates"
-        exportToken={token}
-      />
+      {!isSales && (
+        <DuplicateCheckPanel
+          ref={dupRef}
+          fetchDuplicates={(minM, maxM) => adminProposalService.duplicates(minM, maxM, token)}
+          getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
+          getStationViewUrl={(id) => `/admin/stations/view=${id}`}
+          onModeChange={setDupMode}
+          exportDuplicatesUrl="/admin/excel/export/duplicates"
+          exportToken={token}
+        />
+      )}
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
 
@@ -220,7 +230,7 @@ const AdminProposalsPage = () => {
           record={popup.record}
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
           viewId={PROPOSALS_VIEW_ID}
-          mode={popup.mode}
+          mode={isSales ? 'view' : popup.mode}
           onClose={() => navigate('/admin/proposals')}
           onSaved={() => loadProposals(pagination.page)}
           onSwitchMode={(newMode) => {

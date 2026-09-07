@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 
-const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload' }) => {
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -17,14 +17,21 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
   }, [dropdownOpen]);
 
   const parsedOptions = (() => {
+    let opts = [];
     if (!field.options) return [];
-    if (Array.isArray(field.options)) return field.options;
-    try {
-      const parsed = typeof field.options === 'string' ? JSON.parse(field.options) : field.options;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
+    if (Array.isArray(field.options)) opts = field.options;
+    else {
+      try {
+        const parsed = typeof field.options === 'string' ? JSON.parse(field.options) : field.options;
+        opts = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
     }
+    if (Array.isArray(allowedOptions)) {
+      opts = opts.filter(o => allowedOptions.includes(o.value !== undefined ? o.value : o));
+    }
+    return opts;
   })();
 
   const optionStyle = (() => {
@@ -111,6 +118,19 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           value={value || ''}
           onChange={handleChange}
           placeholder={field.placeholder || ''}
+          disabled={disabled}
+        />
+      );
+
+    case 'password':
+      return (
+        <input
+          type="password"
+          autoComplete="new-password"
+          className={baseClass}
+          value={value || ''}
+          onChange={handleChange}
+          placeholder={field.placeholder || 'Để trống = giữ nguyên'}
           disabled={disabled}
         />
       );

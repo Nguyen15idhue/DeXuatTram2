@@ -1,12 +1,16 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 
-const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, custom_data, created_at FROM users';
+const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at FROM users';
 
-exports.getAllUsers = async (search, page, limit) => {
-  const offset = (page - 1) * limit;
-  let where = [];
-  let params = [];
+exports.getAllUsers = async (search, page, limit, scope = {}) => {
+  const where = [];
+  const params = [];
+
+  if (scope.role === 'SALES' && scope.userId) {
+    where.push('(id = ? OR parent_id = ?)');
+    params.push(scope.userId, scope.userId);
+  }
 
   if (search) {
     where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)');
@@ -18,6 +22,17 @@ exports.getAllUsers = async (search, page, limit) => {
   const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM users ${whereClause}`, params);
   const total = countResult[0].total;
 
+  if (scope.all) {
+    const [users] = await pool.query(
+      `${USER_SELECT} ${whereClause} ORDER BY role, created_at DESC`,
+      params
+    );
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
+    const merged = users.map(u => dynamicUtils.mergeData(u, fieldDefs));
+    return { users: merged, pagination: { page: 1, limit: total, total, totalPages: 1 } };
+  }
+
+  const offset = (page - 1) * limit;
   const [users] = await pool.query(
     `${USER_SELECT} ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
@@ -42,6 +57,16 @@ exports.findByEmailExceptId = async (email, id) => {
   return users.length > 0 ? users[0] : null;
 };
 
+exports.findByExternalId = async (externalId) => {
+  const [users] = await pool.query('SELECT id FROM users WHERE external_id = ?', [externalId]);
+  return users.length > 0 ? users[0] : null;
+};
+
+exports.findByExternalIdExceptId = async (externalId, id) => {
+  const [users] = await pool.query('SELECT id FROM users WHERE external_id = ? AND id != ?', [externalId, id]);
+  return users.length > 0 ? users[0] : null;
+};
+
 exports.findById = async (id) => {
   const [users] = await pool.query(`${USER_SELECT} WHERE id = ?`, [id]);
   return users.length > 0 ? users[0] : null;
@@ -57,38 +82,53 @@ exports.findByIdWithStatus = async (id) => {
   return users.length > 0 ? users[0] : null;
 };
 
-exports.createUser = async (fullName, email, phone, hashedPassword, role, status, customData, parentId = null) => {
+exports.createUser = async (fullName, email, phone, hashedPassword, role, status, customData, parentId = null, externalId = null) => {
   const cd = (customData && typeof customData === 'object') ? JSON.stringify(customData) : null;
   const [result] = await pool.query(
-    'INSERT INTO users (full_name, email, phone, password, role, status, custom_data, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [fullName, email, phone || '', hashedPassword, role || 'CTV', status || 'ACTIVE', cd, parentId]
+    'INSERT INTO users (full_name, email, phone, password, role, status, custom_data, parent_id, external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [fullName, email, phone || '', hashedPassword, role || 'CTV', status || 'ACTIVE', cd, parentId, externalId]
   );
   const [user] = await pool.query(`${USER_SELECT} WHERE id = ?`, [result.insertId]);
   return user[0];
 };
 
-exports.updateUser = async (id, fullName, email, phone, role, status, customData) => {
+exports.updateUser = async (id, fullName, email, phone, role, status, customData, externalId) => {
   const cd = (customData !== undefined && customData !== null)
     ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
     : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
-    [fullName, email, phone || '', role, status, cd, id]
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, custom_data = ?, external_id = ?, updated_at = NOW() WHERE id = ?',
+    [fullName, email, phone || '', role, status, cd, externalId === undefined ? null : externalId, id]
   );
 };
 
-exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPassword, role, status, customData) => {
+exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPassword, role, status, customData, externalId) => {
   const cd = (customData !== undefined && customData !== null)
     ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
     : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
-    [fullName, email, phone || '', hashedPassword, role, status, cd, id]
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, external_id = ?, updated_at = NOW() WHERE id = ?',
+    [fullName, email, phone || '', hashedPassword, role, status, cd, externalId === undefined ? null : externalId, id]
   );
 };
 
 exports.deleteUser = async (id) => {
   await pool.query('DELETE FROM users WHERE id = ?', [id]);
+};
+
+exports.deleteUserWithOrphan = async (id, newOwnerId) => {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('UPDATE station_proposals SET user_id = ? WHERE user_id = ?', [newOwnerId, id]);
+    await conn.query('DELETE FROM users WHERE id = ?', [id]);
+    await conn.commit();
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* silent */ }
+    throw err;
+  } finally {
+    conn.release();
+  }
 };
 
 exports.updateStatus = async (id, status) => {

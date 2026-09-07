@@ -58,6 +58,9 @@ exports.getById = async (req, res) => {
     if (!file) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
     }
+    if (file.uploaded_by !== req.user.id && !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
     res.json({ success: true, data: file });
   } catch (error) {
     console.error('Get file error:', error);
@@ -70,6 +73,9 @@ exports.download = async (req, res) => {
     const result = await fileService.getFilePath(req.params.id);
     if (!result) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
+    }
+    if (result.file.uploaded_by !== req.user.id && !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
     const mime = result.file.mime_type || 'application/octet-stream';
@@ -93,6 +99,9 @@ exports.delete = async (req, res) => {
     const file = await fileService.getFileById(req.params.id);
     if (!file) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
+    }
+    if (file.uploaded_by !== req.user.id && !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
     await fileService.deleteFile(req.params.id);

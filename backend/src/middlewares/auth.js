@@ -6,28 +6,49 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
-// Middleware: Verify JWT token
-const requireAuth = (req, res, next) => {
+// Middleware: Verify JWT token + refresh role/status từ DB (chống stale role, enforce LOCKED ngay)
+const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Chưa đăng nhập' 
+    return res.status(401).json({
+      success: false,
+      message: 'Chưa đăng nhập'
     });
   }
 
   const token = authHeader.split(' ')[1];
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Token không hợp lệ hoặc đã hết hạn'
+    });
+  }
+
+  try {
+    const pool = require('../utils/db');
+    const [rows] = await pool.query('SELECT id, email, role, status FROM users WHERE id = ?', [decoded.id]);
+    if (rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Tài khoản không tồn tại'
+      });
+    }
+    if (rows[0].status === 'LOCKED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Tài khoản đã bị khóa'
+      });
+    }
+    req.user = { id: rows[0].id, email: rows[0].email, role: rows[0].role };
     next();
   } catch (error) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Token không hợp lệ hoặc đã hết hạn' 
-    });
+    console.error('requireAuth DB error:', error);
+    return res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };
 

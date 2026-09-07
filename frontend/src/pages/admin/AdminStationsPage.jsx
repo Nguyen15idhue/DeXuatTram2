@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { stationService, excelService } from '../../services/api';
@@ -12,27 +10,13 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import 'leaflet/dist/leaflet.css';
-import { Zap, Download, Upload, Plus, Search, MapPin, RotateCcw } from 'lucide-react';
-
-const markerIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
-
-function MapClickHandler({ onMapClick }) {
-  useMapEvents({ click(e) { onMapClick(e.latlng); } });
-  return null;
-}
+import { Zap, Download, Upload, Plus, Search, RotateCcw } from 'lucide-react';
 
 const STATIONS_VIEW_ID = 6;
 const STATIONS_FORM_ID = 7;
 
 const AdminStationsPage = () => {
-  const { token } = useAuth();
+  const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { getSelectOptions } = useFieldOptions('stations');
@@ -42,7 +26,6 @@ const AdminStationsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -112,21 +95,12 @@ const AdminStationsPage = () => {
   };
 
   const openCreate = () => {
-    setMapCoords({ latitude: '', longitude: '' });
     setShowCreateForm(true);
     setError('');
   };
 
-  const handleMapClick = (latlng) => {
-    setMapCoords({ latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
-  };
-
   const handleCreateSubmit = async (formData) => {
-    const submitData = {
-      ...formData,
-      latitude: mapCoords.latitude || formData.latitude || '',
-      longitude: mapCoords.longitude || formData.longitude || ''
-    };
+    const submitData = { ...formData };
     if (!submitData.name || !submitData.latitude || !submitData.longitude || !submitData.address) {
       throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc (Tên, Vĩ độ, Kinh độ, Địa chỉ)');
     }
@@ -236,8 +210,12 @@ const AdminStationsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/stations/view=${row.id}`)}>Xem</button>
-      <button className="btn btn-sm btn-warning" onClick={() => navigate(`/admin/stations/edit=${row.id}`)}>Sửa</button>
-      <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id, row.name)}>Xóa</button>
+      {!isSales && (
+        <button className="btn btn-sm btn-warning" onClick={() => navigate(`/admin/stations/edit=${row.id}`)}>Sửa</button>
+      )}
+      {!isSales && (
+        <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id, row.name)}>Xóa</button>
+      )}
     </div>
   );
 
@@ -250,9 +228,11 @@ const AdminStationsPage = () => {
           <Zap size={24} className="text-primary" />
           <h1 className="text-2xl font-bold">Quản lý Trạm</h1>
         </div>
-        <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
-          <Plus size={14} /> Thêm trạm
-        </button>
+        {!isSales && (
+          <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
+            <Plus size={14} /> Thêm trạm
+          </button>
+        )}
       </div>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadStations(1); }} />}
@@ -288,15 +268,21 @@ const AdminStationsPage = () => {
         <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
           <RotateCcw size={14} /> Reset
         </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
-          <Download size={14} /> Template
-        </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportStations}>
-          <Download size={14} /> Export
-        </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
-          <Upload size={14} /> Import
-        </button>
+        {!isSales && (
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
+            <Download size={14} /> Template
+          </button>
+        )}
+        {!isSales && (
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportStations}>
+            <Download size={14} /> Export
+          </button>
+        )}
+        {!isSales && (
+          <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+            <Upload size={14} /> Import
+          </button>
+        )}
       </div>
 
       {showImport && (
@@ -364,27 +350,10 @@ const AdminStationsPage = () => {
         <dialog className="modal modal-open">
           <div className="modal-box max-w-2xl">
             <h3 className="font-bold text-lg mb-4">Thêm trạm mới</h3>
-            <div className="border border-base-300 rounded-lg p-3 mb-4">
-              <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
-              <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors" />
-                <MapClickHandler onMapClick={handleMapClick} />
-                {mapCoords.latitude && mapCoords.longitude && (
-                  <Marker position={[parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)]} icon={markerIcon} />
-                )}
-              </MapContainer>
-              {mapCoords.latitude && mapCoords.longitude && (
-                <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
-                  <MapPin size={14} />
-                  Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
-                </div>
-              )}
-            </div>
             <DynamicForm
               entity="stations"
               formId={STATIONS_FORM_ID}
               onSubmit={handleCreateSubmit}
-              initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
             >
               <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
             </DynamicForm>
@@ -401,7 +370,7 @@ const AdminStationsPage = () => {
           record={popup.record}
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
           viewId={STATIONS_VIEW_ID}
-          mode={popup.mode}
+          mode={isSales ? 'view' : popup.mode}
           onClose={() => navigate('/admin/stations')}
           onSaved={() => loadStations(pagination.page)}
           onSwitchMode={(newMode) => {

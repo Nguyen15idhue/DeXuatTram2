@@ -107,7 +107,7 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
   }, [config, onChange]);
 
   const ALL_SUGGESTIONS = useMemo(() => {
-    const fieldSuggestions = allFields.map(f => ({ text: f.key, label: f.label || f.key, type: 'field', fieldType: f.type }));
+    const fieldSuggestions = allFields.filter(f => f.type !== 'password').map(f => ({ text: f.key, label: f.label || f.key, type: 'field', fieldType: f.type }));
     const funcSuggestions = FUNCTION_CATEGORIES.flatMap(cat => cat.functions.map(fn => ({ text: fn.name, label: fn.desc, type: 'function', placeholder: { IF: 'condition, trueVal, falseVal', CONCAT: "'text1', 'text2'", COUNTIF: 'arr, criteria', SUMIF: 'arr, criteria', COUNT: '1, 2, 3', COUNTA: "1, 'a', ''", AVERAGE: '10, 20, 30', ROUNDUP: '3.14, 2', ROUNDDOWN: '3.99, 1', MOD: '10, 3', LEN: "'Hello'", LEFT: "'Hello', 3", RIGHT: "'Hello', 3", UPPER: "'hello'", LOWER: "'HELLO'", TRIM: "'  hi  '", LPAD: '42, 5, "0"', RPAD: "'hi', 5, '.'", YEAR: "'2026-09-01'", MONTH: "'2026-09-01'", DAY: "'2026-09-01'", TODAY: '', NOW: '', DATE: '2026, 9, 1' }[fn.name] || '' })));
     const metaSuggestions = config.compute_mode === 'post' ? POST_METADATA.map(m => ({ text: m.label, label: m.desc, type: 'metadata' })) : [];
     return [...funcSuggestions, ...fieldSuggestions, ...metaSuggestions];
@@ -248,7 +248,7 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
     }
     const timer = setTimeout(async () => {
       try {
-        const fields = allFields.map(f => ({ key: f.key, label: f.label || f.key }));
+        const fields = allFields.filter(f => f.type !== 'password').map(f => ({ key: f.key, label: f.label || f.key, type: f.type }));
         const resp = await formulaService.validate(config.expression, fields, token);
         if (resp.success) {
           setValidation(resp.data);

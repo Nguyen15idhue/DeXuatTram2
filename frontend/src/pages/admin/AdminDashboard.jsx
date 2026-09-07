@@ -5,7 +5,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import { Users, Zap, ClipboardList } from 'lucide-react';
 
 const AdminDashboard = () => {
-  const { token } = useAuth();
+  const { token, isSales } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -58,7 +58,10 @@ const AdminDashboard = () => {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        {isSales && <span className="badge badge-info">Nhánh của bạn</span>}
+      </div>
       {error && <ErrorMessage message={error} />}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {cards.map((card) => (

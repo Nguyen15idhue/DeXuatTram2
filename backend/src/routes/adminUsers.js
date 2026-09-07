@@ -49,7 +49,7 @@ const adminUserController = require('../controllers/adminUserController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, adminUserController.getAll);
+router.get('/', requireAuth, requireUserManager, adminUserController.getAll);
 
 /**
  * @swagger
@@ -162,7 +162,7 @@ router.post('/', requireAuth, requireUserManager, validateCreateUser, adminUserC
  *       404:
  *         description: Không tìm thấy user
  */
-router.put('/:id', requireAuth, requireAdmin, validateUpdateUser, adminUserController.update);
+router.put('/:id', requireAuth, requireUserManager, validateUpdateUser, adminUserController.update);
 
 /**
  * @swagger
@@ -191,7 +191,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateUser, adminUserContr
  *       404:
  *         description: Không tìm thấy user
  */
-router.delete('/:id', requireAuth, requireAdmin, adminUserController.delete);
+router.delete('/:id', requireAuth, requireUserManager, adminUserController.delete);
 
 /**
  * @swagger
@@ -304,6 +304,6 @@ router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeR
  *       404:
  *         description: Không tìm thấy user
  */
-router.patch('/:id/password', requireAuth, requireAdmin, adminUserController.changePassword);
+router.patch('/:id/password', requireAuth, requireUserManager, adminUserController.changePassword);
 
 module.exports = router;

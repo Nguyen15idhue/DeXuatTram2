@@ -69,9 +69,14 @@ exports.validateFormula = (expression, availableFields = []) => {
     });
 
     const fieldKeys = new Set(availableFields.map(f => f.key));
+    const passwordKeys = new Set(availableFields.filter(f => f.type === 'password').map(f => f.key));
     const unknown = [...symbols].filter(s => !fieldKeys.has(s) && !funcNames.has(s) && !POST_METADATA.has(s));
     if (unknown.length > 0) {
       return { valid: false, error: `Trường không tồn tại: ${unknown.join(', ')}` };
+    }
+    const forbidden = [...symbols].filter(s => passwordKeys.has(s));
+    if (forbidden.length > 0) {
+      return { valid: false, error: `Không được dùng trường mật khẩu trong công thức: ${forbidden.join(', ')}` };
     }
 
     return { valid: true, symbols: [...symbols] };

@@ -58,6 +58,9 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
   };
 
   switch (field.type) {
+    case 'password':
+      return <span>********</span>;
+
     case 'boolean':
       return <span className={value ? 'field-true' : 'field-false'}>{value ? '✓' : ''}</span>;
 

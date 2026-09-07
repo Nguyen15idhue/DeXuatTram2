@@ -37,7 +37,7 @@ const customFunctions = {
 };
 math.import(customFunctions, { override: false });
 
-const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, guestMode = false }) => {
+const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {} }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -248,7 +248,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
     try {
       const scope = {};
       fields.forEach(f => {
-        if (f.key !== field.key) {
+        if (f.key !== field.key && f.type !== 'password') {
           const val = formData[f.key];
           if (val !== undefined && val !== '') {
             scope[f.key] = f.type === 'number' ? (parseFloat(val) || 0) : val;
@@ -363,6 +363,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
         error={errors[field.key]}
         entityType={entity}
         uploadUrl={guestMode ? '/files/guest-upload' : '/files/upload'}
+        allowedOptions={optionAllowlist[field.key] || null}
       />
     );
   };

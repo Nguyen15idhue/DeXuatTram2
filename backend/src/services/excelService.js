@@ -1,5 +1,6 @@
 const ExcelJS = require('exceljs');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const pool = require('../utils/db');
 const fieldDefinitionService = require('./fieldDefinitionService');
 const dataListService = require('./dataListService');
@@ -51,13 +52,13 @@ async function buildExportColumns(entity, viewId) {
   const allFields = allFieldsResult[0];
 
   const viewKeys = new Set(viewFields.map(f => f.key));
-  const remainingFields = allFields.filter(f => !viewKeys.has(f.key));
+  const remainingFields = allFields.filter(f => !viewKeys.has(f.key) && f.type !== 'password');
 
   const columns = [
     { key: '_stt', label: 'STT', type: 'number', source_type: 'system' }
   ];
 
-  viewFields.forEach(f => {
+  viewFields.filter(f => f.type !== 'password').forEach(f => {
     columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type });
   });
 
@@ -74,6 +75,7 @@ function buildImportColumns(entity, fieldDefs) {
   ];
 
   fieldDefs.forEach(f => {
+    if (f.type === 'password') return;
     let formulaConfig = null;
     if (f.formula_config) {
       try { formulaConfig = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config; } catch { formulaConfig = null; }
@@ -298,6 +300,8 @@ function exportRowToValues(row, columns, idx) {
     }
 
     if (value == null) return '';
+
+    if (col.type === 'password') return '********';
 
     if (col.type === 'file') {
       const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
@@ -617,6 +621,7 @@ exports.importConfirmDynamic = async (req, res) => {
     let imported = 0;
     let failed = 0;
     const failDetails = [];
+    let defaultUserPasswordHash = null;
 
     for (const row of rows) {
       try {
@@ -640,6 +645,24 @@ exports.importConfirmDynamic = async (req, res) => {
 
         if (entity === 'station_proposals' && req.user && req.user.id) {
           fixedData.user_id = req.user.id;
+        }
+
+        if (entity === 'users') {
+          if (fixedData.password && String(fixedData.password).trim() !== '') {
+            const salt = await bcrypt.genSalt(10);
+            fixedData.password = await bcrypt.hash(String(fixedData.password), salt);
+          } else {
+            if (!defaultUserPasswordHash) {
+              const salt = await bcrypt.genSalt(10);
+              defaultUserPasswordHash = await bcrypt.hash('123456', salt);
+            }
+            fixedData.password = defaultUserPasswordHash;
+          }
+          if (!fixedData.role) fixedData.role = 'CTV';
+          if (!fixedData.status) fixedData.status = 'ACTIVE';
+          if (fixedData.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+            throw new Error('Không được import tài khoản Super Admin');
+          }
         }
 
         const fixedCols = Object.keys(fixedData);

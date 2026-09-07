@@ -4,7 +4,7 @@ import { dynamicService } from '../../services/api';
 import FieldRenderer from './FieldRenderer';
 import useDataListMap from '../../hooks/useDataListMap';
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0 }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -179,17 +179,21 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
             ) : sortedData.map((row, idx) => (
               <tr key={row.id || idx} className="hover">
                 <td className="text-center">{startIndex + idx + 1}</td>
-                {visibleColumns.map(col => {
+                {visibleColumns.map((col, colIdx) => {
                   const key = col.field_key || col.key;
+                  const depth = typeof rowDepth === 'function' ? (rowDepth(row) || 0) : 0;
+                  const cell = (
+                    <FieldRenderer
+                      field={col}
+                      value={getFieldValue(row, col)}
+                      entity={entity}
+                      entityId={row.id}
+                      dataListOptions={dataListOptions}
+                    />
+                  );
                   return (
                     <td key={key}>
-                      <FieldRenderer
-                        field={col}
-                        value={getFieldValue(row, col)}
-                        entity={entity}
-                        entityId={row.id}
-                        dataListOptions={dataListOptions}
-                      />
+                      {colIdx === 0 && depth > 0 ? <div style={{ paddingLeft: depth * 24 }}>{cell}</div> : cell}
                     </td>
                   );
                 })}

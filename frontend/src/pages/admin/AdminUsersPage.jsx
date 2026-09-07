@@ -1,22 +1,24 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
+import Loading from '../../components/Loading';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
-import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X } from 'lucide-react';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 8;
 
+const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
+
 const AdminUsersPage = () => {
-  const { token, user: currentUser } = useAuth();
+  const { token, user: currentUser, isSuperAdmin, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { getSelectOptions } = useFieldOptions('users');
@@ -25,11 +27,11 @@ const AdminUsersPage = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -37,12 +39,12 @@ const AdminUsersPage = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const createRoleAllowlist = isSales ? ['CTV'] : (!isSuperAdmin ? ['CTV', 'SALES', 'ADMIN'] : null);
   const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
   const [pw1, setPw1] = useState('');
   const [pw2, setPw2] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState('');
-  const tableRef = useRef(null);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -59,7 +61,7 @@ const AdminUsersPage = () => {
 
   const loadUserById = async (id, mode) => {
     try {
-      const res = await adminUserService.getAllWithParams('', token);
+      const res = await adminUserService.getAllWithParams('all=1', token);
       if (res.success) {
         const user = res.data.find(u => u.id === id);
         if (user) setPopup({ open: true, record: user, mode });
@@ -67,36 +69,74 @@ const AdminUsersPage = () => {
     } catch { /* silent */ }
   };
 
-  const loadUsers = useCallback(async (page = 1, overrides = {}) => {
+  const loadUsers = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: 10 });
-      const s = overrides.search !== undefined ? overrides.search : search;
+      const params = new URLSearchParams({ all: '1' });
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
-      if (s) params.append('search', s);
       if (st) params.append('status', st);
       const res = await adminUserService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setUsers(res.data);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
       }
     } catch {
       setError('Lỗi tải danh sách users');
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, token]);
+  }, [filterStatus, token]);
 
-  useEffect(() => { loadUsers(1); }, [loadUsers]);
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  const handleSearch = () => { loadUsers(1); };
+  const handleSearch = () => { setAppliedSearch(search); };
+
+  const treeRows = useMemo(() => {
+    const q = appliedSearch.trim().toLowerCase();
+    let list = users;
+    if (q) {
+      const match = (u) => [u.full_name, u.email, u.phone, u.external_id].some(v => (v || '').toLowerCase().includes(q));
+      const byId = {};
+      users.forEach(u => { byId[u.id] = u; });
+      const keep = new Set();
+      users.forEach(u => {
+        if (match(u)) {
+          keep.add(u.id);
+          let p = u.parent_id;
+          while (p && byId[p] && !keep.has(p)) { keep.add(p); p = byId[p].parent_id; }
+        }
+      });
+      list = users.filter(u => keep.has(u.id));
+    }
+    const inList = new Set(list.map(u => u.id));
+    const children = {};
+    const roots = [];
+    list.forEach(u => {
+      if (u.parent_id && inList.has(u.parent_id)) {
+        (children[u.parent_id] = children[u.parent_id] || []).push(u);
+      } else {
+        roots.push(u);
+      }
+    });
+    const sortFn = (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || (a.full_name || '').localeCompare(b.full_name || '');
+    roots.sort(sortFn);
+    Object.values(children).forEach(arr => arr.sort(sortFn));
+    const rows = [];
+    const walk = (nodes, depth) => {
+      nodes.forEach(n => {
+        rows.push({ user: n, depth });
+        if (children[n.id]) walk(children[n.id], depth + 1);
+      });
+    };
+    walk(roots, 0);
+    return rows;
+  }, [users, appliedSearch]);
 
   const handleReset = () => {
     setSearch('');
     setFilterStatus('');
-    if (tableRef.current) tableRef.current.clearFilters();
+    setAppliedSearch('');
     setError('');
-    loadUsers(1, { search: '', filterStatus: '' });
+    loadUsers({ filterStatus: '' });
   };
 
   const handleDeleteClick = (id, name) => {
@@ -136,7 +176,7 @@ const AdminUsersPage = () => {
       const res = await adminUserService.delete(id, token);
       if (res.success) {
         setToast({ message: 'Xóa user thành công', type: 'success' });
-        loadUsers(pagination.page);
+        loadUsers();
       } else {
         setError(res.message || 'Xóa thất bại');
       }
@@ -150,7 +190,7 @@ const AdminUsersPage = () => {
       const res = await adminUserService.toggleLock(id, token);
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
-        loadUsers(pagination.page);
+        loadUsers();
       }
     } catch {
       setError('Lỗi kết nối server');
@@ -159,7 +199,7 @@ const AdminUsersPage = () => {
 
   const handleExport = async () => {
     try {
-      await excelService.exportData('users', token, { search, status: filterStatus });
+      await excelService.exportData('users', token, { search: appliedSearch, status: filterStatus });
       setToast({ message: 'Export users thành công', type: 'success' });
     } catch {
       setError('Lỗi export users');
@@ -181,10 +221,11 @@ const AdminUsersPage = () => {
       phone: formData.phone || '',
       password: formData.password || '123456',
       role: formData.role === 'USER' ? 'CTV' : (formData.role || 'CTV'),
-      status: formData.status || 'ACTIVE'
+      status: formData.status || 'ACTIVE',
+      external_id: formData.external_id || null
     };
     const customData = {};
-    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status'];
+    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status', 'external_id'];
     Object.keys(formData).forEach(k => {
       if (!fixedKeys.includes(k) && formData[k] !== undefined && formData[k] !== '') {
         customData[k] = formData[k];
@@ -200,7 +241,7 @@ const AdminUsersPage = () => {
     if (res.success) {
       setToast({ message: 'Tạo user thành công', type: 'success' });
       setShowCreateForm(false);
-      loadUsers(1);
+      loadUsers();
     } else {
       throw new Error(res.message || 'Tạo user thất bại');
     }
@@ -249,7 +290,7 @@ const AdminUsersPage = () => {
       if (res.success) {
         setShowImport(false);
         setToast({ message: res.message, type: 'success' });
-        loadUsers(1);
+        loadUsers();
       } else {
         setError(res.message || 'Lỗi import');
       }
@@ -260,19 +301,29 @@ const AdminUsersPage = () => {
     }
   };
 
-  const renderActions = (row) => (
-    <div className="flex flex-wrap gap-1">
-      <button className="btn btn-primary btn-xs" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
-      <button className="btn btn-warning btn-xs" onClick={() => navigate(`/admin/users/edit=${row.id}`)}>Sửa</button>
-      <button className="btn btn-ghost btn-xs" onClick={() => openPasswordModal(row.id, row.full_name)}>Đổi MK</button>
-      <button className="btn btn-sm btn-ghost" onClick={() => handleToggleLock(row.id)}>
-        {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
-      </button>
-      {!['ADMIN', 'SUPER_ADMIN'].includes(row.role) && row.id !== currentUser.id && (
-        <button className="btn btn-error btn-outline btn-xs" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
-      )}
-    </div>
-  );
+  const renderActions = (row) => {
+    const isSuperRow = row.role === 'SUPER_ADMIN';
+    const canManage = isSuperAdmin || !isSuperRow;
+    return (
+      <div className="flex flex-wrap gap-1">
+        <button className="btn btn-primary btn-xs" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
+        {canManage && (
+          <button className="btn btn-warning btn-xs" onClick={() => navigate(`/admin/users/edit=${row.id}`)}>Sửa</button>
+        )}
+        {canManage && (
+          <button className="btn btn-ghost btn-xs" onClick={() => openPasswordModal(row.id, row.full_name)}>Đổi MK</button>
+        )}
+        {canManage && !isSales && (
+          <button className="btn btn-sm btn-ghost" onClick={() => handleToggleLock(row.id)}>
+            {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
+          </button>
+        )}
+        {!['ADMIN', 'SUPER_ADMIN'].includes(row.role) && row.id !== currentUser.id && (
+          <button className="btn btn-error btn-outline btn-xs" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -289,7 +340,7 @@ const AdminUsersPage = () => {
         </button>
       </div>
 
-      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(1); }} />}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(); }} />}
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -327,18 +378,24 @@ const AdminUsersPage = () => {
           <RotateCcw size={14} />
           Reset
         </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
-          <FileSpreadsheet size={14} />
-          Template
-        </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
-          <Download size={14} />
-          Export
-        </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
-          <Upload size={14} />
-          Import
-        </button>
+        {!isSales && (
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
+            <FileSpreadsheet size={14} />
+            Template
+          </button>
+        )}
+        {!isSales && (
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
+            <Download size={14} />
+            Export
+          </button>
+        )}
+        {!isSales && (
+          <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+            <Upload size={14} />
+            Import
+          </button>
+        )}
       </div>
 
       {/* Import Modal */}
@@ -412,7 +469,8 @@ const AdminUsersPage = () => {
               entity="users"
               formId={USERS_FORM_ID}
               onSubmit={handleCreateUser}
-              initialData={{ role: 'CTV', status: 'ACTIVE', password: '123456' }}
+              initialData={{ role: 'CTV', status: 'ACTIVE' }}
+              optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
             >
               <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
             </DynamicForm>
@@ -458,7 +516,7 @@ const AdminUsersPage = () => {
           viewId={USERS_VIEW_ID}
           mode={popup.mode}
           onClose={() => navigate('/admin/users')}
-          onSaved={() => loadUsers(pagination.page)}
+          onSaved={() => loadUsers()}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/admin/users/${newMode}=${id}`, { replace: true });
@@ -466,21 +524,18 @@ const AdminUsersPage = () => {
         />
       )}
 
-      <DynamicTable
-        ref={tableRef}
-        entity="users"
-        viewId={USERS_VIEW_ID}
-        data={users}
-        actions={renderActions}
-        startIndex={(pagination.page - 1) * pagination.limit}
-      />
-
-      <Pagination
-        page={pagination.page}
-        totalPages={pagination.totalPages}
-        total={pagination.total}
-        onPageChange={loadUsers}
-      />
+      {loading ? (
+        <Loading />
+      ) : (
+        <DynamicTable
+          entity="users"
+          viewId={USERS_VIEW_ID}
+          data={treeRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
+          actions={renderActions}
+          startIndex={0}
+          rowDepth={(row) => row._depth || 0}
+        />
+      )}
     </div>
   );
 };

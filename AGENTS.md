@@ -71,7 +71,7 @@ Browser → Frontend → REST API → Backend → MySQL
 
 ### Data Rules
 4. Proposal phải lưu `user_id` của người tạo (`user_id` được NULL với guest qua `POST /api/proposals/guest`)
-5. Latitude/Longitude lấy từ vị trí click trên map (không nhập thủ công)
+5. Form `/admin` chỉ hiện đúng cấu hình form (nhập tay tọa độ được); trang `/map` có click-to-fill tọa độ cho đề xuất
 
 ### Map Marker Rules
 6. Station `ACTIVE` → marker xanh
