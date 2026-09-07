@@ -96,7 +96,7 @@ function buildImportColumns(entity, fieldDefs) {
 function getAllData(entity, filters = {}) {
   const table = ENTITY_TABLE_MAP[entity];
   if (!table) throw new Error(`Entity không hợp lệ: ${entity}`);
-  const { search = '', status = '' } = filters;
+  const { search = '', status = '', scopeUserId, scopeBranchUserIds } = filters;
   const like = `%${search}%`;
   if (entity === 'stations') {
     const where = [];
@@ -109,6 +109,14 @@ function getAllData(entity, filters = {}) {
   if (entity === 'station_proposals') {
     const where = [];
     const params = [];
+    if (scopeUserId) {
+      where.push('p.user_id = ?'); params.push(scopeUserId);
+    } else if (scopeBranchUserIds) {
+      const ids = scopeBranchUserIds.split(',').map(Number).filter(n => !isNaN(n));
+      if (ids.length > 0) {
+        where.push(`p.user_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids);
+      }
+    }
     if (status) { where.push('p.status = ?'); params.push(status); }
     if (search) { where.push('(p.owner_name LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)'); params.push(like, like, like); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
@@ -344,7 +352,7 @@ function pairLabel(p) {
 
 exports.exportDynamic = async (req, res) => {
   try {
-    const { entity, search = '', status = '' } = req.query;
+    const { entity, search = '', status = '', scopeUserId, scopeBranchUserIds } = req.query;
     const viewIdMap = { stations: 6, users: 7, station_proposals: 8 };
     const viewId = viewIdMap[entity];
 
@@ -353,7 +361,7 @@ exports.exportDynamic = async (req, res) => {
     }
 
     const columns = await buildExportColumns(entity, viewId);
-    const [rows] = await getAllData(entity, { search, status });
+    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(entity);
@@ -788,6 +796,10 @@ exports.exportStations = async (req, res) => {
 
 exports.exportProposals = async (req, res) => {
   req.query.entity = 'station_proposals';
+  if (req.user.role === 'SALES') {
+    const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [req.user.id, req.user.id]);
+    req.query.scopeBranchUserIds = rows.map(r => r.id).join(',');
+  }
   return exports.exportDynamic(req, res);
 };
 

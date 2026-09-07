@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
 const excelService = require('../services/excelService');
 
 /**
@@ -39,6 +39,7 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *   get:
  *     tags: [Admin - Excel]
  *     summary: Xuất danh sách đề xuất ra file Excel (dynamic columns)
+ *     description: Admin/Super xuất tất cả; Sales xuất nhánh mình (scope role tự động).
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -61,7 +62,7 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/export/station_proposals', requireAuth, requireAdmin, excelService.exportProposals);
+router.get('/export/station_proposals', requireAuth, requireUserManager, excelService.exportProposals);
 
 /**
  * @swagger

@@ -131,7 +131,7 @@ const MyProposalsPage = () => {
 
   const handleExport = async () => {
     try {
-      await excelService.exportData('station_proposals', token, { search, status: filter });
+      await excelService.exportMyProposals(token, { search, status: filter });
       setToast({ message: 'Export đề xuất thành công', type: 'success' });
     } catch {
       setError('Lỗi export đề xuất');
@@ -321,7 +321,15 @@ const MyProposalsPage = () => {
           <ClipboardList size={22} /> Đề xuất của tôi
         </h1>
         <div className="flex flex-wrap gap-2">
-          {/* TODO 24/YC5: mở lại khi có export/import scope CTV (hiện endpoint admin trả 403) */}
+          <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
+            <ClipboardList size={14} /> Tạo đề xuất
+          </button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
+            <Download size={14} /> Export
+          </button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+            <Upload size={14} /> Import
+          </button>
         </div>
       </div>
 

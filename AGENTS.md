@@ -111,6 +111,7 @@ API routes:              /api/[resource]
 - Async/await cho bất đồng bộ
 - Try-catch cho error handling
 - Không thêm comments trừ khi được yêu cầu
+- **Backend test OK ≠ Frontend OK**: Sau khi fix backend, PHẢI kiểm tra frontend như mở trình duyệt test — verify nút bấm hiển thị đúng, gọi đúng API, hiển thị dữ liệu đúng, không ẩn/hiện sai. Không được chỉ test backend rồi kết luận frontend OK.
 
 ## 6. Folder Responsibilities
 

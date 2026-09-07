@@ -187,4 +187,36 @@ router.put('/:id', requireAuth, myProposalController.update);
  */
 router.delete('/:id', requireAuth, myProposalController.delete);
 
+/**
+ * @swagger
+ * /api/my-proposals/export:
+ *   get:
+ *     tags: [My Proposals]
+ *     summary: Xuất danh sách đề xuất của user ra file Excel
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, địa chỉ (bỏ trống = tất cả)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       401:
+ *         description: Chưa xác thực
+ */
+router.get('/export', requireAuth, (req, res) => {
+  req.query.entity = 'station_proposals';
+  req.query.scopeUserId = req.user.id;
+  return excelService.exportDynamic(req, res);
+});
+
 module.exports = router;

@@ -389,6 +389,14 @@ export const excelService = {
     await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${entity}_export.xlsx`);
   },
 
+  async exportMyProposals(token, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) params.append('status', filters.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    await this.downloadBlob(`/my-proposals/export${query}`, token, `station_proposals_export.xlsx`);
+  },
+
   async exportDuplicatesBlob(url, body, token, filename) {
     const response = await fetch(`${API_URL}${url}`, {
       method: 'POST',

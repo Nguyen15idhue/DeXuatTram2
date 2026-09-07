@@ -181,12 +181,10 @@ const AdminProposalsPage = () => {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          {!isSales && (
-            <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
-              <Download size={14} />
-              Export Excel
-            </button>
-          )}
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
+            <Download size={14} />
+            Export Excel
+          </button>
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
             <RotateCcw size={14} />
             Reset
