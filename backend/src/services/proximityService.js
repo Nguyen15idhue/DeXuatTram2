@@ -76,7 +76,7 @@ exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposal
   return { is_duplicate: !!nearest, nearest };
 };
 
-exports.findDuplicates = async ({ minM = 200, maxM = 2000, ownUserId = null }) => {
+exports.findDuplicates = async ({ minM = 200, maxM = 2000, ownUserId = null, branchUserIds = null }) => {
   const min = Number(minM);
   const max = Number(maxM);
   if (isNaN(min) || isNaN(max) || min <= 0 || max <= 0) throw new Error('Khoảng cách phải lớn hơn 0');
@@ -87,7 +87,11 @@ exports.findDuplicates = async ({ minM = 200, maxM = 2000, ownUserId = null }) =
 
   let sideA;
   let sideB;
-  if (ownUserId) {
+  if (branchUserIds) {
+    const branchSet = new Set(branchUserIds.map(Number));
+    sideA = proposals.filter(p => branchSet.has(Number(p.user_id)));
+    sideB = [...proposals.filter(p => !sideA.some(a => a.id === p.id)), ...stations];
+  } else if (ownUserId) {
     sideA = proposals.filter(p => p.user_id === Number(ownUserId));
     sideB = [...proposals.filter(p => !sideA.some(a => a.id === p.id)), ...stations];
   } else {

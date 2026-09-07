@@ -1,6 +1,6 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireUserManager } = require('../middlewares/auth');
 const adminProposalController = require('../controllers/adminProposalController');
 
 /**
@@ -35,7 +35,7 @@ const adminProposalController = require('../controllers/adminProposalController'
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, adminProposalController.getAll);
+router.get('/', requireAuth, requireUserManager, adminProposalController.getAll);
 
 /**
  * @swagger
@@ -61,7 +61,7 @@ router.get('/', requireAuth, requireAdmin, adminProposalController.getAll);
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.delete('/:id', requireAuth, requireAdmin, adminProposalController.delete);
+router.delete('/:id', requireAuth, requireUserManager, adminProposalController.delete);
 
 /**
  * @swagger
@@ -109,7 +109,7 @@ router.delete('/:id', requireAuth, requireAdmin, adminProposalController.delete)
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id', requireAuth, requireAdmin, adminProposalController.update);
+router.put('/:id', requireAuth, requireUserManager, adminProposalController.update);
 
 /**
  * @swagger
@@ -148,7 +148,7 @@ router.put('/:id', requireAuth, requireAdmin, adminProposalController.update);
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id/status', requireAuth, requireAdmin, adminProposalController.updateStatus);
+router.put('/:id/status', requireAuth, requireUserManager, adminProposalController.updateStatus);
 
 /**
  * @swagger
@@ -182,6 +182,6 @@ router.put('/:id/status', requireAuth, requireAdmin, adminProposalController.upd
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/duplicates', requireAuth, requireAdmin, adminProposalController.duplicates);
+router.get('/duplicates', requireAuth, requireUserManager, adminProposalController.duplicates);
 
 module.exports = router;

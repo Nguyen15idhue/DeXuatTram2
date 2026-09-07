@@ -179,13 +179,24 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
   const createdAt = new Date().toISOString();
   const resolveUserId = recordData?.user_id ?? userId;
   let userName = '';
+  let userRole = '';
+  let salesName = '';
   if (resolveUserId !== undefined && resolveUserId !== null && resolveUserId !== '') {
     try {
-      const [users] = await pool.query('SELECT full_name FROM users WHERE id = ?', [resolveUserId]);
-      if (users.length > 0) userName = users[0].full_name || '';
+      const [users] = await pool.query('SELECT full_name, role, parent_id FROM users WHERE id = ?', [resolveUserId]);
+      if (users.length > 0) {
+        userName = users[0].full_name || '';
+        userRole = users[0].role || '';
+        if (users[0].parent_id) {
+          try {
+            const [parents] = await pool.query('SELECT full_name FROM users WHERE id = ?', [users[0].parent_id]);
+            if (parents.length > 0) salesName = parents[0].full_name || '';
+          } catch { /* silent */ }
+        }
+      }
     } catch { /* silent */ }
   }
-  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName };
+  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName, user_role: userRole, sales_name: salesName };
 
   const results = {};
   const excludeKeys = new Set(options.excludeKeys || []);

@@ -1,10 +1,25 @@
 const adminProposalService = require('../services/adminProposalService');
 const proximityService = require('../services/proximityService');
 
+const scopeFor = async (req) => {
+  if (req.user.role !== 'SALES') return { role: req.user.role };
+  const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
+  return { role: 'SALES', branchIds };
+};
+
+const denyOutsideBranch = (proposal, scope) => {
+  return scope.role === 'SALES' && !scope.branchIds.includes(Number(proposal.user_id));
+};
+
 exports.duplicates = async (req, res) => {
   try {
     const { min_m = 200, max_m = 2000 } = req.query;
-    const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m });
+    const scope = await scopeFor(req);
+    const result = await proximityService.findDuplicates({
+      minM: min_m,
+      maxM: max_m,
+      branchUserIds: scope.role === 'SALES' ? scope.branchIds : null
+    });
     res.json({ success: true, data: result });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
@@ -14,7 +29,8 @@ exports.duplicates = async (req, res) => {
 exports.getAll = async (req, res) => {
   try {
     const { status, search, page = 1, limit = 10 } = req.query;
-    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit));
+    const scope = await scopeFor(req);
+    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope);
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);
@@ -27,6 +43,9 @@ exports.delete = async (req, res) => {
     const existing = await adminProposalService.getProposalById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
     await adminProposalService.deleteProposal(req.params.id);
     res.json({ success: true, message: 'Xóa đề xuất thành công' });
@@ -48,6 +67,9 @@ exports.updateStatus = async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
+    if (denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
 
     await adminProposalService.updateStatus(req.params.id, status);
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
@@ -65,6 +87,9 @@ exports.update = async (req, res) => {
     const existing = await adminProposalService.getProposalById(id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
     await adminProposalService.updateProposal(id, req.body);

@@ -116,10 +116,12 @@ exports.buildPostScope = (metadata = {}, recordData = {}) => {
   scope.user_id = metadata.user_id ?? '';
   scope.user_email = metadata.user_email || '';
   scope.user_name = metadata.user_name || '';
+  scope.user_role = metadata.user_role || '';
+  scope.sales_name = metadata.sales_name || '';
   return scope;
 };
 
-const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name']);
+const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name']);
 
 exports.getNextSequence = async (prefix, connection) => {
   const p = String(prefix ?? '').slice(0, 20);

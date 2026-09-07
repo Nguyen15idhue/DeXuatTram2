@@ -81,6 +81,8 @@ const POST_METADATA = [
   { key: 'user_id', label: '{user_id}', desc: 'ID người tạo' },
   { key: 'user_email', label: '{user_email}', desc: 'Email người tạo' },
   { key: 'user_name', label: '{user_name}', desc: 'Tên người tạo (trống với khách)' },
+  { key: 'user_role', label: '{user_role}', desc: 'Vai trò người tạo' },
+  { key: 'sales_name', label: '{sales_name}', desc: 'Tên Sales quản lý (trống nếu không có)' },
 ];
 
 const OUTPUT_TYPES = [

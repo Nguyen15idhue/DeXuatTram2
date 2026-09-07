@@ -2,10 +2,23 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dataListService = require('./dataListService');
 
-exports.getAllProposals = async (status, search, page, limit) => {
+exports.getBranchUserIds = async (salesId) => {
+  const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [salesId, salesId]);
+  return rows.map(r => r.id);
+};
+
+exports.getAllProposals = async (status, search, page, limit, scope = {}) => {
   const offset = (page - 1) * limit;
-  let where = [];
-  let params = [];
+  const where = [];
+  const params = [];
+
+  if (scope.role === 'SALES' && scope.branchIds) {
+    if (scope.branchIds.length === 0) {
+      return { proposals: [], pagination: { page, limit, total: 0, totalPages: 0 } };
+    }
+    where.push(`p.user_id IN (${scope.branchIds.map(() => '?').join(',')})`);
+    params.push(...scope.branchIds);
+  }
 
   if (status) {
     where.push('p.status = ?');
@@ -18,10 +31,9 @@ exports.getAllProposals = async (status, search, page, limit) => {
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-  const needsJoin = search;
 
   const [countResult] = await pool.query(
-    `SELECT COUNT(*) as total FROM station_proposals p ${needsJoin ? 'LEFT JOIN users u ON p.user_id = u.id' : ''} ${whereClause}`,
+    `SELECT COUNT(*) as total FROM station_proposals p LEFT JOIN users u ON p.user_id = u.id ${whereClause}`,
     params
   );
   const total = countResult[0].total;
@@ -29,7 +41,8 @@ exports.getAllProposals = async (status, search, page, limit) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.custom_data, p.created_at, u.full_name as user_name, u.email as user_email
+            p.custom_data, p.created_at, p.user_id,
+            u.full_name as user_name, u.email as user_email
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
     ${whereClause}
@@ -48,7 +61,7 @@ exports.getAllProposals = async (status, search, page, limit) => {
 };
 
 exports.getProposalById = async (id) => {
-  const [proposals] = await pool.query('SELECT id FROM station_proposals WHERE id = ?', [id]);
+  const [proposals] = await pool.query('SELECT id, user_id FROM station_proposals WHERE id = ?', [id]);
   return proposals.length > 0 ? proposals[0] : null;
 };
 
