@@ -515,23 +515,29 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     return (
       <>
         {hasSections ? (
-          layoutConfig.sections.map((section) => (
-            <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
-              {section.title && (
-                <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
-                  {section.title}
-                </legend>
-              )}
-              {section.collapsible ? (
-                <details open>
-                  <summary style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280', marginBottom: 8 }}> Chi tiết</summary>
-                  {section.rows.map(row => renderRow(row))}
-                </details>
-              ) : (
-                section.rows.map(row => renderRow(row))
-              )}
-            </fieldset>
-          ))
+          layoutConfig.sections.map((section) => {
+            if (section.visibleWhen) {
+              const { field, value } = section.visibleWhen;
+              if (formData[field] !== value) return null;
+            }
+            return (
+              <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+                {section.title && (
+                  <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
+                    {section.title}
+                  </legend>
+                )}
+                {section.collapsible ? (
+                  <details open>
+                    <summary style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280', marginBottom: 8 }}> Chi tiết</summary>
+                    {section.rows.map(row => renderRow(row))}
+                  </details>
+                ) : (
+                  section.rows.map(row => renderRow(row))
+                )}
+              </fieldset>
+            );
+          })
         ) : (
           rowsToRender.map(row => renderRow(row))
         )}

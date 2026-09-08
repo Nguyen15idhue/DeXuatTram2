@@ -13,7 +13,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import { Zap, Download, Upload, Plus, Search, RotateCcw, X } from 'lucide-react';
 
 const STATIONS_VIEW_ID = 6;
-const STATIONS_FORM_ID = 7;
+const STATIONS_FORM_ID = 12;
 
 const AdminStationsPage = () => {
   const { token, isSales } = useAuth();
@@ -360,6 +360,7 @@ const AdminStationsPage = () => {
               purpose="create"
               formId={STATIONS_FORM_ID}
               onSubmit={handleCreateSubmit}
+              initialData={{}}
             >
               <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
             </DynamicForm>

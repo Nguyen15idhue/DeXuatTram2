@@ -43,13 +43,15 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       loadRecord();
     } else if (recordProp) {
       setRecord(recordProp);
-      loadViewConfig();
+      setLoading(true);
+      loadViewConfig(recordProp).finally(() => setLoading(false));
     }
   }, [entity, recordId, recordProp]);
 
   const loadRecord = async () => {
     try {
       setLoading(true);
+      setError('');
       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
       let url;
       if (entity === 'stations') url = `${baseUrl}/stations/${recordId}`;
@@ -62,28 +64,28 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       const data = await res.json();
       if (data.success) {
         setRecord(data.data);
-        loadViewConfig();
+        await loadViewConfig(data.data);
       } else {
         setError('Không tìm thấy bản ghi');
       }
-    } catch {
+    } catch (e) {
       setError('Lỗi tải bản ghi');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadViewConfig = async () => {
+  const loadViewConfig = async (recordData) => {
+    const vId = viewId || DEFAULT_VIEW_IDS[entity];
+    if (!vId) return;
     try {
-      const vId = viewId || DEFAULT_VIEW_IDS[entity];
-      if (!vId) return;
       const res = await dynamicService.getViewConfig(entity, vId);
       if (res.success) {
         const vf = res.data.fields || [];
         const af = res.data.allFields || [];
         setViewFields(vf);
         setAllFields(af);
-        initFormData(af);
+        initFormData(af, recordData || record);
       }
       try {
         const formRes = await formService.getByEntityAndPurpose(entity, 'view');
@@ -99,21 +101,20 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           });
         }
       } catch {
-        // no view form configured, fallback to main/other
+        // no view form configured
       }
     } catch {
       // silent
-    } finally {
-      setLoading(false);
     }
   };
 
-  const initFormData = (fields) => {
+  const initFormData = (fields, recordOverride) => {
+    const rec = recordOverride || record;
     const data = {};
     (fields || []).forEach(f => {
       const key = f.key;
-      if (record) {
-        data[key] = getFieldValue(record, { key });
+      if (rec) {
+        data[key] = getFieldValue(rec, { key });
       } else {
         data[key] = '';
       }
@@ -223,7 +224,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const handleSwitchMode = (newMode) => {
     setMode(newMode);
-    if (newMode === 'edit') initFormData([...viewFields, ...otherFields]);
+    if (newMode === 'edit') initFormData([...viewFields, ...otherFields], record);
     if (onSwitchMode) onSwitchMode(newMode);
   };
 
@@ -245,7 +246,14 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         cellMap[`${cfg.rowId}-${cfg.colIndex}`] = fieldsByKey[f.key || f.field_key] || null;
       }
     });
-    return lc.sections.map(sec => ({
+    return lc.sections.filter(sec => {
+      if (sec.visibleWhen) {
+        const recData = record || formData;
+        const val = getFieldValue(recData, { key: sec.visibleWhen.field });
+        if (val !== sec.visibleWhen.value) return false;
+      }
+      return true;
+    }).map(sec => ({
       ...sec,
       rows: (sec.rows || []).map(row => {
         const cols = parseInt((row.columns || '1:1').split(':')[1]);
@@ -317,7 +325,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       <div className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
         <div className="popup-header">
           <h2>{ENTITY_LABELS[entity] || entity} #{record.id} {mode === 'edit' && '(chỉnh sửa)'}</h2>
-          <button className="btn btn-sm btn-secondary" onClick={handleClose}>✕ Đóng</button>
+          <button className="btn-close" onClick={handleClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6b7280', padding: '4px 8px' }}>✕</button>
         </div>
 
         {error && <div className="error-message">{error}</div>}

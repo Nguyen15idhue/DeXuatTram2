@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminProposalService, excelService } from '../../services/api';
+import { adminProposalService, proposalService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
+import DynamicForm from '../../components/dynamic/DynamicForm';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
@@ -10,9 +11,10 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
+const PROPOSALS_CREATE_FORM_ID = 13;
 
 const AdminProposalsPage = () => {
   const { token, isSales, isAdmin } = useAuth();
@@ -29,6 +31,7 @@ const AdminProposalsPage = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null });
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [dupMode, setDupMode] = useState(false);
   const dupRef = useRef(null);
   const tableRef = useRef(null);
@@ -131,6 +134,21 @@ const AdminProposalsPage = () => {
     }
   };
 
+  const handleCreateSubmit = async (formData) => {
+    const submitData = { ...formData };
+    if (!submitData.owner_name || !submitData.address || !submitData.latitude || !submitData.longitude) {
+      throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+    }
+    const res = await proposalService.create(submitData, token);
+    if (res.success) {
+      setToast({ message: 'Tạo đề xuất thành công', type: 'success' });
+      setShowCreateForm(false);
+      loadProposals(1);
+    } else {
+      throw new Error(res.message || 'Tạo đề xuất thất bại');
+    }
+  };
+
   const renderActions = (row) => (
     <div className="flex flex-wrap gap-1 items-center">
       <button className="btn btn-primary btn-xs gap-1" onClick={() => navigate(`/admin/proposals/view=${row.id}`)}>
@@ -167,6 +185,9 @@ const AdminProposalsPage = () => {
           <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
         </div>
         <div className="flex gap-2">
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowCreateForm(true)}>
+            <Plus size={14} /> Tạo đề xuất
+          </button>
           <input
             type="text"
             className="input input-bordered input-sm"
@@ -217,6 +238,30 @@ const AdminProposalsPage = () => {
         confirmText="Xóa"
         type="danger"
       />
+
+      {showCreateForm && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Tạo đề xuất mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <DynamicForm
+              entity="station_proposals"
+              purpose="create"
+              formId={PROPOSALS_CREATE_FORM_ID}
+              onSubmit={handleCreateSubmit}
+            >
+              <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
+            </DynamicForm>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowCreateForm(false)}>close</button>
+          </form>
+        </dialog>
+      )}
 
       {popup.open && (
         <RecordDetailPopup

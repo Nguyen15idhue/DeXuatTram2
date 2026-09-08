@@ -30,7 +30,7 @@ function MapClickHandler({ onMapClick }) {
 }
 
 const PROPOSALS_VIEW_ID = 8;
-const PROPOSALS_FORM_ID = 9;
+const PROPOSALS_FORM_ID = 13;
 
 const MyProposalsPage = () => {
   const { token, isAdmin } = useAuth();
