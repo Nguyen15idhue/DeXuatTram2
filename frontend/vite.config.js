@@ -22,6 +22,10 @@ export default defineConfig({
       '/uploads': {
         target: 'http://backend:3000',
         changeOrigin: true
+      },
+      '/tiles': {
+        target: 'http://backend:3000',
+        changeOrigin: true
       }
     }
   },

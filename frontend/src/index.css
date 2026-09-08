@@ -1,18 +1,45 @@
 @import "tailwindcss";
 @plugin "daisyui";
 
-/* Override Tailwind preflight for Leaflet */
+/* Override Tailwind v4 preflight for Leaflet */
 @layer base {
-  .leaflet-container,
+  .leaflet-container {
+    position: relative !important;
+    -webkit-tap-highlight-color: transparent;
+  }
   .leaflet-pane,
-  .leaflet-tile,
-  .leaflet-marker-icon,
-  .leaflet-marker-shadow,
   .leaflet-overlay-pane,
   .leaflet-shadow-pane,
   .leaflet-marker-pane,
   .leaflet-tooltip-pane,
   .leaflet-popup-pane {
     position: absolute !important;
+  }
+  .leaflet-tile {
+    position: absolute !important;
+    top: 0;
+    left: 0;
+  }
+  .leaflet-tile-pane,
+  .leaflet-overlay-pane,
+  .leaflet-shadow-pane,
+  .leaflet-marker-pane,
+  .leaflet-tooltip-pane,
+  .leaflet-popup-pane {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .leaflet-marker-icon,
+  .leaflet-marker-shadow {
+    position: absolute !important;
+  }
+}
+
+@layer utilities {
+  .leaflet-pane img,
+  .leaflet-tile img {
+    max-width: none !important;
   }
 }

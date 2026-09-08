@@ -26,6 +26,7 @@ const dataListsRoutes = require('./routes/dataLists');
 const dataListsPublicRoutes = require('./routes/dataListsPublic');
 const formulasRoutes = require('./routes/formulas');
 const mapConfigsRoutes = require('./routes/mapConfigs');
+const tilesRoutes = require('./routes/tiles');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -82,6 +83,7 @@ app.use('/api/admin/data-lists', adminLimiter, dataListsRoutes);
 app.use('/api/data-lists', dataListsPublicRoutes);
 app.use('/api/formulas', formulasRoutes);
 app.use('/api/map-configs', mapConfigsRoutes);
+app.use('/tiles', tilesRoutes);
 
 // Static file serving for uploads
 const path = require('path');

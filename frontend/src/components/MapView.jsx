@@ -1,5 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { Link } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
@@ -15,6 +17,9 @@ const FALLBACK_TILES = [
   'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
   'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
 ];
+
+const PROXY_TILE = '/tiles/{z}/{x}/{y}';
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 function resolveTileUrl(template, apiKey, styleValue) {
   if (!template) return '';
@@ -33,7 +38,7 @@ function isValidTileUrl(url) {
 
 function getSafeTileUrl(url) {
   if (isValidTileUrl(url)) return url;
-  return FALLBACK_TILES[0];
+  return PROXY_TILE;
 }
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -138,6 +143,7 @@ function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
   const layerRef = useRef(null);
   const errCountRef = useRef(0);
   const firedRef = useRef(false);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
     if (layerRef.current) {
@@ -146,13 +152,17 @@ function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
     }
     errCountRef.current = 0;
     firedRef.current = false;
+    loadedRef.current = false;
     if (!tileUrl) return;
+
     const layer = L.tileLayer(tileUrl, {
       attribution: attribution || '',
       subdomains: subdomains || '',
       maxZoom: 20,
     });
+
     layer.on('tileerror', () => {
+      if (loadedRef.current) return;
       errCountRef.current += 1;
       if (errCountRef.current >= 6 && !firedRef.current) {
         firedRef.current = true;
@@ -160,6 +170,7 @@ function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
       }
     });
     layer.on('tileload', () => {
+      loadedRef.current = true;
       errCountRef.current = 0;
     });
     layer.addTo(map);
@@ -170,7 +181,7 @@ function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
         layerRef.current = null;
       }
     };
-  }, [map, tileUrl, attribution, subdomains]);
+  }, [map, tileUrl, attribution, subdomains, onTileError]);
 
   return null;
 }
@@ -178,6 +189,7 @@ function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
 function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
   return (
     <button
+      type="button"
       className={`map-control-btn ${active ? 'map-control-btn-active' : ''}`}
       onClick={onClick}
       disabled={disabled}
@@ -208,6 +220,7 @@ function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
   return (
     <div className="map-layer-switcher" ref={ref}>
       <button
+        type="button"
         className={`map-control-btn ${open ? 'map-control-btn-active' : ''}`}
         onClick={() => setOpen(v => !v)}
         title="Chuyển layer"
@@ -222,6 +235,7 @@ function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
         <div className="map-layer-dropdown">
           {layers.map((layer, idx) => (
             <button
+              type="button"
               key={idx}
               className={`map-layer-option ${idx === activeIdx ? 'map-layer-option-active' : ''}`}
               onClick={() => { onSwitch(idx); setOpen(false); }}
@@ -235,16 +249,84 @@ function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
   );
 }
 
+function createStationPopupContent(item, user) {
+  const div = document.createElement('div');
+  div.className = 'popup-content';
+  const h3 = document.createElement('h3');
+  h3.textContent = item.name;
+  div.appendChild(h3);
+
+  const addRow = (label, value) => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = `${label}: `;
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(value || ''));
+    div.appendChild(p);
+  };
+
+  addRow('Địa chỉ', item.address);
+  const statusP = document.createElement('p');
+  const statusStrong = document.createElement('strong');
+  statusStrong.textContent = 'Trạng thái: ';
+  statusP.appendChild(statusStrong);
+  const statusSpan = document.createElement('span');
+  statusSpan.style.color = getMarkerColor(item.status);
+  statusSpan.textContent = item.status;
+  statusP.appendChild(statusSpan);
+  div.appendChild(statusP);
+
+  if (item.description) addRow('Mô tả', item.description);
+
+  if (user?.role === 'ADMIN') {
+    const root = createRoot(div);
+    root.render(
+      <Link to={`/admin/stations/view=${item.id}`} className="btn btn-sm btn-primary mt-2">
+        Xem chi tiết
+      </Link>
+    );
+  }
+
+  return div;
+}
+
+function createProposalPopupContent(item) {
+  const div = document.createElement('div');
+  div.className = 'popup-content';
+  const h3 = document.createElement('h3');
+  h3.textContent = `Đề xuất #${item.id}`;
+  div.appendChild(h3);
+
+  const addRow = (label, value) => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = `${label}: `;
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(value || ''));
+    div.appendChild(p);
+  };
+
+  addRow('Chủ sở hữu', item.owner_name);
+  addRow('SĐT', item.owner_phone);
+  addRow('Địa chỉ', item.address);
+  const statusP = document.createElement('p');
+  const statusStrong = document.createElement('strong');
+  statusStrong.textContent = 'Trạng thái: ';
+  statusP.appendChild(statusStrong);
+  const statusSpan = document.createElement('span');
+  statusSpan.style.color = getMarkerColor(item.status);
+  statusSpan.textContent = item.status;
+  statusP.appendChild(statusSpan);
+  div.appendChild(statusP);
+  if (item.description) addRow('Mô tả', item.description);
+  addRow('Người đề xuất', item.user_name || 'Khách');
+
+  return div;
+}
+
 function MapLayerController({ stations, proposals, onMarkerClick, user, showStationLabels }) {
   const map = useMap();
-  const [zoom, setZoom] = useState(map.getZoom());
   const clusterRef = useRef(null);
-
-  useEffect(() => {
-    const handleZoom = () => setZoom(map.getZoom());
-    map.on('zoomend', handleZoom);
-    return () => map.off('zoomend', handleZoom);
-  }, [map]);
 
   useEffect(() => {
     if (clusterRef.current) {
@@ -264,6 +346,8 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
       ...proposals.map(p => ({ ...p, _type: 'proposal' })),
     ];
 
+    const markers = [];
+
     allItems.forEach(item => {
       const lat = parseFloat(item.latitude);
       const lng = parseFloat(item.longitude);
@@ -278,29 +362,19 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
         marker.bindTooltip(label, { permanent: false, direction: 'top', offset: [0, -8], className: 'marker-label-tooltip' });
       }
 
-      let popupHtml = '<div class="popup-content">';
       if (item._type === 'station') {
-        popupHtml += `<h3>${item.name}</h3>`;
-        popupHtml += `<p><strong>Địa chỉ:</strong> ${item.address || ''}</p>`;
-        popupHtml += `<p><strong>Trạng thái:</strong> <span style="color:${getMarkerColor(item.status)}">${item.status}</span></p>`;
-        if (item.description) popupHtml += `<p><strong>Mô tả:</strong> ${item.description}</p>`;
-        if (user?.role === 'ADMIN') {
-          popupHtml += `<button class="btn btn-sm btn-primary" onclick="window.location.href='/admin/stations/view=${item.id}'">Xem chi tiết</button>`;
-        }
+        marker.bindPopup(() => createStationPopupContent(item, user), { className: 'station-popup' });
       } else {
-        popupHtml += `<h3>Đề xuất #${item.id}</h3>`;
-        popupHtml += `<p><strong>Chủ sở hữu:</strong> ${item.owner_name || ''}</p>`;
-        popupHtml += `<p><strong>SĐT:</strong> ${item.owner_phone || ''}</p>`;
-        popupHtml += `<p><strong>Địa chỉ:</strong> ${item.address || ''}</p>`;
-        popupHtml += `<p><strong>Trạng thái:</strong> <span style="color:${getMarkerColor(item.status)}">${item.status}</span></p>`;
-        if (item.description) popupHtml += `<p><strong>Mô tả:</strong> ${item.description}</p>`;
-        popupHtml += `<p><strong>Người đề xuất:</strong> ${item.user_name || 'Khách'}</p>`;
+        marker.bindPopup(() => createProposalPopupContent(item), { className: 'proposal-popup' });
       }
-      popupHtml += '</div>';
-      marker.bindPopup(popupHtml);
+
       marker.on('click', () => onMarkerClick && onMarkerClick(item, item._type));
-      cluster.addLayer(marker);
+      markers.push(marker);
     });
+
+    if (markers.length > 0) {
+      cluster.addLayers(markers);
+    }
 
     map.addLayer(cluster);
     clusterRef.current = cluster;
@@ -311,7 +385,7 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
         clusterRef.current = null;
       }
     };
-  }, [map, stations, proposals, onMarkerClick, user, zoom, showStationLabels]);
+  }, [map, stations, proposals, onMarkerClick, user, showStationLabels]);
 
   return null;
 }
@@ -401,14 +475,16 @@ const MapView = ({
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
   const [activeLayerIdx, setActiveLayerIdx] = useState(0);
-  const [resolvedTileUrl, setResolvedTileUrl] = useState(FALLBACK_TILES[0]);
-  const [resolvedAttribution, setResolvedAttribution] = useState('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors');
-  const [resolvedSubdomains, setResolvedSubdomains] = useState('a,b,c');
+  const [resolvedTileUrl, setResolvedTileUrl] = useState(PROXY_TILE);
+  const [resolvedAttribution, setResolvedAttribution] = useState(OSM_ATTRIBUTION);
+  const [resolvedSubdomains, setResolvedSubdomains] = useState('');
   const [tileWarning, setTileWarning] = useState('');
+  const mountedRef = useRef(true);
+
   const [config, setConfig] = useState({
     tile_provider_id: 'leaflet-osm',
-    tile_url: FALLBACK_TILES[0],
-    tile_attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    tile_url: PROXY_TILE,
+    tile_attribution: OSM_ATTRIBUTION,
     tile_subdomains: '',
     api_key: '',
     show_boundaries: true,
@@ -425,23 +501,25 @@ const MapView = ({
     }
   }, [highlightPosition]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (signal) => {
     try {
       const [stationsRes, proposalsRes] = await Promise.all([
         stationService.getAll(),
         proposalService.getAll()
       ]);
-      if (stationsRes.success) setStations(stationsRes.data);
-      if (proposalsRes.success) setProposals(proposalsRes.data);
+      if (!signal?.aborted) {
+        if (stationsRes.success) setStations(stationsRes.data);
+        if (proposalsRes.success) setProposals(proposalsRes.data);
+      }
     } catch (error) {
-      console.error('Error fetching data:', error);
+      if (error.name !== 'AbortError') console.error('Error fetching data:', error);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  };
+  }, []);
 
-  const buildTileUrl = (providerId, apiKey, styleIdx) => {
-    const fallback = { url: FALLBACK_TILES[0], attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', subdomains: 'a,b,c', warning: '' };
+  const buildTileUrl = useCallback((providerId, apiKey, styleIdx) => {
+    const fallback = { url: PROXY_TILE, attribution: OSM_ATTRIBUTION, subdomains: '', warning: '' };
     const provider = getProviderById(providerId);
     if (!provider) return { ...fallback, warning: 'Không tìm thấy provider đã lưu, đang dùng bản đồ mặc định.' };
     if (provider.incompatible_with_leaflet) {
@@ -482,53 +560,79 @@ const MapView = ({
     }
 
     return fallback;
-  };
+  }, []);
 
-  const applyFallback = (message) => {
-    setResolvedTileUrl(FALLBACK_TILES[0]);
-    setResolvedAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors');
-    setResolvedSubdomains('a,b,c');
+  const applyFallback = useCallback((message) => {
+    setResolvedTileUrl(PROXY_TILE);
+    setResolvedAttribution(OSM_ATTRIBUTION);
+    setResolvedSubdomains('');
     setTileWarning(message);
-  };
+  }, []);
 
-  const handleTileError = () => {
-    applyFallback('Tile server lỗi liên tục, đã tự chuyển về bản đồ mặc định.');
-  };
-
-  const fetchConfig = async () => {
-    try {
-      const data = await api.get('/map-configs?entity=stations');
-      if (data.success && data.data) {
-        const d = data.data;
-        const providerId = d.tile_provider_id || d.tile_provider || 'leaflet-osm';
-        const apiKey = d.api_key || '';
-        const tile = buildTileUrl(providerId, apiKey, 0);
-
-        setResolvedTileUrl(tile.url);
-        setResolvedAttribution(tile.attribution);
-        setResolvedSubdomains(tile.subdomains);
-        setTileWarning(tile.warning || '');
-
-        setConfig(prev => ({
-          ...prev,
-          ...d,
-          tile_provider_id: providerId,
-          api_key: apiKey,
-          center_lat: parseFloat(d.center_lat) || prev.center_lat,
-          center_lng: parseFloat(d.center_lng) || prev.center_lng,
-          default_zoom: parseInt(d.default_zoom) || prev.default_zoom,
-        }));
-        setShowProvinceLabels(d.show_province_labels !== false);
-        setShowBoundaries(d.show_boundaries !== false);
-        setActiveLayerIdx(0);
+  const handleTileError = useCallback(() => {
+    setResolvedTileUrl(prev => {
+      if (prev !== PROXY_TILE) {
+        setResolvedAttribution(OSM_ATTRIBUTION);
+        setResolvedSubdomains('');
+        setTileWarning('Tile server trực tiếp không truy cập được, đang dùng proxy.');
+        return PROXY_TILE;
       }
-    } catch (e) {
-      // Use defaults
-    }
-  };
+      setTileWarning('Tile server lỗi, proxy cũng không truy cập được.');
+      return prev;
+    });
+  }, []);
 
-  useEffect(() => { fetchData(); fetchConfig(); }, []);
-  useEffect(() => { if (refreshKey) fetchData(); }, [refreshKey]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (refreshKey) {
+      const controller = new AbortController();
+      fetchData(controller.signal);
+      return () => controller.abort();
+    }
+  }, [refreshKey, fetchData]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchConfig = async () => {
+      try {
+        const data = await api.get('/map-configs?entity=stations');
+        if (controller.signal.aborted) return;
+        if (data.success && data.data) {
+          const d = data.data;
+          const providerId = d.tile_provider_id || d.tile_provider || 'leaflet-osm';
+          const apiKey = d.api_key || '';
+          const tile = buildTileUrl(providerId, apiKey, 0);
+
+          setResolvedTileUrl(tile.url);
+          setResolvedAttribution(tile.attribution);
+          setResolvedSubdomains(tile.subdomains);
+          setTileWarning(tile.warning || '');
+
+          setConfig(prev => ({
+            ...prev,
+            ...d,
+            tile_provider_id: providerId,
+            api_key: apiKey,
+            center_lat: parseFloat(d.center_lat) || prev.center_lat,
+            center_lng: parseFloat(d.center_lng) || prev.center_lng,
+            default_zoom: parseInt(d.default_zoom) || prev.default_zoom,
+          }));
+          setShowProvinceLabels(d.show_province_labels !== false);
+          setShowBoundaries(d.show_boundaries !== false);
+          setActiveLayerIdx(0);
+        }
+      } catch (e) {
+        if (e.name !== 'AbortError') { /* Use defaults */ }
+      }
+    };
+    fetchConfig();
+    return () => controller.abort();
+  }, [buildTileUrl]);
 
   useEffect(() => {
     if (activeLayerIdx === 0 && !config.api_key) return;
@@ -537,9 +641,13 @@ const MapView = ({
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
     setTileWarning(tile.warning || '');
-  }, [activeLayerIdx, config.tile_provider_id, config.api_key]);
+  }, [activeLayerIdx, config.tile_provider_id, config.api_key, buildTileUrl]);
 
-  const handleMyLocation = (openForm = false) => {
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const handleMyLocation = useCallback((openForm = false) => {
     if (!navigator.geolocation) {
       alert('Trình duyệt không hỗ trợ định vị');
       return;
@@ -547,6 +655,7 @@ const MapView = ({
     setLocationLoading(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        if (!mountedRef.current) return;
         const { latitude, longitude } = position.coords;
         setMyLocation([latitude, longitude]);
         setLocationLoading(false);
@@ -556,6 +665,7 @@ const MapView = ({
         }
       },
       (error) => {
+        if (!mountedRef.current) return;
         setLocationLoading(false);
         let msg = 'Không thể lấy vị trí';
         if (error.code === 1) msg = 'Bạn đã từ chối quyền truy cập vị trí';
@@ -565,9 +675,9 @@ const MapView = ({
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-  };
+  }, [onLocationSelected]);
 
-  const handleGoogleMapSubmit = async () => {
+  const handleGoogleMapSubmit = useCallback(async () => {
     if (!googleMapUrl.trim()) return;
     setResolvingUrl(true);
     const result = parseGoogleMapsLink(googleMapUrl);
@@ -590,7 +700,7 @@ const MapView = ({
     }
     setResolvingUrl(false);
     alert('Không thể đọc tọa độ từ link này. Vui lòng kiểm tra lại định dạng link.');
-  };
+  }, [googleMapUrl, onLocationSelected]);
 
   if (loading) {
     return <div className="map-loading">Đang tải bản đồ...</div>;
@@ -625,7 +735,7 @@ const MapView = ({
           <div className="alert alert-warning text-xs shadow-lg"
             style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, maxWidth: '90%' }}>
             <span>{tileWarning}</span>
-            <button className="btn btn-xs btn-ghost" onClick={() => setTileWarning('')}>✕</button>
+            <button type="button" className="btn btn-xs btn-ghost" onClick={() => setTileWarning('')}>✕</button>
           </div>
         )}
 
@@ -681,7 +791,6 @@ const MapView = ({
         ))}
       </MapContainer>
 
-      {/* Map Controls - Top Right */}
       <div className="map-controls-top-right">
         <MapControlButton
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>}
@@ -720,7 +829,6 @@ const MapView = ({
         )}
       </div>
 
-      {/* Map Legend */}
       {showLegend && (
         <div className="map-legend">
           <div className="map-legend-title">Chú thích</div>
@@ -733,12 +841,11 @@ const MapView = ({
         </div>
       )}
 
-      {/* Floating Action Buttons - bottom right */}
       {!readOnly && (
       <div className="map-fab-group">
         {showCreateMenu && (
           <div className="map-create-menu">
-            <button className="map-create-option" onClick={() => handleMyLocation(true)} disabled={locationLoading}>
+            <button type="button" className="map-create-option" onClick={() => handleMyLocation(true)} disabled={locationLoading}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
                 <circle cx="12" cy="9" r="2.5"/>
@@ -746,6 +853,7 @@ const MapView = ({
               <span>{locationLoading ? 'Đang lấy...' : 'Vị trí của tôi'}</span>
             </button>
             <button
+              type="button"
               className="map-create-option"
               onClick={() => { setShowCreateMenu(false); if (onLocationSelected) onLocationSelected(null, null, 'select'); }}
             >
@@ -768,6 +876,7 @@ const MapView = ({
                 onKeyDown={(e) => e.key === 'Enter' && handleGoogleMapSubmit()}
               />
               <button
+                type="button"
                 className="map-google-confirm"
                 onClick={handleGoogleMapSubmit}
                 disabled={resolvingUrl || !googleMapUrl.trim()}
@@ -779,6 +888,7 @@ const MapView = ({
         )}
 
         <button
+          type="button"
           className="map-fab map-fab-location"
           onClick={() => handleMyLocation()}
           disabled={locationLoading}
@@ -791,14 +901,15 @@ const MapView = ({
         </button>
 
         <button
+          type="button"
           className={`map-fab map-fab-create ${showCreateMenu ? 'map-fab-active' : ''}`}
           onClick={() => setShowCreateMenu(!showCreateMenu)}
           title="Tạo đề xuất mới"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/>
-          <line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
         </button>
       </div>
       )}

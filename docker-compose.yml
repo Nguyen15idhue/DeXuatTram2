@@ -14,6 +14,9 @@ services:
       - backend
     networks:
       - station-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   backend:
     build: ./backend
@@ -39,6 +42,9 @@ services:
         condition: service_healthy
     networks:
       - station-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   mysql:
     image: mysql:8.0
