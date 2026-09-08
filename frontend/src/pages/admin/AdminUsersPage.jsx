@@ -464,9 +464,15 @@ const AdminUsersPage = () => {
       {showCreateForm && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-2xl">
-            <h3 className="font-bold text-lg mb-4">Tạo user mới</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Tạo user mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
+                <X size={18} />
+              </button>
+            </div>
             <DynamicForm
               entity="users"
+              purpose="create"
               formId={USERS_FORM_ID}
               onSubmit={handleCreateUser}
               initialData={{ role: 'CTV', status: 'ACTIVE' }}

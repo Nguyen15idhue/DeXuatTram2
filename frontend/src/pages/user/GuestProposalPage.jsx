@@ -306,6 +306,7 @@ const GuestProposalPage = () => {
             {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
             <DynamicForm
               entity="station_proposals"
+              purpose="create"
               formId={PROPOSALS_FORM_ID}
               onSubmit={handleSubmit}
               initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}

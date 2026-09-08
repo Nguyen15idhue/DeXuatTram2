@@ -68,6 +68,7 @@ Browser → Frontend → REST API → Backend → MySQL
 2. Super/Admin được quản lý tất cả proposals và stations
 3. CTV KHÔNG được truy cập admin API (`/admin/*`); Sales chỉ 4 trang (`/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`)
 4. Chỉ `SUPER_ADMIN` được vào trang cấu hình (`/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`) + tạo super admin
+5. Sales chỉ được xem trạm (không nút Sửa), dùng `allowEdit={!isSales}` trong RecordDetailPopup
 
 ### Data Rules
 4. Proposal phải lưu `user_id` của người tạo (`user_id` được NULL với guest qua `POST /api/proposals/guest`)
@@ -78,22 +79,30 @@ Browser → Frontend → REST API → Backend → MySQL
 7. Station `DEPLOYING` → marker vàng
 8. Proposal → marker màu trạng thái đề xuất
 
+### Map Tile Rules
+9. Tile server lỗi → fallback proxy `/tiles/{z}/{x}/{y}` tự động, KHÔNG hiện warning cho user
+10. Geolocation: debug log `console.error('[MapView] Geolocation error:')` khi có lỗi, user thấy alert
+11. MyProposalsPage mini map: click → realtime sync lat/lng vào DynamicForm qua `initialData` prop
+
+### Create Form Modal Rules
+12. Tất cả create form modals phải có nút X (X icon lucide-react) ở góc phải title
+
 ### Ownership Rules
-9. Khi update/delete proposal, phải check `user_id` khớp với user đang login
-10. Admin có thể bypass ownership check
+13. Khi update/delete proposal, phải check `user_id` khớp với user đang login
+14. Admin có thể bypass ownership check
 
 ### Dynamic Field Rules
-11. Field `source_type=fixed` không được đổi key hoặc xóa
-12. Field `source_type=json` lưu trong cột `custom_data` JSON của entity
-13. Select/Multiselect có 2 nguồn: manual options hoặc Data List
-14. Cascading select: child field có `parent_field` + `relation_key`
-15. Formula field: pre-compute (trong form), post-compute (sau khi tạo record)
+15. Field `source_type=fixed` không được đổi key hoặc xóa
+16. Field `source_type=json` lưu trong cột `custom_data` JSON của entity
+17. Select/Multiselect có 2 nguồn: manual options hoặc Data List
+18. Cascading select: child field có `parent_field` + `relation_key`
+19. Formula field: pre-compute (trong form), post-compute (sau khi tạo record)
 
 ### Data List Rules
-16. Data List name phải unique
-17. Columns config: `[{key, label, type}]`, type = `text` hoặc `number`
-18. Row data lưu JSON trong cột `data`
-19. Delete row → orphaned children set `parent_row_id = NULL`
+20. Data List name phải unique
+21. Columns config: `[{key, label, type}]`, type = `text` hoặc `number`
+22. Row data lưu JSON trong cột `data`
+23. Delete row → orphaned children set `parent_row_id = NULL`
 
 ## 5. Coding Conventions
 
@@ -179,7 +188,7 @@ backend/src/
 - **Không modify schema mà không có migration plan**
 - **KHÔNG dùng migration — schema quản lý thủ công qua SQL scripts**
 
-### Database Tables (11 bảng)
+### Database Tables (12 bảng)
 
 | Bảng | Mô tả |
 |------|-------|
@@ -194,6 +203,7 @@ backend/src/
 | `files` | File uploaded |
 | `data_lists` | Danh sách dữ liệu (columns_config JSON) |
 | `data_list_rows` | Rows trong data list (data JSON) |
+| `map_configs` | Cấu hình tile provider, center, zoom cho bản đồ |
 
 ### Database Migrations
 - `database/14-alter-field-definitions-add-display-format-unit.sql` — Thêm `display_format` và `unit` vào `field_definitions`
@@ -326,7 +336,22 @@ After changing code:
 
 When automated tests do not exist, perform manual verification.
 
-## 14. Definition of Done
+## 14. PowerShell UTF-8 Encoding
+
+PowerShell 5.1 (Windows) mặc định dùng Windows-1252 → tiếng Việt hiển thị sai (mojibake).
+MUST set UTF-8 encoding trước khi chạy任何 command:
+
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+```
+
+Khi chạy docker exec mysql, thêm `--default-character-set=utf8mb4`:
+```powershell
+docker exec station-mysql mysql -u root -ppassword station_management --default-character-set=utf8mb4 -e "QUERY"
+```
+
+## 15. Definition of Done
 
 Task is complete when:
 - [ ] Feature works end-to-end

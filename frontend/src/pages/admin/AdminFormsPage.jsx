@@ -5,7 +5,7 @@ import { formService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
-import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, FileText } from 'lucide-react';
+import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, FileText, PenLine, Eye } from 'lucide-react';
 
 const ENTITIES = [
   { key: 'stations', label: 'Stations', icon: Zap, desc: 'Quản lý trạm sạc' },
@@ -13,10 +13,9 @@ const ENTITIES = [
   { key: 'users', label: 'Users', icon: Users, desc: 'Quản lý người dùng' },
 ];
 
-const ENTITY_NAMES = {
-  stations: 'Form Stations',
-  station_proposals: 'Form Proposals',
-  users: 'Form Users',
+const PURPOSE_CONFIG = {
+  create: { label: 'Nhập liệu', icon: PenLine, color: 'text-blue-500', bgColor: 'bg-blue-50' },
+  view: { label: 'Xem / sửa', icon: Eye, color: 'text-green-500', bgColor: 'bg-green-50' }
 };
 
 const AdminFormsPage = () => {
@@ -26,7 +25,7 @@ const AdminFormsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
-  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '', entity: '' });
+  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
 
   const loadForms = async () => {
     try {
@@ -44,18 +43,20 @@ const AdminFormsPage = () => {
 
   useEffect(() => { loadForms(); }, []);
 
-  const getFormForEntity = (entity) => forms.find(f => f.entity === entity);
+  const getFormForEntity = (entity, purpose) => forms.find(f => f.entity === entity && f.purpose === purpose);
 
-  const handleCreate = async (entity) => {
+  const handleCreate = async (entity, purpose) => {
     setError('');
+    const purposeLabel = PURPOSE_CONFIG[purpose].label;
     try {
       const res = await formService.create({
         entity,
-        name: ENTITY_NAMES[entity] || `Form ${entity}`,
-        description: `Form cấu hình cho ${entity}`
+        name: `Form ${entity} - ${purposeLabel}`,
+        description: `Form ${purposeLabel.toLowerCase()} cho ${entity}`,
+        purpose
       }, token);
       if (res.success) {
-        setToast({ message: `Tạo form ${entity} thành công`, type: 'success' });
+        setToast({ message: `Tạo form ${purposeLabel} thành công`, type: 'success' });
         navigate(`/admin/forms/${res.data.id}/edit`);
       } else {
         setError(res.message || 'Tạo form thất bại');
@@ -65,13 +66,13 @@ const AdminFormsPage = () => {
     }
   };
 
-  const handleDeleteClick = (id, name, entity) => {
-    setConfirmDelete({ isOpen: true, id, name, entity });
+  const handleDeleteClick = (id, name) => {
+    setConfirmDelete({ isOpen: true, id, name });
   };
 
   const handleConfirmDelete = async () => {
     const { id } = confirmDelete;
-    setConfirmDelete({ isOpen: false, id: null, name: '', entity: '' });
+    setConfirmDelete({ isOpen: false, id: null, name: '' });
     try {
       const res = await formService.delete(id, token);
       if (res.success) {
@@ -101,7 +102,7 @@ const AdminFormsPage = () => {
         title="Xóa form"
         message={`Bạn có chắc chắn muốn xóa form "${confirmDelete.name}"? Các field liên kết cũng sẽ bị xóa.`}
         onConfirm={handleConfirmDelete}
-        onCancel={() => setConfirmDelete({ isOpen: false, id: null, name: '', entity: '' })}
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null, name: '' })}
         confirmText="Xóa"
         type="danger"
       />
@@ -113,7 +114,8 @@ const AdminFormsPage = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {ENTITIES.map(ent => {
-            const existingForm = getFormForEntity(ent.key);
+            const createForm = getFormForEntity(ent.key, 'create');
+            const viewForm = getFormForEntity(ent.key, 'view');
             return (
               <div key={ent.key} className="card bg-base-100 shadow-sm border border-base-300">
                 <div className="card-body">
@@ -126,33 +128,59 @@ const AdminFormsPage = () => {
                       <span className="text-xs text-base-content/50">{ent.key}</span>
                     </div>
                   </div>
-                  <p className="text-sm text-base-content/60">{ent.desc}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    {existingForm ? (
-                      <>
-                        <span className="badge badge-success badge-sm">Đã tạo</span>
-                        <span className="text-xs text-base-content/50">{existingForm.field_count || 0} fields</span>
-                      </>
+                  <p className="text-sm text-base-content/60 mb-3">{ent.desc}</p>
+
+                  {/* Create Form */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <PenLine size={14} className="text-blue-500" />
+                    <span className="text-sm font-medium">Nhập liệu</span>
+                    {createForm ? (
+                      <span className="badge badge-success badge-sm">{createForm.field_count || 0} fields</span>
                     ) : (
                       <span className="badge badge-ghost badge-sm">Chưa tạo</span>
                     )}
                   </div>
-                  <div className="card-actions justify-end mt-4">
-                    {existingForm ? (
+                  <div className="flex items-center gap-2 mb-3">
+                    <Eye size={14} className="text-green-500" />
+                    <span className="text-sm font-medium">Xem / sửa</span>
+                    {viewForm ? (
+                      <span className="badge badge-success badge-sm">{viewForm.field_count || 0} fields</span>
+                    ) : (
+                      <span className="badge badge-ghost badge-sm">Chưa tạo</span>
+                    )}
+                  </div>
+
+                  <div className="card-actions justify-end gap-1 mt-auto">
+                    {createForm ? (
                       <>
-                        <button className="btn btn-primary btn-sm gap-1" onClick={() => navigate(`/admin/forms/${existingForm.id}/edit`)}>
+                        <button className="btn btn-primary btn-sm gap-1" onClick={() => navigate(`/admin/forms/${createForm.id}/edit`)}>
                           <Pencil size={14} />
-                          Chỉnh sửa
+                          Nhập liệu
                         </button>
-                        <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(existingForm.id, existingForm.name, ent.key)}>
+                        <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(createForm.id, createForm.name)}>
                           <Trash2 size={14} />
-                          Xóa
                         </button>
                       </>
                     ) : (
-                      <button className="btn btn-primary btn-sm gap-1" onClick={() => handleCreate(ent.key)}>
+                      <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={() => handleCreate(ent.key, 'create')}>
                         <Plus size={14} />
-                        Tạo form
+                        Nhập liệu
+                      </button>
+                    )}
+                    {viewForm ? (
+                      <>
+                        <button className="btn btn-primary btn-sm gap-1" onClick={() => navigate(`/admin/forms/${viewForm.id}/edit`)}>
+                          <Pencil size={14} />
+                          Xem/sửa
+                        </button>
+                        <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(viewForm.id, viewForm.name)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={() => handleCreate(ent.key, 'view')}>
+                        <Plus size={14} />
+                        Xem/sửa
                       </button>
                     )}
                   </div>

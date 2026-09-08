@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import { Zap, Download, Upload, Plus, Search, RotateCcw } from 'lucide-react';
+import { Zap, Download, Upload, Plus, Search, RotateCcw, X } from 'lucide-react';
 
 const STATIONS_VIEW_ID = 6;
 const STATIONS_FORM_ID = 7;
@@ -349,9 +349,15 @@ const AdminStationsPage = () => {
       {showCreateForm && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-2xl">
-            <h3 className="font-bold text-lg mb-4">Thêm trạm mới</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Thêm trạm mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
+                <X size={18} />
+              </button>
+            </div>
             <DynamicForm
               entity="stations"
+              purpose="create"
               formId={STATIONS_FORM_ID}
               onSubmit={handleCreateSubmit}
             >
@@ -371,6 +377,7 @@ const AdminStationsPage = () => {
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
           viewId={STATIONS_VIEW_ID}
           mode={isSales ? 'view' : popup.mode}
+          allowEdit={!isSales}
           onClose={() => navigate('/admin/stations')}
           onSaved={() => loadStations(pagination.page)}
           onSwitchMode={(newMode) => {

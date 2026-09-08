@@ -49,8 +49,8 @@ Frontend React 18 + React Router v6, sử dụng Leaflet cho bản đồ, cấu 
 
 ### Map (MapPage)
 **Bản đồ tương tác chính:**
-- Leaflet với CARTO light basemap, centered trên Vietnam
-- Hiển thị markers cho stations và proposals
+- Leaflet với dynamic tile provider (cấu hình từ admin/map-config)
+- Hiển thị markers cho stations và proposals (marker clustering)
 - Marker colors theo status:
   - Stations: `ACTIVE` = xanh, `DEPLOYING` = vàng
   - Proposals: `PENDING` = cam, `REVIEWING` = xanh dương, `APPROVED` = xanh lá, `REJECTED` = đỏ
@@ -62,18 +62,30 @@ Frontend React 18 + React Router v6, sử dụng Leaflet cho bản đồ, cấu 
 
 **Workflow:**
 1. User chọn vị trí → tọa độ hiển thị trong blue info box
-2. Dynamic form (form ID 9) render cho `station_proposals`
-3. Submit → tạo proposal qua API
-4. Toast notification thành công
-5. Map refresh qua `key` increment (force remount)
-6. Highlight vị trí mới tạo với flyTo animation 1.5s
+2. Dynamic form render cho `station_proposals` (purpose-based form loading)
+3. **Realtime lat/lng sync**: Khi click bản đồ trong form, lat/lng fields tự động cập nhật realtime
+4. Submit → tạo proposal qua API
+5. Toast notification thành công
+6. Map refresh qua `key` increment (force remount)
+7. Highlight vị trí mới tạo với flyTo animation 1.5s
+8. **Nearby check**: Tự kiểm tra trùng lặp trong bán kính 200m
 
 **Legend:** Floating panel top-left với 6 status colors + labels tiếng Việt
 
+**Tile System:**
+- Fallback tự động: tile URL lỗi → proxy `/tiles/{z}/{x}/{y}`
+- Proxy route trong Vite config (`/tiles` → backend)
+- Không hiển thị warning cho user
+
 ### My Proposals (MyProposalsPage)
 - DynamicTable với view ID 8
+- **Mini map (200px)**: Embedded MapContainer với click-to-select
+  - Click bản đồ → cập nhật lat/lng realtime vào DynamicForm fields
+  - Nearby check 200m tự động khi chọn vị trí
 - Status filter dropdown
 - Phân trang server-side
+- **Export/Import Excel**
+- **DuplicateCheckPanel**: Kiểm tra trùng lặp với bản đồ preview
 - CRUD actions:
   - **View**: Mở RecordDetailPopup (bất kỳ status nào)
   - **Edit**: Chỉ khi status = PENDING
@@ -185,10 +197,13 @@ Frontend React 18 + React Router v6, sử dụng Leaflet cho bản đồ, cấu 
 
 ### DynamicForm (Form Engine)
 - Server-driven: Load config từ API
+- **Purpose-based form loading**: Prop `purpose` tự tìm form theo entity+purpose, fallback formId
 - Default values: `initialData` hoặc field `default_value`
+- **Realtime initialData sync**: `useEffect` theo dõi `initialData` thay đổi → sync vào formData (hỗ trợ realtime lat/lng từ map)
 - Data list integration: Tree-structured option filtering
 - Parent-child cascading: Auto-filter options
 - Formula computation: Auto-compute khi form data thay đổi (mathjs v15.2.0)
+- **Sections layout**: Render `<fieldset>` + `<legend>` từ `layout_config.sections`, fallback flat rows
 - Layout: Configurable colSpan (1-4 columns CSS grid)
 - Validation: Required field validation, inline errors
 - Children slot: Custom action buttons

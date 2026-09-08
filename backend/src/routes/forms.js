@@ -24,6 +24,11 @@ const formController = require('../controllers/formController');
  *           type: string
  *           enum: [active, inactive]
  *       - in: query
+ *         name: purpose
+ *         schema:
+ *           type: string
+ *           enum: [create, view, all]
+ *       - in: query
  *         name: page
  *         schema:
  *           type: integer
@@ -42,6 +47,36 @@ const formController = require('../controllers/formController');
  *         description: Không có quyền Admin
  */
 router.get('/', requireAuth, requireSuperAdmin, formController.getAll);
+
+/**
+ * @swagger
+ * /api/forms/by-entity-purpose:
+ *   get:
+ *     tags: [Forms]
+ *     summary: Lấy form theo entity và purpose (công khai)
+ *     description: Trả về form active có entity và purpose khớp
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, station_proposals, users]
+ *       - in: query
+ *         name: purpose
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [create, view, all]
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Thiếu tham số
+ *       404:
+ *         description: Không tìm thấy form
+ */
+router.get('/by-entity-purpose', formController.getByEntityAndPurpose);
 
 /**
  * @swagger
@@ -91,12 +126,41 @@ router.get('/:id', formController.getById);
  *                 type: string
  *                 enum: [active, inactive]
  *                 default: active
+ *               purpose:
+ *                 type: string
+ *                 enum: [create, view, all]
+ *                 default: all
+ *                 description: Mục đích form: create (nhập liệu), view (xem/sửa), all (cả hai)
  *               layout_config:
  *                 type: object
- *                 description: Layout rows config
+ *                 description: Layout config với sections và rows
  *                 properties:
+ *                   sections:
+ *                     type: array
+ *                     description: Danh sách section (nếu có)
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         title:
+ *                           type: string
+ *                         collapsible:
+ *                           type: boolean
+ *                           default: false
+ *                         rows:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                               columns:
+ *                                 type: string
+ *                                 enum: ['1:1', '1:2', '2:1', '2:2']
  *                   rows:
  *                     type: array
+ *                     description: Rows cũ (backward compatible, không có sections)
  *                     items:
  *                       type: object
  *                       properties:
@@ -147,10 +211,35 @@ router.post('/', requireAuth, requireSuperAdmin, formController.create);
  *                 type: string
  *               status:
  *                 type: string
+ *               purpose:
+ *                 type: string
+ *                 enum: [create, view, all]
+ *                 default: all
  *               layout_config:
  *                 type: object
- *                 description: Layout rows config
+ *                 description: Layout config với sections và rows
  *                 properties:
+ *                   sections:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         title:
+ *                           type: string
+ *                         collapsible:
+ *                           type: boolean
+ *                         rows:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                               columns:
+ *                                 type: string
+ *                                 enum: ['1:1', '1:2', '2:1', '2:2']
  *                   rows:
  *                     type: array
  *                     items:

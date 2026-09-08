@@ -3,9 +3,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import { fieldDefinitionService, formService, formFieldService } from '../../services/api';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
-import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ArrowUpFromLine, ArrowDownToLine, Zap } from 'lucide-react';
+import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownIcon, Layers, Pencil, Check, X, Zap } from 'lucide-react';
 
 const ENTITIES = ['stations', 'station_proposals', 'users'];
+const PURPOSE_OPTIONS = [
+  { value: 'create', label: 'Form nhập liệu' },
+  { value: 'view', label: 'Form xem / sửa' },
+  { value: 'all', label: 'Cả hai (chung)' }
+];
 const COL_OPTIONS = [
   { value: '1:1', label: '1 cột' },
   { value: '1:2', label: '2 cột' }
@@ -20,9 +25,12 @@ const FormBuilder = ({ formId, onSaved }) => {
   const [entity, setEntity] = useState('stations');
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
+  const [formPurpose, setFormPurpose] = useState('all');
   const [availableFields, setAvailableFields] = useState([]);
   const [assignedFields, setAssignedFields] = useState([]);
-  const [layoutConfig, setLayoutConfig] = useState({ rows: [] });
+  const [layoutConfig, setLayoutConfig] = useState({ sections: [], rows: [] });
+  const [editingSectionId, setEditingSectionId] = useState(null);
+  const [editingSectionTitle, setEditingSectionTitle] = useState('');
   const [selectedField, setSelectedField] = useState(null);
   const [previewMode, setPreviewMode] = useState('desktop');
   const [dragOverCell, setDragOverCell] = useState(null);
@@ -41,10 +49,18 @@ const FormBuilder = ({ formId, onSaved }) => {
         setEntity(formRes.data.entity);
         setFormName(formRes.data.name);
         setFormDesc(formRes.data.description || '');
+        setFormPurpose(formRes.data.purpose || 'all');
         if (formRes.data.layout_config) {
-          setLayoutConfig(typeof formRes.data.layout_config === 'string'
+          const lc = typeof formRes.data.layout_config === 'string'
             ? JSON.parse(formRes.data.layout_config)
-            : formRes.data.layout_config);
+            : formRes.data.layout_config;
+          if (!lc.sections) {
+            lc.sections = lc.rows && lc.rows.length > 0
+              ? [{ id: 's1', title: 'Thông tin chung', collapsible: false, rows: lc.rows }]
+              : [];
+            lc.rows = [];
+          }
+          setLayoutConfig(lc);
         }
         const availFields = await loadAvailableFields(formRes.data.entity);
         const fieldsRes = await formFieldService.getByForm(formId);
@@ -98,7 +114,7 @@ const FormBuilder = ({ formId, onSaved }) => {
   const handleEntityChange = (newEntity) => {
     setEntity(newEntity);
     setAssignedFields([]);
-    setLayoutConfig({ rows: [] });
+    setLayoutConfig({ sections: [], rows: [] });
     setSelectedField(null);
     loadAvailableFields(newEntity);
   };
@@ -126,18 +142,29 @@ const FormBuilder = ({ formId, onSaved }) => {
   };
 
   // ===== Layout: Row management =====
-  const addRow = (insertIndex) => {
+  const addRow = (sectionId, insertIndex) => {
     const newId = `r${Date.now()}`;
     setLayoutConfig(prev => {
-      const rows = [...prev.rows];
-      const idx = insertIndex !== undefined ? insertIndex : rows.length;
-      rows.splice(idx, 0, { id: newId, columns: '1:2' });
-      return { ...prev, rows };
+      const sections = [...(prev.sections || [])];
+      const secIdx = sections.findIndex(s => s.id === sectionId);
+      if (secIdx >= 0) {
+        const rows = [...sections[secIdx].rows];
+        const idx = insertIndex !== undefined ? insertIndex : rows.length;
+        rows.splice(idx, 0, { id: newId, columns: '1:2' });
+        sections[secIdx] = { ...sections[secIdx], rows };
+      }
+      return { ...prev, sections };
     });
   };
 
   const removeRow = (rowId) => {
-    setLayoutConfig(prev => ({ ...prev, rows: prev.rows.filter(r => r.id !== rowId) }));
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => ({
+        ...s,
+        rows: s.rows.filter(r => r.id !== rowId)
+      }))
+    }));
     setAssignedFields(prev => prev.map(f => {
       if (f.config?.rowId === rowId) {
         const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
@@ -150,7 +177,10 @@ const FormBuilder = ({ formId, onSaved }) => {
   const updateRowColumns = (rowId, columns) => {
     setLayoutConfig(prev => ({
       ...prev,
-      rows: prev.rows.map(r => r.id === rowId ? { ...r, columns } : r)
+      sections: (prev.sections || []).map(s => ({
+        ...s,
+        rows: s.rows.map(r => r.id === rowId ? { ...r, columns } : r)
+      }))
     }));
     if (columns === '1:1') {
       setAssignedFields(prev => prev.map(f => {
@@ -163,23 +193,29 @@ const FormBuilder = ({ formId, onSaved }) => {
     }
   };
 
-  const moveRow = (rowId, direction) => {
+  const moveRow = (rowId, direction, sectionId) => {
     setLayoutConfig(prev => {
-      const rows = [...prev.rows];
+      const sections = [...(prev.sections || [])];
+      const secIdx = sections.findIndex(s => s.id === sectionId);
+      if (secIdx < 0) return prev;
+      const rows = [...sections[secIdx].rows];
       const idx = rows.findIndex(r => r.id === rowId);
       if (idx < 0) return prev;
       const newIdx = direction === 'up' ? idx - 1 : idx + 1;
       if (newIdx < 0 || newIdx >= rows.length) return prev;
       [rows[idx], rows[newIdx]] = [rows[newIdx], rows[idx]];
-      return { ...prev, rows };
+      sections[secIdx] = { ...sections[secIdx], rows };
+      return { ...prev, sections };
     });
   };
 
   // ===== Field <-> Cell assignment =====
   const assignFieldToCell = (fieldId, rowId, colIndex) => {
+    const allRows = getAllRows();
+    const rowIdx = allRows.findIndex(r => r.id === rowId);
     setAssignedFields(prev => prev.map(f => {
       if (f.fieldId === fieldId) {
-        return { ...f, config: { ...f.config, rowId, rowIndex: layoutConfig.rows.findIndex(r => r.id === rowId), colIndex } };
+        return { ...f, config: { ...f.config, rowId, rowIndex: rowIdx, colIndex } };
       }
       if (f.config?.rowId === rowId && f.config?.colIndex === colIndex && f.fieldId !== fieldId) {
         const { rowId: _a, rowIndex: _b, colIndex: _c, ...rest } = f.config;
@@ -206,6 +242,14 @@ const FormBuilder = ({ formId, onSaved }) => {
     return assignedFields.find(f => f.config?.rowId === rowId && f.config?.colIndex === colIndex);
   };
 
+  const getAllRows = () => {
+    const allRows = [];
+    (layoutConfig.sections || []).forEach(sec => {
+      sec.rows.forEach(r => allRows.push({ ...r, sectionId: sec.id }));
+    });
+    return allRows;
+  };
+
   // ===== Drag & Drop: Fields =====
   const handleFieldDragStart = (e, fieldId) => {
     e.dataTransfer.setData('fieldId', String(fieldId));
@@ -229,9 +273,11 @@ const FormBuilder = ({ formId, onSaved }) => {
     if (!isAlreadyAssigned) {
       const field = availableFields.find(f => f.id === fieldId);
       if (field) {
+        const allRows = getAllRows();
+        const rowIdx = allRows.findIndex(r => r.id === rowId);
         setAssignedFields(prev => [...prev, {
           fieldId: field.id, label: field.label, key: field.key, type: field.type,
-          orderIndex: prev.length, visible: true, config: { rowId, rowIndex: layoutConfig.rows.findIndex(r => r.id === rowId), colIndex }
+          orderIndex: prev.length, visible: true, config: { rowId, rowIndex: rowIdx, colIndex }
         }]);
         return;
       }
@@ -265,25 +311,81 @@ const FormBuilder = ({ formId, onSaved }) => {
     setDragOverCell(null);
   };
 
-  const handleRowDrop = (e, targetRowId) => {
+  const handleRowDrop = (e, targetRowId, sectionId) => {
     e.preventDefault();
     setDragOverRow(null);
     setDraggedRowId(null);
     const sourceRowId = e.dataTransfer.getData('rowId');
     if (!sourceRowId || sourceRowId === targetRowId) return;
     setLayoutConfig(prev => {
-      const rows = [...prev.rows];
+      const sections = [...(prev.sections || [])];
+      const secIdx = sections.findIndex(s => s.id === sectionId);
+      if (secIdx < 0) return prev;
+      const rows = [...sections[secIdx].rows];
       const srcIdx = rows.findIndex(r => r.id === sourceRowId);
       const tgtIdx = rows.findIndex(r => r.id === targetRowId);
       if (srcIdx < 0 || tgtIdx < 0) return prev;
       const [moved] = rows.splice(srcIdx, 1);
       rows.splice(tgtIdx, 0, moved);
-      return { ...prev, rows };
+      sections[secIdx] = { ...sections[secIdx], rows };
+      return { ...prev, sections };
     });
   };
 
   const handleRowDragLeave = () => {
     setDragOverRow(null);
+  };
+
+  // ===== Section management =====
+  const addSection = () => {
+    const newId = `s${Date.now()}`;
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || []), { id: newId, title: `Section ${prev.sections.length + 1}`, collapsible: false, rows: [] }];
+      return { ...prev, sections };
+    });
+    setActiveSectionId(newId);
+  };
+
+  const removeSection = (sectionId) => {
+    setLayoutConfig(prev => {
+      const sections = (prev.sections || []).filter(s => s.id !== sectionId);
+      return { ...prev, sections };
+    });
+    setAssignedFields(prev => prev.map(f => {
+      const section = (layoutConfig.sections || []).find(s => s.id === sectionId);
+      if (section && section.rows.some(r => r.id === f.config?.rowId)) {
+        const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
+        return { ...f, config: rest };
+      }
+      return f;
+    }));
+  };
+
+  const updateSectionTitle = (sectionId, title) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? { ...s, title } : s)
+    }));
+  };
+
+  const toggleSectionCollapsible = (sectionId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? { ...s, collapsible: !s.collapsible } : s)
+    }));
+  };
+
+  const startEditSectionTitle = (section) => {
+    setEditingSectionId(section.id);
+    setEditingSectionTitle(section.title);
+  };
+
+  const saveEditSectionTitle = () => {
+    if (editingSectionId && editingSectionTitle.trim()) {
+      updateSectionTitle(editingSectionId, editingSectionTitle.trim());
+    }
+    setEditingSectionId(null);
+    setEditingSectionTitle('');
   };
 
   // ===== Conditions =====
@@ -332,9 +434,9 @@ const FormBuilder = ({ formId, onSaved }) => {
     try {
       let res;
       if (formId) {
-        res = await formService.update(formId, { entity, name: formName, description: formDesc, layout_config: layoutConfig }, token);
+        res = await formService.update(formId, { entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutConfig }, token);
       } else {
-        res = await formService.create({ entity, name: formName, description: formDesc, layout_config: layoutConfig }, token);
+        res = await formService.create({ entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutConfig }, token);
       }
       if (!res.success) { setError(res.message || 'Lỗi lưu form'); setSaving(false); return; }
       const savedFormId = formId || res.data.id;
@@ -389,6 +491,12 @@ const FormBuilder = ({ formId, onSaved }) => {
             <label>Tên form *</label>
             <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="VD: Form tạo trạm" />
           </div>
+          <div className="form-group">
+            <label>Mục đích</label>
+            <select value={formPurpose} onChange={(e) => setFormPurpose(e.target.value)}>
+              {PURPOSE_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </div>
         </div>
         <div className="form-group">
           <label>Mô tả</label>
@@ -405,7 +513,9 @@ const FormBuilder = ({ formId, onSaved }) => {
       <div className="builder-layout">
         {/* Left: Preview with inline layout controls */}
         <div className="builder-panel flex-[2]">
-          <div className="builder-panel-header">Form Preview</div>
+          <div className="builder-panel-header">
+            <span>Form Preview</span>
+          </div>
           <div className="builder-panel-body">
             <div
               className={`preview-container ${previewMode === 'mobile' ? 'mobile-mode' : ''}`}
@@ -417,177 +527,318 @@ const FormBuilder = ({ formId, onSaved }) => {
                 padding: previewMode === 'mobile' ? '16px' : '0'
               }}
             >
-              {layoutConfig.rows.length === 0 && (
-                <div
-                  className="builder-empty mb-3"
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
-                    if (!fieldId) return;
-                    const field = availableFields.find(f => f.id === fieldId);
-                    if (!field) return;
-                    const newId = `r${Date.now()}`;
-                    setLayoutConfig({ rows: [{ id: newId, columns: '1:1' }] });
-                    setTimeout(() => {
-                      setAssignedFields(prev => [...prev, {
-                        fieldId: field.id, label: field.label, key: field.key, type: field.type,
-                        orderIndex: 0, visible: true, config: { rowId: newId, rowIndex: 0, colIndex: 0 }
-                      }]);
-                    }, 0);
-                  }}
-                >
-                  Kéo field vào đây để tạo hàng mới
+              {/* Empty state */}
+              {(layoutConfig.sections || []).length === 0 && (
+                <div className="builder-empty mb-3">
+                  <p className="text-sm text-gray-500 mb-2">Chưa có section nào. Bấm nút bên dưới để thêm section đầu tiên.</p>
+                  <button className="btn btn-primary btn-sm gap-1" onClick={addSection}>
+                    <Plus size={14} /> Thêm section
+                  </button>
                 </div>
               )}
 
-              {layoutConfig.rows.map((row, rowIdx) => {
-                const desktopCols = parseInt(row.columns.split(':')[1]);
-                const isStacked = previewMode === 'mobile' && desktopCols > 1;
-                return (
-                  <div key={row.id}>
-                    {/* Insert row zone (between rows) */}
-                    <div
-                      className={`insert-row-zone ${dragOverRow === `before-${row.id}` ? 'drag-over' : ''}`}
-                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`before-${row.id}`); }}
-                      onDragLeave={handleRowDragLeave}
-                      onDrop={(e) => {
-                        e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
-                        const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
-                        if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
-                          const field = availableFields.find(f => f.id === fieldId);
-                          if (field) {
-                            const newId = `r${Date.now()}`;
-                            setLayoutConfig(prev => {
-                              const rows = [...prev.rows];
-                              rows.splice(rowIdx, 0, { id: newId, columns: '1:1' });
-                              return { ...prev, rows };
-                            });
-                            setTimeout(() => {
-                              setAssignedFields(prev => [...prev, {
-                                fieldId: field.id, label: field.label, key: field.key, type: field.type,
-                                orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: rowIdx, colIndex: 0 }
-                              }]);
-                            }, 0);
-                            return;
-                          }
-                        }
-                        addRow(rowIdx);
-                      }}
-                    >
-                      <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => addRow(rowIdx)}>
-                        <Plus size={12} /> Thêm hàng
-                      </button>
-                    </div>
-
-                    {/* Row container */}
-                    <div
-                      className={`preview-row ${dragOverRow === row.id ? 'row-drag-over' : ''}`}
-                      onDragOver={(e) => handleRowDragOver(e, row.id)}
-                      onDragLeave={handleRowDragLeave}
-                      onDrop={(e) => handleRowDrop(e, row.id)}
-                    >
-                      {/* Row header with controls */}
-                      <div className="row-header">
-                        <div
-                          className="row-drag-handle"
-                          draggable
-                          onDragStart={(e) => handleRowDragStart(e, row.id)}
-                          onDragEnd={() => setDraggedRowId(null)}
-                        >
-                          <GripVertical size={14} />
-                        </div>
-                        <span className="row-label text-xs text-gray-500">Hàng {rowIdx + 1}</span>
-                        <select
-                          className="select select-bordered select-xs w-auto ml-1"
-                          value={row.columns}
-                          onChange={(e) => updateRowColumns(row.id, e.target.value)}
-                        >
-                          {COL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                        <div className="row-actions ml-auto flex gap-0.5">
-                          <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'up')} disabled={rowIdx === 0} title="Lên">
-                            <ChevronUp size={14} />
-                          </button>
-                          <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'down')} disabled={rowIdx === layoutConfig.rows.length - 1} title="Xuống">
-                            <ChevronDown size={14} />
-                          </button>
-                          <button className="btn btn-xs btn-ghost text-error" onClick={() => removeRow(row.id)} title="Xóa hàng">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Row cells */}
-                      <div className={`form-row ${isStacked ? 'form-row-stacked' : ''}`} data-cols={row.columns}>
-                        {Array.from({ length: desktopCols }).map((_, colIdx) => {
-                          const cellField = getCellField(row.id, colIdx);
-                          const cellKey = `${row.id}-${colIdx}`;
-                          const isOver = dragOverCell === cellKey;
-                          return (
-                            <div
-                              key={colIdx}
-                              className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''}`}
-                              onDragOver={(e) => handleDragOver(e, row.id, colIdx)}
-                              onDragLeave={handleDragLeave}
-                              onDrop={(e) => handleDrop(e, row.id, colIdx)}
-                            >
-                              {cellField ? (
-                                <div
-                                  className="field-assigned"
-                                  draggable
-                                  onDragStart={(e) => handleFieldDragStart(e, cellField.fieldId)}
-                                  onClick={() => setSelectedField(cellField)}
-                                >
-                                  <GripVertical size={12} className="opacity-40 cursor-grab" />
-                                  <div className="flex-1 min-w-0">
-                                    <span className="field-assigned-label">{cellField.label}</span>
-                                    <span className="field-assigned-type">{cellField.type}</span>
-                                  </div>
-                                  <button className="btn btn-xs btn-ghost text-error" onClick={(e) => { e.stopPropagation(); removeFieldFromCell(row.id, colIdx); }}>
-                                    <Trash2 size={12} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="drop-hint">Kéo field vào đây</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Insert row zone after last row */}
-              {layoutConfig.rows.length > 0 && (
-                <div
-                  className={`insert-row-zone ${dragOverRow === 'after-last' ? 'drag-over' : ''}`}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow('after-last'); }}
-                  onDragLeave={handleRowDragLeave}
-                  onDrop={(e) => {
-                    e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
-                    const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
-                    if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
-                      const field = availableFields.find(f => f.id === fieldId);
-                      if (field) {
-                        const newId = `r${Date.now()}`;
-                        setLayoutConfig(prev => ({ ...prev, rows: [...prev.rows, { id: newId, columns: '1:1' }] }));
-                        setTimeout(() => {
-                          setAssignedFields(prev => [...prev, {
-                            fieldId: field.id, label: field.label, key: field.key, type: field.type,
-                            orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: layoutConfig.rows.length, colIndex: 0 }
-                          }]);
-                        }, 0);
-                        return;
-                      }
-                    }
-                    addRow();
+              {/* Render each section as a block */}
+              {(layoutConfig.sections || []).map((section, secIdx) => (
+                <div key={section.id} className="section-block" style={{
+                  border: '1px solid #d1d5db',
+                  borderRadius: 8,
+                  marginBottom: 12,
+                  background: '#fafbfc'
+                }}>
+                  {/* Section header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 10px',
+                    borderBottom: section.rows.length > 0 ? '1px solid #e5e7eb' : 'none',
+                    background: '#f3f4f6',
+                    borderRadius: section.rows.length > 0 ? '8px 8px 0 0' : 8,
+                    cursor: 'grab'
                   }}
-                >
-                  <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => addRow()}>
-                    <Plus size={12} /> Thêm hàng
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('sectionId', section.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                  >
+                    <GripVertical size={14} className="text-gray-400" />
+                    {editingSectionId === section.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <input
+                          value={editingSectionTitle}
+                          onChange={(e) => setEditingSectionTitle(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditSectionTitle(); if (e.key === 'Escape') setEditingSectionId(null); }}
+                          autoFocus
+                          style={{ fontSize: 13, padding: '2px 6px', flex: 1, border: '1px solid #6366f1', borderRadius: 4 }}
+                        />
+                        <button className="btn btn-xs btn-ghost" onClick={saveEditSectionTitle}><Check size={12} /></button>
+                        <button className="btn btn-xs btn-ghost" onClick={() => setEditingSectionId(null)}><X size={12} /></button>
+                      </div>
+                    ) : (
+                      <span
+                        style={{ fontWeight: 600, fontSize: 13, flex: 1, cursor: 'text' }}
+                        onDoubleClick={() => startEditSectionTitle(section)}
+                        title="Double-click để sửa tên"
+                      >
+                        {section.title}
+                      </span>
+                    )}
+                    <button
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => toggleSectionCollapsible(section.id)}
+                      title={section.collapsible ? 'Thu gọn được' : 'Cố định'}
+                      style={{ padding: '0 4px' }}
+                    >
+                      {section.collapsible ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </button>
+                    <button className="btn btn-xs btn-ghost text-error" onClick={() => removeSection(section.id)} title="Xóa section">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+
+                  {/* Section body: rows */}
+                  <div style={{ padding: section.rows.length > 0 ? '8px' : '0', minHeight: section.rows.length === 0 ? 40 : 'auto' }}>
+                    {section.rows.length === 0 && (
+                      <div
+                        style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                          if (!fieldId) return;
+                          const field = availableFields.find(f => f.id === fieldId);
+                          if (!field) return;
+                          const newRowId = `r${Date.now()}`;
+                          setLayoutConfig(prev => {
+                            const sections = [...(prev.sections || [])];
+                            const si = sections.findIndex(s => s.id === section.id);
+                            if (si >= 0) {
+                              sections[si] = { ...sections[si], rows: [{ id: newRowId, columns: '1:1' }] };
+                            }
+                            return { ...prev, sections };
+                          });
+                          setTimeout(() => {
+                            setAssignedFields(prev => [...prev, {
+                              fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                              orderIndex: 0, visible: true, config: { rowId: newRowId, rowIndex: 0, colIndex: 0 }
+                            }]);
+                          }, 0);
+                        }}
+                      >
+                        Kéo field vào đây
+                      </div>
+                    )}
+
+                    {section.rows.map((row, rowIdx) => {
+                      const desktopCols = parseInt(row.columns.split(':')[1]);
+                      const isStacked = previewMode === 'mobile' && desktopCols > 1;
+                      return (
+                        <div key={row.id}>
+                          {/* Insert row zone */}
+                          <div
+                            className={`insert-row-zone ${dragOverRow === `before-${row.id}` ? 'drag-over' : ''}`}
+                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`before-${row.id}`); }}
+                            onDragLeave={handleRowDragLeave}
+                            onDrop={(e) => {
+                              e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
+                              const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                              if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
+                                const field = availableFields.find(f => f.id === fieldId);
+                                if (field) {
+                                  const newId = `r${Date.now()}`;
+                                  setLayoutConfig(prev => {
+                                    const sections = [...(prev.sections || [])];
+                                    const si = sections.findIndex(s => s.id === section.id);
+                                    if (si >= 0) {
+                                      const rows = [...sections[si].rows];
+                                      rows.splice(rowIdx, 0, { id: newId, columns: '1:1' });
+                                      sections[si] = { ...sections[si], rows };
+                                    }
+                                    return { ...prev, sections };
+                                  });
+                                  setTimeout(() => {
+                                    setAssignedFields(prev => [...prev, {
+                                      fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                                      orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: rowIdx, colIndex: 0 }
+                                    }]);
+                                  }, 0);
+                                  return;
+                                }
+                              }
+                              const sec = (layoutConfig.sections || []).find(s => s.id === section.id);
+                              if (sec) {
+                                setLayoutConfig(prev => {
+                                  const sections = [...(prev.sections || [])];
+                                  const si = sections.findIndex(s => s.id === section.id);
+                                  if (si >= 0) {
+                                    const rows = [...sections[si].rows];
+                                    rows.splice(rowIdx, 0, { id: newId || `r${Date.now()}`, columns: '1:2' });
+                                    sections[si] = { ...sections[si], rows };
+                                  }
+                                  return { ...prev, sections };
+                                });
+                              }
+                            }}
+                          >
+                            <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => {
+                              const newId = `r${Date.now()}`;
+                              setLayoutConfig(prev => {
+                                const sections = [...(prev.sections || [])];
+                                const si = sections.findIndex(s => s.id === section.id);
+                                if (si >= 0) {
+                                  const rows = [...sections[si].rows];
+                                  rows.splice(rowIdx, 0, { id: newId, columns: '1:2' });
+                                  sections[si] = { ...sections[si], rows };
+                                }
+                                return { ...prev, sections };
+                              });
+                            }}>
+                              <Plus size={12} /> Thêm hàng
+                            </button>
+                          </div>
+
+                          {/* Row container */}
+                          <div
+                            className={`preview-row ${dragOverRow === row.id ? 'row-drag-over' : ''}`}
+                            onDragOver={(e) => handleRowDragOver(e, row.id)}
+                            onDragLeave={handleRowDragLeave}
+                            onDrop={(e) => handleRowDrop(e, row.id, section.id)}
+                          >
+                            <div className="row-header">
+                              <div
+                                className="row-drag-handle"
+                                draggable
+                                onDragStart={(e) => handleRowDragStart(e, row.id)}
+                                onDragEnd={() => setDraggedRowId(null)}
+                              >
+                                <GripVertical size={14} />
+                              </div>
+                              <span className="row-label text-xs text-gray-500">Hàng {rowIdx + 1}</span>
+                              <select
+                                className="select select-bordered select-xs w-auto ml-1"
+                                value={row.columns}
+                                onChange={(e) => updateRowColumns(row.id, e.target.value)}
+                              >
+                                {COL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                              </select>
+                              <div className="row-actions ml-auto flex gap-0.5">
+                                <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'up', section.id)} disabled={rowIdx === 0} title="Lên">
+                                  <ChevronUp size={14} />
+                                </button>
+                                <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'down', section.id)} disabled={rowIdx === section.rows.length - 1} title="Xuống">
+                                  <ChevronDown size={14} />
+                                </button>
+                                <button className="btn btn-xs btn-ghost text-error" onClick={() => removeRow(row.id)} title="Xóa hàng">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Row cells */}
+                            <div className={`form-row ${isStacked ? 'form-row-stacked' : ''}`} data-cols={row.columns}>
+                              {Array.from({ length: desktopCols }).map((_, colIdx) => {
+                                const cellField = getCellField(row.id, colIdx);
+                                const cellKey = `${row.id}-${colIdx}`;
+                                const isOver = dragOverCell === cellKey;
+                                return (
+                                  <div
+                                    key={colIdx}
+                                    className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''}`}
+                                    onDragOver={(e) => handleDragOver(e, row.id, colIdx)}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={(e) => handleDrop(e, row.id, colIdx)}
+                                  >
+                                    {cellField ? (
+                                      <div
+                                        className="field-assigned"
+                                        draggable
+                                        onDragStart={(e) => handleFieldDragStart(e, cellField.fieldId)}
+                                        onClick={() => setSelectedField(cellField)}
+                                      >
+                                        <GripVertical size={12} className="opacity-40 cursor-grab" />
+                                        <div className="flex-1 min-w-0">
+                                          <span className="field-assigned-label">{cellField.label}</span>
+                                          <span className="field-assigned-type">{cellField.type}</span>
+                                        </div>
+                                        <button className="btn btn-xs btn-ghost text-error" onClick={(e) => { e.stopPropagation(); removeFieldFromCell(row.id, colIdx); }}>
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="drop-hint">Kéo field vào đây</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Insert row zone after last row in section */}
+                    {section.rows.length > 0 && (
+                      <div
+                        className={`insert-row-zone ${dragOverRow === `after-last-${section.id}` ? 'drag-over' : ''}`}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`after-last-${section.id}`); }}
+                        onDragLeave={handleRowDragLeave}
+                        onDrop={(e) => {
+                          e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
+                          const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                          const newId = `r${Date.now()}`;
+                          if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
+                            const field = availableFields.find(f => f.id === fieldId);
+                            if (field) {
+                              setLayoutConfig(prev => {
+                                const sections = [...(prev.sections || [])];
+                                const si = sections.findIndex(s => s.id === section.id);
+                                if (si >= 0) {
+                                  sections[si] = { ...sections[si], rows: [...sections[si].rows, { id: newId, columns: '1:1' }] };
+                                }
+                                return { ...prev, sections };
+                              });
+                              setTimeout(() => {
+                                setAssignedFields(prev => [...prev, {
+                                  fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                                  orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: section.rows.length, colIndex: 0 }
+                                }]);
+                              }, 0);
+                              return;
+                            }
+                          }
+                          setLayoutConfig(prev => {
+                            const sections = [...(prev.sections || [])];
+                            const si = sections.findIndex(s => s.id === section.id);
+                            if (si >= 0) {
+                              sections[si] = { ...sections[si], rows: [...sections[si].rows, { id: newId, columns: '1:2' }] };
+                            }
+                            return { ...prev, sections };
+                          });
+                        }}
+                      >
+                        <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => {
+                          const newId = `r${Date.now()}`;
+                          setLayoutConfig(prev => {
+                            const sections = [...(prev.sections || [])];
+                            const si = sections.findIndex(s => s.id === section.id);
+                            if (si >= 0) {
+                              sections[si] = { ...sections[si], rows: [...sections[si].rows, { id: newId, columns: '1:2' }] };
+                            }
+                            return { ...prev, sections };
+                          });
+                        }}>
+                          <Plus size={12} /> Thêm hàng
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Add section button at bottom */}
+              {(layoutConfig.sections || []).length > 0 && (
+                <div style={{ textAlign: 'center', margin: '8px 0' }}>
+                  <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={addSection}>
+                    <Plus size={14} /> Thêm section
                   </button>
                 </div>
               )}
@@ -595,7 +846,7 @@ const FormBuilder = ({ formId, onSaved }) => {
               {/* Unassigned fields */}
               {unassignedFields.length > 0 && (
                 <div className="unassigned-section mt-3">
-                  <div className="unassigned-label text-xs text-gray-500 mb-1">Fields chưa xếp vào layout:</div>
+                  <div className="unassigned-label text-xs text-gray-500 mb-1">Fields chưa xếp vào section:</div>
                   <div className="flex flex-wrap gap-1.5">
                     {unassignedFields.map(field => (
                       <div key={field.fieldId} className="field-chip" draggable

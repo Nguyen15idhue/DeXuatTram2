@@ -478,7 +478,6 @@ const MapView = ({
   const [resolvedTileUrl, setResolvedTileUrl] = useState(PROXY_TILE);
   const [resolvedAttribution, setResolvedAttribution] = useState(OSM_ATTRIBUTION);
   const [resolvedSubdomains, setResolvedSubdomains] = useState('');
-  const [tileWarning, setTileWarning] = useState('');
   const mountedRef = useRef(true);
 
   const [config, setConfig] = useState({
@@ -562,22 +561,13 @@ const MapView = ({
     return fallback;
   }, []);
 
-  const applyFallback = useCallback((message) => {
-    setResolvedTileUrl(PROXY_TILE);
-    setResolvedAttribution(OSM_ATTRIBUTION);
-    setResolvedSubdomains('');
-    setTileWarning(message);
-  }, []);
-
   const handleTileError = useCallback(() => {
     setResolvedTileUrl(prev => {
       if (prev !== PROXY_TILE) {
         setResolvedAttribution(OSM_ATTRIBUTION);
         setResolvedSubdomains('');
-        setTileWarning('Tile server trực tiếp không truy cập được, đang dùng proxy.');
         return PROXY_TILE;
       }
-      setTileWarning('Tile server lỗi, proxy cũng không truy cập được.');
       return prev;
     });
   }, []);
@@ -611,7 +601,7 @@ const MapView = ({
           setResolvedTileUrl(tile.url);
           setResolvedAttribution(tile.attribution);
           setResolvedSubdomains(tile.subdomains);
-          setTileWarning(tile.warning || '');
+
 
           setConfig(prev => ({
             ...prev,
@@ -640,7 +630,6 @@ const MapView = ({
     setResolvedTileUrl(tile.url);
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
-    setTileWarning(tile.warning || '');
   }, [activeLayerIdx, config.tile_provider_id, config.api_key, buildTileUrl]);
 
   useEffect(() => {
@@ -649,6 +638,7 @@ const MapView = ({
 
   const handleMyLocation = useCallback((openForm = false) => {
     if (!navigator.geolocation) {
+      console.error('[MapView] navigator.geolocation is not available');
       alert('Trình duyệt không hỗ trợ định vị');
       return;
     }
@@ -667,6 +657,7 @@ const MapView = ({
       (error) => {
         if (!mountedRef.current) return;
         setLocationLoading(false);
+        console.error('[MapView] Geolocation error:', error.code, error.message);
         let msg = 'Không thể lấy vị trí';
         if (error.code === 1) msg = 'Bạn đã từ chối quyền truy cập vị trí';
         else if (error.code === 2) msg = 'Không xác định được vị trí';
@@ -730,14 +721,6 @@ const MapView = ({
           subdomains={resolvedSubdomains}
           onTileError={handleTileError}
         />
-
-        {tileWarning && (
-          <div className="alert alert-warning text-xs shadow-lg"
-            style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, maxWidth: '90%' }}>
-            <span>{tileWarning}</span>
-            <button type="button" className="btn btn-xs btn-ghost" onClick={() => setTileWarning('')}>✕</button>
-          </div>
-        )}
 
         <MapEventsHandler
           selectingLocation={selectingLocation}

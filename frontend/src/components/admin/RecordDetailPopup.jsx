@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { dynamicService, stationService, adminUserService, adminProposalService } from '../../services/api';
+import { dynamicService, formService, stationService, adminUserService, adminProposalService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
@@ -20,7 +20,7 @@ const ENTITY_SERVICES = {
 
 const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8 };
 
-const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode }) => {
+const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,6 +31,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [record, setRecord] = useState(recordProp || null);
   const [mode, setMode] = useState(modeProp || 'view');
   const [formData, setFormData] = useState({});
+  const [formConfig, setFormConfig] = useState(null);
   const dataListOptions = useDataListMap([...viewFields, ...allFields].map(f => f.data_list_id));
 
   useEffect(() => {
@@ -83,6 +84,22 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         setViewFields(vf);
         setAllFields(af);
         initFormData(af);
+      }
+      try {
+        const formRes = await formService.getByEntityAndPurpose(entity, 'view');
+        if (formRes.success && formRes.data) {
+          const lc = formRes.data.layout_config
+            ? (typeof formRes.data.layout_config === 'string' ? JSON.parse(formRes.data.layout_config) : formRes.data.layout_config)
+            : null;
+          const fullFormRes = await formService.getById(formRes.data.id);
+          setFormConfig({
+            ...formRes.data,
+            layout_config: lc,
+            fields: fullFormRes.success ? fullFormRes.data.fields : []
+          });
+        }
+      } catch {
+        // no view form configured, fallback to main/other
       }
     } catch {
       // silent
@@ -214,6 +231,37 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const mainFields = viewFields.filter(f => f.visible);
   const otherFields = allFields.filter(f => !viewFieldKeys.includes(f.key));
 
+  const getLayoutSections = () => {
+    if (!formConfig?.layout_config?.sections) return null;
+    const sections = formConfig.layout_config.sections;
+    const fieldsAll = [...viewFields, ...otherFields];
+    const fieldsByKey = {};
+    fieldsAll.forEach(f => { fieldsByKey[f.field_key || f.key] = f; });
+    return sections.map(sec => {
+      const sectionFields = [];
+      (sec.rows || []).forEach(row => {
+        const cols = parseInt((row.columns || '1:1').split(':')[1]);
+        Array.from({ length: cols }).forEach((_, ci) => {
+          const cellKey = `${row.id}-${ci}`;
+          const ff = (formConfig.fields || []).find(f => {
+            const cfg = f.config ? (typeof f.config === 'string' ? (() => { try { return JSON.parse(f.config); } catch { return null; } })() : f.config) : null;
+            return cfg && cfg.rowId === row.id && cfg.colIndex === ci;
+          });
+          if (ff) {
+            const fieldKey = ff.key || ff.field_key;
+            const matched = fieldsByKey[fieldKey];
+            if (matched && !sectionFields.find(f => (f.field_key || f.key) === fieldKey)) {
+              sectionFields.push(matched);
+            }
+          }
+        });
+      });
+      return { ...sec, fields: sectionFields };
+    }).filter(sec => sec.fields.length > 0);
+  };
+
+  const sections = getLayoutSections();
+
   if (loading) return (
     <div className="modal-overlay" onClick={handleClose}>
       <div className="legacy-modal legacy-modal-lg" onClick={e => e.stopPropagation()}>
@@ -277,14 +325,50 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         {error && <div className="error-message">{error}</div>}
 
         <div className="popup-body">
-          {mainFields.length > 0 && renderFieldSection(mainFields, 'Thông tin chính')}
-          {otherFields.length > 0 && renderFieldSection(otherFields, 'Thông tin khác')}
+          {sections && sections.length > 0 ? (
+            sections.map(sec => (
+              <div key={sec.id} className="popup-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+                {sec.title && <h3 className="popup-section-title" style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{sec.title}</h3>}
+                <div className="popup-fields">
+                  {sec.fields.map(field => {
+                    const key = field.field_key || field.key;
+                    const label = field.field_label || field.label;
+                    const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
+                    return (
+                      <div key={key} className="popup-field-row">
+                        <span className="popup-field-label">{label}</span>
+                        <span className="popup-field-value">
+                          {mode === 'edit' ? (
+                            <DynamicField
+                              field={{ ...field, options: resolveFieldOptions(field) }}
+                              value={value}
+                              onChange={(val) => handleFieldChange(key, val)}
+                              entityId={record.id}
+                              entityType={entity}
+                              allFields={allFields}
+                            />
+                          ) : (
+                            <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          ) : (
+            <>
+              {mainFields.length > 0 && renderFieldSection(mainFields, 'Thông tin chính')}
+              {otherFields.length > 0 && renderFieldSection(otherFields, 'Thông tin khác')}
+            </>
+          )}
         </div>
 
         <div className="popup-footer">
           {mode === 'view' ? (
             <>
-              <button className="btn btn-primary" onClick={() => handleSwitchMode('edit')}>Sửa</button>
+              {allowEdit && <button className="btn btn-primary" onClick={() => handleSwitchMode('edit')}>Sửa</button>}
               <button className="btn btn-secondary" onClick={handleClose}>Đóng</button>
             </>
           ) : (

@@ -14,7 +14,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import 'leaflet/dist/leaflet.css';
-import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw } from 'lucide-react';
+import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X } from 'lucide-react';
 
 const markerIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -368,7 +368,12 @@ const MyProposalsPage = () => {
       {showCreateForm && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-2xl">
-            <h3 className="font-bold text-lg mb-4">Tạo đề xuất mới</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Tạo đề xuất mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
+                <X size={18} />
+              </button>
+            </div>
             <div className="border border-base-300 rounded-lg p-3 mb-4">
               <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
               <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
@@ -388,6 +393,7 @@ const MyProposalsPage = () => {
             </div>
             <DynamicForm
               entity="station_proposals"
+              purpose="create"
               formId={PROPOSALS_FORM_ID}
               onSubmit={handleCreateProposal}
               initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}

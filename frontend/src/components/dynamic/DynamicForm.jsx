@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { dynamicService, dataListService, fieldDefinitionService } from '../../services/api';
+import { dynamicService, dataListService, fieldDefinitionService, formService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
 import { formatNumber } from '../../utils/formatNumber';
@@ -42,7 +42,7 @@ const customFunctions = {
 };
 math.import(customFunctions, { override: false });
 
-const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {} }) => {
+const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {} }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -52,15 +52,38 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [dataListOptions, setDataListOptions] = useState({});
+  const [resolvedFormId, setResolvedFormId] = useState(null);
 
   useEffect(() => {
-    if (formId) loadFormConfig();
-  }, [entity, formId]);
+    if (purpose) {
+      resolveFormId();
+    } else if (formIdProp) {
+      setResolvedFormId(formIdProp);
+    }
+  }, [entity, formIdProp, purpose]);
+
+  const resolveFormId = async () => {
+    try {
+      setLoading(true);
+      const res = await formService.getByEntityAndPurpose(entity, purpose);
+      if (res.success && res.data) {
+        setResolvedFormId(res.data.id);
+      } else {
+        setResolvedFormId(formIdProp || null);
+      }
+    } catch {
+      setResolvedFormId(formIdProp || null);
+    }
+  };
+
+  useEffect(() => {
+    if (resolvedFormId) loadFormConfig();
+  }, [resolvedFormId]);
 
   const loadFormConfig = async () => {
     try {
       setLoading(true);
-      const res = await dynamicService.getFormConfig(entity, formId);
+      const res = await dynamicService.getFormConfig(entity, resolvedFormId);
       if (res.success) {
         setFormConfig(res.data.form);
         const fieldList = (res.data.fields || []).map(f => {
@@ -148,6 +171,21 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
     };
     loadAll();
   }, [entity, fields, token]);
+
+  useEffect(() => {
+    if (!initialData || fields.length === 0) return;
+    setFormData(prev => {
+      let changed = false;
+      const next = { ...prev };
+      fields.forEach(f => {
+        if (initialData[f.key] !== undefined && initialData[f.key] !== null && initialData[f.key] !== prev[f.key]) {
+          next[f.key] = initialData[f.key];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [initialData, fields]);
 
   const handleChange = useCallback((key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -424,7 +462,8 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
   const layoutConfig = formConfig?.layout_config
     ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
     : null;
-  const hasLayout = layoutConfig && layoutConfig.rows && layoutConfig.rows.length > 0;
+  const hasSections = layoutConfig && layoutConfig.sections && layoutConfig.sections.length > 0;
+  const hasLayout = hasSections || (layoutConfig && layoutConfig.rows && layoutConfig.rows.length > 0);
 
   const fieldsByKey = {};
   fields.forEach(f => { fieldsByKey[f.key] = f; });
@@ -443,34 +482,58 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
   };
 
   const renderLayoutForm = () => {
+    const rowsToRender = hasSections ? null : layoutConfig.rows;
+
+    const renderRow = (row) => {
+      const desktopCol = parseInt(row.columns.split(':')[1]);
+      return (
+        <div key={row.id} className={`form-row form-row-${row.columns}`} data-cols={row.columns}>
+          {Array.from({ length: desktopCol }).map((_, colIdx) => {
+            const cellField = getCellField(row.id, colIdx);
+            if (!cellField || !isFieldVisible(cellField)) {
+              return <div key={colIdx} className="form-cell-empty" />;
+            }
+            return (
+              <div key={colIdx} className="form-cell-content">
+                <div className="dynamic-form-field">
+                  <label>
+                    {cellField.labelOverride || cellField.label}
+                    {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span className="text-red-600"> *</span>}
+                  </label>
+                  {renderField(cellField)}
+                  {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
+                  {errors[cellField.key] && <div className="field-error">{errors[cellField.key]}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    };
+
     return (
       <>
-        {layoutConfig.rows.map((row) => {
-          const desktopCol = parseInt(row.columns.split(':')[1]);
-          return (
-            <div key={row.id} className={`form-row form-row-${row.columns}`} data-cols={row.columns}>
-              {Array.from({ length: desktopCol }).map((_, colIdx) => {
-                const cellField = getCellField(row.id, colIdx);
-                if (!cellField || !isFieldVisible(cellField)) {
-                  return <div key={colIdx} className="form-cell-empty" />;
-                }
-                return (
-                  <div key={colIdx} className="form-cell-content">
-                    <div className="dynamic-form-field">
-                      <label>
-                        {cellField.labelOverride || cellField.label}
-                        {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span className="text-red-600"> *</span>}
-                      </label>
-                      {renderField(cellField)}
-                      {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
-                      {errors[cellField.key] && <div className="field-error">{errors[cellField.key]}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+        {hasSections ? (
+          layoutConfig.sections.map((section) => (
+            <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+              {section.title && (
+                <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
+                  {section.title}
+                </legend>
+              )}
+              {section.collapsible ? (
+                <details open>
+                  <summary style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280', marginBottom: 8 }}> Chi tiết</summary>
+                  {section.rows.map(row => renderRow(row))}
+                </details>
+              ) : (
+                section.rows.map(row => renderRow(row))
+              )}
+            </fieldset>
+          ))
+        ) : (
+          rowsToRender.map(row => renderRow(row))
+        )}
 
         {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).length > 0 && (
           <div className="dynamic-form-row">

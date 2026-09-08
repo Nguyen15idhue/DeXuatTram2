@@ -1,6 +1,6 @@
 const pool = require('../utils/db');
 
-exports.getAllForms = async (entity, status, page, limit) => {
+exports.getAllForms = async (entity, status, purpose, page, limit) => {
   const offset = (page - 1) * limit;
   let where = [];
   let params = [];
@@ -13,6 +13,11 @@ exports.getAllForms = async (entity, status, page, limit) => {
   if (status) {
     where.push('f.status = ?');
     params.push(status);
+  }
+
+  if (purpose) {
+    where.push('f.purpose = ?');
+    params.push(purpose);
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
@@ -56,20 +61,20 @@ exports.getFormById = async (id) => {
 };
 
 exports.createForm = async (data) => {
-  const { entity, name, description, status, layout_config } = data;
+  const { entity, name, description, status, layout_config, purpose } = data;
   const [result] = await pool.query(
-    'INSERT INTO forms (entity, name, description, status, layout_config) VALUES (?, ?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null]
+    'INSERT INTO forms (entity, name, description, status, layout_config, purpose) VALUES (?, ?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all']
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [result.insertId]);
   return rows[0];
 };
 
 exports.updateForm = async (id, data) => {
-  const { entity, name, description, status, layout_config } = data;
+  const { entity, name, description, status, layout_config, purpose } = data;
   await pool.query(
-    'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, layout_config = ?, updated_at = NOW() WHERE id = ?',
-    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, id]
+    'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, layout_config = ?, purpose = ?, updated_at = NOW() WHERE id = ?',
+    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all', id]
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [id]);
   return rows[0];
@@ -77,4 +82,12 @@ exports.updateForm = async (id, data) => {
 
 exports.deleteForm = async (id) => {
   await pool.query('DELETE FROM forms WHERE id = ?', [id]);
+};
+
+exports.getFormByEntityAndPurpose = async (entity, purpose) => {
+  const [rows] = await pool.query(
+    'SELECT * FROM forms WHERE entity = ? AND purpose = ? AND status = ? LIMIT 1',
+    [entity, purpose, 'active']
+  );
+  return rows[0] || null;
 };

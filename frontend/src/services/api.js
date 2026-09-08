@@ -289,6 +289,9 @@ export const formService = {
   getById(id) {
     return api.get(`/forms/${id}`);
   },
+  getByEntityAndPurpose(entity, purpose) {
+    return api.get(`/forms/by-entity-purpose?entity=${entity}&purpose=${purpose}`);
+  },
   create(data, token) {
     return api.postWithAuth('/forms', data, token);
   },

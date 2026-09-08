@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Toast from '../../components/Toast';
-import { MapPin } from 'lucide-react';
+import { MapPin, X } from 'lucide-react';
 
 const PROPOSALS_FORM_ID = 9;
 
@@ -159,7 +159,12 @@ const MapPage = () => {
       {showForm && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-2xl">
-            <h3 className="font-bold text-lg mb-4">Đề xuất trạm mới</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Đề xuất trạm mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
+                <X size={18} />
+              </button>
+            </div>
 
             <div className="space-y-3">
               <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
@@ -173,6 +178,7 @@ const MapPage = () => {
 
               <DynamicForm
                 entity="station_proposals"
+                purpose="create"
                 formId={PROPOSALS_FORM_ID}
                 onSubmit={handleSubmit}
                 initialData={{ latitude: coords.lat, longitude: coords.lng }}
