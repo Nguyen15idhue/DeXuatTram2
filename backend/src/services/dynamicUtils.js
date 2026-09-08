@@ -104,6 +104,24 @@ exports.validateField = (fieldDef, value) => {
         }
       }
       break;
+
+    case 'table': {
+      if (!Array.isArray(value)) {
+        errors.push(`${fieldDef.label} phải là mảng`);
+        break;
+      }
+      const tc = typeof fieldDef.source_config === 'string'
+        ? (() => { try { return JSON.parse(fieldDef.source_config); } catch { return {}; } })()
+        : (fieldDef.source_config || {});
+      if (tc.min_rows != null && value.length < tc.min_rows) {
+        errors.push(`${fieldDef.label} phải có ít nhất ${tc.min_rows} dòng`);
+      }
+      if (tc.max_rows != null && value.length > tc.max_rows) {
+        errors.push(`${fieldDef.label} không được quá ${tc.max_rows} dòng`);
+      }
+      break;
+    }
+
     case 'textarea':
     case 'text':
     case 'formula':

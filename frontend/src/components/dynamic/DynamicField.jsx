@@ -1,7 +1,50 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
+import { create, all } from 'mathjs';
 
-const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null }) => {
+const math = create(all);
+const customFunctions = {
+  ROUNDUP: (x, d = 0) => Math.ceil(x * Math.pow(10, d)) / Math.pow(10, d),
+  ROUNDDOWN: (x, d = 0) => Math.floor(x * Math.pow(10, d)) / Math.pow(10, d),
+  MOD: (a, b) => a % b,
+  IF: (cond, t, f) => cond ? t : f,
+  AND: (...args) => args.every(Boolean),
+  OR: (...args) => args.some(Boolean),
+  NOT: (v) => !v,
+  IFERROR: (v, fallback) => { try { return v; } catch { return fallback; } },
+  ROUND: (x, d = 0) => { const f = Math.pow(10, d); return Math.round(x * f) / f; },
+  CONCAT: (...args) => args.join(''),
+  LEN: (s) => String(s ?? '').length,
+  UPPER: (s) => String(s ?? '').toUpperCase(),
+  LOWER: (s) => String(s ?? '').toLowerCase(),
+  TRIM: (s) => String(s ?? '').trim(),
+  LPAD: (s, len, ch = '0') => String(s ?? '').padStart(len, ch),
+  RPAD: (s, len, ch = ' ') => String(s ?? '').padEnd(len, ch),
+};
+math.import(customFunctions, { override: false });
+
+const computeFormula = (expression, rowData) => {
+  if (!expression) return '';
+  try {
+    const scope = {};
+    Object.entries(rowData).forEach(([k, v]) => {
+      if (v === '' || v === null || v === undefined) {
+        scope[k] = 0;
+      } else {
+        scope[k] = v;
+      }
+    });
+    const result = math.evaluate(expression, scope);
+    return result;
+  } catch {
+    return '#ERR';
+  }
+};
+
+const TABLE_CELL_STYLE = { padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 13 };
+const TABLE_HEADER_STYLE = { padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, background: '#f8fafc', textAlign: 'left' };
+
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [] }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -71,6 +114,89 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
 
   const baseClass = `form-control ${error ? 'is-invalid' : ''}`;
   const step = field.type === 'number' ? (field.number_format === 'integer' ? '1' : (field.decimal_places > 0 ? '0.' + '0'.repeat(field.decimal_places - 1) + '1' : 'any')) : undefined;
+
+  const renderTableCell = (refField, cellVal, onChangeCell, disabledCell) => {
+    const cellClass = 'form-control';
+    switch (refField.type) {
+      case 'number':
+        return (
+          <input
+            type="number"
+            className={cellClass}
+            value={cellVal ?? ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            step={refField.number_format === 'integer' ? '1' : 'any'}
+            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+          />
+        );
+      case 'select': {
+        const opts = (() => {
+          if (!refField.options) return [];
+          if (Array.isArray(refField.options)) return refField.options;
+          try { return JSON.parse(refField.options); } catch { return []; }
+        })();
+        return (
+          <select
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+          >
+            <option value="">--</option>
+            {opts.map((o, i) => {
+              const optVal = typeof o === 'object' ? (o.value ?? o.label) : o;
+              const optLabel = typeof o === 'object' ? (o.label || o.value) : o;
+              return <option key={i} value={optVal}>{optLabel}</option>;
+            })}
+          </select>
+        );
+      }
+      case 'date':
+        return (
+          <input
+            type="date"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+          />
+        );
+      case 'datetime':
+        return (
+          <input
+            type="datetime-local"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+          />
+        );
+      case 'boolean':
+        return (
+          <input
+            type="checkbox"
+            checked={!!cellVal}
+            onChange={(e) => onChangeCell(e.target.checked)}
+            disabled={disabledCell}
+          />
+        );
+      default:
+        return (
+          <input
+            type="text"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+          />
+        );
+    }
+  };
 
   switch (field.type) {
     case 'textarea':
@@ -297,6 +423,168 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           readOnly
         />
       );
+
+    case 'table': {
+      const tc = (() => {
+        if (!field.source_config) return { columns: [], min_rows: 0, max_rows: 10 };
+        if (typeof field.source_config === 'object') return field.source_config;
+        try { return JSON.parse(field.source_config); } catch { return { columns: [], min_rows: 0, max_rows: 10 }; }
+      })();
+      const rows = Array.isArray(value) ? value : [];
+      const columns = tc.columns || [];
+      const minRows = tc.min_rows || 0;
+      const maxRows = tc.max_rows || 10;
+
+      const addRow = () => {
+        if (disabled) return;
+        if (rows.length >= maxRows) return;
+        const newRow = {};
+        columns.forEach(col => { newRow[col.key] = ''; });
+        const computedRow = columns.reduce((r, col) => {
+          if (col.formula) r[col.key] = computeFormula(col.formula, r);
+          return r;
+        }, newRow);
+        onChange([...rows, computedRow]);
+      };
+
+      const removeRow = (idx) => {
+        if (disabled) return;
+        if (rows.length <= minRows) return;
+        const next = rows.filter((_, i) => i !== idx);
+        onChange(next);
+      };
+
+      const updateCell = (rowIdx, colKey, val) => {
+        if (disabled) return;
+        const updatedRow = { ...rows[rowIdx], [colKey]: val };
+        const recomputedRow = columns.reduce((r, col) => {
+          if (col.formula) {
+            r[col.key] = computeFormula(col.formula, r);
+          }
+          return r;
+        }, updatedRow);
+        const next = rows.map((r, i) => i === rowIdx ? recomputedRow : r);
+        onChange(next);
+      };
+
+      const getReferencedField = (col) => {
+        if (col.field_id) {
+          const found = allFields.find(f => f.id === col.field_id || f.field_id === col.field_id);
+          if (found) return found;
+        }
+        if (col.column_type) {
+          return {
+            type: col.column_type,
+            key: col.key,
+            options: (col.options || []).map(o => typeof o === 'object' ? o : { label: o, value: o })
+          };
+        }
+        return { type: 'text', key: col.key };
+      };
+
+      return (
+        <div className="dynamic-field-table" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ ...TABLE_HEADER_STYLE, width: 40, textAlign: 'center' }}>STT</th>
+                {columns.map(col => (
+                  <th key={col.key} style={{ ...TABLE_HEADER_STYLE, width: col.width || undefined }}>
+                    {col.label || col.key}
+                    {col.required && <span className="text-red-600"> *</span>}
+                  </th>
+                ))}
+                {!disabled && <th style={{ ...TABLE_HEADER_STYLE, width: 50 }}></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={columns.length + 2} style={{ ...TABLE_CELL_STYLE, textAlign: 'center', color: '#999', padding: '12px' }}>
+                    Chưa có dữ liệu. Nhấn "+ Thêm dòng" để bắt đầu.
+                  </td>
+                </tr>
+              )}
+              {rows.map((row, rowIdx) => (
+                <tr key={rowIdx}>
+                  <td style={{ ...TABLE_CELL_STYLE, textAlign: 'center', color: '#999' }}>{rowIdx + 1}</td>
+                  {columns.map(col => {
+                    const hasFormula = !!col.formula;
+                    let cellVal;
+                    if (hasFormula) {
+                      cellVal = computeFormula(col.formula, row);
+                    } else {
+                      cellVal = row[col.key] ?? '';
+                    }
+                    const refField = getReferencedField(col);
+                    const cellDisabled = disabled || hasFormula;
+                    return (
+                      <td key={col.key} style={{ ...TABLE_CELL_STYLE, background: hasFormula ? '#f0fdf4' : undefined }}>
+                        {renderTableCell(refField, cellVal, (val) => updateCell(rowIdx, col.key, val), cellDisabled)}
+                        {hasFormula && <input type="hidden" value={cellVal} />}
+                      </td>
+                    );
+                  })}
+                  {!disabled && (
+                    <td style={{ ...TABLE_CELL_STYLE, textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => removeRow(rowIdx)}
+                        disabled={rows.length <= minRows}
+                        style={{ background: 'none', border: 'none', color: rows.length <= minRows ? '#ccc' : '#ef4444', cursor: rows.length <= minRows ? 'not-allowed' : 'pointer', fontSize: 16 }}
+                        title="Xóa dòng"
+                      >×</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+            {columns.some(col => col.footer_formula) && rows.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td style={{ ...TABLE_HEADER_STYLE, textAlign: 'center', fontWeight: 700, background: '#f1f5f9' }}>∑</td>
+                  {columns.map(col => {
+                    if (!col.footer_formula) {
+                      return <td key={col.key} style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9' }}></td>;
+                    }
+                    const values = rows.map(r => {
+                      const raw = col.formula ? computeFormula(col.formula, r) : r[col.key];
+                      const n = parseFloat(raw);
+                      return isNaN(n) ? null : n;
+                    }).filter(v => v !== null);
+                    let footerVal = '';
+                    switch (col.footer_formula) {
+                      case 'SUM': footerVal = values.reduce((a, b) => a + b, 0); break;
+                      case 'AVG': footerVal = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0; break;
+                      case 'MIN': footerVal = values.length ? Math.min(...values) : 0; break;
+                      case 'MAX': footerVal = values.length ? Math.max(...values) : 0; break;
+                      case 'COUNT': footerVal = values.length; break;
+                    }
+                    return (
+                      <td key={col.key} style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}>
+                        {typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}
+                      </td>
+                    );
+                  })}
+                  {!disabled && <td style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9' }}></td>}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          {!disabled && rows.length < maxRows && (
+            <button
+              type="button"
+              onClick={addRow}
+              className="btn btn-xs btn-secondary mt-1"
+              style={{ fontSize: 12 }}
+            >+ Thêm dòng</button>
+          )}
+          <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+            {rows.length}/{maxRows} dòng {minRows > 0 && `(tối thiểu ${minRows})`}
+          </div>
+        </div>
+      );
+    }
 
     default:
       return (

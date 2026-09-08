@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { Zap } from 'lucide-react';
 import { fieldDefinitionService, dataListService } from '../../services/api';
 import Loading from '../Loading';
 import Toast from '../Toast';
@@ -10,7 +11,7 @@ import Pagination from '../Pagination';
 import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
 import FormulaEditor from '../dynamic/FormulaEditor';
 
-const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
@@ -69,6 +70,7 @@ const FieldManager = () => {
     option_style: { defaultColor: '#666666', defaultBorderRadius: 'rounded' },
     file_config: { images: true, videos: false, documents: true, maxSize: 5, multiple: false },
     formula_config: { expression: '', referencedFields: [], compute_mode: 'pre', outputType: 'auto', outputFormat: '', decimalPlaces: 0, unit: '', label: '' },
+    table_config: { columns: [], min_rows: 0, max_rows: 10 },
     data_list_id: null,
     data_list_column: '',
     data_list_label_column: '',
@@ -156,6 +158,12 @@ const FieldManager = () => {
         parsedFormulaConfig = typeof field.formula_config === 'string' ? JSON.parse(field.formula_config) : field.formula_config;
       } catch {}
     }
+    let parsedTableConfig = { columns: [], min_rows: 0, max_rows: 10 };
+    if (field.source_config && field.type === 'table') {
+      try {
+        parsedTableConfig = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
+      } catch {}
+    }
     setForm({
       entity: field.entity, key: field.key, label: field.label, type: field.type,
       source_type: field.source_type || 'json', required: !!field.required,
@@ -169,6 +177,7 @@ const FieldManager = () => {
       option_style: parsedOptionStyle,
       file_config: parsedFileConfig,
       formula_config: parsedFormulaConfig,
+      table_config: parsedTableConfig,
       data_list_id: field.data_list_id || null,
       data_list_column: field.data_list_column || '',
       data_list_label_column: field.data_list_label_column || '',
@@ -248,6 +257,9 @@ const FieldManager = () => {
     }
     if (form.type === 'formula') {
       payload.formula_config = form.formula_config;
+    }
+    if (form.type === 'table') {
+      payload.table_config = form.table_config;
     }
     try {
       let res;
@@ -604,6 +616,153 @@ const FieldManager = () => {
                       onChange={(cfg) => updateForm('formula_config', cfg)}
                       allFields={entityFields}
                     />
+                  </div>
+                )}
+
+                {(form.type === 'table') && (
+                  <div className="form-group-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginTop: 12 }}>
+                    <h4 style={{ marginTop: 0, marginBottom: 12 }}>Cấu hình Bảng (Table)</h4>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Số dòng tối thiểu</label>
+                        <input type="number" min="0" value={form.table_config.min_rows ?? 0}
+                          onChange={(e) => updateForm('table_config', { ...form.table_config, min_rows: parseInt(e.target.value) || 0 })} />
+                      </div>
+                      <div className="form-group">
+                        <label>Số dòng tối đa</label>
+                        <input type="number" min="1" value={form.table_config.max_rows ?? 10}
+                          onChange={(e) => updateForm('table_config', { ...form.table_config, max_rows: parseInt(e.target.value) || 10 })} />
+                      </div>
+                    </div>
+                    <h4 style={{ marginTop: 12, marginBottom: 8 }}>Cấu hình cột</h4>
+                    {(form.table_config.columns || []).map((col, idx) => (
+                      <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, minWidth: 30 }}>#{idx + 1}</span>
+                          <select value={col.field_id || ''} onChange={(e) => {
+                            const refField = entityFields.find(f => f.id === parseInt(e.target.value));
+                            const newCols = [...(form.table_config.columns || [])];
+                            newCols[idx] = {
+                              ...newCols[idx],
+                              field_id: parseInt(e.target.value) || null,
+                              key: refField ? refField.key : (newCols[idx].key || ''),
+                              label: refField ? refField.label : (newCols[idx].label || ''),
+                              column_type: refField ? refField.type : (newCols[idx].column_type || 'text')
+                            };
+                            updateForm('table_config', { ...form.table_config, columns: newCols });
+                          }} style={{ flex: 2, minWidth: 150 }}>
+                            <option value="">-- Tạo thủ công --</option>
+                            {entityFields.filter(f => f.type !== 'table' && f.type !== 'formula' && f.type !== 'password').map(f => (
+                              <option key={f.id} value={f.id}>{f.label} ({f.key})</option>
+                            ))}
+                          </select>
+                          {!col.field_id && (
+                            <select value={col.column_type || 'text'} onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], column_type: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ width: 110 }}>
+                              <option value="text">Text</option>
+                              <option value="number">Number</option>
+                              <option value="date">Date</option>
+                              <option value="datetime">DateTime</option>
+                              <option value="boolean">Boolean</option>
+                              <option value="select">Select</option>
+                            </select>
+                          )}
+                          <button type="button" className="btn btn-sm btn-delete" onClick={() => {
+                            const newCols = (form.table_config.columns || []).filter((_, i) => i !== idx);
+                            updateForm('table_config', { ...form.table_config, columns: newCols });
+                          }} title="Xóa cột">✕</button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                          <input type="text" placeholder="Key (VD: so_luong)" value={col.key || ''}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], key: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ flex: 1, minWidth: 120, fontSize: 12 }} disabled={!!col.field_id} />
+                          <input type="text" placeholder="Label hiển thị" value={col.label || ''}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], label: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ flex: 1, minWidth: 120, fontSize: 12 }} />
+                          <input type="number" min="60" placeholder="Width" value={col.width || 120}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], width: parseInt(e.target.value) || 120 };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ width: 70, fontSize: 12 }} />
+                          <label style={{ fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <input type="checkbox" checked={!!col.required}
+                              onChange={(e) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], required: e.target.checked };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }} />
+                            Bắt buộc
+                          </label>
+                        </div>
+                        {!col.field_id && (col.column_type === 'select') && (
+                          <div style={{ marginTop: 4, fontSize: 12 }}>
+                            <label>Options (cách nhau bởi dấu phẩy):</label>
+                            <input type="text" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
+                              onChange={(e) => {
+                                const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], options: opts };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }} style={{ width: '100%', fontSize: 12 }} />
+                          </div>
+                        )}
+                        <div style={{ marginTop: 4, fontSize: 12 }}>
+                          <label style={{ fontWeight: 500 }}>Formula (tự tính — để trống nếu nhập tay):</label>
+                          <input type="text" placeholder={`VD: ${col.key || 'col_a'} * ${col.key || 'col_b'}`}
+                            value={col.formula || ''}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], formula: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }}
+                            style={{ width: '100%', fontSize: 12, fontFamily: 'monospace', background: col.formula ? '#fffbeb' : undefined }}
+                            disabled={!!col.field_id} />
+                          {col.formula && (
+                            <span style={{ color: '#d97706', fontSize: 11 }}><Zap size={11} style={{ verticalAlign: 'middle' }} /> Tự tính, ô nhập bị khóa</span>
+                          )}
+                          {!col.formula && (
+                            <span style={{ color: '#888', fontSize: 11 }}>Dùng tên cột khác trong cùng dòng. VD: so_luong * don_gia</span>
+                          )}
+                        </div>
+                        {((!col.field_id && col.column_type === 'number') || (col.field_id && entityFields.find(f => f.id === parseInt(col.field_id))?.type === 'number')) && (
+                          <div style={{ marginTop: 4, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <label style={{ fontWeight: 500 }}>Footer:</label>
+                            <select value={col.footer_formula || ''} onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], footer_formula: e.target.value || null };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ fontSize: 11, padding: '2px 4px' }}>
+                              <option value="">Không</option>
+                              <option value="SUM">SUM — Tổng</option>
+                              <option value="AVG">AVG — Trung bình</option>
+                              <option value="MIN">MIN — Nhỏ nhất</option>
+                              <option value="MAX">MAX — Lớn nhất</option>
+                              <option value="COUNT">COUNT — Đếm dòng</option>
+                            </select>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                          {col.field_id
+                            ? `Tham chiếu field #${col.field_id}`
+                            : `Tạo thủ công — type: ${col.column_type || 'text'}, key: ${col.key || '(chưa có)'}`
+                          }
+                        </div>
+                      </div>
+                    ))}
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => {
+                      const newCols = [...(form.table_config.columns || []), { field_id: null, key: '', label: '', column_type: 'text', width: 120, required: false, options: [] }];
+                      updateForm('table_config', { ...form.table_config, columns: newCols });
+                    }}>+ Thêm cột</button>
                   </div>
                 )}
               </div>

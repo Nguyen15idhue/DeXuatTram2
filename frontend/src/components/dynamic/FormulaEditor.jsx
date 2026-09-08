@@ -47,6 +47,16 @@ const FUNCTION_CATEGORIES = [
     ]
   },
   {
+    name: 'Bảng (Table)',
+    functions: [
+      { name: 'TABLE_SUM', label: 'TABLE_SUM(arr)', desc: 'Tổng cột bảng' },
+      { name: 'TABLE_AVG', label: 'TABLE_AVG(arr)', desc: 'Trung bình cột bảng' },
+      { name: 'TABLE_MIN', label: 'TABLE_MIN(arr)', desc: 'Giá trị nhỏ nhất' },
+      { name: 'TABLE_MAX', label: 'TABLE_MAX(arr)', desc: 'Giá trị lớn nhất' },
+      { name: 'TABLE_COUNT', label: 'TABLE_COUNT(arr)', desc: 'Đếm ô không trống' },
+    ]
+  },
+  {
     name: 'Chuỗi',
     functions: [
       { name: 'CONCAT', label: 'CONCAT(...)', desc: 'Nối chuỗi' },
@@ -110,9 +120,27 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
 
   const ALL_SUGGESTIONS = useMemo(() => {
     const fieldSuggestions = allFields.filter(f => f.type !== 'password').map(f => ({ text: f.key, label: f.label || f.key, type: 'field', fieldType: f.type }));
-    const funcSuggestions = FUNCTION_CATEGORIES.flatMap(cat => cat.functions.map(fn => ({ text: fn.name, label: fn.desc, type: 'function', placeholder: { IF: 'condition, trueVal, falseVal', CONCAT: "'text1', 'text2'", COUNTIF: 'arr, criteria', SUMIF: 'arr, criteria', COUNT: '1, 2, 3', COUNTA: "1, 'a', ''", AVERAGE: '10, 20, 30', ROUNDUP: '3.14, 2', ROUNDDOWN: '3.99, 1', MOD: '10, 3', LEN: "'Hello'", LEFT: "'Hello', 3", RIGHT: "'Hello', 3", UPPER: "'hello'", LOWER: "'HELLO'", TRIM: "'  hi  '", LPAD: '42, 5, "0"', RPAD: "'hi', 5, '.'", YEAR: "'2026-09-01'", MONTH: "'2026-09-01'", DAY: "'2026-09-01'", TODAY: '', NOW: '', DATE: '2026, 9, 1' }[fn.name] || '' })));
+    const tableColSuggestions = [];
+    allFields.filter(f => f.type === 'table').forEach(f => {
+      const tc = (() => {
+        if (!f.source_config) return {};
+        if (typeof f.source_config === 'object') return f.source_config;
+        try { return JSON.parse(f.source_config); } catch { return {}; }
+      })();
+      const columns = tc.columns || [];
+      columns.forEach(col => {
+        const refField = col.field_id ? allFields.find(af => af.id === col.field_id) : null;
+        tableColSuggestions.push({
+          text: `${f.key}.${col.key}`,
+          label: `${col.label || col.key} (bảng ${f.label || f.key})`,
+          type: 'table-column',
+          fieldType: refField ? refField.type : 'text'
+        });
+      });
+    });
+    const funcSuggestions = FUNCTION_CATEGORIES.flatMap(cat => cat.functions.map(fn => ({ text: fn.name, label: fn.desc, type: 'function', placeholder: { IF: 'condition, trueVal, falseVal', CONCAT: "'text1', 'text2'", COUNTIF: 'arr, criteria', SUMIF: 'arr, criteria', TABLE_SUM: 'table.col', TABLE_AVG: 'table.col', TABLE_MIN: 'table.col', TABLE_MAX: 'table.col', TABLE_COUNT: 'table.col', COUNT: '1, 2, 3', COUNTA: "1, 'a', ''", AVERAGE: '10, 20, 30', ROUNDUP: '3.14, 2', ROUNDDOWN: '3.99, 1', MOD: '10, 3', LEN: "'Hello'", LEFT: "'Hello', 3", RIGHT: "'Hello', 3", UPPER: "'hello'", LOWER: "'HELLO'", TRIM: "'  hi  '", LPAD: '42, 5, "0"', RPAD: "'hi', 5, '.'", YEAR: "'2026-09-01'", MONTH: "'2026-09-01'", DAY: "'2026-09-01'", TODAY: '', NOW: '', DATE: '2026, 9, 1' }[fn.name] || '' })));
     const metaSuggestions = config.compute_mode === 'post' ? POST_METADATA.map(m => ({ text: m.label, label: m.desc, type: 'metadata' })) : [];
-    return [...funcSuggestions, ...fieldSuggestions, ...metaSuggestions];
+    return [...funcSuggestions, ...fieldSuggestions, ...tableColSuggestions, ...metaSuggestions];
   }, [allFields, config.compute_mode]);
 
   const getWordAtCursor = useCallback(() => {
@@ -195,6 +223,11 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
     CONCAT: 'CONCAT("text1", "text2", ...)',
     COUNTIF: 'COUNTIF(mảng, điều kiện)',
     SUMIF: 'SUMIF(mảng, điều kiện)',
+    TABLE_SUM: 'TABLE_SUM(table.col) - Tổng giá trị trong cột bảng',
+    TABLE_AVG: 'TABLE_AVG(table.col) - Trung bình cột bảng',
+    TABLE_MIN: 'TABLE_MIN(table.col) - Giá trị nhỏ nhất trong cột',
+    TABLE_MAX: 'TABLE_MAX(table.col) - Giá trị lớn nhất trong cột',
+    TABLE_COUNT: 'TABLE_COUNT(table.col) - Đếm ô không trống trong cột',
     COUNT: 'COUNT(1, 2, 3, ...)',
     COUNTA: 'COUNTA(1, "a", "", ...)',
     AVERAGE: 'AVERAGE(10, 20, 30, ...)',
@@ -361,6 +394,38 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
         </div>
       </CollapsibleSection>
 
+      {(() => {
+        const tableFields = allFields.filter(f => f.type === 'table');
+        if (tableFields.length === 0) return null;
+        const tableCols = [];
+        tableFields.forEach(tf => {
+          const tc = (() => {
+            if (!tf.source_config) return {};
+            if (typeof tf.source_config === 'object') return tf.source_config;
+            try { return JSON.parse(tf.source_config); } catch { return {}; }
+          })();
+          const columns = tc.columns || [];
+          columns.forEach(col => {
+            const refField = col.field_id ? allFields.find(af => af.id === col.field_id) : null;
+            tableCols.push({ tableField: tf, col, refField });
+          });
+        });
+        return (
+          <CollapsibleSection title={`Cột bảng (${tableCols.length})`} defaultOpen={true} count={tableCols.length}>
+            <div className="items-grid-2">
+              {tableCols.map(({ tableField, col, refField }) => (
+                <button key={`${tableField.key}.${col.key}`} type="button" className="field-btn table-col"
+                  onClick={() => insertField(`${tableField.key}.${col.key}`)}
+                  title={`${col.label || col.key} (${refField ? refField.type : 'text'})`}>
+                  📊 {tableField.label || tableField.key}.{col.label || col.key}
+                </button>
+              ))}
+              {tableCols.length === 0 && <span className="empty-hint">Không có cột bảng</span>}
+            </div>
+          </CollapsibleSection>
+        );
+      })()}
+
       <CollapsibleSection title="Phép toán & Hàm" defaultOpen={true} count={9}>
         <div className="operators-grid-3">
           {['(', ')', '+', '-', '*', '/', '^', ',', '>'].map(op => (
@@ -416,7 +481,7 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
                 onMouseEnter={() => setAutocomplete(prev => ({ ...prev, selectedIndex: i }))}
               >
                 <span className="ac-text">{s.text}</span>
-                <span className="ac-type">{s.type === 'field' ? `#${s.fieldType}` : s.type === 'function' ? '()' : 'var'}</span>
+                <span className="ac-type">{s.type === 'field' ? `#${s.fieldType}` : s.type === 'table-column' ? `📊#${s.fieldType}` : s.type === 'function' ? '()' : 'var'}</span>
                 <span className="ac-label">{s.label}</span>
               </div>
             ))}

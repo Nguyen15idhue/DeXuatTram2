@@ -29,6 +29,30 @@ const customFunctions = {
     if (nums.length === 0) return 0;
     return nums.reduce((s, v) => s + Number(v), 0) / nums.length;
   },
+  TABLE_SUM: (arr) => {
+    if (!Array.isArray(arr)) return 0;
+    return arr.reduce((s, v) => s + (Number(v) || 0), 0);
+  },
+  TABLE_AVG: (arr) => {
+    if (!Array.isArray(arr)) return 0;
+    const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (nums.length === 0) return 0;
+    return nums.reduce((s, v) => s + Number(v), 0) / nums.length;
+  },
+  TABLE_MIN: (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return 0;
+    const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number);
+    return nums.length === 0 ? 0 : Math.min(...nums);
+  },
+  TABLE_MAX: (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return 0;
+    const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number);
+    return nums.length === 0 ? 0 : Math.max(...nums);
+  },
+  TABLE_COUNT: (arr) => {
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter(v => v !== null && v !== undefined && v !== '').length;
+  },
   CONCAT: (...args) => args.map(v => v ?? '').join(''),
   LEN: (s) => String(s ?? '').length,
   LEFT: (s, n = 1) => String(s ?? '').substring(0, n),
@@ -70,7 +94,18 @@ exports.validateFormula = (expression, availableFields = []) => {
 
     const fieldKeys = new Set(availableFields.map(f => f.key));
     const passwordKeys = new Set(availableFields.filter(f => f.type === 'password').map(f => f.key));
-    const unknown = [...symbols].filter(s => !fieldKeys.has(s) && !funcNames.has(s) && !POST_METADATA.has(s));
+    const tableFields = new Set(availableFields.filter(f => f.type === 'table').map(f => f.key));
+    const unknown = [...symbols].filter(s => {
+      if (fieldKeys.has(s)) return false;
+      if (funcNames.has(s)) return false;
+      if (POST_METADATA.has(s)) return false;
+      if (tableFields.has(s)) return false;
+      if (s.includes('.')) {
+        const parts = s.split('.');
+        if (parts.length === 2 && tableFields.has(parts[0])) return false;
+      }
+      return true;
+    });
     if (unknown.length > 0) {
       return { valid: false, error: `Trường không tồn tại: ${unknown.join(', ')}` };
     }

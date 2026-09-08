@@ -1,6 +1,8 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const formulaService = require('./formulaService');
+const { create, all } = require('mathjs');
+const math = create(all);
 
 exports.getFormConfig = async (entity, formId) => {
   const [forms] = await pool.query(
@@ -198,6 +200,18 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
   }
   const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName, user_role: userRole, sales_name: salesName };
 
+  const tableFields = fieldDefs.filter(f => f.type === 'table');
+  const tableColArrays = {};
+  for (const tf of tableFields) {
+    const tc = typeof tf.source_config === 'string' ? (() => { try { return JSON.parse(tf.source_config); } catch { return {}; } })() : (tf.source_config || {});
+    const columns = tc.columns || [];
+    const rows = Array.isArray(recordData[tf.key]) ? recordData[tf.key] : [];
+    for (const col of columns) {
+      const colValues = rows.map(r => r[col.key] ?? '');
+      tableColArrays[`${tf.key}.${col.key}`] = colValues;
+    }
+  }
+
   const results = {};
   const excludeKeys = new Set(options.excludeKeys || []);
   for (const field of postFormulaFields) {
@@ -205,10 +219,37 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
     if (!fc.expression) continue;
     if (excludeKeys.has(field.key)) continue;
     if (Array.isArray(fc.referencedFields) && fc.referencedFields.length > 0) {
-      const missing = fc.referencedFields.some(k => recordData?.[k] === undefined || recordData?.[k] === null || recordData?.[k] === '');
+      const missing = fc.referencedFields.some(k => {
+        if (k.includes('.')) return false;
+        return recordData?.[k] === undefined || recordData?.[k] === null || recordData?.[k] === '';
+      });
       if (missing) continue;
     }
-    const result = await formulaService.evaluatePostFormulaAsync(fc.expression, metadata, recordData, { connection: options.connection });
+    const scope = { ...recordData };
+    for (const [key, arr] of Object.entries(tableColArrays)) {
+      scope[key] = arr;
+    }
+    for (const [k, v] of Object.entries(metadata)) {
+      scope[k] = v;
+    }
+    let result;
+    try {
+      const node = math.parse(fc.expression);
+      const seqNodes = node.filter(n => n.isFunctionNode && n.fn && (n.fn.name || '').toUpperCase() === 'SEQ');
+      if (seqNodes.length > 0) {
+        const values = new Map();
+        for (const seqNode of seqNodes) {
+          if (!seqNode.args || seqNode.args.length === 0) { result = null; break; }
+          const prefix = String(math.evaluate(seqNode.args[0].toString(), scope));
+          values.set(seqNode, options.dryRun ? 1 : await formulaService.getNextSequence(prefix, options.connection));
+        }
+        if (result === null) continue;
+        const transformed = node.transform(n => (values.has(n) ? new math.ConstantNode(values.get(n)) : n));
+        result = transformed.compile().evaluate(scope);
+      } else {
+        result = math.evaluate(fc.expression, scope);
+      }
+    } catch { result = null; }
     if (result !== null && result !== undefined) {
       const decimalPlaces = fc.decimalPlaces ?? 2;
       if (fc.outputType === 'number' || (fc.outputType === 'auto' && typeof result === 'number')) {

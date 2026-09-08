@@ -252,6 +252,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                     onChange={(val) => handleFieldChange(key, val)}
                     entityId={record.id}
                     entityType={entity}
+                    allFields={allFields}
                   />
                 ) : (
                   <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />

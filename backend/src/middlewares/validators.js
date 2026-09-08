@@ -49,6 +49,11 @@ function validateDynamicFields(data, fieldDefs) {
           }
         }
         break;
+      case 'table':
+        if (value !== undefined && value !== null && value !== '' && !Array.isArray(value)) {
+          errors.push(`${fd.label} phải là mảng`);
+        }
+        break;
     }
   }
   return errors;

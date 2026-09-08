@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { dynamicService, dataListService } from '../../services/api';
+import { dynamicService, dataListService, fieldDefinitionService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
 import { formatNumber } from '../../utils/formatNumber';
@@ -19,6 +19,11 @@ const customFunctions = {
   COUNT: (...args) => args.filter(v => v !== null && v !== undefined && !isNaN(v)).length,
   COUNTA: (...args) => args.filter(v => v !== null && v !== undefined && v !== '').length,
   AVERAGE: (...args) => { const nums = args.flat().filter(v => v !== null && v !== undefined && !isNaN(v)); return nums.length === 0 ? 0 : nums.reduce((s, v) => s + Number(v), 0) / nums.length; },
+  TABLE_SUM: (arr) => { if (!Array.isArray(arr)) return 0; return arr.reduce((s, v) => s + (Number(v) || 0), 0); },
+  TABLE_AVG: (arr) => { if (!Array.isArray(arr)) return 0; const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)); return nums.length === 0 ? 0 : nums.reduce((s, v) => s + Number(v), 0) / nums.length; },
+  TABLE_MIN: (arr) => { if (!Array.isArray(arr) || arr.length === 0) return 0; const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number); return nums.length === 0 ? 0 : Math.min(...nums); },
+  TABLE_MAX: (arr) => { if (!Array.isArray(arr) || arr.length === 0) return 0; const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number); return nums.length === 0 ? 0 : Math.max(...nums); },
+  TABLE_COUNT: (arr) => { if (!Array.isArray(arr)) return 0; return arr.filter(v => v !== null && v !== undefined && v !== '').length; },
   CONCAT: (...args) => args.map(v => v ?? '').join(''),
   LEN: (s) => String(s ?? '').length,
   LEFT: (s, n = 1) => String(s ?? '').substring(0, n),
@@ -43,6 +48,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
   const [error, setError] = useState('');
   const [formConfig, setFormConfig] = useState(null);
   const [fields, setFields] = useState([]);
+  const [allEntityFields, setAllEntityFields] = useState([]);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [dataListOptions, setDataListOptions] = useState({});
@@ -80,6 +86,8 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
           } else if (f.type === 'boolean') {
             defaults[f.key] = false;
           } else if (f.type === 'multiselect') {
+            defaults[f.key] = [];
+          } else if (f.type === 'table') {
             defaults[f.key] = [];
           } else {
             defaults[f.key] = '';
@@ -127,6 +135,19 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!entity || fields.length === 0) return;
+    const hasTable = fields.some(f => f.type === 'table');
+    if (!hasTable) return;
+    const loadAll = async () => {
+      try {
+        const res = await fieldDefinitionService.getAll(`entity=${entity}&limit=100`, token);
+        if (res.success) setAllEntityFields(res.data || []);
+      } catch {}
+    };
+    loadAll();
+  }, [entity, fields, token]);
 
   const handleChange = useCallback((key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -251,7 +272,20 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
         if (f.key !== field.key && f.type !== 'password') {
           const val = formData[f.key];
           if (val !== undefined && val !== '') {
-            scope[f.key] = f.type === 'number' ? (parseFloat(val) || 0) : val;
+            if (f.type === 'table' && Array.isArray(val)) {
+              const tc = (() => {
+                if (!f.source_config) return {};
+                if (typeof f.source_config === 'object') return f.source_config;
+                try { return JSON.parse(f.source_config); } catch { return {}; }
+              })();
+              const columns = tc.columns || [];
+              for (const col of columns) {
+                const colValues = val.map(r => r[col.key] ?? '');
+                scope[`${f.key}.${col.key}`] = colValues;
+              }
+            } else {
+              scope[f.key] = f.type === 'number' ? (parseFloat(val) || 0) : val;
+            }
           }
         }
       });
@@ -303,6 +337,24 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
         if (f.type === 'multiselect' && Array.isArray(val) && val.length === 0) {
           const label = f.labelOverride || f.label;
           newErrors[f.key] = `${label} là bắt buộc`;
+        }
+        if (f.type === 'table' && Array.isArray(val) && val.length === 0) {
+          const label = f.labelOverride || f.label;
+          newErrors[f.key] = `${label} phải có ít nhất 1 dòng`;
+        }
+      }
+      if (f.type === 'table' && Array.isArray(formData[f.key])) {
+        const tc = (() => {
+          if (!f.source_config) return {};
+          if (typeof f.source_config === 'object') return f.source_config;
+          try { return JSON.parse(f.source_config); } catch { return {}; }
+        })();
+        const rows = formData[f.key];
+        if (tc.min_rows != null && rows.length < tc.min_rows) {
+          newErrors[f.key] = `${f.label || f.key} phải có ít nhất ${tc.min_rows} dòng`;
+        }
+        if (tc.max_rows != null && rows.length > tc.max_rows) {
+          newErrors[f.key] = `${f.label || f.key} không được quá ${tc.max_rows} dòng`;
         }
       }
     });
@@ -364,6 +416,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children, gue
         entityType={entity}
         uploadUrl={guestMode ? '/files/guest-upload' : '/files/upload'}
         allowedOptions={optionAllowlist[field.key] || null}
+        allFields={allEntityFields.length > 0 ? allEntityFields : fields}
       />
     );
   };

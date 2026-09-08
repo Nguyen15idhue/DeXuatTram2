@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { fieldDefinitionService, formService, formFieldService } from '../../services/api';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
-import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react';
+import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ArrowUpFromLine, ArrowDownToLine, Zap } from 'lucide-react';
 
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const COL_OPTIONS = [
@@ -46,11 +46,20 @@ const FormBuilder = ({ formId, onSaved }) => {
             ? JSON.parse(formRes.data.layout_config)
             : formRes.data.layout_config);
         }
-        await loadAvailableFields(formRes.data.entity);
+        const availFields = await loadAvailableFields(formRes.data.entity);
         const fieldsRes = await formFieldService.getByForm(formId);
         if (fieldsRes.success) {
           setAssignedFields(fieldsRes.data.map(f => {
             const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
+            if (f.field_type === 'table' && !cfg.tableConfig) {
+              const fieldDef = availFields.find(af => af.id === f.field_id);
+              if (fieldDef && fieldDef.source_config) {
+                const sc = typeof fieldDef.source_config === 'string'
+                  ? (() => { try { return JSON.parse(fieldDef.source_config); } catch { return null; } })()
+                  : fieldDef.source_config;
+                if (sc) cfg.tableConfig = sc;
+              }
+            }
             return {
               id: f.id,
               fieldId: f.field_id,
@@ -74,9 +83,15 @@ const FormBuilder = ({ formId, onSaved }) => {
   const loadAvailableFields = async (ent) => {
     try {
       const res = await fieldDefinitionService.getByEntity(ent);
-      if (res.success) setAvailableFields(res.data || []);
+      if (res.success) {
+        const data = res.data || [];
+        setAvailableFields(data);
+        return data;
+      }
+      return [];
     } catch {
       setError('Lỗi tải field definitions');
+      return [];
     }
   };
 
@@ -331,6 +346,11 @@ const FormBuilder = ({ formId, onSaved }) => {
       }
       for (const field of assignedFields) {
         const config = { ...field.config };
+        if (field.type === 'table' && config.tableConfig) {
+          try {
+            await fieldDefinitionService.update(field.fieldId, { table_config: config.tableConfig }, token);
+          } catch (e) { console.error('[FormBuilder] Error saving table config', e); }
+        }
         if (field.id) {
           await formFieldService.update(savedFormId, field.id, { order_index: field.orderIndex, visible: field.visible ? 1 : 0, config }, token);
         } else {
@@ -688,6 +708,178 @@ const FormBuilder = ({ formId, onSaved }) => {
                 </div>
               )}
             </div>
+
+            {selectedField.type === 'table' && (
+              <div className="table-config-section mt-3" style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+                <label style={{ fontWeight: 600, fontSize: 13 }}>Cấu hình bảng</label>
+                <div className="form-row mt-1">
+                  <div className="form-group">
+                    <label>Số dòng tối thiểu</label>
+                    <input type="number" min="0" value={selectedField.config?.tableConfig?.min_rows ?? 0}
+                      onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                        ...(selectedField.config?.tableConfig || {}),
+                        min_rows: parseInt(e.target.value) || 0
+                      })} />
+                  </div>
+                  <div className="form-group">
+                    <label>Số dòng tối đa</label>
+                    <input type="number" min="1" value={selectedField.config?.tableConfig?.max_rows ?? 10}
+                      onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                        ...(selectedField.config?.tableConfig || {}),
+                        max_rows: parseInt(e.target.value) || 10
+                      })} />
+                  </div>
+                </div>
+                <label style={{ fontSize: 13, marginTop: 8 }}>Cột bảng</label>
+                {(selectedField.config?.tableConfig?.columns || []).map((col, idx) => {
+                  const isNumber = (!col.field_id && col.column_type === 'number') || (col.field_id && availableFields.find(f => f.id === parseInt(col.field_id))?.type === 'number');
+                  return (
+                    <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, minWidth: 24 }}>#{idx + 1}</span>
+                        <select value={col.field_id || ''} onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          const refField = availableFields.find(f => f.id === parseInt(e.target.value));
+                          newCols[idx] = {
+                            ...newCols[idx],
+                            field_id: parseInt(e.target.value) || null,
+                            key: refField ? refField.key : newCols[idx].key,
+                            label: refField ? refField.label : newCols[idx].label,
+                            column_type: refField ? refField.type : (newCols[idx].column_type || 'text')
+                          };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ flex: 2, minWidth: 140, fontSize: 12 }}>
+                          <option value="">-- Tạo thủ công --</option>
+                          {availableFields.filter(f => f.type !== 'table' && f.type !== 'formula' && f.type !== 'password').map(f => (
+                            <option key={f.id} value={f.id}>{f.label} ({f.key})</option>
+                          ))}
+                        </select>
+                        {!col.field_id && (
+                          <select value={col.column_type || 'text'} onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], column_type: e.target.value };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }} style={{ width: 90, fontSize: 12 }}>
+                            <option value="text">Text</option>
+                            <option value="number">Number</option>
+                            <option value="date">Date</option>
+                            <option value="datetime">DateTime</option>
+                            <option value="boolean">Boolean</option>
+                            <option value="select">Select</option>
+                          </select>
+                        )}
+                        <button className="btn btn-xs btn-ghost text-error" onClick={() => {
+                          const newCols = (selectedField.config?.tableConfig?.columns || []).filter((_, i) => i !== idx);
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }}>✕</button>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                        <input value={col.key || ''} placeholder="Key" onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], key: e.target.value };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ flex: 1, minWidth: 100, fontSize: 12 }} disabled={!!col.field_id} />
+                        <input value={col.label || ''} placeholder="Label" onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], label: e.target.value };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ flex: 1, minWidth: 100, fontSize: 12 }} />
+                        <input type="number" min="60" value={col.width || 120} placeholder="W" onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], width: parseInt(e.target.value) || 120 };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ width: 55, fontSize: 12 }} />
+                        <label style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={!!col.required} onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], required: e.target.checked };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }} /> Bắt buộc
+                        </label>
+                      </div>
+                      {!col.field_id && col.column_type === 'select' && (
+                        <div style={{ marginTop: 4, fontSize: 12 }}>
+                          <input type="text" placeholder="Options (cách nhau bởi dấu phẩy)" value={(col.options || []).join(', ')}
+                            onChange={(e) => {
+                              const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                              const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                              newCols[idx] = { ...newCols[idx], options: opts };
+                              handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                                ...(selectedField.config?.tableConfig || {}),
+                                columns: newCols
+                              });
+                            }} style={{ width: '100%', fontSize: 12 }} />
+                        </div>
+                      )}
+                      <div style={{ marginTop: 4, fontSize: 12 }}>
+                        <input type="text" placeholder={`Formula (VD: so_luong * don_gia)`}
+                          value={col.formula || ''}
+                          onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], formula: e.target.value };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }}
+                          style={{ width: '100%', fontSize: 12, fontFamily: 'monospace', background: col.formula ? '#fffbeb' : undefined }}
+                          disabled={!!col.field_id} />
+                        {col.formula && <span style={{ color: '#d97706', fontSize: 11 }}><Zap size={11} style={{ verticalAlign: 'middle' }} /> Tự tính</span>}
+                        {!col.formula && <span style={{ color: '#888', fontSize: 11 }}>Dùng tên cột khác trong dòng</span>}
+                      </div>
+                      {isNumber && (
+                        <div style={{ marginTop: 4, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <label style={{ fontWeight: 500 }}>Footer:</label>
+                          <select value={col.footer_formula || ''} onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], footer_formula: e.target.value || null };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }} style={{ fontSize: 11, padding: '2px 4px' }}>
+                            <option value="">Không</option>
+                            <option value="SUM">SUM — Tổng</option>
+                            <option value="AVG">AVG — Trung bình</option>
+                            <option value="MIN">MIN — Nhỏ nhất</option>
+                            <option value="MAX">MAX — Lớn nhất</option>
+                            <option value="COUNT">COUNT — Đếm dòng</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button className="btn btn-xs btn-secondary mt-1" onClick={() => {
+                  const newCols = [...(selectedField.config?.tableConfig?.columns || []), { field_id: null, key: '', label: '', column_type: 'text', width: 120, required: false, options: [] }];
+                  handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                    ...(selectedField.config?.tableConfig || {}),
+                    columns: newCols
+                  });
+                }}>+ Thêm cột</button>
+              </div>
+            )}
           </div>
         </div>
       )}

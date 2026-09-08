@@ -39,7 +39,8 @@ exports.create = async (req, res) => {
     const {
       entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, display_format, unit, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key,
+      table_config
     } = req.body;
 
     if (!entity || !entity.trim()) {
@@ -52,7 +53,7 @@ exports.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Label không được để trống' });
     }
 
-    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password'];
+    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
     if (type && !allowedTypes.includes(type)) {
       return res.status(400).json({ success: false, message: `Type phải là một trong: ${allowedTypes.join(', ')}` });
     }
@@ -63,7 +64,8 @@ exports.create = async (req, res) => {
       label: label.trim(),
       type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, display_format, unit, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key,
+      table_config
     });
 
     res.status(201).json({ success: true, data: field, message: 'Tạo field definition thành công' });
@@ -82,7 +84,8 @@ exports.update = async (req, res) => {
     const {
       entity, key, label, type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, display_format, unit, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key,
+      table_config
     } = req.body;
 
     const existing = await fieldDefinitionService.getFieldDefinitionById(id);
@@ -109,7 +112,7 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Label không được để trống' });
     }
 
-    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password'];
+    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
     if (type && !allowedTypes.includes(type)) {
       return res.status(400).json({ success: false, message: `Type phải là một trong: ${allowedTypes.join(', ')}` });
     }
@@ -120,7 +123,8 @@ exports.update = async (req, res) => {
       label: label.trim(),
       type, source_type, required, validation, options, formula, placeholder, help_text, status,
       number_format, decimal_places, display_format, unit, date_format, timezone,
-      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key
+      source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key,
+      table_config
     });
 
     res.json({ success: true, data: field, message: 'Cập nhật field definition thành công' });
