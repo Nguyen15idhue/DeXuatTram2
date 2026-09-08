@@ -533,27 +533,27 @@ const MapView = ({
 
     if (selectedStyle && selectedStyle.url) {
       return {
-        url: resolveTileUrl(selectedStyle.url, apiKey, selectedStyle.value),
+        url: PROXY_TILE,
         attribution: selectedStyle.attribution || provider.attribution,
-        subdomains: selectedStyle.subdomains ?? provider.subdomains ?? '',
+        subdomains: '',
         warning: '',
       };
     }
 
     if (provider.tile_url_template && selectedStyle) {
       return {
-        url: resolveTileUrl(provider.tile_url_template, apiKey, selectedStyle.value),
+        url: PROXY_TILE,
         attribution: provider.attribution,
-        subdomains: provider.subdomains || '',
+        subdomains: '',
         warning: '',
       };
     }
 
     if (provider.tile_url && isValidTileUrl(provider.tile_url)) {
       return {
-        url: provider.tile_url,
+        url: PROXY_TILE,
         attribution: provider.attribution,
-        subdomains: provider.subdomains || '',
+        subdomains: '',
         warning: '',
       };
     }

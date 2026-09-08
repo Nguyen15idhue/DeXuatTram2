@@ -33,7 +33,7 @@ const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_FORM_ID = 9;
 
 const MyProposalsPage = () => {
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { getSelectOptions } = useFieldOptions('station_proposals');
@@ -45,7 +45,7 @@ const MyProposalsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
-  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -66,10 +66,10 @@ const MyProposalsPage = () => {
       const mode = match[1];
       const id = parseInt(match[2]);
       const existing = proposals.find(p => p.id === id);
-      setPopup({ open: true, record: existing || null, mode });
+      setPopup({ open: true, record: existing || null, mode, recordId: null, entity: 'station_proposals' });
       if (!existing && id) loadProposalById(id);
     } else {
-      setPopup({ open: false, record: null, mode: 'view' });
+      setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
     }
   }, [location.pathname, proposals.length]);
 
@@ -361,6 +361,10 @@ const MyProposalsPage = () => {
         fetchDuplicates={(minM, maxM) => myProposalService.duplicates(minM, maxM, token)}
         getProposalViewUrl={(id) => `/my-proposals/view=${id}`}
         onModeChange={setDupMode}
+        onViewItem={(kind, id) => {
+          const entity = kind === 'station' ? 'stations' : 'station_proposals';
+          setPopup({ open: true, record: null, mode: 'view', recordId: id, entity });
+        }}
         exportDuplicatesUrl="/my-proposals/duplicates/export"
         exportToken={token}
       />
@@ -472,16 +476,20 @@ const MyProposalsPage = () => {
 
       {popup.open && (
         <RecordDetailPopup
-          entity="station_proposals"
+          entity={popup.entity}
           record={popup.record}
-          recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
-          viewId={PROPOSALS_VIEW_ID}
+          recordId={popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))}
+          viewId={popup.entity === 'stations' ? undefined : PROPOSALS_VIEW_ID}
           mode={popup.mode}
-          onClose={() => navigate('/my-proposals')}
+          allowEdit={isAdmin}
+          onClose={() => {
+            setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
+            navigate('/my-proposals');
+          }}
           onSaved={() => loadProposals(pagination.page)}
           onSwitchMode={(newMode) => {
-            const id = location.pathname.match(/=(\d+)/)?.[1];
-            navigate(`/my-proposals/${newMode}=${id}`, { replace: true });
+            const id = popup.recordId || location.pathname.match(/=(\d+)/)?.[1];
+            if (id) navigate(`/my-proposals/${newMode}=${id}`, { replace: true });
           }}
         />
       )}

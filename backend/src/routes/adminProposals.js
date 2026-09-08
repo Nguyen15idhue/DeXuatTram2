@@ -39,6 +39,66 @@ router.get('/', requireAuth, requireUserManager, adminProposalController.getAll)
 
 /**
  * @swagger
+ * /api/admin/proposals/duplicates:
+ *   get:
+ *     tags: [Admin - Proposals]
+ *     summary: Tìm cặp đề xuất/trạm trùng lặp theo khoảng cách
+ *     description: So sánh toàn bộ đề xuất (trừ REJECTED) với nhau và với trạm. Khoảng cách Haversine, tính bằng mét.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: min_m
+ *         schema:
+ *           type: number
+ *           default: 200
+ *         description: Khoảng cách tối thiểu (m)
+ *       - in: query
+ *         name: max_m
+ *         schema:
+ *           type: number
+ *           default: 2000
+ *         description: Khoảng cách tối đa (m, tối đa 5000)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Tham số không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
+router.get('/duplicates', requireAuth, requireUserManager, adminProposalController.duplicates);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}:
+ *   get:
+ *     tags: [Admin - Proposals]
+ *     summary: Admin lấy chi tiết đề xuất theo ID
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id', requireAuth, requireUserManager, adminProposalController.getById);
+
+/**
+ * @swagger
  * /api/admin/proposals/{id}:
  *   delete:
  *     tags: [Admin - Proposals]
@@ -149,39 +209,5 @@ router.put('/:id', requireAuth, requireUserManager, adminProposalController.upda
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id/status', requireAuth, requireUserManager, adminProposalController.updateStatus);
-
-/**
- * @swagger
- * /api/admin/proposals/duplicates:
- *   get:
- *     tags: [Admin - Proposals]
- *     summary: Tìm cặp đề xuất/trạm trùng lặp theo khoảng cách
- *     description: So sánh toàn bộ đề xuất (trừ REJECTED) với nhau và với trạm. Khoảng cách Haversine, tính bằng mét.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: min_m
- *         schema:
- *           type: number
- *           default: 200
- *         description: Khoảng cách tối thiểu (m)
- *       - in: query
- *         name: max_m
- *         schema:
- *           type: number
- *           default: 2000
- *         description: Khoảng cách tối đa (m, tối đa 5000)
- *     responses:
- *       200:
- *         description: Thành công
- *       400:
- *         description: Tham số không hợp lệ
- *       401:
- *         description: Chưa xác thực
- *       403:
- *         description: Không có quyền Admin
- */
-router.get('/duplicates', requireAuth, requireUserManager, adminProposalController.duplicates);
 
 module.exports = router;

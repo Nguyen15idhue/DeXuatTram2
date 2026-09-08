@@ -1,4 +1,5 @@
 const adminProposalService = require('../services/adminProposalService');
+const proposalService = require('../services/proposalService');
 const proximityService = require('../services/proximityService');
 
 const scopeFor = async (req) => {
@@ -34,6 +35,23 @@ exports.getAll = async (req, res) => {
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getById = async (req, res) => {
+  try {
+    const proposal = await proposalService.getProposalById(req.params.id);
+    if (!proposal) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const scope = await scopeFor(req);
+    if (denyOutsideBranch(proposal, scope)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
+    }
+    res.json({ success: true, data: proposal });
+  } catch (error) {
+    console.error('Admin get proposal error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

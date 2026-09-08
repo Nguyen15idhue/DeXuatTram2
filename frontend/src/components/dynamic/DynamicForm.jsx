@@ -455,6 +455,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         uploadUrl={guestMode ? '/files/guest-upload' : '/files/upload'}
         allowedOptions={optionAllowlist[field.key] || null}
         allFields={allEntityFields.length > 0 ? allEntityFields : fields}
+        dataListOptions={dataListOptions}
       />
     );
   };

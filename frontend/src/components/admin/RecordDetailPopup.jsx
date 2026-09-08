@@ -233,31 +233,28 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const getLayoutSections = () => {
     if (!formConfig?.layout_config?.sections) return null;
-    const sections = formConfig.layout_config.sections;
+    const lc = formConfig.layout_config;
+    const fieldsForm = formConfig.fields || [];
     const fieldsAll = [...viewFields, ...otherFields];
     const fieldsByKey = {};
     fieldsAll.forEach(f => { fieldsByKey[f.field_key || f.key] = f; });
-    return sections.map(sec => {
-      const sectionFields = [];
-      (sec.rows || []).forEach(row => {
+    const cellMap = {};
+    fieldsForm.forEach(f => {
+      const cfg = f.config ? (typeof f.config === 'string' ? (() => { try { return JSON.parse(f.config); } catch { return null; } })() : f.config) : null;
+      if (cfg && cfg.rowId != null && cfg.colIndex != null) {
+        cellMap[`${cfg.rowId}-${cfg.colIndex}`] = fieldsByKey[f.key || f.field_key] || null;
+      }
+    });
+    return lc.sections.map(sec => ({
+      ...sec,
+      rows: (sec.rows || []).map(row => {
         const cols = parseInt((row.columns || '1:1').split(':')[1]);
-        Array.from({ length: cols }).forEach((_, ci) => {
-          const cellKey = `${row.id}-${ci}`;
-          const ff = (formConfig.fields || []).find(f => {
-            const cfg = f.config ? (typeof f.config === 'string' ? (() => { try { return JSON.parse(f.config); } catch { return null; } })() : f.config) : null;
-            return cfg && cfg.rowId === row.id && cfg.colIndex === ci;
-          });
-          if (ff) {
-            const fieldKey = ff.key || ff.field_key;
-            const matched = fieldsByKey[fieldKey];
-            if (matched && !sectionFields.find(f => (f.field_key || f.key) === fieldKey)) {
-              sectionFields.push(matched);
-            }
-          }
-        });
-      });
-      return { ...sec, fields: sectionFields };
-    }).filter(sec => sec.fields.length > 0);
+        return {
+          ...row,
+          cells: Array.from({ length: cols }).map((_, ci) => cellMap[`${row.id}-${ci}`] || null)
+        };
+      })
+    }));
   };
 
   const sections = getLayoutSections();
@@ -301,6 +298,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                     entityId={record.id}
                     entityType={entity}
                     allFields={allFields}
+                    dataListOptions={dataListOptions}
                   />
                 ) : (
                   <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
@@ -327,35 +325,40 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         <div className="popup-body">
           {sections && sections.length > 0 ? (
             sections.map(sec => (
-              <div key={sec.id} className="popup-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
-                {sec.title && <h3 className="popup-section-title" style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{sec.title}</h3>}
-                <div className="popup-fields">
-                  {sec.fields.map(field => {
-                    const key = field.field_key || field.key;
-                    const label = field.field_label || field.label;
-                    const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
-                    return (
-                      <div key={key} className="popup-field-row">
-                        <span className="popup-field-label">{label}</span>
-                        <span className="popup-field-value">
-                          {mode === 'edit' ? (
-                            <DynamicField
-                              field={{ ...field, options: resolveFieldOptions(field) }}
-                              value={value}
-                              onChange={(val) => handleFieldChange(key, val)}
-                              entityId={record.id}
-                              entityType={entity}
-                              allFields={allFields}
-                            />
-                          ) : (
-                            <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
-                          )}
-                        </span>
+              <fieldset key={sec.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+                {sec.title && <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>{sec.title}</legend>}
+                {sec.rows.map(row => (
+                  <div key={row.id} className="form-row" data-cols={row.columns} style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                    {row.cells.map((field, ci) => (
+                      <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
+                        {field ? (() => {
+                          const key = field.field_key || field.key;
+                          const label = field.field_label || field.label;
+                          const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
+                          return (
+                            <div className="dynamic-form-field">
+                              <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}</label>
+                              {mode === 'edit' ? (
+                                <DynamicField
+                                  field={{ ...field, options: resolveFieldOptions(field) }}
+                                  value={value}
+                                  onChange={(val) => handleFieldChange(key, val)}
+                                  entityId={record.id}
+                                  entityType={entity}
+                                  allFields={allFields}
+                                  dataListOptions={dataListOptions}
+                                />
+                              ) : (
+                                <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
+                              )}
+                            </div>
+                          );
+                        })() : <div className="form-cell-empty" />}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
+                    ))}
+                  </div>
+                ))}
+              </fieldset>
             ))
           ) : (
             <>

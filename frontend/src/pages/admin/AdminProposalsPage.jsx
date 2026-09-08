@@ -15,7 +15,7 @@ import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw } from 'lucide-
 const PROPOSALS_VIEW_ID = 8;
 
 const AdminProposalsPage = () => {
-  const { token, isSales } = useAuth();
+  const { token, isSales, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { getSelectOptions } = useFieldOptions('station_proposals');
@@ -28,7 +28,7 @@ const AdminProposalsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null });
   const [dupMode, setDupMode] = useState(false);
   const dupRef = useRef(null);
   const tableRef = useRef(null);
@@ -198,6 +198,10 @@ const AdminProposalsPage = () => {
         getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
         getStationViewUrl={(id) => `/admin/stations/view=${id}`}
         onModeChange={setDupMode}
+        onViewItem={(kind, id) => {
+          if (kind === 'proposal') setPopup({ open: true, record: null, mode: 'view', recordId: id });
+          else if (kind === 'station') navigate(`/admin/stations/view=${id}`);
+        }}
         exportDuplicatesUrl="/admin/excel/export/duplicates"
         exportToken={token}
       />
@@ -218,14 +222,18 @@ const AdminProposalsPage = () => {
         <RecordDetailPopup
           entity="station_proposals"
           record={popup.record}
-          recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
+          recordId={popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))}
           viewId={PROPOSALS_VIEW_ID}
           mode={popup.mode}
-          onClose={() => navigate('/admin/proposals')}
+          allowEdit={isAdmin}
+          onClose={() => {
+            setPopup({ open: false, record: null, mode: 'view', recordId: null });
+            navigate('/admin/proposals');
+          }}
           onSaved={() => loadProposals(pagination.page)}
           onSwitchMode={(newMode) => {
-            const id = location.pathname.match(/=(\d+)/)?.[1];
-            navigate(`/admin/proposals/${newMode}=${id}`, { replace: true });
+            const id = popup.recordId || location.pathname.match(/=(\d+)/)?.[1];
+            if (id) navigate(`/admin/proposals/${newMode}=${id}`, { replace: true });
           }}
         />
       )}

@@ -521,7 +521,10 @@ const AdminUsersPage = () => {
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
           viewId={USERS_VIEW_ID}
           mode={popup.mode}
-          onClose={() => navigate('/admin/users')}
+          onClose={() => {
+            setPopup({ open: false, record: null, mode: 'view' });
+            navigate('/admin/users');
+          }}
           onSaved={() => loadUsers()}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];

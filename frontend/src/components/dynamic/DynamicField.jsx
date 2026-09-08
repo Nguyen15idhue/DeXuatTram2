@@ -44,7 +44,7 @@ const computeFormula = (expression, rowData) => {
 const TABLE_CELL_STYLE = { padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 13 };
 const TABLE_HEADER_STYLE = { padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, background: '#f8fafc', textAlign: 'left' };
 
-const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [] }) => {
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {} }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -115,8 +115,22 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
   const baseClass = `form-control ${error ? 'is-invalid' : ''}`;
   const step = field.type === 'number' ? (field.number_format === 'integer' ? '1' : (field.decimal_places > 0 ? '0.' + '0'.repeat(field.decimal_places - 1) + '1' : 'any')) : undefined;
 
+  const resolveCellOptions = (refField) => {
+    if (refField.data_list_id && dataListOptions[refField.data_list_id]) {
+      const { unique } = dataListOptions[refField.data_list_id];
+      const col = refField.data_list_column;
+      if (col && unique[col]) return unique[col].map(v => ({ value: v, label: v }));
+    }
+    if (refField.options) {
+      if (Array.isArray(refField.options)) return refField.options;
+      try { return JSON.parse(refField.options); } catch { return []; }
+    }
+    return [];
+  };
+
   const renderTableCell = (refField, cellVal, onChangeCell, disabledCell) => {
     const cellClass = 'form-control';
+    const cellStyle = { padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' };
     switch (refField.type) {
       case 'number':
         return (
@@ -127,22 +141,18 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
             step={refField.number_format === 'integer' ? '1' : 'any'}
-            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+            style={cellStyle}
           />
         );
       case 'select': {
-        const opts = (() => {
-          if (!refField.options) return [];
-          if (Array.isArray(refField.options)) return refField.options;
-          try { return JSON.parse(refField.options); } catch { return []; }
-        })();
+        const opts = resolveCellOptions(refField);
         return (
           <select
             className={cellClass}
             value={cellVal || ''}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
-            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+            style={cellStyle}
           >
             <option value="">--</option>
             {opts.map((o, i) => {
@@ -153,6 +163,47 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           </select>
         );
       }
+      case 'multiselect': {
+        const opts = resolveCellOptions(refField);
+        const selected = Array.isArray(cellVal) ? cellVal : [];
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            {opts.map((o, i) => {
+              const optVal = typeof o === 'object' ? (o.value ?? o.label) : o;
+              const optLabel = typeof o === 'object' ? (o.label || o.value) : o;
+              const isSelected = selected.includes(optVal);
+              return (
+                <label key={i} style={{ cursor: disabledCell ? 'not-allowed' : 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(e) => {
+                      const cur = [...selected];
+                      if (e.target.checked) cur.push(optVal);
+                      else { const idx = cur.indexOf(optVal); if (idx > -1) cur.splice(idx, 1); }
+                      onChangeCell(cur);
+                    }}
+                    disabled={disabledCell}
+                    className="hidden"
+                  />
+                  <span style={{ display: 'inline-block', padding: '1px 6px', fontSize: 11, borderRadius: 4, background: isSelected ? '#3b82f6' : '#e5e7eb', color: isSelected ? '#fff' : '#374151' }}>
+                    {optLabel}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        );
+      }
+      case 'boolean':
+        return (
+          <input
+            type="checkbox"
+            checked={!!cellVal}
+            onChange={(e) => onChangeCell(e.target.checked)}
+            disabled={disabledCell}
+          />
+        );
       case 'date':
         return (
           <input
@@ -161,7 +212,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             value={cellVal || ''}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
-            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+            style={cellStyle}
           />
         );
       case 'datetime':
@@ -172,16 +223,75 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             value={cellVal || ''}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
-            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+            style={cellStyle}
           />
         );
-      case 'boolean':
+      case 'email':
         return (
           <input
-            type="checkbox"
-            checked={!!cellVal}
-            onChange={(e) => onChangeCell(e.target.checked)}
+            type="email"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
+            style={cellStyle}
+          />
+        );
+      case 'phone':
+        return (
+          <input
+            type="tel"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={cellStyle}
+          />
+        );
+      case 'url':
+        return (
+          <input
+            type="url"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={cellStyle}
+          />
+        );
+      case 'password':
+        return (
+          <input
+            type="password"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={cellStyle}
+          />
+        );
+      case 'formula':
+        return (
+          <input
+            type="text"
+            className={cellClass}
+            value={cellVal || ''}
+            readOnly
+            disabled
+            style={{ ...cellStyle, background: '#f0fdf4' }}
+          />
+        );
+      case 'file':
+        return <span style={{ fontSize: 12, color: '#6b7280' }}>{Array.isArray(cellVal) ? `${cellVal.length} file` : (cellVal ? '1 file' : '-')}</span>;
+      case 'textarea':
+        return (
+          <input
+            type="text"
+            className={cellClass}
+            value={cellVal || ''}
+            onChange={(e) => onChangeCell(e.target.value)}
+            disabled={disabledCell}
+            style={cellStyle}
           />
         );
       default:
@@ -192,7 +302,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             value={cellVal || ''}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
-            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+            style={cellStyle}
           />
         );
     }
@@ -542,7 +652,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             {columns.some(col => col.footer_formula) && rows.length > 0 && (
               <tfoot>
                 <tr>
-                  <td style={{ ...TABLE_HEADER_STYLE, textAlign: 'center', fontWeight: 700, background: '#f1f5f9' }}>∑</td>
+                  <td style={{ ...TABLE_HEADER_STYLE, textAlign: 'center', fontWeight: 700, background: '#f1f5f9' }}></td>
                   {columns.map(col => {
                     if (!col.footer_formula) {
                       return <td key={col.key} style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9' }}></td>;
@@ -552,6 +662,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                       const n = parseFloat(raw);
                       return isNaN(n) ? null : n;
                     }).filter(v => v !== null);
+                    const FOOTER_LABELS = { SUM: 'Tổng', AVG: 'TB', MIN: 'Min', MAX: 'Max', COUNT: 'Đếm' };
                     let footerVal = '';
                     switch (col.footer_formula) {
                       case 'SUM': footerVal = values.reduce((a, b) => a + b, 0); break;
@@ -560,9 +671,10 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                       case 'MAX': footerVal = values.length ? Math.max(...values) : 0; break;
                       case 'COUNT': footerVal = values.length; break;
                     }
+                    const label = FOOTER_LABELS[col.footer_formula] || col.footer_formula;
                     return (
                       <td key={col.key} style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}>
-                        {typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}
+                        <span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{label}:</span>{typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}
                       </td>
                     );
                   })}
