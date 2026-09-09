@@ -5,6 +5,8 @@ const fieldMapper = require('./fieldMapper');
 const oneOfficeService = require('./oneOfficeService');
 const proposalService = require('./proposalService');
 const queueService = require('./queueService');
+const templateService = require('./templateService');
+const fileSyncService = require('./fileSyncService');
 
 exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
   const config = await apiConfigService.getById(apiConfigId);
@@ -45,6 +47,25 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       contactData.type = '0';
     }
 
+    let descHtml = '';
+    try {
+      descHtml = await templateService.render(proposal, apiConfigId);
+    } catch (err) {
+      console.error('[Sync] Error rendering desc template:', err.message);
+      descHtml = proposal.description || '';
+    }
+    contactData.desc = descHtml;
+
+    let filesResult = null;
+    try {
+      filesResult = await fileSyncService.uploadFiles(proposalId, apiConfigId);
+      if (filesResult.success && filesResult.totalFiles > 0) {
+        console.log(`[Sync] Uploaded ${filesResult.totalFiles} files for proposal ${proposalId}`);
+      }
+    } catch (err) {
+      console.error('[Sync] Error uploading files:', err.message);
+    }
+
     const missingRequired = [];
     if (!contactData.code) missingRequired.push('Mã (code)');
     if (!contactData.name) missingRequired.push('Tên (name)');
@@ -60,12 +81,26 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       entity_type: 'station_proposals',
       entity_id: proposalId,
       direction: 'push',
-      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId },
+      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId, files_result: filesResult },
       priority: 0,
       created_by: userId
     });
 
-    results.push({ proposalId, success: true, jobId: job.id, contactData });
+    try {
+      const snapshotData = {
+        contact_data: contactData,
+        files_result: filesResult,
+        synced_at: new Date().toISOString()
+      };
+      await pool.query(
+        'UPDATE station_proposals SET last_synced_data = ?, updated_at = NOW() WHERE id = ?',
+        [JSON.stringify(snapshotData), proposalId]
+      );
+    } catch (err) {
+      console.error('[Sync] Error saving snapshot:', err.message);
+    }
+
+    results.push({ proposalId, success: true, jobId: job.id, contactData, filesResult });
   }
 
   return results;
