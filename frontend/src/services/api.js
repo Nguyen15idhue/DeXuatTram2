@@ -518,3 +518,37 @@ export const apiConfigService = {
     return api.postWithAuth(`/admin/api-configs/${id}/test`, {}, token);
   }
 };
+
+export const fieldMappingService = {
+  getTypes(token, configId) {
+    const url = configId ? `/admin/field-mappings/types?configId=${configId}` : '/admin/field-mappings/types';
+    return api.getWithAuth(url, token);
+  },
+  getAllByConfig(configId, token) {
+    return api.getWithAuth(`/admin/field-mappings/${configId}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/field-mappings/detail/${id}`, token);
+  },
+  create(configId, data, token) {
+    return api.postWithAuth(`/admin/field-mappings/${configId}`, data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/field-mappings/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/field-mappings/${id}`, token);
+  },
+  preview(data, token) {
+    return api.postWithAuth('/admin/field-mappings/preview', data, token);
+  },
+  updateMetadata(configId, metadata, token) {
+    return api.putWithAuth(`/admin/field-mappings/metadata/${configId}`, metadata, token);
+  },
+  getSelectedFields(configId, token) {
+    return api.getWithAuth(`/admin/field-mappings/selected-fields/${configId}`, token);
+  },
+  updateSelectedFields(configId, fields, token) {
+    return api.putWithAuth(`/admin/field-mappings/selected-fields/${configId}`, fields, token);
+  }
+};

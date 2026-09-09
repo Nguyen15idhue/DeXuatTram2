@@ -107,6 +107,50 @@ exports.remove = async (id) => {
   return existing;
 };
 
+exports.getFieldMetadata = async (id) => {
+  const config = await exports.getById(id);
+  if (!config) return null;
+  if (!config.field_metadata) return {};
+  return typeof config.field_metadata === 'string' ? JSON.parse(config.field_metadata) : config.field_metadata;
+};
+
+exports.updateFieldMetadata = async (id, metadata) => {
+  await pool.query(
+    'UPDATE api_configs SET field_metadata = ?, updated_at = NOW() WHERE id = ?',
+    [JSON.stringify(metadata), id]
+  );
+  return metadata;
+};
+
+exports.mergeFieldMetadata = async (configId, apiFields) => {
+  const existing = await exports.getFieldMetadata(configId);
+  const merged = { ...existing };
+  apiFields.forEach(f => {
+    if (!merged[f.key]) {
+      merged[f.key] = { label: f.label || f.key, type: f.type || 'text', options: f.options || [] };
+    } else if (merged[f.key].label === f.key && f.label !== f.key) {
+      merged[f.key].label = f.label;
+    }
+  });
+  await exports.updateFieldMetadata(configId, merged);
+  return merged;
+};
+
+exports.getSelectedFields = async (id) => {
+  const config = await exports.getById(id);
+  if (!config) return null;
+  if (!config.selected_fields) return null;
+  return typeof config.selected_fields === 'string' ? JSON.parse(config.selected_fields) : config.selected_fields;
+};
+
+exports.updateSelectedFields = async (id, fields) => {
+  await pool.query(
+    'UPDATE api_configs SET selected_fields = ?, updated_at = NOW() WHERE id = ?',
+    [JSON.stringify(fields), id]
+  );
+  return fields;
+};
+
 exports.testConnection = async (id) => {
   const config = await exports.getById(id);
   if (!config) {
@@ -121,13 +165,9 @@ exports.testConnection = async (id) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const response = await fetch(`${config.base_url}/api/customer/contact/gets`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Bearer ${token}`
-      },
-      body: new URLSearchParams({ page: 1, limit: 1 }).toString(),
+    const url = `${config.base_url}/api/customer/contact/gets?access_token=${token}&limit=1`;
+    const response = await fetch(url, {
+      method: 'GET',
       signal: controller.signal
     });
 
@@ -143,10 +183,17 @@ exports.testConnection = async (id) => {
     }
 
     const result = await response.json();
+    if (result.error) {
+      return {
+        status: 'failed',
+        response_time: responseTime,
+        error: result.message || 'Token không hợp lệ'
+      };
+    }
     return {
       status: 'connected',
       response_time: responseTime,
-      data: { total: result.data?.total || 0 }
+      data: { total: result.total_item || 0 }
     };
   } catch (error) {
     const responseTime = Date.now() - startTime;

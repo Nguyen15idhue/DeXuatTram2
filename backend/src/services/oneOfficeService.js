@@ -36,18 +36,18 @@ const requestWithRetry = async (method, url, body, token, retryCount = 0) => {
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Bearer ${token}`
-    };
+    const separator = url.includes('?') ? '&' : '?';
+    const fullUrl = `${url}${separator}access_token=${token}`;
 
+    const headers = {};
     const options = { method, headers, signal: controller.signal };
     if (body && method !== 'GET') {
-      options.body = new URLSearchParams(body).toString();
+      headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
     }
 
     const startTime = Date.now();
-    const response = await fetch(url, options);
+    const response = await fetch(fullUrl, options);
     clearTimeout(timeout);
     const responseTime = Date.now() - startTime;
 
@@ -97,17 +97,24 @@ const requestWithRetry = async (method, url, body, token, retryCount = 0) => {
 
 exports.getContacts = async (apiConfigId, params = {}) => {
   const { baseUrl, token } = await getToken(apiConfigId);
-  const body = {
-    page: params.page || 1,
-    limit: params.limit || 50,
-    sort: params.sort || 'id',
-    order: params.order || 'desc'
-  };
-  if (params.type) body.type = params.type;
-  if (params.search) body.search = params.search;
-  if (params.status_id) body.status_id = params.status_id;
+  const queryParams = {};
+  if (params.page) queryParams.page = params.page;
+  if (params.limit) queryParams.limit = params.limit;
+  if (params.type !== undefined) queryParams.type = params.type;
+  if (params.search) queryParams.search = params.search;
+  if (params.status_id) queryParams.status_id = params.status_id;
 
-  return requestWithRetry('POST', `${baseUrl}/api/customer/contact/gets`, body, token);
+  const queryString = Object.entries(queryParams).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  const url = `${baseUrl}/api/customer/contact/gets${queryString ? '?' + queryString : ''}`;
+
+  const result = await requestWithRetry('GET', url, null, token);
+  if (result.success && result.data && !result.data.error) {
+    result.data = {
+      contacts: result.data.data || [],
+      total: result.data.total_item || 0
+    };
+  }
+  return result;
 };
 
 exports.getContactDetail = async (apiConfigId, code) => {
@@ -120,7 +127,7 @@ exports.insertContact = async (apiConfigId, contactData) => {
   const body = {};
   for (const [key, value] of Object.entries(contactData)) {
     if (value !== null && value !== undefined) {
-      body[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      body[key] = value;
     }
   }
   return requestWithRetry('POST', `${baseUrl}/api/customer/contact/insert`, body, token);
@@ -128,12 +135,7 @@ exports.insertContact = async (apiConfigId, contactData) => {
 
 exports.updateContact = async (apiConfigId, code, contactData) => {
   const { baseUrl, token } = await getToken(apiConfigId);
-  const body = { code };
-  for (const [key, value] of Object.entries(contactData)) {
-    if (value !== null && value !== undefined) {
-      body[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    }
-  }
+  const body = { code, ...contactData };
   return requestWithRetry('POST', `${baseUrl}/api/customer/contact/update`, body, token);
 };
 

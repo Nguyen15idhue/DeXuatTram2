@@ -336,6 +336,54 @@ After changing code:
 
 When automated tests do not exist, perform manual verification.
 
+### Playwright Frontend Testing
+
+Playwright đã cài sẵn trong `frontend/package.json`. Test trên host (không chạy trong Docker).
+
+**Cách chạy:**
+```powershell
+# Từ thư mục frontend/
+node test-1office.cjs
+```
+
+**Quy tắc viết test:**
+- File test đặt tại `frontend/test-*.cjs` (dùng `.cjs` vì package.json có `"type": "module"`)
+- Dùng `chromium.launch({ headless: true })` — không cần giao diện
+- Login trước khi test các trang admin: `page.request.post(API + '/api/auth/login', { data: { email, password } })` → lưu token vào localStorage
+- Dùng `page.waitForLoadState('networkidle')` + `page.waitForTimeout(1000-2000)` sau mỗi hành động
+- CSS selectors: dùng `button:has-text("Text")`, `span.font-medium`, `input[placeholder*="..."]`
+- KHÔNG dùng `text=...` trong `page.$()` — phải dùng `page.getByText()` hoặc `page.locator()`
+- Test results lưu vào `test-1office-results.json`
+
+**Ví dụ test pattern:**
+```javascript
+const { chromium } = require('playwright');
+const BASE = 'http://localhost:5173';
+const API = 'http://localhost:3000';
+
+async function main() {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+
+  // Login
+  await page.goto(`${BASE}/login`);
+  await page.waitForLoadState('networkidle');
+  await page.fill('input[type="email"]', 'admin@station.com');
+  await page.fill('input[type="password"]', '123456');
+  await page.click('button[type="submit"]');
+  await page.waitForTimeout(2000);
+
+  // Test page
+  await page.goto(`${BASE}/admin/api-configs`);
+  await page.waitForLoadState('networkidle');
+  const btn = await page.$('button:has-text("Mapping")');
+  console.log('Mapping button:', btn ? 'PASS' : 'FAIL');
+
+  await browser.close();
+}
+main();
+```
+
 ## 14. PowerShell UTF-8 Encoding
 
 PowerShell 5.1 (Windows) mặc định dùng Windows-1252 → tiếng Việt hiển thị sai (mojibake).
