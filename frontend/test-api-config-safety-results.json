@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "test": "Login",
+      "pass": true
+    },
+    {
+      "test": "Config 1Office tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Config đang Active",
+      "pass": true
+    },
+    {
+      "test": "Toast lỗi hiện khi xóa active config",
+      "pass": true
+    },
+    {
+      "test": "Toast message đúng",
+      "pass": true
+    },
+    {
+      "test": "ConfirmDialog KHÔNG mở khi xóa active",
+      "pass": true
+    }
+  ],
+  "timestamp": "2026-09-09T12:03:53.631Z"
+}

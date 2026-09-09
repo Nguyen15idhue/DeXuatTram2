@@ -3,9 +3,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiConfigService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw } from 'lucide-react';
+import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code } from 'lucide-react';
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
 import SyncPanel from '../../components/admin/SyncPanel';
+import TemplateEditor from '../../components/admin/TemplateEditor';
 
 const AUTH_TYPES = [
   { value: 'token', label: 'Token (Bearer)' },
@@ -27,6 +28,7 @@ const AdminApiConfigPage = () => {
   const [testing, setTesting] = useState(false);
   const [mappingConfig, setMappingConfig] = useState(null);
   const [syncConfig, setSyncConfig] = useState(null);
+  const [templateConfig, setTemplateConfig] = useState(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -115,8 +117,12 @@ const AdminApiConfigPage = () => {
     }
   };
 
-  const handleDeleteClick = (id, name) => {
-    setConfirmDelete({ isOpen: true, id, name });
+  const handleDeleteClick = (config) => {
+    if (config.is_active) {
+      setToast({ message: 'Cấu hình đang active. Vui lòng tắt active trước khi xóa', type: 'error' });
+      return;
+    }
+    setConfirmDelete({ isOpen: true, id: config.id, name: config.name });
   };
 
   const handleConfirmDelete = async () => {
@@ -332,6 +338,13 @@ const AdminApiConfigPage = () => {
                 <div className="card-actions justify-end gap-1 mt-auto">
                   <button
                     className="btn btn-outline btn-sm gap-1"
+                    onClick={() => setTemplateConfig(templateConfig?.id === config.id ? null : config)}
+                  >
+                    <Code size={14} />
+                    Template
+                  </button>
+                  <button
+                    className="btn btn-outline btn-sm gap-1"
                     onClick={() => setSyncConfig(syncConfig?.id === config.id ? null : config)}
                   >
                     <RefreshCw size={14} />
@@ -357,7 +370,7 @@ const AdminApiConfigPage = () => {
                       <button className="btn btn-primary btn-sm gap-1" onClick={() => openEditModal(config)}>
                         <Pencil size={14} />
                       </button>
-                      <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(config.id, config.name)}>
+                      <button className="btn btn-error btn-outline btn-sm gap-1" onClick={() => handleDeleteClick(config)}>
                         <Trash2 size={14} />
                       </button>
                     </>
@@ -385,6 +398,16 @@ const AdminApiConfigPage = () => {
           <SyncPanel
             configId={syncConfig.id}
             onClose={() => setSyncConfig(null)}
+          />
+        </div>
+      )}
+
+      {/* Template Editor */}
+      {templateConfig && (
+        <div className="mt-6">
+          <TemplateEditor
+            configId={templateConfig.id}
+            onClose={() => setTemplateConfig(null)}
           />
         </div>
       )}

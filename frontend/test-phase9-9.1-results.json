@@ -1,0 +1,33 @@
+{
+  "results": [
+    {
+      "test": "Template button exists",
+      "pass": true
+    },
+    {
+      "test": "Editor title visible",
+      "pass": true
+    },
+    {
+      "test": "Preview input exists",
+      "pass": true
+    },
+    {
+      "test": "Add Section button exists",
+      "pass": true
+    },
+    {
+      "test": "Save button exists",
+      "pass": true
+    },
+    {
+      "test": "Sections rendered",
+      "pass": true
+    },
+    {
+      "test": "Preview modal opens",
+      "pass": true
+    }
+  ],
+  "timestamp": "2026-09-09T11:05:55.418Z"
+}

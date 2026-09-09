@@ -1,0 +1,154 @@
+{
+  "results": [
+    {
+      "test": "Login thành công (redirect to map)",
+      "pass": true
+    },
+    {
+      "test": "Trang API Configurations load",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Template\" tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Template Editor title hiển thị",
+      "pass": true
+    },
+    {
+      "test": "Preview input tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Xem trước\" tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Thêm Section\" tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Lưu Template\" tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Sections render (6 sections)",
+      "pass": true
+    },
+    {
+      "test": "Section titles render",
+      "pass": true
+    },
+    {
+      "test": "Always checkbox render",
+      "pass": true
+    },
+    {
+      "test": "Collapse checkbox render",
+      "pass": true
+    },
+    {
+      "test": "Preview modal mở",
+      "pass": true
+    },
+    {
+      "test": "HTML content render",
+      "pass": true
+    },
+    {
+      "test": "HTML có nội dung",
+      "pass": true
+    },
+    {
+      "test": "HTML chứa nội dung tiếng Việt",
+      "pass": true
+    },
+    {
+      "test": "Thêm section mới",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Sync\" tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Push tab tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Pull tab tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Link tab tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Preview tab tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Preview description hiển thị",
+      "pass": true
+    },
+    {
+      "test": "Preview input trong SyncPanel",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Xem trước\" trong SyncPanel",
+      "pass": true
+    },
+    {
+      "test": "Preview HTML render trong SyncPanel",
+      "pass": true
+    },
+    {
+      "test": "HTML content trong SyncPanel có nội dung",
+      "pass": true
+    },
+    {
+      "test": "Nút \"Mapping\" tồn tại",
+      "pass": true
+    },
+    {
+      "test": "Field Mappings panel load",
+      "pass": true
+    },
+    {
+      "test": "Proposal Fields section render",
+      "pass": true
+    },
+    {
+      "test": "Contact Fields section render",
+      "pass": true
+    },
+    {
+      "test": "Get buttons render",
+      "pass": true
+    },
+    {
+      "test": "Search input render",
+      "pass": true
+    },
+    {
+      "test": "Mapped badges render",
+      "pass": true
+    },
+    {
+      "test": "Tablet viewport: Template button visible",
+      "pass": true
+    },
+    {
+      "test": "Console errors: 0 errors",
+      "pass": true
+    }
+  ],
+  "summary": {
+    "total": 36,
+    "passed": 36,
+    "failed": 0
+  },
+  "timestamp": "2026-09-09T11:40:18.625Z"
+}

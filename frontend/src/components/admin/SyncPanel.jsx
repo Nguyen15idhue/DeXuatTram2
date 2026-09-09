@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { oneOfficeSyncService, adminProposalService } from '../../services/api';
 import Toast from '../Toast';
-import { Send, Download, Link2, Search, CheckCircle, XCircle, Loader2, X, RefreshCw } from 'lucide-react';
+import { Send, Download, Link2, Search, CheckCircle, XCircle, Loader2, X, RefreshCw, Eye, FileText } from 'lucide-react';
 
 const SyncPanel = ({ configId, onClose }) => {
   const { token } = useAuth();
@@ -30,6 +30,13 @@ const SyncPanel = ({ configId, onClose }) => {
     linking: false,
     selectedContact: null,
     linkingProposalId: ''
+  });
+
+  const [previewState, setPreviewState] = useState({
+    proposalId: '',
+    loading: false,
+    html: '',
+    files: []
   });
 
   const loadProposals = useCallback(async () => {
@@ -147,10 +154,31 @@ const SyncPanel = ({ configId, onClose }) => {
     }));
   };
 
+  const handlePreview = async () => {
+    if (!previewState.proposalId) {
+      setToast({ message: 'Nhập ID proposal', type: 'error' });
+      return;
+    }
+    setPreviewState(prev => ({ ...prev, loading: true }));
+    try {
+      const res = await oneOfficeSyncService.previewDesc(configId, parseInt(previewState.proposalId), token);
+      if (res.success) {
+        setPreviewState(prev => ({ ...prev, html: res.data.html, loading: false }));
+      } else {
+        setToast({ message: res.message || 'Lỗi preview', type: 'error' });
+        setPreviewState(prev => ({ ...prev, loading: false }));
+      }
+    } catch {
+      setToast({ message: 'Lỗi kết nối server', type: 'error' });
+      setPreviewState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   const tabs = [
     { key: 'push', label: 'Push', icon: Send, desc: 'Gửi đề xuất sang 1Office' },
     { key: 'pull', label: 'Pull', icon: Download, desc: 'Đồng bộ từ 1Office' },
-    { key: 'link', label: 'Link', icon: Link2, desc: 'Liên kết đề xuất - contact' }
+    { key: 'link', label: 'Link', icon: Link2, desc: 'Liên kết đề xuất - contact' },
+    { key: 'preview', label: 'Preview', icon: Eye, desc: 'Xem trước HTML desc' }
   ];
 
   return (
@@ -319,6 +347,43 @@ const SyncPanel = ({ configId, onClose }) => {
             {linkState.linking ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
             Liên kết
           </button>
+        </div>
+      )}
+
+      {activeTab === 'preview' && (
+        <div>
+          <p className="text-sm text-base-content/60 mb-3">Xem trước HTML desc sẽ được gửi sang 1Office</p>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="number"
+              className="input input-bordered input-sm flex-1"
+              placeholder="Proposal ID"
+              value={previewState.proposalId}
+              onChange={(e) => setPreviewState(prev => ({ ...prev, proposalId: e.target.value }))}
+            />
+            <button
+              className="btn btn-primary btn-sm gap-1"
+              onClick={handlePreview}
+              disabled={previewState.loading || !previewState.proposalId}
+            >
+              {previewState.loading ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+              Xem trước
+            </button>
+          </div>
+
+          {previewState.html && (
+            <div className="border border-base-300 rounded bg-base-100 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText size={14} className="text-primary" />
+                <span className="text-sm font-medium">HTML Preview</span>
+                <span className="text-xs text-base-content/50">({previewState.html.length} chars)</span>
+              </div>
+              <div
+                className="bg-white p-4 rounded border border-base-300 overflow-auto max-h-96"
+                dangerouslySetInnerHTML={{ __html: previewState.html }}
+              />
+            </div>
+          )}
         </div>
       )}
 

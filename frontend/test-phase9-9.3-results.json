@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "test": "Panel title visible",
+      "pass": true
+    },
+    {
+      "test": "Desc badges rendered",
+      "pass": true
+    },
+    {
+      "test": "Warning styling applied",
+      "pass": true
+    }
+  ],
+  "timestamp": "2026-09-09T11:10:31.665Z"
+}

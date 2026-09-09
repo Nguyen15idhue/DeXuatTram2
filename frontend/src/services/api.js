@@ -550,6 +550,9 @@ export const fieldMappingService = {
   },
   updateSelectedFields(configId, fields, token) {
     return api.putWithAuth(`/admin/field-mappings/selected-fields/${configId}`, fields, token);
+  },
+  getUsedInDesc(configId, token) {
+    return api.getWithAuth(`/admin/field-mappings/used-in-desc/${configId}`, token);
   }
 };
 
@@ -571,5 +574,14 @@ export const oneOfficeSyncService = {
   },
   getJobDetail(jobId, token) {
     return api.getWithAuth(`/admin/queue-logs/${jobId}`, token);
+  },
+  getTemplate(configId, token) {
+    return api.getWithAuth(`/admin/1office/template?configId=${configId}`, token);
+  },
+  updateTemplate(configId, template, token) {
+    return api.putWithAuth('/admin/1office/template', { configId, template }, token);
+  },
+  previewDesc(configId, proposalId, token) {
+    return api.postWithAuth('/admin/1office/preview', { apiConfigId: configId, proposalId }, token);
   }
 };

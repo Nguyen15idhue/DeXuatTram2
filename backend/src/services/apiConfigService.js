@@ -103,6 +103,9 @@ exports.remove = async (id) => {
   if (!existing) {
     throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
   }
+  if (existing.is_active) {
+    throw Object.assign(new Error('Cấu hình đang active. Vui lòng tắt active trước khi xóa'), { statusCode: 400 });
+  }
   await pool.query('DELETE FROM api_configs WHERE id = ?', [id]);
   return existing;
 };

@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto('http://localhost:5173/login');
+  await page.waitForLoadState('networkidle');
+  await page.fill('input[type="email"]', 'admin@station.com');
+  await page.fill('input[type="password"]', '123456');
+  await page.click('button[type="submit"]');
+  await page.waitForTimeout(3000);
+  console.log('URL after login:', page.url());
+  await page.goto('http://localhost:5173/admin/api-configs');
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1000);
+  console.log('URL after nav:', page.url());
+  const h1 = await page.$('h1');
+  if (h1) console.log('H1:', await h1.textContent());
+  const templateBtn = await page.$('button:has-text("Template")');
+  console.log('Template button:', !!templateBtn);
+  await browser.close();
+})();

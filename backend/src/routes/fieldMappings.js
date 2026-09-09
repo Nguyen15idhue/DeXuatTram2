@@ -2,6 +2,35 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const fieldMappingController = require('../controllers/fieldMappingController');
+const fieldMappingService = require('../services/fieldMappingService');
+
+/**
+ * @swagger
+ * /api/admin/field-mappings/used-in-desc/{configId}:
+ *   get:
+ *     tags: [Field Mappings]
+ *     summary: Lấy danh sách fields đã dùng trong desc template
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: configId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Danh sách fields
+ */
+router.get('/used-in-desc/:configId', requireAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { configId } = req.params;
+    const fields = await fieldMappingService.getUsedInDescFields(parseInt(configId));
+    res.json({ success: true, data: fields });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ success: false, message: e.message });
+  }
+});
 
 /**
  * @swagger

@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "test": "Preview tab exists",
+      "pass": true
+    },
+    {
+      "test": "Preview input exists",
+      "pass": true
+    },
+    {
+      "test": "Preview button exists",
+      "pass": true
+    },
+    {
+      "test": "Preview HTML rendered",
+      "pass": true
+    },
+    {
+      "test": "HTML has content",
+      "pass": true
+    }
+  ],
+  "timestamp": "2026-09-09T11:07:50.512Z"
+}

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { fieldMappingService } from '../../services/api';
+import { fieldMappingService, oneOfficeSyncService } from '../../services/api';
 import Toast from '../Toast';
-import { ArrowRightLeft, Save, X, ToggleLeft, ToggleRight, Info, Search, Download } from 'lucide-react';
+import { ArrowRightLeft, Save, X, ToggleLeft, ToggleRight, Info, Search, Download, AlertTriangle } from 'lucide-react';
 
 const TYPE_LABELS = {
   text: 'Text', textarea: 'Textarea', number: 'Number', email: 'Email',
@@ -91,6 +91,7 @@ const FieldMappingPanel = ({ configId, onClose }) => {
   const [editingLabel, setEditingLabel] = useState('');
   const [fieldMetadata, setFieldMetadata] = useState({});
   const [editingMeta, setEditingMeta] = useState(null);
+  const [usedInDescFields, setUsedInDescFields] = useState([]);
   const searchRef = useRef(null);
 
   const loadMappings = useCallback(async () => {
@@ -125,6 +126,13 @@ const FieldMappingPanel = ({ configId, onClose }) => {
             ? JSON.parse(metaData.data.field_metadata)
             : metaData.data.field_metadata;
           setFieldMetadata(meta);
+        }
+      } catch {}
+
+      try {
+        const usedRes = await fieldMappingService.getUsedInDesc(configId, token);
+        if (usedRes.success && usedRes.data) {
+          setUsedInDescFields(usedRes.data);
         }
       } catch {}
     } catch {
@@ -442,13 +450,20 @@ const FieldMappingPanel = ({ configId, onClose }) => {
               <div className="space-y-1.5 max-h-[500px] overflow-y-auto">
                 {proposalFields.map((field) => {
                   const mapping = getMappingForSource(field.key);
+                  const isUsedInDesc = usedInDescFields.includes(field.key);
                   return (
-                    <div key={field.key} className={`flex items-center gap-2 p-2 rounded-lg border text-sm ${mapping ? 'border-primary bg-primary/5' : 'border-base-300'}`}>
+                    <div key={field.key} className={`flex items-center gap-2 p-2 rounded-lg border text-sm ${mapping ? 'border-primary bg-primary/5' : 'border-base-300'} ${isUsedInDesc ? 'border-warning bg-warning/5' : ''}`}>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="font-medium truncate">{field.label}</span>
                           {field.required ? <span className="text-error text-xs">*</span> : null}
                           <span className={`badge badge-xs ${TYPE_COLORS[field.type] || 'badge-ghost'}`}>{TYPE_LABELS[field.type] || field.type}</span>
+                          {isUsedInDesc && (
+                            <span className="badge badge-xs badge-warning gap-0.5">
+                              <AlertTriangle size={10} />
+                              Desc
+                            </span>
+                          )}
                         </div>
                         <span className="text-xs text-base-content/50">{field.key}</span>
                       </div>
