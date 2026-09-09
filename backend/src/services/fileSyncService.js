@@ -18,18 +18,18 @@ exports.loadFiles = async (proposalId) => {
     ? JSON.parse(rows[0].custom_data)
     : (rows[0].custom_data || {});
 
-  const files = [];
-  const legalDocs = customData.legal_document || [];
-  const siteImages = customData.site_images || [];
+  const [fieldRows] = await pool.query(
+    "SELECT `key` FROM field_definitions WHERE entity = 'station_proposals' AND type = 'file'"
+  );
+  const fileFields = fieldRows.map(r => r.key);
 
-  for (const file of legalDocs) {
-    if (file.status === 'active') {
-      files.push({ ...file, source: 'legal_document' });
-    }
-  }
-  for (const file of siteImages) {
-    if (file.status === 'active') {
-      files.push({ ...file, source: 'site_images' });
+  const files = [];
+  for (const fieldKey of fileFields) {
+    const fieldFiles = customData[fieldKey] || [];
+    for (const file of fieldFiles) {
+      if (file.status === 'active') {
+        files.push({ ...file, source: fieldKey });
+      }
     }
   }
 
