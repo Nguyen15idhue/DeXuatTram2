@@ -19,6 +19,59 @@ const TYPE_COLORS = {
   formula: 'badge-secondary', password: 'badge-error', table: 'badge-ghost'
 };
 
+const TYPE_FORMATS = {
+  text: 'String', textarea: 'String (text dài)', number: 'Number',
+  email: 'Email format', phone: 'String (số điện thoại)', url: 'URL format',
+  date: 'DD/MM/YYYY', datetime: 'DD/MM/YYYY HH:mm', boolean: 'true/false hoặc 1/0',
+  select: 'String (chọn 1)', multiselect: 'Array hoặc comma-separated',
+  file: 'Base64 hoặc URL', formula: 'Tự tính', password: 'String', table: 'JSON Array'
+};
+
+const getFieldInfo = (field, savedMeta) => {
+  const meta = savedMeta && savedMeta[field.key] ? savedMeta[field.key] : {};
+  const key = field.key;
+  const type = field.type || 'text';
+
+  let desc = meta.description || '';
+  let example = meta.example || '';
+  let format = meta.format || TYPE_FORMATS[type] || 'String';
+
+  if (!desc) {
+    if (key.endsWith('_id')) desc = `ID liên kết (${key.replace('_id', '')})`;
+    else if (key === 'code') desc = 'Mã liên hệ duy nhất';
+    else if (key === 'type') desc = 'Loại liên hệ (personal/organization)';
+    else if (key === 'name') desc = 'Tên liên hệ';
+    else if (key === 'phones') desc = 'Số điện thoại';
+    else if (key === 'emails') desc = 'Địa chỉ email';
+    else if (key === 'address') desc = 'Địa chỉ';
+    else if (key === 'desc') desc = 'Mô tả/Ghi chú';
+    else if (key === 'gender') desc = 'Giới tính';
+    else if (key === 'birthday') desc = 'Ngày sinh';
+    else if (key.startsWith('cf')) desc = `Trường tùy chỉnh ${key}`;
+    else if (key.includes('date')) desc = 'Ngày tháng';
+    else if (key.includes('time')) desc = 'Thời gian';
+    else if (key.includes('name')) desc = 'Tên';
+    else if (key.includes('status')) desc = 'Trạng thái';
+    else if (key.includes('user')) desc = 'Người dùng';
+    else desc = `Trường ${key}`;
+  }
+
+  if (!example) {
+    if (type === 'text') example = 'Giá trị text';
+    else if (type === 'number') example = '123';
+    else if (type === 'email') example = 'example@email.com';
+    else if (type === 'phone') example = '0901234567';
+    else if (type === 'date') example = '01/01/2025';
+    else if (type === 'select') example = 'option1';
+    else if (type === 'multiselect') example = 'option1, option2';
+    else if (type === 'boolean') example = 'true';
+    else if (type === 'url') example = 'https://example.com';
+    else example = '...';
+  }
+
+  return { desc, example, format };
+};
+
 const FieldMappingPanel = ({ configId, onClose }) => {
   const { token } = useAuth();
   const [proposalFields, setProposalFields] = useState([]);
@@ -34,6 +87,8 @@ const FieldMappingPanel = ({ configId, onClose }) => {
   const [contactSearch, setContactSearch] = useState('');
   const [editingFieldKey, setEditingFieldKey] = useState(null);
   const [editingLabel, setEditingLabel] = useState('');
+  const [fieldMetadata, setFieldMetadata] = useState({});
+  const [editingMeta, setEditingMeta] = useState(null);
   const searchRef = useRef(null);
 
   const loadMappings = useCallback(async () => {
@@ -55,6 +110,19 @@ const FieldMappingPanel = ({ configId, onClose }) => {
         const sfRes = await fieldMappingService.getSelectedFields(configId, token);
         if (sfRes.success && sfRes.data && sfRes.data.length > 0) {
           setProposalFields(sfRes.data);
+        }
+      } catch {}
+
+      try {
+        const metaRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/api-configs/${configId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const metaData = await metaRes.json();
+        if (metaData.success && metaData.data && metaData.data.field_metadata) {
+          const meta = typeof metaData.data.field_metadata === 'string'
+            ? JSON.parse(metaData.data.field_metadata)
+            : metaData.data.field_metadata;
+          setFieldMetadata(meta);
         }
       } catch {}
     } catch {
@@ -227,53 +295,106 @@ const FieldMappingPanel = ({ configId, onClose }) => {
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
       {/* Info Modal */}
-      {showInfo && selectedInfo && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-lg">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold">{selectedInfo.field.label || selectedInfo.field.key}</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowInfo(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div><span className="font-medium">Key:</span> <code className="bg-base-200 px-1 rounded">{selectedInfo.field.key}</code></div>
-              <div><span className="font-medium">Type:</span> <span className={`badge badge-xs ${TYPE_COLORS[selectedInfo.field.type] || 'badge-ghost'}`}>{TYPE_LABELS[selectedInfo.field.type] || selectedInfo.field.type}</span></div>
-              {selectedInfo.field.required !== undefined && (
-                <div><span className="font-medium">Required:</span> {selectedInfo.field.required ? <span className="text-error">Yes *</span> : 'No'}</div>
-              )}
-              {selectedInfo.field.entity && (
-                <div><span className="font-medium">Entity:</span> {selectedInfo.field.entity}</div>
-              )}
-              {selectedInfo.field.source_type && (
-                <div><span className="font-medium">Source:</span> {selectedInfo.field.source_type}</div>
-              )}
-              {selectedInfo.source === 'contact' && selectedInfo.field.example && (
-                <div>
-                  <span className="font-medium">Ví dụ:</span>
-                  <pre className="bg-base-200 p-2 rounded text-xs mt-1 overflow-x-auto">{selectedInfo.field.example}</pre>
-                </div>
-              )}
-              {selectedInfo.source === 'proposal' && (
-                <div>
-                  <span className="font-medium">Ví dụ JSON:</span>
-                  <pre className="bg-base-200 p-2 rounded text-xs mt-1 overflow-x-auto">{`{
+      {showInfo && selectedInfo && (() => {
+        const info = getFieldInfo(selectedInfo.field, fieldMetadata);
+        return (
+          <div className="modal modal-open">
+            <div className="modal-box max-w-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold">{selectedInfo.field.label || selectedInfo.field.key}</h3>
+                <button className="btn btn-ghost btn-sm btn-circle" onClick={() => { setShowInfo(false); setEditingMeta(null); }}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div><span className="font-medium">Key:</span> <code className="bg-base-200 px-1 rounded">{selectedInfo.field.key}</code></div>
+                <div><span className="font-medium">Type:</span> <span className={`badge badge-xs ${TYPE_COLORS[selectedInfo.field.type] || 'badge-ghost'}`}>{TYPE_LABELS[selectedInfo.field.type] || selectedInfo.field.type}</span></div>
+                {selectedInfo.field.required !== undefined && (
+                  <div><span className="font-medium">Required:</span> {selectedInfo.field.required ? <span className="text-error">Yes *</span> : 'No'}</div>
+                )}
+                {selectedInfo.source === 'contact' && (
+                  <>
+                    <div className="divider my-1"></div>
+                    {editingMeta === selectedInfo.field.key ? (
+                      <>
+                        <div>
+                          <span className="font-medium">Mô tả:</span>
+                          <input type="text" className="input input-bordered input-xs w-full mt-1" value={info.desc} onChange={(e) => {
+                            const newMeta = { ...fieldMetadata, [selectedInfo.field.key]: { ...fieldMetadata[selectedInfo.field.key], description: e.target.value } };
+                            setFieldMetadata(newMeta);
+                          }} />
+                        </div>
+                        <div>
+                          <span className="font-medium">Định dạng:</span>
+                          <input type="text" className="input input-bordered input-xs w-full mt-1" value={info.format} onChange={(e) => {
+                            const newMeta = { ...fieldMetadata, [selectedInfo.field.key]: { ...fieldMetadata[selectedInfo.field.key], format: e.target.value } };
+                            setFieldMetadata(newMeta);
+                          }} />
+                        </div>
+                        <div>
+                          <span className="font-medium">Ví dụ:</span>
+                          <input type="text" className="input input-bordered input-xs w-full mt-1" value={info.example} onChange={(e) => {
+                            const newMeta = { ...fieldMetadata, [selectedInfo.field.key]: { ...fieldMetadata[selectedInfo.field.key], example: e.target.value } };
+                            setFieldMetadata(newMeta);
+                          }} />
+                        </div>
+                        <button className="btn btn-primary btn-xs mt-2" onClick={async () => {
+                          try {
+                            await fieldMappingService.updateMetadata(configId, { [selectedInfo.field.key]: fieldMetadata[selectedInfo.field.key] }, token);
+                            setToast({ message: 'Đã lưu mô tả', type: 'success' });
+                            setEditingMeta(null);
+                          } catch {
+                            setToast({ message: 'Lỗi lưu', type: 'error' });
+                          }
+                        }}>Lưu</button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-start gap-2">
+                          <span className="font-medium shrink-0">Mô tả:</span>
+                          <span className="flex-1">{info.desc}</span>
+                          <button className="btn btn-ghost btn-xs shrink-0" onClick={() => setEditingMeta(selectedInfo.field.key)}>Sửa</button>
+                        </div>
+                        <div><span className="font-medium">Định dạng:</span> <code className="bg-base-200 px-1 rounded text-xs">{info.format}</code></div>
+                        <div>
+                          <span className="font-medium">Ví dụ:</span>
+                          <div className="bg-base-200 p-2 rounded text-xs mt-1">{info.example}</div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                {selectedInfo.source === 'contact' && selectedInfo.field.options && selectedInfo.field.options.length > 0 && (
+                  <div>
+                    <span className="font-medium">Tùy chọn:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedInfo.field.options.map((opt, i) => (
+                        <span key={i} className="badge badge-xs badge-outline">{opt}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedInfo.source === 'proposal' && (
+                  <div>
+                    <span className="font-medium">Ví dụ JSON:</span>
+                    <pre className="bg-base-200 p-2 rounded text-xs mt-1 overflow-x-auto">{`{
   "key": "${selectedInfo.field.key}",
   "label": "${selectedInfo.field.label}",
   "type": "${selectedInfo.field.type}",
   "required": ${selectedInfo.field.required || false},
   "source_type": "${selectedInfo.field.source_type || 'json'}"
 }`}</pre>
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
+              <div className="modal-action">
+                <button className="btn btn-sm" onClick={() => { setShowInfo(false); setEditingMeta(null); }}>Đóng</button>
+              </div>
             </div>
-            <div className="modal-action">
-              <button className="btn btn-sm" onClick={() => setShowInfo(false)}>Đóng</button>
-            </div>
+            <div className="modal-backdrop bg-black/50" onClick={() => { setShowInfo(false); setEditingMeta(null); }} />
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setShowInfo(false)} />
-        </div>
-      )}
+        );
+      })()}
 
       {/* Header with Save/Cancel */}
       <div className="flex items-center justify-between mb-4">

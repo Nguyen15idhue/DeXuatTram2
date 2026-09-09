@@ -29,6 +29,8 @@ const mapConfigsRoutes = require('./routes/mapConfigs');
 const tilesRoutes = require('./routes/tiles');
 const apiConfigRoutes = require('./routes/apiConfigs');
 const fieldMappingRoutes = require('./routes/fieldMappings');
+const queueLogsRoutes = require('./routes/queueLogs');
+const queueWorker = require('./workers/queueWorker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -87,6 +89,7 @@ app.use('/api/formulas', formulasRoutes);
 app.use('/api/map-configs', mapConfigsRoutes);
 app.use('/api/admin/api-configs', adminLimiter, apiConfigRoutes);
 app.use('/api/admin/field-mappings', adminLimiter, fieldMappingRoutes);
+app.use('/api/admin/queue-logs', adminLimiter, queueLogsRoutes);
 app.use('/tiles', tilesRoutes);
 
 // Static file serving for uploads
@@ -116,6 +119,7 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
+  queueWorker.start();
 });
 
 const fileService = require('./services/fileService');

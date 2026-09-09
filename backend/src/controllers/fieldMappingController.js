@@ -118,11 +118,12 @@ exports.getFieldTypes = async (req, res) => {
 
           oneOfficeFields = apiFields.map(f => {
             const saved = savedMetadata[f.key];
+            const known = fieldMapper.ONE_OFFICE_FIELDS.find(k => k.key === f.key);
             return {
               key: f.key,
               label: (saved && saved.label !== f.key) ? saved.label : f.label,
               type: saved ? saved.type : f.type,
-              required: false,
+              required: known ? known.required : false,
               options: saved ? (saved.options || []) : []
             };
           });
