@@ -18,6 +18,7 @@ const menuItems = [
   { path: '/admin/data-lists', label: 'Data Lists', icon: List, roles: ['SUPER_ADMIN'] },
   { path: '/admin/map-config', label: 'Map Config', icon: Map, roles: ['SUPER_ADMIN'] },
   { path: '/admin/roles', label: 'Phân quyền', icon: ShieldCheck, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/api-configs', label: 'API Configs', icon: Settings, roles: ['SUPER_ADMIN'] },
 ];
 
 const AdminSidebar = ({ onNavClick }) => {

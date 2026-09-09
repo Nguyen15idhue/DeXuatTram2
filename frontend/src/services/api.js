@@ -497,3 +497,24 @@ export const formulaService = {
     return api.postWithAuth('/formulas/preview', { expression, metadata, scope }, token);
   }
 };
+
+export const apiConfigService = {
+  getAll(queryString, token) {
+    return api.getWithAuth(`/admin/api-configs?${queryString || ''}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/api-configs/${id}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/api-configs', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/api-configs/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/api-configs/${id}`, token);
+  },
+  testConnection(id, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/test`, {}, token);
+  }
+};
