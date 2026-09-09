@@ -3,8 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiConfigService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft } from 'lucide-react';
+import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw } from 'lucide-react';
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
+import SyncPanel from '../../components/admin/SyncPanel';
 
 const AUTH_TYPES = [
   { value: 'token', label: 'Token (Bearer)' },
@@ -25,6 +26,7 @@ const AdminApiConfigPage = () => {
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
   const [mappingConfig, setMappingConfig] = useState(null);
+  const [syncConfig, setSyncConfig] = useState(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -330,7 +332,14 @@ const AdminApiConfigPage = () => {
                 <div className="card-actions justify-end gap-1 mt-auto">
                   <button
                     className="btn btn-outline btn-sm gap-1"
-                    onClick={() => setMappingConfig(config)}
+                    onClick={() => setSyncConfig(syncConfig?.id === config.id ? null : config)}
+                  >
+                    <RefreshCw size={14} />
+                    Sync
+                  </button>
+                  <button
+                    className="btn btn-outline btn-sm gap-1"
+                    onClick={() => setMappingConfig(mappingConfig?.id === config.id ? null : config)}
                   >
                     <ArrowRightLeft size={14} />
                     Mapping
@@ -366,6 +375,16 @@ const AdminApiConfigPage = () => {
           <FieldMappingPanel
             configId={mappingConfig.id}
             onClose={() => setMappingConfig(null)}
+          />
+        </div>
+      )}
+
+      {/* Sync Panel */}
+      {syncConfig && (
+        <div className="mt-6">
+          <SyncPanel
+            configId={syncConfig.id}
+            onClose={() => setSyncConfig(null)}
           />
         </div>
       )}

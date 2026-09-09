@@ -27,6 +27,8 @@ const TYPE_FORMATS = {
   file: 'Base64 hoặc URL', formula: 'Tự tính', password: 'String', table: 'JSON Array'
 };
 
+const SOURCE_TYPES_FORCE_TEXT = ['url', 'multiselect', 'datetime', 'formula', 'table'];
+
 const getFieldInfo = (field, savedMeta) => {
   const meta = savedMeta && savedMeta[field.key] ? savedMeta[field.key] : {};
   const key = field.key;

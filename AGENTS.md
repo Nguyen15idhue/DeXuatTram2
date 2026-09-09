@@ -305,6 +305,19 @@ DynamicField render: custom dropdown with badge styling
 - Export: ExcelJS → .xlsx
 - Import: Preview → Validate → Confirm (transaction, all-or-nothing)
 
+### 1Office API Field Mapping Rules
+- **Content-Type**: `application/x-www-form-urlencoded` (KHÔNG phải JSON)
+- **Auth**: `access_token` query param (KHÔNG phải Bearer header)
+- **9/14 source types hoạt động**: text, textarea, number, email, phone, date, select, boolean, file
+- **5/14 source types chuyển sang text**: url, multiselect, datetime, formula, table
+- **1Office select fields dùng ID**: formal_name (1=Ông), scale_id (3=25-50 NV)
+- **1Office cf2 dùng label**: "VIP", "VVIP" (KHÔNG phải ID)
+- **File upload**: JSON array base64 `[{name,file}]`, max 5 files/batch
+- **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region — API nhận nhưng không lưu
+- **Non-working arrays**: contacts[] — API không parse; detail[] — chỉ lưu department_id
+- **Desc field HTML**: type `html` trong docs, INSERT lưu HTML đúng, GET strip HTML → plain text, Web UI render HTML đúng
+- **Code**: `backend/src/services/fieldMapper.js` (ONE_OFFICE_FIELDS), `frontend/src/components/admin/FieldMappingPanel.jsx` (SOURCE_TYPES_FORCE_TEXT)
+
 ## 12. Performance Optimizations
 
 ### Đã áp dụng

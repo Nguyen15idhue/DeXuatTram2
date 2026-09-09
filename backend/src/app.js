@@ -30,6 +30,7 @@ const tilesRoutes = require('./routes/tiles');
 const apiConfigRoutes = require('./routes/apiConfigs');
 const fieldMappingRoutes = require('./routes/fieldMappings');
 const queueLogsRoutes = require('./routes/queueLogs');
+const oneOfficeSyncRoutes = require('./routes/oneOfficeSync');
 const queueWorker = require('./workers/queueWorker');
 
 const app = express();
@@ -90,6 +91,7 @@ app.use('/api/map-configs', mapConfigsRoutes);
 app.use('/api/admin/api-configs', adminLimiter, apiConfigRoutes);
 app.use('/api/admin/field-mappings', adminLimiter, fieldMappingRoutes);
 app.use('/api/admin/queue-logs', adminLimiter, queueLogsRoutes);
+app.use('/api/admin/1office', adminLimiter, oneOfficeSyncRoutes);
 app.use('/tiles', tilesRoutes);
 
 // Static file serving for uploads

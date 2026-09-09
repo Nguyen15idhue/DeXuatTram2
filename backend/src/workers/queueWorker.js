@@ -66,7 +66,7 @@ const processPushJob = async (job) => {
     ? JSON.parse(job.request_payload)
     : job.request_payload;
 
-  const { api_config_id, contact_data } = requestPayload;
+  const { api_config_id, contact_data, proposal_id } = requestPayload;
 
   if (!api_config_id || !contact_data) {
     throw new Error('Missing api_config_id or contact_data in request_payload');
@@ -76,6 +76,17 @@ const processPushJob = async (job) => {
 
   if (!result.success) {
     throw new Error(result.error || `1Office API error: ${result.status}`);
+  }
+
+  if (proposal_id && result.data && !result.data.error) {
+    const pool = require('../utils/db');
+    const contactCode = result.data.code || contact_data.code;
+    if (contactCode) {
+      await pool.query(
+        `UPDATE station_proposals SET contact_1office_code = ?, sync_status = 'synced', last_synced_at = NOW(), updated_at = NOW() WHERE id = ?`,
+        [contactCode, proposal_id]
+      );
+    }
   }
 
   return {

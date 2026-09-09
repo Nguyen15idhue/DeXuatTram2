@@ -42,8 +42,14 @@ const requestWithRetry = async (method, url, body, token, retryCount = 0) => {
     const headers = {};
     const options = { method, headers, signal: controller.signal };
     if (body && method !== 'GET') {
-      headers['Content-Type'] = 'application/json';
-      options.body = JSON.stringify(body);
+      const formBody = new URLSearchParams();
+      for (const [key, value] of Object.entries(body)) {
+        if (value !== null && value !== undefined) {
+          formBody.append(key, String(value));
+        }
+      }
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      options.body = formBody.toString();
     }
 
     const startTime = Date.now();
@@ -155,4 +161,49 @@ exports.uploadFile = async (apiConfigId, files) => {
     body[`files[${index}][content]`] = file.content;
   });
   return requestWithRetry('POST', `${baseUrl}/api/customer/contact/upload-file`, body, token);
+};
+
+const FILES_PER_BATCH = 5;
+
+exports.uploadFilesInBatches = async (apiConfigId, files) => {
+  const fileList = Array.isArray(files) ? files : [files];
+  const results = [];
+  const totalBatches = Math.ceil(fileList.length / FILES_PER_BATCH);
+
+  for (let i = 0; i < totalBatches; i++) {
+    const batch = fileList.slice(i * FILES_PER_BATCH, (i + 1) * FILES_PER_BATCH);
+    console.log(`[1Office] Upload batch ${i + 1}/${totalBatches}: ${batch.length} files`);
+
+    const result = await exports.uploadFile(apiConfigId, batch);
+    results.push({
+      batch: i + 1,
+      totalBatches,
+      fileCount: batch.length,
+      fileNames: batch.map(f => f.name),
+      success: result.success,
+      data: result.data,
+      error: result.error
+    });
+
+    if (!result.success) {
+      console.error(`[1Office] Batch ${i + 1} failed:`, result.error);
+      break;
+    }
+
+    if (i < totalBatches - 1) {
+      await delay(REQUEST_DELAY_MS);
+    }
+  }
+
+  const successCount = results.filter(r => r.success).length;
+  const failCount = results.filter(r => !r.success).length;
+
+  return {
+    success: failCount === 0,
+    totalFiles: fileList.length,
+    totalBatches,
+    successBatches: successCount,
+    failedBatches: failCount,
+    batches: results
+  };
 };

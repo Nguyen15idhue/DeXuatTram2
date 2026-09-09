@@ -1,0 +1,27 @@
+{
+  "name": "dexuattram2",
+  "version": "1.0.0",
+  "main": "test_api.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test:e2e": "playwright test e2e/FE-01-smoke.spec.js --reporter=list",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nguyen15idhue/DeXuatTram2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Nguyen15idhue/DeXuatTram2/issues"
+  },
+  "homepage": "https://github.com/Nguyen15idhue/DeXuatTram2#readme",
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

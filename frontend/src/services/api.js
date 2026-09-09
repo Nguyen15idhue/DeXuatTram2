@@ -552,3 +552,24 @@ export const fieldMappingService = {
     return api.putWithAuth(`/admin/field-mappings/selected-fields/${configId}`, fields, token);
   }
 };
+
+export const oneOfficeSyncService = {
+  push(data, token) {
+    return api.postWithAuth('/admin/1office/push', data, token);
+  },
+  pull(data, token) {
+    return api.postWithAuth('/admin/1office/pull', data, token);
+  },
+  link(data, token) {
+    return api.postWithAuth('/admin/1office/link', data, token);
+  },
+  unlink(data, token) {
+    return api.postWithAuth('/admin/1office/unlink', data, token);
+  },
+  searchContacts(configId, query, token) {
+    return api.getWithAuth(`/admin/1office/contacts/search?configId=${configId}&q=${encodeURIComponent(query || '')}`, token);
+  },
+  getJobDetail(jobId, token) {
+    return api.getWithAuth(`/admin/queue-logs/${jobId}`, token);
+  }
+};

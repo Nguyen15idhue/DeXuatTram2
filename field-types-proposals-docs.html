@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tài liệu Field Types &amp; Fields của Proposals</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; margin: 0; background: #f1f5f9; color: #1e293b; line-height: 1.6; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { text-align: center; color: #0f172a; }
+  .subtitle { text-align: center; color: #64748b; margin-top: -10px; }
+  h2.part { background: #1e40af; color: #fff; padding: 12px 18px; border-radius: 8px; margin-top: 40px; }
+  .toc { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 24px; }
+  .toc a { color: #1d4ed8; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin: 16px 0; }
+  .card h3 { margin: 0 0 6px; color: #1e40af; }
+  .badge { display: inline-block; font-size: 12px; font-weight: bold; padding: 2px 10px; border-radius: 9999px; margin-right: 6px; color: #fff; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+  code.inline { background: #e2e8f0; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+  th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; }
+  .req { color: #dc2626; font-weight: bold; }
+  .opt { color: #64748b; }
+  .group-title { background: #e0e7ff; padding: 10px 16px; border-radius: 8px; margin-top: 28px; color: #1e3a8a; }
+  footer { text-align: center; color: #94a3b8; margin-top: 40px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Tài liệu cấu hình Fields</h1>
+<p class="subtitle">Entity: <code class="inline">station_proposals</code> (đề xuất trạm) — 15 field types &amp; 58 fields</p>
+
+<div class="toc">
+  <strong>Mục lục</strong>
+  <ul>
+    <li><a href="#part1">Phần 1: 15 field types (mô tả, cấu trúc JSON, ví dụ)</a></li>
+    <li><a href="#part2">Phần 2: 58 fields của entity proposals theo nhóm type</a></li>
+  </ul>
+</div>
+
+<!-- ==================== PHẦN 1 ==================== -->
+<h2 class="part" id="part1">Phần 1: Danh sách 15 field types trong cấu hình fields</h2>
+<p>Nguồn định nghĩa type: <code class="inline">frontend/src/components/admin/FieldManager.jsx</code> (FIELD_TYPES). Mỗi field lưu 1 dòng trong bảng <code class="inline">field_definitions</code>. Trường <code class="inline">source_type = fixed</code> nghĩa là cột thật trong DB, <code class="inline">source_type = json</code> nghĩa là lưu trong cột <code class="inline">custom_data</code> (JSON) của record.</p>
+
+<div class="card" id="t-text">
+  <h3><span class="badge" style="background:#64748b">1. text</span> Văn bản ngắn (1 dòng)</h3>
+  <p><strong>Mô tả:</strong> Ô nhập liệu 1 dòng, render thẻ <code class="inline">&lt;input type="text"&gt;</code>. Dùng cho tên, địa chỉ, mã số ngắn. Có <code class="inline">placeholder</code>, <code class="inline">validation</code> (min/max length, pattern).</p>
+  <p><strong>Cấu trúc JSON (field definition):</strong></p>
+  <pre>{
+  "key": "owner_name",
+  "label": "Tên chủ sở hữu",
+  "type": "text",
+  "source_type": "fixed",
+  "required": 1,
+  "placeholder": "Nhập tên chủ sở hữu",
+  "validation": { "minLength": 2, "maxLength": 255 }
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"Nguyễn Văn A"</code> (chuỗi)</p>
+  <p><strong>Ví dụ thực tế:</strong> Tên chủ sở hữu mặt bằng, địa chỉ ĐKKD, mã số thuế, số tài khoản.</p>
+</div>
+
+<div class="card" id="t-textarea">
+  <h3><span class="badge" style="background:#64748b">2. textarea</span> Văn bản dài (nhiều dòng)</h3>
+  <p><strong>Mô tả:</strong> Khung nhập nhiều dòng, render thẻ <code class="inline">&lt;textarea rows="3"&gt;</code>. Dùng cho mô tả, ghi chú.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "description",
+  "label": "Mô tả",
+  "type": "textarea",
+  "source_type": "fixed",
+  "required": 0,
+  "placeholder": "Mô tả đề xuất"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"Mặt bằng góc 2 mặt tiền, gần chợ, xe ra vào thuận tiện."</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Mô tả đề xuất trạm, ghi chú nội bộ.</p>
+</div>
+
+<div class="card" id="t-number">
+  <h3><span class="badge" style="background:#0ea5e9">3. number</span> Số</h3>
+  <p><strong>Mô tả:</strong> Ô nhập số (<code class="inline">&lt;input type="number"&gt;</code>). Cấu hình thêm: <code class="inline">number_format</code> (integer/decimal), <code class="inline">decimal_places</code>, <code class="inline">display_format</code> (plain/comma/dot/space — vd 1,000 / 1.000 / 1 000), <code class="inline">unit</code> (đơn vị hiển thị như m², VNĐ/kWh, %).</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "dien_tich_mat_bang",
+  "label": "Diện tích mặt bằng (m²)",
+  "type": "number",
+  "source_type": "json",
+  "number_format": "decimal",
+  "decimal_places": 2,
+  "display_format": "comma",
+  "unit": "m²"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">120.5</code> (số)</p>
+  <p><strong>Ví dụ thực tế:</strong> Vĩ độ 10.762622, kinh độ 106.660172, diện tích 120.5 m², giá niêm yết 650000 (VNĐ), tỷ lệ % TMT 70.</p>
+</div>
+
+<div class="card" id="t-email">
+  <h3><span class="badge" style="background:#8b5cf6">4. email</span> Thư điện tử</h3>
+  <p><strong>Mô tả:</strong> Ô nhập email (<code class="inline">&lt;input type="email"&gt;</code>), trình duyệt + backend tự validate định dạng <code class="inline">xxx@yyy.zzz</code>.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "contact_email",
+  "label": "Email liên hệ",
+  "type": "email",
+  "source_type": "json",
+  "required": 0,
+  "placeholder": "Nhập email"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"chudaidu@example.com"</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Email chủ đầu tư để gửi hợp đồng (hiện proposals chưa dùng, dùng ở entity users).</p>
+</div>
+
+<div class="card" id="t-phone">
+  <h3><span class="badge" style="background:#8b5cf6">5. phone</span> Số điện thoại</h3>
+  <p><strong>Mô tả:</strong> Ô nhập SĐT (<code class="inline">&lt;input type="tel"&gt;</code>), mở bàn phím số trên di động.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "owner_phone",
+  "label": "SĐT chủ sở hữu",
+  "type": "phone",
+  "source_type": "fixed",
+  "required": 1,
+  "placeholder": "Nhập SĐT"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"0901234567"</code></p>
+  <p><strong>Ví dụ thực tế:</strong> SĐT chủ sở hữu 0901234567, SĐT CĐT, SĐT khách hàng nhượng quyền.</p>
+</div>
+
+<div class="card" id="t-url">
+  <h3><span class="badge" style="background:#8b5cf6">6. url</span> Đường dẫn website</h3>
+  <p><strong>Mô tả:</strong> Ô nhập URL (<code class="inline">&lt;input type="url"&gt;</code>), yêu cầu có http(s)://. Hiển thị dạng link bấm được.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "map_link",
+  "label": "Link bản đồ",
+  "type": "url",
+  "source_type": "json",
+  "placeholder": "https://..."
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"https://maps.google.com/?q=10.76,106.66"</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Link Google Maps vị trí mặt bằng (hiện proposals chưa dùng).</p>
+</div>
+
+<div class="card" id="t-date">
+  <h3><span class="badge" style="background:#f59e0b">7. date</span> Ngày</h3>
+  <p><strong>Mô tả:</strong> Chọn ngày (<code class="inline">&lt;input type="date"&gt;</code>). Cấu hình <code class="inline">date_format</code> hiển thị (vd DD/MM/YYYY) và <code class="inline">timezone</code>.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "ngay_khao_sat",
+  "label": "Ngày khảo sát",
+  "type": "date",
+  "source_type": "json",
+  "date_format": "DD/MM/YYYY"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"2026-03-15"</code> (YYYY-MM-DD)</p>
+  <p><strong>Ví dụ thực tế:</strong> Ngày khảo sát mặt bằng 15/03/2026 (hiện proposals lưu thời gian lắp đặt/nghiệm thu dạng text).</p>
+</div>
+
+<div class="card" id="t-datetime">
+  <h3><span class="badge" style="background:#f59e0b">8. datetime</span> Ngày + giờ</h3>
+  <p><strong>Mô tả:</strong> Chọn ngày giờ (<code class="inline">&lt;input type="datetime-local"&gt;</code>). Có <code class="inline">date_format</code> + <code class="inline">timezone</code> như type date.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "hen_khao_sat",
+  "label": "Hẹn khảo sát",
+  "type": "datetime",
+  "source_type": "json",
+  "date_format": "DD/MM/YYYY HH:mm"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"2026-03-15T09:30"</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Hẹn khảo sát lúc 09:30 ngày 15/03/2026 (hiện proposals chưa dùng).</p>
+</div>
+
+<div class="card" id="t-boolean">
+  <h3><span class="badge" style="background:#10b981">9. boolean</span> Đúng / Sai (checkbox)</h3>
+  <p><strong>Mô tả:</strong> Checkbox chọn/bỏ chọn. <code class="inline">placeholder</code> dùng làm nhãn cạnh checkbox (vd "Có").</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "da_ky_hop_dong",
+  "label": "Đã ký hợp đồng",
+  "type": "boolean",
+  "source_type": "json",
+  "placeholder": "Có"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">true</code> / <code class="inline">false</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Đánh dấu "Đã ký hợp đồng" (hiện proposals chưa dùng).</p>
+</div>
+
+<div class="card" id="t-select">
+  <h3><span class="badge" style="background:#3b82f6">10. select</span> Chọn 1 giá trị</h3>
+  <p><strong>Mô tả:</strong> Dropdown chọn 1 giá trị, hiển thị dạng badge màu. 2 nguồn dữ liệu: (a) nhập tay <code class="inline">options: [{label, value, color, borderRadius}]</code> + <code class="inline">option_style</code>; (b) lấy từ Data List (<code class="inline">data_list_id</code> + <code class="inline">data_list_column</code>). Hỗ trợ select nối tầng (cascading) qua <code class="inline">parent_field</code> + <code class="inline">relation_key</code>.</p>
+  <p><strong>Cấu trúc JSON (nhập tay):</strong></p>
+  <pre>{
+  "key": "mo_hinh_dau_tu",
+  "label": "Mô hình đầu tư",
+  "type": "select",
+  "source_type": "json",
+  "required": 1,
+  "options": [
+    { "label": "Nhượng quyền", "value": "NQ", "color": "#166534", "borderRadius": "rounded" },
+    { "label": "Tự đầu tư", "value": "TDT", "color": "#eab308", "borderRadius": "rounded" },
+    { "label": "Liên kết", "value": "LK", "color": "#3b82f6", "borderRadius": "rounded" }
+  ]
+}</pre>
+  <p><strong>Cấu trúc JSON (từ Data List + cascading):</strong></p>
+  <pre>{
+  "key": "xa_phuong",
+  "label": "Xã phường",
+  "type": "select",
+  "data_list_id": 4,
+  "data_list_column": "xa",
+  "parent_field": "province",
+  "relation_key": "tinh"
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"NQ"</code> (1 value)</p>
+  <p><strong>Ví dụ thực tế:</strong> Trạng thái PENDING/REVIEWING/APPROVED/REJECTED, mô hình NQ/TDT/LK, Tỉnh → Xã phường (chọn tỉnh lọc ra xã).</p>
+</div>
+
+<div class="card" id="t-multiselect">
+  <h3><span class="badge" style="background:#3b82f6">11. multiselect</span> Chọn nhiều giá trị</h3>
+  <p><strong>Mô tả:</strong> Như select nhưng tick chọn được nhiều giá trị cùng lúc (hiển thị nhiều badge). Cùng cấu hình nguồn dữ liệu như select.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "tien_ich",
+  "label": "Tiện ích xung quanh",
+  "type": "multiselect",
+  "source_type": "json",
+  "options": [
+    { "label": "Chợ", "value": "cho" },
+    { "label": "Trường học", "value": "truong" },
+    { "label": "Bệnh viện", "value": "benh_vien" }
+  ]
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">["cho", "truong"]</code> (mảng)</p>
+  <p><strong>Ví dụ thực tế:</strong> Tiện ích xung quanh trạm: chợ + trường học (hiện proposals chưa dùng).</p>
+</div>
+
+<div class="card" id="t-file">
+  <h3><span class="badge" style="background:#a855f7">12. file</span> Tệp đính kèm</h3>
+  <p><strong>Mô tả:</strong> Upload file qua <code class="inline">POST /api/files/upload</code> (giới hạn 10MB). Cấu hình <code class="inline">file_config: {images, videos, documents, maxSize, multiple}</code>. Xem được ảnh, video, PDF, Word, Excel ngay trên web.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "site_images",
+  "label": "Hình ảnh hiện trường",
+  "type": "file",
+  "source_type": "json",
+  "file_config": { "images": true, "videos": false, "documents": true, "maxSize": 5, "multiple": true }
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">[{"id": 12, "name": "mat-bang.jpg", "url": "/uploads/..."}]</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Hồ sơ pháp lý (sổ đỏ scan PDF), hình ảnh hiện trường mặt bằng.</p>
+</div>
+
+<div class="card" id="t-formula">
+  <h3><span class="badge" style="background:#16a34a">13. formula</span> Công thức tự tính</h3>
+  <p><strong>Mô tả:</strong> Field chỉ đọc, hệ thống tự tính. 2 chế độ (<code class="inline">compute_mode</code>): <code class="inline">pre</code> = tính ngay trên form lúc nhập; <code class="inline">post</code> = tính sau khi tạo record (dùng được id, user tạo...). Có 26 hàm: ROUNDUP, IF, CONCAT, LEN, LPAD, TODAY... Cấu hình <code class="inline">outputType/outputFormat/decimalPlaces/unit</code>.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "ma_de_xuat",
+  "label": "Mã đề xuất",
+  "type": "formula",
+  "formula_config": {
+    "compute_mode": "post",
+    "expression": "CONCAT(mo_hinh_dau_tu, '_', ma_tinh, '_', LPAD(SEQ(...), 4, '0'))",
+    "referencedFields": ["mo_hinh_dau_tu", "ma_tinh"],
+    "outputType": "text"
+  }
+}</pre>
+  <p><strong>Giá trị lưu:</strong> <code class="inline">"NQ_SG_0007"</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Mã đề xuất NQ_SG_0007, người đề xuất "Nguyễn Văn A (SALES)", tổng chi phí tự đầu tư.</p>
+</div>
+
+<div class="card" id="t-password">
+  <h3><span class="badge" style="background:#dc2626">14. password</span> Mật khẩu</h3>
+  <p><strong>Mô tả:</strong> Ô nhập mật khẩu (<code class="inline">&lt;input type="password" autocomplete="new-password"&gt;</code>), ký tự bị che. Bỏ trống = giữ nguyên. Backend hash bằng bcrypt, không lưu plaintext.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "password",
+  "label": "Mật khẩu",
+  "type": "password",
+  "source_type": "fixed",
+  "required": 0,
+  "placeholder": "Để trống = giữ nguyên"
+}</pre>
+  <p><strong>Giá trị nhập:</strong> <code class="inline">"123456"</code> → lưu hash <code class="inline">"$2b$10$..."</code></p>
+  <p><strong>Ví dụ thực tế:</strong> Đặt/đổi mật khẩu user (hiện proposals không dùng, dùng ở entity users).</p>
+</div>
+
+<div class="card" id="t-table">
+  <h3><span class="badge" style="background:#0d9488">15. table</span> Bảng con nhiều dòng</h3>
+  <p><strong>Mô tả:</strong> Bảng nhập liệu con ngay trong form: thêm/xóa dòng, mỗi cột tham chiếu 1 field type khác (number/select/date...), cột có thể gắn công thức riêng và dòng tổng (SUM/AVG/MIN/MAX/COUNT). Cấu hình <code class="inline">source_config: {columns: [{key, label, column_type, width, required, formula, footer_formula}], min_rows, max_rows}</code>.</p>
+  <p><strong>Cấu trúc JSON:</strong></p>
+  <pre>{
+  "key": "hang_muc_dau_tu",
+  "label": "Hạng mục đầu tư",
+  "type": "table",
+  "source_type": "json",
+  "source_config": {
+    "min_rows": 0,
+    "max_rows": 10,
+    "columns": [
+      { "key": "ten", "label": "Hạng mục", "column_type": "text" },
+      { "key": "so_luong", "label": "SL", "column_type": "number" },
+      { "key": "don_gia", "label": "Đơn giá", "column_type": "number" },
+      { "key": "thanh_tien", "label": "Thành tiền",
+        "column_type": "number", "formula": "so_luong * don_gia",
+        "footer_formula": "SUM" }
+    ]
+  }
+}</pre>
+  <p><strong>Giá trị lưu:</strong></p>
+  <pre>[
+  { "ten": "Trụ CCS2 60kW", "so_luong": 2, "don_gia": 180000000, "thanh_tien": 360000000 },
+  { "ten": "Trạm biến áp", "so_luong": 1, "don_gia": 250000000, "thanh_tien": 250000000 }
+]</pre>
+  <p><strong>Ví dụ thực tế:</strong> Bảng kê hạng mục đầu tư của trạm (hiện proposals tách sẵn thành các field number riêng thay vì dùng table).</p>
+</div>
+
+<!-- ==================== PHẦN 2 ==================== -->
+<h2 class="part" id="part2">Phần 2: 58 fields của entity proposals (station_proposals) theo nhóm type</h2>
+<p>Thực tế trong DB, proposals đang dùng <strong>7/15 types</strong>: text (15), number (23), select (9), phone (3), textarea (2), file (2), formula (4). Các type email, url, date, datetime, boolean, multiselect, password, table hiện chưa có field nào trong proposals.</p>
+
+<h3 class="group-title">Nhóm text — 15 fields (văn bản ngắn)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Bắt buộc</th><th>Nguồn</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">owner_name</code></td><td>Tên chủ sở hữu</td><td class="req">Có</td><td>fixed</td><td>Tên người đứng tên mặt bằng. Vd: "Nguyễn Văn A".</td></tr>
+<tr><td>2</td><td><code class="inline">address</code></td><td>Địa chỉ</td><td class="opt">Không</td><td>fixed</td><td>Địa chỉ mặt bằng đề xuất. Vd: "123 Nguyễn Huệ, Q.1, TP.HCM".</td></tr>
+<tr><td>3</td><td><code class="inline">area</code></td><td>Diện tích</td><td class="opt">Không</td><td>fixed</td><td>Diện tích mô tả tự do (text cũ). Vd: "120m², ngang 6m".</td></tr>
+<tr><td>4</td><td><code class="inline">land_type</code></td><td>Loại đất</td><td class="opt">Không</td><td>fixed</td><td>Loại đất mặt bằng. Vd: "Đất thương mại dịch vụ".</td></tr>
+<tr><td>5</td><td><code class="inline">thoi_gian_lap_dat</code></td><td>Thời gian lắp đặt</td><td class="opt">Không</td><td>json</td><td>Dự kiến lắp đặt. Vd: "15 ngày sau khi ký HĐ".</td></tr>
+<tr><td>6</td><td><code class="inline">thoi_gian_nghiem_thu</code></td><td>Thời gian nghiệm thu</td><td class="opt">Không</td><td>json</td><td>Dự kiến nghiệm thu. Vd: "30/04/2026".</td></tr>
+<tr><td>7</td><td><code class="inline">phap_ly_dat</code></td><td>Pháp lý đất</td><td class="opt">Không</td><td>json</td><td>Tình trạng pháp lý. Vd: "Sổ đỏ chính chủ, đủ điều kiện cho thuê 10 năm".</td></tr>
+<tr><td>8</td><td><code class="inline">lk_ten_phap_nhan</code></td><td>Tên pháp nhân/HKD (Liên kết)</td><td class="opt">Không</td><td>json</td><td>Tên đối tác liên kết. Vd: "HKD Cà Phê Sáng".</td></tr>
+<tr><td>9</td><td><code class="inline">lk_mst</code></td><td>MST (Liên kết)</td><td class="opt">Không</td><td>json</td><td>Mã số thuế đối tác. Vd: "0312345678".</td></tr>
+<tr><td>10</td><td><code class="inline">lk_nguoi_dai_dien</code></td><td>Người đại diện (Liên kết)</td><td class="opt">Không</td><td>json</td><td>Người đại diện đối tác. Vd: "Trần Thị B".</td></tr>
+<tr><td>11</td><td><code class="inline">lk_dia_chi_dkkd</code></td><td>Địa chỉ ĐKKD (Liên kết)</td><td class="opt">Không</td><td>json</td><td>Địa chỉ đăng ký kinh doanh. Vd: "45 Lê Lợi, TP. Thủ Đức".</td></tr>
+<tr><td>12</td><td><code class="inline">nq_ten_khach_hang</code></td><td>Tên khách hàng (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>Khách nhận nhượng quyền. Vd: "Công ty TNHH Năng Lượng Xanh".</td></tr>
+<tr><td>13</td><td><code class="inline">nq_mst</code></td><td>MST (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>MST khách nhượng quyền. Vd: "0318765432".</td></tr>
+<tr><td>14</td><td><code class="inline">nq_nguoi_dai_dien</code></td><td>Đại diện (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>Người đại diện khách. Vd: "Lê Văn C".</td></tr>
+<tr><td>15</td><td><code class="inline">nq_so_tai_khoan</code></td><td>Số tài khoản (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>STK thanh toán. Vd: "1903556688 Vietcombank".</td></tr>
+</table>
+
+<h3 class="group-title">Nhóm number — 23 fields (số)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Bắt buộc</th><th>Nguồn</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">latitude</code></td><td>Vĩ độ</td><td class="req">Có</td><td>fixed</td><td>Tọa độ bấm trên bản đồ. Vd: 10.762622.</td></tr>
+<tr><td>2</td><td><code class="inline">longitude</code></td><td>Kinh độ</td><td class="req">Có</td><td>fixed</td><td>Tọa độ bấm trên bản đồ. Vd: 106.660172.</td></tr>
+<tr><td>3</td><td><code class="inline">investment_cost</code></td><td>Chi phí đầu tư</td><td class="opt">Không</td><td>json</td><td>Tổng khái toán ban đầu (VNĐ). Vd: 1500000000.</td></tr>
+<tr><td>4</td><td><code class="inline">dien_tich_mat_bang</code></td><td>Diện tích mặt bằng (m²)</td><td class="opt">Không</td><td>json</td><td>Diện tích dạng số. Vd: 120.5.</td></tr>
+<tr><td>5</td><td><code class="inline">tdt_tru_ccs2_60kw_sl</code></td><td>Trụ CCS2 60kW - SL</td><td class="opt">Không</td><td>json</td><td>Số lượng trụ 60kW (tự đầu tư). Vd: 2.</td></tr>
+<tr><td>6</td><td><code class="inline">tdt_tru_ccs2_60kw_dg</code></td><td>Trụ CCS2 60kW - Đơn giá</td><td class="opt">Không</td><td>json</td><td>Đơn giá/trụ 60kW. Vd: 180000000.</td></tr>
+<tr><td>7</td><td><code class="inline">tdt_tru_ccs2_120kw_sl</code></td><td>Trụ CCS2 120kW - SL</td><td class="opt">Không</td><td>json</td><td>Số lượng trụ 120kW. Vd: 1.</td></tr>
+<tr><td>8</td><td><code class="inline">tdt_tru_ccs2_120kw_dg</code></td><td>Trụ CCS2 120kW - Đơn giá</td><td class="opt">Không</td><td>json</td><td>Đơn giá/trụ 120kW. Vd: 290000000.</td></tr>
+<tr><td>9</td><td><code class="inline">tdt_chi_phi_van_chuyen</code></td><td>Chi phí vận chuyển</td><td class="opt">Không</td><td>json</td><td>Vd: 15000000.</td></tr>
+<tr><td>10</td><td><code class="inline">tdt_chi_phi_tba</code></td><td>Chi phí trạm biến áp</td><td class="opt">Không</td><td>json</td><td>Vd: 250000000.</td></tr>
+<tr><td>11</td><td><code class="inline">tdt_chi_phi_ha_tang</code></td><td>Chi phí hạ tầng</td><td class="opt">Không</td><td>json</td><td>Vd: 80000000.</td></tr>
+<tr><td>12</td><td><code class="inline">tdt_chi_phi_thue_vi_tri</code></td><td>Chi phí thuê vị trí</td><td class="opt">Không</td><td>json</td><td>Vd: 120000000.</td></tr>
+<tr><td>13</td><td><code class="inline">lk_ty_le_tmt</code></td><td>Tỷ lệ % TMT (Liên kết)</td><td class="opt">Không</td><td>json</td><td>Phần chia cho TMT. Vd: 70.</td></tr>
+<tr><td>14</td><td><code class="inline">lk_ty_le_doi_tac</code></td><td>Tỷ lệ % Đối tác (Liên kết)</td><td class="opt">Không</td><td>json</td><td>Phần chia đối tác. Vd: 30.</td></tr>
+<tr><td>15</td><td><code class="inline">lk_chia_loi_nhuan_tmt</code></td><td>Chia LN TMT (VNĐ/kWh)</td><td class="opt">Không</td><td>json</td><td>Vd: 800.</td></tr>
+<tr><td>16</td><td><code class="inline">lk_chia_loi_nhuan_lk</code></td><td>Chia LN LK (VNĐ/kWh)</td><td class="opt">Không</td><td>json</td><td>Vd: 400.</td></tr>
+<tr><td>17</td><td><code class="inline">nq_gia_niem_yet</code></td><td>Giá niêm yết (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>Vd: 650000.</td></tr>
+<tr><td>18</td><td><code class="inline">nq_gia_uu_dai</code></td><td>Giá ưu đãi (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>Vd: 590000.</td></tr>
+<tr><td>19</td><td><code class="inline">nq_chia_loi_nhuan_tmt</code></td><td>Chia LN TMT (VNĐ/kWh)</td><td class="opt">Không</td><td>json</td><td>Vd: 750.</td></tr>
+<tr><td>20</td><td><code class="inline">nq_chia_loi_nhuan_nq</code></td><td>Chia LN NQ (VNĐ/kWh)</td><td class="opt">Không</td><td>json</td><td>Vd: 450.</td></tr>
+<tr><td>21</td><td><code class="inline">nq_thanh_toan_lan_1</code></td><td>Thanh toán đợt 1 (%)</td><td class="opt">Không</td><td>json</td><td>Vd: 50.</td></tr>
+<tr><td>22</td><td><code class="inline">nq_thanh_toan_lan_2</code></td><td>Thanh toán đợt 2 (%)</td><td class="opt">Không</td><td>json</td><td>Vd: 30.</td></tr>
+<tr><td>23</td><td><code class="inline">nq_thanh_toan_lan_3</code></td><td>Thanh toán đợt 3 (%)</td><td class="opt">Không</td><td>json</td><td>Vd: 20.</td></tr>
+</table>
+
+<h3 class="group-title">Nhóm select — 9 fields (chọn 1 giá trị)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Bắt buộc</th><th>Nguồn dữ liệu</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">status</code></td><td>Trạng thái</td><td class="opt">Không</td><td>fixed · nhập tay</td><td>PENDING (vàng) / REVIEWING (xanh dương) / APPROVED (xanh lá) / REJECTED (đỏ). Vd: "PENDING".</td></tr>
+<tr><td>2</td><td><code class="inline">province</code></td><td>Tỉnh thành</td><td class="opt">Không</td><td>json · Data List #4 cột <code class="inline">tinh</code></td><td>Chọn tỉnh. Vd: "TP. Hồ Chí Minh". Làm cha cho Xã phường (cascading).</td></tr>
+<tr><td>3</td><td><code class="inline">xa_phuong</code></td><td>Xã phường</td><td class="opt">Không</td><td>json · Data List #4 cột <code class="inline">xa</code></td><td>Chọn xã theo tỉnh đã chọn (cascading, relation_key=tinh). Vd: "Phường Bến Nghé".</td></tr>
+<tr><td>4</td><td><code class="inline">giacatest</code></td><td>Giá cả test</td><td class="opt">Không</td><td>json · Data List #5 cột <code class="inline">gia</code></td><td>Field test dữ liệu giá. Vd: "100.000".</td></tr>
+<tr><td>5</td><td><code class="inline">loai_tru</code></td><td>Loại trụ</td><td class="opt">Không</td><td>json · Data List #5 cột <code class="inline">san_pham</code></td><td>Chọn loại trụ sạc. Vd: "CCS2 60kW".</td></tr>
+<tr><td>6</td><td><code class="inline">vung_mien</code></td><td>Vùng miền</td><td class="opt">Không</td><td>json · nhập tay + Data List #10</td><td>Vùng miền hoạt động. Vd: "Miền Nam".</td></tr>
+<tr><td>7</td><td><code class="inline">mo_hinh_dau_tu</code></td><td>Mô hình đầu tư</td><td class="req">Có</td><td>json · nhập tay</td><td>NQ (Nhượng quyền, xanh lá) / TDT (Tự đầu tư, vàng) / LK (Liên kết, xanh dương). Vd: "NQ".</td></tr>
+<tr><td>8</td><td><code class="inline">ma_tinh</code></td><td>Mã tỉnh</td><td class="req">Có</td><td>json · Data List #10 cột <code class="inline">ma_tinh</code></td><td>Mã tỉnh để ghép mã đề xuất. Vd: "SG".</td></tr>
+<tr><td>9</td><td><code class="inline">nguon_dien</code></td><td>Nguồn điện</td><td class="opt">Không</td><td>json · Data List #17 cột <code class="inline">ten</code></td><td>Nguồn cấp điện cho trạm. Vd: "Điện 3 pha 22kV".</td></tr>
+</table>
+
+<h3 class="group-title">Nhóm phone — 3 fields (số điện thoại)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Bắt buộc</th><th>Nguồn</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">owner_phone</code></td><td>SĐT chủ sở hữu</td><td class="req">Có</td><td>fixed</td><td>SĐT chính để liên hệ mặt bằng. Vd: "0901234567".</td></tr>
+<tr><td>2</td><td><code class="inline">lk_sdt</code></td><td>SĐT CĐT (Liên kết)</td><td class="opt">Không</td><td>json</td><td>SĐT chủ đầu tư liên kết. Vd: "0912345678".</td></tr>
+<tr><td>3</td><td><code class="inline">nq_sdt</code></td><td>SĐT (Nhượng quyền)</td><td class="opt">Không</td><td>json</td><td>SĐT khách nhượng quyền. Vd: "0923456789".</td></tr>
+</table>
+
+<h3 class="group-title">Nhóm textarea — 2 fields (văn bản dài)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Bắt buộc</th><th>Nguồn</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">description</code></td><td>Mô tả</td><td class="opt">Không</td><td>fixed</td><td>Mô tả chung đề xuất. Vd: "Mặt bằng góc 2 mặt tiền, gần chợ, xe tải ra vào thuận tiện, có sẵn điện 3 pha."</td></tr>
+<tr><td>2</td><td><code class="inline">ghi_chu</code></td><td>Ghi chú</td><td class="opt">Không</td><td>json</td><td>Ghi chú bổ sung. Vd: "Chủ đất yêu cầu đặt cọc 3 tháng, hợp đồng tối thiểu 5 năm."</td></tr>
+</table>
+
+<h3 class="group-title">Nhóm file — 2 fields (tệp đính kèm)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Bắt buộc</th><th>Nguồn</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">legal_document</code></td><td>Hồ sơ pháp lý</td><td class="opt">Không</td><td>json</td><td>Scan sổ đỏ, hợp đồng thuê. Vd: [so-do-trang-1.pdf, hop-dong-thue.pdf].</td></tr>
+<tr><td>2</td><td><code class="inline">site_images</code></td><td>Hình ảnh hiện trường</td><td class="opt">Không</td><td>json</td><td>Ảnh chụp mặt bằng (cho phép nhiều file). Vd: [mat-truoc.jpg, mat-hong.jpg, dien-3pha.jpg].</td></tr>
+</table>
+
+<h3 class="group-title">Nhóm formula — 4 fields (công thức tự tính, post-compute)</h3>
+<table>
+<tr><th>#</th><th>Key</th><th>Label</th><th>Công thức</th><th>Mô tả &amp; ví dụ thực tế</th></tr>
+<tr><td>1</td><td><code class="inline">ma_de_xuat</code></td><td>Mã đề xuất</td><td><code class="inline">CONCAT(mo_hinh_dau_tu, '_', ma_tinh, '_', LPAD(SEQ(...), 4, '0'))</code></td><td>Mã tự sinh sau khi tạo: mô hình + mã tỉnh + số thứ tự. Vd: "NQ_SG_0007".</td></tr>
+<tr><td>2</td><td><code class="inline">nguoi_de_xuat</code></td><td>Người đề xuất</td><td><code class="inline">IF(LEN(user_name) &gt; 0, ..., 'Khách')</code></td><td>Tên + vai trò người tạo, guest = "Khách". Vd: "Nguyễn Văn A (SALES)".</td></tr>
+<tr><td>3</td><td><code class="inline">sales_quan_ly</code></td><td>Sales quản lý</td><td><code class="inline">IF(LEN(sales_name) &gt; 0, sales_name, '???')</code></td><td>Sales quản lý CTV tạo đề xuất. Vd: "Trần Thị B".</td></tr>
+<tr><td>4</td><td><code class="inline">tdt_tong_cong</code></td><td>Tổng cộng chi phí</td><td class="opt">(tổng các chi phí TDT)</td><td>Tổng chi phí mô hình tự đầu tư (trụ + vận chuyển + TBA + hạ tầng + thuê vị trí). Vd: 1115000000.</td></tr>
+</table>
+
+<footer>Tài liệu nội bộ — Station Management System · entity station_proposals · 58 fields</footer>
+
+</div>
+</body>
+</html>

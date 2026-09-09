@@ -9,24 +9,24 @@ const ONE_OFFICE_FIELDS = [
   { key: 'emails', label: 'Email', type: 'email', required: false },
   { key: 'address', label: '[Địa chỉ] Số, đường', type: 'text', required: false },
   { key: 'place_of_address', label: '[Địa chỉ] Xã phường, Quận huyện, Tỉnh thành', type: 'text', required: false },
-  { key: 'group_type_id', label: 'Nhóm khách hàng', type: 'multiselect', required: false },
-  { key: 'region', label: 'Vùng miền', type: 'select', required: false },
+  { key: 'group_type_id', label: 'Nhóm khách hàng', type: 'text', required: false },
+  { key: 'region', label: 'Vùng miền', type: 'text', required: false },
   { key: 'partner_id', label: 'Đối tác', type: 'text', required: false },
   { key: 'job_tax', label: 'CMND/Căn cước', type: 'text', required: false },
   { key: 'id_card_date', label: 'Ngày cấp', type: 'date', required: false },
   { key: 'id_card_place', label: 'Nơi cấp', type: 'text', required: false },
   { key: 'birthday', label: 'Ngày sinh', type: 'date', required: false },
   { key: 'scale_id', label: 'Quy mô tổ chức', type: 'select', required: false },
-  { key: 'status_id', label: 'Trạng thái', type: 'select', required: false },
-  { key: 'source_id', label: 'Nguồn liên hệ', type: 'select', required: false },
+  { key: 'status_id', label: 'Trạng thái', type: 'text', required: false },
+  { key: 'source_id', label: 'Nguồn liên hệ', type: 'text', required: false },
   { key: 'desc', label: 'Mô tả', type: 'textarea', required: false },
   { key: 'user_ids', label: 'Phụ trách', type: 'text', required: false },
   { key: 'manager_user_ids', label: 'Người giao phụ trách', type: 'text', required: false },
-  { key: 'trade_ids', label: 'Lĩnh vực', type: 'multiselect', required: false },
+  { key: 'trade_ids', label: 'Lĩnh vực', type: 'text', required: false },
   { key: 'tax_number', label: 'Mã số thuế/ĐKKD', type: 'text', required: false },
   { key: 'established_date', label: 'Ngày thành lập', type: 'date', required: false },
-  { key: 'gender', label: 'Giới tính', type: 'select', required: false },
-  { key: 'websites', label: 'Website', type: 'url', required: false }
+  { key: 'gender', label: 'Giới tính', type: 'text', required: false },
+  { key: 'websites', label: 'Website', type: 'text', required: false }
 ];
 
 const PROPOSAL_FIELDS = [
@@ -156,7 +156,9 @@ exports.transformText = (value, rules) => {
 
 exports.transformTextarea = (value, rules) => {
   let result = String(value).trim();
-  result = result.replace(/<[^>]*>/g, '');
+  if (rules.strip_html) {
+    result = result.replace(/<[^>]*>/g, '');
+  }
   if (rules.max_length && result.length > rules.max_length) {
     result = result.substring(0, rules.max_length);
   }
