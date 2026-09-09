@@ -112,3 +112,23 @@ exports.remove = async (id) => {
 exports.removeAllByConfig = async (apiConfigId) => {
   await pool.query('DELETE FROM api_field_mappings WHERE api_config_id = ?', [apiConfigId]);
 };
+
+exports.getUsedInDescFields = async (apiConfigId) => {
+  const [rows] = await pool.query(
+    'SELECT source_field FROM api_field_mappings WHERE api_config_id = ? AND used_in_desc = 1',
+    [apiConfigId]
+  );
+  return rows.map(r => r.source_field);
+};
+
+exports.setUsedInDesc = async (id, usedInDesc) => {
+  await pool.query(
+    'UPDATE api_field_mappings SET used_in_desc = ?, updated_at = NOW() WHERE id = ?',
+    [usedInDesc ? 1 : 0, id]
+  );
+};
+
+exports.checkFieldConflict = async (fieldKey, apiConfigId) => {
+  const usedFields = await exports.getUsedInDescFields(apiConfigId);
+  return usedFields.includes(fieldKey);
+};

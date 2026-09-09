@@ -151,6 +151,23 @@ exports.updateSelectedFields = async (id, fields) => {
   return fields;
 };
 
+exports.getDescTemplate = async (id) => {
+  const config = await exports.getById(id);
+  if (!config) return null;
+  if (!config.desc_template_config) return null;
+  return typeof config.desc_template_config === 'string'
+    ? JSON.parse(config.desc_template_config)
+    : config.desc_template_config;
+};
+
+exports.updateDescTemplate = async (id, templateConfig) => {
+  await pool.query(
+    'UPDATE api_configs SET desc_template_config = ?, updated_at = NOW() WHERE id = ?',
+    [JSON.stringify(templateConfig), id]
+  );
+  return templateConfig;
+};
+
 exports.testConnection = async (id) => {
   const config = await exports.getById(id);
   if (!config) {

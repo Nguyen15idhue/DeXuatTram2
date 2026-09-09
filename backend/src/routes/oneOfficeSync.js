@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middlewares/auth');
 const syncService = require('../services/syncService');
+const templateService = require('../services/templateService');
+const apiConfigService = require('../services/apiConfigService');
+const pool = require('../utils/db');
 
 /**
  * @swagger
@@ -178,6 +181,128 @@ router.get('/contacts/search', requireAuth, async (req, res) => {
     }
     const result = await syncService.searchContacts(parseInt(configId), q || '');
     res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/1office/preview:
+ *   post:
+ *     tags: [1Office Sync]
+ *     summary: Preview HTML desc từ template
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [apiConfigId, proposalId]
+ *             properties:
+ *               apiConfigId:
+ *                 type: integer
+ *               proposalId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: HTML preview
+ */
+router.post('/preview', requireAuth, async (req, res) => {
+  try {
+    const { apiConfigId, proposalId } = req.body;
+    if (!apiConfigId || !proposalId) {
+      return res.status(400).json({ success: false, message: 'Thiếu apiConfigId hoặc proposalId' });
+    }
+    const [proposals] = await pool.query('SELECT * FROM station_proposals WHERE id = ?', [proposalId]);
+    if (proposals.length === 0) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy proposal' });
+    }
+    const proposal = proposals[0];
+    const html = await templateService.render(proposal, apiConfigId);
+    const template = await apiConfigService.getDescTemplate(apiConfigId);
+    const validation = templateService.validateTemplate(template);
+    res.json({
+      success: true,
+      data: {
+        html,
+        proposalId,
+        apiConfigId,
+        templateValid: validation.valid,
+        templateErrors: validation.errors
+      }
+    });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/1office/template:
+ *   get:
+ *     tags: [1Office Sync]
+ *     summary: Lấy desc template config
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: configId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Template config
+ */
+router.get('/template', requireAuth, async (req, res) => {
+  try {
+    const { configId } = req.query;
+    if (!configId) {
+      return res.status(400).json({ success: false, message: 'Thiếu configId' });
+    }
+    const template = await apiConfigService.getDescTemplate(parseInt(configId));
+    res.json({ success: true, data: template });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/1office/template:
+ *   put:
+ *     tags: [1Office Sync]
+ *     summary: Cập nhật desc template config
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [configId, template]
+ *             properties:
+ *               configId:
+ *                 type: integer
+ *               template:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Updated
+ */
+router.put('/template', requireAuth, async (req, res) => {
+  try {
+    const { configId, template } = req.body;
+    if (!configId || !template) {
+      return res.status(400).json({ success: false, message: 'Thiếu configId hoặc template' });
+    }
+    const validation = templateService.validateTemplate(template);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: 'Template không hợp lệ', errors: validation.errors });
+    }
+    await apiConfigService.updateDescTemplate(parseInt(configId), template);
+    res.json({ success: true, message: 'Cập nhật template thành công' });
   } catch (e) {
     res.status(e.statusCode || 500).json({ success: false, message: e.message });
   }
