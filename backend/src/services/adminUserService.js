@@ -13,8 +13,16 @@ exports.getAllUsers = async (search, page, limit, scope = {}) => {
   }
 
   if (search) {
-    where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    const ors = ['full_name LIKE ?', 'email LIKE ?', 'phone LIKE ?', 'external_id LIKE ?'];
+    const orsParams = [like, like, like, like];
+    const digits = String(search).replace(/[^0-9]/g, '');
+    if (/^[0-9]{4,}$/.test(digits) && `%${digits}%` !== like) {
+      ors.push('phone LIKE ?');
+      orsParams.push(`%${digits}%`);
+    }
+    where.push('(' + ors.join(' OR ') + ')');
+    params.push(...orsParams);
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
@@ -107,7 +115,7 @@ exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPasswo
     ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
     : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, external_id = ?, updated_at = NOW() WHERE id = ?',
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, external_id = ?, token_version = token_version + 1, updated_at = NOW() WHERE id = ?',
     [fullName, email, phone || '', hashedPassword, role, status, cd, externalId === undefined ? null : externalId, id]
   );
 };
@@ -140,5 +148,5 @@ exports.updateRole = async (id, role) => {
 };
 
 exports.updatePassword = async (id, hashedPassword) => {
-  await pool.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPassword, id]);
+  await pool.query('UPDATE users SET password = ?, token_version = token_version + 1, updated_at = NOW() WHERE id = ?', [hashedPassword, id]);
 };

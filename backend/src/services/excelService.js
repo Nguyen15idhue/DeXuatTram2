@@ -5,6 +5,7 @@ const pool = require('../utils/db');
 const fieldDefinitionService = require('./fieldDefinitionService');
 const dataListService = require('./dataListService');
 const proximityService = require('./proximityService');
+const { validateLatitude, validateLongitude, validatePhone, validateRequired, validateEmail } = require('../middlewares/validators');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -251,18 +252,26 @@ function parseExcelRow(row, columns, entity, headerMap) {
 
     if (col.source_type === 'fixed') {
       if (col.key === 'latitude' || col.key === 'longitude') {
+        if (value === '') {
+          errors.push(`${col.label} là bắt buộc`);
+          return;
+        }
         const num = parseFloat(value);
-        if (value !== '' && (isNaN(num) || (col.key === 'latitude' && (num < -90 || num > 90)) || (col.key === 'longitude' && (num < -180 || num > 180)))) {
+        if (isNaN(num) || (col.key === 'latitude' && (num < -90 || num > 90)) || (col.key === 'longitude' && (num < -180 || num > 180))) {
           errors.push(`${col.label}: giá trị không hợp lệ (${value})`);
         } else {
-          fixedData[col.key] = num || 0;
+          fixedData[col.key] = num;
         }
       } else if (col.type === 'number') {
+        if (value === '') {
+          fixedData[col.key] = null;
+          return;
+        }
         const num = parseFloat(value);
-        if (value !== '' && isNaN(num)) {
+        if (isNaN(num)) {
           errors.push(`${col.label}: phải là số (${value})`);
         } else {
-          fixedData[col.key] = num || 0;
+          fixedData[col.key] = num;
         }
       } else if (col.type === 'boolean') {
         fixedData[col.key] = value === 'true' || value === '1' || value === 'TRUE' ? 1 : 0;
@@ -630,6 +639,14 @@ exports.importConfirmDynamic = async (req, res) => {
     let failed = 0;
     const failDetails = [];
     let defaultUserPasswordHash = null;
+    const insertedCoords = [];
+    const usedCodes = new Set();
+    if (entity === 'stations') {
+      const [existing] = await connection.query(
+        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) AS code FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) IS NOT NULL`
+      );
+      existing.forEach(r => { if (r.code) usedCodes.add(r.code); });
+    }
 
     for (const row of rows) {
       try {
@@ -642,6 +659,44 @@ exports.importConfirmDynamic = async (req, res) => {
           }
           delete dynamicData[k];
         });
+
+        if (entity === 'stations' || entity === 'station_proposals') {
+          const coordErr = validateLatitude(fixedData.latitude) || validateLongitude(fixedData.longitude);
+          if (coordErr) throw new Error(coordErr);
+        }
+        if (entity === 'station_proposals') {
+          const reqErr = validateRequired(fixedData.owner_name, 'Chủ mặt bằng') || validatePhone(fixedData.owner_phone) || validateRequired(fixedData.address, 'Địa chỉ');
+          if (reqErr) throw new Error(reqErr);
+          const lat = parseFloat(fixedData.latitude);
+          const lng = parseFloat(fixedData.longitude);
+          const nearby = await proximityService.checkNearby(lat, lng, 200);
+          if (nearby.is_duplicate) {
+            const n = nearby.nearest;
+            const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
+            throw new Error(`Vị trí trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m), không cho import`);
+          }
+          for (const c of insertedCoords) {
+            if (proximityService.haversineM(lat, lng, c.lat, c.lng) < 200) {
+              throw new Error('Vị trí trùng với dòng khác trong cùng file import (< 200m), không cho import');
+            }
+          }
+          insertedCoords.push({ lat, lng });
+        }
+        if (entity === 'stations') {
+          const code = dynamicData.ma_tram;
+          if (code) {
+            const [dup] = await connection.query(
+              `SELECT id FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) = ? LIMIT 1`,
+              [code]
+            );
+            if (dup.length > 0 || usedCodes.has(code)) throw new Error(`Mã trạm "${code}" đã tồn tại, không cho import`);
+            usedCodes.add(code);
+          }
+        }
+        if (entity === 'users') {
+          const uErr = validateRequired(fixedData.full_name, 'Họ tên') || validateEmail(fixedData.email);
+          if (uErr) throw new Error(uErr);
+        }
 
         if (entity === 'station_proposals' || entity === 'stations') {
           if (dynamicData.province && String(dynamicData.province).trim() !== '') {
@@ -718,11 +773,11 @@ exports.importConfirmDynamic = async (req, res) => {
         `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) AS code FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) IS NOT NULL`
       );
       const maxByPrefix = {};
+      const formulaService = require('./formulaService');
       for (const r of codeRows) {
-        const m = /^E\.([A-Z]+)(\d+)$/.exec(r.code || '');
-        if (!m) continue;
-        const prefix = 'E.' + m[1];
-        maxByPrefix[prefix] = Math.max(maxByPrefix[prefix] || 0, parseInt(m[2], 10));
+        const parsed = formulaService.parseCodeToSeq(r.code);
+        if (!parsed) continue;
+        maxByPrefix[parsed.prefix] = Math.max(maxByPrefix[parsed.prefix] || 0, parsed.num);
       }
       for (const [prefix, max] of Object.entries(maxByPrefix)) {
         await connection.query(

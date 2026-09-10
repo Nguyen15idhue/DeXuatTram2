@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
+import { formatNumber } from '../../utils/formatNumber';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -521,18 +522,30 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         />
       );
 
-    case 'formula':
+    case 'formula': {
+      const displayValue = (() => {
+        if (value === null || value === undefined || value === '') return '';
+        if (typeof value === 'number' || !isNaN(Number(value))) {
+          return formatNumber(Number(value), {
+            format: field.formula_config?.numberFormat || 'plain',
+            decimalPlaces: field.formula_config?.decimalPlaces,
+            unit: field.formula_config?.unit
+          });
+        }
+        return String(value);
+      })();
       return (
         <input
           type="text"
           className={baseClass}
-          value={value || ''}
+          value={displayValue}
           onChange={handleChange}
           placeholder={field.placeholder || 'Formula (tính tự động)'}
           disabled={true}
           readOnly
         />
       );
+    }
 
     case 'table': {
       const tc = (() => {

@@ -14,14 +14,21 @@ exports.getDashboardStats = async (scope = {}) => {
     `SELECT COUNT(*) as totalUsers FROM users WHERE 1=1${isSales ? ` AND (id IN (${branchIds.map(() => '?').join(',')}))` : ''}`,
     isSales ? [...branchIds] : []
   );
-  const [[{ totalStations }]] = await pool.query('SELECT COUNT(*) as totalStations FROM stations');
+  let totalStations = null;
+  let activeStations = null;
+  let deployingStations = null;
+  if (!isSales) {
+    [[{ totalStations }]] = await pool.query('SELECT COUNT(*) as totalStations FROM stations');
+  }
   const [[{ totalProposals }]] = await pool.query(
     `SELECT COUNT(*) as totalProposals FROM station_proposals WHERE 1=1${inBranch('user_id')}`,
     branchParams()
   );
 
-  const [[{ activeStations }]] = await pool.query("SELECT COUNT(*) as activeStations FROM stations WHERE status = 'ACTIVE'");
-  const [[{ deployingStations }]] = await pool.query("SELECT COUNT(*) as deployingStations FROM stations WHERE status = 'DEPLOYING'");
+  if (!isSales) {
+    [[{ activeStations }]] = await pool.query("SELECT COUNT(*) as activeStations FROM stations WHERE status = 'ACTIVE'");
+    [[{ deployingStations }]] = await pool.query("SELECT COUNT(*) as deployingStations FROM stations WHERE status = 'DEPLOYING'");
+  }
 
   const [[{ pendingProposals }]] = await pool.query(
     `SELECT COUNT(*) as pendingProposals FROM station_proposals WHERE status = 'PENDING'${inBranch('user_id')}`,
@@ -59,7 +66,7 @@ exports.getDashboardStats = async (scope = {}) => {
   return {
     scope: isSales ? 'branch' : 'all',
     users: { total: totalUsers, active: activeUsers, locked: lockedUsers },
-    stations: { total: totalStations, active: activeStations, deploying: deployingStations },
+    stations: isSales ? null : { total: totalStations, active: activeStations, deploying: deployingStations },
     proposals: {
       total: totalProposals, pending: pendingProposals, approved: approvedProposals,
       rejected: rejectedProposals, new7d: newProposals7d,

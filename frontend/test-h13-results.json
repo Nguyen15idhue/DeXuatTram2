@@ -1,0 +1,32 @@
+[
+  {
+    "name": "BE fixture created",
+    "ok": true,
+    "detail": "id=411"
+  },
+  {
+    "name": "BE bad phone rejected",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE bad coords rejected",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE valid PUT ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "FE my-proposals lists fixture",
+    "ok": true,
+    "detail": "Station Management Bản đồ Đề xuất của tôi Hồ sơ Tran Thi B Đăng xuất Đề xuất của tôi Tạo đề xuất Exp"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

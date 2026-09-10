@@ -307,7 +307,7 @@ router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeR
  * /api/admin/users/{id}/password:
  *   patch:
  *     tags: [Admin - Users]
- *     summary: Admin đổi mật khẩu user (không trả về mật khẩu)
+ *     summary: Admin đổi mật khẩu user (tự đổi cần mật khẩu cũ old_password)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -322,11 +322,14 @@ router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeR
  *         application/json:
  *           schema:
  *             type: object
- *             required: [password]
- *             properties:
- *               password:
- *                 type: string
- *                 minLength: 6
+  *             required: [password]
+  *             properties:
+  *               password:
+  *                 type: string
+  *                 minLength: 6
+  *               old_password:
+  *                 type: string
+  *                 description: Bắt buộc khi tự đổi mật khẩu của chính mình
  *     responses:
  *       200:
  *         description: Đổi mật khẩu thành công

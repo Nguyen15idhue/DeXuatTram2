@@ -1,0 +1,22 @@
+[
+  {
+    "name": "BE empty lat/lng flagged required",
+    "ok": true,
+    "detail": "[{\"row\":2,\"errors\":[\"Tên trạm là bắt buộc\",\"Vĩ độ là bắt buộc\",\"Kinh độ là bắt buộc\",\"Trạng thái là bắt buộc\",\"Tỉnh/Thành phố là bắt buộc\"]}]"
+  },
+  {
+    "name": "BE valid row keeps real coords",
+    "ok": true,
+    "detail": "lat=10.5 lng=106.7"
+  },
+  {
+    "name": "FE stations import UI present",
+    "ok": true,
+    "detail": "count=1"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

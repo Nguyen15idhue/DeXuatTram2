@@ -38,14 +38,16 @@ const AdminDashboard = () => {
       color: 'text-primary',
       bg: 'bg-primary/10',
     },
-    {
-      title: 'Stations',
-      icon: Zap,
-      total: stats?.stations?.total,
-      detail: `Active: ${stats?.stations?.active ?? 0} | Deploying: ${stats?.stations?.deploying ?? 0}`,
-      color: 'text-success',
-      bg: 'bg-success/10',
-    },
+    ...(stats?.stations ? [
+      {
+        title: 'Stations',
+        icon: Zap,
+        total: stats?.stations?.total,
+        detail: `Active: ${stats?.stations?.active ?? 0} | Deploying: ${stats?.stations?.deploying ?? 0}`,
+        color: 'text-success',
+        bg: 'bg-success/10',
+      }
+    ] : []),
     {
       title: 'Proposals',
       icon: ClipboardList,

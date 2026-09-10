@@ -35,7 +35,7 @@ const requireAuth = async (req, res, next) => {
 
   try {
     const pool = require('../utils/db');
-    const [rows] = await pool.query('SELECT id, email, role, status FROM users WHERE id = ?', [decoded.id]);
+    const [rows] = await pool.query('SELECT id, email, role, status, token_version FROM users WHERE id = ?', [decoded.id]);
     if (rows.length === 0) {
       return res.status(401).json({
         success: false,
@@ -46,6 +46,12 @@ const requireAuth = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         message: 'Tài khoản đã bị khóa'
+      });
+    }
+    if ((decoded.tokenVersion || 0) !== (rows[0].token_version || 0)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Phiên đăng nhập đã hết hạn'
       });
     }
     req.user = { id: rows[0].id, email: rows[0].email, role: rows[0].role };

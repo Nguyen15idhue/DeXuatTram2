@@ -1,0 +1,37 @@
+[
+  {
+    "name": "BE proposals code search",
+    "ok": true,
+    "detail": "total=1"
+  },
+  {
+    "name": "BE proposals dotted phone search",
+    "ok": true,
+    "detail": "total=1"
+  },
+  {
+    "name": "BE stations code search",
+    "ok": true,
+    "detail": "n=1"
+  },
+  {
+    "name": "BE users fixed search intact",
+    "ok": true,
+    "detail": "n=1"
+  },
+  {
+    "name": "FE proposals code search finds record",
+    "ok": true,
+    "detail": "Quản lý Đề xuất Tạo đề xuất Tất cả PENDING REVIEWING APPROVED REJECTED Export 200m – m Check trùng \tSTT\tMã đề xuất↕\tTên "
+  },
+  {
+    "name": "FE stations code search finds record",
+    "ok": true,
+    "detail": "Quản lý Trạm Thêm trạm Tất cả trạng thái Hoạt động Đang triển khai Tìm Reset Template Export Import \tSTT\tMã trạm sạc↕\tTê"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

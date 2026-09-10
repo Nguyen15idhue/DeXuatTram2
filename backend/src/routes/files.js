@@ -262,6 +262,7 @@ router.get('/:id/image', optionalAuth, async (req, res) => {
     }
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.sendFile(result.filePath);
   } catch (error) {
     console.error('Image file error:', error);

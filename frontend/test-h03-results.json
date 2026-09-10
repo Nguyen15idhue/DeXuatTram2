@@ -1,0 +1,17 @@
+[
+  {
+    "name": "FE sales users/files denied",
+    "ok": true,
+    "detail": "❌  Không có quyền truy cập  Quay lại Admin Panel Dashboard Quản lý Users Quản lý Trạm Quản lý Đề xuất Audit Log Xem bản "
+  },
+  {
+    "name": "FE sales stations/files allowed",
+    "ok": true,
+    "detail": "Files của bản ghi #1  Không có file nào.  Quay lại Admin Panel Dashboard Quản lý Users Quản lý Trạm Quản lý Đề xuất Audi"
+  },
+  {
+    "name": "FE admin users/files allowed",
+    "ok": true,
+    "detail": "Files của bản ghi #3  Không có file nào.  Quay lại Admin Panel Dashboard Quản lý Users Quản lý Trạm Quản lý Đề xuất Audi"
+  }
+]

@@ -44,7 +44,7 @@ router.get('/', requireAuth, requireSuperAdmin, dataListController.getAll);
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/:id', requireAuth, dataListController.getById);
+router.get('/:id', requireAuth, requireSuperAdmin, dataListController.getById);
 
 /**
  * @swagger

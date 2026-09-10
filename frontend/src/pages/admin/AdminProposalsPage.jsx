@@ -348,17 +348,19 @@ const AdminProposalsPage = () => {
         <Eye size={12} />
         Xem
       </button>
+      {isAdmin && (
       <button className="btn btn-warning btn-xs gap-1" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>
         <Pencil size={12} />
         Sửa
       </button>
+      )}
       <select
         value={row.status}
         onChange={(e) => handleStatusChange(row.id, e.target.value)}
         className="select select-bordered select-xs"
       >
         {statusOptions.map(opt => (
-          <option key={opt.value} value={opt.label}>{opt.label}</option>
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
       <button className="btn btn-error btn-outline btn-xs gap-1" onClick={() => handleDeleteClick(row.id)}>
@@ -430,7 +432,7 @@ const AdminProposalsPage = () => {
           <input
             type="text"
             className="input input-bordered input-sm"
-            placeholder="Tìm theo tên, địa chỉ, mã đề xuất..."
+            placeholder="Tìm theo tên, địa chỉ, SĐT, mã đề xuất..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && loadProposals(1)}

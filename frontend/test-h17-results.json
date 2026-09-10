@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE formulas API alive after refactor",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "FE stations page intact",
+    "ok": true,
+    "detail": "Quản lý Trạm Thêm trạm Tất cả trạng thái Hoạt động Đang triển khai Tìm Reset Tem"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

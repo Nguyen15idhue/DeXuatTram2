@@ -1,0 +1,37 @@
+[
+  {
+    "name": "BE admin dashboard has stations",
+    "ok": true,
+    "detail": "total=39"
+  },
+  {
+    "name": "BE sales dashboard hides stations",
+    "ok": true,
+    "detail": "stations=null"
+  },
+  {
+    "name": "BE sales keeps branch proposals",
+    "ok": true,
+    "detail": "total=2"
+  },
+  {
+    "name": "BE station list still viewable",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "FE sales dashboard no Stations card",
+    "ok": true,
+    "detail": "Dashboard Nhánh của bạn Users  2  Active: 2 | Locked: 0  Proposals  2  Pending: 1 | Approved: 0 | Rejected: 1  Tỷ lệ duyệt  0%  Approved: 0 / Total: 2"
+  },
+  {
+    "name": "FE sales branch badge",
+    "ok": true,
+    "detail": "badge"
+  },
+  {
+    "name": "FE sales still views stations",
+    "ok": true,
+    "detail": "Quản lý Trạm Tất cả trạng thái Hoạt động Đang triển khai Tìm Reset \tSTT\tMã trạm sạc↕\tTên trạm↕\tTrạng thái↕\tNhà điều hành"
+  }
+]

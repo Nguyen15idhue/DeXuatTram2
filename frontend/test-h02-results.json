@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE sales full PUT blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "FE sales no edit buttons in table",
+    "ok": true,
+    "detail": "count=0"
+  },
+  {
+    "name": "FE sales direct /edit= forced to view",
+    "ok": true,
+    "detail": "Quản lý Đề xuất Tạo đề xuất Tất cả PENDING REVIEWING APPROVED REJECTED Export 200m – m Check trùng Đề xuất #365 ✕ Thông tin cơ bản Tỉnh thành Thành ph"
+  }
+]

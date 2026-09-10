@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE admin self-lock via PUT blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "FE users page loads",
+    "ok": true,
+    "detail": "Quản lý Users Tạo user Tất cả trạng thái Hoạt động Bị khóa Tìm Reset Template Ex"
+  },
+  {
+    "name": "FE password modal opens",
+    "ok": true,
+    "detail": "modal"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE sales retry blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "FE sales no Retry/Cancel",
+    "ok": true,
+    "detail": "retry=0 cancel=0"
+  },
+  {
+    "name": "FE super audit-log loads",
+    "ok": true,
+    "detail": "Audit Log — Lịch sử đồng bộ Tổng cộng 52 Chờ xử lý 0 Đang xử lý 0 Thành công 51 Thất bại 0 Phân bổ t"
+  }
+]

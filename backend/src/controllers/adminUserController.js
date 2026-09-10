@@ -105,12 +105,18 @@ exports.update = async (req, res) => {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       role = existing.role;
+      status = existing.status;
     } else if (editorRole === 'ADMIN') {
       if (existing.role === 'SUPER_ADMIN') {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       if (role === 'SUPER_ADMIN') {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      if (status !== undefined && status !== existing.status) {
+        if (targetId === req.user.id || existing.role === 'ADMIN') {
+          return res.status(403).json({ success: false, message: 'Không được đổi trạng thái tài khoản này' });
+        }
       }
       if (targetId === req.user.id) {
         role = existing.role;
@@ -122,6 +128,9 @@ exports.update = async (req, res) => {
         role = existing.role;
       } else {
         role = role || existing.role;
+      }
+      if (targetId === req.user.id && status !== undefined && status !== existing.status) {
+        return res.status(400).json({ success: false, message: 'Không thể khóa chính mình' });
       }
     }
 
@@ -139,6 +148,7 @@ exports.update = async (req, res) => {
 
     const cd = custom_data !== undefined ? custom_data : existing.custom_data;
     const ext = external_id === undefined ? existing.external_id : (external_id || null);
+    const finalStatus = status !== undefined ? status : existing.status;
 
     if (password) {
       if (password.length < 6) {
@@ -146,9 +156,9 @@ exports.update = async (req, res) => {
       }
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
-      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, status, cd, ext);
+      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, finalStatus, cd, ext);
     } else {
-      await adminUserService.updateUser(targetId, full_name, email, phone, role, status, cd, ext);
+      await adminUserService.updateUser(targetId, full_name, email, phone, role, finalStatus, cd, ext);
     }
 
     const user = await adminUserService.findById(targetId);
@@ -260,7 +270,7 @@ exports.changeRole = async (req, res) => {
 exports.changePassword = async (req, res) => {
   try {
     const { id } = req.params;
-    const { password } = req.body;
+    const { password, old_password } = req.body;
 
     if (!password || typeof password !== 'string' || password.length < 6) {
       return res.status(400).json({ success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' });
@@ -275,8 +285,23 @@ exports.changePassword = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
+    const targetId = parseInt(id);
+    if (targetId === req.user.id) {
+      if (!old_password) {
+        return res.status(400).json({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại' });
+      }
+      const pool = require('../utils/db');
+      const [rows] = await pool.query('SELECT password FROM users WHERE id = ?', [targetId]);
+      if (rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+      }
+      const match = await bcrypt.compare(old_password, rows[0].password);
+      if (!match) {
+        return res.status(400).json({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+      }
+    }
+
     if (req.user.role === 'SALES') {
-      const targetId = parseInt(id);
       const isSelf = targetId === req.user.id;
       const full = await adminUserService.findById(targetId);
       const isOwnCtv = full && full.role === 'CTV' && full.parent_id === req.user.id;
@@ -288,6 +313,7 @@ exports.changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     await adminUserService.updatePassword(id, hashedPassword);
+    console.warn(`[security] password changed target=${id} by=${req.user.id} self=${targetId === req.user.id}`);
     const user = await adminUserService.findById(id);
     res.json({ success: true, data: user, message: 'Đổi mật khẩu thành công' });
   } catch (error) {

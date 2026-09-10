@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middlewares/auth');
+const { validateUpdateProposal } = require('../middlewares/validators');
 const myProposalController = require('../controllers/myProposalController');
 const excelService = require('../services/excelService');
 
@@ -158,7 +159,7 @@ router.post('/duplicates/export', requireAuth, (req, res) => excelService.export
  *       404:
  *         description: Không tìm thấy đề xuất hoặc không phải của user
  */
-router.put('/:id', requireAuth, myProposalController.update);
+router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.update);
 
 /**
  * @swagger

@@ -229,6 +229,9 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
         }
         return <a href={value} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{field.formula_config.label || value}</a>;
       }
+      if (typeof value === 'number' || (value !== null && value !== undefined && value !== '' && !isNaN(Number(value)))) {
+        return <span>{formatNumber(Number(value), { format: field.formula_config.numberFormat || 'plain', decimalPlaces: field.formula_config.decimalPlaces, unit: field.formula_config.unit })}</span>;
+      }
       return <span>{String(value)}</span>;
     }
 

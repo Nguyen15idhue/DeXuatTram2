@@ -1,0 +1,22 @@
+[
+  {
+    "name": "BE CTV admin data-list blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "BE public data-list for forms",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "FE CTV my-proposals loads (form data-lists via public)",
+    "ok": true,
+    "detail": "Station Management Bản đồ Đề xuất của tôi Hồ sơ Trần Thị B Đăng xuất Đề xuất của tôi Tạo đề xuất Exp"
+  },
+  {
+    "name": "FE super data-lists admin loads",
+    "ok": true,
+    "detail": "Danh mục dữ liệu (Data Lists) + Tạo mới STT\tTên\tMô tả\tColumns\tRows\tThao tác 1\tdm_nguon_dien\tNguồn đi"
+  }
+]

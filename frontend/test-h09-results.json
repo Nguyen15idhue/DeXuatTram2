@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE formula preview returns raw number",
+    "ok": true,
+    "detail": "{\"success\":true,\"data\":{\"result\":1234}}"
+  },
+  {
+    "name": "FE DynamicForm create renders",
+    "ok": true,
+    "detail": "len=2594"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

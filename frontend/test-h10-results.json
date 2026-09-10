@@ -1,0 +1,27 @@
+[
+  {
+    "name": "BE invalid tile returns image not JSON",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE out-of-range tile fallback image",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE ?url= ignored (open-proxy closed)",
+    "ok": true,
+    "detail": "bytes=103"
+  },
+  {
+    "name": "FE map tiles render (fallback ok)",
+    "ok": true,
+    "detail": "tiles=24"
+  },
+  {
+    "name": "FE map markers still show",
+    "ok": true,
+    "detail": "markers=40"
+  }
+]

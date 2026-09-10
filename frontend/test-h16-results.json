@@ -1,0 +1,22 @@
+[
+  {
+    "name": "BE tampered confirm rejected",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE rollback intact",
+    "ok": true,
+    "detail": "30->30"
+  },
+  {
+    "name": "FE proposals page intact",
+    "ok": true,
+    "detail": "export=1"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

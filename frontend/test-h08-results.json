@@ -1,0 +1,22 @@
+[
+  {
+    "name": "BE fixture proposal 2 readable",
+    "ok": true,
+    "detail": "status=REJECTED"
+  },
+  {
+    "name": "FE row select value is an option value",
+    "ok": true,
+    "detail": "{\"sel\":\"PENDING\",\"opts\":[\"PENDING\",\"REVIEWING\",\"APPROVED\",\"REJECTED\"]}"
+  },
+  {
+    "name": "FE row select sends value not label",
+    "ok": true,
+    "detail": "PENDING,REVIEWING,APPROVED,REJECTED"
+  },
+  {
+    "name": "BE status PUT with value ok",
+    "ok": true,
+    "detail": "status=200"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE sales branch file ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE unrelated CTV blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "FE sales branch proposal view loads",
+    "ok": true,
+    "detail": "Quản lý Đề xuất Tạo đề xuất Tất cả PENDING REVIEWING APPROVED REJECTED Export 200m – m Check trùng Đ"
+  }
+]

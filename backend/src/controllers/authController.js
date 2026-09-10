@@ -66,7 +66,7 @@ exports.login = async (req, res) => {
     const loginCd = parseCustomData(user.custom_data);
     const avatar = loginCd.avatar || null;
 
-    const token = authService.generateToken(user.id, user.email, user.role);
+    const token = authService.generateToken(user.id, user.email, user.role, user.token_version || 0);
 
     res.json({
       success: true,

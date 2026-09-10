@@ -14,8 +14,16 @@ exports.getUserProposals = async (userId, status, search, page, limit) => {
   }
 
   if (search) {
-    where.push('(p.owner_name LIKE ? OR p.address LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    const ors = ['p.owner_name LIKE ?', 'p.address LIKE ?', 'p.tracking_code LIKE ?', 'p.ma_de_xuat_gen LIKE ?'];
+    const orsParams = [like, like, like, like];
+    const digits = String(search).replace(/[^0-9]/g, '');
+    if (/^[0-9]{4,}$/.test(digits)) {
+      ors.push('p.owner_phone LIKE ?');
+      orsParams.push(`%${digits}%`);
+    }
+    where.push('(' + ors.join(' OR ') + ')');
+    params.push(...orsParams);
   }
 
   const whereClause = 'WHERE ' + where.join(' AND ');

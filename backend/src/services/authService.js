@@ -37,8 +37,8 @@ exports.comparePassword = async (password, hashedPassword) => {
   return bcrypt.compare(password, hashedPassword);
 };
 
-exports.generateToken = (id, email, role) => {
-  return jwt.sign({ id, email, role }, JWT_SECRET, { expiresIn: '7d' });
+exports.generateToken = (id, email, role, tokenVersion = 0) => {
+  return jwt.sign({ id, email, role, tokenVersion }, JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '12h' });
 };
 
 exports.updateProfile = async (id, fullName, phone, customData) => {
@@ -53,7 +53,7 @@ exports.updatePassword = async (id, fullName, phone, newPassword) => {
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash(newPassword, salt);
   await pool.query(
-    'UPDATE users SET full_name = ?, phone = ?, password = ?, updated_at = NOW() WHERE id = ?',
+    'UPDATE users SET full_name = ?, phone = ?, password = ?, token_version = token_version + 1, updated_at = NOW() WHERE id = ?',
     [fullName, phone || '', hashedPassword, id]
   );
 };

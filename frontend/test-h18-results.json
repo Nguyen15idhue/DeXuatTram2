@@ -1,0 +1,17 @@
+[
+  {
+    "name": "BE guest upload stores submitter_ip",
+    "ok": true,
+    "detail": "ip=172.19.0.1"
+  },
+  {
+    "name": "FE guest form loads",
+    "ok": true,
+    "detail": "Đề xuất trạm sạc Đăng nhập Đề xuất vị trí trạm sạc  Không cần tài khoản. Điền fo"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

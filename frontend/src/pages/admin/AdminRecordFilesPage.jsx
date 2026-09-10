@@ -31,7 +31,7 @@ const getFileIcon = (file) => {
 const VIEW_MAP = { stations: 6, users: 7, station_proposals: 8 };
 
 const AdminRecordFilesPage = () => {
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { entity, id } = useParams();
   const [searchParams] = useSearchParams();
@@ -51,6 +51,7 @@ const AdminRecordFilesPage = () => {
     try {
       setLoading(true);
       setError('');
+      if (entity === 'users' && !isAdmin) { setError('Không có quyền truy cập'); return; }
       const viewId = VIEW_MAP[entity];
       if (!viewId) { setError('Entity không hợp lệ'); return; }
 

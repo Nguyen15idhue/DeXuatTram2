@@ -183,6 +183,14 @@ exports.getNextSequence = async (prefix, connection) => {
   return n;
 };
 
+exports.parseCodeToSeq = (code) => {
+  const m = /^(.*)(\d{4})$/.exec(String(code || ''));
+  if (!m) return null;
+  const prefix = m[1].replace(/_+$/, '').slice(0, 20);
+  if (!prefix) return null;
+  return { prefix, num: parseInt(m[2], 10) };
+};
+
 exports.reconcileSequences = async () => {
   const targets = [
     { table: 'station_proposals', key: 'ma_de_xuat' },
@@ -194,11 +202,9 @@ exports.reconcileSequences = async () => {
       `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) AS code FROM ${t.table} WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) IS NOT NULL`
     );
     for (const r of rows) {
-      const m = /^(.*)(\d{4})$/.exec(String(r.code || ''));
-      if (!m) continue;
-      const prefix = m[1].replace(/_+$/, '').slice(0, 20);
-      if (!prefix) continue;
-      maxByPrefix[prefix] = Math.max(maxByPrefix[prefix] || 0, parseInt(m[2], 10));
+      const parsed = exports.parseCodeToSeq(r.code);
+      if (!parsed) continue;
+      maxByPrefix[parsed.prefix] = Math.max(maxByPrefix[parsed.prefix] || 0, parsed.num);
     }
   }
   let fixed = 0;

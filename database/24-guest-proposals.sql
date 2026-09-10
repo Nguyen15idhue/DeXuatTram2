@@ -16,4 +16,9 @@ CREATE UNIQUE INDEX uq_proposals_tracking ON station_proposals(tracking_code);
 
 CREATE INDEX idx_proposals_phone ON station_proposals(owner_phone);
 
-ALTER TABLE files ADD COLUMN submitter_ip VARCHAR(45) NULL;
+-- files.submitter_ip đã có từ script 08 với cài fresh; guard để chạy tuần tự không lỗi trùng cột
+SET @has_files_ip := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'files' AND COLUMN_NAME = 'submitter_ip');
+SET @add_files_ip := IF(@has_files_ip = 0, 'ALTER TABLE files ADD COLUMN submitter_ip VARCHAR(45) NULL', 'SELECT 1');
+PREPARE stmt_add_files_ip FROM @add_files_ip;
+EXECUTE stmt_add_files_ip;
+DEALLOCATE PREPARE stmt_add_files_ip;

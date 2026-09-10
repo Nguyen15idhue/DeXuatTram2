@@ -44,6 +44,7 @@ const AdminUsersPage = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const createRoleAllowlist = isSales ? ['CTV'] : (!isSuperAdmin ? ['CTV', 'SALES', 'ADMIN'] : null);
   const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
+  const [pwOld, setPwOld] = useState('');
   const [pw1, setPw1] = useState('');
   const [pw2, setPw2] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
@@ -147,17 +148,19 @@ const AdminUsersPage = () => {
 
   const openPasswordModal = (id, name) => {
     setPwModal({ open: true, id, name });
+    setPwOld('');
     setPw1('');
     setPw2('');
     setPwError('');
   };
 
   const handleChangePassword = async () => {
+    if (pwModal.id === currentUser.id && !pwOld) { setPwError('Vui lòng nhập mật khẩu hiện tại'); return; }
     if (!pw1 || pw1.length < 6) { setPwError('Mật khẩu phải có ít nhất 6 ký tự'); return; }
     if (pw1 !== pw2) { setPwError('Nhập lại mật khẩu chưa khớp'); return; }
     try {
       setPwLoading(true);
-      const res = await adminUserService.changePassword(pwModal.id, pw1, token);
+      const res = await adminUserService.changePassword(pwModal.id, pw1, token, pwModal.id === currentUser.id ? pwOld : undefined);
       if (res.success) {
         setPwModal({ open: false, id: null, name: '' });
         setToast({ message: 'Đổi mật khẩu thành công', type: 'success' });
@@ -410,7 +413,7 @@ const AdminUsersPage = () => {
         <div className="form-control flex-1">
           <input
             type="text"
-            placeholder="Search theo tên, email, SĐT..."
+            placeholder="Search theo tên, email, SĐT, mã ngoài..."
             className="input input-bordered input-sm w-full"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -557,6 +560,12 @@ const AdminUsersPage = () => {
           <div className="modal-box">
             <h3 className="font-bold text-lg mb-4">Đổi mật khẩu — {pwModal.name}</h3>
             <div className="space-y-4">
+              {pwModal.id === currentUser.id && (
+              <div className="form-control">
+                <label className="label"><span className="label-text">Mật khẩu hiện tại</span></label>
+                <input type="password" autoComplete="current-password" className="input input-bordered w-full" value={pwOld} onChange={(e) => setPwOld(e.target.value)} />
+              </div>
+              )}
               <div className="form-control">
                 <label className="label"><span className="label-text">Mật khẩu mới (ít nhất 6 ký tự)</span></label>
                 <input type="password" autoComplete="new-password" className="input input-bordered w-full" value={pw1} onChange={(e) => setPw1(e.target.value)} />

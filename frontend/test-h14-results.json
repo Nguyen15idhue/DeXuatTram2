@@ -1,0 +1,27 @@
+[
+  {
+    "name": "BE children cascading ok",
+    "ok": true,
+    "detail": "n=126"
+  },
+  {
+    "name": "BE children bad column 400",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "FE proposals page loads (hook regression)",
+    "ok": true,
+    "detail": "Quản lý Đề xuất Tạo đề xuất Tất cả PENDING REVIEWING APPROVED REJECTED Export 20"
+  },
+  {
+    "name": "FE guest form loads (cascading intact)",
+    "ok": true,
+    "detail": "Đề xuất trạm sạc Đăng nhập Đề xuất vị trí trạm sạc  Không cần tài khoản. Điền fo"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]

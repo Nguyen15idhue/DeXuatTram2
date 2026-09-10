@@ -22,20 +22,64 @@ const verifyMagic = (filePath, mime) => {
 
 const removePhysical = (p) => { try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch { /* silent */ } };
 
+const containsFileId = (customData, fid) => {
+  let obj = customData;
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); } catch { return false; }
+  }
+  if (!obj || typeof obj !== 'object') return false;
+  const stack = [obj];
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (Array.isArray(cur)) { stack.push(...cur); continue; }
+    if (cur && typeof cur === 'object') {
+      if (Number(cur.id) === fid && (cur.original_name || cur.storage_key || cur.name)) return true;
+      stack.push(...Object.values(cur));
+    }
+  }
+  return false;
+};
+
 const canAccessFile = async (file, req) => {
   if (!file) return false;
   let requesterId = req.user ? req.user.id : null;
   let requesterRole = req.user ? req.user.role : null;
-  if (requesterId && !requesterRole) {
+  if (requesterId) {
     try {
-      const [rows] = await pool.query('SELECT role FROM users WHERE id = ?', [requesterId]);
-      if (rows.length > 0) requesterRole = rows[0].role;
+      const [rows] = await pool.query('SELECT role, token_version FROM users WHERE id = ?', [requesterId]);
+      if (rows.length === 0 || (req.user.tokenVersion || 0) !== (rows[0].token_version || 0)) {
+        requesterId = null;
+        requesterRole = null;
+      } else {
+        requesterRole = rows[0].role;
+      }
     } catch { /* silent */ }
   }
   if (requesterId && ['ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
   const reqIp = req.ip || req.connection?.remoteAddress || null;
   if (file.uploaded_by === null && file.submitter_ip && reqIp && file.submitter_ip === reqIp) return true;
+  if (requesterId) {
+    try {
+      const fid = Number(file.id);
+      const [props] = await pool.query('SELECT user_id, custom_data FROM station_proposals');
+      let branchIds = null;
+      if (requesterRole === 'SALES') {
+        const [brows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [requesterId, requesterId]);
+        branchIds = new Set(brows.map(r => Number(r.id)));
+      }
+      for (const p of props) {
+        if (!containsFileId(p.custom_data, fid)) continue;
+        if (p.user_id !== null && Number(p.user_id) === Number(requesterId)) return true;
+        if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
+      }
+      const [sts] = await pool.query('SELECT custom_data FROM stations');
+      for (const s of sts) {
+        if (!containsFileId(s.custom_data, fid)) continue;
+        if (['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
+      }
+    } catch { /* silent */ }
+  }
   return false;
 };
 
@@ -109,7 +153,8 @@ exports.getById = async (req, res) => {
     if (!file) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
     }
-    if (file.uploaded_by !== req.user.id && !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+    const allowed = await canAccessFile(file, req);
+    if (!allowed) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
     res.json({ success: true, data: file });
@@ -138,6 +183,7 @@ exports.download = async (req, res) => {
     const safeName = originalName.replace(/[^\w\s.\-()]/g, '_');
     const encodedName = encodeURIComponent(originalName);
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`);
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
     res.sendFile(result.filePath);
   } catch (error) {

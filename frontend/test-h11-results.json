@@ -1,0 +1,22 @@
+[
+  {
+    "name": "BE full link parsed",
+    "ok": true,
+    "detail": "{\"lat\":21.0285,\"lng\":105.8542}"
+  },
+  {
+    "name": "BE SSRF includes-trick blocked",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE subdomain spoof blocked",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "FE guest form loads (link paste intact)",
+    "ok": true,
+    "detail": "linkInputs=1"
+  }
+]

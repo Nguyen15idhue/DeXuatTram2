@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, dataListService, fieldDefinitionService, formService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
-import { formatNumber } from '../../utils/formatNumber';
+import { parseFormattedNumber } from '../../utils/formatNumber';
 import { getDataListLabel } from '../../utils/dataListLabel';
 
 const math = create(all);
@@ -123,7 +123,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
           const dlMap = {};
           await Promise.all(dlIds.map(async (dlId) => {
             try {
-              const dlRes = await dataListService.getById(dlId, token);
+              const dlRes = await dataListService.getById(dlId);
               if (dlRes.success && dlRes.data) {
                 const cols = dlRes.data.columns_config || [];
                 const rows = dlRes.data.rows || [];
@@ -321,23 +321,19 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
                 const colValues = val.map(r => r[col.key] ?? '');
                 scope[`${f.key}.${col.key}`] = colValues;
               }
+            } else if (f.type === 'number' || f.type === 'formula') {
+              const num = typeof val === 'number' ? val : parseFormattedNumber(val);
+              scope[f.key] = isNaN(num) ? 0 : num;
             } else {
-              scope[f.key] = f.type === 'number' ? (parseFloat(val) || 0) : val;
+              scope[f.key] = val;
             }
           }
         }
       });
       const result = math.evaluate(field.formula_config.expression, scope);
       if (result === null || result === undefined) return '';
-      const outputType = field.formula_config.outputType || 'auto';
-      if (outputType === 'number' || (outputType === 'auto' && typeof result === 'number')) {
-        return formatNumber(result, {
-          format: field.formula_config.numberFormat || 'plain',
-          decimalPlaces: field.formula_config.decimalPlaces,
-          unit: field.formula_config.unit
-        });
-      }
-      return String(result);
+      if (typeof result === 'number' && !isFinite(result)) return '';
+      return result;
     } catch { return ''; }
   };
 

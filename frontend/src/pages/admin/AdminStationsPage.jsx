@@ -290,7 +290,7 @@ const AdminStationsPage = () => {
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <input
           type="text"
-          placeholder="Search theo tên hoặc địa chỉ..."
+          placeholder="Search theo tên, địa chỉ, mã trạm..."
           className="input input-bordered input-sm flex-1"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

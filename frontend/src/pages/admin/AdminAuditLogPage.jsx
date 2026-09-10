@@ -15,7 +15,7 @@ const STATUS_CONFIG = {
 const DIRECTION_LABEL = { push: 'Push → 1Office', pull: 'Pull ← 1Office' };
 
 function AdminAuditLogPage() {
-  const { token } = useAuth();
+  const { token, isSuperAdmin } = useAuth();
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -241,10 +241,10 @@ function AdminAuditLogPage() {
                   <td>
                     <div className="flex gap-1">
                       <button className="btn btn-ghost btn-xs" onClick={() => showDetailPopup(log.id)} title="Xem chi tiết"><Eye size={14} /></button>
-                      {log.status === 'failed' && (
+                      {isSuperAdmin && log.status === 'failed' && (
                         <button className="btn btn-ghost btn-xs text-warning" onClick={() => handleRetry(log.id)} title="Retry"><RotateCcw size={14} /></button>
                       )}
-                      {(log.status === 'pending' || log.status === 'failed') && (
+                      {isSuperAdmin && (log.status === 'pending' || log.status === 'failed') && (
                         <button className="btn btn-ghost btn-xs text-error" onClick={() => handleCancel(log.id)} title="Cancel"><Ban size={14} /></button>
                       )}
                     </div>

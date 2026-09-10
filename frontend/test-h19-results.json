@@ -1,0 +1,22 @@
+[
+  {
+    "name": "BE token 12h + version",
+    "ok": true,
+    "detail": "exp-iat=43200 v=2"
+  },
+  {
+    "name": "FE invalid token redirected to login",
+    "ok": true,
+    "detail": "http://localhost:5173/login"
+  },
+  {
+    "name": "FE stale token cleared",
+    "ok": true,
+    "detail": "localStorage"
+  },
+  {
+    "name": "FE valid session unaffected",
+    "ok": true,
+    "detail": "http://localhost:5173/admin"
+  }
+]

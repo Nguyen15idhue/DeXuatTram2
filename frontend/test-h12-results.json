@@ -1,0 +1,32 @@
+[
+  {
+    "name": "BE image with auth ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE image without auth blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "BE image ?token= ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE download with auth ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "FE <img> with token renders",
+    "ok": true,
+    "detail": "width=1920"
+  },
+  {
+    "name": "FE <img> without token blocked",
+    "ok": true,
+    "detail": "width=0"
+  }
+]

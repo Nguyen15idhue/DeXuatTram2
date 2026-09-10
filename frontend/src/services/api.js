@@ -1,5 +1,16 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const handleUnauthorized = (response) => {
+  if (response.status === 401) {
+    try {
+      localStorage.removeItem('token');
+      if (typeof window !== 'undefined' && window.location && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
+    } catch { /* silent */ }
+  }
+};
+
 export const api = {
   async get(endpoint) {
     const response = await fetch(`${API_URL}${endpoint}`);
@@ -39,6 +50,7 @@ export const api = {
     const response = await fetch(`${API_URL}${endpoint}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -52,6 +64,7 @@ export const api = {
       },
       body: JSON.stringify(body)
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -65,6 +78,7 @@ export const api = {
       },
       body: JSON.stringify(body)
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -74,6 +88,7 @@ export const api = {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -87,6 +102,7 @@ export const api = {
       },
       body: JSON.stringify(body)
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -95,6 +111,7 @@ export const api = {
     const response = await fetch(`${API_URL}${endpoint}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    handleUnauthorized(response);
     if (!response.ok) throw new Error('Download failed');
     return response;
   },
@@ -105,6 +122,7 @@ export const api = {
       headers: { 'Authorization': `Bearer ${token}` },
       body: formData
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   }
@@ -233,8 +251,8 @@ export const adminUserService = {
   changeRole(id, role, token) {
     return api.patchWithAuth(`/admin/users/${id}/role`, { role }, token);
   },
-  changePassword(id, password, token) {
-    return api.patchWithAuth(`/admin/users/${id}/password`, { password }, token);
+  changePassword(id, password, token, oldPassword) {
+    return api.patchWithAuth(`/admin/users/${id}/password`, oldPassword ? { password, old_password: oldPassword } : { password }, token);
   }
 };
 
@@ -471,6 +489,10 @@ export const dataListService = {
     const query = params ? `?${params}` : '';
     if (!token) return api.get(`/data-lists/${id}${query}`);
     return api.getWithAuth(`/admin/data-lists/${id}${query}`, token);
+  },
+  getChildren(id, column, parentColumn, parentValue) {
+    const q = `column=${encodeURIComponent(column)}&parent_column=${encodeURIComponent(parentColumn)}&parent_value=${encodeURIComponent(parentValue ?? '')}`;
+    return api.get(`/data-lists/${id}/children?${q}`);
   },
   create(data, token) {
     return api.postWithAuth('/admin/data-lists', data, token);

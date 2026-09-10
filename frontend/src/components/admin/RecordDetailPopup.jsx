@@ -35,8 +35,8 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const dataListOptions = useDataListMap([...viewFields, ...allFields].map(f => f.data_list_id));
 
   useEffect(() => {
-    if (modeProp) setMode(modeProp);
-  }, [modeProp]);
+    if (modeProp) setMode(allowEdit ? modeProp : 'view');
+  }, [modeProp, allowEdit]);
 
   useEffect(() => {
     if (!recordProp && recordId && entity) {

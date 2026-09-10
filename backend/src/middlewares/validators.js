@@ -215,11 +215,12 @@ function validateCreateUser(req, res, next) {
 }
 
 function validateUpdateUser(req, res, next) {
-  const { full_name, email, phone } = req.body;
+  const { full_name, email, phone, status } = req.body;
   const errors = runValidations([
     validateFullName(full_name),
     validateEmail(email),
-    phone ? validatePhone(phone) : null
+    phone ? validatePhone(phone) : null,
+    status !== undefined ? validateEnum(status, ['ACTIVE', 'LOCKED'], 'Trạng thái') : null
   ]);
   if (validationResponse(res, errors)) return;
   next();

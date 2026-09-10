@@ -9,8 +9,9 @@ exports.getAllStations = async (search, status, page, limit) => {
   let params = [];
 
   if (search) {
-    where.push('(s.name LIKE ? OR s.address LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+    const like = `%${search}%`;
+    where.push('(s.name LIKE ? OR s.address LIKE ? OR s.ma_tram_gen LIKE ?)');
+    params.push(like, like, like);
   }
 
   if (status) {
