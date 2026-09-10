@@ -60,6 +60,32 @@ innodb_flush_method=fsync
 ```
 mount vào `/etc/my.cnf.d` trong cả `docker-compose.simple.yml` và `docker-compose.prod.yml`.
 
+### 0.7 Phương án B — dùng MySQL có sẵn trên VPS (khi container MySQL không hợp)
+
+VPS đã chạy sẵn `mysqld` (3306) → bỏ container MySQL, trỏ backend vào host.
+
+- File `docker-compose.hostdb.yml`: chỉ còn `frontend` + `backend`; backend thêm `extra_hosts: host.docker.internal:host-gateway` và `DB_HOST=host.docker.internal`.
+- Script `deploy-hostdb.sh`: đọc `.env`, tạo DB + user `station_app` trên host MySQL, import baseline, rồi `up -d --build`.
+
+```bash
+# 1. Tạo .env nếu chưa có (./deploy.sh --skip-schema tạo .env rồi dừng cũng được)
+# 2. Chạy
+chmod +x deploy-hostdb.sh
+./deploy-hostdb.sh
+```
+Sau đó (hoặc làm tay nếu `sudo mysql` cần mật khẩu):
+```bash
+sudo mysql
+CREATE DATABASE IF NOT EXISTS station_management CHARACTER SET utf8mb4;
+CREATE USER IF NOT EXISTS 'station_app'@'%' IDENTIFIED BY '<DB_PASSWORD trong .env>';
+GRANT ALL PRIVILEGES ON station_management.* TO 'station_app'@'%';
+FLUSH PRIVILEGES;
+EXIT;
+sudo mysql station_management < database/baseline/station_management_baseline.sql
+docker compose -f docker-compose.hostdb.yml up -d --build
+```
+Lưu ý: host MySQL phải là **MySQL 8.x** (baseline dùng collation `utf8mb4_0900_ai_ci`). Nếu là MariaDB phải chuyển collation trước.
+
 ---
 
 

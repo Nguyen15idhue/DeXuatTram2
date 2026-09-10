@@ -1,0 +1,38 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: station-frontend
+    ports:
+      - "${WEB_PORT:-8081}:5173"
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - station-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    container_name: station-backend
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - DB_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - uploads_data:/app/storage/uploads
+    restart: unless-stopped
+    networks:
+      - station-network
+
+volumes:
+  uploads_data:
+
+networks:
+  station-network:
+    driver: bridge
