@@ -4,6 +4,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: station-frontend
+    environment:
+      - VITE_API_URL=/api
+      - VITE_TURNSTILE_SITE_KEY=
     ports:
       - "${WEB_PORT:-5173}:5173"
     restart: unless-stopped
