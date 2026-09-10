@@ -1,0 +1,19 @@
+services:
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: station-phpmyadmin
+    ports:
+      - "${PMA_PORT:-8082}:80"
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+      - UPLOAD_LIMIT=512M
+      - HIDE_PHP_VERSION=true
+    restart: unless-stopped
+    networks:
+      - station-network
+
+networks:
+  station-network:
+    external: true
+    name: dexuattram2_station-network
