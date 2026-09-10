@@ -1,0 +1,47 @@
+[
+  {
+    "name": "BE proposal desc no mojibake",
+    "ok": true,
+    "detail": "hasTitle=true len=622"
+  },
+  {
+    "name": "BE proposal desc normalized title",
+    "ok": true,
+    "detail": "📋 Thông tin cơ bản\\nTỉnh/Thành phốTp Hồ Chí MinhXã phường—\\nV"
+  },
+  {
+    "name": "BE file name recovered",
+    "ok": true,
+    "detail": "TÀI LIỆU PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG - WEBSITE TRAVELA V2.pdf"
+  },
+  {
+    "name": "BE datalist xa NFC (Mỏ Vàng)",
+    "ok": true,
+    "detail": "n=99 sample=Xã Khao Mang,Xã Mù Cang Chải,Xã Púng Luông"
+  },
+  {
+    "name": "BE view desc normalized",
+    "ok": true,
+    "detail": "\"Bảng hiển thị người dùng\""
+  },
+  {
+    "name": "FE proposal detail renders normalized",
+    "ok": true,
+    "detail": "Quản lý Đề xuất Tạo đề xuất Tất cả PENDING REVIEWING APPROVED REJECTED Export 200m – m Check trùng Đ"
+  },
+  {
+    "name": "FE proposal detail no mojibake char",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "FE forms page loads",
+    "ok": true,
+    "detail": "Forms Manager Stations stations  Quản lý trạm sạc  Nhập liệu 19 fields Xem / sửa"
+  },
+  {
+    "name": "FE no page errors",
+    "ok": true,
+    "detail": ""
+  }
+]
