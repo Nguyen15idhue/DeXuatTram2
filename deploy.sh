@@ -92,7 +92,10 @@ else
 fi
 
 log "Build images (lan dau co the vai phut)..."
-docker compose -f "$COMPOSE_FILE" build
+if ! docker compose -f "$COMPOSE_FILE" build; then
+  log "Build loi (co the DeadlineExceeded), thu lai voi legacy builder..."
+  COMPOSE_BAKE=false DOCKER_BUILDKIT=0 docker compose -f "$COMPOSE_FILE" build
+fi
 
 NEED_RESTORE=1
 if docker volume inspect "$VOL" >/dev/null 2>&1; then

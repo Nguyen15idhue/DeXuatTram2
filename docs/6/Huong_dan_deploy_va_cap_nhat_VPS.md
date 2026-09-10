@@ -217,6 +217,29 @@ chmod +x update.sh deploy.sh
 ./update.sh
 ```
 
+### 6.2 Lỗi `failed to solve: DeadlineExceeded: context deadline exceeded`
+
+**Biểu hiện:** build chạy gần xong (`Building ... FINISHED`) nhưng bước export/naming image báo:
+```
+target backend: failed to solve: DeadlineExceeded: context deadline exceeded
+```
+**Nguyên nhân:** timeout của BuildKit khi ghi image (thường do **đĩa VPS chậm/quá tải**) — mang tính tạm thời.
+
+**Khắc phục:**
+```bash
+# 1) Thử lại (thường là đủ)
+./update.sh
+
+# 2) Nếu vẫn lỗi → dùng legacy builder (tắt bake/BuildKit)
+COMPOSE_BAKE=false DOCKER_BUILDKIT=0 docker compose -f docker-compose.simple.yml build
+docker compose -f docker-compose.simple.yml up -d
+
+# 3) Hoặc khởi động lại Docker rồi thử lại
+sudo systemctl restart docker
+./update.sh
+```
+`update.sh` (bản mới) **đã tự thử lại bằng legacy builder** nếu lần build đầu lỗi.
+
 **Lưu ý:**
 - Nếu có **thay đổi schema DB**: phải chạy thêm script SQL tương ứng (dự án quản lý schema thủ công qua `database/*.sql`).
 - Nếu chỉ sửa frontend/backend → `up -d --build` là đủ, không mất dữ liệu.
