@@ -104,9 +104,9 @@ docker compose -f "$COMPOSE_FILE" build
 log "Khoi dong MySQL..."
 docker compose -f "$COMPOSE_FILE" up -d mysql
 
-log "Cho MySQL healthy (co the mat 1-3 phut lan dau)..."
+log "Cho MySQL healthy (co the mat 5-10 phut lan dau tren VPS cham)..."
 MYSQL_READY=0
-for i in $(seq 1 120); do
+for i in $(seq 1 200); do
   STATUS="$(docker inspect -f '{{.State.Health.Status}}' station-mysql 2>/dev/null || echo missing)"
   RUNNING="$(docker inspect -f '{{.State.Running}}' station-mysql 2>/dev/null || echo false)"
   if [ "$STATUS" = "healthy" ]; then
@@ -117,6 +117,9 @@ for i in $(seq 1 120); do
     echo "LOI: container MySQL khong chay (status=${STATUS}). Log cuoi:"
     docker logs --tail 80 station-mysql 2>&1 || true
     exit 1
+  fi
+  if [ $((i % 10)) -eq 0 ]; then
+    echo "   ... dang cho MySQL healthy (${STATUS}) - $((i * 3))s"
   fi
   sleep 3
 done
