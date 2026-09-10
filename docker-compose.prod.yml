@@ -1,0 +1,59 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: station-frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - station-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    container_name: station-backend
+    command: ["npm", "start"]
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - uploads_data:/app/storage/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - station-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: station-mysql
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - station-network
+
+volumes:
+  mysql_data:
+  uploads_data:
+
+networks:
+  station-network:
+    driver: bridge

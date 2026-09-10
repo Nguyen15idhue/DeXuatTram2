@@ -1,0 +1,21 @@
+{
+  "thoiGian": "2026-09-10T09:04:15.019Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "Bản đồ Leaflet hiển thị",
+      "dat": true,
+      "ghiChu": ".leaflet-container = 1"
+    },
+    {
+      "ten": "Không có lỗi Mixed Content",
+      "dat": true,
+      "ghiChu": "không có"
+    },
+    {
+      "ten": "Không còn tham chiếu http://{domain}",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

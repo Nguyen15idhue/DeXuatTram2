@@ -5,7 +5,7 @@
 -- Seed 1Office config (chỉ insert nếu chưa có)
 INSERT INTO api_configs (name, base_url, auth_type, auth_config, description, is_active, created_by)
 SELECT '1office', 'https://egr.1office.vn', 'token',
-  '{"token":"18867666386a9fc351066cb292544194"}',
+  '{"token":"CHANGE_ME_1OFFICE_TOKEN"}',
   '1Office CRM API - Quản lý liên hệ',
   1,
   (SELECT id FROM users WHERE role = 'SUPER_ADMIN' LIMIT 1)

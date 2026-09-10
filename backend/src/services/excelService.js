@@ -304,7 +304,7 @@ function parseExcelRow(row, columns, entity, headerMap) {
   return { fixedData, dynamicData, errors };
 }
 
-function exportRowToValues(row, columns, idx) {
+function exportRowToValues(row, columns, idx, token = '') {
   return columns.map(col => {
     if (col.key === '_stt') return idx + 1;
 
@@ -325,7 +325,7 @@ function exportRowToValues(row, columns, idx) {
       const files = Array.isArray(value) ? value : [value];
       const fileData = files.filter(f => f && f.original_name).map(f => ({
         original_name: f.original_name,
-        link: f.storage_key ? `${baseUrl}/uploads/${f.storage_key}` : null
+        link: f.id ? `${baseUrl}/api/files/${f.id}/download${token ? `?token=${encodeURIComponent(token)}` : ''}` : null
       }));
       if (fileData.length === 0) return '';
       if (fileData.length === 1) return JSON.stringify(fileData[0]);
@@ -362,6 +362,7 @@ function pairLabel(p) {
 exports.exportDynamic = async (req, res) => {
   try {
     const { entity, search = '', status = '', scopeUserId, scopeBranchUserIds } = req.query;
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
     const viewIdMap = { stations: 6, users: 7, station_proposals: 8 };
     const viewId = viewIdMap[entity];
 
@@ -379,7 +380,7 @@ exports.exportDynamic = async (req, res) => {
     styleHeaderRow(sheet);
 
     rows.forEach((row, idx) => {
-      sheet.addRow(exportRowToValues(row, columns, idx));
+      sheet.addRow(exportRowToValues(row, columns, idx, token));
     });
 
     autoWidthColumns(sheet, columns);
@@ -397,6 +398,7 @@ exports.exportDynamic = async (req, res) => {
 exports.exportDuplicates = async (req, res, ownUserId = null) => {
   try {
     const { min_m = 200, max_m = 2000 } = req.body || {};
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
     const proximityService = require('./proximityService');
     const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m, ownUserId });
     const { pairs } = result;
@@ -470,7 +472,7 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
       styleHeaderRow(sheet);
       side.forEach((item, idx) => {
         const row = records[`${item.kind}:${item.id}`];
-        sheet.addRow(row ? exportRowToValues(row, columns, idx) : columns.map(() => ''));
+        sheet.addRow(row ? exportRowToValues(row, columns, idx, token) : columns.map(() => ''));
       });
       autoWidthColumns(sheet, columns);
     };

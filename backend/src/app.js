@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const { authLimiter, adminLimiter, excelLimiter } = require('./middlewares/rateLimits');
 const swaggerUi = require('swagger-ui-express');
-const swaggerSpec = require('./config/swagger');
 const testRoutes = require('./routes/test');
 const authRoutes = require('./routes/auth');
 const stationsRoutes = require('./routes/stations');
@@ -34,6 +33,7 @@ const oneOfficeSyncRoutes = require('./routes/oneOfficeSync');
 const queueWorker = require('./workers/queueWorker');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 // 1. Helmet — Security Headers
@@ -56,15 +56,18 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // 4. Rate Limiters (xem middlewares/rateLimits.js)
 
 // Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Station Management API Docs'
-}));
+if (process.env.ENABLE_SWAGGER !== 'false') {
+  const swaggerSpec = require('./config/swagger');
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'Station Management API Docs'
+  }));
 
-app.get('/api-docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpec);
-});
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+}
 
 // Routes
 app.use('/api', testRoutes);
@@ -103,7 +106,9 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
-  queueWorker.start();
+  queueWorker.start().catch((err) => {
+    console.error('[QueueWorker] start error:', err.message);
+  });
 });
 
 const fileService = require('./services/fileService');

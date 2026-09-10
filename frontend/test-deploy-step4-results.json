@@ -1,0 +1,36 @@
+{
+  "thoiGian": "2026-09-10T08:59:02.665Z",
+  "base": "http://127.0.0.1:18081",
+  "ketQua": [
+    {
+      "ten": "Không nạp script Turnstile",
+      "dat": true,
+      "ghiChu": "#turnstile-script = 0"
+    },
+    {
+      "ten": "Không hiện iframe Turnstile",
+      "dat": true,
+      "ghiChu": "iframe = 0"
+    },
+    {
+      "ten": "Không có widget .cf-turnstile",
+      "dat": true,
+      "ghiChu": ".cf-turnstile = 0"
+    },
+    {
+      "ten": "Form nhập thông tin hiển thị",
+      "dat": true,
+      "ghiChu": "\"Nhập thông tin\" = 1"
+    },
+    {
+      "ten": "Khu tra cứu đề xuất hiển thị",
+      "dat": true,
+      "ghiChu": "\"Tra cứu đề xuất\" = 1"
+    },
+    {
+      "ten": "Không có lỗi console liên quan Turnstile",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

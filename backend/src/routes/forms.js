@@ -130,7 +130,7 @@ router.get('/:id', formController.getById);
  *                 type: string
  *                 enum: [create, view, all]
  *                 default: all
- *                 description: Mục đích form: create (nhập liệu), view (xem/sửa), all (cả hai)
+ *                 description: "Mục đích form: create (nhập liệu), view (xem/sửa), all (cả hai)"
  *               layout_config:
  *                 type: object
  *                 description: Layout config với sections và rows

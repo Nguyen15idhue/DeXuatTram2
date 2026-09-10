@@ -98,8 +98,19 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- Index cho sync lookup
-CREATE INDEX IF NOT EXISTS idx_proposals_sync_status ON station_proposals(sync_status);
-CREATE INDEX IF NOT EXISTS idx_proposals_1office_id ON station_proposals(contact_1office_id);
+SET @idx1 := (SELECT COUNT(*) FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'station_proposals' AND index_name = 'idx_proposals_sync_status');
+SET @sql1 := IF(@idx1 = 0, 'CREATE INDEX idx_proposals_sync_status ON station_proposals(sync_status)', 'SELECT ''Index already exists'' AS info');
+PREPARE stmt FROM @sql1;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @idx2 := (SELECT COUNT(*) FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'station_proposals' AND index_name = 'idx_proposals_1office_id');
+SET @sql2 := IF(@idx2 = 0, 'CREATE INDEX idx_proposals_1office_id ON station_proposals(contact_1office_id)', 'SELECT ''Index already exists'' AS info');
+PREPARE stmt FROM @sql2;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ============================================
 -- 5. KIỂM TRA KẾT QUẢ
