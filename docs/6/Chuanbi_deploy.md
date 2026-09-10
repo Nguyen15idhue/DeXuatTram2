@@ -48,6 +48,10 @@ Cần 2 fix đã áp dụng: `database/03-update-passwords.sql` (hash bcrypt h�
 - Cập nhật `CORS_ORIGINS/BASE_URL/FRONTEND_URL` trong `.env` rồi `docker compose -f docker-compose.simple.yml up -d`.
 - (Tùy chọn) chuyển sang `docker-compose.prod.yml` (nginx trong container + TLS) nếu muốn tách host nginx.
 
+### 0.6 Lưu ý CPU VPS (quan trọng)
+
+Image `mysql:8.0` (từ bản ≥ 8.0.34) yêu cầu CPU **x86-64-v2**; VPS CPU cũ sẽ báo `Fatal glibc error: CPU does not support x86-64-v2` và MySQL không chạy. Vì vậy compose ghim **`mysql:8.0.33`** (bản cuối hỗ trợ CPU x86-64 v1). **Không** đổi về `mysql:8.0`/`mysql:latest` trên VPS cũ.
+
 ---
 
 
@@ -160,7 +164,7 @@ services:
       - station-network
 
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.33
     container_name: station-mysql
     env_file:
       - .env
