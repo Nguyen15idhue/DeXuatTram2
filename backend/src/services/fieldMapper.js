@@ -48,6 +48,15 @@ exports.ALLOWED_TYPES = ALLOWED_TYPES;
 exports.ONE_OFFICE_FIELDS = ONE_OFFICE_FIELDS;
 exports.PROPOSAL_FIELDS = PROPOSAL_FIELDS;
 
+const ONE_OFFICE_UNSUPPORTED = ['gender', 'group_type_id', 'trade_ids', 'websites', 'status_id', 'source_id', 'region', 'contacts', 'detail'];
+const ONE_OFFICE_SPECIAL = ['desc', 'files'];
+
+exports.ONE_OFFICE_UNSUPPORTED = ONE_OFFICE_UNSUPPORTED;
+exports.ONE_OFFICE_SPECIAL = ONE_OFFICE_SPECIAL;
+exports.isUnsupportedTarget = (key) => ONE_OFFICE_UNSUPPORTED.includes(String(key || ''));
+exports.isSpecialTarget = (key) => ONE_OFFICE_SPECIAL.includes(String(key || ''));
+exports.buildFilesTarget = () => ({ key: 'files', label: 'Tệp đính kèm', type: 'json', required: false, options: [] });
+
 exports.transformPush = (value, mapping) => {
   if (value === null || value === undefined || value === '') {
     return mapping.default_value || null;

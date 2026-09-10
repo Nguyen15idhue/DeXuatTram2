@@ -35,7 +35,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
 
   const results = [];
   for (const proposalId of proposalIds) {
-    const proposal = await proposalService.getProposalById(proposalId);
+    const proposal = await proposalService.getProposalFullById(proposalId);
     if (!proposal) {
       results.push({ proposalId, success: false, error: 'Không tìm thấy đề xuất' });
       continue;
@@ -74,16 +74,6 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
     }
     contactData.desc = descHtml;
 
-    let filesResult = null;
-    try {
-      filesResult = await fileSyncService.uploadFiles(proposalId, apiConfigId);
-      if (filesResult.success && filesResult.totalFiles > 0) {
-        console.log(`[Sync] Uploaded ${filesResult.totalFiles} files for proposal ${proposalId}`);
-      }
-    } catch (err) {
-      console.error('[Sync] Error uploading files:', err.message);
-    }
-
     const missingRequired = [];
     if (!contactData.code) missingRequired.push('Mã (code)');
     if (!contactData.name) missingRequired.push('Tên (name)');
@@ -99,26 +89,12 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       entity_type: 'station_proposals',
       entity_id: proposalId,
       direction: 'push',
-      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId, files_result: filesResult, was_linked: isLinked, previous_contact_id: proposal.contact_1office_id || null },
+      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId, was_linked: isLinked, previous_contact_id: proposal.contact_1office_id || null },
       priority: 0,
       created_by: userId
     });
 
-    try {
-      const snapshotData = {
-        contact_data: contactData,
-        files_result: filesResult,
-        synced_at: new Date().toISOString()
-      };
-      await pool.query(
-        'UPDATE station_proposals SET last_synced_data = ?, updated_at = NOW() WHERE id = ?',
-        [JSON.stringify(snapshotData), proposalId]
-      );
-    } catch (err) {
-      console.error('[Sync] Error saving snapshot:', err.message);
-    }
-
-    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData, filesResult });
+    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData });
   }
 
   return results;
@@ -248,7 +224,7 @@ exports.processPull = async (apiConfigId, filter) => {
 };
 
 exports.linkProposal = async (proposalId, contactCode, apiConfigId) => {
-  const proposal = await proposalService.getProposalById(proposalId);
+  const proposal = await proposalService.getProposalFullById(proposalId);
   if (!proposal) throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
 
   if (proposal.contact_1office_code) {
@@ -278,7 +254,7 @@ exports.linkProposal = async (proposalId, contactCode, apiConfigId) => {
 };
 
 exports.unlinkProposal = async (proposalId) => {
-  const proposal = await proposalService.getProposalById(proposalId);
+  const proposal = await proposalService.getProposalFullById(proposalId);
   if (!proposal) throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
 
   await pool.query(

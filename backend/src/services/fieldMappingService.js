@@ -15,6 +15,14 @@ exports.getById = async (id) => {
   return rows.length > 0 ? rows[0] : null;
 };
 
+exports.getByTarget = async (apiConfigId, targetField) => {
+  const [rows] = await pool.query(
+    'SELECT * FROM api_field_mappings WHERE api_config_id = ? AND target_field = ? LIMIT 1',
+    [apiConfigId, targetField]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
 exports.create = async (data) => {
   const { api_config_id, source_field, target_field, target_field_type, sync_enabled, direction, default_value, transform_rules } = data;
 
@@ -29,11 +37,11 @@ exports.create = async (data) => {
   }
 
   const [existing] = await pool.query(
-    'SELECT id FROM api_field_mappings WHERE api_config_id = ? AND source_field = ?',
-    [api_config_id, source_field.trim()]
+    'SELECT id FROM api_field_mappings WHERE api_config_id = ? AND target_field = ?',
+    [api_config_id, target_field.trim()]
   );
   if (existing.length > 0) {
-    throw Object.assign(new Error(`Mapping cho source_field "${source_field}" đã tồn tại`), { statusCode: 400 });
+    throw Object.assign(new Error(`Trường đích "${target_field}" đã được map`), { statusCode: 400 });
   }
 
   const [result] = await pool.query(
@@ -65,13 +73,13 @@ exports.update = async (id, data) => {
     throw Object.assign(new Error(`target_field_type phải là một trong: ${ALLOWED_TYPES.join(', ')}`), { statusCode: 400 });
   }
 
-  if (data.source_field && data.source_field.trim() !== existing.source_field) {
+  if (data.target_field && data.target_field.trim() !== existing.target_field) {
     const [dup] = await pool.query(
-      'SELECT id FROM api_field_mappings WHERE api_config_id = ? AND source_field = ? AND id != ?',
-      [existing.api_config_id, data.source_field.trim(), id]
+      'SELECT id FROM api_field_mappings WHERE api_config_id = ? AND target_field = ? AND id != ?',
+      [existing.api_config_id, data.target_field.trim(), id]
     );
     if (dup.length > 0) {
-      throw Object.assign(new Error(`Mapping cho source_field "${data.source_field}" đã tồn tại`), { statusCode: 400 });
+      throw Object.assign(new Error(`Trường đích "${data.target_field}" đã được map`), { statusCode: 400 });
     }
   }
 
@@ -80,7 +88,7 @@ exports.update = async (id, data) => {
     target_field: data.target_field !== undefined ? data.target_field.trim() : existing.target_field,
     target_field_type: data.target_field_type !== undefined ? data.target_field_type : existing.target_field_type,
     sync_enabled: data.sync_enabled !== undefined ? (data.sync_enabled ? 1 : 0) : existing.sync_enabled,
-    direction: data.direction !== undefined ? data.direction : existing.direction,
+    direction: existing.direction,
     default_value: data.default_value !== undefined ? data.default_value : existing.default_value,
     transform_rules: data.transform_rules !== undefined
       ? (typeof data.transform_rules === 'string' ? data.transform_rules : JSON.stringify(data.transform_rules))

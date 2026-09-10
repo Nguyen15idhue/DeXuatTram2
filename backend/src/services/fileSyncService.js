@@ -57,6 +57,30 @@ exports.splitBatch = (files, maxPerBatch = 5) => {
   return batches;
 };
 
+exports.buildFilesArray = async (proposalId, options = {}) => {
+  const excludeNames = new Set((options.excludeNames || []).filter(Boolean));
+  const files = await exports.loadFiles(proposalId);
+  const result = [];
+  const names = [];
+  const skipped = [];
+  const stripExt = (n) => {
+    const s = String(n || 'file');
+    const i = s.lastIndexOf('.');
+    return i > 0 ? s.slice(0, i) : s;
+  };
+  for (const file of files) {
+    if (excludeNames.has(file.original_name)) continue;
+    try {
+      const content = await exports.base64Encode(file.storage_key);
+      result.push({ name: stripExt(file.original_name), file: content });
+      names.push(file.original_name);
+    } catch (err) {
+      skipped.push({ name: file.original_name, reason: err.message });
+    }
+  }
+  return { files: result, names, skipped, totalLoaded: files.length };
+};
+
 exports.uploadFiles = async (proposalId, apiConfigId) => {
   const files = await exports.loadFiles(proposalId);
   if (files.length === 0) {
@@ -99,7 +123,9 @@ exports.checkFileConflicts = async (proposalId) => {
     [proposalId]
   );
   const lastSynced = rows.length > 0 ? rows[0].last_synced_data : null;
-  const syncedFiles = lastSynced?.files_result?.batches?.flatMap(b => b.fileNames) || [];
+  const snap = typeof lastSynced === 'string' ? (() => { try { return JSON.parse(lastSynced); } catch { return null; } })() : lastSynced;
+  const fr = snap?.files_result;
+  const syncedFiles = (fr && fr.fileNames) || (fr && fr.batches ? fr.batches.flatMap(b => b.fileNames) : []);
 
   for (const file of files) {
     const filePath = path.join(STORAGE_PATH, file.storage_key);

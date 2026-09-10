@@ -1,0 +1,67 @@
+[
+  {
+    "ten": "Lấy được contact mẫu để link",
+    "ok": true,
+    "chiTiet": "code=2"
+  },
+  {
+    "ten": "Tạo proposal test A/B",
+    "ok": true,
+    "chiTiet": "A=426 B=427"
+  },
+  {
+    "ten": "Tìm thấy proposal A trên UI",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "PUSH: proposal A được tạo contact 1Office",
+    "ok": true,
+    "chiTiet": "code=DXS_426 sync=synced"
+  },
+  {
+    "ten": "PUSH: contact 1Office có tên",
+    "ok": true,
+    "chiTiet": "{\"name\":\"P29E2E_PUSH_1789032301953\",\"phones\":null,\"address\":null}"
+  },
+  {
+    "ten": "PUSH: contact 1Office nhận đủ 2 file",
+    "ok": true,
+    "chiTiet": "soFile=2"
+  },
+  {
+    "ten": "PUSH lại (không thêm file): không nhân đôi file",
+    "ok": true,
+    "chiTiet": "soFile=2"
+  },
+  {
+    "ten": "Tìm thấy proposal B trên UI",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "LINK: proposal B được gắn contact",
+    "ok": true,
+    "chiTiet": "code=2"
+  },
+  {
+    "ten": "UNLINK: proposal B gỡ contact",
+    "ok": true,
+    "chiTiet": "code=null"
+  },
+  {
+    "ten": "PULL: job lấy về hoàn thành",
+    "ok": true,
+    "chiTiet": "job#82"
+  },
+  {
+    "ten": "Không lỗi console",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Dọn dẹp dữ liệu test",
+    "ok": true,
+    "chiTiet": "đã xóa contact DXS_426 + proposal A/B"
+  }
+]

@@ -74,6 +74,37 @@ const processPushJob = async (job) => {
     throw new Error('Missing api_config_id or contact_data in request_payload');
   }
 
+  const fileSyncService = require('../services/fileSyncService');
+  const pool = require('../utils/db');
+
+  let prevFileNames = [];
+  if (proposal_id) {
+    try {
+      const [rows] = await pool.query('SELECT last_synced_data FROM station_proposals WHERE id = ?', [proposal_id]);
+      if (rows.length > 0 && rows[0].last_synced_data) {
+        const snap = typeof rows[0].last_synced_data === 'string'
+          ? JSON.parse(rows[0].last_synced_data)
+          : rows[0].last_synced_data;
+        prevFileNames = (snap && snap.files_result && snap.files_result.fileNames) || [];
+      }
+    } catch (err) {
+      console.error('[QueueWorker] Read snapshot error:', err.message);
+    }
+  }
+
+  let filesInfo = { sent: [], skipped: [], total: 0 };
+  if (proposal_id) {
+    try {
+      const built = await fileSyncService.buildFilesArray(proposal_id, { excludeNames: was_linked ? prevFileNames : [] });
+      const sentNames = built.names;
+      contact_data.files = built.files.length > 0 ? JSON.stringify(built.files) : undefined;
+      if (contact_data.files === undefined) delete contact_data.files;
+      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative: [...prevFileNames, ...sentNames] };
+    } catch (err) {
+      console.error('[QueueWorker] Build files error:', err.message);
+    }
+  }
+
   const findExistingId = async () => {
     const code = contact_data.code;
     if (!code) return null;
@@ -102,14 +133,18 @@ const processPushJob = async (job) => {
   }
 
   if (proposal_id && result.data && !result.data.error) {
-    const pool = require('../utils/db');
     const contactCode = (result.data.data && result.data.data.code) || result.data.code || contact_data.code;
     const urlMatch = String(result.data.url || '').match(/[?&]ID=(\d+)/i);
     const contactId = existingId || (urlMatch ? urlMatch[1] : null);
     if (contactCode || contactId) {
+      const cumulative = filesInfo.cumulative || filesInfo.sent || [];
+      const snapshot = {
+        files_result: { fileNames: cumulative, totalFiles: cumulative.length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [] },
+        synced_at: new Date().toISOString()
+      };
       await pool.query(
-        `UPDATE station_proposals SET contact_1office_id = COALESCE(?, contact_1office_id), contact_1office_code = COALESCE(?, contact_1office_code), sync_status = 'synced', last_synced_at = NOW(), updated_at = NOW() WHERE id = ?`,
-        [contactId, contactCode, proposal_id]
+        `UPDATE station_proposals SET contact_1office_id = COALESCE(?, contact_1office_id), contact_1office_code = COALESCE(?, contact_1office_code), sync_status = 'synced', last_synced_at = NOW(), last_synced_data = ?, updated_at = NOW() WHERE id = ?`,
+        [contactId, contactCode, JSON.stringify(snapshot), proposal_id]
       );
       try {
         const [rows] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ?', [proposal_id]);
@@ -135,6 +170,7 @@ const processPushJob = async (job) => {
     contact_updated: updated,
     contact_recreated: recreated,
     previous_contact_id: recreated ? (previous_contact_id || null) : null,
+    files: { sentCount: (filesInfo.sent || []).length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [] },
     api_response: result.data,
     response_time: result.responseTime
   };

@@ -1,0 +1,62 @@
+[
+  {
+    "ten": "Đăng nhập super admin",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "getTypes có field đặc biệt files",
+    "ok": true,
+    "chiTiet": "{\"key\":\"files\",\"label\":\"Tệp đính kèm\",\"type\":\"json\",\"required\":false,\"options\":[],\"unsupported\":false,\"special\":true}"
+  },
+  {
+    "ten": "getTypes đánh dấu desc special",
+    "ok": true,
+    "chiTiet": "{\"key\":\"desc\",\"special\":true}"
+  },
+  {
+    "ten": "getTypes đánh dấu gender unsupported",
+    "ok": true,
+    "chiTiet": "{\"key\":\"gender\",\"unsupported\":true}"
+  },
+  {
+    "ten": "getTypes trả unsupportedTargets",
+    "ok": true,
+    "chiTiet": "[\"gender\",\"group_type_id\",\"trade_ids\",\"websites\",\"status_id\",\"source_id\",\"region\",\"contacts\",\"detail\"]"
+  },
+  {
+    "ten": "Tạo mapping nguồn A -> target 1",
+    "ok": true,
+    "chiTiet": "status=201"
+  },
+  {
+    "ten": "Tạo mapping nguồn A -> target 2 (nguồn lặp OK)",
+    "ok": true,
+    "chiTiet": "status=201"
+  },
+  {
+    "ten": "Tạo mapping trùng target -> 400",
+    "ok": true,
+    "chiTiet": "status=400 msg=Trường đích \"formal_name_872057\" đã được map"
+  },
+  {
+    "ten": "Đổi target sang target đã có -> 400",
+    "ok": true,
+    "chiTiet": "status=400 msg=Trường đích \"formal_name_872057\" đã được map"
+  },
+  {
+    "ten": "Nguồn A map thêm target 3 OK",
+    "ok": true,
+    "chiTiet": "status=201"
+  },
+  {
+    "ten": "Chi tiết mapping đọc được",
+    "ok": true,
+    "chiTiet": "direction=undefined"
+  },
+  {
+    "ten": "Đã dọn mapping test",
+    "ok": true,
+    "chiTiet": ""
+  }
+]

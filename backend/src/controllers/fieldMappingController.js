@@ -152,11 +152,27 @@ exports.getFieldTypes = async (req, res) => {
       oneOfficeFields = [...fieldMapper.ONE_OFFICE_FIELDS];
     }
 
+    const markSpecial = (list) => {
+      const marked = list.map(f => ({
+        ...f,
+        unsupported: fieldMapper.isUnsupportedTarget(f.key),
+        special: fieldMapper.isSpecialTarget(f.key)
+      }));
+      if (!marked.some(f => f.key === 'files')) {
+        marked.push({ ...fieldMapper.buildFilesTarget(), unsupported: false, special: true });
+      }
+      return marked;
+    };
+
+    oneOfficeFields = markSpecial(oneOfficeFields);
+
     res.json({
       success: true,
       data: {
         allowedTypes: fieldMapper.ALLOWED_TYPES,
         oneOfficeFields,
+        unsupportedTargets: fieldMapper.ONE_OFFICE_UNSUPPORTED,
+        specialTargets: fieldMapper.ONE_OFFICE_SPECIAL,
         proposalFields: fieldMapper.PROPOSAL_FIELDS
       }
     });

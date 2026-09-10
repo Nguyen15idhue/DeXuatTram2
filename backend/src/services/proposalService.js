@@ -26,6 +26,19 @@ exports.getProposalById = async (id) => {
   return proposals[0];
 };
 
+exports.getProposalFullById = async (id) => {
+  const [proposals] = await pool.query(
+    `SELECT p.*, u.full_name as user_name
+     FROM station_proposals p
+     LEFT JOIN users u ON p.user_id = u.id
+     WHERE p.id = ?`,
+    [id]
+  );
+  if (proposals.length === 0) return null;
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  return dynamicUtils.mergeData(proposals[0], fieldDefs);
+};
+
 exports.createProposal = async (userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);

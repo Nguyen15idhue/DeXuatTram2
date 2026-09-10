@@ -1,0 +1,67 @@
+[
+  {
+    "ten": "Panel mở, có 2 cột",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Có khối Đã link",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Có mục desc cố định",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Có mục files cố định",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Có Proposal Fields để kéo",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "owner_name có badge ban đầu",
+    "ok": true,
+    "chiTiet": "badge=1"
+  },
+  {
+    "ten": "Kéo owner_name vào formal_name -> xuất hiện khối Đã link",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Badge owner_name tăng lên",
+    "ok": true,
+    "chiTiet": "1 -> 2"
+  },
+  {
+    "ten": "Mapping lưu server (reload vẫn còn)",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Thả source khác vào target đã link -> thay thế",
+    "ok": true,
+    "chiTiet": "Danh xưng Select ← Địa chỉ (address)"
+  },
+  {
+    "ten": "X -> unlink",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Field unsupported được đánh dấu khóa",
+    "ok": true,
+    "chiTiet": ""
+  },
+  {
+    "ten": "Không lỗi console",
+    "ok": true,
+    "chiTiet": ""
+  }
+]
