@@ -77,6 +77,23 @@ chmod +x deploy-datadir.sh
 
 > Khi đã nạp datadir, MySQL khởi động **tức thì** (không init), sau đó `deploy.sh` import baseline và chạy backend/frontend.
 
+### 0.9 File DB gọn để import nhanh (`station_lite_dump.sql`)
+
+Khi cần DB nhẹ, tránh dữ liệu dev/test: dùng `station_lite_dump.sql` (0.73MB):
+- **Đủ schema 16 bảng.**
+- **Chỉ 4 user** (4 quyền): `admin@station.com` (SUPER_ADMIN), `admin@admin.com` (ADMIN), `sales_test@example.com` (SALES), `user2@example.com` (CTV) — mật khẩu `123456`.
+- **Giữ cấu hình** (field_definitions, forms, form_fields, views, view_fields, data_lists, data_list_rows, map_configs, api_configs, api_field_mappings) để form/view hoạt động.
+- **Bỏ dữ liệu nghiệp vụ** (stations, station_proposals, files, api_queue_logs) và **bỏ `LOCK TABLES`** (tránh kẹt metadata lock khi import).
+
+Import:
+```bash
+docker kill station-backend 2>/dev/null || true
+docker exec station-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS station_management; CREATE DATABASE station_management CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"'
+docker exec -i station-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 station_management' < station_lite_dump.sql
+docker exec station-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N station_management -e "SHOW TABLES"' | wc -l
+docker start station-backend
+```
+
 ---
 
 
