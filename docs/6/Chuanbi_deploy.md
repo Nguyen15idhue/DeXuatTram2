@@ -50,37 +50,32 @@ Cần 2 fix đã áp dụng: `database/03-update-passwords.sql` (hash bcrypt h�
 
 ### 0.6 Lưu ý CPU VPS (quan trọng)
 
-**Chọn image MySQL cho VPS CPU cũ (quan trọng):** dùng **`mysql:8.0-debian`** (Debian 12, MySQL 8.0.46) — bản Debian build chạy được trên CPU x86-64 v1. Tránh:
+**Chọn image MySQL cho VPS CPU cũ (quan trọng):** dùng **`mysql:8.0.44-debian`** (Debian 12) — bản Debian build chạy được trên CPU x86-64 v1. Tránh:
 - `mysql:8.0` / `mysql:latest` (Oracle Linux): báo `Fatal glibc error: CPU does not support x86-64-v2`.
 - `mysql:8.0.33` (Oracle Linux `el8`): chạy nhưng **treo** `mysqld --initialize` trên VPS này.
 
 Không thêm tuning `innodb_use_native_aio`/`innodb_flush_method` — dùng mặc định của bản Debian (giống container `cgbas-mysql` đang chạy ổn trên VPS). Thêm `fsync` từng khiến init rất chậm trên đĩa của VPS này.
 
-### 0.7 Phương án B — dùng MySQL có sẵn trên VPS (khi container MySQL không hợp)
+### 0.7 Phương án B — dùng MySQL có sẵn trên VPS (KHÔNG khả thi trên VPS này)
 
-VPS đã chạy sẵn `mysqld` (3306) → bỏ container MySQL, trỏ backend vào host.
+Trên VPS ghi nhận: **không có MySQL native** (không socket, không systemd); port 3306 là một container/tiến trình khác không kiểm soát được mật khẩu → không dùng làm host DB được. Giữ `docker-compose.hostdb.yml` + `deploy-hostdb.sh` để tham khảo, chỉ dùng khi VPS thật sự có MySQL native truy cập được.
 
-- File `docker-compose.hostdb.yml`: chỉ còn `frontend` + `backend`; backend thêm `extra_hosts: host.docker.internal:host-gateway` và `DB_HOST=host.docker.internal`.
-- Script `deploy-hostdb.sh`: đọc `.env`, tạo DB + user `station_app` trên host MySQL, import baseline, rồi `up -d --build`.
+### 0.8 Phương án datadir init sẵn (dùng khi init MySQL trên VPS quá chậm/treo)
+
+Tránh hoàn toàn `mysqld --initialize` trên VPS bằng cách nạp **datadir đã init sẵn** (tạo trên máy dev, nén ~6MB) vào volume `dexuattram2_mysql_data` trước khi khởi động.
+
+- `mysql-datadir.tar.gz`: datadir tạo sẵn bằng `mysql:8.0.44-debian` + `docker/mysql-init/01-app-user.sh` (có DB `station_management` và user `station_app`).
+- `deploy-datadir.sh`: đồng bộ mật khẩu MySQL trong `.env`, xoá volume cũ, giải nén datadir vào volume (chown `999:999`), rồi gọi `deploy.sh`.
+- Mật khẩu datadir (cố định): root `RootPass2026!`, app `AppPass2026!` — **nên đổi sau khi lên web**.
 
 ```bash
-# 1. Tạo .env nếu chưa có (./deploy.sh --skip-schema tạo .env rồi dừng cũng được)
-# 2. Chạy
-chmod +x deploy-hostdb.sh
-./deploy-hostdb.sh
+git pull origin ui-redesign
+chmod +x deploy-datadir.sh
+./deploy-datadir.sh
 ```
-Sau đó (hoặc làm tay nếu `sudo mysql` cần mật khẩu):
-```bash
-sudo mysql
-CREATE DATABASE IF NOT EXISTS station_management CHARACTER SET utf8mb4;
-CREATE USER IF NOT EXISTS 'station_app'@'%' IDENTIFIED BY '<DB_PASSWORD trong .env>';
-GRANT ALL PRIVILEGES ON station_management.* TO 'station_app'@'%';
-FLUSH PRIVILEGES;
-EXIT;
-sudo mysql station_management < database/baseline/station_management_baseline.sql
-docker compose -f docker-compose.hostdb.yml up -d --build
-```
-Lưu ý: host MySQL phải là **MySQL 8.x** (baseline dùng collation `utf8mb4_0900_ai_ci`). Nếu là MariaDB phải chuyển collation trước.
+(Cần `.env` đã tồn tại; nếu chưa: `cp .env.example .env` rồi điền `JWT_SECRET`, IP... trước.)
+
+> Khi đã nạp datadir, MySQL khởi động **tức thì** (không init), sau đó `deploy.sh` import baseline và chạy backend/frontend.
 
 ---
 
