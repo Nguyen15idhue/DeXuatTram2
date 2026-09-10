@@ -1,0 +1,62 @@
+[
+  {
+    "name": "BE list returns array",
+    "ok": true,
+    "detail": "count=30"
+  },
+  {
+    "name": "BE list no owner_phone",
+    "ok": true,
+    "detail": "id,latitude,longitude,address,status,created_at"
+  },
+  {
+    "name": "BE list no owner_name",
+    "ok": true,
+    "detail": "id,latitude,longitude,address,status,created_at"
+  },
+  {
+    "name": "BE list no custom_data",
+    "ok": true,
+    "detail": "id,latitude,longitude,address,status,created_at"
+  },
+  {
+    "name": "BE list has id/lat/lng/address/status",
+    "ok": true,
+    "detail": "id,latitude,longitude,address,status,created_at"
+  },
+  {
+    "name": "BE list raw no owner_phone string",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "BE byId sanitized",
+    "ok": true,
+    "detail": "id,latitude,longitude,address,status,created_at"
+  },
+  {
+    "name": "BE enum id=1 no PII",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "FE /map loads",
+    "ok": true,
+    "detail": "len=372884"
+  },
+  {
+    "name": "FE map has markers",
+    "ok": true,
+    "detail": "markers=40"
+  },
+  {
+    "name": "FE popup source has no phone",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "FE initial HTML no PII labels leaked in static",
+    "ok": true,
+    "detail": "clean"
+  }
+]

@@ -163,6 +163,9 @@ export const adminProposalService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/admin/proposals?${queryString}`, token);
   },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}`, token);
+  },
   updateStatus(id, status, token) {
     return api.putWithAuth(`/admin/proposals/${id}/status`, { status }, token);
   },
@@ -211,6 +214,9 @@ export const adminUserService = {
   },
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/admin/users?${queryString}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/users/${id}`, token);
   },
   create(user, token) {
     return api.postWithAuth('/admin/users', user, token);

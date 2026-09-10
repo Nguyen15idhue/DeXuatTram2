@@ -10,7 +10,10 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const getFileUrl = (file) => {
   if (file.url) return file.url;
-  if (file.storage_key) return `${API_URL.replace('/api', '')}/uploads/${file.storage_key}`;
+  if (file.id) {
+    const t = localStorage.getItem('token') || '';
+    return t ? `${API_URL}/files/${file.id}/download?token=${encodeURIComponent(t)}` : `${API_URL}/files/${file.id}/download`;
+  }
   return null;
 };
 
@@ -57,14 +60,14 @@ const AdminRecordFilesPage = () => {
 
       let recordData = null;
       if (entity === 'station_proposals') {
-        const res = await adminProposalService.getAllWithParams('', token);
-        recordData = res.data?.find(r => r.id === parseInt(id));
+        const res = await adminProposalService.getById(id, token);
+        recordData = res.data;
       } else if (entity === 'stations') {
-        const res = await stationService.getAllWithParams('');
-        recordData = res.data?.find(r => r.id === parseInt(id));
+        const res = await stationService.getById(id);
+        recordData = res.data;
       } else if (entity === 'users') {
-        const res = await adminUserService.getAllWithParams('', token);
-        recordData = res.data?.find(r => r.id === parseInt(id));
+        const res = await adminUserService.getById(id, token);
+        recordData = res.data;
       }
 
       if (!recordData) { setError('Không tìm thấy bản ghi'); return; }

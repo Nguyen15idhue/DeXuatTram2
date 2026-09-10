@@ -7,7 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const getViewUrl = (file) => {
   if (file.url) return file.url;
-  if (file.storage_key) return `${API_URL.replace('/api', '')}/uploads/${file.storage_key}`;
+  if (file.id) return `${API_URL}/files/${file.id}/download`;
   return null;
 };
 

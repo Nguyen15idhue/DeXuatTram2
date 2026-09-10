@@ -53,6 +53,41 @@ router.get('/', requireAuth, requireUserManager, adminUserController.getAll);
 
 /**
  * @swagger
+ * /api/admin/users/{id}:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Lấy chi tiết user theo ID (SALES chỉ bản thân + CTV của mình, ADMIN không xem SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.get('/:id', requireAuth, requireUserManager, adminUserController.getById);
+
+/**
+ * @swagger
  * /api/admin/users:
  *   post:
  *     tags: [Admin - Users]

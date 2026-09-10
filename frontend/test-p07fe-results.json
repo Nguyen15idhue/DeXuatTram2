@@ -1,0 +1,12 @@
+[
+  {
+    "name": "FE /admin/data-lists loads",
+    "ok": true,
+    "detail": "Danh mục dữ liệu (Data Lists) + Tạo mới STT\tTên\tMô tả\tColumns\tRows\tThao tác 1\tdm_nguon_dien\tNguồn điện\tMã, Tên\t4\t Sửa Dữ"
+  },
+  {
+    "name": "FE import buttons present",
+    "ok": true,
+    "detail": "count=9"
+  }
+]

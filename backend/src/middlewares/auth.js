@@ -9,15 +9,19 @@ if (!JWT_SECRET) {
 // Middleware: Verify JWT token + refresh role/status từ DB (chống stale role, enforce LOCKED ngay)
 const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
+  let token = null;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!token) {
     return res.status(401).json({
       success: false,
       message: 'Chưa đăng nhập'
     });
   }
-
-  const token = authHeader.split(' ')[1];
 
   let decoded;
   try {
@@ -88,9 +92,13 @@ const requireUserManager = (req, res, next) => {
 // Optional auth: attach user if token exists, otherwise continue
 const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  
+  let token = null;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
+  if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       req.user = decoded;

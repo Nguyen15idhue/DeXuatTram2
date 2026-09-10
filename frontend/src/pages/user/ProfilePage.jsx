@@ -26,12 +26,14 @@ const ProfilePage = () => {
 
   const getAvatarUrl = () => {
     if (!user?.avatar) return null;
+    const t = localStorage.getItem('token') || '';
+    const qs = t ? `?token=${encodeURIComponent(t)}&v=${avatarVersion}` : `?v=${avatarVersion}`;
     const avatar = user.avatar;
     if (typeof avatar === 'object' && avatar.id) {
-      return `/api/files/${avatar.id}/image?v=${avatarVersion}`;
+      return `/api/files/${avatar.id}/image${qs}`;
     }
     if (typeof avatar === 'number') {
-      return `/api/files/${avatar}/image?v=${avatarVersion}`;
+      return `/api/files/${avatar}/image${qs}`;
     }
     return null;
   };

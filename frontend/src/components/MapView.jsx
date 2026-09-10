@@ -306,8 +306,6 @@ function createProposalPopupContent(item) {
     div.appendChild(p);
   };
 
-  addRow('Chủ sở hữu', item.owner_name);
-  addRow('SĐT', item.owner_phone);
   addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
@@ -318,8 +316,6 @@ function createProposalPopupContent(item) {
   statusSpan.textContent = item.status;
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
-  if (item.description) addRow('Mô tả', item.description);
-  addRow('Người đề xuất', item.user_name || 'Khách');
 
   return div;
 }

@@ -101,16 +101,27 @@ exports.updateProposal = async (id, data) => {
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
 
-  const [existing] = await pool.query('SELECT custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
+  const [existing] = await pool.query('SELECT owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
   const mergedDynamic = { ...current, ...dynamicData };
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
+  const prev = existing.length > 0 ? existing[0] : {};
+  const next = {
+    owner_name: fixedData.owner_name !== undefined ? fixedData.owner_name : prev.owner_name,
+    owner_phone: fixedData.owner_phone !== undefined ? fixedData.owner_phone : prev.owner_phone,
+    address: fixedData.address !== undefined ? fixedData.address : prev.address,
+    area: fixedData.area !== undefined ? fixedData.area : prev.area,
+    land_type: fixedData.land_type !== undefined ? fixedData.land_type : prev.land_type,
+    description: fixedData.description !== undefined ? fixedData.description : prev.description,
+    status: fixedData.status !== undefined ? fixedData.status : prev.status
+  };
+
   await pool.query(
     `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
-    [fixedData.owner_name, fixedData.owner_phone, fixedData.address, fixedData.area, fixedData.land_type, fixedData.description || '', fixedData.status, customData, id]
+    [next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
   );
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];

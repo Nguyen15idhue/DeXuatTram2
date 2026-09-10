@@ -13,6 +13,31 @@ exports.getAll = async (req, res) => {
   }
 };
 
+exports.getById = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const user = await adminUserService.findById(targetId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+    if (req.user.role === 'SALES') {
+      const isSelf = targetId === req.user.id;
+      const isOwnCtv = user.parent_id === req.user.id;
+      if (!isSelf && !isOwnCtv) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+    } else if (req.user.role === 'ADMIN') {
+      if (user.role === 'SUPER_ADMIN') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+    }
+    res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Admin get user error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.create = async (req, res) => {
   try {
     let { full_name, email, phone, password, role, status, custom_data, external_id } = req.body;
@@ -175,17 +200,26 @@ exports.delete = async (req, res) => {
 exports.toggleLock = async (req, res) => {
   try {
     const { id } = req.params;
+    const targetId = parseInt(id);
 
-    const existing = await adminUserService.findByIdWithStatus(id);
+    if (targetId === req.user.id) {
+      return res.status(400).json({ success: false, message: 'Không thể khóa chính mình' });
+    }
+
+    const existing = await adminUserService.findById(targetId);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    const newStatus = existing.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
-    await adminUserService.updateStatus(id, newStatus);
+    if (existing.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
 
-    const user = await adminUserService.findById(id);
-    res.json({ success: true, data: user, message: newStatus === 'LOCKED' ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' });
+    const newStatus = existing.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
+    await adminUserService.updateStatus(targetId, newStatus);
+
+    const lockedUser = await adminUserService.findById(targetId);
+    res.json({ success: true, data: lockedUser, message: newStatus === 'LOCKED' ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' });
   } catch (error) {
     console.error('Admin lock user error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

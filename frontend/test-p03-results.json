@@ -1,0 +1,47 @@
+[
+  {
+    "name": "BE login",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "BE block e.svg",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE block e.html",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE block e.exe",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE block e.js",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE block e.php",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE allow real png + safe ext",
+    "ok": true,
+    "detail": "\"general/10-09-2026/1789010787358-en7db0c9hu9xq35hbmtb8.png\""
+  },
+  {
+    "name": "BE block fake png content",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "FE /profile loads",
+    "ok": true,
+    "detail": "len=313223"
+  }
+]

@@ -10,8 +10,8 @@ const proposalController = require('../controllers/proposalController');
  * /api/proposals:
  *   get:
  *     tags: [Proposals]
- *     summary: Lấy danh sách đề xuất (công khai)
- *     description: Hiển thị trên bản đồ, không phân trang
+ *     summary: Lấy danh sách đề xuất (công khai, rút gọn)
+ *     description: Hiển thị trên bản đồ, không phân trang. Chỉ trả id/latitude/longitude/address/status/created_at, không trả phone/custom_data.
  *     responses:
  *       200:
  *         description: Thành công
@@ -34,7 +34,8 @@ router.get('/', proposalController.getAll);
  * /api/proposals/{id}:
  *   get:
  *     tags: [Proposals]
- *     summary: Lấy thông tin đề xuất theo ID
+ *     summary: Lấy thông tin đề xuất theo ID (công khai, rút gọn)
+ *     description: Chỉ trả bản rút gọn id/latitude/longitude/address/status/created_at.
  *     parameters:
  *       - in: path
  *         name: id

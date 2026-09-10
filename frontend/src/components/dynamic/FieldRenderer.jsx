@@ -29,7 +29,8 @@ const getFileUrl = (file, entity, entityId) => {
   if (file.link) return file.link;
   if (file.id) {
     const base = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-    return `${base}/files/${file.id}/image`;
+    const t = localStorage.getItem('token') || '';
+    return t ? `${base}/files/${file.id}/image?token=${encodeURIComponent(t)}` : `${base}/files/${file.id}/image`;
   }
   return '';
 };

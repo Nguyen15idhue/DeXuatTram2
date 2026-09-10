@@ -1,0 +1,12 @@
+[
+  {
+    "name": "BE guest explicit-false bypasses captcha (not captcha err)",
+    "ok": true,
+    "detail": "status=400 msg=Vị trí này trùng với trạm #8 (cách 0m < 200m). Vui lòng chọn"
+  },
+  {
+    "name": "FE /de-xuat loads guest form",
+    "ok": true,
+    "detail": "Đề xuất trạm sạc Đăng nhập Đề xuất vị trí trạm sạc  Không cần tài khoản. Điền form bên dưới, lưu mã tra cứu để theo dõi "
+  }
+]

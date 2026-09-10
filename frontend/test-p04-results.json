@@ -1,0 +1,42 @@
+[
+  {
+    "name": "BE logins",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "BE ADMIN cannot lock SUPER_ADMIN",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "BE cannot self-lock",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "BE ADMIN lock CTV ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE ADMIN unlock CTV ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE SUPER self-lock blocked",
+    "ok": true,
+    "detail": "status=400"
+  },
+  {
+    "name": "FE /admin/users loads",
+    "ok": true,
+    "detail": "len=329060"
+  },
+  {
+    "name": "FE lock buttons rendered",
+    "ok": true,
+    "detail": "count=15"
+  }
+]

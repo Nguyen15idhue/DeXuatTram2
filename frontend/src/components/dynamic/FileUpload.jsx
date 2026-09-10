@@ -72,7 +72,10 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
 
   const getFileUrl = (file) => {
     if (file.url) return file.url;
-    if (file.storage_key) return `${API_URL.replace('/api', '')}/uploads/${file.storage_key}`;
+    if (file.id) {
+      const t = token || localStorage.getItem('token') || '';
+      return t ? `${API_URL}/files/${file.id}/image?token=${encodeURIComponent(t)}` : `${API_URL}/files/${file.id}/image`;
+    }
     return null;
   };
 

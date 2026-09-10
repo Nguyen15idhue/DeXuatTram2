@@ -189,6 +189,19 @@ function validateCreateProposal(req, res, next) {
   next();
 }
 
+function validateUpdateProposal(req, res, next) {
+  const { latitude, longitude, owner_name, owner_phone, address, status } = req.body;
+  const errors = runValidations([
+    latitude !== undefined ? validateLatitude(latitude) : null,
+    longitude !== undefined ? validateLongitude(longitude) : null,
+    owner_name !== undefined ? validateRequired(owner_name, 'Chủ mặt bằng') : null,
+    owner_phone !== undefined ? validatePhone(owner_phone) : null,
+    address !== undefined ? validateRequired(address, 'Địa chỉ') : null,
+    status !== undefined ? validateEnum(status, ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED'], 'Trạng thái') : null
+  ]);
+  if (validationResponse(res, errors)) return;
+  next();
+}
 function validateCreateUser(req, res, next) {
   const { full_name, email, phone, password } = req.body;
   const errors = runValidations([
@@ -227,6 +240,7 @@ module.exports = {
   validateCreateStation,
   validateUpdateStation,
   validateCreateProposal,
+  validateUpdateProposal,
   validateCreateUser,
   validateUpdateUser
 };

@@ -57,10 +57,9 @@ const AdminProposalsPage = () => {
 
   const loadProposalById = async (id) => {
     try {
-      const res = await adminProposalService.getAllWithParams('', token);
+      const res = await adminProposalService.getById(id, token);
       if (res.success) {
-        const p = res.data.find(x => x.id === id);
-        if (p) setPopup(prev => ({ ...prev, record: p }));
+        setPopup(prev => ({ ...prev, record: res.data }));
       }
     } catch { /* silent */ }
   };

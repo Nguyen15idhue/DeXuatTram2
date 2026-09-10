@@ -64,10 +64,9 @@ const AdminUsersPage = () => {
 
   const loadUserById = async (id, mode) => {
     try {
-      const res = await adminUserService.getAllWithParams('all=1', token);
+      const res = await adminUserService.getById(id, token);
       if (res.success) {
-        const user = res.data.find(u => u.id === id);
-        if (user) setPopup({ open: true, record: user, mode });
+        setPopup({ open: true, record: res.data, mode });
       }
     } catch { /* silent */ }
   };
@@ -233,6 +232,8 @@ const AdminUsersPage = () => {
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
         loadUsers();
+      } else {
+        setError(res.message || 'Không thể khóa/mở tài khoản');
       }
     } catch {
       setError('Lỗi kết nối server');
@@ -355,7 +356,7 @@ const AdminUsersPage = () => {
         {canManage && (
           <button className="btn btn-ghost btn-xs" onClick={() => openPasswordModal(row.id, row.full_name)}>Đổi MK</button>
         )}
-        {canManage && !isSales && (
+        {canManage && !isSales && row.id !== currentUser.id && (
           <button className="btn btn-sm btn-ghost" onClick={() => handleToggleLock(row.id)}>
             {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
           </button>

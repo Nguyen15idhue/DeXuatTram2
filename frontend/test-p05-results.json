@@ -1,0 +1,37 @@
+[
+  {
+    "name": "BE login",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "BE GET /admin/users/:id",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE GET /admin/users/99999 404",
+    "ok": true,
+    "detail": "status=404"
+  },
+  {
+    "name": "BE fixtures page2",
+    "ok": true,
+    "detail": "station=140 proposal=388"
+  },
+  {
+    "name": "FE /admin/users/view=3 opens record",
+    "ok": true,
+    "detail": "Quản lý Users Tạo user Tất cả trạng thái Hoạt động Bị khóa Tìm Reset Template Export Import User #3 ✕ Thông tin tài khoản Mã nhân viên - Họ tên Trần T"
+  },
+  {
+    "name": "FE /admin/stations/view=140 (page2) opens",
+    "ok": true,
+    "detail": "Quản lý Trạm Thêm trạm Tất cả trạng thái Hoạt động Đang triển khai Tìm Reset Template Export Import Trạm #140 ✕ Thông tin trạm Tên trạm TS_LK CÔNG TY "
+  },
+  {
+    "name": "FE /admin/proposals/view=388 (page2) opens",
+    "ok": true,
+    "detail": "Quản lý Đề xuất Tạo đề xuất Tất cả PENDING REVIEWING APPROVED REJECTED Export 200m – m Check trùng Đề xuất #388 ✕ Thông tin cơ bản Tỉnh thành Tp Hồ Ch"
+  }
+]

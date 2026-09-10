@@ -57,10 +57,9 @@ const AdminStationsPage = () => {
 
   const loadStationById = async (id, mode) => {
     try {
-      const res = await stationService.getAllWithParams('');
+      const res = await stationService.getById(id);
       if (res.success) {
-        const station = res.data.find(s => s.id === id);
-        if (station) setPopup({ open: true, record: station, mode });
+        setPopup({ open: true, record: res.data, mode });
       }
     } catch { /* silent */ }
   };

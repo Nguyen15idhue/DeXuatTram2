@@ -16,8 +16,9 @@ INSERT INTO data_list_rows (list_id, data) VALUES
 (@dl_phong_ban, '{"ma":"MKT","ten":"Marketing"}');
 
 -- 2. Thêm field chuc_vu cho Users
-INSERT INTO field_definitions (entity, `key`, label, type, source_type, required, status, order_index)
-VALUES ('users', 'chuc_vu', 'Chức vụ', 'text', 'json', 0, 'active', 50);
+-- field_definitions KHÔNG có cột order_index (thứ tự nằm ở form_fields.order_index)
+INSERT INTO field_definitions (entity, `key`, label, type, source_type, required, status)
+VALUES ('users', 'chuc_vu', 'Chức vụ', 'text', 'json', 0, 'active');
 
 -- 3. Link field department với dm_phong_ban
 UPDATE field_definitions

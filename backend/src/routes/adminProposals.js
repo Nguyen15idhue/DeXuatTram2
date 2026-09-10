@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const router = express.Router();
 const { requireAuth, requireUserManager } = require('../middlewares/auth');
+const { validateUpdateProposal } = require('../middlewares/validators');
 const adminProposalController = require('../controllers/adminProposalController');
 
 /**
@@ -169,7 +170,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id', requireAuth, requireUserManager, adminProposalController.update);
+router.put('/:id', requireAuth, requireUserManager, validateUpdateProposal, adminProposalController.update);
 
 /**
  * @swagger

@@ -1,5 +1,4 @@
 const adminProposalService = require('../services/adminProposalService');
-const proposalService = require('../services/proposalService');
 const proximityService = require('../services/proximityService');
 
 const scopeFor = async (req) => {
@@ -41,14 +40,15 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const proposal = await proposalService.getProposalById(req.params.id);
-    if (!proposal) {
+    const light = await adminProposalService.getProposalById(req.params.id);
+    if (!light) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
     const scope = await scopeFor(req);
-    if (denyOutsideBranch(proposal, scope)) {
+    if (denyOutsideBranch(light, scope)) {
       return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
     }
+    const proposal = await adminProposalService.getProposalWithUser(req.params.id);
     res.json({ success: true, data: proposal });
   } catch (error) {
     console.error('Admin get proposal error:', error);

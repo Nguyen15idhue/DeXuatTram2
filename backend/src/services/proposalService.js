@@ -6,30 +6,24 @@ const proximityService = require('./proximityService');
 
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
-    `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
-            p.address, p.area, p.land_type, p.description, p.status,
-            p.custom_data, p.created_at, u.full_name as user_name
+    `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
+            p.created_at
      FROM station_proposals p
-     LEFT JOIN users u ON p.user_id = u.id
      ORDER BY p.created_at DESC`
   );
-
-  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  return proposals.map(p => dynamicUtils.mergeData(p, fieldDefs));
+  return proposals;
 };
 
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.*, u.full_name as user_name
+    `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
+            p.created_at
      FROM station_proposals p
-     LEFT JOIN users u ON p.user_id = u.id
      WHERE p.id = ?`,
     [id]
   );
   if (proposals.length === 0) return null;
-
-  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  return dynamicUtils.mergeData(proposals[0], fieldDefs);
+  return proposals[0];
 };
 
 exports.createProposal = async (userId, data) => {
@@ -87,7 +81,7 @@ exports.createProposal = async (userId, data) => {
 const normalizePhone = (phone) => String(phone || '').replace(/[^\d]/g, '');
 
 const verifyCaptcha = async (token, ip) => {
-  if (process.env.CAPTCHA_ENABLED !== 'true') return true;
+  if (process.env.CAPTCHA_ENABLED === 'false') return true;
   const secret = process.env.TURNSTILE_SECRET_KEY || '';
   if (!token || !secret) return false;
   try {

@@ -1,0 +1,47 @@
+[
+  {
+    "name": "BE /uploads static removed",
+    "ok": true,
+    "detail": "status=404"
+  },
+  {
+    "name": "BE download no-auth blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "BE image no-auth blocked",
+    "ok": true,
+    "detail": "status=403"
+  },
+  {
+    "name": "BE login ok",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "BE download admin ok",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "BE image ?token= query works or blocked-by-ownership",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "name": "FE /admin/stations loads",
+    "ok": true,
+    "detail": "len=329752"
+  },
+  {
+    "name": "FE no /uploads/ direct refs in HTML",
+    "ok": true,
+    "detail": "clean"
+  },
+  {
+    "name": "FE /profile loads",
+    "ok": true,
+    "detail": "len=313223"
+  }
+]

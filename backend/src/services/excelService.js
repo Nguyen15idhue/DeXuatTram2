@@ -897,6 +897,10 @@ exports.importDataListPreview = async (req, res) => {
       return res.status(400).json({ success: false, message: `Lỗi header: ${headerErrors.join('; ')}` });
     }
 
+    const headerMap = buildHeaderMap(sheet.getRow(1), columns);
+    const byKey = {};
+    columns.forEach(c => { byKey[c.key] = c; });
+
     const validRows = [];
     const errors = [];
 
@@ -909,22 +913,22 @@ exports.importDataListPreview = async (req, res) => {
       const rowErrors = [];
       const rowData = {};
 
-      columns.forEach((col, idx) => {
+      const valueByKey = {};
+      Object.entries(headerMap).forEach(([colNumber, key]) => {
+        const cell = row.getCell(Number(colNumber));
+        valueByKey[key] = cell ? cell.value : '';
+      });
+
+      columns.forEach((col) => {
         if (col.key === '_stt') return;
 
-        let value = '';
-
-        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-          const cellLabel = String(cell.value || '').trim().toLowerCase();
-          if (col.label.toLowerCase() === cellLabel) {
-            let raw = cell.value;
-            if (raw && typeof raw === 'object' && raw.result !== undefined) raw = raw.result;
-            if (raw == null || raw === '') value = '';
-            else if (typeof raw === 'number') value = raw;
-            else if (raw instanceof Date) value = raw.toISOString().split('T')[0];
-            else value = String(raw).trim();
-          }
-        });
+        let raw = Object.prototype.hasOwnProperty.call(valueByKey, col.key) ? valueByKey[col.key] : '';
+        if (raw && typeof raw === 'object' && raw.result !== undefined) raw = raw.result;
+        let value;
+        if (raw == null || raw === '') value = '';
+        else if (typeof raw === 'number') value = raw;
+        else if (raw instanceof Date) value = raw.toISOString().split('T')[0];
+        else value = String(raw).trim();
 
         if (col.type === 'number' && value !== '') {
           const num = parseFloat(value);
