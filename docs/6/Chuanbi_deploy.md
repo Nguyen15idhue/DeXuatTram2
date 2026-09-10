@@ -50,7 +50,9 @@ Cần 2 fix đã áp dụng: `database/03-update-passwords.sql` (hash bcrypt h�
 
 ### 0.6 Lưu ý CPU VPS (quan trọng)
 
-Image `mysql:8.0` (từ bản ≥ 8.0.34) yêu cầu CPU **x86-64-v2**; VPS CPU cũ sẽ báo `Fatal glibc error: CPU does not support x86-64-v2` và MySQL không chạy. Vì vậy compose ghim **`mysql:8.0.33`** (bản cuối hỗ trợ CPU x86-64 v1). **Không** đổi về `mysql:8.0`/`mysql:latest` trên VPS cũ.
+**Chọn image MySQL cho VPS CPU cũ (quan trọng):** dùng **`mysql:8.0-debian`** (Debian 12, MySQL 8.0.46) — bản Debian build chạy được trên CPU x86-64 v1. Tránh:
+- `mysql:8.0` / `mysql:latest` (Oracle Linux): báo `Fatal glibc error: CPU does not support x86-64-v2`.
+- `mysql:8.0.33` (Oracle Linux `el8`): chạy nhưng **treo** `mysqld --initialize` trên VPS này.
 
 Ngoài ra, một số VPS khiến `mysqld --initialize` **treo** (native AIO/O_DIRECT không tương thích) → đã thêm `docker/mysql-conf/01-tuning.cnf`:
 ```
@@ -58,7 +60,7 @@ Ngoài ra, một số VPS khiến `mysqld --initialize` **treo** (native AIO/O_D
 innodb_use_native_aio=0
 innodb_flush_method=fsync
 ```
-mount vào `/etc/my.cnf.d` trong cả `docker-compose.simple.yml` và `docker-compose.prod.yml`.
+mount vào `/etc/my.cnf.d` và truyền thẳng qua `command` trong `docker-compose.simple.yml` / `docker-compose.prod.yml`.
 
 ### 0.7 Phương án B — dùng MySQL có sẵn trên VPS (khi container MySQL không hợp)
 

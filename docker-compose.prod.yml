@@ -33,7 +33,7 @@ services:
       - station-network
 
   mysql:
-    image: mysql:8.0.33
+    image: mysql:8.0-debian
     container_name: station-mysql
     env_file:
       - .env
