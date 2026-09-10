@@ -41,6 +41,8 @@ services:
       - TZ=Asia/Ho_Chi_Minh
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+      - ./docker/mysql-conf:/etc/my.cnf.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 10s

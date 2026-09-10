@@ -52,6 +52,14 @@ Cần 2 fix đã áp dụng: `database/03-update-passwords.sql` (hash bcrypt h�
 
 Image `mysql:8.0` (từ bản ≥ 8.0.34) yêu cầu CPU **x86-64-v2**; VPS CPU cũ sẽ báo `Fatal glibc error: CPU does not support x86-64-v2` và MySQL không chạy. Vì vậy compose ghim **`mysql:8.0.33`** (bản cuối hỗ trợ CPU x86-64 v1). **Không** đổi về `mysql:8.0`/`mysql:latest` trên VPS cũ.
 
+Ngoài ra, một số VPS khiến `mysqld --initialize` **treo** (native AIO/O_DIRECT không tương thích) → đã thêm `docker/mysql-conf/01-tuning.cnf`:
+```
+[mysqld]
+innodb_use_native_aio=0
+innodb_flush_method=fsync
+```
+mount vào `/etc/my.cnf.d` trong cả `docker-compose.simple.yml` và `docker-compose.prod.yml`.
+
 ---
 
 
