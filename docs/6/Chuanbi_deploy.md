@@ -54,13 +54,7 @@ Cần 2 fix đã áp dụng: `database/03-update-passwords.sql` (hash bcrypt h�
 - `mysql:8.0` / `mysql:latest` (Oracle Linux): báo `Fatal glibc error: CPU does not support x86-64-v2`.
 - `mysql:8.0.33` (Oracle Linux `el8`): chạy nhưng **treo** `mysqld --initialize` trên VPS này.
 
-Ngoài ra, một số VPS khiến `mysqld --initialize` **treo** (native AIO/O_DIRECT không tương thích) → đã thêm `docker/mysql-conf/01-tuning.cnf`:
-```
-[mysqld]
-innodb_use_native_aio=0
-innodb_flush_method=fsync
-```
-mount vào `/etc/my.cnf.d` và truyền thẳng qua `command` trong `docker-compose.simple.yml` / `docker-compose.prod.yml`.
+Không thêm tuning `innodb_use_native_aio`/`innodb_flush_method` — dùng mặc định của bản Debian (giống container `cgbas-mysql` đang chạy ổn trên VPS). Thêm `fsync` từng khiến init rất chậm trên đĩa của VPS này.
 
 ### 0.7 Phương án B — dùng MySQL có sẵn trên VPS (khi container MySQL không hợp)
 
