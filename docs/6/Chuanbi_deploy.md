@@ -4,95 +4,57 @@
 >
 > **Cập nhật 10/09/2026**: bổ sung gap analysis giữa doc và mã nguồn thực tế (mục 1), phần chuẩn bị VPS (mục 2), các file cần tạo/sửa (mục 4), checklist sau deploy (mục 8).
 >
-> **Chốt 10/09/2026 — Phương án deploy nhanh (đang dùng)**: dùng `deploy.sh` + `docker-compose.simple.yml` (**KHÔNG nginx**), import baseline `database/baseline/station_management_baseline.sql` (cấu trúc **TẤT CẢ 16 bảng** + dữ liệu **11 bảng cấu hình**; bảng nghiệp vụ để trống). Chạy 1 lệnh trên VPS → `http://{ip}:8081`. Chi tiết ở **mục 0**.
+> **Chốt 10/09/2026 — 1-click deploy (đang dùng)**: `./deploy.sh` + `docker-compose.simple.yml`. Script tự tạo `.env`, nạp **datadir MySQL init sẵn** (`docker/mysql-datadir.tar.gz`) để MySQL khởi động tức thì, build & chạy 3 container, import **`docker/station_lite_dump.sql`** (16 bảng + cấu hình + 4 user), in link `http://{ip}:8081`.
 
 ---
 
-## 0. Phương án deploy nhanh (khuyến nghị)
+## 0. Deploy 1 lệnh (khuyến nghị)
 
-Mục tiêu: clone về VPS → chạy **1 lệnh** → có web dùng được ngay (chấp nhận HTTP, bổ sung domain/HTTPS sau).
+Mục tiêu: clone về VPS → chạy **1 lệnh** → có web dùng được (HTTP; bổ sung domain/HTTPS sau).
 
-### 0.1 Thành phần
-
-| File | Vai trò |
-|---|---|
-| `deploy.sh` | Tự sinh `.env` (secret random, JWT ≥32 ký tự), build & up, chờ MySQL, tạo user app, import baseline, in link |
-| `docker-compose.simple.yml` | 3 service, **không nginx** (frontend Vite `:5173`), chỉ publish cổng web; backend/mysql ẩn |
-| `docker/mysql-init/01-app-user.sh` | Tạo user MySQL `station_app` (không root) khi khởi tạo MySQL lần đầu |
-| `database/baseline/station_management_baseline.sql` | Baseline: **structure 16 bảng** + **data 11 bảng cấu hình** (users, field_definitions, forms, form_fields, views, view_fields, data_lists, data_list_rows, map_configs, api_configs, api_field_mappings); đã bỏ token 1Office |
-
-### 0.2 Chạy
-
+### 0.1 Chạy
 ```bash
 git clone <repo-url> && cd DeXuatTram2
 chmod +x deploy.sh
-./deploy.sh                  # mặc định WEB_PORT=8081
-# ./deploy.sh --port=8088    # đổi cổng web
-# ./deploy.sh --skip-schema  # không import DB
-# ./deploy.sh --use-scripts  # bỏ baseline, chạy database/01 -> 44
+./deploy.sh                 # http://<ip>:8081
+# ./deploy.sh --port=8088   # đổi cổng web
+# ./deploy.sh --skip-schema # không import DB
 ```
-Kết quả: mở `http://{ip}:8081`, đăng nhập `admin@station.com / 123456` (đổi ngay sau).
+Kết quả: mở `http://<ip>:8081`, đăng nhập `admin@station.com / 123456` (đổi ngay sau).
 
-### 0.3 Cổng (tránh trùng VPS)
+### 0.2 Script làm gì (tự động)
+1. Tạo `.env` (mật khẩu MySQL cố định khớp datadir, `JWT_SECRET` random ≥32 ký tự, `WEB_PORT=8081`).
+2. Build images.
+3. Nếu volume MySQL chưa có dữ liệu → nạp `docker/mysql-datadir.tar.gz` (chown `999:999`) → MySQL **khởi động tức thì, không init**.
+4. Chạy MySQL, chờ healthy.
+5. Nếu DB chưa có bảng → import `docker/station_lite_dump.sql`.
+6. Chạy backend + frontend; in link.
 
-- Chỉ publish **WEB_PORT** (mặc định **8081**). VPS đang dùng 8080/8085/8086/8087/8090/8091/3000/3001/3004/3101/3306/3307/9090/12101/10445/10630/1509/22/80/443 → **8081 trống**.
-- Backend `:3000` và MySQL `:3306` **không publish** ra host (chỉ trong mạng Docker nội bộ) nên **không đụng Grafana `:3000`** hay MySQL `:3306` sẵn có.
+Idempotent: chạy lại không mất dữ liệu (đã có volume/bảng thì bỏ qua nạp & import).
 
-### 0.4 `--use-scripts` (khi không dùng baseline)
+### 0.3 Thành phần
+| File | Vai trò |
+|---|---|
+| `deploy.sh` | Deploy 1 lệnh |
+| `update.sh` | `docker compose up -d --build` (cập nhật code) |
+| `docker-compose.simple.yml` | 3 service (frontend Vite, backend, mysql), chỉ publish cổng web |
+| `docker/mysql-datadir.tar.gz` | Datadir MySQL init sẵn (tránh init chậm trên VPS) |
+| `docker/station_lite_dump.sql` | Data: 16 bảng + cấu hình + 4 user (SUPER_ADMIN/ADMIN/SALES/CTV) |
+| `docker/mysql-init/01-app-user.sh` | Tạo user `station_app` (không root) |
+| `docker/docker-compose.pma.yml` | (Tùy chọn) phpMyAdmin: `docker compose -f docker/docker-compose.pma.yml up -d` |
 
-Cần 2 fix đã áp dụng: `database/03-update-passwords.sql` (hash bcrypt hợp lệ — bản cũ hash sai làm login hỏng) và `database/36-1office-api-configs.sql` (bỏ `CREATE INDEX IF NOT EXISTS` không được MySQL 8 hỗ trợ). Lưu ý: chạy script thuần vẫn **lỗi FK ở `19,22,23,26,28,29,31,33,41`** (form/view được tạo qua UI, không có trong script) → **baseline là cách đầy đủ hơn**.
+### 0.4 Cổng
+- Chỉ publish **WEB_PORT** (mặc định **8081**; VPS đang dùng 8080/8085/8086/8087/8090/8091/3000/3001/3004/3101/3306/3307/9090... → 8081 trống).
+- Backend `:3000` và MySQL `:3306` **không publish** ra host → không đụng Grafana/MySQL sẵn có.
+- Truy cập từ ngoài: mở cổng `${WEB_PORT}` trên **security group** của VPS.
 
-### 0.5 Sau này có domain / HTTPS
+### 0.5 Lưu ý môi trường VPS (đã bake sẵn)
+- **CPU cũ**: dùng `mysql:8.0.44-debian` (Debian build chạy trên x86-64 v1); tránh `mysql:8.0`/`latest` (Oracle Linux → `CPU does not support x86-64-v2`) và `8.0.33` el8 (treo init).
+- **Đĩa chậm**: dùng datadir init sẵn → không chạy `mysqld --initialize` trên VPS.
+- **Frontend**: đã có `frontend/.env.development` (`VITE_API_URL=/api`) → không fallback `localhost:3000`.
 
-- VPS đã có host nginx (80/443) → cấu hình trỏ về `127.0.0.1:8081`.
-- Cập nhật `CORS_ORIGINS/BASE_URL/FRONTEND_URL` trong `.env` rồi `docker compose -f docker-compose.simple.yml up -d`.
-- (Tùy chọn) chuyển sang `docker-compose.prod.yml` (nginx trong container + TLS) nếu muốn tách host nginx.
-
-### 0.6 Lưu ý CPU VPS (quan trọng)
-
-**Chọn image MySQL cho VPS CPU cũ (quan trọng):** dùng **`mysql:8.0.44-debian`** (Debian 12) — bản Debian build chạy được trên CPU x86-64 v1. Tránh:
-- `mysql:8.0` / `mysql:latest` (Oracle Linux): báo `Fatal glibc error: CPU does not support x86-64-v2`.
-- `mysql:8.0.33` (Oracle Linux `el8`): chạy nhưng **treo** `mysqld --initialize` trên VPS này.
-
-Không thêm tuning `innodb_use_native_aio`/`innodb_flush_method` — dùng mặc định của bản Debian (giống container `cgbas-mysql` đang chạy ổn trên VPS). Thêm `fsync` từng khiến init rất chậm trên đĩa của VPS này.
-
-### 0.7 Phương án B — dùng MySQL có sẵn trên VPS (KHÔNG khả thi trên VPS này)
-
-Trên VPS ghi nhận: **không có MySQL native** (không socket, không systemd); port 3306 là một container/tiến trình khác không kiểm soát được mật khẩu → không dùng làm host DB được. Giữ `docker-compose.hostdb.yml` + `deploy-hostdb.sh` để tham khảo, chỉ dùng khi VPS thật sự có MySQL native truy cập được.
-
-### 0.8 Phương án datadir init sẵn (dùng khi init MySQL trên VPS quá chậm/treo)
-
-Tránh hoàn toàn `mysqld --initialize` trên VPS bằng cách nạp **datadir đã init sẵn** (tạo trên máy dev, nén ~6MB) vào volume `dexuattram2_mysql_data` trước khi khởi động.
-
-- `mysql-datadir.tar.gz`: datadir tạo sẵn bằng `mysql:8.0.44-debian` + `docker/mysql-init/01-app-user.sh` (có DB `station_management` và user `station_app`).
-- `deploy-datadir.sh`: đồng bộ mật khẩu MySQL trong `.env`, xoá volume cũ, giải nén datadir vào volume (chown `999:999`), rồi gọi `deploy.sh`.
-- Mật khẩu datadir (cố định): root `RootPass2026!`, app `AppPass2026!` — **nên đổi sau khi lên web**.
-
-```bash
-git pull origin ui-redesign
-chmod +x deploy-datadir.sh
-./deploy-datadir.sh
-```
-(Cần `.env` đã tồn tại; nếu chưa: `cp .env.example .env` rồi điền `JWT_SECRET`, IP... trước.)
-
-> Khi đã nạp datadir, MySQL khởi động **tức thì** (không init), sau đó `deploy.sh` import baseline và chạy backend/frontend.
-
-### 0.9 File DB gọn để import nhanh (`station_lite_dump.sql`)
-
-Khi cần DB nhẹ, tránh dữ liệu dev/test: dùng `station_lite_dump.sql` (0.73MB):
-- **Đủ schema 16 bảng.**
-- **Chỉ 4 user** (4 quyền): `admin@station.com` (SUPER_ADMIN), `admin@admin.com` (ADMIN), `sales_test@example.com` (SALES), `user2@example.com` (CTV) — mật khẩu `123456`.
-- **Giữ cấu hình** (field_definitions, forms, form_fields, views, view_fields, data_lists, data_list_rows, map_configs, api_configs, api_field_mappings) để form/view hoạt động.
-- **Bỏ dữ liệu nghiệp vụ** (stations, station_proposals, files, api_queue_logs) và **bỏ `LOCK TABLES`** (tránh kẹt metadata lock khi import).
-
-Import:
-```bash
-docker kill station-backend 2>/dev/null || true
-docker exec station-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS station_management; CREATE DATABASE station_management CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"'
-docker exec -i station-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 station_management' < station_lite_dump.sql
-docker exec station-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N station_management -e "SHOW TABLES"' | wc -l
-docker start station-backend
-```
+### 0.6 Mật khẩu MySQL mặc định
+Datadir dùng mật khẩu cố định: root `RootPass2026!`, app `AppPass2026!` (đã ghi vào `.env`). **Đổi sau khi lên web.**
 
 ---
 
