@@ -39,6 +39,7 @@ services:
       - .env
     environment:
       - TZ=Asia/Ho_Chi_Minh
+    command: ["--innodb-use-native-aio=0", "--innodb-flush-method=fsync"]
     volumes:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
