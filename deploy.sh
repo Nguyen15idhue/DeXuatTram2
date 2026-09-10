@@ -98,23 +98,37 @@ else
   [ -n "$IP" ] || IP="$(detect_ip)"
 fi
 
-log "Khoi dong containers (build lan dau co the mat vai phut)..."
-docker compose -f "$COMPOSE_FILE" up -d --build
+log "Build images (lan dau co the mat vai phut)..."
+docker compose -f "$COMPOSE_FILE" build
 
-log "Cho MySQL san sang..."
+log "Khoi dong MySQL..."
+docker compose -f "$COMPOSE_FILE" up -d mysql
+
+log "Cho MySQL healthy (co the mat 1-3 phut lan dau)..."
 MYSQL_READY=0
-for i in $(seq 1 90); do
-  if docker compose -f "$COMPOSE_FILE" exec -T mysql sh -c 'mysqladmin ping -h localhost -uroot -p"$MYSQL_ROOT_PASSWORD" --silent' >/dev/null 2>&1; then
+for i in $(seq 1 120); do
+  STATUS="$(docker inspect -f '{{.State.Health.Status}}' station-mysql 2>/dev/null || echo missing)"
+  RUNNING="$(docker inspect -f '{{.State.Running}}' station-mysql 2>/dev/null || echo false)"
+  if [ "$STATUS" = "healthy" ]; then
     MYSQL_READY=1
     break
   fi
-  sleep 2
+  if [ "$RUNNING" != "true" ]; then
+    echo "LOI: container MySQL khong chay (status=${STATUS}). Log cuoi:"
+    docker logs --tail 80 station-mysql 2>&1 || true
+    exit 1
+  fi
+  sleep 3
 done
 if [ "$MYSQL_READY" != "1" ]; then
-  echo "LOI: MySQL khong san sang sau thoi gian cho."
+  echo "LOI: MySQL khong healthy sau thoi gian cho. Log cuoi:"
+  docker logs --tail 80 station-mysql 2>&1 || true
   exit 1
 fi
-log "MySQL san sang."
+log "MySQL healthy."
+
+log "Khoi dong backend + frontend..."
+docker compose -f "$COMPOSE_FILE" up -d backend frontend
 
 if [ "$SKIP_SCHEMA" != "1" ]; then
   TABLE_USERS="$(printf "SHOW TABLES LIKE 'users';" | docker compose -f "$COMPOSE_FILE" exec -T mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' 2>/dev/null | tr -d '\r' | head -1 || true)"
