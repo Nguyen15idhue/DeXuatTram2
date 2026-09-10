@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import { Zap, Download, Upload, Plus, Search, RotateCcw, X } from 'lucide-react';
+import { Zap, Download, Upload, Plus, Search, RotateCcw, X, Trash2 } from 'lucide-react';
 
 const STATIONS_VIEW_ID = 6;
 const STATIONS_FORM_ID = 12;
@@ -27,10 +27,13 @@ const AdminStationsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [selectedIds, setSelectedIds] = useState([]);
   const tableRef = useRef(null);
 
   const [showImport, setShowImport] = useState(false);
@@ -131,6 +134,34 @@ const AdminStationsPage = () => {
       }
     } catch {
       setError('Lỗi kết nối server');
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setConfirmBulkDelete(false);
+    setBulkLoading(true);
+    let ok = 0;
+    const failed = [];
+    for (const id of selectedIds) {
+      try {
+        const res = await stationService.delete(id, token);
+        if (res.success) ok++;
+        else failed.push(`#${id}: ${res.message || 'Xóa thất bại'}`);
+      } catch {
+        failed.push(`#${id}: Lỗi kết nối server`);
+      }
+    }
+    setBulkLoading(false);
+    setSelectedIds([]);
+    loadStations(pagination.page);
+    if (ok > 0) {
+      setToast({
+        message: `Đã xóa ${ok} trạm${failed.length > 0 ? `, ${failed.length} không xóa được: ${failed.join('; ')}` : ''}`,
+        type: failed.length > 0 ? 'warning' : 'success'
+      });
+    } else {
+      setError(`Không xóa được: ${failed.join('; ')}`);
     }
   };
 
@@ -247,6 +278,16 @@ const AdminStationsPage = () => {
         type="danger"
       />
 
+      <ConfirmDialog
+        isOpen={confirmBulkDelete}
+        title="Xóa nhiều trạm"
+        message={`Bạn có chắc chắn muốn xóa ${selectedIds.length} trạm đã chọn?`}
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+        confirmText="Xóa"
+        type="danger"
+      />
+
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <input
           type="text"
@@ -284,6 +325,18 @@ const AdminStationsPage = () => {
           </button>
         )}
       </div>
+
+      {!isSales && selectedIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
+          <span className="text-sm font-medium">Đã chọn: {selectedIds.length} trạm</span>
+          <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={bulkLoading}>
+            <Trash2 size={14} /> Xóa ({selectedIds.length})
+          </button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => setSelectedIds([])}>
+            <X size={14} /> Bỏ chọn
+          </button>
+        </div>
+      )}
 
       {showImport && (
         <dialog className="modal modal-open">
@@ -398,6 +451,8 @@ const AdminStationsPage = () => {
         data={stations}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
       />
 
       <Pagination

@@ -1,8 +1,7 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const formulaService = require('./formulaService');
-const { create, all } = require('mathjs');
-const math = create(all);
+const math = formulaService.math;
 
 exports.getFormConfig = async (entity, formId) => {
   const [forms] = await pool.query(
@@ -183,6 +182,7 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
   let userName = '';
   let userRole = '';
   let salesName = '';
+  let id1Office = '';
   if (resolveUserId !== undefined && resolveUserId !== null && resolveUserId !== '') {
     try {
       const [users] = await pool.query('SELECT full_name, role, parent_id FROM users WHERE id = ?', [resolveUserId]);
@@ -198,7 +198,18 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
       }
     } catch { /* silent */ }
   }
-  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName, user_role: userRole, sales_name: salesName };
+  if (entity === 'station_proposals' && recordId !== undefined && recordId !== null && recordId !== '') {
+    try {
+      const [linked] = await pool.query('SELECT contact_1office_id, contact_1office_code FROM station_proposals WHERE id = ?', [recordId]);
+      if (linked.length > 0) {
+        const numId = linked[0].contact_1office_id;
+        id1Office = (numId !== null && numId !== undefined && String(numId) !== '')
+          ? String(numId)
+          : (linked[0].contact_1office_code || '');
+      }
+    } catch { /* silent */ }
+  }
+  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName, user_role: userRole, sales_name: salesName, id_1office: id1Office };
 
   const tableFields = fieldDefs.filter(f => f.type === 'table');
   const tableColArrays = {};

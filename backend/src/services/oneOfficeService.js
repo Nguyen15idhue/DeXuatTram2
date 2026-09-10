@@ -125,7 +125,7 @@ exports.getContacts = async (apiConfigId, params = {}) => {
 
 exports.getContactDetail = async (apiConfigId, code) => {
   const { baseUrl, token } = await getToken(apiConfigId);
-  return requestWithRetry('POST', `${baseUrl}/api/customer/contact/item`, { code }, token);
+  return requestWithRetry('GET', `${baseUrl}/api/customer/contact/item?code=${encodeURIComponent(code)}`, null, token);
 };
 
 exports.insertContact = async (apiConfigId, contactData) => {

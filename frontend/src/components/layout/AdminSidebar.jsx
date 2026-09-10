@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   BarChart3, Users, Zap, ClipboardList, Settings,
-  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck
+  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History
 } from 'lucide-react';
 
 const menuItems = [
@@ -10,6 +10,7 @@ const menuItems = [
   { path: '/admin/users', label: 'Quản lý Users', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/stations', label: 'Quản lý Trạm', icon: Zap, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/proposals', label: 'Quản lý Đề xuất', icon: ClipboardList, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
+  { path: '/admin/audit-log', label: 'Audit Log', icon: History, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { divider: true, roles: ['SUPER_ADMIN'] },
   { label: 'Cấu hình', isGroup: true, roles: ['SUPER_ADMIN'] },
   { path: '/admin/fields', label: 'Field Definitions', icon: FileText, roles: ['SUPER_ADMIN'] },

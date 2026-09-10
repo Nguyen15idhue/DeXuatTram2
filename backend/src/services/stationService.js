@@ -117,6 +117,12 @@ exports.updateStation = async (id, data) => {
     'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
     [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address || '', fixedData.status || 'ACTIVE', fixedData.description || '', customData, id]
   );
+
+  const postResults = await dynamicEngineService.computePostFormulas('stations', id, mergedDynamic, null, null);
+  if (Object.keys(postResults).length > 0) {
+    const updatedDynamic = { ...mergedDynamic, ...postResults };
+    await pool.query('UPDATE stations SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
+  }
 };
 
 exports.deleteStation = async (id) => {

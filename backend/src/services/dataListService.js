@@ -128,6 +128,8 @@ exports.applyDiaGioi = async (dynamicData) => {
 exports.getDiaGioiByTenTinh = async (tenTinh) => {
   const name = String(tenTinh || '').trim();
   if (!name) return null;
+  const normalize = (s) => String(s || '').trim().toLowerCase()
+    .replace(/^(thành phố|tp\.?|tỉnh)\s+/i, '');
   const pick = (row) => {
     if (!row) return null;
     const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
@@ -147,6 +149,11 @@ exports.getDiaGioiByTenTinh = async (tenTinh) => {
   for (const row of all) {
     const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
     if (data && String(data.ten_tinh || '').trim().toLowerCase() === lowered) return pick(row);
+  }
+  const normalized = normalize(name);
+  for (const row of all) {
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (data && normalize(data.ten_tinh) === normalized) return pick(row);
   }
   return null;
 };

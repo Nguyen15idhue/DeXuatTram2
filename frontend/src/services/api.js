@@ -585,3 +585,26 @@ export const oneOfficeSyncService = {
     return api.postWithAuth('/admin/1office/preview', { apiConfigId: configId, proposalId }, token);
   }
 };
+
+export const queueLogService = {
+  getAll(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/queue-logs?${params.toString()}`, token);
+  },
+  getStats(apiConfigId, token) {
+    const q = apiConfigId ? `?api_config_id=${apiConfigId}` : '';
+    return api.getWithAuth(`/admin/queue-logs/stats${q}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/queue-logs/${id}`, token);
+  },
+  retry(id, token) {
+    return api.postWithAuth(`/admin/queue-logs/${id}/retry`, {}, token);
+  },
+  cancel(id, token) {
+    return api.postWithAuth(`/admin/queue-logs/${id}/cancel`, {}, token);
+  }
+};

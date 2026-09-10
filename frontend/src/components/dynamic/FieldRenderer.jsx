@@ -219,6 +219,13 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
     case 'formula': {
       if (!field.formula_config) return <span>{String(value)}</span>;
       if (field.formula_config.outputType === 'url') {
+        const tpl = field.formula_config.url_template;
+        if (tpl) {
+          if (/^\d+$/.test(String(value ?? ''))) {
+            return <a href={tpl.replace('{value}', value)} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{value}</a>;
+          }
+          return <span>{String(value)}</span>;
+        }
         return <a href={value} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{field.formula_config.label || value}</a>;
       }
       return <span>{String(value)}</span>;

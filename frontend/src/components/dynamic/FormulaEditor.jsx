@@ -93,6 +93,7 @@ const POST_METADATA = [
   { key: 'user_name', label: '{user_name}', desc: 'Tên người tạo (trống với khách)' },
   { key: 'user_role', label: '{user_role}', desc: 'Vai trò người tạo' },
   { key: 'sales_name', label: '{sales_name}', desc: 'Tên Sales quản lý (trống nếu không có)' },
+  { key: 'id_1office', label: '{id_1office}', desc: 'Mã liên kết 1Office (trống nếu chưa liên kết)' },
 ];
 
 const OUTPUT_TYPES = [
@@ -534,6 +535,12 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
             <div className="config-field">
               <label>Text hiển thị link</label>
               <input type="text" value={config.label || ''} onChange={(e) => updateConfig({ label: e.target.value })} placeholder="Xem chi tiết" />
+            </div>
+          )}
+          {config.outputType === 'url' && (
+            <div className="config-field">
+              <label>URL template ({'{value}'} = giá trị)</label>
+              <input type="text" value={config.url_template || ''} onChange={(e) => updateConfig({ url_template: e.target.value })} placeholder="https://...?ID={value}" />
             </div>
           )}
         </div>

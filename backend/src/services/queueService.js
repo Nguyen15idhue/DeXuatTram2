@@ -175,57 +175,64 @@ exports.getAll = async (filters = {}, page = 1, limit = 50) => {
   const params = [];
 
   if (filters.status) {
-    where.push('status = ?');
+    where.push('q.status = ?');
     params.push(filters.status);
   }
 
   if (filters.direction) {
-    where.push('direction = ?');
+    where.push('q.direction = ?');
     params.push(filters.direction);
   }
 
   if (filters.action) {
-    where.push('action = ?');
+    where.push('q.action = ?');
     params.push(filters.action);
   }
 
   if (filters.api_config_id) {
-    where.push('api_config_id = ?');
+    where.push('q.api_config_id = ?');
     params.push(filters.api_config_id);
   }
 
   if (filters.entity_type) {
-    where.push('entity_type = ?');
+    where.push('q.entity_type = ?');
     params.push(filters.entity_type);
   }
 
   if (filters.entity_id) {
-    where.push('entity_id = ?');
+    where.push('q.entity_id = ?');
     params.push(filters.entity_id);
   }
 
   if (filters.created_by) {
-    where.push('created_by = ?');
+    where.push('q.created_by = ?');
     params.push(filters.created_by);
   }
 
   if (filters.date_from) {
-    where.push('created_at >= ?');
+    where.push('q.created_at >= ?');
     params.push(filters.date_from);
   }
 
   if (filters.date_to) {
-    where.push('created_at <= ?');
+    where.push('q.created_at <= ?');
     params.push(filters.date_to);
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
-  const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM api_queue_logs ${whereClause}`, params);
+  const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM api_queue_logs q ${whereClause}`, params);
   const total = countResult[0].total;
 
   const [rows] = await pool.query(
-    `SELECT * FROM api_queue_logs ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    `SELECT q.*, u.full_name,
+            sp.custom_data->>'$.ma_de_xuat' AS ma_de_xuat
+     FROM api_queue_logs q
+     LEFT JOIN users u ON q.created_by = u.id
+     LEFT JOIN station_proposals sp ON q.entity_type = 'station_proposals' AND q.entity_id = sp.id
+     ${whereClause}
+     ORDER BY q.created_at DESC
+     LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
 
@@ -235,14 +242,20 @@ exports.getAll = async (filters = {}, page = 1, limit = 50) => {
   };
 };
 
-exports.getStats = async (apiConfigId) => {
-  let whereClause = '';
+exports.getStats = async (apiConfigId, createdBy) => {
+  const conditions = [];
   const params = [];
 
   if (apiConfigId) {
-    whereClause = 'WHERE api_config_id = ?';
+    conditions.push('api_config_id = ?');
     params.push(apiConfigId);
   }
+  if (createdBy) {
+    conditions.push('created_by = ?');
+    params.push(createdBy);
+  }
+
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
   const [rows] = await pool.query(
     `SELECT status, COUNT(*) as count FROM api_queue_logs ${whereClause} GROUP BY status`,
@@ -254,6 +267,15 @@ exports.getStats = async (apiConfigId) => {
     stats[row.status] = row.count;
     stats.total += row.count;
   });
+
+  const errorWhereParts = [...conditions, 'status = ?', 'error_message IS NOT NULL', "error_message != ''"];
+  const errorWhereClause = errorWhereParts.length > 0 ? 'WHERE ' + errorWhereParts.join(' AND ') : '';
+  const errorParams = [...params, 'failed'];
+  const [errorRows] = await pool.query(
+    `SELECT error_message, COUNT(*) as count FROM api_queue_logs ${errorWhereClause} GROUP BY error_message ORDER BY count DESC LIMIT 5`,
+    errorParams
+  );
+  stats.topErrors = errorRows.map(r => ({ message: r.error_message, count: r.count }));
 
   return stats;
 };

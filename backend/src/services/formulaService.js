@@ -72,6 +72,7 @@ const customFunctions = {
 
 math.import(customFunctions, { override: false });
 
+exports.math = math;
 exports.customFunctions = customFunctions;
 
 const DB_FUNCTIONS = new Set(['SEQ']);
@@ -153,10 +154,11 @@ exports.buildPostScope = (metadata = {}, recordData = {}) => {
   scope.user_name = metadata.user_name || '';
   scope.user_role = metadata.user_role || '';
   scope.sales_name = metadata.sales_name || '';
+  scope.id_1office = metadata.id_1office || '';
   return scope;
 };
 
-const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name']);
+const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name', 'id_1office']);
 
 exports.getNextSequence = async (prefix, connection) => {
   const p = String(prefix ?? '').slice(0, 20);

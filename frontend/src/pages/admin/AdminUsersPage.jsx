@@ -10,7 +10,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import useFieldOptions from '../../hooks/useFieldOptions';
-import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X } from 'lucide-react';
+import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2 } from 'lucide-react';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 15;
@@ -30,9 +30,12 @@ const AdminUsersPage = () => {
   const [appliedSearch, setAppliedSearch] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [selectedIds, setSelectedIds] = useState([]);
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -182,6 +185,45 @@ const AdminUsersPage = () => {
       }
     } catch {
       setError('Lỗi kết nối server');
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setConfirmBulkDelete(false);
+    setBulkLoading(true);
+    const deletable = [];
+    const skipped = [];
+    selectedIds.forEach((id) => {
+      const u = users.find(x => x.id === id);
+      if (!u || ['ADMIN', 'SUPER_ADMIN'].includes(u.role) || u.id === currentUser.id) {
+        skipped.push(`#${id}${u ? ` (${u.full_name || u.email || ''})` : ''}`);
+      } else {
+        deletable.push(id);
+      }
+    });
+    let ok = 0;
+    const failed = [];
+    for (const id of deletable) {
+      try {
+        const res = await adminUserService.delete(id, token);
+        if (res.success) ok++;
+        else failed.push(`#${id}: ${res.message || 'Xóa thất bại'}`);
+      } catch {
+        failed.push(`#${id}: Lỗi kết nối server`);
+      }
+    }
+    setBulkLoading(false);
+    setSelectedIds([]);
+    loadUsers();
+    const parts = [];
+    if (ok > 0) parts.push(`Đã xóa ${ok} user`);
+    if (skipped.length > 0) parts.push(`bỏ qua ${skipped.length} (admin/tự): ${skipped.join('; ')}`);
+    if (failed.length > 0) parts.push(`${failed.length} không xóa được: ${failed.join('; ')}`);
+    if (ok > 0) {
+      setToast({ message: parts.join('; '), type: (skipped.length > 0 || failed.length > 0) ? 'warning' : 'success' });
+    } else {
+      setError(parts.join('; ') || 'Không xóa được user nào');
     }
   };
 
@@ -352,6 +394,16 @@ const AdminUsersPage = () => {
         type="danger"
       />
 
+      <ConfirmDialog
+        isOpen={confirmBulkDelete}
+        title="Xóa nhiều user"
+        message={`Bạn có chắc chắn muốn xóa ${selectedIds.length} user đã chọn? (Tài khoản admin và chính bạn sẽ được bỏ qua)`}
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+        confirmText="Xóa"
+        type="danger"
+      />
+
       {/* Filter bar */}
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <div className="form-control flex-1">
@@ -397,6 +449,18 @@ const AdminUsersPage = () => {
           </button>
         )}
       </div>
+
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
+          <span className="text-sm font-medium">Đã chọn: {selectedIds.length} user</span>
+          <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={bulkLoading}>
+            <Trash2 size={14} /> Xóa ({selectedIds.length})
+          </button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => setSelectedIds([])}>
+            <X size={14} /> Bỏ chọn
+          </button>
+        </div>
+      )}
 
       {/* Import Modal */}
       {showImport && (
@@ -543,6 +607,8 @@ const AdminUsersPage = () => {
           actions={renderActions}
           startIndex={0}
           rowDepth={(row) => row._depth || 0}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
         />
       )}
     </div>

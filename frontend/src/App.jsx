@@ -28,9 +28,11 @@ import AdminDataListsPage from './pages/admin/AdminDataListsPage';
 import AdminMapConfigPage from './pages/admin/AdminMapConfigPage';
 import AdminRolesPage from './pages/admin/AdminRolesPage';
 import AdminApiConfigPage from './pages/admin/AdminApiConfigPage';
+import AdminAuditLogPage from './pages/admin/AdminAuditLogPage';
 import RoleRoute from './components/RoleRoute';
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
+const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 
 import './App.css';
 
@@ -74,6 +76,7 @@ function App() {
             <Route path="/admin/map-config" element={<RoleRoute allowed={SUPER_ONLY}><AdminMapConfigPage /></RoleRoute>} />
             <Route path="/admin/roles" element={<RoleRoute allowed={SUPER_ONLY}><AdminRolesPage /></RoleRoute>} />
             <Route path="/admin/api-configs" element={<RoleRoute allowed={SUPER_ONLY}><AdminApiConfigPage /></RoleRoute>} />
+            <Route path="/admin/audit-log" element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminAuditLogPage /></RoleRoute>} />
           </Route>
 
           <Route path="/" element={<Navigate to="/login" replace />} />

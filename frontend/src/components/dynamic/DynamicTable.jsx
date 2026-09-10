@@ -4,7 +4,7 @@ import { dynamicService } from '../../services/api';
 import FieldRenderer from './FieldRenderer';
 import useDataListMap from '../../hooks/useDataListMap';
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -120,6 +120,25 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
 
   const visibleColumns = columns.filter(c => c.visible);
   const hasFilters = visibleColumns.some(c => c.filterable);
+  const hasSelection = Array.isArray(selectedIds) && onSelectionChange;
+  const allSelected = hasSelection && sortedData.length > 0 && sortedData.every(row => selectedIds.includes(row.id));
+
+  const handleToggleAll = () => {
+    if (allSelected) {
+      onSelectionChange([]);
+    } else {
+      onSelectionChange(sortedData.map(row => row.id));
+    }
+  };
+
+  const handleToggleRow = (id) => {
+    if (!hasSelection) return;
+    if (selectedIds.includes(id)) {
+      onSelectionChange(selectedIds.filter(x => x !== id));
+    } else {
+      onSelectionChange([...selectedIds, id]);
+    }
+  };
 
   return (
     <div className="dynamic-table-container">
@@ -128,6 +147,11 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
         <table className="table table-zebra w-full text-sm">
           <thead>
             <tr>
+              {hasSelection && (
+                <th className="w-10">
+                  <input type="checkbox" className="checkbox checkbox-sm" checked={allSelected} onChange={handleToggleAll} />
+                </th>
+              )}
               <th className="text-center w-12">STT</th>
               {visibleColumns.map(col => {
                 const key = col.field_key || col.key;
@@ -147,6 +171,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
             </tr>
             {hasFilters && (
               <tr className="bg-base-200">
+                {hasSelection && <th></th>}
                 <th></th>
                 {visibleColumns.map(col => {
                   const key = col.field_key || col.key;
@@ -172,12 +197,17 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
           <tbody>
             {!sortedData || sortedData.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + 2} className="text-center py-10 text-base-content/40">
+                <td colSpan={visibleColumns.length + (hasSelection ? 3 : 2)} className="text-center py-10 text-base-content/40">
                   Không có dữ liệu
                 </td>
               </tr>
             ) : sortedData.map((row, idx) => (
               <tr key={row.id || idx} className="hover">
+                {hasSelection && (
+                  <td>
+                    <input type="checkbox" className="checkbox checkbox-sm" checked={selectedIds.includes(row.id)} onChange={() => handleToggleRow(row.id)} />
+                  </td>
+                )}
                 <td className="text-center">{startIndex + idx + 1}</td>
                 {visibleColumns.map((col, colIdx) => {
                   const key = col.field_key || col.key;

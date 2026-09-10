@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 
 exports.getUserProposals = async (userId, status, search, page, limit) => {
@@ -74,7 +75,7 @@ exports.updateProposal = async (id, userId, data) => {
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
 
-  const [existing] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT custom_data, contact_1office_code FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -87,6 +88,21 @@ exports.updateProposal = async (id, userId, data) => {
      WHERE id = ? AND user_id = ?`,
     [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, id, userId]
   );
+
+  const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
+  const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
+  const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9]+_[A-Z0-9]+_\d{4}$/.test(current.ma_de_xuat);
+  const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
+  const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
+  const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });
+  if (Object.keys(postResults).length > 0) {
+    const updatedDynamic = { ...mergedDynamic, ...postResults };
+    if (postResults.ma_de_xuat) {
+      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), postResults.ma_de_xuat, id]);
+    } else {
+      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
+    }
+  }
 };
 
 exports.deleteProposal = async (id, userId) => {

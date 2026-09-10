@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 
 exports.getBranchUserIds = async (salesId) => {
@@ -42,6 +43,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}) => {
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
+            p.contact_1office_code, p.sync_status,
             u.full_name as user_name, u.email as user_email
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
@@ -99,7 +101,7 @@ exports.updateProposal = async (id, data) => {
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
 
-  const [existing] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ?', [id]);
+  const [existing] = await pool.query('SELECT custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -110,4 +112,19 @@ exports.updateProposal = async (id, data) => {
     `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
     [fixedData.owner_name, fixedData.owner_phone, fixedData.address, fixedData.area, fixedData.land_type, fixedData.description || '', fixedData.status, customData, id]
   );
+
+  const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
+  const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
+  const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9]+_[A-Z0-9]+_\d{4}$/.test(current.ma_de_xuat);
+  const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
+  const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
+  const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, null, null, { excludeKeys: exclude });
+  if (Object.keys(postResults).length > 0) {
+    const updatedDynamic = { ...mergedDynamic, ...postResults };
+    if (postResults.ma_de_xuat) {
+      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), postResults.ma_de_xuat, id]);
+    } else {
+      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
+    }
+  }
 };

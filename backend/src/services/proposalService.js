@@ -1,5 +1,4 @@
 const pool = require('../utils/db');
-const crypto = require('crypto');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
@@ -38,7 +37,8 @@ exports.createProposal = async (userId, data) => {
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await dataListService.applyDiaGioi(dynamicData);
 
-  const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
+  const customDataObj = { ...dynamicData };
+  const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
 
   const conn = await pool.getConnection();
   let recordId;
@@ -47,8 +47,8 @@ exports.createProposal = async (userId, data) => {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
     );
 
@@ -56,9 +56,9 @@ exports.createProposal = async (userId, data) => {
 
     postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, userId, null, { connection: conn });
     if (Object.keys(postResults).length > 0) {
-      const updatedDynamic = { ...dynamicData, ...postResults };
-      const updatedCustomData = JSON.stringify(updatedDynamic);
-      await conn.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [updatedCustomData, recordId]);
+      const updatedDynamic = { ...customDataObj, ...postResults };
+      const trackingCode = postResults.ma_de_xuat || null;
+      await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
     }
 
     await conn.commit();
@@ -101,15 +101,6 @@ const verifyCaptcha = async (token, ip) => {
   } catch {
     return false;
   }
-};
-
-const generateTrackingCode = async () => {
-  for (let i = 0; i < 5; i++) {
-    const code = 'DX-' + crypto.randomBytes(3).toString('hex').toUpperCase();
-    const [rows] = await pool.query('SELECT id FROM station_proposals WHERE tracking_code = ?', [code]);
-    if (rows.length === 0) return code;
-  }
-  throw new Error('Không sinh được mã tra cứu, vui lòng thử lại');
 };
 
 const maskPhone = (phone) => {
@@ -244,7 +235,6 @@ exports.createGuestProposal = async (data, ip) => {
     }
   }
 
-  const trackingCode = await generateTrackingCode();
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
   const conn = await pool.getConnection();
@@ -255,8 +245,8 @@ exports.createGuestProposal = async (data, ip) => {
 
     const [result] = await conn.query(
       `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip)
-       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', ?, ?)`,
-      [fixedData.latitude, fixedData.longitude, fixedData.owner_name, phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, trackingCode, ip || null]
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?)`,
+      [fixedData.latitude, fixedData.longitude, fixedData.owner_name, phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null]
     );
 
     recordId = result.insertId;
@@ -264,7 +254,8 @@ exports.createGuestProposal = async (data, ip) => {
     postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, null, null, { connection: conn });
     if (Object.keys(postResults).length > 0) {
       const updatedDynamic = { ...dynamicData, ...postResults };
-      await conn.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), recordId]);
+      const trackingCode = postResults.ma_de_xuat || null;
+      await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
     }
 
     await conn.commit();
@@ -278,7 +269,6 @@ exports.createGuestProposal = async (data, ip) => {
   const [proposal] = await pool.query('SELECT * FROM station_proposals WHERE id = ?', [recordId]);
   const finalData = dynamicUtils.mergeData(proposal[0], fieldDefs);
   Object.assign(finalData, postResults);
-  finalData.tracking_code = trackingCode;
   return finalData;
 };
 

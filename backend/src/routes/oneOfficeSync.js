@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middlewares/auth');
+const { requireAuth, requireAdmin } = require('../middlewares/auth');
 const syncService = require('../services/syncService');
 const templateService = require('../services/templateService');
 const apiConfigService = require('../services/apiConfigService');
@@ -105,7 +105,7 @@ router.post('/pull', requireAuth, async (req, res) => {
  *       200:
  *         description: Linked
  */
-router.post('/link', requireAuth, async (req, res) => {
+router.post('/link', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { proposalId, contactCode, apiConfigId } = req.body;
     if (!proposalId || !contactCode) {
@@ -139,7 +139,7 @@ router.post('/link', requireAuth, async (req, res) => {
  *       200:
  *         description: Unlinked
  */
-router.post('/unlink', requireAuth, async (req, res) => {
+router.post('/unlink', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { proposalId } = req.body;
     if (!proposalId) {

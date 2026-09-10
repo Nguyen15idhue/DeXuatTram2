@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin, requireUserManager } = require('../middlewares/auth');
 const queueService = require('../services/queueService');
 const queueWorker = require('../workers/queueWorker');
 
@@ -72,7 +72,7 @@ const queueWorker = require('../workers/queueWorker');
  *       403:
  *         description: Không có quyền SUPER_ADMIN
  */
-router.get('/', requireAuth, requireSuperAdmin, async (req, res) => {
+router.get('/', requireAuth, requireUserManager, async (req, res) => {
   try {
     const filters = {
       status: req.query.status,
@@ -85,6 +85,10 @@ router.get('/', requireAuth, requireSuperAdmin, async (req, res) => {
       date_from: req.query.date_from,
       date_to: req.query.date_to
     };
+
+    if (req.user.role === 'SALES') {
+      filters.created_by = req.user.id;
+    }
 
     Object.keys(filters).forEach(key => {
       if (filters[key] === undefined || filters[key] === null || filters[key] === '') {
@@ -122,10 +126,11 @@ router.get('/', requireAuth, requireSuperAdmin, async (req, res) => {
  *       200:
  *         description: Thống kê
  */
-router.get('/stats', requireAuth, requireSuperAdmin, async (req, res) => {
+router.get('/stats', requireAuth, requireUserManager, async (req, res) => {
   try {
     const apiConfigId = req.query.api_config_id ? parseInt(req.query.api_config_id) : undefined;
-    const stats = await queueService.getStats(apiConfigId);
+    const createdBy = req.user.role === 'SALES' ? req.user.id : undefined;
+    const stats = await queueService.getStats(apiConfigId, createdBy);
     const memoryQueue = queueService.getMemoryQueue();
     const workerStatus = queueWorker.getStatus();
 
@@ -169,13 +174,19 @@ router.get('/stats', requireAuth, requireSuperAdmin, async (req, res) => {
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/:id', requireAuth, requireSuperAdmin, async (req, res) => {
+router.get('/:id', requireAuth, requireUserManager, async (req, res) => {
   try {
     const job = await queueService.getById(parseInt(req.params.id));
     if (!job) {
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy queue job'
+      });
+    }
+    if (req.user.role === 'SALES' && job.created_by !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không có quyền xem log này'
       });
     }
     res.json({ success: true, data: job });

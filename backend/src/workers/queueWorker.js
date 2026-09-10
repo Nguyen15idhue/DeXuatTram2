@@ -1,12 +1,14 @@
 const queueService = require('../services/queueService');
 const oneOfficeService = require('../services/oneOfficeService');
 const apiConfigService = require('../services/apiConfigService');
+const dynamicEngineService = require('../services/dynamicEngineService');
 
 const POLL_INTERVAL_MS = 2000;
 const PROCESSING_DELAY_MS = 1500;
 
 let isRunning = false;
 let pollTimer = null;
+let started = false;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -66,13 +68,34 @@ const processPushJob = async (job) => {
     ? JSON.parse(job.request_payload)
     : job.request_payload;
 
-  const { api_config_id, contact_data, proposal_id } = requestPayload;
+  const { api_config_id, contact_data, proposal_id, was_linked, previous_contact_id } = requestPayload;
 
   if (!api_config_id || !contact_data) {
     throw new Error('Missing api_config_id or contact_data in request_payload');
   }
 
-  const result = await oneOfficeService.insertContact(api_config_id, contact_data);
+  const findExistingId = async () => {
+    const code = contact_data.code;
+    if (!code) return null;
+    try {
+      const detail = await oneOfficeService.getContactDetail(api_config_id, code);
+      if (!detail || !detail.success || !detail.data || detail.data.error) return null;
+      const inner = detail.data.data || detail.data;
+      const id = inner ? (inner.ID ?? inner.id ?? null) : null;
+      return (id !== null && id !== undefined && String(id).match(/^\d+$/)) ? String(id) : null;
+    } catch { return null; }
+  };
+
+  const existingId = await findExistingId();
+  let result;
+  let updated = false;
+  const recreated = !!was_linked && !existingId;
+  if (existingId) {
+    result = await oneOfficeService.updateContact(api_config_id, contact_data.code, contact_data);
+    updated = true;
+  } else {
+    result = await oneOfficeService.insertContact(api_config_id, contact_data);
+  }
 
   if (!result.success) {
     throw new Error(result.error || `1Office API error: ${result.status}`);
@@ -80,18 +103,38 @@ const processPushJob = async (job) => {
 
   if (proposal_id && result.data && !result.data.error) {
     const pool = require('../utils/db');
-    const contactCode = result.data.code || contact_data.code;
-    if (contactCode) {
+    const contactCode = (result.data.data && result.data.data.code) || result.data.code || contact_data.code;
+    const urlMatch = String(result.data.url || '').match(/[?&]ID=(\d+)/i);
+    const contactId = existingId || (urlMatch ? urlMatch[1] : null);
+    if (contactCode || contactId) {
       await pool.query(
-        `UPDATE station_proposals SET contact_1office_code = ?, sync_status = 'synced', last_synced_at = NOW(), updated_at = NOW() WHERE id = ?`,
-        [contactCode, proposal_id]
+        `UPDATE station_proposals SET contact_1office_id = COALESCE(?, contact_1office_id), contact_1office_code = COALESCE(?, contact_1office_code), sync_status = 'synced', last_synced_at = NOW(), updated_at = NOW() WHERE id = ?`,
+        [contactId, contactCode, proposal_id]
       );
+      try {
+        const [rows] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ?', [proposal_id]);
+        if (rows.length > 0) {
+          let cd = rows[0].custom_data;
+          if (typeof cd === 'string') {
+            try { cd = JSON.parse(cd); } catch { cd = {}; }
+          }
+          cd = cd || {};
+          const postResults = await dynamicEngineService.computePostFormulas('station_proposals', proposal_id, cd, null, null, { excludeKeys: ['ma_de_xuat'] });
+          if (postResults.id_1office !== undefined) {
+            cd.id_1office = postResults.id_1office;
+            await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(cd), proposal_id]);
+          }
+        }
+      } catch { /* silent */ }
     }
   }
 
   return {
     action: 'push',
-    contact_created: true,
+    contact_created: !updated && !recreated,
+    contact_updated: updated,
+    contact_recreated: recreated,
+    previous_contact_id: recreated ? (previous_contact_id || null) : null,
     api_response: result.data,
     response_time: result.responseTime
   };
@@ -108,18 +151,16 @@ const processPullJob = async (job) => {
     throw new Error('Missing api_config_id in request_payload');
   }
 
-  const result = await oneOfficeService.getContacts(api_config_id, filter || {});
-
-  if (!result.success) {
-    throw new Error(result.error || `1Office API error: ${result.status}`);
-  }
+  const syncService = require('../services/syncService');
+  const result = await syncService.processPull(api_config_id, filter || {});
 
   return {
     action: 'pull',
-    contacts_fetched: result.data.contacts ? result.data.contacts.length : 0,
-    total: result.data.total,
-    api_response: result.data,
-    response_time: result.responseTime
+    contacts_fetched: result.total,
+    created: result.created,
+    updated: result.updated,
+    skipped: result.skipped,
+    details: result.details
   };
 };
 
@@ -183,6 +224,7 @@ exports.start = async () => {
   console.log(`[QueueWorker] Requeued ${requeued.requeued} processing jobs, ${requeued.pending} pending jobs`);
 
   pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+  started = true;
   console.log(`[QueueWorker] Worker started, polling every ${POLL_INTERVAL_MS}ms`);
 };
 
@@ -190,6 +232,7 @@ exports.stop = () => {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
+    started = false;
     console.log('[QueueWorker] Worker stopped');
   }
 };
@@ -200,7 +243,7 @@ exports.processOne = async () => {
 
 exports.getStatus = () => {
   return {
-    isRunning,
+    isRunning: started,
     pollInterval: POLL_INTERVAL_MS,
     memoryQueue: queueService.getMemoryQueue()
   };
