@@ -180,6 +180,43 @@ git pull origin ui-redesign
 docker compose -f docker-compose.simple.yml up -d --build
 ```
 
+### 6.1 Lỗi `Your local changes ... would be overwritten by merge`
+
+**Biểu hiện:**
+```
+error: Your local changes to the following files would be overwritten by merge:
+        deploy-datadir.sh
+Please commit your changes or stash them before you merge.
+Aborting
+```
+**Nguyên nhân:** trên VPS có file (theo dõi bởi git) bị sửa cục bộ — thường do lần trước bạn sửa tay, hoặc file đã bị **xóa/đổi tên ở bản mới** nhưng còn bản cũ trên VPS.
+
+**Khắc phục:** trên VPS coi repo là chuẩn, bỏ hết thay đổi cục bộ rồi pull lại:
+```bash
+cd ~/DeXuatTram2
+git status --short              # xem file nào đang bị lệch
+git checkout -- deploy-datadir.sh   # bỏ thay đổi ở file bị báo (nếu muốn giữ thì git stash)
+git pull origin ui-redesign
+```
+Nếu còn nhiều file báo lỗi, bỏ tất cả:
+```bash
+git checkout -- .
+git pull origin ui-redesign
+```
+Hoặc dùng stash (giữ tạm thay đổi):
+```bash
+git stash
+git pull origin ui-redesign
+git stash pop
+```
+> `.env` là file **gitignore** nên không bị đụng — cấu hình của bạn vẫn giữ nguyên.
+
+Sau khi pull thành công, `update.sh` mới tồn tại để chạy:
+```bash
+chmod +x update.sh deploy.sh
+./update.sh
+```
+
 **Lưu ý:**
 - Nếu có **thay đổi schema DB**: phải chạy thêm script SQL tương ứng (dự án quản lý schema thủ công qua `database/*.sql`).
 - Nếu chỉ sửa frontend/backend → `up -d --build` là đủ, không mất dữ liệu.
