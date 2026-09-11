@@ -3,6 +3,7 @@ import { dynamicService, formService, stationService, adminUserService, adminPro
 import { useAuth } from '../../contexts/AuthContext';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
+import UserExternalPanel from './UserExternalPanel';
 import useDataListMap from '../../hooks/useDataListMap';
 import Toast from '../Toast';
 
@@ -374,6 +375,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
               {otherFields.length > 0 && renderFieldSection(otherFields, 'Thông tin khác')}
             </>
           )}
+          {entity === 'users' && record?.id && <UserExternalPanel userId={record.id} />}
         </div>
 
         <div className="popup-footer">

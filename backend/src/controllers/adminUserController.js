@@ -13,6 +13,16 @@ exports.getAll = async (req, res) => {
   }
 };
 
+exports.getOptions = async (req, res) => {
+  try {
+    const options = await adminUserService.getUserOptions();
+    res.json({ success: true, data: options });
+  } catch (error) {
+    console.error('Get user options error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.getById = async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
@@ -319,5 +329,47 @@ exports.changePassword = async (req, res) => {
   } catch (error) {
     console.error('Admin change password error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getExternal = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const user = await adminUserService.findById(targetId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+    const mappings = await adminUserService.getExternalMappings(targetId);
+    res.json({ success: true, data: mappings });
+  } catch (error) {
+    console.error('Admin get external mappings error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.setExternal = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const { system, external_id } = req.body || {};
+    const mapping = await adminUserService.setExternalMapping(targetId, system, external_id);
+    res.json({ success: true, data: mapping, message: 'Lưu liên kết hệ ngoài thành công' });
+  } catch (error) {
+    console.error('Admin set external mapping error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.deleteExternal = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const { system } = req.body || {};
+    const deleted = await adminUserService.deleteExternalMapping(targetId, system);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy liên kết' });
+    }
+    res.json({ success: true, message: 'Xóa liên kết thành công' });
+  } catch (error) {
+    console.error('Admin delete external mapping error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

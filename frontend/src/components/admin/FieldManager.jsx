@@ -11,7 +11,7 @@ import Pagination from '../Pagination';
 import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
 import FormulaEditor from '../dynamic/FormulaEditor';
 
-const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
@@ -75,7 +75,8 @@ const FieldManager = () => {
     data_list_column: '',
     data_list_label_column: '',
     parent_field: '',
-    relation_key: ''
+    relation_key: '',
+    auto_user: 'none'
   };
   const [form, setForm] = useState(defaultForm);
 
@@ -164,6 +165,13 @@ const FieldManager = () => {
         parsedTableConfig = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
       } catch {}
     }
+    let autoUser = 'none';
+    if (field.source_config && field.type === 'user') {
+      try {
+        const parsedSc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
+        autoUser = parsedSc.auto_user || 'none';
+      } catch {}
+    }
     setForm({
       entity: field.entity, key: field.key, label: field.label, type: field.type,
       source_type: field.source_type || 'json', required: !!field.required,
@@ -182,7 +190,8 @@ const FieldManager = () => {
       data_list_column: field.data_list_column || '',
       data_list_label_column: field.data_list_label_column || '',
       parent_field: field.parent_field || '',
-      relation_key: field.relation_key || ''
+      relation_key: field.relation_key || '',
+      auto_user: autoUser
     });
     setShowForm(true);
     setError('');
@@ -260,6 +269,9 @@ const FieldManager = () => {
     }
     if (form.type === 'table') {
       payload.table_config = form.table_config;
+    }
+    if (form.type === 'user') {
+      payload.source_config = (form.auto_user && form.auto_user !== 'none') ? { auto_user: form.auto_user } : null;
     }
     try {
       let res;
@@ -423,6 +435,25 @@ const FieldManager = () => {
                         {DATE_FORMAT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </div>
+                  </div>
+                )}
+
+                {(form.type === 'user') && (
+                  <div className="form-group-section">
+                    <h4>Cấu hình Người dùng</h4>
+                    <div className="form-group">
+                      <label>Tự động lấy người</label>
+                      <select value={form.auto_user || 'none'} onChange={(e) => updateForm('auto_user', e.target.value)}>
+                        <option value="none">Không (chọn thủ công)</option>
+                        <option value="current_user">Người đăng nhập (người tạo)</option>
+                        <option value="parent_sales">Sales quản lý (người tạo cấp trên)</option>
+                      </select>
+                    </div>
+                    {form.auto_user && form.auto_user !== 'none' && (
+                      <div style={{ fontSize: 12, color: '#6b7280' }}>
+                        Field sẽ tự điền và khóa (chỉ đọc) trên form, dùng để đẩy sang hệ ngoài.
+                      </div>
+                    )}
                   </div>
                 )}
 

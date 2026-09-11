@@ -53,6 +53,22 @@ router.get('/', requireAuth, requireUserManager, adminUserController.getAll);
 
 /**
  * @swagger
+ * /api/admin/users/options/all:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Danh sách user gọn (id, tên, quyền) cho select
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ */
+router.get('/options/all', requireAuth, adminUserController.getOptions);
+
+/**
+ * @swagger
  * /api/admin/users/{id}:
  *   get:
  *     tags: [Admin - Users]
@@ -343,5 +359,110 @@ router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeR
  *         description: Không tìm thấy user
  */
 router.patch('/:id/password', requireAuth, requireUserManager, adminUserController.changePassword);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/external:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Lấy danh sách liên kết hệ ngoài của user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.get('/:id/external', requireAuth, requireAdmin, adminUserController.getExternal);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/external:
+ *   put:
+ *     tags: [Admin - Users]
+ *     summary: Gán ID hệ ngoài cho user (vd 1office)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [system, external_id]
+ *             properties:
+ *               system:
+ *                 type: string
+ *                 example: 1office
+ *               external_id:
+ *                 type: string
+ *                 example: "4"
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.put('/:id/external', requireAuth, requireAdmin, adminUserController.setExternal);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/external:
+ *   delete:
+ *     tags: [Admin - Users]
+ *     summary: Xóa liên kết hệ ngoài của user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [system]
+ *             properties:
+ *               system:
+ *                 type: string
+ *                 example: 1office
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy liên kết
+ */
+router.delete('/:id/external', requireAuth, requireAdmin, adminUserController.deleteExternal);
 
 module.exports = router;

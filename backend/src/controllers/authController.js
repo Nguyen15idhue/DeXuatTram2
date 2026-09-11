@@ -79,6 +79,7 @@ exports.login = async (req, res) => {
           phone: user.phone,
           role: user.role,
           status: user.status,
+          parent_id: user.parent_id || null,
           avatar
         },
         token

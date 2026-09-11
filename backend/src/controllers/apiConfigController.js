@@ -1,4 +1,5 @@
 const apiConfigService = require('../services/apiConfigService');
+const oneOfficeService = require('../services/oneOfficeService');
 
 exports.getAll = async (req, res) => {
   try {
@@ -22,6 +23,24 @@ exports.getById = async (req, res) => {
   } catch (error) {
     console.error('Get api config error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.get1OfficeUsers = async (req, res) => {
+  try {
+    const { page = 1, limit = 100 } = req.query;
+    const result = await oneOfficeService.getUsers(req.params.id, { page, limit });
+    if (!result.success) {
+      return res.status(502).json({ success: false, message: result.error || 'Lỗi 1Office', data: result.data });
+    }
+    res.json({
+      success: true,
+      data: result.data.users,
+      pagination: { page: result.data.page, limit: result.data.limit, total: result.data.total }
+    });
+  } catch (error) {
+    console.error('Get 1Office users error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };
 

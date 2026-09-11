@@ -36,13 +36,15 @@ exports.getProposalFullById = async (id) => {
   );
   if (proposals.length === 0) return null;
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  return dynamicUtils.mergeData(proposals[0], fieldDefs);
+  const merged = dynamicUtils.mergeData(proposals[0], fieldDefs);
+  return dynamicUtils.enrichUserFields(merged, fieldDefs);
 };
 
 exports.createProposal = async (userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await dataListService.applyDiaGioi(dynamicData);
+  await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
 
   const customDataObj = { ...dynamicData };
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;

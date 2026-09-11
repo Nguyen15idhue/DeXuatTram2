@@ -50,6 +50,11 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
     return null;
   };
 
+  const toDisplayValue = (val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val) && typeof val.label === 'string') return val.label;
+    return val;
+  };
+
   const filteredData = useMemo(() => {
     if (!data) return [];
     const activeFilters = Object.entries(filters).filter(([, v]) => v.trim());
@@ -57,7 +62,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
 
     return data.filter(row => {
       return activeFilters.every(([key, filterVal]) => {
-        const val = getFieldValue(row, { key });
+        const val = toDisplayValue(getFieldValue(row, { key }));
         if (val === null || val === undefined) return false;
         return String(val).toLowerCase().includes(filterVal.toLowerCase());
       });
@@ -69,8 +74,8 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
     if (!sortConfig.key) return filteredData;
 
     return [...filteredData].sort((a, b) => {
-      const aVal = getFieldValue(a, { key: sortConfig.key });
-      const bVal = getFieldValue(b, { key: sortConfig.key });
+      const aVal = toDisplayValue(getFieldValue(a, { key: sortConfig.key }));
+      const bVal = toDisplayValue(getFieldValue(b, { key: sortConfig.key }));
 
       if (aVal === null || aVal === undefined) return 1;
       if (bVal === null || bVal === undefined) return -1;

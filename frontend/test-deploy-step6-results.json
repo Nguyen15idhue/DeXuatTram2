@@ -1,0 +1,26 @@
+{
+  "thoiGian": "2026-09-11T03:40:59.815Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "Form co 2 select nguoi dung",
+      "dat": true,
+      "ghiChu": "select = 2"
+    },
+    {
+      "ten": "Select co option ten nguoi dung",
+      "dat": true,
+      "ghiChu": "\"Admin\" = 6"
+    },
+    {
+      "ten": "Chon duoc nguoi dung",
+      "dat": true,
+      "ghiChu": "value = 1"
+    },
+    {
+      "ten": "Khong co loi console nghiem trong",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

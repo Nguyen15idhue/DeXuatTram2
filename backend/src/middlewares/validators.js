@@ -49,6 +49,13 @@ function validateDynamicFields(data, fieldDefs) {
           }
         }
         break;
+      case 'user': {
+        let rawUser = value;
+        if (typeof value === 'object' && value !== null) rawUser = value.id ?? value.user_id ?? value.value;
+        const userNum = Number(rawUser);
+        if (!Number.isInteger(userNum) || userNum <= 0) errors.push(`${fd.label} không hợp lệ`);
+        break;
+      }
       case 'table':
         if (value !== undefined && value !== null && value !== '' && !Array.isArray(value)) {
           errors.push(`${fd.label} phải là mảng`);

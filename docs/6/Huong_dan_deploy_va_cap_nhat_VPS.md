@@ -184,15 +184,11 @@ docker compose -f docker-compose.simple.yml up -d --build
 
 `update.sh` **tự chạy** `scripts/migrate.sh run` trước khi build. DB có bảng `schema_migrations` sẽ chỉ chạy các script mới.
 
-- **DB cũ chưa có tracking** (như VPS hiện tại): lần update đầu sẽ dừng và yêu cầu chạy một lần:
-  ```bash
-  scripts/migrate.sh mark-all --yes
-  ./update.sh
-  ```
-  Chỉ làm **một lần** sau khi đã xác minh schema hiện tại đúng.
+- **Trạng thái VPS (10/09/2026):** đã `mark-all` một lần — **46 file, 0 chờ**. Từ nay `./update.sh` tự áp dụng script DB mới, không cần làm tay.
+- **DB cũ chưa có tracking:** chạy một lần `scripts/migrate.sh mark-all --yes` (sau khi xác minh schema), rồi `./update.sh`.
 - **Kiểm tra:** `scripts/migrate.sh status` (xem file nào chưa chạy).
-- Script DB mới viết dạng **tiến tới, idempotent**, đặt trong `database/` và đánh số. Không DROP.
-- DB mới dựng bằng **datadir + dump chuẩn rồi `mark-all`**, không chạy `01-create-tables.sql`.
+- Script DB mới viết dạng **tiến tới, idempotent**, đặt trong `database/` và đánh số. Không DROP. Không tự chạy `01-create-tables.sql`.
+- DB mới dựng bằng **datadir + dump chuẩn rồi `mark-all`**.
 
 ### 6.1 Lỗi `Your local changes ... would be overwritten by merge`
 

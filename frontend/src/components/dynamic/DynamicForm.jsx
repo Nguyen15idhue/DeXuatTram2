@@ -42,8 +42,22 @@ const customFunctions = {
 };
 math.import(customFunctions, { override: false });
 
+const parseSourceConfig = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+const resolveAutoUserId = (sc, authUser) => {
+  const mode = sc && sc.auto_user;
+  if (mode !== 'current_user' && mode !== 'parent_sales') return null;
+  if (!authUser || !authUser.id) return null;
+  if (mode === 'parent_sales') return authUser.parent_id || authUser.id;
+  return authUser.id;
+};
+
 const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {} }) => {
-  const { token } = useAuth();
+  const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [formConfig, setFormConfig] = useState(null);
@@ -78,7 +92,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
   useEffect(() => {
     if (resolvedFormId) loadFormConfig();
-  }, [resolvedFormId]);
+  }, [resolvedFormId, authUser?.id, authUser?.parent_id]);
 
   const loadFormConfig = async () => {
     try {
@@ -88,6 +102,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         setFormConfig(res.data.form);
         const fieldList = (res.data.fields || []).map(f => {
           const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
+          const sc = parseSourceConfig(f.source_config);
+          const autoUserId = f.type === 'user' ? resolveAutoUserId(sc, authUser) : null;
           return {
             ...f,
             config: cfg,
@@ -96,13 +112,17 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             readonly: cfg.readonly || false,
             labelOverride: cfg.labelOverride || '',
             placeholderOverride: cfg.placeholderOverride || '',
-            requiredOverride: cfg.requiredOverride
+            requiredOverride: cfg.requiredOverride,
+            autoUser: sc.auto_user || 'none',
+            autoUserId
           };
         });
         setFields(fieldList);
         const defaults = {};
         fieldList.forEach(f => {
-          if (initialData[f.key] !== undefined && initialData[f.key] !== null) {
+          if (f.autoUserId) {
+            defaults[f.key] = { id: f.autoUserId };
+          } else if (initialData[f.key] !== undefined && initialData[f.key] !== null) {
             defaults[f.key] = initialData[f.key];
           } else if (f.default_value !== undefined) {
             defaults[f.key] = f.default_value;
@@ -424,7 +444,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || false
+      readonly: field.readonly || !!field.autoUserId
     };
 
     if (field.type === 'formula') {
@@ -447,6 +467,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         value={formData[field.key]}
         onChange={(val) => handleChange(field.key, val)}
         error={errors[field.key]}
+        disabled={fieldForRender.readonly}
         entityType={entity}
         uploadUrl={guestMode ? '/files/guest-upload' : '/files/upload'}
         allowedOptions={optionAllowlist[field.key] || null}

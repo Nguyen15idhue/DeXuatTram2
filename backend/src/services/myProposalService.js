@@ -44,9 +44,10 @@ exports.getUserProposals = async (userId, status, search, page, limit) => {
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const merged = proposals.map(p => dynamicUtils.mergeData(p, fieldDefs));
+  const enriched = await dynamicUtils.enrichUserFieldsMany(merged, fieldDefs);
 
   return {
-    proposals: merged,
+    proposals: enriched,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
   };
 };
@@ -56,7 +57,8 @@ exports.getProposalById = async (id) => {
   if (proposals.length === 0) return null;
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  return dynamicUtils.mergeData(proposals[0], fieldDefs);
+  const merged = dynamicUtils.mergeData(proposals[0], fieldDefs);
+  return dynamicUtils.enrichUserFields(merged, fieldDefs);
 };
 
 exports.getProposalByIdAndUser = async (id, userId) => {
@@ -82,6 +84,7 @@ exports.updateProposal = async (id, userId, data) => {
     } catch { return false; }
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
+  await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
 
   const [existing] = await pool.query('SELECT custom_data, contact_1office_code FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data

@@ -207,7 +207,7 @@ function buildHeaderMap(headerRow, columns) {
   return map;
 }
 
-function parseExcelRow(row, columns, entity, headerMap) {
+function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
   const fixedData = {};
   const dynamicData = {};
   const errors = [];
@@ -295,6 +295,26 @@ function parseExcelRow(row, columns, entity, headerMap) {
         }
       } else if (col.type === 'boolean') {
         dynamicData[col.key] = value === 'true' || value === '1' || value === 'TRUE';
+      } else if (col.type === 'user') {
+        if (value === '') {
+          dynamicData[col.key] = '';
+        } else {
+          const numVal = Number(value);
+          if (Number.isInteger(numVal) && numVal > 0) {
+            if (userMap && userMap.byId && userMap.byId.has(numVal)) {
+              dynamicData[col.key] = { id: numVal };
+            } else {
+              errors.push(`${col.label}: người dùng không tồn tại (${value})`);
+            }
+          } else {
+            const key = String(value).trim().toLowerCase();
+            if (userMap && userMap.byName && userMap.byName.has(key)) {
+              dynamicData[col.key] = { id: userMap.byName.get(key) };
+            } else {
+              errors.push(`${col.label}: không tìm thấy người dùng "${value}"`);
+            }
+          }
+        }
       } else {
         dynamicData[col.key] = value;
       }
@@ -304,7 +324,14 @@ function parseExcelRow(row, columns, entity, headerMap) {
   return { fixedData, dynamicData, errors };
 }
 
-function exportRowToValues(row, columns, idx, token = '') {
+async function getUserLabelMap() {
+  const [rows] = await pool.query('SELECT id, full_name FROM users');
+  const byId = new Map(rows.map(r => [Number(r.id), r.full_name || '']));
+  const byName = new Map(rows.map(r => [String(r.full_name || '').trim().toLowerCase(), Number(r.id)]));
+  return { byId, byName };
+}
+
+function exportRowToValues(row, columns, idx, token = '', userMap = null) {
   return columns.map(col => {
     if (col.key === '_stt') return idx + 1;
 
@@ -319,6 +346,25 @@ function exportRowToValues(row, columns, idx, token = '') {
     if (value == null) return '';
 
     if (col.type === 'password') return '********';
+
+    if (col.type === 'user') {
+      let uid = null;
+      let label = '';
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const raw = value.id ?? value.user_id ?? value.value;
+        const n = Number(raw);
+        if (Number.isInteger(n) && n > 0) uid = n;
+        if (value.label) label = String(value.label);
+      } else if (value !== null && value !== undefined && value !== '') {
+        const n = Number(value);
+        if (Number.isInteger(n) && n > 0) uid = n;
+        else label = String(value).trim();
+      }
+      if (!label && uid !== null && userMap && userMap.has(uid)) label = userMap.get(uid);
+      if (label) return label;
+      if (uid !== null) return `User #${uid}`;
+      return '';
+    }
 
     if (col.type === 'file') {
       const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/api\/?$/, '');
@@ -372,6 +418,13 @@ exports.exportDynamic = async (req, res) => {
 
     const columns = await buildExportColumns(entity, viewId);
     const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
+    let userMap = null;
+    if (columns.some(c => c.type === 'user')) {
+      try {
+        const m = await getUserLabelMap();
+        userMap = m.byId;
+      } catch { /* silent */ }
+    }
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(entity);
@@ -380,7 +433,7 @@ exports.exportDynamic = async (req, res) => {
     styleHeaderRow(sheet);
 
     rows.forEach((row, idx) => {
-      sheet.addRow(exportRowToValues(row, columns, idx, token));
+      sheet.addRow(exportRowToValues(row, columns, idx, token, userMap));
     });
 
     autoWidthColumns(sheet, columns);
@@ -466,13 +519,19 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
     });
     autoWidthColumns(ketqua, [{ label: 'STT' }, { label: 'Bên A' }, { label: 'Bên B' }, { label: 'Khoảng cách (m)' }]);
 
+    let dupUserMap = null;
+    try {
+      const m = await getUserLabelMap();
+      dupUserMap = m.byId;
+    } catch { /* silent */ }
+
     const fillSide = (name, side, records, columns) => {
       const sheet = workbook.addWorksheet(name);
       sheet.addRow(columns.map(c => c.label));
       styleHeaderRow(sheet);
       side.forEach((item, idx) => {
         const row = records[`${item.kind}:${item.id}`];
-        sheet.addRow(row ? exportRowToValues(row, columns, idx, token) : columns.map(() => ''));
+        sheet.addRow(row ? exportRowToValues(row, columns, idx, token, dupUserMap) : columns.map(() => ''));
       });
       autoWidthColumns(sheet, columns);
     };
@@ -525,6 +584,12 @@ exports.importPreviewDynamic = async (req, res) => {
     const validRows = [];
     const errors = [];
     const headerMap = buildHeaderMap(sheet.getRow(1), columns);
+    let importUserMap = null;
+    if (columns.some(c => c.type === 'user')) {
+      try {
+        importUserMap = await getUserLabelMap();
+      } catch { /* silent */ }
+    }
 
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
@@ -532,7 +597,7 @@ exports.importPreviewDynamic = async (req, res) => {
       const isEmpty = row.values.every((v, i) => i === 0 || v == null || v === '');
       if (isEmpty) return;
 
-      const parsed = parseExcelRow(row, columns, entity, headerMap);
+      const parsed = parseExcelRow(row, columns, entity, headerMap, importUserMap);
 
       if (parsed.errors.length > 0) {
         errors.push({ row: rowNumber, errors: parsed.errors });

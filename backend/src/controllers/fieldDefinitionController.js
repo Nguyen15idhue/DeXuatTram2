@@ -53,7 +53,7 @@ exports.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Label không được để trống' });
     }
 
-    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
+    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
     if (type && !allowedTypes.includes(type)) {
       return res.status(400).json({ success: false, message: `Type phải là một trong: ${allowedTypes.join(', ')}` });
     }
@@ -112,7 +112,7 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Label không được để trống' });
     }
 
-    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
+    const allowedTypes = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
     if (type && !allowedTypes.includes(type)) {
       return res.status(400).json({ success: false, message: `Type phải là một trong: ${allowedTypes.join(', ')}` });
     }

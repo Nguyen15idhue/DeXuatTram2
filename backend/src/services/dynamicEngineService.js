@@ -225,6 +225,23 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
 
   const results = {};
   const excludeKeys = new Set(options.excludeKeys || []);
+  const userFieldKeys = fieldDefs.filter(f => f.type === 'user').map(f => f.key);
+  const userLabelMap = {};
+  if (userFieldKeys.length > 0) {
+    const uidSet = new Set();
+    for (const k of userFieldKeys) {
+      const v = recordData?.[k];
+      const id = (v && typeof v === 'object') ? Number(v.id ?? v.user_id ?? v.value) : Number(v);
+      if (Number.isInteger(id) && id > 0) uidSet.add(id);
+    }
+    if (uidSet.size > 0) {
+      try {
+        const ids = [...uidSet];
+        const [urows] = await pool.query(`SELECT id, full_name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+        for (const r of urows) userLabelMap[Number(r.id)] = r.full_name || '';
+      } catch { /* silent */ }
+    }
+  }
   for (const field of postFormulaFields) {
     const fc = typeof field.formula_config === 'string' ? (() => { try { return JSON.parse(field.formula_config); } catch { return {}; } })() : field.formula_config;
     if (!fc.expression) continue;
@@ -239,6 +256,11 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
     const scope = { ...recordData };
     for (const [key, arr] of Object.entries(tableColArrays)) {
       scope[key] = arr;
+    }
+    for (const k of userFieldKeys) {
+      const v = scope[k];
+      const id = (v && typeof v === 'object') ? Number(v.id ?? v.user_id ?? v.value) : Number(v);
+      if (Number.isInteger(id) && id > 0 && userLabelMap[id]) scope[k] = userLabelMap[id];
     }
     for (const [k, v] of Object.entries(metadata)) {
       scope[k] = v;

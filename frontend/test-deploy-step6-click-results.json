@@ -1,0 +1,36 @@
+{
+  "thoiGian": "2026-09-11T03:44:50.634Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "ADMIN thay chip nguoi dang button",
+      "dat": true,
+      "ghiChu": "button = 4"
+    },
+    {
+      "ten": "ADMIN click mo chi tiet user",
+      "dat": true,
+      "ghiChu": "\"admin@station.com\" = 1"
+    },
+    {
+      "ten": "ADMIN khong loi console",
+      "dat": true,
+      "ghiChu": "không có"
+    },
+    {
+      "ten": "CTV khong thay chip dang button",
+      "dat": true,
+      "ghiChu": "button = 0"
+    },
+    {
+      "ten": "CTV van thay ten (plain text)",
+      "dat": true,
+      "ghiChu": "\"Admin\" = 2"
+    },
+    {
+      "ten": "CTV khong loi console",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

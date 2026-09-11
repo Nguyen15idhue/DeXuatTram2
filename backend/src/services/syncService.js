@@ -32,6 +32,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
 
   const mappings = await fieldMappingService.getAllByConfig(apiConfigId);
   const pushMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'push' || m.direction === 'both'));
+  const system = (config && config.system_key) || '1office';
 
   const results = [];
   for (const proposalId of proposalIds) {
@@ -46,7 +47,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
     const contactData = {};
     for (const mapping of pushMappings) {
       const value = proposal[mapping.source_field] || (proposal.custom_data && proposal.custom_data[mapping.source_field]);
-      const transformed = fieldMapper.transformPush(value, mapping);
+      const transformed = await fieldMapper.transformPush(value, mapping, system, apiConfigId);
       if (transformed !== null && transformed !== undefined) {
         contactData[mapping.target_field] = transformed;
       }
@@ -121,13 +122,16 @@ exports.processPull = async (apiConfigId, filter) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const mappings = await fieldMappingService.getAllByConfig(apiConfigId);
   const pullMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'pull' || m.direction === 'both'));
+  const pullConfig = await apiConfigService.getById(apiConfigId);
+  const pullSystem = (pullConfig && pullConfig.system_key) || '1office';
+  const pullRawFields = [...new Set(pullMappings.filter(m => m.target_field_type === 'user').map(m => m.target_field))];
 
   const PAGE_LIMIT = 50;
   const contacts = [];
   let page = 1;
   let total = Infinity;
   while (contacts.length < total) {
-    const pageResult = await oneOfficeService.getContacts(apiConfigId, { ...(filter || {}), page, limit: PAGE_LIMIT });
+    const pageResult = await oneOfficeService.getContacts(apiConfigId, { ...(filter || {}), page, limit: PAGE_LIMIT, fieldRaws: pullRawFields });
     if (!pageResult.success) {
       throw new Error(pageResult.error || 'Không thể lấy contacts từ 1Office');
     }
@@ -155,7 +159,7 @@ exports.processPull = async (apiConfigId, filter) => {
     const proposalData = {};
     for (const mapping of pullMappings) {
       const value = contact[mapping.target_field];
-      const transformed = fieldMapper.transformPull(value, mapping);
+      const transformed = await fieldMapper.transformPull(value, mapping, pullSystem, apiConfigId);
       if (transformed !== null && transformed !== undefined && transformed !== '' && !(Array.isArray(transformed) && transformed.length === 0)) {
         proposalData[mapping.source_field] = transformed;
       }

@@ -1,4 +1,31 @@
-const ALLOWED_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
+const adminUserService = require('./adminUserService');
+const oneOfficeService = require('./oneOfficeService');
+
+const ONE_OFFICE_USER_VALUE_CACHE = {};
+const ONE_OFFICE_USER_VALUE_TTL = 10 * 60 * 1000;
+
+const getOneOfficeUserMaps = async (apiConfigId) => {
+  const now = Date.now();
+  const cached = ONE_OFFICE_USER_VALUE_CACHE[apiConfigId];
+  if (cached && now - cached.at < ONE_OFFICE_USER_VALUE_TTL) return cached.maps;
+  const res = await oneOfficeService.getUsers(apiConfigId, { limit: 100 });
+  const users = (res && res.data && Array.isArray(res.data.users)) ? res.data.users : null;
+  if (!users) throw new Error('Không lấy được danh sách user hệ ngoài');
+  const valueByPersonnel = {};
+  const personnelByApiId = {};
+  users.forEach(u => {
+    const pid = (u.personnel_id !== null && u.personnel_id !== undefined) ? String(u.personnel_id) : '';
+    const code = (u.code !== null && u.code !== undefined && String(u.code).trim() !== '') ? String(u.code).trim() : '';
+    const val = code || (u.fullname ? String(u.fullname).trim() : '');
+    if (pid !== '' && val) valueByPersonnel[pid] = val;
+    if (u.ID !== null && u.ID !== undefined && pid !== '') personnelByApiId[String(u.ID)] = pid;
+  });
+  const maps = { valueByPersonnel, personnelByApiId };
+  ONE_OFFICE_USER_VALUE_CACHE[apiConfigId] = { at: now, maps };
+  return maps;
+};
+
+const ALLOWED_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
 
 const ONE_OFFICE_FIELDS = [
   { key: 'code', label: 'Mã', type: 'text', required: true },
@@ -20,8 +47,8 @@ const ONE_OFFICE_FIELDS = [
   { key: 'status_id', label: 'Trạng thái', type: 'text', required: false },
   { key: 'source_id', label: 'Nguồn liên hệ', type: 'text', required: false },
   { key: 'desc', label: 'Mô tả', type: 'textarea', required: false },
-  { key: 'user_ids', label: 'Phụ trách', type: 'text', required: false },
-  { key: 'manager_user_ids', label: 'Người giao phụ trách', type: 'text', required: false },
+  { key: 'user_ids', label: 'Phụ trách', type: 'user', required: false },
+  { key: 'manager_user_ids', label: 'Người giao phụ trách', type: 'user', required: false },
   { key: 'trade_ids', label: 'Lĩnh vực', type: 'text', required: false },
   { key: 'tax_number', label: 'Mã số thuế/ĐKKD', type: 'text', required: false },
   { key: 'established_date', label: 'Ngày thành lập', type: 'date', required: false },
@@ -57,7 +84,7 @@ exports.isUnsupportedTarget = (key) => ONE_OFFICE_UNSUPPORTED.includes(String(ke
 exports.isSpecialTarget = (key) => ONE_OFFICE_SPECIAL.includes(String(key || ''));
 exports.buildFilesTarget = () => ({ key: 'files', label: 'Tệp đính kèm', type: 'json', required: false, options: [] });
 
-exports.transformPush = (value, mapping) => {
+exports.transformPush = async (value, mapping, system = null, apiConfigId = null) => {
   if (value === null || value === undefined || value === '') {
     return mapping.default_value || null;
   }
@@ -98,12 +125,14 @@ exports.transformPush = (value, mapping) => {
       return null;
     case 'table':
       return exports.transformTable(value, rules);
+    case 'user':
+      return exports.transformUserPush(value, mapping, system, apiConfigId);
     default:
       return String(value);
   }
 };
 
-exports.transformPull = (value, mapping) => {
+exports.transformPull = async (value, mapping, system = null, apiConfigId = null) => {
   if (value === null || value === undefined || value === '') {
     return null;
   }
@@ -150,6 +179,8 @@ exports.transformPull = (value, mapping) => {
       return null;
     case 'table':
       return value;
+    case 'user':
+      return exports.transformUserPull(value, mapping, system, apiConfigId);
     default:
       return value;
   }
@@ -288,4 +319,75 @@ exports.transformTable = (value, rules) => {
   if (Array.isArray(value)) return JSON.stringify(value);
   if (typeof value === 'object' && value !== null) return JSON.stringify(value);
   return String(value);
+};
+
+exports.resolveUserId = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  let raw = value;
+  if (typeof value === 'object' && value !== null) {
+    raw = value.id ?? value.user_id ?? value.value;
+  }
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+exports.transformUser = (value, rules) => {
+  const id = exports.resolveUserId(value);
+  return id === null ? null : String(id);
+};
+
+exports.transformUserPush = async (value, mapping, system, apiConfigId = null) => {
+  const id = exports.resolveUserId(value);
+  if (id === null) return null;
+  if (!system) return String(id);
+  try {
+    const ext = await adminUserService.findExternalByUser(id, system);
+    if (!ext) {
+      console.warn(`[fieldMapper] user ${id} chua co map he ${system}, bo qua.`);
+      return null;
+    }
+    let outgoing = String(ext);
+    if (apiConfigId) {
+      try {
+        const maps = await getOneOfficeUserMaps(apiConfigId);
+        const resolved = maps.valueByPersonnel[outgoing];
+        if (!resolved) {
+          console.warn(`[fieldMapper] khong tim thay nhan su he ngoai personnel_id=${outgoing} trong danh sach, bo qua field.`);
+          return null;
+        }
+        outgoing = resolved;
+      } catch (err) {
+        console.warn('[fieldMapper] khong lay duoc danh sach user he ngoai, bo qua field:', err.message);
+        return null;
+      }
+    }
+    return outgoing;
+  } catch (err) {
+    console.error('[fieldMapper] transformUserPush error:', err.message);
+    return null;
+  }
+};
+
+exports.transformUserPull = async (value, mapping, system, apiConfigId = null) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (!system) return value;
+  const ext = String(value).trim();
+  if (!ext) return null;
+  try {
+    let personnelId = ext;
+    if (apiConfigId) {
+      try {
+        const maps = await getOneOfficeUserMaps(apiConfigId);
+        if (maps.personnelByApiId[ext]) personnelId = maps.personnelByApiId[ext];
+      } catch (err) {
+        console.warn('[fieldMapper] khong lay duoc danh sach user he ngoai (pull), dung gia tri goc:', err.message);
+      }
+    }
+    const found = await adminUserService.findUserByExternal(system, personnelId);
+    if (!found) return null;
+    return { id: Number(found.user_id) };
+  } catch (err) {
+    console.error('[fieldMapper] transformUserPull error:', err.message);
+    return null;
+  }
 };

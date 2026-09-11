@@ -313,6 +313,7 @@ DynamicField render: custom dropdown with badge styling
 - **5/14 source types chuyển sang text**: url, multiselect, datetime, formula, table
 - **1Office select fields dùng ID**: formal_name (1=Ông), scale_id (3=25-50 NV)
 - **1Office cf2 dùng label**: "VIP", "VVIP" (KHÔNG phải ID)
+- **1Office `user_ids`/`manager_user_ids` nhận CODE/TÊN, KHÔNG nhận ID**: kiểu `string comma` (vd `'NV06,NV08,Nguyễn Văn C'`). `user_external_map.external_id` lưu **`personnel_id`** ("ID Hồ sơ nhân sự" trong UI 1Office). Push quy đổi `personnel_id` → `code` (ưu tiên) hoặc `fullname`; pull dùng `field_raws=user_ids,manager_user_ids` trả `ID` liên hệ → quy đổi `ID` → `personnel_id`. Cần `admin_token` trong `api_configs.auth_config`; thiếu → bỏ qua field (không gửi sai). Lưu ý 3 ID khác nhau: `ID` (contact), `personnel_id`, `code`.
 - **File đính kèm**: field `files` = JSON string `[{name,file}]` trong body `contact/insert` (hoặc `update`); KHÔNG dùng endpoint upload-file riêng; gửi **tất cả file trong 1 request**; `update` **append** file (chỉ gửi file mới để tránh trùng); tên file nên **bỏ đuôi** vì 1Office tự thêm đuôi theo nội dung
 - **Mapping target đặc biệt**: `desc` (nguồn = Desc Template, cố định) và `files` (gộp mọi field file) luôn link sẵn; `api_field_mappings` unique theo `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn)
 - **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region — API nhận nhưng không lưu (khóa kéo–thả ở FieldMappingPanel)

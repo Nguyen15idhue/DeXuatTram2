@@ -1,0 +1,21 @@
+{
+  "thoiGian": "2026-09-11T03:31:14.876Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "Form hien thi truong Nguoi phu trach",
+      "dat": true,
+      "ghiChu": "\"Người phụ trách\" = 1"
+    },
+    {
+      "ten": "Form hien thi truong Nguoi giao phu trach",
+      "dat": true,
+      "ghiChu": "\"Người giao phụ trách\" = 1"
+    },
+    {
+      "ten": "Khong co loi console nghiem trong",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

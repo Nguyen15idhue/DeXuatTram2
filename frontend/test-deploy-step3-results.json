@@ -1,0 +1,21 @@
+{
+  "thoiGian": "2026-09-11T03:20:36.291Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "Trang quan ly users hien thi bang",
+      "dat": true,
+      "ghiChu": "table = 1"
+    },
+    {
+      "ten": "Danh sach co tai khoan admin",
+      "dat": true,
+      "ghiChu": "\"admin@station.com\" = 1"
+    },
+    {
+      "ten": "Khong co loi console nghiem trong",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

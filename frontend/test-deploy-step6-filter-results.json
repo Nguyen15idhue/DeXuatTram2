@@ -1,0 +1,31 @@
+{
+  "thoiGian": "2026-09-11T03:50:04.104Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "Bang co du lieu",
+      "dat": true,
+      "ghiChu": "rows = 10"
+    },
+    {
+      "ten": "Co o loc (2 cot user)",
+      "dat": true,
+      "ghiChu": "inputs = 2"
+    },
+    {
+      "ten": "Loc theo ten giam so dong",
+      "dat": true,
+      "ghiChu": "truoc=10 sau=4"
+    },
+    {
+      "ten": "Sap xep theo cot khong loi",
+      "dat": true,
+      "ghiChu": "click sort OK"
+    },
+    {
+      "ten": "Khong loi console",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

@@ -29,6 +29,17 @@ const getToken = async (apiConfigId) => {
   };
 };
 
+const getAdminToken = async (apiConfigId) => {
+  const config = await apiConfigService.getById(apiConfigId);
+  if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
+
+  const authConfig = typeof config.auth_config === 'string' ? JSON.parse(config.auth_config) : config.auth_config;
+  return {
+    baseUrl: config.base_url.replace(/\/$/, ''),
+    token: authConfig.admin_token || authConfig.token || authConfig.access_token || ''
+  };
+};
+
 const requestWithRetry = async (method, url, body, token, retryCount = 0) => {
   await enforceRateLimit();
 
@@ -101,6 +112,24 @@ const requestWithRetry = async (method, url, body, token, retryCount = 0) => {
   }
 };
 
+exports.getUsers = async (apiConfigId, params = {}) => {
+  const { baseUrl, token } = await getAdminToken(apiConfigId);
+  if (!token) throw Object.assign(new Error('Thiếu admin token 1Office'), { statusCode: 400 });
+  const page = Math.max(1, parseInt(params.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(params.limit) || 100));
+  const url = `${baseUrl}/api/admin/user/gets?page=${page}&limit=${limit}`;
+  const result = await requestWithRetry('GET', url, null, token);
+  if (result.success && result.data && !result.data.error) {
+    result.data = {
+      users: result.data.data || [],
+      total: result.data.total_item || 0,
+      page,
+      limit
+    };
+  }
+  return result;
+};
+
 exports.getContacts = async (apiConfigId, params = {}) => {
   const { baseUrl, token } = await getToken(apiConfigId);
   const queryParams = {};
@@ -111,7 +140,9 @@ exports.getContacts = async (apiConfigId, params = {}) => {
   if (params.status_id) queryParams.status_id = params.status_id;
 
   const queryString = Object.entries(queryParams).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  const url = `${baseUrl}/api/customer/contact/gets${queryString ? '?' + queryString : ''}`;
+  let url = `${baseUrl}/api/customer/contact/gets${queryString ? '?' + queryString : ''}`;
+  const fr = Array.isArray(params.fieldRaws) ? params.fieldRaws.filter(Boolean).join(',') : String(params.fieldRaws || '').trim();
+  if (fr) url += (url.includes('?') ? '&' : '?') + 'field_raws=' + fr;
 
   const result = await requestWithRetry('GET', url, null, token);
   if (result.success && result.data && !result.data.error) {
@@ -123,9 +154,12 @@ exports.getContacts = async (apiConfigId, params = {}) => {
   return result;
 };
 
-exports.getContactDetail = async (apiConfigId, code) => {
+exports.getContactDetail = async (apiConfigId, code, fieldRaws = null) => {
   const { baseUrl, token } = await getToken(apiConfigId);
-  return requestWithRetry('GET', `${baseUrl}/api/customer/contact/item?code=${encodeURIComponent(code)}`, null, token);
+  let url = `${baseUrl}/api/customer/contact/item?code=${encodeURIComponent(code)}`;
+  const fr = Array.isArray(fieldRaws) ? fieldRaws.filter(Boolean).join(',') : String(fieldRaws || '').trim();
+  if (fr) url += `&field_raws=${fr}`;
+  return requestWithRetry('GET', url, null, token);
 };
 
 exports.insertContact = async (apiConfigId, contactData) => {

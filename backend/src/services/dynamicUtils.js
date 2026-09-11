@@ -122,6 +122,18 @@ exports.validateField = (fieldDef, value) => {
       break;
     }
 
+    case 'user': {
+      let rawUserId = value;
+      if (typeof value === 'object' && value !== null) {
+        rawUserId = value.id ?? value.user_id ?? value.value;
+      }
+      const userIdNum = Number(rawUserId);
+      if (!Number.isInteger(userIdNum) || userIdNum <= 0) {
+        errors.push(`${fieldDef.label} không hợp lệ`);
+      }
+      break;
+    }
+
     case 'textarea':
     case 'text':
     case 'formula':
@@ -147,6 +159,27 @@ exports.validateData = async (entity, data, fieldDefs) => {
     const value = data[fieldDef.key];
     const errors = exports.validateField(fieldDef, value);
     allErrors.push(...errors);
+  }
+
+  const userChecks = [];
+  for (const fieldDef of fieldDefs) {
+    if (fieldDef.type !== 'user') continue;
+    const value = data[fieldDef.key];
+    if (value === undefined || value === null || value === '') continue;
+    let raw = value;
+    if (typeof value === 'object' && value !== null) raw = value.id ?? value.user_id ?? value.value;
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > 0) userChecks.push({ fieldDef, id: n });
+  }
+  if (userChecks.length > 0) {
+    const ids = [...new Set(userChecks.map(u => u.id))];
+    try {
+      const [rows] = await pool.query(`SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      const found = new Set(rows.map(r => Number(r.id)));
+      for (const { fieldDef, id } of userChecks) {
+        if (!found.has(id)) allErrors.push(`${fieldDef.label} không tồn tại`);
+      }
+    } catch { /* silent */ }
   }
 
   return allErrors;
@@ -202,6 +235,46 @@ exports.mergeData = (row, fieldDefs) => {
   return result;
 };
 
+const parseSourceConfig = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+exports.parseSourceConfig = parseSourceConfig;
+
+exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection = null) => {
+  if (!dynamicData || !fieldDefs || fieldDefs.length === 0) return dynamicData;
+  const autoFields = fieldDefs.filter(f => {
+    if (f.type !== 'user') return false;
+    const sc = parseSourceConfig(f.source_config);
+    return sc.auto_user === 'current_user' || sc.auto_user === 'parent_sales';
+  });
+  if (autoFields.length === 0) return dynamicData;
+
+  const db = connection || pool;
+  const currentId = Number(userId) > 0 ? Number(userId) : null;
+  let parentId = null;
+  if (currentId) {
+    try {
+      const [rows] = await db.query('SELECT parent_id FROM users WHERE id = ?', [currentId]);
+      if (rows.length > 0 && rows[0].parent_id) parentId = Number(rows[0].parent_id);
+    } catch { /* silent */ }
+  }
+
+  autoFields.forEach(f => {
+    const sc = parseSourceConfig(f.source_config);
+    if (!currentId) {
+      dynamicData[f.key] = '';
+      return;
+    }
+    const id = sc.auto_user === 'parent_sales' ? (parentId || currentId) : currentId;
+    dynamicData[f.key] = { id };
+  });
+
+  return dynamicData;
+};
+
 exports.buildDynamicSetClause = (data, fieldDefs) => {
   if (!fieldDefs || fieldDefs.length === 0) return null;
 
@@ -223,4 +296,79 @@ exports.getFieldDefinitionsByEntity = async (entity) => {
     [entity, 'active']
   );
   return rows;
+};
+
+exports.enrichUserFields = async (record, fieldDefs, preloadedMap = null) => {
+  if (!record || !fieldDefs || fieldDefs.length === 0) return record;
+  const userFields = fieldDefs.filter(f => f.type === 'user');
+  if (userFields.length === 0) return record;
+  const getId = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const raw = (typeof v === 'object' && v !== null) ? (v.id ?? v.user_id ?? v.value) : v;
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const idSet = new Set();
+  for (const f of userFields) {
+    const v = record[f.key] !== undefined ? record[f.key] : (record.custom_data && record.custom_data[f.key]);
+    const id = getId(v);
+    if (id !== null) idSet.add(id);
+  }
+  if (idSet.size === 0) return record;
+  let nameMap = preloadedMap;
+  if (!nameMap) {
+    nameMap = new Map();
+    try {
+      const ids = [...idSet];
+      const [rows] = await pool.query(`SELECT id, full_name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      nameMap = new Map(rows.map(r => [Number(r.id), r.full_name || '']));
+    } catch { /* silent */ }
+  }
+  if (!nameMap || nameMap.size === 0) return record;
+  const out = { ...record };
+  const cd = { ...(out.custom_data || {}) };
+  for (const f of userFields) {
+    const cur = out[f.key] !== undefined ? out[f.key] : cd[f.key];
+    const id = getId(cur);
+    if (id === null || !nameMap.has(id)) continue;
+    const label = nameMap.get(id);
+    const enriched = (typeof cur === 'object' && cur !== null) ? { ...cur, label } : { id, label };
+    if (out[f.key] !== undefined) out[f.key] = enriched;
+    if (cd[f.key] !== undefined) cd[f.key] = enriched;
+  }
+  out.custom_data = cd;
+  return out;
+};
+
+exports.enrichUserFieldsMany = async (records, fieldDefs) => {
+  if (!records || records.length === 0 || !fieldDefs || fieldDefs.length === 0) return records;
+  const userFields = fieldDefs.filter(f => f.type === 'user');
+  if (userFields.length === 0) return records;
+  const getId = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const raw = (typeof v === 'object' && v !== null) ? (v.id ?? v.user_id ?? v.value) : v;
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const idSet = new Set();
+  for (const rec of records) {
+    for (const f of userFields) {
+      const v = rec[f.key] !== undefined ? rec[f.key] : (rec.custom_data && rec.custom_data[f.key]);
+      const id = getId(v);
+      if (id !== null) idSet.add(id);
+    }
+  }
+  let nameMap = new Map();
+  if (idSet.size > 0) {
+    try {
+      const ids = [...idSet];
+      const [rows] = await pool.query(`SELECT id, full_name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      nameMap = new Map(rows.map(r => [Number(r.id), r.full_name || '']));
+    } catch { /* silent */ }
+  }
+  const out = [];
+  for (const rec of records) {
+    out.push(await exports.enrichUserFields(rec, fieldDefs, nameMap));
+  }
+  return out;
 };

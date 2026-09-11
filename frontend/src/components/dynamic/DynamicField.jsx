@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
+import UserField from './UserField';
 import { formatNumber } from '../../utils/formatNumber';
 import { create, all } from 'mathjs';
 
@@ -295,11 +296,11 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             style={cellStyle}
           />
         );
-      default:
-        return (
-          <input
-            type="text"
-            className={cellClass}
+    default:
+      return (
+        <input
+          type="text"
+          className={cellClass}
             value={cellVal || ''}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
@@ -710,6 +711,9 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         </div>
       );
     }
+
+    case 'user':
+      return <UserField field={field} value={value} onChange={onChange} disabled={disabled} error={error} />;
 
     default:
       return (

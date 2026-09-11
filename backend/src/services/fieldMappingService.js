@@ -1,6 +1,6 @@
 const pool = require('../utils/db');
 
-const ALLOWED_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table'];
+const ALLOWED_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
 
 exports.getAllByConfig = async (apiConfigId) => {
   const [rows] = await pool.query(

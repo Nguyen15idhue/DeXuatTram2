@@ -254,6 +254,13 @@ function renderTableLayout(fields, proposal, fieldMap, color) {
 function formatFieldValue(fieldKey, value, fieldMap) {
   if (value === null || value === undefined || value === '') return null;
 
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (typeof value.label === 'string' && value.label) return escapeHtml(value.label);
+    if (value.id !== undefined && Object.keys(value).every(k => k === 'id' || k === 'label')) {
+      return escapeHtml(`User #${value.id}`);
+    }
+  }
+
   const type = getFieldTypeInfo(fieldKey, fieldMap);
 
   switch (type) {
@@ -312,6 +319,18 @@ function formatFieldValue(fieldKey, value, fieldMap) {
       const text = String(value);
       if (text.length <= 100) return escapeHtml(text);
       return `<div style="line-height:1.6;color:#333">${escapeHtml(text)}</div>`;
+    }
+    case 'user': {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        if (value.label) return escapeHtml(String(value.label));
+        const uid = value.id ?? value.user_id;
+        const n = Number(uid);
+        if (Number.isInteger(n) && n > 0) return escapeHtml(`User #${n}`);
+        return null;
+      }
+      const n = Number(value);
+      if (Number.isInteger(n) && n > 0) return escapeHtml(`User #${n}`);
+      return escapeHtml(String(value));
     }
     default:
       return escapeHtml(String(value));

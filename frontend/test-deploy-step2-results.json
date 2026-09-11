@@ -1,0 +1,21 @@
+{
+  "thoiGian": "2026-09-11T03:12:14.085Z",
+  "base": "http://localhost:5173",
+  "ketQua": [
+    {
+      "ten": "Trang quan ly field hien thi (co field User Test)",
+      "dat": true,
+      "ghiChu": "\"User Test\" = 1"
+    },
+    {
+      "ten": "Ban do van hien thi (type cu khong hong)",
+      "dat": true,
+      "ghiChu": ".leaflet-container = 1"
+    },
+    {
+      "ten": "Khong co loi console nghiem trong",
+      "dat": true,
+      "ghiChu": "không có"
+    }
+  ]
+}

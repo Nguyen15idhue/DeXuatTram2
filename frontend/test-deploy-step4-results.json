@@ -1,34 +1,14 @@
 {
-  "thoiGian": "2026-09-10T08:59:02.665Z",
-  "base": "http://127.0.0.1:18081",
+  "thoiGian": "2026-09-11T03:25:42.606Z",
+  "base": "http://localhost:5173",
   "ketQua": [
     {
-      "ten": "Không nạp script Turnstile",
+      "ten": "Trang API configs tai duoc",
       "dat": true,
-      "ghiChu": "#turnstile-script = 0"
+      "ghiChu": "\"API\" = 4"
     },
     {
-      "ten": "Không hiện iframe Turnstile",
-      "dat": true,
-      "ghiChu": "iframe = 0"
-    },
-    {
-      "ten": "Không có widget .cf-turnstile",
-      "dat": true,
-      "ghiChu": ".cf-turnstile = 0"
-    },
-    {
-      "ten": "Form nhập thông tin hiển thị",
-      "dat": true,
-      "ghiChu": "\"Nhập thông tin\" = 1"
-    },
-    {
-      "ten": "Khu tra cứu đề xuất hiển thị",
-      "dat": true,
-      "ghiChu": "\"Tra cứu đề xuất\" = 1"
-    },
-    {
-      "ten": "Không có lỗi console liên quan Turnstile",
+      "ten": "Khong co loi console nghiem trong",
       "dat": true,
       "ghiChu": "không có"
     }

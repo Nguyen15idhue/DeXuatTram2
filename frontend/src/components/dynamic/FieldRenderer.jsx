@@ -1,4 +1,5 @@
 import { useState, lazy, Suspense } from 'react';
+import UserChip from './UserChip';
 import { create, all } from 'mathjs';
 import { Zap } from 'lucide-react';
 import { formatNumber } from '../../utils/formatNumber';
@@ -323,6 +324,9 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
         </>
       );
     }
+
+    case 'user':
+      return <UserChip value={value} />;
 
     default:
       return <span>{String(value)}</span>;

@@ -68,6 +68,46 @@ router.get('/:id', requireAuth, requireSuperAdmin, apiConfigController.getById);
 
 /**
  * @swagger
+ * /api/admin/api-configs/{id}/1office-users:
+ *   get:
+ *     tags: [API Configs]
+ *     summary: Lấy danh sách user 1Office (phân trang, cần admin token)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Thiếu admin token
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền SUPER_ADMIN
+ *       404:
+ *         description: Không tìm thấy cấu hình
+ *       502:
+ *         description: Lỗi 1Office
+ */
+router.get('/:id/1office-users', requireAuth, requireSuperAdmin, apiConfigController.get1OfficeUsers);
+
+/**
+ * @swagger
  * /api/admin/api-configs:
  *   post:
  *     tags: [API Configs]

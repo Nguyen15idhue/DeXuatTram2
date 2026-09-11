@@ -80,6 +80,11 @@ exports.findById = async (id) => {
   return users.length > 0 ? users[0] : null;
 };
 
+exports.getUserOptions = async () => {
+  const [rows] = await pool.query("SELECT id, full_name, role FROM users WHERE status = 'ACTIVE' ORDER BY full_name");
+  return rows;
+};
+
 exports.findByIdWithRole = async (id) => {
   const [users] = await pool.query('SELECT id, role FROM users WHERE id = ?', [id]);
   return users.length > 0 ? users[0] : null;
@@ -149,4 +154,83 @@ exports.updateRole = async (id, role) => {
 
 exports.updatePassword = async (id, hashedPassword) => {
   await pool.query('UPDATE users SET password = ?, token_version = token_version + 1, updated_at = NOW() WHERE id = ?', [hashedPassword, id]);
+};
+
+exports.getExternalMappings = async (userId) => {
+  const [rows] = await pool.query(
+    'SELECT id, user_id, `system`, external_id, created_at, updated_at FROM user_external_map WHERE user_id = ? ORDER BY `system`',
+    [userId]
+  );
+  return rows;
+};
+
+exports.setExternalMapping = async (userId, system, externalId) => {
+  const sys = String(system || '').trim();
+  const ext = String(externalId || '').trim();
+  if (!sys) {
+    throw Object.assign(new Error('System không được để trống'), { statusCode: 400 });
+  }
+  if (!ext) {
+    throw Object.assign(new Error('External ID không được để trống'), { statusCode: 400 });
+  }
+  const user = await exports.findById(userId);
+  if (!user) {
+    throw Object.assign(new Error('Không tìm thấy user'), { statusCode: 404 });
+  }
+  const [conflict] = await pool.query(
+    'SELECT user_id FROM user_external_map WHERE `system` = ? AND external_id = ? AND user_id != ? LIMIT 1',
+    [sys, ext, userId]
+  );
+  if (conflict.length > 0) {
+    throw Object.assign(new Error('External ID đã được gán cho user khác trong hệ này'), { statusCode: 400 });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO user_external_map (user_id, `system`, external_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE external_id = VALUES(external_id)',
+      [userId, sys, ext]
+    );
+  } catch (err) {
+    if (err && (err.code === 'ER_DUP_ENTRY' || err.errno === 1062)) {
+      throw Object.assign(new Error('External ID đã được gán cho user khác trong hệ này'), { statusCode: 400 });
+    }
+    throw err;
+  }
+  const [rows] = await pool.query(
+    'SELECT id, user_id, `system`, external_id, created_at, updated_at FROM user_external_map WHERE user_id = ? AND `system` = ?',
+    [userId, sys]
+  );
+  return rows[0] || null;
+};
+
+exports.deleteExternalMapping = async (userId, system) => {
+  const sys = String(system || '').trim();
+  if (!sys) {
+    throw Object.assign(new Error('System không được để trống'), { statusCode: 400 });
+  }
+  const [result] = await pool.query(
+    'DELETE FROM user_external_map WHERE user_id = ? AND `system` = ?',
+    [userId, sys]
+  );
+  return result.affectedRows > 0;
+};
+
+exports.findUserByExternal = async (system, externalId) => {
+  const sys = String(system || '').trim();
+  const ext = String(externalId || '').trim();
+  if (!sys || !ext) return null;
+  const [rows] = await pool.query(
+    'SELECT user_id FROM user_external_map WHERE `system` = ? AND external_id = ? LIMIT 1',
+    [sys, ext]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
+exports.findExternalByUser = async (userId, system) => {
+  const sys = String(system || '').trim();
+  if (!sys) return null;
+  const [rows] = await pool.query(
+    'SELECT external_id FROM user_external_map WHERE user_id = ? AND `system` = ? LIMIT 1',
+    [userId, sys]
+  );
+  return rows.length > 0 ? rows[0].external_id : null;
 };

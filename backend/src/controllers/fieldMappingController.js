@@ -189,9 +189,10 @@ exports.previewTransform = async (req, res) => {
       return res.status(400).json({ success: false, message: 'mapping không được để trống' });
     }
 
+    const apiConfigId = mapping.api_config_id || mapping.apiConfigId || null;
     const result = direction === 'pull'
-      ? fieldMapper.transformPull(value, mapping)
-      : fieldMapper.transformPush(value, mapping);
+      ? await fieldMapper.transformPull(value, mapping, mapping.system || null, apiConfigId)
+      : await fieldMapper.transformPush(value, mapping, mapping.system || null, apiConfigId);
 
     res.json({ success: true, data: { original: value, transformed: result } });
   } catch (error) {
