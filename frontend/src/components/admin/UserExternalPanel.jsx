@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { externalUserService } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const UserExternalPanel = ({ userId }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, token } = useAuth();
   const [mappings, setMappings] = useState([]);
+  const [extUsers, setExtUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [system, setSystem] = useState('1office');
   const [externalId, setExternalId] = useState('');
@@ -17,7 +19,6 @@ const UserExternalPanel = ({ userId }) => {
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('token') || '';
       const res = await fetch(`${API_URL}/admin/users/${userId}/external`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -29,28 +30,53 @@ const UserExternalPanel = ({ userId }) => {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, token]);
+
+  const loadExtUsers = useCallback(async (sys) => {
+    try {
+      const res = await externalUserService.getAll(sys, token);
+      if (res.success) setExtUsers(res.data || []);
+    } catch {
+      setExtUsers([]);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (isAdmin) load();
     else setLoading(false);
   }, [load, isAdmin]);
 
+  useEffect(() => {
+    if (isAdmin && system.trim()) loadExtUsers(system.trim());
+  }, [isAdmin, system, loadExtUsers]);
+
   if (!isAdmin) return null;
 
+  const extLabel = (u) => {
+    const code = u.code ? `${u.code} - ` : '';
+    const dept = u.department_name ? ` (${u.department_name})` : '';
+    const noAcc = !u.contact_id ? ' — chưa có tài khoản 1Office' : '';
+    return `${code}${u.fullname || `ID ${u.external_id}`}${dept}${noAcc}`;
+  };
+
+  const mappingLabel = (externalId) => {
+    const u = extUsers.find(x => String(x.external_id) === String(externalId));
+    if (u) return extLabel(u);
+    return `ID ${externalId} (không có trong danh sách)`;
+  };
+
   const handleSave = async () => {
-    if (!system.trim() || !externalId.trim()) {
-      setError('Nhập system và external ID');
+    if (!system.trim() || !externalId) {
+      setError('Chọn hệ thống và nhân sự');
       return;
     }
     setSaving(true);
     setError('');
     try {
-      const token = localStorage.getItem('token') || '';
       const res = await fetch(`${API_URL}/admin/users/${userId}/external`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ system: system.trim(), external_id: externalId.trim() })
+        body: JSON.stringify({ system: system.trim(), external_id: String(externalId) })
       });
       const data = await res.json();
       if (data.success) {
@@ -70,7 +96,6 @@ const UserExternalPanel = ({ userId }) => {
     if (!window.confirm(`Xóa liên kết hệ "${sys}"?`)) return;
     setError('');
     try {
-      const token = localStorage.getItem('token') || '';
       const res = await fetch(`${API_URL}/admin/users/${userId}/external`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -98,7 +123,7 @@ const UserExternalPanel = ({ userId }) => {
               {mappings.map(m => (
                 <div key={m.id} className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{m.system}</span>
-                  <span>= {m.external_id}</span>
+                  <span>= {mappingLabel(m.external_id)}</span>
                   <button type="button" className="btn btn-ghost btn-xs" onClick={() => handleDelete(m.system)}>Xóa</button>
                 </div>
               ))}
@@ -107,19 +132,30 @@ const UserExternalPanel = ({ userId }) => {
           <div className="flex gap-2 items-end">
             <div>
               <label className="text-xs">Hệ thống</label>
-              <input className="input input-bordered input-sm" value={system} onChange={e => setSystem(e.target.value)} placeholder="1office" />
+              <input className="input input-bordered input-sm w-24" value={system} onChange={e => setSystem(e.target.value)} placeholder="1office" />
             </div>
-            <div>
-              <label className="text-xs">ID hồ sơ nhân sự</label>
-              <input className="input input-bordered input-sm" value={externalId} onChange={e => setExternalId(e.target.value)} placeholder="VD: 7" />
+            <div className="flex-1">
+              <label className="text-xs">Nhân sự (Mã NS - Tên)</label>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={externalId}
+                onChange={e => setExternalId(e.target.value)}
+              >
+                <option value="">-- Chọn nhân sự --</option>
+                {extUsers.map(u => (
+                  <option key={u.id} value={String(u.external_id)} disabled={!u.contact_id} title={!u.contact_id ? 'Chưa có tài khoản 1Office – không giao việc được' : ''}>{extLabel(u)}</option>
+                ))}
+              </select>
             </div>
-            <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={handleSave}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={saving || !externalId} onClick={handleSave}>
               {saving ? 'Đang lưu...' : 'Lưu'}
             </button>
           </div>
-          <div className="text-xs text-gray-500 mt-1">
-            Lấy ở cột "ID Hồ sơ nhân sự" trong danh sách nhân sự của hệ ngoài (KHÔNG phải cột "Mã NS" hay ID liên hệ).
-          </div>
+          {extUsers.length === 0 && (
+            <div className="text-xs text-gray-500 mt-1">
+              Chưa có danh sách nhân sự. Vào Cấu hình API → "1office nhân sự" → Đồng bộ.
+            </div>
+          )}
           {error && <div className="text-error text-xs mt-1">{error}</div>}
         </>
       )}

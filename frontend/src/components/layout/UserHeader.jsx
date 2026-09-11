@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Map, ClipboardList, User, Settings, Menu, LogOut } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 
 const navItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
@@ -59,6 +60,7 @@ const UserHeader = ({ onMenuToggle }) => {
       </nav>
 
       <div className="navbar-end gap-2">
+        <NotificationBell />
         <span className="text-sm text-base-content/70 hidden sm:inline">{user?.full_name}</span>
         <button onClick={logout} className="btn btn-sm btn-ghost text-error gap-2">
           <LogOut size={14} />

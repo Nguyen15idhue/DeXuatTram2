@@ -2,6 +2,7 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
+const notificationService = require('./notificationService');
 
 exports.getBranchUserIds = async (salesId) => {
   const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [salesId, salesId]);
@@ -52,6 +53,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}) => {
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status,
+            p.reject_reason, p.reviewed_by, p.reviewed_at,
             u.full_name as user_name, u.email as user_email
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
@@ -89,10 +91,41 @@ exports.getProposalWithUser = async (id) => {
 
 exports.deleteProposal = async (id) => {
   await pool.query('DELETE FROM station_proposals WHERE id = ?', [id]);
+  await notificationService.removeByEntity('station_proposals', id);
 };
 
-exports.updateStatus = async (id, status) => {
-  await pool.query('UPDATE station_proposals SET status = ?, updated_at = NOW() WHERE id = ?', [status, id]);
+exports.updateStatus = async (id, status, opts = {}) => {
+  const reason = status === 'REJECTED' ? String(opts.reason || '').trim() : null;
+  if (status === 'REJECTED' && !reason) {
+    throw Object.assign(new Error('Vui lòng nhập lý do từ chối'), { statusCode: 400 });
+  }
+
+  const [rows] = await pool.query('SELECT id, user_id FROM station_proposals WHERE id = ?', [id]);
+  if (rows.length === 0) {
+    throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
+  }
+  const proposal = rows[0];
+
+  await pool.query(
+    `UPDATE station_proposals
+     SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW()
+     WHERE id = ?`,
+    [status, reason, opts.reviewerId || null, id]
+  );
+
+  if (proposal.user_id) {
+    await notificationService.create({
+      userId: proposal.user_id,
+      type: status,
+      title: notificationService.statusTitle(status),
+      message: status === 'REJECTED' ? reason : null,
+      entityType: 'station_proposals',
+      entityId: id,
+      createdBy: opts.reviewerId || null
+    });
+  }
+
+  return { id, status };
 };
 
 exports.updateProposal = async (id, data) => {
@@ -130,10 +163,40 @@ exports.updateProposal = async (id, data) => {
     status: fixedData.status !== undefined ? fixedData.status : prev.status
   };
 
+  const resubmitted = prev.status === 'REJECTED' && next.status === 'REJECTED';
+  if (resubmitted) next.status = 'PENDING';
+
   await pool.query(
     `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
     [next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
   );
+
+  if (resubmitted) {
+    if (prev.user_id) {
+      await notificationService.create({
+        userId: prev.user_id,
+        type: 'RESUBMITTED',
+        title: notificationService.statusTitle('RESUBMITTED'),
+        message: fixedData.owner_name ? `Đề xuất "${fixedData.owner_name}" đã được chỉnh sửa và gửi lại` : 'Đề xuất đã được chỉnh sửa và gửi lại',
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: null
+      });
+    }
+  } else if (next.status === 'REJECTED' && prev.status !== 'REJECTED') {
+    await pool.query('UPDATE station_proposals SET reviewed_at = NOW() WHERE id = ? AND reviewed_at IS NULL', [id]);
+    if (prev.user_id) {
+      await notificationService.create({
+        userId: prev.user_id,
+        type: 'REJECTED',
+        title: notificationService.statusTitle('REJECTED'),
+        message: 'Đề xuất đã bị từ chối, vui lòng kiểm tra và chỉnh sửa.',
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: null
+      });
+    }
+  }
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));

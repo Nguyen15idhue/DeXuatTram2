@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Menu } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 
 const AdminHeader = ({ onMenuToggle }) => {
   return (
@@ -10,6 +11,9 @@ const AdminHeader = ({ onMenuToggle }) => {
       <Link to="/admin" className="btn btn-ghost text-xl font-bold text-primary">
         Admin Panel
       </Link>
+      <div className="ml-auto">
+        <NotificationBell mode="admin" />
+      </div>
     </div>
   );
 };

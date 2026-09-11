@@ -75,10 +75,13 @@ exports.delete = async (req, res) => {
 
 exports.updateStatus = async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, reason } = req.body;
     const validStatuses = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ' });
+    }
+    if (status === 'REJECTED' && !String(reason || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do từ chối' });
     }
 
     const existing = await adminProposalService.getProposalById(req.params.id);
@@ -89,10 +92,13 @@ exports.updateStatus = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
-    await adminProposalService.updateStatus(req.params.id, status);
+    await adminProposalService.updateStatus(req.params.id, status, { reason, reviewerId: req.user.id });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
     res.json({ success: true, data: proposal, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Admin update status error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }

@@ -4,6 +4,7 @@ import {
   BarChart3, Users, Zap, ClipboardList, Settings,
   FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History
 } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 
 const menuItems = [
   { path: '/admin', label: 'Dashboard', icon: BarChart3, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
@@ -30,10 +31,11 @@ const AdminSidebar = ({ onNavClick }) => {
   return (
     <aside className="w-64 h-full flex flex-col bg-base-100 border-r border-base-300">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-base-300 flex-shrink-0">
+      <div className="px-5 py-4 border-b border-base-300 flex-shrink-0 flex items-center justify-between">
         <Link to="/admin" className="text-lg font-bold text-primary" onClick={onNavClick}>
           Admin Panel
         </Link>
+        <NotificationBell mode="admin" />
       </div>
 
       {/* Navigation */}

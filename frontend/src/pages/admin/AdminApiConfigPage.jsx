@@ -7,12 +7,22 @@ import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, Refre
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
 import SyncPanel from '../../components/admin/SyncPanel';
 import TemplateEditor from '../../components/admin/TemplateEditor';
+import PersonnelSyncPanel from '../../components/admin/PersonnelSyncPanel';
 
 const AUTH_TYPES = [
   { value: 'token', label: 'Token (Bearer)' },
   { value: 'basic', label: 'Basic Auth' },
   { value: 'oauth2', label: 'OAuth2' },
   { value: 'api_key', label: 'API Key' }
+];
+
+const PLATFORMS = [
+  { value: '1office', label: '1Office' }
+];
+
+const API_TYPES = [
+  { value: 'contact', label: 'Liên hệ' },
+  { value: 'personnel', label: 'Nhân sự' }
 ];
 
 const AdminApiConfigPage = () => {
@@ -24,11 +34,12 @@ const AdminApiConfigPage = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [showModal, setShowModal] = useState(false);
   const [editingConfig, setEditingConfig] = useState(null);
-  const [testResult, setTestResult] = useState(null);
-  const [testing, setTesting] = useState(false);
+  const [testResults, setTestResults] = useState({});
+  const [testingId, setTestingId] = useState(null);
   const [mappingConfig, setMappingConfig] = useState(null);
   const [syncConfig, setSyncConfig] = useState(null);
   const [templateConfig, setTemplateConfig] = useState(null);
+  const [personnelConfig, setPersonnelConfig] = useState(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -36,7 +47,9 @@ const AdminApiConfigPage = () => {
     auth_type: 'token',
     auth_config: '',
     description: '',
-    is_active: true
+    is_active: true,
+    system_key: '1office',
+    api_type: 'contact'
   });
   const [formError, setFormError] = useState('');
 
@@ -60,25 +73,26 @@ const AdminApiConfigPage = () => {
 
   const openCreateModal = () => {
     setEditingConfig(null);
-    setForm({ name: '', base_url: 'https://egr.1office.vn', auth_type: 'token', auth_config: '', description: '', is_active: true });
+    setForm({ name: '', base_url: 'https://egr.1office.vn', auth_type: 'token', auth_config: '', description: '', is_active: true, system_key: '1office', api_type: 'contact' });
     setFormError('');
-    setTestResult(null);
     setShowModal(true);
   };
 
   const openEditModal = (config) => {
     setEditingConfig(config);
-    const authConfig = typeof config.auth_config === 'string' ? JSON.parse(config.auth_config) : config.auth_config;
+    const authConfig = typeof config.auth_config === 'string' ? JSON.parse(config.auth_config) : (config.auth_config || {});
+    const isPersonnel = config.api_type === 'personnel';
     setForm({
       name: config.name,
       base_url: config.base_url,
       auth_type: config.auth_type || 'token',
-      auth_config: authConfig.token || authConfig.access_token || '',
+      auth_config: isPersonnel ? (authConfig.admin_token || '') : (authConfig.token || authConfig.access_token || ''),
       description: config.description || '',
-      is_active: !!config.is_active
+      is_active: !!config.is_active,
+      system_key: config.system_key || '1office',
+      api_type: config.api_type || 'contact'
     });
     setFormError('');
-    setTestResult(null);
     setShowModal(true);
   };
 
@@ -86,16 +100,20 @@ const AdminApiConfigPage = () => {
     setFormError('');
     if (!form.name.trim()) { setFormError('Tên cấu hình không được để trống'); return; }
     if (!form.base_url.trim()) { setFormError('Base URL không được để trống'); return; }
-    if (!form.auth_config.trim()) { setFormError('Token không được để trống'); return; }
+    if (!form.auth_config.trim()) { setFormError(form.api_type === 'personnel' ? 'Admin token không được để trống' : 'Token không được để trống'); return; }
 
     try {
       const payload = {
         name: form.name.trim(),
         base_url: form.base_url.trim(),
         auth_type: form.auth_type,
-        auth_config: { token: form.auth_config.trim() },
+        auth_config: form.api_type === 'personnel'
+          ? { admin_token: form.auth_config.trim() }
+          : { token: form.auth_config.trim() },
         description: form.description.trim() || null,
-        is_active: form.is_active
+        is_active: form.is_active,
+        api_type: form.api_type,
+        system_key: form.system_key
       };
 
       let res;
@@ -142,19 +160,19 @@ const AdminApiConfigPage = () => {
   };
 
   const handleTestConnection = async (id) => {
-    setTesting(true);
-    setTestResult(null);
+    setTestingId(id);
+    setTestResults(prev => ({ ...prev, [id]: null }));
     try {
       const res = await apiConfigService.testConnection(id, token);
       if (res.success) {
-        setTestResult(res.data);
+        setTestResults(prev => ({ ...prev, [id]: res.data }));
       } else {
-        setTestResult({ status: 'failed', error: res.message });
+        setTestResults(prev => ({ ...prev, [id]: { status: 'failed', error: res.message } }));
       }
     } catch {
-      setTestResult({ status: 'failed', error: 'Lỗi kết nối server' });
+      setTestResults(prev => ({ ...prev, [id]: { status: 'failed', error: 'Lỗi kết nối server' } }));
     } finally {
-      setTesting(false);
+      setTestingId(null);
     }
   };
 
@@ -212,6 +230,29 @@ const AdminApiConfigPage = () => {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Nền tảng API</span></label>
+                  <select
+                    className="select select-bordered select-sm"
+                    value={form.system_key}
+                    onChange={(e) => setForm({ ...form, system_key: e.target.value })}
+                  >
+                    {PLATFORMS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Loại API</span></label>
+                  <select
+                    className="select select-bordered select-sm"
+                    value={form.api_type}
+                    onChange={(e) => setForm({ ...form, api_type: e.target.value })}
+                  >
+                    {API_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
               <div className="form-control">
                 <label className="label"><span className="label-text">Loại xác thực</span></label>
                 <select
@@ -224,13 +265,13 @@ const AdminApiConfigPage = () => {
               </div>
 
               <div className="form-control">
-                <label className="label"><span className="label-text">Token / API Key *</span></label>
+                <label className="label"><span className="label-text">{form.api_type === 'personnel' ? 'Token hồ sơ nhân sự *' : 'Token / API Key *'}</span></label>
                 <input
                   type="password"
                   className="input input-bordered input-sm"
                   value={form.auth_config}
                   onChange={(e) => setForm({ ...form, auth_config: e.target.value })}
-                  placeholder="Nhập token..."
+                  placeholder={form.api_type === 'personnel' ? 'Nhập token hồ sơ nhân sự...' : 'Nhập token...'}
                 />
               </div>
 
@@ -311,7 +352,9 @@ const AdminApiConfigPage = () => {
                     </div>
                     <div>
                       <h3 className="card-title text-base">{config.name}</h3>
-                      <span className="text-xs text-base-content/50">{config.auth_type}</span>
+                      <span className="text-xs text-base-content/50">
+                        {(config.system_key || '1office')} · {config.api_type === 'personnel' ? 'Nhân sự' : 'Liên hệ'}
+                      </span>
                     </div>
                   </div>
                   <span className={`badge badge-sm ${config.is_active ? 'badge-success' : 'badge-ghost'}`}>
@@ -325,42 +368,54 @@ const AdminApiConfigPage = () => {
                 </div>
 
                 {/* Test Connection Result */}
-                {testResult && (
-                  <div className={`alert ${testResult.status === 'connected' ? 'alert-success' : 'alert-error'} mb-3 py-2`}>
+                {testResults[config.id] && (
+                  <div className={`alert ${testResults[config.id].status === 'connected' ? 'alert-success' : 'alert-error'} mb-3 py-2`}>
                     <span className="text-xs">
-                      {testResult.status === 'connected'
-                        ? `Connected (${testResult.response_time}ms)`
-                        : `Failed: ${testResult.error}`}
+                      {testResults[config.id].status === 'connected'
+                        ? `Connected (${testResults[config.id].response_time}ms)`
+                        : `Failed: ${testResults[config.id].error}`}
                     </span>
                   </div>
                 )}
 
                 <div className="card-actions justify-end gap-1 mt-auto">
+                  {config.api_type === 'personnel' ? (
+                    <button
+                      className="btn btn-outline btn-sm gap-1"
+                      onClick={() => setPersonnelConfig(personnelConfig?.id === config.id ? null : config)}
+                    >
+                      <RefreshCw size={14} />
+                      Sync nhân sự
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-outline btn-sm gap-1"
+                        onClick={() => setTemplateConfig(templateConfig?.id === config.id ? null : config)}
+                      >
+                        <Code size={14} />
+                        Template
+                      </button>
+                      <button
+                        className="btn btn-outline btn-sm gap-1"
+                        onClick={() => setSyncConfig(syncConfig?.id === config.id ? null : config)}
+                      >
+                        <RefreshCw size={14} />
+                        Sync
+                      </button>
+                      <button
+                        className="btn btn-outline btn-sm gap-1"
+                        onClick={() => setMappingConfig(mappingConfig?.id === config.id ? null : config)}
+                      >
+                        <ArrowRightLeft size={14} />
+                        Mapping
+                      </button>
+                    </>
+                  )}
                   <button
-                    className="btn btn-outline btn-sm gap-1"
-                    onClick={() => setTemplateConfig(templateConfig?.id === config.id ? null : config)}
-                  >
-                    <Code size={14} />
-                    Template
-                  </button>
-                  <button
-                    className="btn btn-outline btn-sm gap-1"
-                    onClick={() => setSyncConfig(syncConfig?.id === config.id ? null : config)}
-                  >
-                    <RefreshCw size={14} />
-                    Sync
-                  </button>
-                  <button
-                    className="btn btn-outline btn-sm gap-1"
-                    onClick={() => setMappingConfig(mappingConfig?.id === config.id ? null : config)}
-                  >
-                    <ArrowRightLeft size={14} />
-                    Mapping
-                  </button>
-                  <button
-                    className={`btn btn-outline btn-sm gap-1 ${testing ? 'loading' : ''}`}
+                    className={`btn btn-outline btn-sm gap-1 ${testingId === config.id ? 'loading' : ''}`}
                     onClick={() => handleTestConnection(config.id)}
-                    disabled={testing}
+                    disabled={testingId === config.id}
                   >
                     <Wifi size={14} />
                     Test
@@ -408,6 +463,17 @@ const AdminApiConfigPage = () => {
           <TemplateEditor
             configId={templateConfig.id}
             onClose={() => setTemplateConfig(null)}
+          />
+        </div>
+      )}
+
+      {/* Personnel Sync Panel */}
+      {personnelConfig && (
+        <div className="mt-6">
+          <PersonnelSyncPanel
+            config={personnelConfig}
+            onClose={() => setPersonnelConfig(null)}
+            onUpdated={loadConfigs}
           />
         </div>
       )}

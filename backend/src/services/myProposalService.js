@@ -2,6 +2,7 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
+const notificationService = require('./notificationService');
 
 exports.getUserProposals = async (userId, status, search, page, limit) => {
   const offset = (page - 1) * limit;
@@ -34,7 +35,7 @@ exports.getUserProposals = async (userId, status, search, page, limit) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.custom_data, p.created_at
+            p.reject_reason, p.custom_data, p.created_at
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -86,19 +87,35 @@ exports.updateProposal = async (id, userId, data) => {
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
 
-  const [existing] = await pool.query('SELECT custom_data, contact_1office_code FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT custom_data, contact_1office_code, status, reviewed_by FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
   const mergedDynamic = { ...current, ...dynamicData };
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
+  const wasRejected = existing.length > 0 && existing[0].status === 'REJECTED';
+  const nextStatus = wasRejected ? 'PENDING' : (existing.length > 0 ? existing[0].status : 'PENDING');
+  const reviewerId = existing.length > 0 ? existing[0].reviewed_by : null;
+
   await pool.query(
     `UPDATE station_proposals
-     SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, updated_at = NOW()
+     SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
      WHERE id = ? AND user_id = ?`,
-    [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, id, userId]
+    [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
   );
+
+  if (wasRejected && reviewerId) {
+    await notificationService.create({
+      userId: reviewerId,
+      type: 'RESUBMITTED',
+      title: notificationService.statusTitle('RESUBMITTED'),
+      message: fixedData.owner_name ? `Đề xuất "${fixedData.owner_name}" đã được chỉnh sửa và gửi lại` : 'Đề xuất đã được chỉnh sửa và gửi lại',
+      entityType: 'station_proposals',
+      entityId: id,
+      createdBy: userId
+    });
+  }
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));

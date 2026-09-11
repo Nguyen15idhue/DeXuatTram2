@@ -447,6 +447,7 @@ const FieldManager = () => {
                         <option value="none">Không (chọn thủ công)</option>
                         <option value="current_user">Người đăng nhập (người tạo)</option>
                         <option value="parent_sales">Sales quản lý (người tạo cấp trên)</option>
+                        <option value="owner_or_manager">Người phụ trách (CTV → Sales quản lý, còn lại → người tạo)</option>
                       </select>
                     </div>
                     {form.auto_user && form.auto_user !== 'none' && (

@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
 import UserExternalPanel from './UserExternalPanel';
+import { notifyBellRefresh } from '../layout/NotificationBell';
 import useDataListMap from '../../hooks/useDataListMap';
 import Toast from '../Toast';
 
@@ -21,7 +22,7 @@ const ENTITY_SERVICES = {
 
 const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8 };
 
-const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true }) => {
+const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -187,7 +188,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     try {
       setSaving(true);
       setError('');
-      const service = ENTITY_SERVICES[entity];
+      const service = updateService || ENTITY_SERVICES[entity];
       if (!service) {
         setError('Entity không hỗ trợ cập nhật');
         setSaving(false);
@@ -208,6 +209,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         setToast({ message: 'Cập nhật thành công', type: 'success' });
         setRecord({ ...record, ...formData, ...res.data });
         setMode('view');
+        notifyBellRefresh();
         if (onSaved) onSaved();
       } else {
         setError(res.message || 'Lỗi cập nhật');
@@ -331,6 +333,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
         {error && <div className="error-message">{error}</div>}
 
+        {entity === 'station_proposals' && record?.status === 'REJECTED' && record?.reject_reason && (
+          <div className="alert alert-error mb-3">
+            <span className="text-sm"><strong>Đề xuất bị từ chối:</strong> {record.reject_reason}</span>
+          </div>
+        )}
+
         <div className="popup-body">
           {sections && sections.length > 0 ? (
             sections.map(sec => (
@@ -387,7 +395,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           ) : (
             <>
               <button className="btn btn-secondary" onClick={() => handleSwitchMode('view')}>Hủy</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Đang lưu...' : (entity === 'station_proposals' && record?.status === 'REJECTED' ? 'Gửi lại' : 'Lưu')}
+              </button>
               <button className="btn btn-secondary" onClick={handleClose}>Đóng</button>
             </>
           )}

@@ -217,6 +217,36 @@ router.delete('/:id', requireAuth, requireSuperAdmin, apiConfigController.remove
 
 /**
  * @swagger
+ * /api/admin/api-configs/{id}/sync-personnel:
+ *   post:
+ *     tags: [API Configs]
+ *     summary: Đồng bộ danh sách nhân sự từ hệ ngoài về DB
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Đồng bộ thành công
+ *       400:
+ *         description: Không phải config nhân sự
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền SUPER_ADMIN
+ *       404:
+ *         description: Không tìm thấy cấu hình
+ *       502:
+ *         description: Lỗi hệ ngoài
+ */
+router.post('/:id/sync-personnel', requireAuth, requireSuperAdmin, apiConfigController.syncPersonnel);
+
+/**
+ * @swagger
  * /api/admin/api-configs/{id}/test:
  *   post:
  *     tags: [API Configs]

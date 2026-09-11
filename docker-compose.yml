@@ -37,6 +37,7 @@ services:
       - CAPTCHA_ENABLED=false
       - TURNSTILE_SECRET_KEY=
       - ORPHAN_FILE_TTL_HOURS=24
+      - TZ=Asia/Ho_Chi_Minh
     depends_on:
       mysql:
         condition: service_healthy
@@ -54,6 +55,7 @@ services:
     environment:
       - MYSQL_ROOT_PASSWORD=password
       - MYSQL_DATABASE=station_management
+      - TZ=Asia/Ho_Chi_Minh
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

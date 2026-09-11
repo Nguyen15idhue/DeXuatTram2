@@ -66,7 +66,11 @@ const SyncPanel = ({ configId, onClose }) => {
       if (res.success) {
         const created = res.data.filter(r => r.success).length;
         const failed = res.data.filter(r => !r.success);
-        setToast({ message: `Tạo ${created} job thành công${failed.length > 0 ? `, ${failed.length} lỗi` : ''}`, type: 'success' });
+        const warnings = res.data.flatMap(r => r.warnings || []);
+        const parts = [`Tạo ${created} job`];
+        if (failed.length > 0) parts.push(`${failed.length} lỗi`);
+        if (warnings.length > 0) parts.push(`${warnings.length} cảnh báo (nhân sự chưa có tài khoản 1Office)`);
+        setToast({ message: parts.join(', '), type: warnings.length > 0 ? 'warning' : 'success' });
         setPushState(prev => ({ ...prev, selected: [], pushing: false }));
         loadProposals();
       } else {

@@ -168,57 +168,43 @@ function renderSection(section, proposal, fieldMap) {
   return html;
 }
 
+function renderFieldBox(label, valueHtml, flexBasis) {
+  const value = valueHtml || '<span style="color:#aaa">—</span>';
+  return `<div style="flex:${flexBasis};min-width:0;box-sizing:border-box;display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid #ddd;margin:-1px 0 0 -1px">`
+    + `<div style="flex:0 0 40%;max-width:40%;font-weight:600;overflow-wrap:anywhere;word-break:break-word">${escapeHtml(label)}</div>`
+    + `<div style="flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:break-word">${value}</div>`
+    + `</div>`;
+}
+
 function render2ColLayout(fields, proposal, fieldMap) {
-  let html = `<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:13px;margin-bottom:12px">`;
-
-  for (let i = 0; i < fields.length; i += 2) {
-    const key1 = fields[i];
-    const key2 = fields[i + 1];
-    const raw1 = getFieldValue(proposal, key1);
-    const raw2 = key2 ? getFieldValue(proposal, key2) : null;
-    const label1 = getFieldLabel(key1, fieldMap);
-    const label2 = key2 ? getFieldLabel(key2, fieldMap) : null;
-    const value1 = formatFieldValue(key1, raw1, fieldMap);
-    const value2 = key2 ? formatFieldValue(key2, raw2, fieldMap) : null;
-
-    html += `<tr>`;
-    html += `<td style="padding:8px 10px;background:#f8f9fa;border:1px solid #ddd;font-weight:600;width:140px;vertical-align:top;white-space:nowrap">${escapeHtml(label1)}</td>`;
-    html += `<td style="padding:8px 10px;border:1px solid #ddd;vertical-align:top;word-break:break-word">${value1 || '<span style="color:#aaa">—</span>'}</td>`;
-    if (key2) {
-      html += `<td style="padding:8px 10px;background:#f8f9fa;border:1px solid #ddd;font-weight:600;width:140px;vertical-align:top;white-space:nowrap">${escapeHtml(label2)}</td>`;
-      html += `<td style="padding:8px 10px;border:1px solid #ddd;vertical-align:top;word-break:break-word">${value2 || '<span style="color:#aaa">—</span>'}</td>`;
-    } else {
-      html += `<td colspan="2" style="padding:8px 10px;border:1px solid #ddd;background:#fafafa"></td>`;
-    }
-    html += `</tr>`;
+  let html = `<div style="display:flex;flex-wrap:wrap;margin-bottom:12px">`;
+  for (const key of fields) {
+    const raw = getFieldValue(proposal, key);
+    const label = getFieldLabel(key, fieldMap);
+    const value = formatFieldValue(key, raw, fieldMap);
+    html += renderFieldBox(label, value, '1 1 300px');
   }
-
-  html += `</table>`;
+  html += `</div>`;
   return html;
 }
 
 function render1ColLayout(fields, proposal, fieldMap) {
-  let html = `<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:13px;margin-bottom:12px">`;
-
-  for (const fieldKey of fields) {
-    const raw = getFieldValue(proposal, fieldKey);
-    const label = getFieldLabel(fieldKey, fieldMap);
-    const value = formatFieldValue(fieldKey, raw, fieldMap);
-
-    html += `<tr>`;
-    html += `<td style="padding:8px 10px;background:#f8f9fa;border:1px solid #ddd;font-weight:600;width:140px;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>`;
-    html += `<td style="padding:8px 10px;border:1px solid #ddd;vertical-align:top;word-break:break-word">${value || '<span style="color:#aaa">—</span>'}</td>`;
-    html += `</tr>`;
+  let html = `<div style="display:flex;flex-wrap:wrap;margin-bottom:12px">`;
+  for (const key of fields) {
+    const raw = getFieldValue(proposal, key);
+    const label = getFieldLabel(key, fieldMap);
+    const value = formatFieldValue(key, raw, fieldMap);
+    html += renderFieldBox(label, value, '1 1 100%');
   }
-
-  html += `</table>`;
+  html += `</div>`;
   return html;
 }
 
 function renderTableLayout(fields, proposal, fieldMap, color) {
   if (fields.length === 0) return '';
 
-  let html = `<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:13px;margin-bottom:12px">`;
+  let html = `<div style="overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch">`;
+  html += `<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:13px;margin-bottom:12px">`;
   html += `<thead><tr style="background:${color};color:white">`;
   for (const fieldKey of fields) {
     const label = getFieldLabel(fieldKey, fieldMap);
@@ -233,7 +219,7 @@ function renderTableLayout(fields, proposal, fieldMap, color) {
       for (const fieldKey of fields) {
         const raw = row[fieldKey] !== undefined ? row[fieldKey] : null;
         const value = formatFieldValue(fieldKey, raw, fieldMap);
-        html += `<td style="padding:6px 10px;border:1px solid #ddd;word-break:break-word">${value || '—'}</td>`;
+        html += `<td style="padding:6px 10px;border:1px solid #ddd;word-break:break-word;overflow-wrap:anywhere">${value || '—'}</td>`;
       }
       html += `</tr>`;
     }
@@ -242,12 +228,13 @@ function renderTableLayout(fields, proposal, fieldMap, color) {
     for (const fieldKey of fields) {
       const raw = getFieldValue(proposal, fieldKey);
       const value = formatFieldValue(fieldKey, raw, fieldMap);
-      html += `<td style="padding:6px 10px;border:1px solid #ddd;word-break:break-word">${value || '—'}</td>`;
+      html += `<td style="padding:6px 10px;border:1px solid #ddd;word-break:break-word;overflow-wrap:anywhere">${value || '—'}</td>`;
     }
     html += `</tr>`;
   }
 
   html += `</tbody></table>`;
+  html += `</div>`;
   return html;
 }
 

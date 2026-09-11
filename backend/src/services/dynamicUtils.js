@@ -248,17 +248,21 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
   const autoFields = fieldDefs.filter(f => {
     if (f.type !== 'user') return false;
     const sc = parseSourceConfig(f.source_config);
-    return sc.auto_user === 'current_user' || sc.auto_user === 'parent_sales';
+    return sc.auto_user === 'current_user' || sc.auto_user === 'parent_sales' || sc.auto_user === 'owner_or_manager';
   });
   if (autoFields.length === 0) return dynamicData;
 
   const db = connection || pool;
   const currentId = Number(userId) > 0 ? Number(userId) : null;
   let parentId = null;
+  let currentRole = '';
   if (currentId) {
     try {
-      const [rows] = await db.query('SELECT parent_id FROM users WHERE id = ?', [currentId]);
-      if (rows.length > 0 && rows[0].parent_id) parentId = Number(rows[0].parent_id);
+      const [rows] = await db.query('SELECT role, parent_id FROM users WHERE id = ?', [currentId]);
+      if (rows.length > 0) {
+        currentRole = rows[0].role || '';
+        if (rows[0].parent_id) parentId = Number(rows[0].parent_id);
+      }
     } catch { /* silent */ }
   }
 
@@ -268,7 +272,12 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
       dynamicData[f.key] = '';
       return;
     }
-    const id = sc.auto_user === 'parent_sales' ? (parentId || currentId) : currentId;
+    let id = currentId;
+    if (sc.auto_user === 'parent_sales') {
+      id = parentId || currentId;
+    } else if (sc.auto_user === 'owner_or_manager') {
+      id = currentRole === 'CTV' ? (parentId || currentId) : currentId;
+    }
     dynamicData[f.key] = { id };
   });
 

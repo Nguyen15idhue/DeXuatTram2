@@ -1,4 +1,5 @@
 require('dotenv').config();
+if (!process.env.TZ) process.env.TZ = 'Asia/Ho_Chi_Minh';
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -29,8 +30,11 @@ const tilesRoutes = require('./routes/tiles');
 const apiConfigRoutes = require('./routes/apiConfigs');
 const fieldMappingRoutes = require('./routes/fieldMappings');
 const queueLogsRoutes = require('./routes/queueLogs');
+const externalUsersRoutes = require('./routes/externalUsers');
+const notificationsRoutes = require('./routes/notifications');
 const oneOfficeSyncRoutes = require('./routes/oneOfficeSync');
 const queueWorker = require('./workers/queueWorker');
+const personnelSyncWorker = require('./workers/personnelSyncWorker');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -94,6 +98,8 @@ app.use('/api/map-configs', mapConfigsRoutes);
 app.use('/api/admin/api-configs', adminLimiter, apiConfigRoutes);
 app.use('/api/admin/field-mappings', adminLimiter, fieldMappingRoutes);
 app.use('/api/admin/queue-logs', adminLimiter, queueLogsRoutes);
+app.use('/api/admin/external-users', adminLimiter, externalUsersRoutes);
+app.use('/api/notifications', notificationsRoutes);
 app.use('/api/admin/1office', adminLimiter, oneOfficeSyncRoutes);
 app.use('/tiles', tilesRoutes);
 
@@ -108,6 +114,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
   queueWorker.start().catch((err) => {
     console.error('[QueueWorker] start error:', err.message);
+  });
+  personnelSyncWorker.start().catch((err) => {
+    console.error('[PersonnelSync] start error:', err.message);
   });
 });
 

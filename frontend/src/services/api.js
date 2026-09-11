@@ -184,8 +184,8 @@ export const adminProposalService = {
   getById(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}`, token);
   },
-  updateStatus(id, status, token) {
-    return api.putWithAuth(`/admin/proposals/${id}/status`, { status }, token);
+  updateStatus(id, status, token, reason) {
+    return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason }, token);
   },
   update(id, data, token) {
     return api.putWithAuth(`/admin/proposals/${id}`, data, token);
@@ -544,6 +544,34 @@ export const apiConfigService = {
   },
   testConnection(id, token) {
     return api.postWithAuth(`/admin/api-configs/${id}/test`, {}, token);
+  },
+  syncPersonnel(id, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/sync-personnel`, {}, token);
+  }
+};
+
+export const externalUserService = {
+  getAll(system, token) {
+    const qs = system ? `?system=${encodeURIComponent(system)}` : '';
+    return api.getWithAuth(`/admin/external-users${qs}`, token);
+  }
+};
+
+export const notificationService = {
+  getAll(page = 1, limit = 20, token) {
+    return api.getWithAuth(`/notifications?page=${page}&limit=${limit}`, token);
+  },
+  unreadCount(token) {
+    return api.getWithAuth('/notifications/unread-count', token);
+  },
+  getAllAdmin(page = 1, limit = 20, token) {
+    return api.getWithAuth(`/notifications/all?page=${page}&limit=${limit}`, token);
+  },
+  markRead(id, token) {
+    return api.putWithAuth(`/notifications/${id}/read`, {}, token);
+  },
+  markAllRead(token) {
+    return api.putWithAuth('/notifications/read-all', {}, token);
   }
 };
 

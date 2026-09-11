@@ -279,11 +279,11 @@ const MyProposalsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
+      {(row.status === 'PENDING' || row.status === 'REJECTED') && (
+        <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
+      )}
       {row.status === 'PENDING' && (
-        <>
-          <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
-          <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
-        </>
+        <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
       )}
     </div>
   );
@@ -478,10 +478,11 @@ const MyProposalsPage = () => {
         <RecordDetailPopup
           entity={popup.entity}
           record={popup.record}
-          recordId={popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))}
+          recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
           viewId={popup.entity === 'stations' ? undefined : PROPOSALS_VIEW_ID}
           mode={popup.mode}
-          allowEdit={isAdmin}
+          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED'].includes(popup.record.status))}
+          updateService={isAdmin ? undefined : myProposalService}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
             navigate('/my-proposals');

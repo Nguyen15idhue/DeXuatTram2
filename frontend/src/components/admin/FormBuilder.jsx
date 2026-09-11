@@ -31,6 +31,7 @@ const FormBuilder = ({ formId, onSaved }) => {
   const [layoutConfig, setLayoutConfig] = useState({ sections: [], rows: [] });
   const [editingSectionId, setEditingSectionId] = useState(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
+  const [configSectionId, setConfigSectionId] = useState(null);
   const [selectedField, setSelectedField] = useState(null);
   const [previewMode, setPreviewMode] = useState('desktop');
   const [dragOverCell, setDragOverCell] = useState(null);
@@ -375,6 +376,24 @@ const FormBuilder = ({ formId, onSaved }) => {
     }));
   };
 
+  const moveSection = (sectionId, direction) => {
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || [])];
+      const idx = sections.findIndex(s => s.id === sectionId);
+      const ni = idx + direction;
+      if (idx < 0 || ni < 0 || ni >= sections.length) return prev;
+      [sections[idx], sections[ni]] = [sections[ni], sections[idx]];
+      return { ...prev, sections };
+    });
+  };
+
+  const updateSection = (sectionId, updates) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? { ...s, ...updates } : s)
+    }));
+  };
+
   const startEditSectionTitle = (section) => {
     setEditingSectionId(section.id);
     setEditingSectionTitle(section.title);
@@ -472,6 +491,7 @@ const FormBuilder = ({ formId, onSaved }) => {
 
   const filteredAvailable = availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id));
   const unassignedFields = assignedFields.filter(f => !f.config?.rowId);
+  const conditionFields = assignedFields.filter(f => ['select', 'text', 'boolean'].includes(f.type));
 
   return (
     <div className="form-builder">
@@ -582,6 +602,14 @@ const FormBuilder = ({ formId, onSaved }) => {
                         {section.title}
                       </span>
                     )}
+                    {section.visibleWhen && section.visibleWhen.field && (
+                      <span style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                        background: '#fff3cd', color: '#856404', border: '1px solid #ffc107'
+                      }}>
+                        {section.visibleWhen.field} = {section.visibleWhen.value || '...'}
+                      </span>
+                    )}
                     <button
                       className="btn btn-xs btn-ghost"
                       onClick={() => toggleSectionCollapsible(section.id)}
@@ -590,10 +618,78 @@ const FormBuilder = ({ formId, onSaved }) => {
                     >
                       {section.collapsible ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     </button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, -1)} disabled={secIdx === 0} title="Di chuyển lên">
+                      <ChevronUp size={12} />
+                    </button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, 1)} disabled={secIdx === (layoutConfig.sections || []).length - 1} title="Di chuyển xuống">
+                      <ChevronDown size={12} />
+                    </button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => setConfigSectionId(configSectionId === section.id ? null : section.id)} title="Điều kiện hiển thị">
+                      <Pencil size={12} />
+                    </button>
                     <button className="btn btn-xs btn-ghost text-error" onClick={() => removeSection(section.id)} title="Xóa section">
                       <Trash2 size={12} />
                     </button>
                   </div>
+
+                  {/* Section condition config */}
+                  {configSectionId === section.id && (
+                    <div style={{ padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#f8f9ff', fontSize: 12 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={!section.visibleWhen}
+                          onChange={(e) => updateSection(section.id, {
+                            visibleWhen: e.target.checked ? null : { field: section.visibleWhen?.field || '', value: section.visibleWhen?.value || '' }
+                          })}
+                        />
+                        <span>Luôn hiển thị</span>
+                      </label>
+                      {section.visibleWhen && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                          <span className="text-gray-500">Hiện khi</span>
+                          <select
+                            className="select select-bordered select-xs"
+                            value={section.visibleWhen.field || ''}
+                            onChange={(e) => updateSection(section.id, { visibleWhen: { ...section.visibleWhen, field: e.target.value } })}
+                          >
+                            <option value="">-- Chọn field --</option>
+                            {conditionFields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                          </select>
+                          <span>=</span>
+                          {(() => {
+                            const def = availableFields.find(af => af.key === section.visibleWhen.field);
+                            const opts = def && Array.isArray(def.options) ? def.options : [];
+                            if (opts.length > 0) {
+                              return (
+                                <select
+                                  className="select select-bordered select-xs"
+                                  value={section.visibleWhen.value || ''}
+                                  onChange={(e) => updateSection(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                                >
+                                  <option value="">-- Chọn giá trị --</option>
+                                  {opts.map((o, i) => {
+                                    const val = (o && typeof o === 'object') ? (o.value ?? o.label) : o;
+                                    const lbl = (o && typeof o === 'object') ? (o.label ?? o.value) : o;
+                                    return <option key={i} value={val}>{lbl}</option>;
+                                  })}
+                                </select>
+                              );
+                            }
+                            return (
+                              <input
+                                type="text"
+                                className="input input-bordered input-xs"
+                                placeholder="Giá trị"
+                                value={section.visibleWhen.value || ''}
+                                onChange={(e) => updateSection(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                              />
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Section body: rows */}
                   <div style={{ padding: section.rows.length > 0 ? '8px' : '0', minHeight: section.rows.length === 0 ? 40 : 'auto' }}>

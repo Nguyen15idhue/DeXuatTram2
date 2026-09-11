@@ -1,16 +1,13 @@
 const adminUserService = require('./adminUserService');
 const oneOfficeService = require('./oneOfficeService');
+const pool = require('../utils/db');
 
+const EXTERNAL_USER_MAPS_CACHE = {};
+const EXTERNAL_USER_MAPS_TTL = 30 * 1000;
 const ONE_OFFICE_USER_VALUE_CACHE = {};
 const ONE_OFFICE_USER_VALUE_TTL = 10 * 60 * 1000;
 
-const getOneOfficeUserMaps = async (apiConfigId) => {
-  const now = Date.now();
-  const cached = ONE_OFFICE_USER_VALUE_CACHE[apiConfigId];
-  if (cached && now - cached.at < ONE_OFFICE_USER_VALUE_TTL) return cached.maps;
-  const res = await oneOfficeService.getUsers(apiConfigId, { limit: 100 });
-  const users = (res && res.data && Array.isArray(res.data.users)) ? res.data.users : null;
-  if (!users) throw new Error('Không lấy được danh sách user hệ ngoài');
+const buildMapsFromUsers = (users) => {
   const valueByPersonnel = {};
   const personnelByApiId = {};
   users.forEach(u => {
@@ -20,9 +17,61 @@ const getOneOfficeUserMaps = async (apiConfigId) => {
     if (pid !== '' && val) valueByPersonnel[pid] = val;
     if (u.ID !== null && u.ID !== undefined && pid !== '') personnelByApiId[String(u.ID)] = pid;
   });
-  const maps = { valueByPersonnel, personnelByApiId };
+  return { valueByPersonnel, personnelByApiId };
+};
+
+const getExternalUserMaps = async (system) => {
+  const now = Date.now();
+  const cached = EXTERNAL_USER_MAPS_CACHE[system];
+  if (cached && now - cached.at < EXTERNAL_USER_MAPS_TTL) return cached.maps;
+  const [rows] = await pool.query(
+    'SELECT external_id, contact_id, code, fullname FROM external_users WHERE `system` = ? AND is_active = 1',
+    [system]
+  );
+  const valueByPersonnel = {};
+  const personnelByApiId = {};
+  const noAccount = new Set();
+  rows.forEach(r => {
+    const pid = r.external_id !== null && r.external_id !== undefined ? String(r.external_id) : '';
+    const code = (r.code !== null && r.code !== undefined && String(r.code).trim() !== '') ? String(r.code).trim() : '';
+    const val = code || (r.fullname ? String(r.fullname).trim() : '');
+    if (pid !== '' && val) valueByPersonnel[pid] = val;
+    if (r.contact_id !== null && r.contact_id !== undefined && String(r.contact_id) !== '' && pid !== '') {
+      personnelByApiId[String(r.contact_id)] = pid;
+    } else if (pid !== '') {
+      noAccount.add(pid);
+    }
+  });
+  const maps = { valueByPersonnel, personnelByApiId, noAccount };
+  EXTERNAL_USER_MAPS_CACHE[system] = { at: now, maps };
+  return maps;
+};
+
+exports.getUserMapInfo = (system) => getExternalUserMaps(system);
+
+const getOneOfficeUserMaps = async (apiConfigId) => {
+  const now = Date.now();
+  const cached = ONE_OFFICE_USER_VALUE_CACHE[apiConfigId];
+  if (cached && now - cached.at < ONE_OFFICE_USER_VALUE_TTL) return cached.maps;
+  const res = await oneOfficeService.getUsers(apiConfigId, { limit: 100 });
+  const users = (res && res.data && Array.isArray(res.data.users)) ? res.data.users : null;
+  if (!users) throw new Error('Không lấy được danh sách user hệ ngoài');
+  const maps = buildMapsFromUsers(users);
   ONE_OFFICE_USER_VALUE_CACHE[apiConfigId] = { at: now, maps };
   return maps;
+};
+
+const resolveUserMaps = async (system, apiConfigId) => {
+  if (system) {
+    try {
+      const dbMaps = await getExternalUserMaps(system);
+      if (Object.keys(dbMaps.valueByPersonnel).length > 0) return dbMaps;
+    } catch (err) {
+      console.warn('[fieldMapper] doc external_users loi:', err.message);
+    }
+  }
+  if (apiConfigId) return getOneOfficeUserMaps(apiConfigId);
+  return { valueByPersonnel: {}, personnelByApiId: {} };
 };
 
 const ALLOWED_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
@@ -347,9 +396,9 @@ exports.transformUserPush = async (value, mapping, system, apiConfigId = null) =
       return null;
     }
     let outgoing = String(ext);
-    if (apiConfigId) {
+    {
       try {
-        const maps = await getOneOfficeUserMaps(apiConfigId);
+        const maps = await resolveUserMaps(system, apiConfigId);
         const resolved = maps.valueByPersonnel[outgoing];
         if (!resolved) {
           console.warn(`[fieldMapper] khong tim thay nhan su he ngoai personnel_id=${outgoing} trong danh sach, bo qua field.`);
@@ -375,9 +424,9 @@ exports.transformUserPull = async (value, mapping, system, apiConfigId = null) =
   if (!ext) return null;
   try {
     let personnelId = ext;
-    if (apiConfigId) {
+    {
       try {
-        const maps = await getOneOfficeUserMaps(apiConfigId);
+        const maps = await resolveUserMaps(system, apiConfigId);
         if (maps.personnelByApiId[ext]) personnelId = maps.personnelByApiId[ext];
       } catch (err) {
         console.warn('[fieldMapper] khong lay duoc danh sach user he ngoai (pull), dung gia tri goc:', err.message);

@@ -10,6 +10,7 @@ const fileSyncService = require('./fileSyncService');
 const dynamicEngineService = require('./dynamicEngineService');
 const dynamicUtils = require('./dynamicUtils');
 const dataListService = require('./dataListService');
+const adminUserService = require('./adminUserService');
 
 const refreshId1Office = async (proposalId) => {
   const [rows] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ?', [proposalId]);
@@ -31,7 +32,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
   if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
 
   const mappings = await fieldMappingService.getAllByConfig(apiConfigId);
-  const pushMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'push' || m.direction === 'both'));
+  const pushMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'push' || m.direction === 'both') && !fieldMapper.isSpecialTarget(m.target_field));
   const system = (config && config.system_key) || '1office';
 
   const results = [];
@@ -45,8 +46,21 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
     const isLinked = !!proposal.contact_1office_code;
 
     const contactData = {};
+    const warnings = [];
+    const userMapInfo = await fieldMapper.getUserMapInfo(system);
     for (const mapping of pushMappings) {
       const value = proposal[mapping.source_field] || (proposal.custom_data && proposal.custom_data[mapping.source_field]);
+      if (mapping.target_field_type === 'user' && value !== null && value !== undefined && value !== '') {
+        const internalId = fieldMapper.resolveUserId(value);
+        if (internalId) {
+          try {
+            const ext = await adminUserService.findExternalByUser(internalId, system);
+            if (ext && userMapInfo.noAccount && userMapInfo.noAccount.has(String(ext))) {
+              warnings.push(`${mapping.target_field}: nhân sự (personnel_id ${ext}) chưa có tài khoản 1Office nên 1Office sẽ bỏ qua`);
+            }
+          } catch { /* silent */ }
+        }
+      }
       const transformed = await fieldMapper.transformPush(value, mapping, system, apiConfigId);
       if (transformed !== null && transformed !== undefined) {
         contactData[mapping.target_field] = transformed;
@@ -95,7 +109,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       created_by: userId
     });
 
-    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData });
+    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData, warnings });
   }
 
   return results;
@@ -121,7 +135,7 @@ exports.pullFrom1Office = async (apiConfigId, filter, userId) => {
 exports.processPull = async (apiConfigId, filter) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const mappings = await fieldMappingService.getAllByConfig(apiConfigId);
-  const pullMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'pull' || m.direction === 'both'));
+  const pullMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'pull' || m.direction === 'both') && !fieldMapper.isSpecialTarget(m.target_field));
   const pullConfig = await apiConfigService.getById(apiConfigId);
   const pullSystem = (pullConfig && pullConfig.system_key) || '1office';
   const pullRawFields = [...new Set(pullMappings.filter(m => m.target_field_type === 'user').map(m => m.target_field))];

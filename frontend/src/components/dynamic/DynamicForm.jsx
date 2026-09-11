@@ -50,9 +50,12 @@ const parseSourceConfig = (val) => {
 
 const resolveAutoUserId = (sc, authUser) => {
   const mode = sc && sc.auto_user;
-  if (mode !== 'current_user' && mode !== 'parent_sales') return null;
+  if (mode !== 'current_user' && mode !== 'parent_sales' && mode !== 'owner_or_manager') return null;
   if (!authUser || !authUser.id) return null;
   if (mode === 'parent_sales') return authUser.parent_id || authUser.id;
+  if (mode === 'owner_or_manager') {
+    return authUser.role === 'CTV' ? (authUser.parent_id || authUser.id) : authUser.id;
+  }
   return authUser.id;
 };
 

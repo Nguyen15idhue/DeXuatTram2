@@ -1,5 +1,6 @@
 const apiConfigService = require('../services/apiConfigService');
 const oneOfficeService = require('../services/oneOfficeService');
+const personnelSyncService = require('../services/personnelSyncService');
 
 exports.getAll = async (req, res) => {
   try {
@@ -44,9 +45,22 @@ exports.get1OfficeUsers = async (req, res) => {
   }
 };
 
+exports.syncPersonnel = async (req, res) => {
+  try {
+    const result = await personnelSyncService.syncFrom1Office(req.params.id);
+    res.json({ success: true, data: result, message: 'Đồng bộ nhân sự thành công' });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Sync personnel error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.create = async (req, res) => {
   try {
-    const { name, base_url, auth_type, auth_config, description, is_active } = req.body;
+    const { name, base_url, auth_type, auth_config, description, is_active, api_type, sync_enabled, sync_cron, system_key } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Tên cấu hình không được để trống' });
@@ -57,6 +71,9 @@ exports.create = async (req, res) => {
     if (!auth_config) {
       return res.status(400).json({ success: false, message: 'Auth config không được để trống' });
     }
+    if (api_type !== undefined && !['contact', 'personnel'].includes(api_type)) {
+      return res.status(400).json({ success: false, message: 'Loại API không hợp lệ' });
+    }
 
     try {
       new URL(base_url.trim());
@@ -65,7 +82,7 @@ exports.create = async (req, res) => {
     }
 
     const config = await apiConfigService.create({
-      name, base_url, auth_type, auth_config, description, is_active,
+      name, base_url, auth_type, auth_config, description, is_active, api_type, sync_enabled, sync_cron, system_key,
       created_by: req.user.id
     });
 
@@ -82,13 +99,16 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, base_url, auth_type, auth_config, description, is_active } = req.body;
+    const { name, base_url, auth_type, auth_config, description, is_active, api_type, sync_enabled, sync_cron } = req.body;
 
     if (name !== undefined && (!name || !name.trim())) {
       return res.status(400).json({ success: false, message: 'Tên cấu hình không được để trống' });
     }
     if (base_url !== undefined && (!base_url || !base_url.trim())) {
       return res.status(400).json({ success: false, message: 'Base URL không được để trống' });
+    }
+    if (api_type !== undefined && !['contact', 'personnel'].includes(api_type)) {
+      return res.status(400).json({ success: false, message: 'Loại API không hợp lệ' });
     }
     if (base_url) {
       try {
@@ -99,7 +119,7 @@ exports.update = async (req, res) => {
     }
 
     const config = await apiConfigService.update(id, {
-      name, base_url, auth_type, auth_config, description, is_active
+      name, base_url, auth_type, auth_config, description, is_active, api_type, sync_enabled, sync_cron
     });
 
     res.json({ success: true, data: config, message: 'Cập nhật cấu hình API thành công' });

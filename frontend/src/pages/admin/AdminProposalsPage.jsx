@@ -13,6 +13,7 @@ import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
+import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
@@ -39,6 +40,7 @@ const AdminProposalsPage = () => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const dupRef = useRef(null);
   const tableRef = useRef(null);
 
@@ -94,16 +96,41 @@ const AdminProposalsPage = () => {
   }, [showMoreMenu]);
 
   const handleStatusChange = async (id, newStatus) => {
+    if (newStatus === 'REJECTED') {
+      setRejectModal({ open: true, id, reason: '', saving: false });
+      return;
+    }
     try {
       const res = await adminProposalService.updateStatus(id, newStatus, token);
       if (res.success) {
         setToast({ message: 'Cập nhật trạng thái thành công', type: 'success' });
+        notifyBellRefresh();
         loadProposals(pagination.page);
       } else {
         setError(res.message || 'Cập nhật thất bại');
       }
     } catch {
       setError('Lỗi kết nối server');
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectModal.reason.trim()) return;
+    setRejectModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(rejectModal.id, 'REJECTED', token, rejectModal.reason.trim());
+      if (res.success) {
+        setToast({ message: 'Đã từ chối và thông báo cho người tạo', type: 'success' });
+        setRejectModal({ open: false, id: null, reason: '', saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Từ chối thất bại');
+        setRejectModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setRejectModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -521,6 +548,40 @@ const AdminProposalsPage = () => {
         confirmText="Xóa"
         type="danger"
       />
+
+      {rejectModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Từ chối đề xuất</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setRejectModal({ open: false, id: null, reason: '', saving: false })}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Lý do từ chối *</span></label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={4}
+                value={rejectModal.reason}
+                onChange={(e) => setRejectModal(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Nhập lý do và nội dung cần chỉnh sửa..."
+              />
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setRejectModal({ open: false, id: null, reason: '', saving: false })}>Hủy</button>
+              <button
+                className="btn btn-error btn-sm"
+                disabled={!rejectModal.reason.trim() || rejectModal.saving}
+                onClick={handleConfirmReject}
+              >
+                {rejectModal.saving ? 'Đang gửi...' : 'Từ chối & thông báo'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setRejectModal({ open: false, id: null, reason: '', saving: false })} />
+        </dialog>
+      )}
 
       {showCreateForm && (
         <dialog className="modal modal-open">

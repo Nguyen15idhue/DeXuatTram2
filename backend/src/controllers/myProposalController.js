@@ -36,8 +36,8 @@ exports.update = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
 
-    if (existing.status !== 'PENDING') {
-      return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING' });
+    if (existing.status !== 'PENDING' && existing.status !== 'REJECTED') {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING hoặc REJECTED' });
     }
 
     await myProposalService.updateProposal(id, req.user.id, req.body);

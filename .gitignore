@@ -11,3 +11,4 @@ test_files/
 frontend/dist/
 test-results/
 playwright-report/
+.playwright-mcp/

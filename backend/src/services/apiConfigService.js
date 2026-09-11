@@ -37,7 +37,7 @@ exports.getById = async (id) => {
 };
 
 exports.create = async (data) => {
-  const { name, base_url, auth_type, auth_config, description, is_active, created_by } = data;
+  const { name, base_url, auth_type, auth_config, description, is_active, created_by, api_type, sync_enabled, sync_cron, system_key } = data;
 
   const [existing] = await pool.query('SELECT id FROM api_configs WHERE name = ?', [name]);
   if (existing.length > 0) {
@@ -45,8 +45,8 @@ exports.create = async (data) => {
   }
 
   const [result] = await pool.query(
-    `INSERT INTO api_configs (name, base_url, auth_type, auth_config, description, is_active, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO api_configs (name, base_url, auth_type, auth_config, description, is_active, created_by, api_type, sync_enabled, sync_cron, system_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name.trim(),
       base_url.trim(),
@@ -54,7 +54,11 @@ exports.create = async (data) => {
       typeof auth_config === 'string' ? auth_config : JSON.stringify(auth_config),
       description || null,
       is_active !== undefined ? (is_active ? 1 : 0) : 1,
-      created_by || null
+      created_by || null,
+      api_type || 'contact',
+      sync_enabled ? 1 : 0,
+      sync_cron || null,
+      system_key || '1office'
     ]
   );
 
@@ -83,19 +87,36 @@ exports.update = async (id, data) => {
       ? (typeof data.auth_config === 'string' ? data.auth_config : JSON.stringify(data.auth_config))
       : (typeof existing.auth_config === 'string' ? existing.auth_config : JSON.stringify(existing.auth_config)),
     description: data.description !== undefined ? data.description : existing.description,
-    is_active: data.is_active !== undefined ? (data.is_active ? 1 : 0) : existing.is_active
+    is_active: data.is_active !== undefined ? (data.is_active ? 1 : 0) : existing.is_active,
+    api_type: data.api_type !== undefined ? data.api_type : existing.api_type,
+    sync_enabled: data.sync_enabled !== undefined ? (data.sync_enabled ? 1 : 0) : existing.sync_enabled,
+    sync_cron: data.sync_cron !== undefined ? (data.sync_cron || null) : existing.sync_cron
   };
 
   await pool.query(
     `UPDATE api_configs SET
       name = ?, base_url = ?, auth_type = ?, auth_config = ?,
-      description = ?, is_active = ?, updated_at = NOW()
+      description = ?, is_active = ?, api_type = ?, sync_enabled = ?, sync_cron = ?, updated_at = NOW()
      WHERE id = ?`,
-    [merged.name, merged.base_url, merged.auth_type, merged.auth_config, merged.description, merged.is_active, id]
+    [merged.name, merged.base_url, merged.auth_type, merged.auth_config, merged.description, merged.is_active, merged.api_type, merged.sync_enabled, merged.sync_cron, id]
   );
 
   const [rows] = await pool.query('SELECT * FROM api_configs WHERE id = ?', [id]);
   return rows[0];
+};
+
+exports.markSyncResult = async (id, status, message = null) => {
+  await pool.query(
+    'UPDATE api_configs SET last_sync_at = NOW(), last_sync_status = ?, last_sync_message = ? WHERE id = ?',
+    [status || null, message || null, id]
+  );
+};
+
+exports.getSyncableConfigs = async () => {
+  const [rows] = await pool.query(
+    "SELECT * FROM api_configs WHERE api_type = 'personnel' AND sync_enabled = 1 AND is_active = 1"
+  );
+  return rows;
 };
 
 exports.remove = async (id) => {
@@ -178,14 +199,18 @@ exports.testConnection = async (id) => {
   }
 
   const authConfig = typeof config.auth_config === 'string' ? JSON.parse(config.auth_config) : config.auth_config;
-  const token = authConfig.token || authConfig.access_token || '';
+  const isPersonnel = config.api_type === 'personnel';
+  const token = isPersonnel
+    ? (authConfig.admin_token || authConfig.token || authConfig.access_token || '')
+    : (authConfig.token || authConfig.access_token || authConfig.admin_token || '');
+  const testPath = isPersonnel ? '/api/personnel/profile/gets' : '/api/customer/contact/gets';
 
   const startTime = Date.now();
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const url = `${config.base_url}/api/customer/contact/gets?access_token=${token}&limit=1`;
+    const url = `${config.base_url}${testPath}?access_token=${token}&limit=1`;
     const response = await fetch(url, {
       method: 'GET',
       signal: controller.signal

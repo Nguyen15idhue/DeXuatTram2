@@ -130,6 +130,24 @@ exports.getUsers = async (apiConfigId, params = {}) => {
   return result;
 };
 
+exports.getPersonnelProfiles = async (apiConfigId, params = {}) => {
+  const { baseUrl, token } = await getAdminToken(apiConfigId);
+  if (!token) throw Object.assign(new Error('Thiếu token hồ sơ nhân sự 1Office'), { statusCode: 400 });
+  const page = Math.max(1, parseInt(params.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(params.limit) || 100));
+  const url = `${baseUrl}/api/personnel/profile/gets?page=${page}&limit=${limit}`;
+  const result = await requestWithRetry('GET', url, null, token);
+  if (result.success && result.data && !result.data.error) {
+    result.data = {
+      users: result.data.data || [],
+      total: result.data.total_item || 0,
+      page,
+      limit
+    };
+  }
+  return result;
+};
+
 exports.getContacts = async (apiConfigId, params = {}) => {
   const { baseUrl, token } = await getToken(apiConfigId);
   const queryParams = {};
