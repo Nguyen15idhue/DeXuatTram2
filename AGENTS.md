@@ -186,7 +186,8 @@ backend/src/
 - Use foreign keys where appropriate
 - **KHÔNG được DROP TABLE rồi CREATE TABLE lại**
 - **Không modify schema mà không có migration plan**
-- **KHÔNG dùng migration — schema quản lý thủ công qua SQL scripts**
+- **Schema bằng file SQL thủ công trong `database/` (đánh số thứ tự); áp dụng tự động qua `scripts/migrate.sh` có tracking (`schema_migrations`). Chỉ viết script tiến tới, idempotent; không DROP.**
+- **DB mới: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động.**
 
 ### Database Tables (12 bảng)
 

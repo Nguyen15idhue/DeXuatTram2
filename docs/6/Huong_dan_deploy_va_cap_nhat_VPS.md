@@ -180,6 +180,20 @@ git pull origin ui-redesign
 docker compose -f docker-compose.simple.yml up -d --build
 ```
 
+### Cập nhật schema DB (migration)
+
+`update.sh` **tự chạy** `scripts/migrate.sh run` trước khi build. DB có bảng `schema_migrations` sẽ chỉ chạy các script mới.
+
+- **DB cũ chưa có tracking** (như VPS hiện tại): lần update đầu sẽ dừng và yêu cầu chạy một lần:
+  ```bash
+  scripts/migrate.sh mark-all --yes
+  ./update.sh
+  ```
+  Chỉ làm **một lần** sau khi đã xác minh schema hiện tại đúng.
+- **Kiểm tra:** `scripts/migrate.sh status` (xem file nào chưa chạy).
+- Script DB mới viết dạng **tiến tới, idempotent**, đặt trong `database/` và đánh số. Không DROP.
+- DB mới dựng bằng **datadir + dump chuẩn rồi `mark-all`**, không chạy `01-create-tables.sql`.
+
 ### 6.1 Lỗi `Your local changes ... would be overwritten by merge`
 
 **Biểu hiện:**

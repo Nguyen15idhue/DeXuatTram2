@@ -146,6 +146,7 @@ if [ "$SKIP_SCHEMA" != "1" ]; then
   TABLE_USERS="$(printf "SHOW TABLES LIKE 'users';" | docker compose -f "$COMPOSE_FILE" exec -T mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' 2>/dev/null | tr -d '\r' | head -1 || true)"
   if [ "$TABLE_USERS" = "users" ]; then
     log "DB da co bang, bo qua import."
+    log "Neu can cap nhat schema, chay: scripts/migrate.sh run (hoac mark-all --yes mot lan neu DB cu chua tracking)."
   else
     log "Import du lieu DB (lite)..."
     docker compose -f "$COMPOSE_FILE" exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL innodb_flush_log_at_trx_commit=0; SET GLOBAL sync_binlog=0;"' >/dev/null 2>&1 || true
@@ -155,6 +156,10 @@ if [ "$SKIP_SCHEMA" != "1" ]; then
     fi
     docker compose -f "$COMPOSE_FILE" exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL innodb_flush_log_at_trx_commit=1; SET GLOBAL sync_binlog=1;"' >/dev/null 2>&1 || true
     log "Import xong."
+    if [ -x scripts/migrate.sh ]; then
+      log "Danh dau schema hien tai (mark-all)..."
+      scripts/migrate.sh mark-all --yes
+    fi
   fi
 fi
 
