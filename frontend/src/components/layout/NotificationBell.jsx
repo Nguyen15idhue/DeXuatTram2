@@ -16,7 +16,7 @@ const TYPE_COLORS = {
 export const notifyBellRefresh = () => window.dispatchEvent(new Event('notifications:refresh'));
 
 const NotificationBell = ({ mode = 'user' }) => {
-  const { token, canAccessPanel, isAdmin } = useAuth();
+  const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(0);
@@ -130,7 +130,7 @@ const NotificationBell = ({ mode = 'user' }) => {
     }
     setOpen(false);
     if (n.entity_type === 'station_proposals' && n.entity_id) {
-      navigate(canAccessPanel ? `/admin/proposals/view=${n.entity_id}` : `/my-proposals/view=${n.entity_id}`);
+      navigate(mode === 'admin' ? `/admin/proposals/view=${n.entity_id}` : `/my-proposals/view=${n.entity_id}`);
     }
   };
 

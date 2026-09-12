@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
 import UserExternalPanel from './UserExternalPanel';
+import LocationMapModal from '../LocationMapModal';
+import { MapPinned } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import useDataListMap from '../../hooks/useDataListMap';
 import Toast from '../Toast';
@@ -34,6 +36,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [mode, setMode] = useState(modeProp || 'view');
   const [formData, setFormData] = useState({});
   const [formConfig, setFormConfig] = useState(null);
+  const [showMap, setShowMap] = useState(false);
   const dataListOptions = useDataListMap([...viewFields, ...allFields].map(f => f.data_list_id));
 
   useEffect(() => {
@@ -289,6 +292,10 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     </div>
   );
 
+  const mapLat = parseFloat(record.latitude);
+  const mapLng = parseFloat(record.longitude);
+  const hasCoords = !Number.isNaN(mapLat) && !Number.isNaN(mapLng);
+
   const renderFieldSection = (fields, sectionLabel) => (
     <div className="popup-section">
       <h3 className="popup-section-title">{sectionLabel}</h3>
@@ -328,7 +335,15 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       <div className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
         <div className="popup-header">
           <h2>{ENTITY_LABELS[entity] || entity} #{record.id} {mode === 'edit' && '(chỉnh sửa)'}</h2>
-          <button className="btn-close" onClick={handleClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6b7280', padding: '4px 8px' }}>✕</button>
+          <div className="flex items-center gap-2">
+            {hasCoords && (
+              <button className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => setShowMap(true)}>
+                <MapPinned size={14} />
+                Xem bản đồ
+              </button>
+            )}
+            <button className="btn-close" onClick={handleClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6b7280', padding: '4px 8px' }}>✕</button>
+          </div>
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -403,6 +418,16 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           )}
         </div>
       </div>
+
+      {showMap && hasCoords && (
+        <LocationMapModal
+          open
+          lat={record.latitude}
+          lng={record.longitude}
+          title={`${ENTITY_LABELS[entity] || entity} #${record.id}`}
+          onClose={() => setShowMap(false)}
+        />
+      )}
     </div>
   );
 };

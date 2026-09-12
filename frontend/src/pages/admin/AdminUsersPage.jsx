@@ -9,11 +9,13 @@ import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2 } from 'lucide-react';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 15;
+const USERS_PAGE_SIZE = 10;
 
 const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
 
@@ -36,6 +38,7 @@ const AdminUsersPage = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
+  const [page, setPage] = useState(1);
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -133,6 +136,21 @@ const AdminUsersPage = () => {
     walk(roots, 0);
     return rows;
   }, [users, appliedSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(treeRows.length / USERS_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage(1);
+  }, [appliedSearch, filterStatus]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedRows = useMemo(
+    () => treeRows.slice((page - 1) * USERS_PAGE_SIZE, page * USERS_PAGE_SIZE),
+    [treeRows, page]
+  );
 
   const handleReset = () => {
     setSearch('');
@@ -610,16 +628,24 @@ const AdminUsersPage = () => {
       {loading ? (
         <Loading />
       ) : (
-        <DynamicTable
-          entity="users"
-          viewId={USERS_VIEW_ID}
-          data={treeRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
-          actions={renderActions}
-          startIndex={0}
-          rowDepth={(row) => row._depth || 0}
-          selectedIds={selectedIds}
-          onSelectionChange={setSelectedIds}
-        />
+        <>
+          <DynamicTable
+            entity="users"
+            viewId={USERS_VIEW_ID}
+            data={pagedRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
+            actions={renderActions}
+            startIndex={(page - 1) * USERS_PAGE_SIZE}
+            rowDepth={(row) => row._depth || 0}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+          />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={treeRows.length}
+            onPageChange={setPage}
+          />
+        </>
       )}
     </div>
   );

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { fieldMappingService } from '../../services/api';
 import Toast from '../Toast';
-import { ArrowRightLeft, X, Info, Search, Download, AlertTriangle, Paperclip, FileText, GripVertical } from 'lucide-react';
+import { ArrowRightLeft, X, Info, Search, Download, AlertTriangle, Paperclip, FileText, GripVertical, Pencil } from 'lucide-react';
 
 const TYPE_LABELS = {
   text: 'Text', textarea: 'Textarea', number: 'Number', email: 'Email',
@@ -81,6 +81,9 @@ const FieldMappingPanel = ({ configId, onClose }) => {
   const [selectedInfo, setSelectedInfo] = useState(null);
   const [showInfo, setShowInfo] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
+  const [proposalSearch, setProposalSearch] = useState('');
+  const [editingMeta, setEditingMeta] = useState(null);
+  const [savingMeta, setSavingMeta] = useState(false);
   const [fieldMetadata, setFieldMetadata] = useState({});
   const [usedInDescFields, setUsedInDescFields] = useState([]);
   const [dragKey, setDragKey] = useState(null);
@@ -233,11 +236,121 @@ const FieldMappingPanel = ({ configId, onClose }) => {
     }
   };
 
-  const filteredUnlinked = unlinkedFields.filter(f => {
-    if (!contactSearch) return true;
-    const q = contactSearch.toLowerCase();
-    return (f.label && f.label.toLowerCase().includes(q)) || (f.key && f.key.toLowerCase().includes(q));
+  const matchesQuery = (q, ...vals) => {
+    if (!q) return true;
+    const s = q.toLowerCase();
+    return vals.some(v => v && String(v).toLowerCase().includes(s));
+  };
+
+  const startEditMeta = (field) => {
+    setEditingMeta({
+      key: field.key,
+      label: field.label || field.key,
+      description: (fieldMetadata[field.key] && fieldMetadata[field.key].description) || ''
+    });
+  };
+
+  const saveMeta = async () => {
+    if (!editingMeta || !editingMeta.label.trim()) return;
+    setSavingMeta(true);
+    try {
+      const key = editingMeta.key;
+      const label = editingMeta.label.trim();
+      const description = editingMeta.description.trim();
+      const res = await fieldMappingService.updateMetadata(configId, { [key]: { label, description } }, token);
+      if (res.success) {
+        setFieldMetadata(prev => ({ ...prev, [key]: { ...(prev[key] || {}), label, description } }));
+        setContactFields(prev => prev.map(f => f.key === key ? { ...f, label } : f));
+        setToast({ message: 'Đã lưu label/ghi chú', type: 'success' });
+        setEditingMeta(null);
+      } else {
+        setToast({ message: res.message || 'Lỗi lưu', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Lỗi kết nối server', type: 'error' });
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
+  const filteredUnlinked = unlinkedFields.filter(f => matchesQuery(contactSearch, f.label, f.key));
+
+  const filteredLinkedContact = normalLinked.filter(m => {
+    const t = contactFields.find(f => f.key === m.target_field);
+    const src = fieldByKey(m.source_field);
+    return matchesQuery(contactSearch, t && t.label, m.target_field, src && src.label, m.source_field);
   });
+
+  const showSpecialDesc = matchesQuery(contactSearch, SPECIAL_LABELS.desc, 'desc');
+  const showSpecialFiles = matchesQuery(contactSearch, SPECIAL_LABELS.files, 'files');
+
+  const linkedProposalFields = proposalFields.filter(f => countBySource(f.key) > 0);
+  const unlinkedProposalFields = proposalFields.filter(f => countBySource(f.key) === 0);
+  const filterProposal = (list) => list.filter(f => matchesQuery(proposalSearch, f.label, f.key));
+
+  const renderProposalField = (field) => {
+    const count = countBySource(field.key);
+    const isUsedInDesc = usedInDescFields.includes(field.key);
+    return (
+      <div
+        key={field.key}
+        data-field-key={field.key}
+        draggable
+        onDragStart={(e) => { e.dataTransfer.setData('text/plain', field.key); setDragKey(field.key); }}
+        onDragEnd={() => { setDragKey(null); setDragOverTarget(null); }}
+        className={`flex items-center gap-2 p-2 rounded-lg border text-sm cursor-grab active:cursor-grabbing bg-base-100 hover:border-primary ${dragKey === field.key ? 'opacity-50 border-primary' : 'border-base-300'}`}
+      >
+        <GripVertical size={14} className="text-base-content/30 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-medium truncate">{field.label}</span>
+            {field.required ? <span className="text-error text-xs">*</span> : null}
+            <span className={`badge badge-xs ${TYPE_COLORS[field.type] || 'badge-ghost'}`}>{TYPE_LABELS[field.type] || field.type}</span>
+            {count > 0 && (
+              <span data-count-key={field.key} className="badge badge-xs badge-success" title={`Đã link ${count} trường đích`}>
+                ^ {count}
+              </span>
+            )}
+            {isUsedInDesc && (
+              <span className="badge badge-xs badge-warning gap-0.5" title="Đang dùng trong Desc Template">
+                <AlertTriangle size={10} /> Desc
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-base-content/50">{field.key}</span>
+        </div>
+        <button className="btn btn-ghost btn-xs" onClick={() => { setSelectedInfo({ field }); setShowInfo(true); }}>
+          <Info size={14} />
+        </button>
+      </div>
+    );
+  };
+
+  const renderMetaEditor = (key) => (
+    editingMeta && editingMeta.key === key ? (
+      <div className="mt-1 space-y-1">
+        <input
+          className="input input-bordered input-xs w-full"
+          placeholder="Label"
+          value={editingMeta.label}
+          onChange={(e) => setEditingMeta(prev => ({ ...prev, label: e.target.value }))}
+          onKeyDown={(e) => { if (e.key === 'Enter') saveMeta(); if (e.key === 'Escape') setEditingMeta(null); }}
+          autoFocus
+        />
+        <input
+          className="input input-bordered input-xs w-full"
+          placeholder="Ghi chú"
+          value={editingMeta.description}
+          onChange={(e) => setEditingMeta(prev => ({ ...prev, description: e.target.value }))}
+          onKeyDown={(e) => { if (e.key === 'Enter') saveMeta(); if (e.key === 'Escape') setEditingMeta(null); }}
+        />
+        <div className="flex gap-1">
+          <button className="btn btn-primary btn-xs" onClick={saveMeta} disabled={savingMeta || !editingMeta.label.trim()}>Lưu</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => setEditingMeta(null)}>Hủy</button>
+        </div>
+      </div>
+    ) : null
+  );
 
   return (
     <div>
@@ -299,52 +412,39 @@ const FieldMappingPanel = ({ configId, onClose }) => {
           <div className="card-body p-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="card-title text-sm">Proposal Fields (Nguồn)</h4>
-              <button className={`btn btn-outline btn-primary btn-xs gap-1 ${fetchingProposal ? 'loading' : ''}`} onClick={fetchProposalFields} disabled={fetchingProposal}>
-                <Download size={12} /> Get
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-base-content/40" />
+                  <input type="text" className="input input-bordered input-xs pl-7 w-32" placeholder="Tìm trường..." value={proposalSearch} onChange={(e) => setProposalSearch(e.target.value)} />
+                </div>
+                <button className={`btn btn-outline btn-primary btn-xs gap-1 ${fetchingProposal ? 'loading' : ''}`} onClick={fetchProposalFields} disabled={fetchingProposal}>
+                  <Download size={12} /> Get
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-base-content/50 mb-2">Kéo trường sang bên phải để link. Số trên badge là số trường đích đã link.</p>
+            <p className="text-xs text-base-content/50 mb-2 flex-none">Kéo trường sang bên phải để link. Số trên badge là số trường đích đã link.</p>
             {proposalFields.length === 0 ? (
               <div className="text-center py-8 text-base-content/40 text-sm">Nhấn "Get" để tải danh sách trường</div>
             ) : (
-              <div className="space-y-1.5 max-h-[520px] overflow-y-auto pr-1">
-                {proposalFields.map((field) => {
-                  const count = countBySource(field.key);
-                  const isUsedInDesc = usedInDescFields.includes(field.key);
-                  return (
-                    <div
-                      key={field.key}
-                      data-field-key={field.key}
-                      draggable
-                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', field.key); setDragKey(field.key); }}
-                      onDragEnd={() => { setDragKey(null); setDragOverTarget(null); }}
-                      className={`flex items-center gap-2 p-2 rounded-lg border text-sm cursor-grab active:cursor-grabbing bg-base-100 hover:border-primary ${dragKey === field.key ? 'opacity-50 border-primary' : 'border-base-300'}`}
-                    >
-                      <GripVertical size={14} className="text-base-content/30 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-medium truncate">{field.label}</span>
-                          {field.required ? <span className="text-error text-xs">*</span> : null}
-                          <span className={`badge badge-xs ${TYPE_COLORS[field.type] || 'badge-ghost'}`}>{TYPE_LABELS[field.type] || field.type}</span>
-                          {count > 0 && (
-                            <span data-count-key={field.key} className="badge badge-xs badge-success" title={`Đã link ${count} trường đích`}>
-                              ^ {count}
-                            </span>
-                          )}
-                          {isUsedInDesc && (
-                            <span className="badge badge-xs badge-warning gap-0.5" title="Đang dùng trong Desc Template">
-                              <AlertTriangle size={10} /> Desc
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs text-base-content/50">{field.key}</span>
-                      </div>
-                      <button className="btn btn-ghost btn-xs" onClick={() => { setSelectedInfo({ field }); setShowInfo(true); }}>
-                        <Info size={14} />
-                      </button>
-                    </div>
-                  );
-                })}
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold text-success uppercase">Đã link ({filterProposal(linkedProposalFields).length})</div>
+                  <div className="space-y-1.5">
+                    {filterProposal(linkedProposalFields).map(renderProposalField)}
+                    {filterProposal(linkedProposalFields).length === 0 && (
+                      <div className="text-center py-2 text-base-content/40 text-xs">Chưa có trường được link</div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold text-base-content/60 uppercase">Chưa link ({filterProposal(unlinkedProposalFields).length})</div>
+                  <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
+                    {filterProposal(unlinkedProposalFields).map(renderProposalField)}
+                    {filterProposal(unlinkedProposalFields).length === 0 && (
+                      <div className="text-center py-2 text-base-content/40 text-xs">Không còn trường trống</div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -365,32 +465,37 @@ const FieldMappingPanel = ({ configId, onClose }) => {
               </div>
             </div>
 
-            <div className="mb-2 text-xs font-semibold text-success uppercase">Đã link ({normalLinked.length + 2})</div>
+            <div className="mb-2 text-xs font-semibold text-success uppercase">Đã link ({filteredLinkedContact.length + (showSpecialDesc ? 1 : 0) + (showSpecialFiles ? 1 : 0)})</div>
             <div className="space-y-1.5 mb-4">
-              <div className="flex items-center gap-2 p-2 rounded-lg border border-success bg-success/5 text-sm">
-                <FileText size={14} className="text-success shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium">{SPECIAL_LABELS.desc}</span>
-                    <span className={`badge badge-xs ${TYPE_COLORS.textarea}`}>Textarea</span>
+              {showSpecialDesc && (
+                <div className="flex items-center gap-2 p-2 rounded-lg border border-success bg-success/5 text-sm">
+                  <FileText size={14} className="text-success shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{SPECIAL_LABELS.desc}</span>
+                      <span className={`badge badge-xs ${TYPE_COLORS.textarea}`}>Textarea</span>
+                    </div>
+                    <span className="text-xs text-base-content/50">← Desc Template (cố định)</span>
                   </div>
-                  <span className="text-xs text-base-content/50">← Desc Template (cố định)</span>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 p-2 rounded-lg border border-success bg-success/5 text-sm">
-                <Paperclip size={14} className="text-success shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium">{SPECIAL_LABELS.files}</span>
-                    <span className={`badge badge-xs ${TYPE_COLORS.json}`}>JSON</span>
+              )}
+              {showSpecialFiles && (
+                <div className="flex items-center gap-2 p-2 rounded-lg border border-success bg-success/5 text-sm">
+                  <Paperclip size={14} className="text-success shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{SPECIAL_LABELS.files}</span>
+                      <span className={`badge badge-xs ${TYPE_COLORS.json}`}>JSON</span>
+                    </div>
+                    <span className="text-xs text-base-content/50">← Tất cả file đề xuất ({fileFieldCount} trường file) (cố định)</span>
                   </div>
-                  <span className="text-xs text-base-content/50">← Tất cả file đề xuất ({fileFieldCount} trường file) (cố định)</span>
                 </div>
-              </div>
+              )}
 
-              {normalLinked.map((m) => {
+              {filteredLinkedContact.map((m) => {
                 const src = fieldByKey(m.source_field);
-                const targetDef = contactFields.find(f => f.key === m.target_field);
+                const targetDef = contactFields.find(f => f.key === m.target_field) || { key: m.target_field, label: m.target_field, type: m.target_field_type };
+                const note = fieldMetadata[m.target_field] && fieldMetadata[m.target_field].description;
                 return (
                   <div
                     key={m.id}
@@ -398,15 +503,20 @@ const FieldMappingPanel = ({ configId, onClose }) => {
                     onDragOver={(e) => { e.preventDefault(); setDragOverTarget(m.target_field); }}
                     onDragLeave={() => setDragOverTarget(t => t === m.target_field ? null : t)}
                     onDrop={(e) => { e.preventDefault(); handleDrop({ key: m.target_field, type: m.target_field_type, label: targetDef?.label }); }}
-                    className={`flex items-center gap-2 p-2 rounded-lg border border-success bg-success/5 text-sm ${dragOverTarget === m.target_field ? 'ring-2 ring-primary' : ''}`}
+                    className={`flex items-start gap-2 p-2 rounded-lg border border-success bg-success/5 text-sm ${dragOverTarget === m.target_field ? 'ring-2 ring-primary' : ''}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium truncate">{targetDef?.label || m.target_field}</span>
+                        <span className="font-medium truncate">{targetDef.label || m.target_field}</span>
                         <span className={`badge badge-xs ${TYPE_COLORS[m.target_field_type] || 'badge-ghost'}`}>{TYPE_LABELS[m.target_field_type] || m.target_field_type}</span>
                       </div>
                       <span className="text-xs text-base-content/50">← {src ? src.label : m.source_field} ({m.source_field})</span>
+                      {note && <div className="text-xs text-base-content/40 italic truncate">{note}</div>}
+                      {renderMetaEditor(m.target_field)}
                     </div>
+                    <button className="btn btn-ghost btn-xs" title="Sửa label/ghi chú" onClick={() => startEditMeta(targetDef)}>
+                      <Pencil size={12} />
+                    </button>
                     <button data-unlink={m.target_field} className="btn btn-ghost btn-xs text-error" onClick={() => handleUnlink(m)} disabled={savingId === m.target_field}>
                       <X size={14} />
                     </button>
@@ -419,6 +529,7 @@ const FieldMappingPanel = ({ configId, onClose }) => {
             <div className="space-y-1.5 max-h-[320px] overflow-y-auto pr-1">
               {filteredUnlinked.map((field) => {
                 const disabled = field.unsupported;
+                const note = fieldMetadata[field.key] && fieldMetadata[field.key].description;
                 return (
                   <div
                     key={field.key}
@@ -427,7 +538,7 @@ const FieldMappingPanel = ({ configId, onClose }) => {
                     onDragOver={(e) => { if (!disabled) { e.preventDefault(); setDragOverTarget(field.key); } }}
                     onDragLeave={() => setDragOverTarget(t => t === field.key ? null : t)}
                     onDrop={(e) => { e.preventDefault(); handleDrop(field); }}
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-sm ${disabled ? 'border-base-200 bg-base-200/40 opacity-60 cursor-not-allowed' : 'border-dashed border-base-300 bg-base-100'} ${dragOverTarget === field.key ? 'border-primary bg-primary/10' : ''}`}
+                    className={`flex items-start gap-2 p-2 rounded-lg border text-sm ${disabled ? 'border-base-200 bg-base-200/40 opacity-60 cursor-not-allowed' : 'border-dashed border-base-300 bg-base-100'} ${dragOverTarget === field.key ? 'border-primary bg-primary/10' : ''}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -436,7 +547,12 @@ const FieldMappingPanel = ({ configId, onClose }) => {
                         {disabled && <span className="badge badge-xs badge-warning">1Office không lưu</span>}
                       </div>
                       <span className="text-xs text-base-content/50">{field.key}</span>
+                      {note && <div className="text-xs text-base-content/40 italic truncate">{note}</div>}
+                      {renderMetaEditor(field.key)}
                     </div>
+                    <button className="btn btn-ghost btn-xs" title="Sửa label/ghi chú" onClick={() => startEditMeta(field)}>
+                      <Pencil size={12} />
+                    </button>
                     <button className="btn btn-ghost btn-xs" onClick={() => { setSelectedInfo({ field }); setShowInfo(true); }}>
                       <Info size={14} />
                     </button>

@@ -4,10 +4,12 @@ import { useAuth } from '../contexts/AuthContext';
 import AdminSidebar from '../components/layout/AdminSidebar';
 import AdminHeader from '../components/layout/AdminHeader';
 import Toast from '../components/Toast';
+import useMediaQuery from '../hooks/useMediaQuery';
 
 const AdminLayout = () => {
   const { isAuthenticated, canAccessPanel, loading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [toast, setToast] = useState({ message: '', type: 'error' });
   const location = useLocation();
   const navigate = useNavigate();
@@ -51,7 +53,7 @@ const AdminLayout = () => {
 
       {/* Content */}
       <div className="drawer-content flex flex-col min-h-screen">
-        <AdminHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
+        <AdminHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} showBell={!isDesktop} />
         <main className="flex-1 p-4 lg:p-6 bg-base-200">
           <Outlet />
         </main>
@@ -61,7 +63,7 @@ const AdminLayout = () => {
       {/* Sidebar */}
       <div className="drawer-side z-40 h-screen">
         <label className="drawer-overlay" onClick={() => setSidebarOpen(false)} />
-        <AdminSidebar onNavClick={handleNavClick} />
+        <AdminSidebar onNavClick={handleNavClick} showBell={isDesktop} />
       </div>
     </div>
   );

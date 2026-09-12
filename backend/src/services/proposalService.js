@@ -7,8 +7,9 @@ const proximityService = require('./proximityService');
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
-            p.created_at
+            p.created_at, p.user_id, u.parent_id AS owner_parent_id
      FROM station_proposals p
+     LEFT JOIN users u ON p.user_id = u.id
      ORDER BY p.created_at DESC`
   );
   return proposals;
@@ -17,8 +18,9 @@ exports.getAllProposals = async () => {
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
-            p.created_at
+            p.created_at, p.user_id, u.parent_id AS owner_parent_id
      FROM station_proposals p
+     LEFT JOIN users u ON p.user_id = u.id
      WHERE p.id = ?`,
     [id]
   );

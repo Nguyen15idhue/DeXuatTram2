@@ -201,6 +201,10 @@ const FieldManager = () => {
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleFormulaChange = useCallback((cfg) => {
+    setForm(prev => ({ ...prev, formula_config: cfg }));
+  }, []);
+
   const updateFileConfig = (key, value) => {
     setForm(prev => ({ ...prev, file_config: { ...prev.file_config, [key]: value } }));
   };
@@ -645,7 +649,7 @@ const FieldManager = () => {
                     <h4>Cấu hình Formula</h4>
                     <FormulaEditor
                       value={form.formula_config}
-                      onChange={(cfg) => updateForm('formula_config', cfg)}
+                      onChange={handleFormulaChange}
                       allFields={entityFields}
                     />
                   </div>

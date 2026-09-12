@@ -10,7 +10,7 @@ const navItems = [
 ];
 
 const UserHeader = ({ onMenuToggle }) => {
-  const { user, canAccessPanel, logout } = useAuth();
+  const { canAccessPanel, logout } = useAuth();
   const location = useLocation();
 
   const isActive = (path) => {
@@ -19,13 +19,13 @@ const UserHeader = ({ onMenuToggle }) => {
   };
 
   return (
-    <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-4 lg:px-6">
-      <div className="navbar-start">
+    <header className="navbar bg-base-100 shadow-sm sticky top-0 z-30 px-2 sm:px-4 lg:px-6 gap-1">
+      <div className="navbar-start min-w-0">
         <label className="btn btn-square btn-ghost lg:hidden" onClick={onMenuToggle}>
           <Menu size={20} />
         </label>
-        <Link to="/map" className="btn btn-ghost text-xl font-bold text-primary">
-          Station Management
+        <Link to="/map" className="btn btn-ghost text-lg sm:text-xl font-bold text-primary px-1 sm:px-2 min-w-0">
+          <span className="truncate">Station Management</span>
         </Link>
       </div>
 
@@ -59,12 +59,11 @@ const UserHeader = ({ onMenuToggle }) => {
         )}
       </nav>
 
-      <div className="navbar-end gap-2">
+      <div className="navbar-end gap-1">
         <NotificationBell />
-        <span className="text-sm text-base-content/70 hidden sm:inline">{user?.full_name}</span>
-        <button onClick={logout} className="btn btn-sm btn-ghost text-error gap-2">
-          <LogOut size={14} />
-          <span className="hidden sm:inline">Đăng xuất</span>
+        <button onClick={logout} className="btn btn-sm btn-ghost text-error gap-1 hidden lg:inline-flex" title="Đăng xuất">
+          <LogOut size={16} />
+          <span>Đăng xuất</span>
         </button>
       </div>
     </header>

@@ -2,8 +2,11 @@ const stationService = require('../services/stationService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { search, status, page = 1, limit = 10 } = req.query;
-    const result = await stationService.getAllStations(search, status, parseInt(page), parseInt(limit));
+    const { search, status, page = 1, limit } = req.query;
+    const isMapRequest = limit === undefined;
+    const parsedLimit = isMapRequest ? 10000 : parseInt(limit);
+    const parsedPage = isMapRequest ? 1 : parseInt(page);
+    const result = await stationService.getAllStations(search, status, parsedPage, parsedLimit);
     res.json({ success: true, data: result.stations, pagination: result.pagination });
   } catch (error) {
     console.error('Get stations error:', error);

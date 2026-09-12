@@ -168,36 +168,23 @@ function renderSection(section, proposal, fieldMap) {
   return html;
 }
 
-function renderFieldBox(label, valueHtml, flexBasis) {
-  const value = valueHtml || '<span style="color:#aaa">—</span>';
-  return `<div style="flex:${flexBasis};min-width:0;box-sizing:border-box;display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid #ddd;margin:-1px 0 0 -1px">`
-    + `<div style="flex:0 0 40%;max-width:40%;font-weight:600;overflow-wrap:anywhere;word-break:break-word">${escapeHtml(label)}</div>`
-    + `<div style="flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:break-word">${value}</div>`
-    + `</div>`;
-}
+const TD_LABEL = 'width:35%;font-weight:600;background:#fafafa;border:1px solid #ddd;padding:6px 10px;vertical-align:top;overflow-wrap:anywhere;word-break:break-word';
+const TD_VALUE = 'border:1px solid #ddd;padding:6px 10px;vertical-align:top;overflow-wrap:anywhere;word-break:break-word';
 
 function render2ColLayout(fields, proposal, fieldMap) {
-  let html = `<div style="display:flex;flex-wrap:wrap;margin-bottom:12px">`;
+  let html = `<table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px"><tbody>`;
   for (const key of fields) {
     const raw = getFieldValue(proposal, key);
     const label = getFieldLabel(key, fieldMap);
-    const value = formatFieldValue(key, raw, fieldMap);
-    html += renderFieldBox(label, value, '1 1 300px');
+    const value = formatFieldValue(key, raw, fieldMap) || '<span style="color:#aaa">—</span>';
+    html += `<tr><td style="${TD_LABEL}">${escapeHtml(label)}</td><td style="${TD_VALUE}">${value}</td></tr>`;
   }
-  html += `</div>`;
+  html += `</tbody></table>`;
   return html;
 }
 
 function render1ColLayout(fields, proposal, fieldMap) {
-  let html = `<div style="display:flex;flex-wrap:wrap;margin-bottom:12px">`;
-  for (const key of fields) {
-    const raw = getFieldValue(proposal, key);
-    const label = getFieldLabel(key, fieldMap);
-    const value = formatFieldValue(key, raw, fieldMap);
-    html += renderFieldBox(label, value, '1 1 100%');
-  }
-  html += `</div>`;
-  return html;
+  return render2ColLayout(fields, proposal, fieldMap);
 }
 
 function renderTableLayout(fields, proposal, fieldMap, color) {

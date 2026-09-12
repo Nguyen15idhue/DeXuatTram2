@@ -178,7 +178,13 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
 
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   const createdAt = new Date().toISOString();
-  const resolveUserId = recordData?.user_id ?? userId;
+  let resolveUserId = recordData?.user_id ?? userId;
+  if ((resolveUserId === undefined || resolveUserId === null || resolveUserId === '') && recordId !== undefined && recordId !== null) {
+    try {
+      const [prows] = await pool.query('SELECT user_id FROM station_proposals WHERE id = ?', [recordId]);
+      if (prows.length > 0) resolveUserId = prows[0].user_id;
+    } catch { /* silent */ }
+  }
   let userName = '';
   let userRole = '';
   let salesName = '';
@@ -254,6 +260,9 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
       if (missing) continue;
     }
     const scope = { ...recordData };
+    for (const fd of fieldDefs) {
+      if (scope[fd.key] === undefined || scope[fd.key] === null) scope[fd.key] = '';
+    }
     for (const [key, arr] of Object.entries(tableColArrays)) {
       scope[key] = arr;
     }

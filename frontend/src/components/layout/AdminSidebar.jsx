@@ -23,7 +23,7 @@ const menuItems = [
   { path: '/admin/api-configs', label: 'API Configs', icon: Settings, roles: ['SUPER_ADMIN'] },
 ];
 
-const AdminSidebar = ({ onNavClick }) => {
+const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const visibleItems = menuItems.filter((item) => !item.roles || item.roles.includes(user?.role));
@@ -35,7 +35,7 @@ const AdminSidebar = ({ onNavClick }) => {
         <Link to="/admin" className="text-lg font-bold text-primary" onClick={onNavClick}>
           Admin Panel
         </Link>
-        <NotificationBell mode="admin" />
+        {showBell && <NotificationBell mode="admin" />}
       </div>
 
       {/* Navigation */}

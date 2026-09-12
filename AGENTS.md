@@ -80,13 +80,23 @@ Browser → Frontend → REST API → Backend → MySQL
 - CTV được sửa đề xuất khi `PENDING` hoặc `REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong status về `PENDING` + notify người đã từ chối với type `RESUBMITTED`.
 - Ngoài ra, đổi status sang REJECTED qua form sửa cũ cũng tạo notification (lưới an toàn).
 - Chuông `NotificationBell` ở header user + admin (polling 30s + refresh ngay qua sự kiện `notifications:refresh`; nhấp nháy + badge chưa đọc). Dropdown render qua `createPortal` ra `body` (`position:fixed`, `z-index:9999`) để không bị `.drawer-side` che/cắt. Badge/list chỉ tính thông báo trong **`NOTIFICATION_RETENTION_DAYS`** ngày gần nhất (mặc định 7).
-- **Tab thông báo**: trang user (và role SALES) chỉ "Của bạn"; trang admin + ADMIN/SUPER có thêm tab **"Tất cả"** (`GET /api/notifications/all`, requireAdmin, chỉ đọc, hiện tên người nhận). Badge luôn = chưa đọc của chính mình.
+- **Tab thông báo**: trang user (và role SALES) chỉ "Của bạn"; trang admin + ADMIN/SUPER có thêm tab **"Tất cả"** (`GET /api/notifications/all`, requireAdmin, chỉ đọc, hiện tên người nhận). Badge luôn = chưa đọc của chính mình. Click item điều hướng theo ngữ cảnh trang (`mode`): user → `/my-proposals/view=id`, admin → `/admin/proposals/view=id` (KHÔNG theo role).
 - CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API. Nút "Gửi lại" hiện khi status `REJECTED` ở mọi đường sửa; lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` (cả `myProposalService` và `adminProposalService.updateProposal`).
 
 ### Map Marker Rules
 6. Station `ACTIVE` → marker xanh
 7. Station `DEPLOYING` → marker vàng
 8. Proposal → marker màu trạng thái đề xuất
+8b. Popup marker (`MapView`): link "Xem chi tiết" mở `/admin/stations|proposals/view=<id>` cho `SUPER_ADMIN|ADMIN|SALES` (dùng `canOpenAdminRecord`); render bằng thẻ `<a>` thuần (KHÔNG dùng `<Link>` vì popup tạo ngoài React Router context → lỗi `basename`).
+8c. Popup đề xuất gate sở hữu (`canViewProposal`): ADMIN/SUPER luôn xem; SALES chỉ xem đề xuất của mình (`user_id`) hoặc của CTV thuộc nhánh (`owner_parent_id` = sales id), ngoài nhánh hiện dòng đỏ "Bạn không có quyền xem đề xuất này"; CTV/guest không nút. `GET /proposals` trả thêm `user_id`, `owner_parent_id` (public) để FE quyết định (backend vẫn chặn thật qua `denyOutsideBranch`).
+
+### Map Page Rules
+- Trang `/map` có bộ lọc thu gọn/mở rộng (`MapFilterPanel`, nút phễu trái): phạm vi đề xuất "Của tôi" (theo `user_id`)/"Tất cả", ẩn/hiện trạm & đề xuất, chip lọc trạng thái trạm + đề xuất. Desktop = card nổi; mobile (<768px) = bottom sheet.
+- `MapView` nhận prop `filters`; lọc client-side bằng `useMemo` → `visibleStations`/`visibleProposals` trước khi truyền `MapLayerController`. Mặc định `EMPTY_MAP_FILTERS` = hiện tất cả.
+- `GET /stations` **không truyền `limit`** → trả toàn bộ (map cần hết marker); có `limit` → phân trang như cũ.
+- `RecordDetailPopup` (stations/proposals): nút "Xem bản đồ" mở `LocationMapModal` — modal gọn tâm tại `record.latitude/longitude`, marker có vành nét đứt xoay (`location-point-ring`, `@keyframes location-ring-spin`) + chọn bán kính **5/10/20/50 km** (`L.Circle`) và **hiện các trạm/đề xuất lân cận trong bán kính** (marker màu theo trạng thái, popup khoảng cách). Chỉ hiện khi có tọa độ.
+
+
 
 ### Map Tile Rules
 9. Tile server lỗi → fallback proxy `/tiles/{z}/{x}/{y}` tự động, KHÔNG hiện warning cho user
@@ -306,6 +316,9 @@ DynamicField render: custom dropdown with badge styling
 - Config: `formula_config = { compute_mode, expression, referencedFields, outputType, outputFormat, decimalPlaces, unit }`
 - Pre: `computeFormula()` dùng mathjs v15.2.0 evaluator
 - Post: Backend compute sau INSERT → update record → return kết quả
+- Post metadata: `user_name`/`user_role`/`sales_name` lấy theo **người tạo** (`record.user_id`); nếu không truyền `userId`, engine **tự lấy `station_proposals.user_id` theo `recordId`**. Scope được nạp `''` cho mọi field key thiếu (tránh mathjs `Undefined symbol`).
+- So sánh chuỗi trong công thức: dùng `compareText(a, b) == 0` (mathjs evaluator KHÔNG hỗ trợ `==` trực tiếp với chuỗi).
+- Recompute hàng loạt record: `backend/scripts/recomputeFormulas.js` (exclude `ma_de_xuat`).
 - 26 custom functions: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW
 
 ### Formula Visual Editor
@@ -345,6 +358,7 @@ DynamicField render: custom dropdown with badge styling
 - **File đính kèm**: field `files` = JSON string `[{name,file}]` trong body `contact/insert` (hoặc `update`); KHÔNG dùng endpoint upload-file riêng; gửi **tất cả file trong 1 request**; `update` **append** file (chỉ gửi file mới để tránh trùng); tên file nên **bỏ đuôi** vì 1Office tự thêm đuôi theo nội dung
 - **Mapping target đặc biệt**: `desc` (nguồn = Desc Template, cố định) và `files` (gộp mọi field file) luôn link sẵn; `api_field_mappings` unique theo `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn). **`desc`/`files` là special target — KHÔNG dùng làm nguồn pull** (`syncService` tự loại khỏi push/pull mappings) để tránh desc bị lặp (pull ghi desc vào `description` rồi push lại lồng vào desc).
 - **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region — API nhận nhưng không lưu (khóa kéo–thả ở FieldMappingPanel)
+- **FieldMappingPanel**: Contact Fields cho sửa **Label + Ghi chú** (nút bút chì), lưu vào `api_configs.field_metadata` (`{label, description}`); `getFieldTypes` **luôn ưu tiên `saved.label`** nên label không mất sau "Get"; special `desc`/`files` không sửa. Proposal Fields chia **Đã link** (có mapping nguồn) / **Chưa link**; cả 2 cột đều có ô tìm kiếm lọc theo label/key.
 - **Non-working arrays**: contacts[] — API không parse; detail[] — chỉ lưu department_id
 - **Desc field HTML**: type `html` trong docs, INSERT lưu HTML đúng, GET strip HTML → plain text, Web UI render HTML đúng
 - **Code**: `backend/src/services/fieldMapper.js` (ONE_OFFICE_FIELDS), `frontend/src/components/admin/FieldMappingPanel.jsx` (SOURCE_TYPES_FORCE_TEXT)

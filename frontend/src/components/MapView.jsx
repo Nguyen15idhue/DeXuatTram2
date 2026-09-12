@@ -1,7 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { createRoot } from 'react-dom/client';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
-import { Link } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
@@ -19,6 +17,7 @@ const FALLBACK_TILES = [
 ];
 
 const PROXY_TILE = '/tiles/{z}/{x}/{y}';
+const EMPTY_PAIRS = [];
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 function resolveTileUrl(template, apiKey, styleValue) {
@@ -249,6 +248,33 @@ function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
   );
 }
 
+const ADMIN_PANEL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+const canOpenAdminRecord = (user) => !!user && ADMIN_PANEL_ROLES.includes(user.role);
+
+const canViewProposal = (item, user) => {
+  if (!user) return false;
+  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return true;
+  if (user.role === 'SALES') {
+    return Number(item.user_id) === Number(user.id) || Number(item.owner_parent_id) === Number(user.id);
+  }
+  return false;
+};
+
+function renderAdminLink(div, href) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.className = 'btn btn-sm btn-primary mt-2';
+  a.textContent = 'Xem chi tiết';
+  div.appendChild(a);
+}
+
+function renderDeniedNote(div) {
+  const p = document.createElement('p');
+  p.className = 'popup-denied';
+  p.textContent = 'Bạn không có quyền xem đề xuất này';
+  div.appendChild(p);
+}
+
 function createStationPopupContent(item, user) {
   const div = document.createElement('div');
   div.className = 'popup-content';
@@ -278,19 +304,14 @@ function createStationPopupContent(item, user) {
 
   if (item.description) addRow('Mô tả', item.description);
 
-  if (user?.role === 'ADMIN') {
-    const root = createRoot(div);
-    root.render(
-      <Link to={`/admin/stations/view=${item.id}`} className="btn btn-sm btn-primary mt-2">
-        Xem chi tiết
-      </Link>
-    );
+  if (canOpenAdminRecord(user)) {
+    renderAdminLink(div, `/admin/stations/view=${item.id}`);
   }
 
   return div;
 }
 
-function createProposalPopupContent(item) {
+function createProposalPopupContent(item, user) {
   const div = document.createElement('div');
   div.className = 'popup-content';
   const h3 = document.createElement('h3');
@@ -316,6 +337,12 @@ function createProposalPopupContent(item) {
   statusSpan.textContent = item.status;
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
+
+  if (canViewProposal(item, user)) {
+    renderAdminLink(div, `/admin/proposals/view=${item.id}`);
+  } else if (user && (user.role === 'SALES')) {
+    renderDeniedNote(div);
+  }
 
   return div;
 }
@@ -361,7 +388,7 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
       if (item._type === 'station') {
         marker.bindPopup(() => createStationPopupContent(item, user), { className: 'station-popup' });
       } else {
-        marker.bindPopup(() => createProposalPopupContent(item), { className: 'proposal-popup' });
+        marker.bindPopup(() => createProposalPopupContent(item, user), { className: 'proposal-popup' });
       }
 
       marker.on('click', () => onMarkerClick && onMarkerClick(item, item._type));
@@ -455,7 +482,8 @@ const MapView = ({
   user,
   highlightIds = null,
   readOnly = false,
-  pairs = []
+  pairs = EMPTY_PAIRS,
+  filters = null
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
@@ -632,6 +660,41 @@ const MapView = ({
     return () => { mountedRef.current = false; };
   }, []);
 
+  const visibleStations = useMemo(() => {
+    if (!filters) return stations;
+    if (filters.hideStations) return [];
+    const statuses = filters.stationStatuses || [];
+    if (statuses.length === 0) return stations;
+    return stations.filter(s => statuses.includes(s.status));
+  }, [stations, filters]);
+
+  const visibleProposals = useMemo(() => {
+    if (!filters) return proposals;
+    if (filters.hideProposals) return [];
+    let list = proposals;
+    if (filters.scope === 'mine' && user) {
+      const uid = Number(user.id);
+      list = list.filter(p => Number(p.user_id) === uid);
+    }
+    const statuses = filters.proposalStatuses || [];
+    if (statuses.length > 0) {
+      list = list.filter(p => statuses.includes(p.status));
+    }
+    return list;
+  }, [proposals, filters, user]);
+
+  const layerStations = useMemo(() => {
+    if (!highlightIds) return visibleStations;
+    const ids = new Set(highlightIds.stations);
+    return visibleStations.filter(s => ids.has(s.id));
+  }, [visibleStations, highlightIds]);
+
+  const layerProposals = useMemo(() => {
+    if (!highlightIds) return visibleProposals;
+    const ids = new Set(highlightIds.proposals);
+    return visibleProposals.filter(p => ids.has(p.id));
+  }, [visibleProposals, highlightIds]);
+
   const handleMyLocation = useCallback((openForm = false) => {
     if (!navigator.geolocation) {
       console.error('[MapView] navigator.geolocation is not available');
@@ -749,8 +812,8 @@ const MapView = ({
         )}
 
         <MapLayerController
-          stations={highlightIds ? stations.filter(s => highlightIds.stations.includes(s.id)) : stations}
-          proposals={highlightIds ? proposals.filter(p => highlightIds.proposals.includes(p.id)) : proposals}
+          stations={layerStations}
+          proposals={layerProposals}
           onMarkerClick={onMarkerClick}
           user={user}
           showStationLabels={showStationLabels}

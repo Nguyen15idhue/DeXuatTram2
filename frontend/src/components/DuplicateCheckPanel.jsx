@@ -1,4 +1,4 @@
-import { useState, forwardRef, useImperativeHandle } from 'react';
+import { useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import MapView from './MapView';
 import { excelService } from '../services/api';
 import { MapPinned, Map as MapIcon, X, Download } from 'lucide-react';
@@ -34,8 +34,7 @@ const DuplicateCheckPanel = forwardRef(({
     }
   }));
 
-  const handleCheck = async () => {
-    const m = Number(maxM);
+  const handleCheck = async () => {    const m = Number(maxM);
     if (!m || m <= 200) {
       setError('X (m) phải lớn hơn 200');
       return;
@@ -100,6 +99,11 @@ const DuplicateCheckPanel = forwardRef(({
     }
     return <span className="text-base-content/30 text-xs">{side}</span>;
   };
+
+  const highlightIds = useMemo(() => result ? ({
+    proposals: result.duplicate_proposal_ids,
+    stations: result.duplicate_station_ids
+  }) : null, [result]);
 
   return (
     <div className="mb-4">
@@ -193,10 +197,7 @@ const DuplicateCheckPanel = forwardRef(({
             <div className="flex-1 min-h-0 relative">
               <MapView
                 readOnly
-                highlightIds={{
-                  proposals: result.duplicate_proposal_ids,
-                  stations: result.duplicate_station_ids
-                }}
+                highlightIds={highlightIds}
                 pairs={result.pairs}
               />
             </div>

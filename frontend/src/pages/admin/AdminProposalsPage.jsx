@@ -43,6 +43,16 @@ const AdminProposalsPage = () => {
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const dupRef = useRef(null);
   const tableRef = useRef(null);
+  const syncPollRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (syncPollRef.current) {
+        clearInterval(syncPollRef.current);
+        syncPollRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/proposals\/(view|edit)=(\d+)/);
@@ -183,6 +193,7 @@ const AdminProposalsPage = () => {
 
   const pollSyncJobs = (jobIds, onDone) => {
     if (!jobIds || jobIds.length === 0) return;
+    if (syncPollRef.current) clearInterval(syncPollRef.current);
     let attempts = 0;
     const timer = setInterval(async () => {
       attempts++;
@@ -195,15 +206,19 @@ const AdminProposalsPage = () => {
         const done = jobs.length === jobIds.length && jobs.every(j => ['completed', 'failed', 'cancelled'].includes(j.status));
         if (done) {
           clearInterval(timer);
+          syncPollRef.current = null;
           onDone(jobs);
         } else if (attempts >= 30) {
           clearInterval(timer);
+          syncPollRef.current = null;
           setToast({ message: 'Lệnh vẫn đang xử lý — theo dõi trong Audit Log', type: 'info' });
         }
       } catch {
         clearInterval(timer);
+        syncPollRef.current = null;
       }
     }, 3000);
+    syncPollRef.current = timer;
   };
 
   const handleBatchPush = async () => {

@@ -115,9 +115,12 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
 
   const config = value || { expression: '', referencedFields: [], compute_mode: 'pre', outputType: 'auto', outputFormat: '', decimalPlaces: 0, unit: '', label: '' };
 
+  const configRef = useRef(config);
+  configRef.current = config;
+
   const updateConfig = useCallback((patch) => {
-    onChange({ ...config, ...patch });
-  }, [config, onChange]);
+    onChange({ ...configRef.current, ...patch });
+  }, [onChange]);
 
   const ALL_SUGGESTIONS = useMemo(() => {
     const fieldSuggestions = allFields.filter(f => f.type !== 'password').map(f => ({ text: f.key, label: f.label || f.key, type: 'field', fieldType: f.type }));
@@ -269,12 +272,15 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
     insertText(varName);
   }, [insertText]);
 
+  const allFieldsRef = useRef(allFields);
+  allFieldsRef.current = allFields;
+
   const getReferencedFields = useCallback((expression) => {
     if (!expression) return [];
-    const fieldKeys = new Set(allFields.map(f => f.key));
+    const fieldKeys = new Set(allFieldsRef.current.map(f => f.key));
     const words = expression.match(/[a-zA-Z_]\w*/g) || [];
     return [...new Set(words)].filter(w => fieldKeys.has(w));
-  }, [allFields]);
+  }, []);
 
   useEffect(() => {
     if (!config.expression) {
@@ -284,18 +290,21 @@ export default function FormulaEditor({ value, onChange, allFields = [] }) {
     }
     const timer = setTimeout(async () => {
       try {
-        const fields = allFields.filter(f => f.type !== 'password').map(f => ({ key: f.key, label: f.label || f.key, type: f.type }));
+        const fields = allFieldsRef.current.filter(f => f.type !== 'password').map(f => ({ key: f.key, label: f.label || f.key, type: f.type }));
         const resp = await formulaService.validate(config.expression, fields, token);
         if (resp.success) {
           setValidation(resp.data);
-          updateConfig({ referencedFields: getReferencedFields(config.expression) });
+          const nextRefs = getReferencedFields(config.expression);
+          const prevRefs = configRef.current.referencedFields || [];
+          const changed = nextRefs.length !== prevRefs.length || nextRefs.some((k, i) => k !== prevRefs[i]);
+          if (changed) updateConfig({ referencedFields: nextRefs });
         }
       } catch {
         setValidation({ valid: false, error: 'Không thể validate' });
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [config.expression, allFields, token, getReferencedFields, updateConfig]);
+  }, [config.expression, token, getReferencedFields, updateConfig]);
 
   const handlePreview = async () => {
     if (!config.expression) return;

@@ -12,3 +12,5 @@ frontend/dist/
 test-results/
 playwright-report/
 .playwright-mcp/
+backups/
+frontend/test-*-results.json

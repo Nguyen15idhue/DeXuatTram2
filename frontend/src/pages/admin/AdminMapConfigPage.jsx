@@ -34,7 +34,6 @@ const AdminMapConfigPage = () => {
   const [customAttribution, setCustomAttribution] = useState('');
   const [customSubdomains, setCustomSubdomains] = useState('');
   const [isCustom, setIsCustom] = useState(false);
-  const [previewKey, setPreviewKey] = useState(0);
   const [filterType, setFilterType] = useState('all');
   const [testStatus, setTestStatus] = useState(null);
   const [testUrl, setTestUrl] = useState('');
@@ -205,7 +204,6 @@ const AdminMapConfigPage = () => {
       if (data.success) {
         setToast({ message: 'Lưu cấu hình thành công!', type: 'success' });
         setConfig(data.data);
-        setPreviewKey(prev => prev + 1);
       } else {
         setToast({ message: data.message || 'Lỗi lưu', type: 'error' });
       }
@@ -256,7 +254,7 @@ const AdminMapConfigPage = () => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
               {filteredProviders.map(p => (
-                <div key={p.id} onClick={() => { setIsCustom(false); setSelectedProviderId(p.id); setSelectedStyle(p.tile_url_styles?.[0]?.value || p.style_options?.[0]?.value || ''); setPreviewKey(k => k + 1); setTestStatus(null); }}
+                <div key={p.id} onClick={() => { setIsCustom(false); setSelectedProviderId(p.id); setSelectedStyle(p.tile_url_styles?.[0]?.value || p.style_options?.[0]?.value || ''); setTestStatus(null); }}
                   className={`p-2.5 rounded-lg cursor-pointer border-2 transition-all ${!isCustom && selectedProviderId === p.id ? 'border-primary bg-primary/5' : 'border-base-300 bg-white hover:border-primary/40'}`}>
                   <div className="text-sm font-semibold">{p.name}</div>
                   <div className="text-xs text-base-content/50 mt-0.5">{p.description}</div>
@@ -286,7 +284,7 @@ const AdminMapConfigPage = () => {
                 </ul>
               </details>
             )}
-            <div onClick={() => { setIsCustom(true); setSelectedProviderId('custom'); setPreviewKey(k => k + 1); setTestStatus(null); }}
+            <div onClick={() => { setIsCustom(true); setSelectedProviderId('custom'); setTestStatus(null); }}
               className={`mt-2 p-2.5 rounded-lg cursor-pointer border-2 transition-all ${isCustom ? 'border-primary bg-primary/5' : 'border-base-300 bg-white hover:border-primary/40'}`}>
               <div className="text-sm font-semibold">Tùy chỉnh thủ công (Custom)</div>
               <div className="text-xs text-base-content/50">Nhập tile URL, attribution, subdomains thủ công</div>
@@ -298,7 +296,7 @@ const AdminMapConfigPage = () => {
             <div className="bg-white border border-base-300 rounded-lg p-4">
               <h3 className="text-base font-bold mb-3">Authentication</h3>
               <label className="text-sm font-semibold block mb-1.5">API Key / Token</label>
-              <input className="input input-bordered input-sm w-full" value={apiKey} onChange={e => { setApiKey(e.target.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
+              <input className="input input-bordered input-sm w-full" value={apiKey} onChange={e => { setApiKey(e.target.value); setTestStatus(null); }}
                 placeholder={selectedProvider.api_key_placeholder || 'Nhập API Key'} />
               <div className="text-xs text-base-content/50 mt-1">{selectedProvider.description}</div>
             </div>
@@ -313,7 +311,7 @@ const AdminMapConfigPage = () => {
                 <label className="text-sm font-semibold block mb-1.5">Style</label>
                 <div className="grid grid-cols-2 gap-1.5">
                   {currentStyleOptions.map(s => (
-                    <div key={s.value} onClick={() => { setSelectedStyle(s.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
+                    <div key={s.value} onClick={() => { setSelectedStyle(s.value); setTestStatus(null); }}
                       className={`px-2.5 py-2 rounded-md cursor-pointer text-xs font-medium border-2 transition-all ${selectedStyle === s.value ? 'border-primary bg-primary/5' : 'border-base-300 bg-white'}`}>
                       {s.label}
                     </div>
@@ -326,7 +324,7 @@ const AdminMapConfigPage = () => {
               <div className="flex flex-col gap-2.5 mb-3">
                 <div>
                   <label className="text-sm font-semibold block mb-1.5">Tile URL</label>
-                  <input className="input input-bordered input-sm w-full" value={customTileUrl} onChange={e => { setCustomTileUrl(e.target.value); setPreviewKey(k => k + 1); setTestStatus(null); }}
+                  <input className="input input-bordered input-sm w-full" value={customTileUrl} onChange={e => { setCustomTileUrl(e.target.value); setTestStatus(null); }}
                     placeholder="https://{s}.example.com/{z}/{x}/{y}.png" />
                 </div>
                 <div>
@@ -411,7 +409,7 @@ const AdminMapConfigPage = () => {
               </span>
             </div>
             {safeTileUrl ? (
-              <MapContainer key={previewKey} center={center} zoom={config.default_zoom || 6} style={{ height: 400, width: '100%' }}>
+              <MapContainer center={center} zoom={config.default_zoom || 6} style={{ height: 400, width: '100%' }}>
                 <TileLayer attribution={tile.attribution} url={safeTileUrl} subdomains={subdomains} />
               </MapContainer>
             ) : (

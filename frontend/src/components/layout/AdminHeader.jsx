@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 
-const AdminHeader = ({ onMenuToggle }) => {
+const AdminHeader = ({ onMenuToggle, showBell = true }) => {
   return (
     <div className="navbar bg-base-100 shadow-sm lg:hidden sticky top-0 z-30">
       <label className="btn btn-square btn-ghost drawer-button" onClick={onMenuToggle}>
@@ -12,7 +12,7 @@ const AdminHeader = ({ onMenuToggle }) => {
         Admin Panel
       </Link>
       <div className="ml-auto">
-        <NotificationBell mode="admin" />
+        {showBell && <NotificationBell mode="admin" />}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import MapView from '../../components/MapView';
+import MapFilterPanel, { EMPTY_MAP_FILTERS } from '../../components/MapFilterPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
@@ -19,6 +20,7 @@ const MapPage = () => {
   const [highlightPosition, setHighlightPosition] = useState(null);
   const [nearbyWarning, setNearbyWarning] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [filters, setFilters] = useState({ ...EMPTY_MAP_FILTERS });
 
   useEffect(() => {
     setIsMobile(window.innerWidth < 768);
@@ -141,7 +143,10 @@ const MapPage = () => {
         highlightPosition={highlightPosition}
         refreshKey={mapKey}
         user={user}
+        filters={filters}
       />
+
+      <MapFilterPanel filters={filters} onChange={setFilters} isMobile={isMobile} />
 
       {selectingLocation && highlightPosition && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1001] bg-white rounded-xl shadow-lg border border-base-300 px-4 py-3 flex items-center gap-4">
