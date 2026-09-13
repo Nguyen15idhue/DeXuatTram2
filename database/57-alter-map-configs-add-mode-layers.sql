@@ -26,7 +26,7 @@ SET layers_config = JSON_ARRAY(JSON_OBJECT(
   'role', 'base',
   'type', 'raster',
   'provider', COALESCE(tile_provider_id, 'leaflet-osm'),
-  'style', COALESCE(NULLIF(style_url, ''), NULLIF(style_value, '')),
+  'style', NULLIF(style_url, ''),
   'mode', 'streets'
 ))
 WHERE layers_config IS NULL;
