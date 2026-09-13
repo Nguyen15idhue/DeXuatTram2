@@ -99,9 +99,24 @@ Browser → Frontend → REST API → Backend → MySQL
 
 
 ### Map Tile Rules
-9. Tile server lỗi → fallback proxy `/tiles/{z}/{x}/{y}` tự động, KHÔNG hiện warning cho user
-10. Geolocation: debug log `console.error('[MapView] Geolocation error:')` khi có lỗi, user thấy alert
-11. MyProposalsPage mini map: click → realtime sync lat/lng vào DynamicForm qua `initialData` prop
+9. Cấu hình bản đồ (`map_configs`) **áp dụng thật**: `MapView` + `LocationMapModal` + mini map `MyProposalsPage` đều đọc qua `useMapConfig`/`utils/mapTile.js`.
+10. `tile_mode`: `proxy` (mặc định, `/tiles/{z}/{x}/{y}` — server giữ key) | `direct` (browser gọi thẳng provider, key client-side). `retina` bật `@2x`.
+11. Public `GET /api/map-configs` **ẩn `api_key`** khi proxy; admin đọc full qua `GET /api/map-configs/admin` (SUPER_ADMIN).
+12. Tile lỗi liên tục → fallback Esri→OSM + banner cảnh báo (không còn im lặng trắng map). Geoapify là provider chính (`maps.geoapify.com`, whitelist proxy).
+12b. **Provider miễn phí không cần key**: OSM mirror `tile.openstreetmap.de` (style `osm-de`) và `{s}.tile.openstreetmap.fr/osmfr` (`osm-fr`) trong `leaflet-osm`; `esri-basemap` (World_Street_Map/World_Imagery/World_Topo_Map); OpenTopoMap. Mặc định `map_configs` = **`leaflet-osm`/`osm-de`** để không tốn quota tile Geoapify. **CARTO (`basemaps.cartocdn.com`) nay cần API key — tile có watermark "API KEY REQUIRED" → đã gỡ khỏi catalog.** OSM gốc `tile.openstreetmap.org` bị chặn TLS ở tầng mạng (cả host lẫn container) → không dùng được. Xem `docs/5/34`.
+13. Renderer seam: `frontend/src/components/map/renderers/`; `renderer` chưa hỗ trợ → cảnh báo + fallback Leaflet.
+14. Geolocation: debug log `console.error('[MapView] Geolocation error:')` khi có lỗi, user thấy alert. `mountedRef` phải được set `true` trong effect (StrictMode chạy effect 2 lần).
+15. MyProposalsPage mini map: click → realtime sync lat/lng vào DynamicForm qua `initialData` prop.
+16. Admin preview `/admin/map-config`: `TileLayer` cần `key` theo provider/style (react-leaflet không cập nhật `subdomains` sau mount → lỗi `{s}` gây trắng trang). Test kết nối dùng `new Image()` thay HEAD.
+17. Lưu config map → phát sự kiện `mapconfig:refresh`; `useMapConfig` (TTL 60s) + `MapView` refetch tự động. Provider không còn trong catalog → `buildTileConfig` dùng `tile_url` đã lưu (cảnh báo nhẹ) thay vì dead-end. `MapView` phải đọc style đã lưu (`style_url`), không hardcode index 0.
+
+### Reverse Geocoding Rules
+- `geocodeService.reverse(lat,lng)` gọi Geoapify (`/v1/geocode/reverse`, `lang=vi`, `countrycodes=vn`) → chuẩn hóa + **cache** `geocode_cache` (4 chữ số thập phân). Trả kèm `admin` = kết quả khớp Data List.
+- **`address` được dựng chuẩn**: `[số nhà] [tên đường], {xã/phường}, {tỉnh/thành}, Việt Nam` (tối thiểu xã + tỉnh + Việt Nam). Ưu tiên giá trị canonical từ Data List; fallback trường Geoapify (`suburb`/`city`...). KHÔNG dùng `formatted` thô (tránh postcode/POI name).
+- `dataListService.matchAdministrative(geo)`: khớp tỉnh (`state→city→county`) với `dm_tinh`; khớp phường/xã (`suburb→city→district→quarter→county`) với list `Danh muc Phuong Xa`. Bỏ tiền tố qua `normalizeAdminName`; không khớp → `null`.
+- `addressEnrichment.enrichDynamicData` tự điền `address`/`province`/`ma_tinh`/`vung_mien`/`xa_phuong` **chỉ khi ô trống**, gọi trước `applyDiaGioi` ở `proposalService`/`myProposalService`/`adminProposalService`/`stationService`/`excelService` (gate `GEOCODE_ON_IMPORT`).
+- FE: `DynamicForm` watcher theo `latitude`/`longitude` (debounce 700ms) gọi `POST /api/geocode/reverse`; điền `address/province/xa_phuong/ma_tinh/vung_mien`, không ghi đè ô đã nhập.
+- Config: `geocode_configs`; admin `GET/PUT /api/admin/geocode-config` + `POST /api/admin/geocode-config/test` (SUPER_ADMIN). Panel `GeocodeConfigPanel` cuối trang `/admin/map-config`.
 
 ### Create Form Modal Rules
 12. Tất cả create form modals phải có nút X (X icon lucide-react) ở góc phải title
@@ -210,7 +225,7 @@ backend/src/
 - **Schema bằng file SQL thủ công trong `database/` (đánh số thứ tự); áp dụng tự động qua `scripts/migrate.sh` có tracking (`schema_migrations`). Chỉ viết script tiến tới, idempotent; không DROP.**
 - **DB mới: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động.**
 
-### Database Tables (15 bảng)
+### Database Tables (17 bảng)
 
 | Bảng | Mô tả |
 |------|-------|
@@ -225,7 +240,9 @@ backend/src/
 | `files` | File uploaded |
 | `data_lists` | Danh sách dữ liệu (columns_config JSON) |
 | `data_list_rows` | Rows trong data list (data JSON) |
-| `map_configs` | Cấu hình tile provider, center, zoom cho bản đồ |
+| `map_configs` | Cấu hình tile provider, center, zoom, renderer/tile_mode/retina cho bản đồ |
+| `geocode_configs` | Cấu hình reverse geocoding (provider/api_key/lang/countrycodes/cache_ttl) |
+| `geocode_cache` | Cache kết quả reverse geocode (lat_key/lng_key → JSON) |
 | `user_external_map` | Map user nội bộ ↔ ID hệ ngoài |
 | `external_users` | Nhân sự hệ ngoài (pull từ 1Office) — nguồn dropdown "Mã NS - Tên" |
 | `notifications` | Thông báo trong app (chuông header) |
@@ -237,6 +254,10 @@ backend/src/
 - `database/48-create-external-users.sql` — bảng `external_users`
 - `database/49-add-proposal-review-fields.sql` — `reject_reason`/`reviewed_by`/`reviewed_at`
 - `database/50-create-notifications.sql` — bảng `notifications`
+- `database/53-alter-map-configs-add-renderer-tile-mode-retina.sql` — `map_configs.renderer/tile_mode/retina`
+- `database/54-create-geocode-configs.sql` — bảng `geocode_configs`
+- `database/55-create-geocode-cache.sql` — bảng `geocode_cache`
+- `database/56-add-performance-indexes.sql` — index `created_at` + `(list_id, sort_order)`
 
 ## 9. Swagger & Documentation
 
@@ -288,6 +309,7 @@ backend/src/
 
 ### Form/View Builder
 - Admin tạo Forms/Views tại `/admin/forms` và `/admin/views`
+- **`DynamicForm` resolve form theo `purpose` (ưu tiên) khi được truyền** (`getByEntityAndPurpose`), `formId` chỉ là fallback. Lý do: cùng entity có form `all`/`create`/`view` (vd proposals: 9=all, 13=create, 14=view); hardcode `formId` cũ dễ trỏ nhầm form `all`.
 - FormBuilder: drag & drop fields, configure visibility + colSpan; **section có nút ▲▼ di chuyển + điều kiện hiển thị** (`section.visibleWhen = { field, value }`, lưu trong `layout_config`). `DynamicForm` chỉ render section khi `formData[field] === value`.
 - ViewBuilder: drag & drop columns, configure visibility + width + sortable + filterable
 
@@ -377,6 +399,13 @@ DynamicField render: custom dropdown with badge styling
 - Object URL cleanup on unmount (FileViewer, FileListPopup)
 - `Cache-Control: no-store` trong Vite dev server config
 - Manual chunks: leaflet tách riêng trong vite.config.js
+- **Data list**: `utils/dataListCache.js` cache module-level + dedupe in-flight; `useFieldOptions(entity, keys)` lazy-load đúng data list của field được hỏi; build tree O(n) bằng Set.
+- **Config server-side**: `utils/ttlCache.js` cache `getFieldDefinitionsByEntity`/`getFormConfig`/`getViewConfig`/`dataListService.getById` (TTL) + xoá cache khi ghi (middleware `app.js`).
+- **Dedupe client**: `dedupGet`/`dedupGetWithAuth` trong `services/api.js` cho form/view/field-definitions (chống gọi trùng do StrictMode).
+- **Nén**: `compression` middleware (data list 4 ~528KB → ~42KB brotli).
+- **Index**: migration 56 (`station_proposals(user_id,created_at)/(status,created_at)`, `stations(created_at)`, `data_list_rows(list_id,sort_order)`).
+- **Debounce search**: `hooks/useDebouncedValue.js` ở các trang danh sách.
+- **Map endpoint**: `GET /stations` không `limit` (map) chỉ trả marker fields, bỏ merge `custom_data`; proposals cap 20000.
 
 ### Chưa có (cơ hội cải thiện)
 - Route-level code splitting (tất cả pages eagerly imported)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fieldDefinitionService, dataListService } from '../services/api';
+import { fetchDataList } from '../utils/dataListCache';
 
 const cache = {};
 
@@ -11,10 +12,11 @@ export const clearFieldOptionsCache = (entity) => {
   }
 };
 
-const useFieldOptions = (entity) => {
+const useFieldOptions = (entity, keys) => {
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dlOptions, setDlOptions] = useState({});
+  const keysKey = Array.isArray(keys) ? [...keys].sort().join(',') : '';
 
   useEffect(() => {
     if (!entity) { setLoading(false); return; }
@@ -44,29 +46,31 @@ const useFieldOptions = (entity) => {
   }, [entity]);
 
   useEffect(() => {
-    const ids = [...new Set((fields || []).filter(f => f.data_list_id).map(f => f.data_list_id))];
-    if (ids.length === 0) return;
+    const wanted = keysKey ? keysKey.split(',') : [];
+    const relevant = (fields || []).filter(f => f.data_list_id && (wanted.length === 0 || wanted.includes(f.key)));
+    const ids = [...new Set(relevant.map(f => f.data_list_id))];
+    if (ids.length === 0) { setDlOptions({}); return; }
     let cancelled = false;
     (async () => {
       const entries = await Promise.all(ids.map(async (id) => {
-        try {
-          const res = await dataListService.getById(id);
-          if (res.success && res.data) {
-            const cols = res.data.columns_config || [];
-            const rows = res.data.rows || [];
-            const perCol = {};
-            cols.forEach(col => {
-              const seen = new Set();
-              rows.forEach(r => {
-                const v = r.data?.[col.key];
-                if (v !== null && v !== undefined && v !== '' && !seen.has(v)) seen.add(v);
-              });
-              perCol[col.key] = [...seen].map(v => ({ value: v, label: v }));
-            });
-            return [id, perCol];
-          }
-        } catch { /* silent */ }
-        return [id, null];
+        const data = await fetchDataList(id);
+        if (!data) return [id, null];
+        const cols = data.columns_config || [];
+        const rows = data.rows || [];
+        const perCol = {};
+        cols.forEach(col => {
+          const seen = new Set();
+          const arr = [];
+          rows.forEach(r => {
+            const v = r.data?.[col.key];
+            if (v === null || v === undefined || v === '') return;
+            if (seen.has(v)) return;
+            seen.add(v);
+            arr.push({ value: v, label: v });
+          });
+          perCol[col.key] = arr;
+        });
+        return [id, perCol];
       }));
       if (!cancelled) {
         const next = {};
@@ -75,7 +79,7 @@ const useFieldOptions = (entity) => {
       }
     })();
     return () => { cancelled = true; };
-  }, [fields]);
+  }, [fields, keysKey]);
 
   const getSelectOptions = (key) => {
     const field = fields.find(f => f.key === key);

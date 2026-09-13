@@ -4,6 +4,8 @@ import 'leaflet/dist/leaflet.css';
 import { TILE_PROVIDERS, getProviderById, TILE_CATEGORIES } from '../../utils/tileProviders';
 import { useAuth } from '../../contexts/AuthContext';
 import Toast from '../../components/Toast';
+import GeocodeConfigPanel from '../../components/admin/GeocodeConfigPanel';
+import { API_URL } from '../../services/api';
 import { Settings, Save, Wifi, WifiOff } from 'lucide-react';
 
 const FALLBACK_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -34,6 +36,8 @@ const AdminMapConfigPage = () => {
   const [customAttribution, setCustomAttribution] = useState('');
   const [customSubdomains, setCustomSubdomains] = useState('');
   const [isCustom, setIsCustom] = useState(false);
+  const [tileMode, setTileMode] = useState('proxy');
+  const [retina, setRetina] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [testStatus, setTestStatus] = useState(null);
   const [testUrl, setTestUrl] = useState('');
@@ -49,7 +53,7 @@ const AdminMapConfigPage = () => {
 
   const loadConfig = async () => {
     try {
-      const res = await fetch('/api/map-configs?entity=stations', {
+      const res = await fetch(`${API_URL}/map-configs/admin?entity=stations`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -83,6 +87,8 @@ const AdminMapConfigPage = () => {
           setCustomSubdomains(c.tile_subdomains || '');
         }
         setApiKey(c.api_key || '');
+        setTileMode(c.tile_mode || 'proxy');
+        setRetina(!!Number(c.retina));
       }
     } catch (e) {
       console.error(e);
@@ -137,28 +143,39 @@ const AdminMapConfigPage = () => {
     return { url, attribution: meta.attribution, subdomains: meta.subdomains };
   };
 
-  const handleTestConnection = async () => {
+  const handleTestConnection = () => {
     const tile = getActiveTileConfig();
-    const url = getSafeTileUrl(tile.url);
     if (!isValidTileUrl(tile.url)) {
       setTestStatus('error');
-      setTestUrl('URL chứa placeholder chưa được thay thế ({domain}, ...)');
+      setTestUrl('URL chưa hợp lệ: còn placeholder chưa thay ({domain}, {key}...) hoặc chưa chọn provider phù hợp.');
       return;
     }
-    const testTileUrl = url
+    if (!isCustom && selectedProvider?.requires_key && !apiKey.trim()) {
+      setTestStatus('error');
+      setTestUrl(`${selectedProvider.name} cần API key — hãy nhập key trước khi test.`);
+      return;
+    }
+    const testTileUrl = tile.url
       .replace('{z}', '6').replace('{x}', '23').replace('{y}', '36')
-      .replace('{s}', 'a').replace('{r}', '');
+      .replace('{s}', 'a').replace('{r}', '')
+      .replace('{key}', apiKey).replace('{style}', selectedStyle);
     setTestUrl(testTileUrl);
     setTestStatus('testing');
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(testTileUrl, { method: 'HEAD', signal: controller.signal });
+
+    const img = new Image();
+    let done = false;
+    const timeout = setTimeout(() => finish(false, 'Quá thời gian 8s (host bị chặn, key sai hoặc mạng chậm)'), 8000);
+    const finish = (ok, note) => {
+      if (done) return;
+      done = true;
       clearTimeout(timeout);
-      setTestStatus(res.ok ? 'success' : 'error');
-    } catch {
-      setTestStatus('error');
-    }
+      img.onload = img.onerror = null;
+      setTestStatus(ok ? 'success' : 'error');
+      if (note) setTestUrl(`${testTileUrl}\n${note}`);
+    };
+    img.onload = () => finish(true);
+    img.onerror = () => finish(false, 'Không tải được tile (host bị chặn ở trình duyệt, key sai, hoặc provider không cho phép tải trực tiếp).');
+    img.src = testTileUrl;
   };
 
   const handleSave = async () => {
@@ -186,6 +203,9 @@ const AdminMapConfigPage = () => {
       api_key: apiKey,
       style_url: selectedStyle,
       auth_type: selectedProvider?.auth_type || 'none',
+      renderer: config.renderer || 'leaflet',
+      tile_mode: tileMode,
+      retina: retina ? 1 : 0,
       show_boundaries: config.show_boundaries,
       show_cluster: config.show_cluster,
       show_province_labels: config.show_province_labels,
@@ -195,7 +215,7 @@ const AdminMapConfigPage = () => {
       label_field: config.label_field,
     };
     try {
-      const res = await fetch(`/api/map-configs/${config.id}`, {
+      const res = await fetch(`${API_URL}/map-configs/${config.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(body)
@@ -204,6 +224,7 @@ const AdminMapConfigPage = () => {
       if (data.success) {
         setToast({ message: 'Lưu cấu hình thành công!', type: 'success' });
         setConfig(data.data);
+        window.dispatchEvent(new Event('mapconfig:refresh'));
       } else {
         setToast({ message: data.message || 'Lỗi lưu', type: 'error' });
       }
@@ -340,6 +361,30 @@ const AdminMapConfigPage = () => {
               </div>
             )}
 
+            {/* Tile mode + Retina */}
+            <div className="mb-3">
+              <label className="text-sm font-semibold block mb-1.5">Chế độ tải tile</label>
+              <div className="grid grid-cols-2 gap-1.5 mb-2">
+                {[
+                  { value: 'proxy', label: 'Proxy server', desc: 'Ẩn API key (khuyến nghị)' },
+                  { value: 'direct', label: 'Trực tiếp', desc: 'Client giữ key, giới hạn referrer' },
+                ].map(opt => (
+                  <div key={opt.value} onClick={() => setTileMode(opt.value)}
+                    className={`px-2.5 py-2 rounded-md cursor-pointer text-xs border-2 transition-all ${tileMode === opt.value ? 'border-primary bg-primary/5' : 'border-base-300 bg-white'}`}>
+                    <div className="font-semibold">{opt.label}</div>
+                    <div className="text-[10px] text-base-content/50">{opt.desc}</div>
+                  </div>
+                ))}
+              </div>
+              {tileMode === 'direct' && (
+                <div className="text-[11px] text-warning mb-1">API key sẽ lộ ở trình duyệt. Hãy giới hạn key theo HTTP referrer trên nhà cung cấp.</div>
+              )}
+              <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                <input type="checkbox" className="checkbox checkbox-sm" checked={retina} onChange={() => setRetina(v => !v)} />
+                <span className="text-sm">Retina (@2x) — nét hơn trên màn hình mật độ cao</span>
+              </label>
+            </div>
+
             {/* Connection Test */}
             <div className="mb-3 p-2.5 bg-base-200 rounded-md border border-base-300">
               <div className="flex items-center gap-2 mb-1.5">
@@ -410,7 +455,7 @@ const AdminMapConfigPage = () => {
             </div>
             {safeTileUrl ? (
               <MapContainer center={center} zoom={config.default_zoom || 6} style={{ height: 400, width: '100%' }}>
-                <TileLayer attribution={tile.attribution} url={safeTileUrl} subdomains={subdomains} />
+                <TileLayer key={`${selectedProviderId}-${selectedStyle}-${apiKey}-${customTileUrl}`} attribution={tile.attribution} url={safeTileUrl} subdomains={subdomains} />
               </MapContainer>
             ) : (
               <div className="h-[400px] flex items-center justify-center text-base-content/40 text-sm">
@@ -436,6 +481,8 @@ const AdminMapConfigPage = () => {
           )}
         </div>
       </div>
+
+      <GeocodeConfigPanel />
     </div>
   );
 };

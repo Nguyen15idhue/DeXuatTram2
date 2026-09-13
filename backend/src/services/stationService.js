@@ -2,8 +2,9 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
+const addressEnrichment = require('./addressEnrichment');
 
-exports.getAllStations = async (search, status, page, limit) => {
+exports.getAllStations = async (search, status, page, limit, mapMode = false) => {
   const offset = (page - 1) * limit;
   let where = [];
   let params = [];
@@ -24,12 +25,22 @@ exports.getAllStations = async (search, status, page, limit) => {
   const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM stations s ${whereClause}`, params);
   const total = countResult[0].total;
 
+  const columns = mapMode
+    ? 's.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.created_at'
+    : 's.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.custom_data, s.created_at';
+
   const [stations] = await pool.query(
-    `SELECT s.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description,
-            s.custom_data, s.created_at
+    `SELECT ${columns}
      FROM stations s ${whereClause} ORDER BY s.created_at DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
+
+  if (mapMode) {
+    return {
+      stations,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    };
+  }
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
   const merged = stations.map(s => dynamicUtils.mergeData(s, fieldDefs));
@@ -51,6 +62,7 @@ exports.getStationById = async (id) => {
 exports.createStation = async (data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
   const { fixedData, dynamicData } = dynamicUtils.splitData('stations', data, fieldDefs);
+  await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
@@ -94,6 +106,7 @@ exports.createStation = async (data) => {
 exports.updateStation = async (id, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
   const { fixedData, dynamicData } = dynamicUtils.splitData('stations', data, fieldDefs);
+  await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   if (dynamicData.province !== undefined && dynamicData.province !== null && String(dynamicData.province).trim() !== '') {
     await dataListService.applyDiaGioi(dynamicData);
   }

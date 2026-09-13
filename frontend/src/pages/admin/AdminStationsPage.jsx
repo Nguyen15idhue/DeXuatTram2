@@ -10,6 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { Zap, Download, Upload, Plus, Search, RotateCcw, X, Trash2 } from 'lucide-react';
 
 const STATIONS_VIEW_ID = 6;
@@ -19,7 +20,7 @@ const AdminStationsPage = () => {
   const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('stations');
+  const { getSelectOptions } = useFieldOptions('stations', ['status']);
   const statusOptions = getSelectOptions('status');
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +31,7 @@ const AdminStationsPage = () => {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [filterStatus, setFilterStatus] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
@@ -68,7 +70,7 @@ const AdminStationsPage = () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
-      const s = overrides.search !== undefined ? overrides.search : search;
+      const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
       if (s) params.append('search', s);
       if (st) params.append('status', st);
@@ -82,7 +84,7 @@ const AdminStationsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus]);
+  }, [debouncedSearch, filterStatus]);
 
   useEffect(() => { loadStations(1); }, [loadStations]);
 

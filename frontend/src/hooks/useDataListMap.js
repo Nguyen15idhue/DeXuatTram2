@@ -1,22 +1,5 @@
 import { useState, useEffect } from 'react';
-import { dataListService } from '../services/api';
-
-const buildMaps = (columnsConfig, rows) => {
-  const tree = {};
-  const unique = {};
-  columnsConfig.forEach(col => { tree[col.key] = {}; unique[col.key] = []; });
-  (rows || []).forEach(r => {
-    const data = r.data || {};
-    columnsConfig.forEach(col => {
-      const val = data[col.key];
-      if (!val) return;
-      if (!tree[col.key][val]) tree[col.key][val] = [];
-      tree[col.key][val].push({ value: val, label: val, _raw: data });
-      if (!unique[col.key].includes(val)) unique[col.key].push(val);
-    });
-  });
-  return { tree, unique };
-};
+import { fetchDataList, buildDataListMaps } from '../utils/dataListCache';
 
 const useDataListMap = (dataListIds) => {
   const [maps, setMaps] = useState({});
@@ -28,12 +11,8 @@ const useDataListMap = (dataListIds) => {
     (async () => {
       const ids = key.split(',').map(Number);
       const entries = await Promise.all(ids.map(async (id) => {
-        try {
-          const res = await dataListService.getById(id);
-          if (res.success && res.data) {
-            return [id, buildMaps(res.data.columns_config || [], res.data.rows || [])];
-          }
-        } catch { /* silent */ }
+        const data = await fetchDataList(id);
+        if (data) return [id, buildDataListMaps(data.columns_config || [], data.rows || [])];
         return [id, null];
       }));
       if (!cancelled) {

@@ -3,6 +3,8 @@ if (!process.env.TZ) process.env.TZ = 'Asia/Ho_Chi_Minh';
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
+const ttlCache = require('./utils/ttlCache');
 const { authLimiter, adminLimiter, excelLimiter } = require('./middlewares/rateLimits');
 const swaggerUi = require('swagger-ui-express');
 const testRoutes = require('./routes/test');
@@ -33,6 +35,8 @@ const queueLogsRoutes = require('./routes/queueLogs');
 const externalUsersRoutes = require('./routes/externalUsers');
 const notificationsRoutes = require('./routes/notifications');
 const oneOfficeSyncRoutes = require('./routes/oneOfficeSync');
+const geocodeRoutes = require('./routes/geocode');
+const adminGeocodeConfigRoutes = require('./routes/adminGeocodeConfig');
 const queueWorker = require('./workers/queueWorker');
 const personnelSyncWorker = require('./workers/personnelSyncWorker');
 
@@ -56,6 +60,24 @@ app.use(cors({
 // 3. Body parser với size limit — Chống payload attacks
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 3b. Nén response (giảm mạnh payload lớn như data list)
+app.use(compression());
+
+// 3c. Xoá cache cấu hình khi có thao tác ghi (admin sửa field/form/view/data list)
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    if (/^\/api\/(field-definitions|forms|views)/.test(req.path)) {
+      ttlCache.delPrefix('fielddefs:');
+      ttlCache.delPrefix('formcfg:');
+      ttlCache.delPrefix('viewcfg:');
+    }
+    if (/^\/api\/admin\/data-lists/.test(req.path)) {
+      ttlCache.delPrefix('datalist:');
+    }
+  }
+  next();
+});
 
 // 4. Rate Limiters (xem middlewares/rateLimits.js)
 
@@ -101,6 +123,8 @@ app.use('/api/admin/queue-logs', adminLimiter, queueLogsRoutes);
 app.use('/api/admin/external-users', adminLimiter, externalUsersRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/admin/1office', adminLimiter, oneOfficeSyncRoutes);
+app.use('/api/geocode', geocodeRoutes);
+app.use('/api/admin/geocode-config', adminLimiter, adminGeocodeConfigRoutes);
 app.use('/tiles', tilesRoutes);
 
 // Health check

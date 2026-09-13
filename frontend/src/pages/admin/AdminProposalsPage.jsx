@@ -11,6 +11,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
@@ -22,12 +23,13 @@ const AdminProposalsPage = () => {
   const { token, isSales, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('station_proposals');
+  const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
@@ -81,7 +83,7 @@ const AdminProposalsPage = () => {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
-      const s = overrides.search !== undefined ? overrides.search : search;
+      const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
       if (f) params.append('status', f);
       if (s) params.append('search', s);
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
@@ -94,7 +96,7 @@ const AdminProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, search, token]);
+  }, [filter, debouncedSearch, token]);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 

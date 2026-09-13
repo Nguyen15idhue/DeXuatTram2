@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const ttlCache = require('../utils/ttlCache');
 
 exports.parseOptions = (optionsJson) => {
   if (!optionsJson) return [];
@@ -300,10 +301,14 @@ exports.buildDynamicSetClause = (data, fieldDefs) => {
 };
 
 exports.getFieldDefinitionsByEntity = async (entity) => {
+  const cacheKey = `fielddefs:${entity}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached) return cached;
   const [rows] = await pool.query(
     'SELECT * FROM field_definitions WHERE entity = ? AND status = ?',
     [entity, 'active']
   );
+  ttlCache.set(cacheKey, rows, 120000);
   return rows;
 };
 

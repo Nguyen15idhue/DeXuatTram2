@@ -15,6 +15,17 @@ exports.getConfig = async (req, res) => {
   }
 };
 
+exports.getAdminConfig = async (req, res) => {
+  try {
+    const entity = req.query.entity || 'stations';
+    const config = await mapConfigService.getConfig(entity, { includeSecret: true });
+    res.json({ success: true, data: config });
+  } catch (error) {
+    console.error('Error getting admin map config:', error);
+    res.status(500).json({ success: false, message: 'Lỗi lấy cấu hình bản đồ' });
+  }
+};
+
 exports.createConfig = async (req, res) => {
   try {
     const config = await mapConfigService.createConfig(req.body);

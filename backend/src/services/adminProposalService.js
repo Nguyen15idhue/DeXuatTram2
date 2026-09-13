@@ -2,6 +2,7 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
+const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 
 exports.getBranchUserIds = async (salesId) => {
@@ -131,6 +132,7 @@ exports.updateStatus = async (id, status, opts = {}) => {
 exports.updateProposal = async (id, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+  await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   if (dynamicData.province !== undefined && dynamicData.province !== null && String(dynamicData.province).trim() !== '') {
     await dataListService.applyDiaGioi(dynamicData);
   }

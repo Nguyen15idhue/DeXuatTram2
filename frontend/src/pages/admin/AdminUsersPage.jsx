@@ -23,7 +23,7 @@ const AdminUsersPage = () => {
   const { token, user: currentUser, isSuperAdmin, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('users');
+  const { getSelectOptions } = useFieldOptions('users', ['status', 'role']);
   const statusOptions = getSelectOptions('status');
   const roleOptions = getSelectOptions('role');
   const [users, setUsers] = useState([]);

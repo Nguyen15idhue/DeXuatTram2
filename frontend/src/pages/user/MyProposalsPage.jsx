@@ -13,6 +13,8 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useMapConfig from '../../hooks/useMapConfig';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 import 'leaflet/dist/leaflet.css';
 import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X } from 'lucide-react';
 
@@ -36,8 +38,9 @@ const MyProposalsPage = () => {
   const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('station_proposals');
+  const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
+  const { tileUrl, attribution: mapAttribution, subdomains: mapSubdomains } = useMapConfig();
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -59,6 +62,7 @@ const MyProposalsPage = () => {
   const tableRef = useRef(null);
 
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 400);
 
   useEffect(() => {
     const match = location.pathname.match(/\/my-proposals\/(view|edit)=(\d+)/);
@@ -92,7 +96,7 @@ const MyProposalsPage = () => {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
-      const s = overrides.search !== undefined ? overrides.search : search;
+      const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
       if (f) params.append('status', f);
       if (s) params.append('search', s);
       const res = await myProposalService.getAllWithParams(params.toString(), token);
@@ -105,7 +109,7 @@ const MyProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, search, token]);
+  }, [filter, debouncedSearch, token]);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
@@ -381,7 +385,7 @@ const MyProposalsPage = () => {
             <div className="border border-base-300 rounded-lg p-3 mb-4">
               <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
               <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors" />
+                <TileLayer url={tileUrl} attribution={mapAttribution} subdomains={mapSubdomains ? mapSubdomains.split(',') : []} />
                 <MapClickHandler onMapClick={handleMapClick} />
                 {mapCoords.latitude && mapCoords.longitude && (
                   <Marker position={[parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)]} icon={markerIcon} />

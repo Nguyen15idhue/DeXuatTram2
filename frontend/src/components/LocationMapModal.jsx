@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { MapPinned } from 'lucide-react';
 import { stationService, proposalService } from '../services/api';
 import { getMarkerColor, createCustomIcon } from '../utils/mapHelpers';
+import useMapConfig from '../hooks/useMapConfig';
 
 const RADIUS_OPTIONS = [5, 10, 20, 50];
 
@@ -44,6 +45,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   const [radius, setRadius] = useState(radiusKm);
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
+  const { tileUrl, attribution, subdomains } = useMapConfig();
   const position = useMemo(() => [parseFloat(lat), parseFloat(lng)], [lat, lng]);
 
   const valid = open && !Number.isNaN(position[0]) && !Number.isNaN(position[1]);
@@ -122,8 +124,9 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
             style={{ height: '100%', width: '100%' }}
           >
             <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url={tileUrl}
+              attribution={attribution}
+              subdomains={subdomains ? subdomains.split(',') : []}
             />
             <FitRadius position={position} radius={radius} />
             <Marker position={position} icon={pointIcon} />

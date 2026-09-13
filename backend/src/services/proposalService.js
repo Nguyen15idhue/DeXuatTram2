@@ -2,6 +2,7 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
+const addressEnrichment = require('./addressEnrichment');
 const proximityService = require('./proximityService');
 
 exports.getAllProposals = async () => {
@@ -10,7 +11,8 @@ exports.getAllProposals = async () => {
             p.created_at, p.user_id, u.parent_id AS owner_parent_id
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
-     ORDER BY p.created_at DESC`
+     ORDER BY p.created_at DESC
+     LIMIT 20000`
   );
   return proposals;
 };
@@ -45,6 +47,7 @@ exports.getProposalFullById = async (id) => {
 exports.createProposal = async (userId, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+  await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
 
@@ -186,6 +189,7 @@ exports.createGuestProposal = async (data, ip) => {
     }
   }
 
+  await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
 
   const fileKeys = fieldDefs.filter(f => f.type === 'file' && f.source_type === 'json').map(f => f.key);

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { dynamicService, dataListService, fieldDefinitionService, formService } from '../../services/api';
+import { dynamicService, dataListService, fieldDefinitionService, formService, geocodeService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
 import { parseFormattedNumber } from '../../utils/formatNumber';
 import { getDataListLabel } from '../../utils/dataListLabel';
+import { fetchDataList } from '../../utils/dataListCache';
 
 const math = create(all);
 const customFunctions = {
@@ -70,13 +71,13 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const [errors, setErrors] = useState({});
   const [dataListOptions, setDataListOptions] = useState({});
   const [resolvedFormId, setResolvedFormId] = useState(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const geocodeTimerRef = useRef(null);
+  const geocodeSeqRef = useRef(0);
 
   useEffect(() => {
-    if (purpose) {
-      resolveFormId();
-    } else if (formIdProp) {
-      setResolvedFormId(formIdProp);
-    }
+    if (purpose) { resolveFormId(); return; }
+    if (formIdProp) setResolvedFormId(formIdProp);
   }, [entity, formIdProp, purpose]);
 
   const resolveFormId = async () => {
@@ -146,26 +147,27 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
           const dlMap = {};
           await Promise.all(dlIds.map(async (dlId) => {
             try {
-              const dlRes = await dataListService.getById(dlId);
-              if (dlRes.success && dlRes.data) {
-                const cols = dlRes.data.columns_config || [];
-                const rows = dlRes.data.rows || [];
+              const dlData = await fetchDataList(dlId);
+              if (dlData) {
+                const cols = dlData.columns_config || [];
+                const rows = dlData.rows || [];
                 const tree = {};
                 const unique = {};
-                cols.forEach(col => { tree[col.key] = {}; unique[col.key] = []; });
+                const seen = {};
+                cols.forEach(col => { tree[col.key] = {}; unique[col.key] = []; seen[col.key] = new Set(); });
+                const firstCol = cols[0];
                 rows.forEach(r => {
                   const data = r.data || {};
                   cols.forEach(col => {
                     const val = data[col.key];
                     if (!val) return;
                     if (!tree[col.key][val]) tree[col.key][val] = [];
-                    const firstCol = cols[0];
                     tree[col.key][val].push({
                       value: firstCol ? (data[firstCol.key] || '') : '',
                       label: firstCol ? (data[firstCol.key] || '') : '',
                       _raw: data
                     });
-                    if (!unique[col.key].includes(val)) unique[col.key].push(val);
+                    if (!seen[col.key].has(val)) { seen[col.key].add(val); unique[col.key].push(val); }
                   });
                 });
                 dlMap[dlId] = { tree, unique };
@@ -214,6 +216,50 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     setFormData(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: '' }));
   }, []);
+
+  useEffect(() => {
+    if (entity !== 'station_proposals' && entity !== 'stations') return;
+    if (fields.length === 0) return;
+    const keySet = new Set(fields.map(f => f.key));
+    if (!keySet.has('latitude') || !keySet.has('longitude')) return;
+    const targets = ['address', 'province', 'xa_phuong', 'ma_tinh', 'vung_mien'].filter(k => keySet.has(k));
+    if (targets.length === 0) return;
+
+    const lat = parseFloat(formData.latitude);
+    const lng = parseFloat(formData.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const isEmpty = (v) => v === undefined || v === null || String(v).trim() === '';
+    if (!targets.some(k => isEmpty(formData[k]))) return;
+
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    const seq = ++geocodeSeqRef.current;
+    geocodeTimerRef.current = setTimeout(async () => {
+      setGeocoding(true);
+      try {
+        const res = await geocodeService.reverse(lat, lng);
+        if (seq !== geocodeSeqRef.current) return;
+        const data = res && res.data;
+        if (!data || !data.found) return;
+        const admin = data.admin || {};
+        setFormData(prev => {
+          const next = { ...prev };
+          const empty = (v) => v === undefined || v === null || String(v).trim() === '';
+          const addr = data.address || data.formatted;
+          if (keySet.has('address') && empty(prev.address) && addr) next.address = addr;
+          if (keySet.has('province') && empty(prev.province) && admin.province) next.province = admin.province;
+          if (keySet.has('xa_phuong') && empty(prev.xa_phuong) && admin.xa_phuong) next.xa_phuong = admin.xa_phuong;
+          if (keySet.has('ma_tinh') && empty(prev.ma_tinh) && admin.ma_tinh) next.ma_tinh = admin.ma_tinh;
+          if (keySet.has('vung_mien') && empty(prev.vung_mien) && admin.vung_mien) next.vung_mien = admin.vung_mien;
+          return next;
+        });
+      } catch { /* bỏ qua lỗi geocode */ } finally {
+        if (seq === geocodeSeqRef.current) setGeocoding(false);
+      }
+    }, 700);
+
+    return () => { if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current); };
+  }, [entity, fields, formData.latitude, formData.longitude]);
 
   const parentFieldMap = useMemo(() => {
     const map = {};
@@ -619,6 +665,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   return (
     <form className="dynamic-form" onSubmit={handleSubmit}>
       {error && <div className="error-message">{error}</div>}
+      {geocoding && <div className="text-xs text-info mb-2">Đang tìm địa chỉ từ tọa độ...</div>}
       {hasLayout ? renderLayoutForm() : renderNoLayoutMessage()}
       {hasLayout && (
         children ? (

@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../utils/db');
 const fieldDefinitionService = require('./fieldDefinitionService');
 const dataListService = require('./dataListService');
+const addressEnrichment = require('./addressEnrichment');
 const proximityService = require('./proximityService');
 const { validateLatitude, validateLongitude, validatePhone, validateRequired, validateEmail } = require('../middlewares/validators');
 
@@ -766,6 +767,9 @@ exports.importConfirmDynamic = async (req, res) => {
         }
 
         if (entity === 'station_proposals' || entity === 'stations') {
+          if (process.env.GEOCODE_ON_IMPORT !== 'false') {
+            await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
+          }
           if (dynamicData.province && String(dynamicData.province).trim() !== '') {
             await dataListService.applyDiaGioi(dynamicData);
           } else if (!dynamicData.ma_tinh) {

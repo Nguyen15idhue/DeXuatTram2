@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const handleUnauthorized = (response) => {
   if (response.status === 401) {
@@ -127,6 +127,21 @@ export const api = {
     return data;
   }
 };
+
+const _pendingGets = new Map();
+function dedupGet(endpoint) {
+  if (_pendingGets.has(endpoint)) return _pendingGets.get(endpoint);
+  const p = api.get(endpoint).finally(() => _pendingGets.delete(endpoint));
+  _pendingGets.set(endpoint, p);
+  return p;
+}
+function dedupGetWithAuth(endpoint, token) {
+  const key = `auth:${endpoint}`;
+  if (_pendingGets.has(key)) return _pendingGets.get(key);
+  const p = api.getWithAuth(endpoint, token).finally(() => _pendingGets.delete(key));
+  _pendingGets.set(key, p);
+  return p;
+}
 
 export const stationService = {
   getAll() {
@@ -274,6 +289,21 @@ export const mapService = {
   }
 };
 
+export const geocodeService = {
+  reverse(lat, lng) {
+    return api.post('/geocode/reverse', { lat, lng });
+  },
+  getConfig(token) {
+    return api.getWithAuth('/admin/geocode-config', token);
+  },
+  updateConfig(data, token) {
+    return api.putWithAuth('/admin/geocode-config', data, token);
+  },
+  test(data, token) {
+    return api.postWithAuth('/admin/geocode-config/test', data, token);
+  }
+};
+
 export const dashboardService = {
   getStats(token) {
     return api.getWithAuth('/admin/dashboard', token);
@@ -283,13 +313,13 @@ export const dashboardService = {
 export const fieldDefinitionService = {
   getAll(queryString, token) {
     const query = queryString ? `?${queryString}` : '';
-    return api.getWithAuth(`/field-definitions${query}`, token);
+    return dedupGetWithAuth(`/field-definitions${query}`, token);
   },
   getById(id, token) {
     return api.getWithAuth(`/field-definitions/${id}`, token);
   },
   getByEntity(entity) {
-    return api.get(`/field-definitions/entity/${entity}`);
+    return dedupGet(`/field-definitions/entity/${entity}`);
   },
   create(data, token) {
     return api.postWithAuth('/field-definitions', data, token);
@@ -314,7 +344,7 @@ export const formService = {
     return api.get(`/forms/${id}`);
   },
   getByEntityAndPurpose(entity, purpose) {
-    return api.get(`/forms/by-entity-purpose?entity=${entity}&purpose=${purpose}`);
+    return dedupGet(`/forms/by-entity-purpose?entity=${entity}&purpose=${purpose}`);
   },
   create(data, token) {
     return api.postWithAuth('/forms', data, token);
@@ -384,10 +414,10 @@ export const viewFieldService = {
 
 export const dynamicService = {
   getFormConfig(entity, formId) {
-    return api.get(`/dynamic/${entity}/form/${formId}`);
+    return dedupGet(`/dynamic/${entity}/form/${formId}`);
   },
   getViewConfig(entity, viewId) {
-    return api.get(`/dynamic/${entity}/view/${viewId}`);
+    return dedupGet(`/dynamic/${entity}/view/${viewId}`);
   },
   validate(entity, data, token) {
     return api.postWithAuth(`/dynamic/${entity}/validate`, data, token);

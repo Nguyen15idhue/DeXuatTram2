@@ -1,14 +1,22 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const formulaService = require('./formulaService');
+const ttlCache = require('../utils/ttlCache');
 const math = formulaService.math;
 
 exports.getFormConfig = async (entity, formId) => {
+  const cacheKey = `formcfg:${entity}:${formId}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const [forms] = await pool.query(
     'SELECT * FROM forms WHERE id = ? AND entity = ?',
     [formId, entity]
   );
-  if (forms.length === 0) return null;
+  if (forms.length === 0) {
+    ttlCache.set(cacheKey, null, 30000);
+    return null;
+  }
 
   const form = forms[0];
 
@@ -28,7 +36,7 @@ exports.getFormConfig = async (entity, formId) => {
     [formId]
   );
 
-  return {
+  const result = {
     form: {
       id: form.id,
       entity: form.entity,
@@ -69,14 +77,23 @@ exports.getFormConfig = async (entity, formId) => {
       relation_key: f.relation_key || null
     }))
   };
+  ttlCache.set(cacheKey, result, 120000);
+  return result;
 };
 
 exports.getViewConfig = async (entity, viewId) => {
+  const cacheKey = `viewcfg:${entity}:${viewId}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const [views] = await pool.query(
     'SELECT * FROM views WHERE id = ? AND entity = ?',
     [viewId, entity]
   );
-  if (views.length === 0) return null;
+  if (views.length === 0) {
+    ttlCache.set(cacheKey, null, 30000);
+    return null;
+  }
 
   const view = views[0];
 
@@ -97,7 +114,7 @@ exports.getViewConfig = async (entity, viewId) => {
 
   const allFieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
 
-  return {
+  const result = {
     view: {
       id: view.id,
       entity: view.entity,
@@ -160,6 +177,8 @@ exports.getViewConfig = async (entity, viewId) => {
       relation_key: f.relation_key || null
     }))
   };
+  ttlCache.set(cacheKey, result, 120000);
+  return result;
 };
 
 exports.validateEntityData = async (entity, data) => {

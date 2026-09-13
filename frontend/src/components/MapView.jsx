@@ -9,36 +9,23 @@ import { stationService, proposalService, api } from '../services/api';
 import { getMarkerColor, createCustomIcon, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById } from '../utils/tileProviders';
+import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
+import { resolveRenderer } from './map/renderers';
 
 const FALLBACK_TILES = [
-  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+    subdomains: '',
+  },
+  {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: OSM_ATTRIBUTION,
+    subdomains: 'a,b,c',
+  },
 ];
 
-const PROXY_TILE = '/tiles/{z}/{x}/{y}';
 const EMPTY_PAIRS = [];
-const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-function resolveTileUrl(template, apiKey, styleValue) {
-  if (!template) return '';
-  let url = template.replace('{key}', apiKey || '');
-  url = url.replace('{style}', styleValue || '');
-  return url;
-}
-
-function isValidTileUrl(url) {
-  if (!url || typeof url !== 'string') return false;
-  const placeholderPattern = /\{[^}]+\}/g;
-  const matches = url.match(placeholderPattern) || [];
-  const validPlaceholders = ['{z}', '{x}', '{y}', '{s}', '{r}'];
-  return matches.every(m => validPlaceholders.includes(m));
-}
-
-function getSafeTileUrl(url) {
-  if (isValidTileUrl(url)) return url;
-  return PROXY_TILE;
-}
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -347,7 +334,7 @@ function createProposalPopupContent(item, user) {
   return div;
 }
 
-function MapLayerController({ stations, proposals, onMarkerClick, user, showStationLabels }) {
+function MapLayerController({ stations, proposals, onMarkerClick, user, showStationLabels, showCluster = true }) {
   const map = useMap();
   const clusterRef = useRef(null);
 
@@ -357,12 +344,14 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
       clusterRef.current = null;
     }
 
-    const cluster = L.markerClusterGroup({
-      maxClusterRadius: 50,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-    });
+    const cluster = showCluster
+      ? L.markerClusterGroup({
+          maxClusterRadius: 50,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: true,
+        })
+      : L.layerGroup();
 
     const allItems = [
       ...stations.map(s => ({ ...s, _type: 'station' })),
@@ -396,7 +385,7 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
     });
 
     if (markers.length > 0) {
-      cluster.addLayers(markers);
+      markers.forEach(m => cluster.addLayer(m));
     }
 
     map.addLayer(cluster);
@@ -408,7 +397,7 @@ function MapLayerController({ stations, proposals, onMarkerClick, user, showStat
         clusterRef.current = null;
       }
     };
-  }, [map, stations, proposals, onMarkerClick, user, showStationLabels]);
+  }, [map, stations, proposals, onMarkerClick, user, showStationLabels, showCluster]);
 
   return null;
 }
@@ -498,11 +487,16 @@ const MapView = ({
   const [showProvinceLabels, setShowProvinceLabels] = useState(true);
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
+  const [showCluster, setShowCluster] = useState(true);
   const [activeLayerIdx, setActiveLayerIdx] = useState(0);
   const [resolvedTileUrl, setResolvedTileUrl] = useState(PROXY_TILE);
   const [resolvedAttribution, setResolvedAttribution] = useState(OSM_ATTRIBUTION);
   const [resolvedSubdomains, setResolvedSubdomains] = useState('');
+  const [tileFailed, setTileFailed] = useState(false);
+  const [tileWarning, setTileWarning] = useState('');
+  const [configVersion, setConfigVersion] = useState(0);
   const mountedRef = useRef(true);
+  const fallbackRef = useRef(-1);
 
   const [config, setConfig] = useState({
     tile_provider_id: 'leaflet-osm',
@@ -510,6 +504,9 @@ const MapView = ({
     tile_attribution: OSM_ATTRIBUTION,
     tile_subdomains: '',
     api_key: '',
+    renderer: 'leaflet',
+    tile_mode: 'proxy',
+    retina: 0,
     show_boundaries: true,
     show_province_labels: true,
     show_cluster: true,
@@ -541,59 +538,30 @@ const MapView = ({
     }
   }, []);
 
-  const buildTileUrl = useCallback((providerId, apiKey, styleIdx) => {
-    const fallback = { url: PROXY_TILE, attribution: OSM_ATTRIBUTION, subdomains: '', warning: '' };
-    const provider = getProviderById(providerId);
-    if (!provider) return { ...fallback, warning: 'Không tìm thấy provider đã lưu, đang dùng bản đồ mặc định.' };
-    if (provider.incompatible_with_leaflet) {
-      return { ...fallback, warning: `${provider.name} không dùng được với Leaflet, đang dùng bản đồ mặc định. Vào Admin → Cấu hình bản đồ để đổi provider.` };
-    }
-    if (provider.requires_key && !apiKey) {
-      return { ...fallback, warning: `${provider.name} yêu cầu API Key nhưng chưa cấu hình, đang dùng bản đồ mặc định. Vào Admin → Cấu hình bản đồ để nhập key.` };
-    }
-
-    const tileUrlStyles = provider.tile_url_styles || [];
-    const selectedStyle = tileUrlStyles[styleIdx] || tileUrlStyles[0];
-
-    if (selectedStyle && selectedStyle.url) {
-      return {
-        url: PROXY_TILE,
-        attribution: selectedStyle.attribution || provider.attribution,
-        subdomains: '',
-        warning: '',
-      };
-    }
-
-    if (provider.tile_url_template && selectedStyle) {
-      return {
-        url: PROXY_TILE,
-        attribution: provider.attribution,
-        subdomains: '',
-        warning: '',
-      };
-    }
-
-    if (provider.tile_url && isValidTileUrl(provider.tile_url)) {
-      return {
-        url: PROXY_TILE,
-        attribution: provider.attribution,
-        subdomains: '',
-        warning: '',
-      };
-    }
-
-    return fallback;
+  const buildTileUrl = useCallback((providerId, apiKey, styleIdx, opts = {}) => {
+    return buildTileConfig({
+      tile_provider_id: providerId,
+      api_key: apiKey,
+      tile_mode: opts.tileMode,
+      retina: opts.retina,
+      tile_url: opts.tileUrl,
+      tile_attribution: opts.tileAttribution,
+      tile_subdomains: opts.tileSubdomains,
+      style_url: opts.styleUrl,
+    }, styleIdx);
   }, []);
 
   const handleTileError = useCallback(() => {
-    setResolvedTileUrl(prev => {
-      if (prev !== PROXY_TILE) {
-        setResolvedAttribution(OSM_ATTRIBUTION);
-        setResolvedSubdomains('');
-        return PROXY_TILE;
-      }
-      return prev;
-    });
+    fallbackRef.current += 1;
+    const next = FALLBACK_TILES[fallbackRef.current];
+    if (next) {
+      setResolvedTileUrl(next.url);
+      setResolvedAttribution(next.attribution);
+      setResolvedSubdomains(next.subdomains);
+      setTileFailed(false);
+    } else {
+      setTileFailed(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -620,25 +588,42 @@ const MapView = ({
           const d = data.data;
           const providerId = d.tile_provider_id || d.tile_provider || 'leaflet-osm';
           const apiKey = d.api_key || '';
-          const tile = buildTileUrl(providerId, apiKey, 0);
+          const tileMode = d.tile_mode || 'proxy';
+          const retina = !!Number(d.retina);
+          const providerStyles = (getProviderById(providerId)?.tile_url_styles) || [];
+          const savedStyleIdx = Math.max(0, providerStyles.findIndex(s => s.value === (d.style_url || d.style_value)));
+          const tile = buildTileUrl(providerId, apiKey, providerStyles.length ? savedStyleIdx : null, {
+            tileMode, retina,
+            tileUrl: d.tile_url, tileAttribution: d.tile_attribution,
+            tileSubdomains: d.tile_subdomains, styleUrl: d.style_url || d.style_value,
+          });
+          const rendererInfo = resolveRenderer(d.renderer);
+          const warning = tile.warning || (rendererInfo.fallback
+            ? `Renderer "${rendererInfo.requested}" chưa hỗ trợ, đang dùng Leaflet.`
+            : '');
 
+          fallbackRef.current = -1;
+          setTileFailed(false);
           setResolvedTileUrl(tile.url);
           setResolvedAttribution(tile.attribution);
           setResolvedSubdomains(tile.subdomains);
-
+          setTileWarning(warning);
 
           setConfig(prev => ({
             ...prev,
             ...d,
             tile_provider_id: providerId,
             api_key: apiKey,
+            tile_mode: tileMode,
+            retina,
             center_lat: parseFloat(d.center_lat) || prev.center_lat,
             center_lng: parseFloat(d.center_lng) || prev.center_lng,
             default_zoom: parseInt(d.default_zoom) || prev.default_zoom,
           }));
           setShowProvinceLabels(d.show_province_labels !== false);
           setShowBoundaries(d.show_boundaries !== false);
-          setActiveLayerIdx(0);
+          setShowCluster(d.show_cluster !== false);
+          setActiveLayerIdx(providerStyles.length ? savedStyleIdx : 0);
         }
       } catch (e) {
         if (e.name !== 'AbortError') { /* Use defaults */ }
@@ -646,17 +631,35 @@ const MapView = ({
     };
     fetchConfig();
     return () => controller.abort();
-  }, [buildTileUrl]);
+  }, [buildTileUrl, configVersion]);
 
   useEffect(() => {
-    if (activeLayerIdx === 0 && !config.api_key) return;
-    const tile = buildTileUrl(config.tile_provider_id, config.api_key, activeLayerIdx);
+    const onRefresh = () => setConfigVersion(v => v + 1);
+    window.addEventListener('mapconfig:refresh', onRefresh);
+    return () => window.removeEventListener('mapconfig:refresh', onRefresh);
+  }, []);
+
+  useEffect(() => {
+    if (!config.tile_provider_id) return;
+    if (activeLayerIdx === 0 && !config.api_key && config.tile_mode !== 'proxy') return;
+    const tile = buildTileUrl(config.tile_provider_id, config.api_key, activeLayerIdx, {
+      tileMode: config.tile_mode,
+      retina: !!config.retina,
+      tileUrl: config.tile_url,
+      tileAttribution: config.tile_attribution,
+      tileSubdomains: config.tile_subdomains,
+      styleUrl: config.style_url,
+    });
+    fallbackRef.current = -1;
+    setTileFailed(false);
     setResolvedTileUrl(tile.url);
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
-  }, [activeLayerIdx, config.tile_provider_id, config.api_key, buildTileUrl]);
+    setTileWarning(tile.warning || '');
+  }, [activeLayerIdx, config.tile_provider_id, config.api_key, config.tile_mode, config.retina, buildTileUrl]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
@@ -817,6 +820,7 @@ const MapView = ({
           onMarkerClick={onMarkerClick}
           user={user}
           showStationLabels={showStationLabels}
+          showCluster={showCluster}
         />
 
         <DuplicateLines pairs={pairs} />
@@ -832,6 +836,18 @@ const MapView = ({
           />
         ))}
       </MapContainer>
+
+      {(tileWarning || tileFailed) && (
+        <div style={{
+          position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1000, maxWidth: '90%', padding: '8px 14px', borderRadius: 8,
+          background: 'rgba(180, 83, 9, 0.95)', color: '#fff', fontSize: 13,
+        }}>
+          {tileFailed
+            ? 'Không tải được bản đồ. Vào Admin → Cấu hình bản đồ để kiểm tra provider/API key.'
+            : tileWarning}
+        </div>
+      )}
 
       <div className="map-controls-top-right">
         <MapControlButton

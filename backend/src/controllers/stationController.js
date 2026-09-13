@@ -6,7 +6,7 @@ exports.getAll = async (req, res) => {
     const isMapRequest = limit === undefined;
     const parsedLimit = isMapRequest ? 10000 : parseInt(limit);
     const parsedPage = isMapRequest ? 1 : parseInt(page);
-    const result = await stationService.getAllStations(search, status, parsedPage, parsedLimit);
+    const result = await stationService.getAllStations(search, status, parsedPage, parsedLimit, isMapRequest);
     res.json({ success: true, data: result.stations, pagination: result.pagination });
   } catch (error) {
     console.error('Get stations error:', error);

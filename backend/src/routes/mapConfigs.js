@@ -39,6 +39,28 @@ router.get('/', mapConfigController.getConfig);
 
 /**
  * @swagger
+ * /api/map-configs/admin:
+ *   get:
+ *     tags: [Map Config]
+ *     summary: Lấy cấu hình bản đồ đầy đủ (gồm API key) cho admin
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         schema:
+ *           type: string
+ *           default: stations
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa đăng nhập
+ */
+router.get('/admin', requireAuth, requireSuperAdmin, mapConfigController.getAdminConfig);
+
+/**
+ * @swagger
  * /api/map-configs:
  *   post:
  *     tags: [Map Config]

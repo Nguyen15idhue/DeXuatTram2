@@ -32,7 +32,7 @@ exports.getAllUsers = async (search, page, limit, scope = {}) => {
 
   if (scope.all) {
     const [users] = await pool.query(
-      `${USER_SELECT} ${whereClause} ORDER BY role, created_at DESC`,
+      `${USER_SELECT} ${whereClause} ORDER BY role, created_at DESC LIMIT 5000`,
       params
     );
     const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
