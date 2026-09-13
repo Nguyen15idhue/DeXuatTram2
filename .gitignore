@@ -7,6 +7,7 @@ backend/storage/uploads/*
 10
 test_api.js
 test_files/
+/tests/
 
 frontend/dist/
 frontend/public/pmtiles/*.pmtiles
