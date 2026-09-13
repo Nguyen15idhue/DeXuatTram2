@@ -2,6 +2,7 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: station-caddy
+    profiles: ["tls"]
     ports:
       - "80:80"
       - "443:443"
