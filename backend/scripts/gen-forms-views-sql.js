@@ -67,7 +67,7 @@ function genForm(entity, purpose, name, desc, sectionsSpec) {
           cfg.conditions = item.conditions;
           cfg.conditionLogic = item.conditionLogic || 'AND';
         }
-        inserts.push(`(${formSub(entity, purpose)}, ${fieldSub(entity, item.key)}, ${order}, 1, ${j(cfg)})`);
+        inserts.push(`SELECT ${formSub(entity, purpose)} AS form_id, ${fieldSub(entity, item.key)} AS field_id, ${order} AS order_index, 1 AS visible, ${j(cfg)} AS config`);
         order += 1;
       });
     });
@@ -85,8 +85,10 @@ function genForm(entity, purpose, name, desc, sectionsSpec) {
   out.push(`DELETE FROM form_fields WHERE form_id = ${formSub(entity, purpose)};`);
   out.push(`UPDATE forms SET layout_config = ${j(layout)}, updated_at = NOW() WHERE entity=${q(entity)} AND purpose=${q(purpose)};`);
   out.push('');
-  out.push(`INSERT INTO form_fields (form_id, field_id, order_index, visible, config) VALUES`);
-  out.push(inserts.join(',\n') + ';');
+  out.push(`INSERT INTO form_fields (form_id, field_id, order_index, visible, config)`);
+  out.push(`SELECT t.form_id, t.field_id, t.order_index, t.visible, t.config FROM (`);
+  out.push(inserts.join('\nUNION ALL\n'));
+  out.push(`) t WHERE t.form_id IS NOT NULL AND t.field_id IS NOT NULL;`);
   out.push('');
   return out.join('\n');
 }
@@ -99,10 +101,12 @@ function genView(entity, name, cols) {
   out.push(`WHERE NOT EXISTS (SELECT 1 FROM views WHERE entity=${q(entity)});`);
   out.push(`DELETE FROM view_fields WHERE view_id = ${viewSub(entity)};`);
   const values = cols.map((c, i) =>
-    `(${viewSub(entity)}, ${fieldSub(entity, c.key)}, ${i}, ${c.visible === 0 ? 0 : 1}, ${c.width || 'NULL'}, ${c.sortable === 0 ? 0 : 1}, ${c.filterable === 0 ? 0 : 1}, NULL)`
+    `SELECT ${viewSub(entity)} AS view_id, ${fieldSub(entity, c.key)} AS field_id, ${i} AS order_index, ${c.visible === 0 ? 0 : 1} AS visible, ${c.width || 'NULL'} AS width, ${c.sortable === 0 ? 0 : 1} AS sortable, ${c.filterable === 0 ? 0 : 1} AS filterable, NULL AS config`
   );
-  out.push(`INSERT INTO view_fields (view_id, field_id, order_index, visible, width, sortable, filterable, config) VALUES`);
-  out.push(values.join(',\n') + ';');
+  out.push(`INSERT INTO view_fields (view_id, field_id, order_index, visible, width, sortable, filterable, config)`);
+  out.push(`SELECT t.view_id, t.field_id, t.order_index, t.visible, t.width, t.sortable, t.filterable, t.config FROM (`);
+  out.push(values.join('\nUNION ALL\n'));
+  out.push(`) t WHERE t.view_id IS NOT NULL AND t.field_id IS NOT NULL;`);
   out.push('');
   return out.join('\n');
 }
