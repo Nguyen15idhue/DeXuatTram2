@@ -206,8 +206,13 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
       }
     }
 
-    case 'url':
-      return <span className="text-indigo-500">{value}</span>;
+    case 'url': {
+      const urlStr = String(value);
+      if (/^https?:\/\//i.test(urlStr)) {
+        return <a href={urlStr} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{urlStr}</a>;
+      }
+      return <span className="text-indigo-500">{urlStr}</span>;
+    }
 
     case 'email':
       return <span>{value}</span>;
@@ -285,7 +290,13 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
                         <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#999' }}>{idx + 1}</td>
                         {columns.map(col => (
                           <td key={col.key} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', background: col.formula ? '#f0fdf4' : undefined }}>
-                            {(() => { const v = computeCell(col, row); return typeof v === 'number' ? v.toLocaleString() : v; })()}
+                            {(() => {
+                              const v = computeCell(col, row);
+                              if (typeof v === 'number') {
+                                return formatNumber(v, { format: col.display_format || 'plain', decimalPlaces: col.decimal_places, unit: col.unit });
+                              }
+                              return v;
+                            })()}
                           </td>
                         ))}
                       </tr>

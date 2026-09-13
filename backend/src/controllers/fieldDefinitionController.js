@@ -150,10 +150,39 @@ exports.delete = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không thể xóa field cố định (fixed)' });
     }
 
+    if (existing.is_locked) {
+      return res.status(400).json({ success: false, message: 'Field đang bị khóa, không thể xóa' });
+    }
+
     await fieldDefinitionService.deleteFieldDefinition(id);
     res.json({ success: true, message: 'Xóa field definition thành công' });
   } catch (error) {
+    if (error.code === 'FIELD_LOCKED') {
+      return res.status(400).json({ success: false, message: 'Field đang bị khóa, không thể xóa' });
+    }
     console.error('Delete field definition error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.updateLock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { locked } = req.body;
+
+    const existing = await fieldDefinitionService.getFieldDefinitionById(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy field definition' });
+    }
+
+    const field = await fieldDefinitionService.setFieldDefinitionLock(id, !!locked);
+    res.json({
+      success: true,
+      data: field,
+      message: locked ? 'Đã khóa field' : 'Đã mở khóa field'
+    });
+  } catch (error) {
+    console.error('Update field definition lock error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

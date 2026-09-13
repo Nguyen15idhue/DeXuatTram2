@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, dataListService, fieldDefinitionService, formService, geocodeService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
-import { parseFormattedNumber } from '../../utils/formatNumber';
+import { parseFormattedNumber, formatNumber } from '../../utils/formatNumber';
 import { getDataListLabel } from '../../utils/dataListLabel';
 import { fetchDataList } from '../../utils/dataListCache';
 
@@ -142,7 +142,17 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         });
         setFormData(defaults);
 
-        const dlIds = [...new Set(fieldList.filter(f => f.data_list_id).map(f => f.data_list_id))];
+        const dlIdSet = new Set(fieldList.filter(f => f.data_list_id).map(f => f.data_list_id));
+        fieldList.forEach(f => {
+          if (f.type !== 'table') return;
+          const tc = (() => {
+            if (!f.source_config) return {};
+            if (typeof f.source_config === 'object') return f.source_config;
+            try { return JSON.parse(f.source_config); } catch { return {}; }
+          })();
+          (tc.columns || []).forEach(col => { if (col.data_list_id) dlIdSet.add(col.data_list_id); });
+        });
+        const dlIds = [...dlIdSet];
         if (dlIds.length > 0) {
           const dlMap = {};
           await Promise.all(dlIds.map(async (dlId) => {
@@ -386,10 +396,13 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
                 try { return JSON.parse(f.source_config); } catch { return {}; }
               })();
               const columns = tc.columns || [];
+              const nested = {};
               for (const col of columns) {
                 const colValues = val.map(r => r[col.key] ?? '');
                 scope[`${f.key}.${col.key}`] = colValues;
+                nested[col.key] = colValues;
               }
+              scope[f.key] = nested;
             } else if (f.type === 'number' || f.type === 'formula') {
               const num = typeof val === 'number' ? val : parseFormattedNumber(val);
               scope[f.key] = isNaN(num) ? 0 : num;
@@ -497,12 +510,18 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     };
 
     if (field.type === 'formula') {
-      const isPost = field.formula_config?.compute_mode === 'post';
+      const fc = field.formula_config || {};
+      const isPost = fc.compute_mode === 'post';
+      const rawVal = formData[field.key];
+      const isNumeric = rawVal !== '' && rawVal !== null && rawVal !== undefined && !isNaN(Number(rawVal)) && fc.outputType !== 'text';
+      const displayVal = isNumeric
+        ? formatNumber(Number(rawVal), { format: fc.numberFormat || 'plain', decimalPlaces: fc.decimalPlaces, unit: fc.unit })
+        : (rawVal || '');
       return (
         <input
           type="text"
           className="form-control"
-          value={formData[field.key] || ''}
+          value={displayVal}
           readOnly
           disabled
           placeholder={isPost ? 'Tính sau khi lưu' : 'Tính tự động'}

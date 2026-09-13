@@ -332,6 +332,9 @@ export const fieldDefinitionService = {
   },
   updateStatus(id, status, token) {
     return api.patchWithAuth(`/field-definitions/${id}/status`, { status }, token);
+  },
+  setLock(id, locked, token) {
+    return api.patchWithAuth(`/field-definitions/${id}/lock`, { locked }, token);
   }
 };
 

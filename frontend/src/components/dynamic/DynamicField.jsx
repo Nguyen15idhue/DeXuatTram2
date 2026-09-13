@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 import UserField from './UserField';
-import { formatNumber } from '../../utils/formatNumber';
+import { formatNumber, parseFormattedNumber } from '../../utils/formatNumber';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -48,6 +48,7 @@ const TABLE_HEADER_STYLE = { padding: '6px 8px', border: '1px solid #e2e8f0', fo
 
 const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {} }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [focusedCell, setFocusedCell] = useState(null);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -130,24 +131,36 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     return [];
   };
 
-  const renderTableCell = (refField, cellVal, onChangeCell, disabledCell) => {
+  const renderTableCell = (refField, cellVal, onChangeCell, disabledCell, cellOptions = null, cellId = null, col = null) => {
     const cellClass = 'form-control';
     const cellStyle = { padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' };
     switch (refField.type) {
-      case 'number':
+      case 'number': {
+        const isFocused = focusedCell === cellId;
+        const fmtOpts = { format: col?.display_format || 'plain', decimalPlaces: col?.decimal_places, unit: col?.unit };
+        const shown = isFocused
+          ? String(cellVal ?? '')
+          : (cellVal === '' || cellVal === null || cellVal === undefined ? '' : formatNumber(cellVal, fmtOpts));
         return (
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             className={cellClass}
-            value={cellVal ?? ''}
+            value={shown}
+            onFocus={() => setFocusedCell(cellId)}
+            onBlur={() => {
+              setFocusedCell(null);
+              const parsed = parseFormattedNumber(String(cellVal ?? ''));
+              onChangeCell(isNaN(parsed) ? '' : parsed);
+            }}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
-            step={refField.number_format === 'integer' ? '1' : 'any'}
             style={cellStyle}
           />
         );
+      }
       case 'select': {
-        const opts = resolveCellOptions(refField);
+        const opts = cellOptions || resolveCellOptions(refField);
         return (
           <select
             className={cellClass}
@@ -166,7 +179,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         );
       }
       case 'multiselect': {
-        const opts = resolveCellOptions(refField);
+        const opts = cellOptions || resolveCellOptions(refField);
         const selected = Array.isArray(cellVal) ? cellVal : [];
         return (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
@@ -578,9 +591,80 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         onChange(next);
       };
 
+      const resolveCellField = (col) => {
+        const base = (() => {
+          if (col.field_id) {
+            const found = allFields.find(f => f.id === col.field_id || f.field_id === col.field_id);
+            if (found) return found;
+          }
+          return {
+            type: col.column_type || 'text',
+            key: col.key,
+            options: (col.options || []).map(o => typeof o === 'object' ? o : { label: o, value: o })
+          };
+        })();
+        return {
+          ...base,
+          type: col.column_type || base.type,
+          data_list_id: col.data_list_id ?? base.data_list_id ?? null,
+          data_list_column: col.data_list_column ?? base.data_list_column ?? null,
+          data_list_label_column: col.data_list_label_column ?? base.data_list_label_column ?? null,
+          parent_column: col.parent_column || null
+        };
+      };
+
+      const getCellOptions = (col, row) => {
+        const ref = resolveCellField(col);
+        const dlId = ref.data_list_id;
+        if (dlId && dataListOptions[dlId] && ref.data_list_column) {
+          const { tree, unique } = dataListOptions[dlId];
+          const valCol = ref.data_list_column;
+          if (ref.parent_column) {
+            const parentColDef = columns.find(c => c.key === ref.parent_column);
+            const parentDlCol = parentColDef ? resolveCellField(parentColDef).data_list_column : null;
+            const parentVal = row ? row[ref.parent_column] : '';
+            if (!parentDlCol || !parentVal || !tree[parentDlCol] || !tree[parentDlCol][parentVal]) return [];
+            const seen = new Set();
+            return tree[parentDlCol][parentVal]
+              .filter(r2 => { const v = r2._raw?.[valCol]; if (v && !seen.has(v)) { seen.add(v); return true; } return false; })
+              .map(r2 => ({ value: r2._raw[valCol], label: r2._raw[valCol] }));
+          }
+          if (tree[valCol] && unique[valCol]) {
+            return unique[valCol].map(v => ({ value: v, label: v }));
+          }
+        }
+        return resolveCellOptions(ref);
+      };
+
+      const findDataListRaw = (col, val) => {
+        const ref = resolveCellField(col);
+        if (!ref.data_list_id || !ref.data_list_column) return null;
+        const map = dataListOptions[ref.data_list_id];
+        if (!map || !map.tree || !map.tree[ref.data_list_column]) return null;
+        const bucket = map.tree[ref.data_list_column][val];
+        return bucket && bucket[0] ? bucket[0]._raw : null;
+      };
+
       const updateCell = (rowIdx, colKey, val) => {
         if (disabled) return;
         const updatedRow = { ...rows[rowIdx], [colKey]: val };
+
+        columns.forEach(col => {
+          if (col.parent_column === colKey) updatedRow[col.key] = '';
+        });
+
+        const changedCol = columns.find(c => c.key === colKey);
+        if (changedCol) {
+          columns.forEach(col => {
+            if (col.autofill_from === colKey && col.autofill_column) {
+              const raw = findDataListRaw(changedCol, val);
+              if (raw && raw[col.autofill_column] !== undefined && raw[col.autofill_column] !== null) {
+                updatedRow[col.key] = raw[col.autofill_column];
+              }
+            }
+          });
+        }
+
         const recomputedRow = columns.reduce((r, col) => {
           if (col.formula) {
             r[col.key] = computeFormula(col.formula, r);
@@ -589,21 +673,6 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         }, updatedRow);
         const next = rows.map((r, i) => i === rowIdx ? recomputedRow : r);
         onChange(next);
-      };
-
-      const getReferencedField = (col) => {
-        if (col.field_id) {
-          const found = allFields.find(f => f.id === col.field_id || f.field_id === col.field_id);
-          if (found) return found;
-        }
-        if (col.column_type) {
-          return {
-            type: col.column_type,
-            key: col.key,
-            options: (col.options || []).map(o => typeof o === 'object' ? o : { label: o, value: o })
-          };
-        }
-        return { type: 'text', key: col.key };
       };
 
       return (
@@ -640,11 +709,12 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                     } else {
                       cellVal = row[col.key] ?? '';
                     }
-                    const refField = getReferencedField(col);
+                    const refField = resolveCellField(col);
+                    const cellOptions = getCellOptions(col, row);
                     const cellDisabled = disabled || hasFormula;
                     return (
                       <td key={col.key} style={{ ...TABLE_CELL_STYLE, background: hasFormula ? '#f0fdf4' : undefined }}>
-                        {renderTableCell(refField, cellVal, (val) => updateCell(rowIdx, col.key, val), cellDisabled)}
+                        {renderTableCell(refField, cellVal, (val) => updateCell(rowIdx, col.key, val), cellDisabled, cellOptions, `${rowIdx}:${col.key}`, col)}
                         {hasFormula && <input type="hidden" value={cellVal} />}
                       </td>
                     );

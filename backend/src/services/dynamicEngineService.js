@@ -191,7 +191,7 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
   const postFormulaFields = fieldDefs.filter(f => {
     if (f.type !== 'formula' || !f.formula_config) return false;
     const fc = typeof f.formula_config === 'string' ? (() => { try { return JSON.parse(f.formula_config); } catch { return {}; } })() : f.formula_config;
-    return fc.compute_mode === 'post';
+    return fc.compute_mode === 'post' || fc.compute_mode === 'pre';
   });
   if (postFormulaFields.length === 0) return {};
 
@@ -238,13 +238,16 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
 
   const tableFields = fieldDefs.filter(f => f.type === 'table');
   const tableColArrays = {};
+  const tableNested = {};
   for (const tf of tableFields) {
     const tc = typeof tf.source_config === 'string' ? (() => { try { return JSON.parse(tf.source_config); } catch { return {}; } })() : (tf.source_config || {});
     const columns = tc.columns || [];
     const rows = Array.isArray(recordData[tf.key]) ? recordData[tf.key] : [];
+    tableNested[tf.key] = {};
     for (const col of columns) {
       const colValues = rows.map(r => r[col.key] ?? '');
       tableColArrays[`${tf.key}.${col.key}`] = colValues;
+      tableNested[tf.key][col.key] = colValues;
     }
   }
 
@@ -284,6 +287,9 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
     }
     for (const [key, arr] of Object.entries(tableColArrays)) {
       scope[key] = arr;
+    }
+    for (const [tkey, obj] of Object.entries(tableNested)) {
+      scope[tkey] = obj;
     }
     for (const k of userFieldKeys) {
       const v = scope[k];

@@ -10,11 +10,51 @@ import ErrorMessage from '../ErrorMessage';
 import Pagination from '../Pagination';
 import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
 import FormulaEditor from '../dynamic/FormulaEditor';
+import { formatNumber } from '../../utils/formatNumber';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
+
+const LABEL_STYLE = { display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 };
+const SECTION_STYLE = { gridColumn: '1 / -1', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, background: '#f8fafc' };
+const SECTION_TITLE_STYLE = { margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 6 };
+const GRID2_STYLE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 };
+const INPUT_STYLE = { width: '100%' };
+const FIELD_GROUP_STYLE = { marginBottom: 0 };
+const NUMBER_FORMAT_OPTIONS = [
+  { value: 'plain', sample: '1000' },
+  { value: 'dot', sample: '1.000' },
+  { value: 'comma', sample: '1,000' },
+  { value: 'space', sample: '1 000' }
+];
+
+const NumberFormatPicker = ({ value, onChange, disabled }) => (
+  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    {NUMBER_FORMAT_OPTIONS.map(opt => {
+      const active = (value || 'plain') === opt.value;
+      return (
+        <button
+          type="button"
+          key={opt.value}
+          disabled={disabled}
+          onClick={() => onChange(opt.value)}
+          style={{
+            padding: '6px 14px', borderRadius: 8, fontSize: 13, minWidth: 74,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            border: active ? '2px solid #2563eb' : '1px solid #cbd5e1',
+            background: active ? '#eff6ff' : '#fff',
+            color: active ? '#1d4ed8' : '#334155',
+            fontWeight: active ? 700 : 500
+          }}
+        >
+          {opt.sample}
+        </button>
+      );
+    })}
+  </div>
+);
 
 const COLOR_PALETTE = [
   { label: 'Xanh lá đậm', value: '#166534' },
@@ -53,6 +93,7 @@ const FieldManager = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [editingId, setEditingId] = useState(null);
   const [editingIsFixed, setEditingIsFixed] = useState(false);
+  const [editingIsLocked, setEditingIsLocked] = useState(false);
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -126,6 +167,7 @@ const FieldManager = () => {
   const openCreate = () => {
     setEditingId(null);
     setEditingIsFixed(false);
+    setEditingIsLocked(false);
     setForm({ ...defaultForm, entity: filterEntity || 'stations', data_list_id: null });
     setShowForm(true);
     setError('');
@@ -134,6 +176,7 @@ const FieldManager = () => {
   const openEdit = (field) => {
     setEditingId(field.id);
     setEditingIsFixed(field.source_type === 'fixed');
+    setEditingIsLocked(!!field.is_locked);
     let parsedOptions = [];
     if (field.options) {
       try {
@@ -332,6 +375,21 @@ const FieldManager = () => {
     }
   };
 
+  const handleToggleLock = async (field) => {
+    try {
+      const res = await fieldDefinitionService.setLock(field.id, !field.is_locked, token);
+      if (res.success) {
+        setToast({ message: field.is_locked ? 'Đã mở khóa field' : 'Đã khóa field', type: 'success' });
+        clearFieldOptionsCache();
+        loadFields(pagination.page);
+      } else {
+        setError(res.message || 'Thao tác thất bại');
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+    }
+  };
+
   if (loading && fields.length === 0) return <Loading message="Đang tải field definitions..." />;
 
   return (
@@ -357,92 +415,116 @@ const FieldManager = () => {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="legacy-modal max-w-[640px]" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
-            <form onSubmit={handleSubmit}>
+          <div
+            className="legacy-modal"
+            style={{ maxWidth: 780, width: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: 0, fontSize: 18 }}>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                aria-label="Đóng"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1, color: '#64748b' }}
+              >✕</button>
+            </div>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+              <div style={{ overflowY: 'auto', padding: '16px 20px' }}>
               {error && <ErrorMessage message={error} />}
+              {editingIsLocked && (
+                <div className="alert alert-warning mb-3 text-sm">
+                  🔒 Field đang bị khóa — chỉ có thể sửa <strong>Label</strong>. Mở khóa ở danh sách nếu cần sửa thêm.
+                </div>
+              )}
               <div className="field-form">
-                <div className="form-group">
-                  <label>Entity * {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
-                  <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)} disabled={editingIsFixed}>
-                    {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Key * {editingId && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
-                  <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" disabled={!!editingId} />
-                </div>
-                <div className="form-group">
-                  <label>Label *</label>
-                  <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" />
-                </div>
-                <div className="form-group">
-                  <label>Type {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
-                  <select value={form.type} onChange={(e) => updateForm('type', e.target.value)} disabled={editingIsFixed}>
-                    {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Placeholder</label>
-                  <input type="text" value={form.placeholder} onChange={(e) => updateForm('placeholder', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Help Text</label>
-                  <input type="text" value={form.help_text} onChange={(e) => updateForm('help_text', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>
-                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} className="mr-1.5" />
-                    Bắt buộc
+                <div style={SECTION_STYLE}>
+                  <h4 style={SECTION_TITLE_STYLE}>Thông tin cơ bản</h4>
+                  <div style={GRID2_STYLE}>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Entity * {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
+                      <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)} disabled={editingIsFixed || editingIsLocked} style={INPUT_STYLE}>
+                        {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Key * {editingId && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
+                      <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" disabled={!!editingId || editingIsLocked} style={INPUT_STYLE} />
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Label *</label>
+                      <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" style={INPUT_STYLE} />
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Type {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
+                      <select value={form.type} onChange={(e) => updateForm('type', e.target.value)} disabled={editingIsFixed || editingIsLocked} style={INPUT_STYLE}>
+                        {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Placeholder</label>
+                      <input type="text" value={form.placeholder} onChange={(e) => updateForm('placeholder', e.target.value)} disabled={editingIsLocked} style={INPUT_STYLE} />
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Help Text</label>
+                      <input type="text" value={form.help_text} onChange={(e) => updateForm('help_text', e.target.value)} disabled={editingIsLocked} style={INPUT_STYLE} />
+                    </div>
+                  </div>
+                  <label style={{ ...LABEL_STYLE, marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} disabled={editingIsLocked} />
+                    Bắt buộc nhập
                   </label>
                 </div>
 
-                {(form.type === 'number') && (
-                  <div className="form-group-section">
-                    <h4>Cấu hình Number</h4>
-                    <div className="form-group">
-                      <label>Number Format</label>
-                      <select value={form.number_format} onChange={(e) => updateForm('number_format', e.target.value)}>
-                        <option value="integer">Integer (số nguyên)</option>
-                        <option value="float">Float (số thập phân)</option>
-                        <option value="currency">Currency (tiền tệ)</option>
-                      </select>
-                    </div>
-                    {form.number_format !== 'integer' && (
-                      <div className="form-group">
-                        <label>Decimal Places</label>
-                        <input type="number" min="0" max="10" value={form.decimal_places} onChange={(e) => updateForm('decimal_places', parseInt(e.target.value) || 0)} />
+                {!editingIsLocked && (form.type === 'number') && (
+                  <div style={SECTION_STYLE}>
+                    <h4 style={SECTION_TITLE_STYLE}>Cấu hình hiển thị số</h4>
+                    <div style={GRID2_STYLE}>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Kiểu số</label>
+                        <select value={form.number_format} onChange={(e) => updateForm('number_format', e.target.value)} style={INPUT_STYLE}>
+                          <option value="integer">Số nguyên</option>
+                          <option value="float">Số thập phân</option>
+                          <option value="currency">Tiền tệ</option>
+                        </select>
                       </div>
-                    )}
-                    <div className="form-group">
-                      <label>Hiển thị</label>
-                      <select value={form.display_format || 'plain'} onChange={(e) => updateForm('display_format', e.target.value)}>
-                        <option value="plain">1000</option>
-                        <option value="comma">1,000</option>
-                        <option value="dot">1.000</option>
-                        <option value="space">1 000</option>
-                      </select>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Số chữ số thập phân</label>
+                        <input type="number" min="0" max="10" value={form.decimal_places} onChange={(e) => updateForm('decimal_places', parseInt(e.target.value) || 0)} disabled={form.number_format === 'integer'} style={INPUT_STYLE} />
+                      </div>
                     </div>
-                    <div className="form-group">
-                      <label>Đơn vị (tùy chọn)</label>
-                      <input type="text" value={form.unit || ''} onChange={(e) => updateForm('unit', e.target.value)} placeholder="VND, %, kg..." />
+                    <div style={{ marginTop: 12 }}>
+                      <label style={LABEL_STYLE}>Kiểu hiển thị (dấu phân cách)</label>
+                      <NumberFormatPicker value={form.display_format} onChange={(v) => updateForm('display_format', v)} />
+                    </div>
+                    <div style={{ ...GRID2_STYLE, marginTop: 12 }}>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Đơn vị (tùy chọn)</label>
+                        <input type="text" value={form.unit || ''} onChange={(e) => updateForm('unit', e.target.value)} placeholder="VND, %, kg..." style={INPUT_STYLE} />
+                      </div>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Xem trước</label>
+                        <div style={{ padding: '12px', borderRadius: 5, border: '1px solid #ddd', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 15 }}>
+                          {formatNumber(1234567.89, { format: form.display_format || 'plain', decimalPlaces: form.number_format === 'integer' ? 0 : (form.decimal_places || 0), unit: form.unit })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {(form.type === 'date' || form.type === 'datetime') && (
-                  <div className="form-group-section">
-                    <h4>Cấu hình Date</h4>
-                    <div className="form-group">
-                      <label>Date Format</label>
-                      <select value={form.date_format} onChange={(e) => updateForm('date_format', e.target.value)}>
+                {!editingIsLocked && (form.type === 'date' || form.type === 'datetime') && (
+                  <div style={SECTION_STYLE}>
+                    <h4 style={SECTION_TITLE_STYLE}>Cấu hình hiển thị ngày</h4>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Định dạng ngày</label>
+                      <select value={form.date_format} onChange={(e) => updateForm('date_format', e.target.value)} style={INPUT_STYLE}>
                         {DATE_FORMAT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </div>
                   </div>
                 )}
 
-                {(form.type === 'user') && (
+                {!editingIsLocked && (form.type === 'user') && (
                   <div className="form-group-section">
                     <h4>Cấu hình Người dùng</h4>
                     <div className="form-group">
@@ -462,7 +544,7 @@ const FieldManager = () => {
                   </div>
                 )}
 
-                {(form.type === 'select' || form.type === 'multiselect') && (
+                {!editingIsLocked && (form.type === 'select' || form.type === 'multiselect') && (
                   <div className="form-group-section">
                     <h4>Nguồn dữ liệu</h4>
                     <div className="form-group">
@@ -612,7 +694,7 @@ const FieldManager = () => {
                   </div>
                 )}
 
-                {(form.type === 'file') && (
+                {!editingIsLocked && (form.type === 'file') && (
                   <div className="form-group-section">
                     <h4>Cấu hình File</h4>
                     <div className="form-row">
@@ -644,7 +726,7 @@ const FieldManager = () => {
                   </div>
                 )}
 
-                {(form.type === 'formula') && (
+                {!editingIsLocked && (form.type === 'formula') && (
                   <div className="form-group-section">
                     <h4>Cấu hình Formula</h4>
                     <FormulaEditor
@@ -655,7 +737,7 @@ const FieldManager = () => {
                   </div>
                 )}
 
-                {(form.type === 'table') && (
+                {!editingIsLocked && (form.type === 'table') && (
                   <div className="form-group-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginTop: 12 }}>
                     <h4 style={{ marginTop: 0, marginBottom: 12 }}>Cấu hình Bảng (Table)</h4>
                     <div className="form-row">
@@ -712,24 +794,24 @@ const FieldManager = () => {
                           }} title="Xóa cột">✕</button>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                          <input type="text" placeholder="Key (VD: so_luong)" value={col.key || ''}
+                          <input type="text" className="form-control" placeholder="Key (VD: so_luong)" value={col.key || ''}
                             onChange={(e) => {
                               const newCols = [...(form.table_config.columns || [])];
                               newCols[idx] = { ...newCols[idx], key: e.target.value };
                               updateForm('table_config', { ...form.table_config, columns: newCols });
-                            }} style={{ flex: 1, minWidth: 120, fontSize: 12 }} disabled={!!col.field_id} />
-                          <input type="text" placeholder="Label hiển thị" value={col.label || ''}
+                            }} style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '6px 8px' }} disabled={!!col.field_id} />
+                          <input type="text" className="form-control" placeholder="Label hiển thị" value={col.label || ''}
                             onChange={(e) => {
                               const newCols = [...(form.table_config.columns || [])];
                               newCols[idx] = { ...newCols[idx], label: e.target.value };
                               updateForm('table_config', { ...form.table_config, columns: newCols });
-                            }} style={{ flex: 1, minWidth: 120, fontSize: 12 }} />
-                          <input type="number" min="60" placeholder="Width" value={col.width || 120}
+                            }} style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '6px 8px' }} />
+                          <input type="number" className="form-control" min="60" placeholder="Width" value={col.width || 120}
                             onChange={(e) => {
                               const newCols = [...(form.table_config.columns || [])];
                               newCols[idx] = { ...newCols[idx], width: parseInt(e.target.value) || 120 };
                               updateForm('table_config', { ...form.table_config, columns: newCols });
-                            }} style={{ width: 70, fontSize: 12 }} />
+                            }} style={{ width: 70, fontSize: 12, padding: '6px 8px' }} />
                           <label style={{ fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 2 }}>
                             <input type="checkbox" checked={!!col.required}
                               onChange={(e) => {
@@ -740,28 +822,41 @@ const FieldManager = () => {
                             Bắt buộc
                           </label>
                         </div>
+                        {((!col.field_id && col.column_type === 'number') || (col.field_id && entityFields.find(f => f.id === parseInt(col.field_id))?.type === 'number')) && (
+                          <div style={{ marginTop: 8 }}>
+                            <label style={LABEL_STYLE}>Kiểu hiển thị số</label>
+                            <NumberFormatPicker
+                              value={col.display_format}
+                              onChange={(v) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], display_format: v };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }}
+                            />
+                          </div>
+                        )}
                         {!col.field_id && (col.column_type === 'select') && (
                           <div style={{ marginTop: 4, fontSize: 12 }}>
                             <label>Options (cách nhau bởi dấu phẩy):</label>
-                            <input type="text" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
+                            <input type="text" className="form-control" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
                               onChange={(e) => {
                                 const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
                                 const newCols = [...(form.table_config.columns || [])];
                                 newCols[idx] = { ...newCols[idx], options: opts };
                                 updateForm('table_config', { ...form.table_config, columns: newCols });
-                              }} style={{ width: '100%', fontSize: 12 }} />
+                              }} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }} />
                           </div>
                         )}
                         <div style={{ marginTop: 4, fontSize: 12 }}>
                           <label style={{ fontWeight: 500 }}>Formula (tự tính — để trống nếu nhập tay):</label>
-                          <input type="text" placeholder={`VD: ${col.key || 'col_a'} * ${col.key || 'col_b'}`}
+                          <input type="text" className="form-control" placeholder={`VD: ${col.key || 'col_a'} * ${col.key || 'col_b'}`}
                             value={col.formula || ''}
                             onChange={(e) => {
                               const newCols = [...(form.table_config.columns || [])];
                               newCols[idx] = { ...newCols[idx], formula: e.target.value };
                               updateForm('table_config', { ...form.table_config, columns: newCols });
                             }}
-                            style={{ width: '100%', fontSize: 12, fontFamily: 'monospace', background: col.formula ? '#fffbeb' : undefined }}
+                            style={{ width: '100%', fontSize: 12, padding: '6px 8px', fontFamily: 'monospace', background: col.formula ? '#fffbeb' : undefined }}
                             disabled={!!col.field_id} />
                           {col.formula && (
                             <span style={{ color: '#d97706', fontSize: 11 }}><Zap size={11} style={{ verticalAlign: 'middle' }} /> Tự tính, ô nhập bị khóa</span>
@@ -787,6 +882,68 @@ const FieldManager = () => {
                             </select>
                           </div>
                         )}
+                        <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e2e8f0' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Liên kết dữ liệu</div>
+                          <div style={GRID2_STYLE}>
+                            <div className="form-group" style={FIELD_GROUP_STYLE}>
+                              <label>DataList</label>
+                              <select value={col.data_list_id || ''} onChange={(e) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], data_list_id: parseInt(e.target.value) || null };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }} style={INPUT_STYLE}>
+                                <option value="">-- Không --</option>
+                                {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
+                              </select>
+                            </div>
+                            {!!col.data_list_id && (
+                              <div className="form-group" style={FIELD_GROUP_STYLE}>
+                                <label>Cột giá trị</label>
+                                <input type="text" placeholder="VD: ten" value={col.data_list_column || ''} onChange={(e) => {
+                                  const newCols = [...(form.table_config.columns || [])];
+                                  newCols[idx] = { ...newCols[idx], data_list_column: e.target.value };
+                                  updateForm('table_config', { ...form.table_config, columns: newCols });
+                                }} style={INPUT_STYLE} />
+                              </div>
+                            )}
+                            {(form.table_config.columns || []).length > 1 && (
+                              <div className="form-group" style={FIELD_GROUP_STYLE}>
+                                <label>Cột cha (cascade)</label>
+                                <select value={col.parent_column || ''} onChange={(e) => {
+                                  const newCols = [...(form.table_config.columns || [])];
+                                  newCols[idx] = { ...newCols[idx], parent_column: e.target.value || null };
+                                  updateForm('table_config', { ...form.table_config, columns: newCols });
+                                }} style={INPUT_STYLE}>
+                                  <option value="">-- Không --</option>
+                                  {(form.table_config.columns || []).filter((_, i) => i !== idx).map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                </select>
+                              </div>
+                            )}
+                            {(form.table_config.columns || []).length > 1 && (
+                              <div className="form-group" style={FIELD_GROUP_STYLE}>
+                                <label>Tự điền từ cột</label>
+                                <select value={col.autofill_from || ''} onChange={(e) => {
+                                  const newCols = [...(form.table_config.columns || [])];
+                                  newCols[idx] = { ...newCols[idx], autofill_from: e.target.value || null };
+                                  updateForm('table_config', { ...form.table_config, columns: newCols });
+                                }} style={INPUT_STYLE}>
+                                  <option value="">-- Không --</option>
+                                  {(form.table_config.columns || []).filter((_, i) => i !== idx).map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                </select>
+                              </div>
+                            )}
+                            {!!col.autofill_from && (
+                              <div className="form-group" style={FIELD_GROUP_STYLE}>
+                                <label>Lấy cột DataList</label>
+                                <input type="text" placeholder="VD: gia" value={col.autofill_column || ''} onChange={(e) => {
+                                  const newCols = [...(form.table_config.columns || [])];
+                                  newCols[idx] = { ...newCols[idx], autofill_column: e.target.value };
+                                  updateForm('table_config', { ...form.table_config, columns: newCols });
+                                }} style={INPUT_STYLE} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
                           {col.field_id
                             ? `Tham chiếu field #${col.field_id}`
@@ -802,7 +959,8 @@ const FieldManager = () => {
                   </div>
                 )}
               </div>
-              <div className="form-actions">
+              </div>
+              <div className="form-actions" style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', margin: 0 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary">{editingId ? 'Cập nhật' : 'Tạo mới'}</button>
               </div>
@@ -859,6 +1017,7 @@ const FieldManager = () => {
                 <td>
                   <code>{f.key}</code>
                   {f.source_type === 'fixed' && <span className="badge badge-fixed" title="Field cố định">🔒</span>}
+                  {!!f.is_locked && <span className="badge badge-fixed" title="Field đang khóa">🔐</span>}
                 </td>
                 <td>{f.label}</td>
                 <td><span className="field-type-badge">{f.type}</span></td>
@@ -871,7 +1030,10 @@ const FieldManager = () => {
                 <td>
                   <div className="action-buttons">
                     <button className="btn btn-sm btn-edit" onClick={() => openEdit(f)}>Sửa</button>
-                    {f.source_type !== 'fixed' && (
+                    <button className="btn btn-sm" onClick={() => handleToggleLock(f)} title={f.is_locked ? 'Mở khóa field' : 'Khóa field'}>
+                      {f.is_locked ? 'Mở khóa' : 'Khóa'}
+                    </button>
+                    {f.source_type !== 'fixed' && !f.is_locked && (
                       <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(f.id, f.label)}>Xóa</button>
                     )}
                   </div>

@@ -37,7 +37,20 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [formData, setFormData] = useState({});
   const [formConfig, setFormConfig] = useState(null);
   const [showMap, setShowMap] = useState(false);
-  const dataListOptions = useDataListMap([...viewFields, ...allFields].map(f => f.data_list_id));
+  const dataListIds = (() => {
+    const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
+    [...viewFields, ...allFields].forEach(f => {
+      if (f.type !== 'table') return;
+      const tc = (() => {
+        if (!f.source_config) return {};
+        if (typeof f.source_config === 'object') return f.source_config;
+        try { return JSON.parse(f.source_config); } catch { return {}; }
+      })();
+      (tc.columns || []).forEach(col => { if (col.data_list_id) ids.add(col.data_list_id); });
+    });
+    return [...ids];
+  })();
+  const dataListOptions = useDataListMap(dataListIds);
 
   useEffect(() => {
     if (modeProp) setMode(allowEdit ? modeProp : 'view');
@@ -238,9 +251,32 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const mainFields = viewFields.filter(f => f.visible);
   const otherFields = allFields.filter(f => !viewFieldKeys.includes(f.key));
 
+  const evalFieldConditions = (config, data) => {
+    const conditions = config?.conditions;
+    if (!conditions || conditions.length === 0) return true;
+    const src = data || {};
+    const results = conditions.map(cond => {
+      if (!cond.field) return true;
+      const val = getFieldValue(src, { key: cond.field });
+      const checkVal = cond.value || '';
+      switch (cond.operator) {
+        case '=': return String(val ?? '') === checkVal;
+        case '!=': return String(val ?? '') !== checkVal;
+        case 'contains': return String(val ?? '').toLowerCase().includes(checkVal.toLowerCase());
+        case '>': return Number(val) > Number(checkVal);
+        case '<': return Number(val) < Number(checkVal);
+        case 'empty': return val === '' || val === null || val === undefined;
+        case 'not_empty': return val !== '' && val !== null && val !== undefined;
+        default: return true;
+      }
+    });
+    return config.conditionLogic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+  };
+
   const getLayoutSections = () => {
     if (!formConfig?.layout_config?.sections) return null;
     const lc = formConfig.layout_config;
+    const data = mode === 'edit' ? formData : (record || formData);
     const fieldsForm = formConfig.fields || [];
     const fieldsAll = [...viewFields, ...otherFields];
     const fieldsByKey = {};
@@ -249,13 +285,13 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     fieldsForm.forEach(f => {
       const cfg = f.config ? (typeof f.config === 'string' ? (() => { try { return JSON.parse(f.config); } catch { return null; } })() : f.config) : null;
       if (cfg && cfg.rowId != null && cfg.colIndex != null) {
-        cellMap[`${cfg.rowId}-${cfg.colIndex}`] = fieldsByKey[f.key || f.field_key] || null;
+        const condOk = evalFieldConditions(cfg, data);
+        cellMap[`${cfg.rowId}-${cfg.colIndex}`] = condOk ? (fieldsByKey[f.key || f.field_key] || null) : null;
       }
     });
     return lc.sections.filter(sec => {
       if (sec.visibleWhen) {
-        const recData = record || formData;
-        const val = getFieldValue(recData, { key: sec.visibleWhen.field });
+        const val = getFieldValue(data, { key: sec.visibleWhen.field });
         if (val !== sec.visibleWhen.value) return false;
       }
       return true;

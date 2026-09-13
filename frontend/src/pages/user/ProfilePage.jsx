@@ -6,8 +6,6 @@ import Toast from '../../components/Toast';
 import ErrorMessage from '../../components/ErrorMessage';
 import { User, Mail, Phone, Shield, CheckCircle, Camera, Lock, Pencil, X } from 'lucide-react';
 
-const USERS_FORM_ID = 8;
-
 const ProfilePage = () => {
   const { user, updateUser, token } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -198,7 +196,7 @@ const ProfilePage = () => {
                 <h3 className="card-title">Chỉnh sửa thông tin</h3>
                 <DynamicForm
                   entity="users"
-                  formId={USERS_FORM_ID}
+                  purpose="view"
                   onSubmit={handleEditSubmit}
                   initialData={user}
                   mode="edit"

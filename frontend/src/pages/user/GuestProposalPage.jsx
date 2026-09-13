@@ -6,7 +6,6 @@ import Toast from '../../components/Toast';
 import ErrorMessage from '../../components/ErrorMessage';
 import { MapPin, Search, Copy, Trash2, CheckCircle2, LocateFixed, Link2 } from 'lucide-react';
 
-const PROPOSALS_FORM_ID = 9;
 const LS_KEY = 'guest_proposals';
 const LS_MAX = 50;
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
@@ -307,7 +306,6 @@ const GuestProposalPage = () => {
             <DynamicForm
               entity="station_proposals"
               purpose="create"
-              formId={PROPOSALS_FORM_ID}
               onSubmit={handleSubmit}
               initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
               guestMode

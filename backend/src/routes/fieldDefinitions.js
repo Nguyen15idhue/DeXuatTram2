@@ -262,4 +262,41 @@ router.delete('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.
  */
 router.patch('/:id/status', requireAuth, requireSuperAdmin, fieldDefinitionController.updateStatus);
 
+/**
+ * @swagger
+ * /api/field-definitions/{id}/lock:
+ *   patch:
+ *     tags: [Field Definitions]
+ *     summary: Khóa / mở khóa field definition (chỉ SUPER_ADMIN)
+ *     description: Field bị khóa chỉ cho phép sửa label; không thể sửa thuộc tính khác hoặc xóa.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [locked]
+ *             properties:
+ *               locked:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy
+ */
+router.patch('/:id/lock', requireAuth, requireSuperAdmin, fieldDefinitionController.updateLock);
+
 module.exports = router;

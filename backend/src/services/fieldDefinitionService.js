@@ -105,35 +105,40 @@ exports.updateFieldDefinition = async (id, data) => {
   const existing = await exports.getFieldDefinitionById(id);
   if (!existing) throw new Error('Field not found');
 
+  // Field bị khóa: chỉ cho phép đổi label, mọi thuộc tính khác giữ nguyên
+  const effectiveData = existing.is_locked
+    ? { label: data.label !== undefined ? data.label : existing.label }
+    : data;
+
   const merged = {
-    entity: data.entity !== undefined ? data.entity : existing.entity,
-    key: data.key !== undefined ? data.key : existing.key,
-    label: data.label !== undefined ? data.label : existing.label,
-    type: data.type !== undefined ? data.type : existing.type,
-    source_type: data.source_type !== undefined ? data.source_type : existing.source_type,
-    required: data.required !== undefined ? data.required : existing.required,
-    validation: data.validation !== undefined ? data.validation : existing.validation,
-    options: data.options !== undefined ? data.options : existing.options,
-    formula: data.formula !== undefined ? data.formula : existing.formula,
-    placeholder: data.placeholder !== undefined ? data.placeholder : existing.placeholder,
-    help_text: data.help_text !== undefined ? data.help_text : existing.help_text,
-    status: data.status !== undefined ? data.status : existing.status,
-    number_format: data.number_format !== undefined ? data.number_format : existing.number_format,
-    decimal_places: data.decimal_places !== undefined ? data.decimal_places : existing.decimal_places,
-    display_format: data.display_format !== undefined ? data.display_format : existing.display_format,
-    unit: data.unit !== undefined ? data.unit : existing.unit,
-    date_format: data.date_format !== undefined ? data.date_format : existing.date_format,
-    timezone: data.timezone !== undefined ? data.timezone : existing.timezone,
-    source_config: data.source_config !== undefined ? data.source_config : existing.source_config,
-    parent_field: data.parent_field !== undefined ? data.parent_field : existing.parent_field,
-    option_style: data.option_style !== undefined ? data.option_style : existing.option_style,
-    file_config: data.file_config !== undefined ? data.file_config : existing.file_config,
-    formula_config: data.formula_config !== undefined ? data.formula_config : existing.formula_config,
-    data_list_id: data.data_list_id !== undefined ? data.data_list_id : existing.data_list_id,
-    data_list_column: data.data_list_column !== undefined ? data.data_list_column : existing.data_list_column,
-    data_list_label_column: data.data_list_label_column !== undefined ? data.data_list_label_column : existing.data_list_label_column,
-    relation_key: data.relation_key !== undefined ? data.relation_key : existing.relation_key,
-    table_config: data.table_config !== undefined ? data.table_config : existing.source_config
+    entity: effectiveData.entity !== undefined ? effectiveData.entity : existing.entity,
+    key: effectiveData.key !== undefined ? effectiveData.key : existing.key,
+    label: effectiveData.label !== undefined ? effectiveData.label : existing.label,
+    type: effectiveData.type !== undefined ? effectiveData.type : existing.type,
+    source_type: effectiveData.source_type !== undefined ? effectiveData.source_type : existing.source_type,
+    required: effectiveData.required !== undefined ? effectiveData.required : existing.required,
+    validation: effectiveData.validation !== undefined ? effectiveData.validation : existing.validation,
+    options: effectiveData.options !== undefined ? effectiveData.options : existing.options,
+    formula: effectiveData.formula !== undefined ? effectiveData.formula : existing.formula,
+    placeholder: effectiveData.placeholder !== undefined ? effectiveData.placeholder : existing.placeholder,
+    help_text: effectiveData.help_text !== undefined ? effectiveData.help_text : existing.help_text,
+    status: effectiveData.status !== undefined ? effectiveData.status : existing.status,
+    number_format: effectiveData.number_format !== undefined ? effectiveData.number_format : existing.number_format,
+    decimal_places: effectiveData.decimal_places !== undefined ? effectiveData.decimal_places : existing.decimal_places,
+    display_format: effectiveData.display_format !== undefined ? effectiveData.display_format : existing.display_format,
+    unit: effectiveData.unit !== undefined ? effectiveData.unit : existing.unit,
+    date_format: effectiveData.date_format !== undefined ? effectiveData.date_format : existing.date_format,
+    timezone: effectiveData.timezone !== undefined ? effectiveData.timezone : existing.timezone,
+    source_config: effectiveData.source_config !== undefined ? effectiveData.source_config : existing.source_config,
+    parent_field: effectiveData.parent_field !== undefined ? effectiveData.parent_field : existing.parent_field,
+    option_style: effectiveData.option_style !== undefined ? effectiveData.option_style : existing.option_style,
+    file_config: effectiveData.file_config !== undefined ? effectiveData.file_config : existing.file_config,
+    formula_config: effectiveData.formula_config !== undefined ? effectiveData.formula_config : existing.formula_config,
+    data_list_id: effectiveData.data_list_id !== undefined ? effectiveData.data_list_id : existing.data_list_id,
+    data_list_column: effectiveData.data_list_column !== undefined ? effectiveData.data_list_column : existing.data_list_column,
+    data_list_label_column: effectiveData.data_list_label_column !== undefined ? effectiveData.data_list_label_column : existing.data_list_label_column,
+    relation_key: effectiveData.relation_key !== undefined ? effectiveData.relation_key : existing.relation_key,
+    table_config: effectiveData.table_config !== undefined ? effectiveData.table_config : existing.source_config
   };
 
   const entity = merged.entity;
@@ -192,7 +197,24 @@ exports.updateFieldDefinition = async (id, data) => {
 };
 
 exports.deleteFieldDefinition = async (id) => {
+  const existing = await exports.getFieldDefinitionById(id);
+  if (!existing) {
+    const err = new Error('Field not found');
+    err.code = 'FIELD_NOT_FOUND';
+    throw err;
+  }
+  if (existing.is_locked) {
+    const err = new Error('Field đang bị khóa, không thể xóa');
+    err.code = 'FIELD_LOCKED';
+    throw err;
+  }
   await pool.query('DELETE FROM field_definitions WHERE id = ?', [id]);
+};
+
+exports.setFieldDefinitionLock = async (id, locked) => {
+  await pool.query('UPDATE field_definitions SET is_locked = ?, updated_at = NOW() WHERE id = ?', [locked ? 1 : 0, id]);
+  const [rows] = await pool.query('SELECT * FROM field_definitions WHERE id = ?', [id]);
+  return rows[0];
 };
 
 exports.updateFieldDefinitionStatus = async (id, status) => {

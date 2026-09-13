@@ -5,17 +5,53 @@ let fieldCache = null;
 let fieldCacheTime = 0;
 const CACHE_TTL = 60000;
 
+const TABLE_NUMBER_FORMATS = {
+  plain: { separator: '', decimal: '.' },
+  dot: { separator: '.', decimal: ',' },
+  comma: { separator: ',', decimal: '.' },
+  space: { separator: ' ', decimal: ',' }
+};
+
+function formatTableNumber(value, col) {
+  const num = Number(value);
+  if (isNaN(num)) return String(value);
+  const fmt = TABLE_NUMBER_FORMATS[col.display_format] || TABLE_NUMBER_FORMATS.plain;
+  const abs = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
+  const decimals = col.decimal_places;
+  let intPart;
+  let decPart = '';
+  if (decimals !== undefined && decimals !== null && decimals >= 0) {
+    const parts = abs.toFixed(decimals).split('.');
+    intPart = parts[0];
+    decPart = parts[1] || '';
+  } else {
+    const str = String(abs);
+    const idx = str.indexOf('.');
+    intPart = idx >= 0 ? str.substring(0, idx) : str;
+    decPart = idx >= 0 ? str.substring(idx + 1) : '';
+  }
+  let out = sign + intPart.replace(/\B(?=(\d{3})+(?!\d))/g, fmt.separator);
+  if (decPart) out += fmt.decimal + decPart;
+  if (col.unit) out += ' ' + col.unit;
+  return out;
+}
+
 async function getFieldMap() {
   const now = Date.now();
   if (fieldCache && now - fieldCacheTime < CACHE_TTL) return fieldCache;
 
   const [rows] = await pool.query(
-    'SELECT `key`, label, type FROM field_definitions WHERE status = ?',
+    'SELECT `key`, label, type, source_config FROM field_definitions WHERE status = ?',
     ['active']
   );
   fieldCache = {};
   for (const row of rows) {
-    fieldCache[row.key] = { label: row.label || row.key, type: row.type || 'text' };
+    fieldCache[row.key] = {
+      label: row.label || row.key,
+      type: row.type || 'text',
+      source_config: row.source_config
+    };
   }
   fieldCacheTime = now;
   return fieldCache;
@@ -238,6 +274,38 @@ function formatFieldValue(fieldKey, value, fieldMap) {
   const type = getFieldTypeInfo(fieldKey, fieldMap);
 
   switch (type) {
+    case 'table': {
+      let tableRows = value;
+      if (typeof tableRows === 'string') {
+        try { tableRows = JSON.parse(tableRows); } catch { tableRows = []; }
+      }
+      if (!Array.isArray(tableRows) || tableRows.length === 0) return null;
+      const info = fieldMap[fieldKey] || {};
+      let sc = info.source_config;
+      if (typeof sc === 'string') {
+        try { sc = JSON.parse(sc); } catch { sc = {}; }
+      }
+      const columns = (sc && sc.columns) || [];
+      let tableHtml = '<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:12px;margin:4px 0">';
+      tableHtml += '<thead><tr style="background:#f1f5f9">';
+      tableHtml += '<th style="border:1px solid #ddd;padding:4px 6px;text-align:center;width:36px">STT</th>';
+      for (const col of columns) {
+        tableHtml += `<th style="border:1px solid #ddd;padding:4px 6px;text-align:left">${escapeHtml(col.label || col.key)}</th>`;
+      }
+      tableHtml += '</tr></thead><tbody>';
+      tableRows.forEach((row, idx) => {
+        tableHtml += '<tr>';
+        tableHtml += `<td style="border:1px solid #ddd;padding:4px 6px;text-align:center;color:#666">${idx + 1}</td>`;
+        for (const col of columns) {
+          let cellVal = row[col.key];
+          if (typeof cellVal === 'number') cellVal = formatTableNumber(cellVal, col);
+          tableHtml += `<td style="border:1px solid #ddd;padding:4px 6px;word-break:break-word">${escapeHtml(cellVal === null || cellVal === undefined ? '' : String(cellVal))}</td>`;
+        }
+        tableHtml += '</tr>';
+      });
+      tableHtml += '</tbody></table>';
+      return tableHtml;
+    }
     case 'phone': {
       const str = String(value).replace(/[^0-9]/g, '');
       if (str.length >= 9) {

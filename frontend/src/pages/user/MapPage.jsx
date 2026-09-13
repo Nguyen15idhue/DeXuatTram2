@@ -7,8 +7,6 @@ import DynamicForm from '../../components/dynamic/DynamicForm';
 import Toast from '../../components/Toast';
 import { MapPin, X } from 'lucide-react';
 
-const PROPOSALS_FORM_ID = 9;
-
 const MapPage = () => {
   const { token, user } = useAuth();
   const [showForm, setShowForm] = useState(false);
@@ -183,7 +181,6 @@ const MapPage = () => {
               <DynamicForm
                 entity="station_proposals"
                 purpose="create"
-                formId={PROPOSALS_FORM_ID}
                 onSubmit={handleSubmit}
                 initialData={{ latitude: coords.lat, longitude: coords.lng }}
               >
