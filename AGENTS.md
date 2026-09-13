@@ -5,138 +5,147 @@
 ```
 Project: Station Management System
 Purpose: Quản lý trạm sạc, hiển thị trên bản đồ, đề xuất vị trí trạm
-Stack: React + Vite | Node.js + Express | MySQL | Leaflet | Docker Compose
+Stack:   React 18 + Vite | Node.js 20 + Express | MySQL 8 | Leaflet | Docker Compose
+Repo:    https://github.com/Nguyen15idhue/DeXuatTram2
 ```
 
 ## 2. Architecture
 
 ```
-Browser → Frontend → REST API → Backend → MySQL
+Browser → Frontend (Vite, :5173) → REST API (/api) → Backend (Express, :3000) → MySQL (:3306)
 ```
 
 ```
-/frontend    React + Vite
+/frontend    React + Vite (JS, không TypeScript)
 /backend     Node.js + Express
-/database    MySQL scripts
-/docker      Docker configs
-/swagger     http://localhost:3000/api-docs
+/database    SQL migrations (đánh số thứ tự)
+/docker      Docker configs + MySQL datadir/dump
+/scripts     migrate.sh (tracking schema_migrations), sync-data.sh
+/e2e         Playwright E2E (root config: playwright.config.js)
+/tests       Script test API thủ công (test_api.js)
+/docs        Tài liệu theo mốc (0–7)
+Swagger UI:  http://localhost:3000/api-docs
 ```
 
 ## 3. Business Entities
 
 ### User
 - Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV` (file 25, thay `USER`/`ADMIN` cũ)
-- `CTV.parent_id` trỏ `SALES` quản lý; `external_id` map hệ ngoài
+- `CTV.parent_id` trỏ `SALES` quản lý; `external_id` map hệ ngoài (unique)
+- `token_version` tăng khi đổi mật khẩu → revoke JWT cũ
 - Status: `ACTIVE`, `LOCKED`
 
-### Station (trạm đã được tạo)
+### Station (trạm đã có thật)
 - Status: `ACTIVE`, `DEPLOYING`
 
 ### Station Proposal (đề xuất trạm mới)
 - Status: `PENDING`, `REVIEWING`, `APPROVED`, `REJECTED`
+- `submission_source`: `user` | `guest`; `tracking_code`, `submitter_ip`
+- Sync 1Office: `contact_1office_id`, `contact_1office_code`, `sync_status`, `last_synced_at`, `last_synced_data`
+- `ma_de_xuat_gen` là cột generated từ `custom_data`
 
-### Field Definition (định nghĩa trường động)
-- 13 types: `text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`
-- Entity: `stations`, `station_proposals`, `users`
-- Source: `fixed` (cột DB) hoặc `json` (lưu trong custom_data)
-- Select/Multiselect có thể lấy data từ Data List hoặc manual options
-
-### Form (cấu hình form nhập liệu)
-- Gắn với 1 entity
-- Chứa danh sách fields sắp xếp theo `order_index`
-
-### View (cấu hình bảng hiển thị)
-- Gắn với 1 entity
-- Chứa columns với `width`, `sortable`, `filterable`, `visible`
-
-### Data List (danh sách dữ liệu dùng chung)
-- Schema: `columns_config` JSON `[{key, label, type}]`
-- Rows: `data` JSON `{column_key: value}`
-- Hỗ trợ hierarchy qua `parent_row_id`
+### Dynamic config entities
+- **Field Definition**: 13 types chuẩn (`text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`) + type `user`. `source` = `fixed` (cột DB) hoặc `json` (trong `custom_data`)
+- **Form**: gắn 1 entity, có `purpose` (`all`/`create`/`view`), field theo `order_index`, section trong `layout_config`
+- **View**: gắn 1 entity, columns có `width`, `sortable`, `filterable`, `visible`
+- **Data List**: `columns_config` JSON `[{key,label,type}]`; rows `data` JSON `{column_key:value}`; hierarchy qua `parent_row_id`
 
 **QUAN TRỌNG:**
-- `Station` và `Station Proposal` là hai entity ĐỘC LẬP
-- `Station` là trạm đã có thật
-- `Station Proposal` là đề xuất chưa được duyệt
-- KHÔNG được merge hai entity này
-- KHÔNG tự thêm status `PROPOSAL` vào Station
+- `Station` và `Station Proposal` là hai entity ĐỘC LẬP — KHÔNG merge, KHÔNG thêm status `PROPOSAL` vào Station
+- `Station` là trạm đã có thật; `Station Proposal` là đề xuất chưa được duyệt
 
 ## 4. Business Rules
 
-### Permission Rules (file 25)
-1. CTV chỉ được xem/sửa/xóa proposal của chính mình (= `USER` cũ)
-2. Super/Admin được quản lý tất cả proposals và stations
-3. CTV KHÔNG được truy cập admin API (`/admin/*`); Sales chỉ 4 trang (`/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`)
-4. Chỉ `SUPER_ADMIN` được vào trang cấu hình (`/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`) + tạo super admin
-5. Sales chỉ được xem trạm (không nút Sửa), dùng `allowEdit={!isSales}` trong RecordDetailPopup
+### 4.1. Permissions & Roles
+1. CTV chỉ xem/sửa/xóa proposal của chính mình (theo `user_id`)
+2. SUPER_ADMIN/ADMIN quản lý tất cả proposals và stations
+3. CTV KHÔNG truy cập admin API (`/admin/*`); SALES chỉ vào 4 trang `/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`
+4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs` + tạo super admin
+5. SALES chỉ xem trạm (không nút Sửa) dùng `allowEdit={!isSales}` trong `RecordDetailPopup`
+6. SALES đổi trạng thái proposal qua `PUT /admin/proposals/:id/status`; `PUT /admin/proposals/:id` là `requireAdmin`
+7. Route `/admin/audit-log` cho `ADMIN` + `SALES` (sales chỉ thấy log của mình); `/admin/:entity/:id/files` bọc `RoleRoute` ADMIN_AND_SALES (chặn entity `users` với non-admin)
+8. Nút Retry/Cancel queue chỉ render cho `SUPER_ADMIN`
 
-### Data Rules
-4. Proposal phải lưu `user_id` của người tạo (`user_id` được NULL với guest qua `POST /api/proposals/guest`)
-5. Form `/admin` chỉ hiện đúng cấu hình form (nhập tay tọa độ được); trang `/map` có click-to-fill tọa độ cho đề xuất
+### 4.2. Proposal Lifecycle & Notification
+- Từ chối đề xuất: **bắt buộc** `reject_reason`; lưu `reviewed_by`, `reviewed_at` (`adminProposalService.updateStatus`)
+- Đổi status → tạo `notifications` cho chủ đề xuất (luôn tạo). **5 loại** + màu: `REJECTED` đỏ, `APPROVED` xanh lá, `PENDING` vàng, `REVIEWING` xanh lam, `RESUBMITTED` vàng
+- CTV sửa được khi `PENDING`/`REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` cho người đã từ chối (cả `myProposalService` và `adminProposalService.updateProposal`)
+- CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API
+- `PUT /my-proposals/:id` gắn `validateUpdateProposal`; `PUT /admin/proposals/:id` merge giá trị cũ khi field vắng (chống ghi NULL)
 
-### Proposal Review & Notification Rules
-- Từ chối đề xuất: **bắt buộc** `reject_reason`; lưu `reviewed_by`, `reviewed_at` (`adminProposalService.updateStatus`).
-- Đổi trạng thái → tạo `notifications` cho chủ đề xuất (luôn tạo, kể cả self). Type = status; **5 loại** thông báo + màu: `REJECTED` đỏ, `APPROVED` xanh lá, `PENDING` vàng, `REVIEWING` xanh lam, `RESUBMITTED` vàng (gửi lại).
-- CTV được sửa đề xuất khi `PENDING` hoặc `REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong status về `PENDING` + notify người đã từ chối với type `RESUBMITTED`.
-- Ngoài ra, đổi status sang REJECTED qua form sửa cũ cũng tạo notification (lưới an toàn).
-- Chuông `NotificationBell` ở header user + admin (polling 30s + refresh ngay qua sự kiện `notifications:refresh`; nhấp nháy + badge chưa đọc). Dropdown render qua `createPortal` ra `body` (`position:fixed`, `z-index:9999`) để không bị `.drawer-side` che/cắt. Badge/list chỉ tính thông báo trong **`NOTIFICATION_RETENTION_DAYS`** ngày gần nhất (mặc định 7).
-- **Tab thông báo**: trang user (và role SALES) chỉ "Của bạn"; trang admin + ADMIN/SUPER có thêm tab **"Tất cả"** (`GET /api/notifications/all`, requireAdmin, chỉ đọc, hiện tên người nhận). Badge luôn = chưa đọc của chính mình. Click item điều hướng theo ngữ cảnh trang (`mode`): user → `/my-proposals/view=id`, admin → `/admin/proposals/view=id` (KHÔNG theo role).
-- CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API. Nút "Gửi lại" hiện khi status `REJECTED` ở mọi đường sửa; lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` (cả `myProposalService` và `adminProposalService.updateProposal`).
+### 4.3. Notification Bell
+- `NotificationBell` ở header user + admin (polling 30s + sự kiện `notifications:refresh`; nhấp nháy + badge chưa đọc)
+- Dropdown render qua `createPortal` ra `body` (`position:fixed`, `z-index:9999`) tránh `.drawer-side` che
+- Badge/list chỉ tính thông báo trong `NOTIFICATION_RETENTION_DAYS` ngày gần nhất (mặc định 7)
+- Tab user/SALES: "Của bạn"; admin + ADMIN/SUPER thêm tab "Tất cả" (`GET /api/notifications/all`, requireAdmin, chỉ đọc)
+- Click item điều hướng theo `mode` trang: user → `/my-proposals/view=id`, admin → `/admin/proposals/view=id` (không theo role)
 
-### Map Marker Rules
-6. Station `ACTIVE` → marker xanh
-7. Station `DEPLOYING` → marker vàng
-8. Proposal → marker màu trạng thái đề xuất
-8b. Popup marker (`MapView`): link "Xem chi tiết" mở `/admin/stations|proposals/view=<id>` cho `SUPER_ADMIN|ADMIN|SALES` (dùng `canOpenAdminRecord`); render bằng thẻ `<a>` thuần (KHÔNG dùng `<Link>` vì popup tạo ngoài React Router context → lỗi `basename`).
-8c. Popup đề xuất gate sở hữu (`canViewProposal`): ADMIN/SUPER luôn xem; SALES chỉ xem đề xuất của mình (`user_id`) hoặc của CTV thuộc nhánh (`owner_parent_id` = sales id), ngoài nhánh hiện dòng đỏ "Bạn không có quyền xem đề xuất này"; CTV/guest không nút. `GET /proposals` trả thêm `user_id`, `owner_parent_id` (public) để FE quyết định (backend vẫn chặn thật qua `denyOutsideBranch`).
+### 4.4. Guest Proposal (không cần đăng nhập)
+- Form tại `/de-xuat` (`GuestProposalPage`, `GuestLayout`); submit `POST /api/proposals/guest` (`user_id` = NULL)
+- CAPTCHA Turnstile **fail-closed**: chỉ bypass khi `CAPTCHA_ENABLED === 'false'`; thiếu token/secret → 400
+- Tra cứu `GET /api/proposals/track/:code` (mask SĐT); check trùng công khai `POST /api/proposals/check-nearby-public`
+- Rate limit riêng: guest submit 5/h, upload 10/h, track 30/h
+- File guest dọn định kỳ qua `ORPHAN_FILE_TTL_HOURS` (mặc định 24h)
 
-### Map Page Rules
-- Trang `/map` có bộ lọc thu gọn/mở rộng (`MapFilterPanel`, nút phễu trái): phạm vi đề xuất "Của tôi" (theo `user_id`)/"Tất cả", ẩn/hiện trạm & đề xuất, chip lọc trạng thái trạm + đề xuất. Desktop = card nổi; mobile (<768px) = bottom sheet.
-- `MapView` nhận prop `filters`; lọc client-side bằng `useMemo` → `visibleStations`/`visibleProposals` trước khi truyền `MapLayerController`. Mặc định `EMPTY_MAP_FILTERS` = hiện tất cả.
-- `GET /stations` **không truyền `limit`** → trả toàn bộ (map cần hết marker); có `limit` → phân trang như cũ.
-- `RecordDetailPopup` (stations/proposals): nút "Xem bản đồ" mở `LocationMapModal` — modal gọn tâm tại `record.latitude/longitude`, marker có vành nét đứt xoay (`location-point-ring`, `@keyframes location-ring-spin`) + chọn bán kính **5/10/20/50 km** (`L.Circle`) và **hiện các trạm/đề xuất lân cận trong bán kính** (marker màu theo trạng thái, popup khoảng cách). Chỉ hiện khi có tọa độ.
+### 4.5. Map Marker & Page
+- Station `ACTIVE` → marker xanh; `DEPLOYING` → vàng; Proposal → marker màu trạng thái đề xuất
+- Popup marker (`MapView`): link "Xem chi tiết" mở `/admin/stations|proposals/view=<id>` cho `SUPER_ADMIN|ADMIN|SALES` (dùng `canOpenAdminRecord`); render bằng thẻ `<a>` thuần (KHÔNG dùng `<Link>` vì popup ngoài React Router context → lỗi `basename`)
+- Popup đề xuất gate sở hữu (`canViewProposal`): ADMIN/SUPER luôn xem; SALES chỉ đề xuất của mình (`user_id`) hoặc CTV thuộc nhánh (`owner_parent_id`); ngoài nhánh hiện dòng đỏ. `GET /proposals` trả thêm `user_id`, `owner_parent_id` (backend vẫn chặn thật qua `denyOutsideBranch`)
+- Trang `/map` có bộ lọc `MapFilterPanel` (phạm vi "Của tôi"/"Tất cả", ẩn/hiện trạm & đề xuất, chip trạng thái). Desktop = card nổi; mobile (<768px) = bottom sheet
+- `MapView` nhận prop `filters`; lọc client-side bằng `useMemo` trước `MapLayerController`. Mặc định `EMPTY_MAP_FILTERS` = hiện tất cả
+- `GET /stations` **không `limit`** → trả toàn bộ marker fields (map); có `limit` → phân trang. Proposals cap 20000
+- `RecordDetailPopup` nút "Xem bản đồ" mở `LocationMapModal` (chỉ khi có tọa độ): tâm tại record, vành nét đứt xoay (`location-point-ring`), bán kính **5/10/20/50 km** (`L.Circle`) + hiện trạm/đề xuất lân cận (`proximityService`)
+- Trang `/map` có nút **chuyển Mode** (Đường phố/Vệ tinh/Vệ tinh + nhãn/Địa hình — `MAP_MODES`) và nút **bật/tắt 3D** khi renderer là MapLibre; thay đổi cục bộ theo phiên (không ghi `map_configs`), mobile ẩn 3D. Legend (`.map-legend`) ở **góc trên-phải** (`top:12; right:64px`) để không đè bộ lọc (`.map-filter` ở trên-trái)
 
+### 4.6. Map Tile & Renderer
+9. Cấu hình `map_configs` áp dụng thật: `MapView` + `LocationMapModal` + mini map `MyProposalsPage` đọc qua `useMapConfig`/`utils/mapTile.js`
+10. `tile_mode`: `proxy` (mặc định, `/tiles/{z}/{x}/{y}` — server giữ key) | `direct` (browser gọi provider, key client-side). `retina` bật `@2x`
+11. Public `GET /api/map-configs` ẩn `api_key` khi proxy; admin đọc full qua `GET /api/map-configs/admin` (SUPER_ADMIN)
+12. Tile lỗi liên tục → hiện **banner cảnh báo** (KHÔNG tự đổi provider/style để tránh "tự chuyển layer"). Geoapify là provider cần key chính (`maps.geoapify.com`, whitelist proxy)
+13. **Provider miễn phí không cần key** (mặc định `map_configs` = `leaflet-osm`/`osm-de`): OSM mirror `tile.openstreetmap.de` (`osm-de`), `{s}.tile.openstreetmap.fr/osmfr` (`osm-fr`), `opentopo`, `esri-imagery`; `esri-basemap` (World_Street/Imagery/Topo). **CARTO nay cần key** (watermark "API KEY REQUIRED") → đã gỡ khỏi catalog. OSM gốc `tile.openstreetmap.org` bị chặn TLS → không dùng. Xem `docs/5/34`
+14. Renderer seam: `frontend/src/components/map/renderers/` (`index.js` registry + `createRuntime`). Có 2 renderer: `leaflet` (`leafletRuntime.js`) và `maplibre` (`maplibreRuntime.js`, lazy import `maplibre-gl`). `MapCanvas.jsx` mount runtime + đẩy dữ liệu; `MapView` KHÔNG import Leaflet trực tiếp. Renderer lạ / thiếu WebGL → fallback Leaflet + banner cảnh báo. **Bắt buộc `vite.config.js` có `optimizeDeps.exclude: ['maplibre-gl']` + `worker.format: 'es'`** — nếu không, worker MapLibre không chạy, vector tile (.pbf) không tải (map trắng)
+15. **Mode/Layer** (`utils/mapModes.js` + `utils/mapStyles.js`): `streets` (OpenFreeMap vector style liberty), `satellite` (Esri raster), `hybrid` (Esri imagery + nhãn), `terrain` (OpenTopoMap). Lưu ở `map_configs.default_mode` + `layers_config`; đổi mode/nguồn vector chỉ bằng cấu hình
+16. **Self-host PMTiles** (provider `maplibre-self-hosted`): `maplibreRuntime` đăng ký protocol `pmtiles`; `loadPmtilesStyle(url)` dùng **style OpenFreeMap liberty** (`frontend/public/pmtiles/liberty-style.json`, 117 layer) và thay `sources.openmaptiles` → `pmtiles://<origin>/...pmtiles` (bỏ `ne2_shaded`) để có đủ nhãn địa danh; fallback style tối giản nếu fetch lỗi. File build từ OSM (Planetiler) đặt ở `frontend/public/pmtiles/vietnam.pmtiles` (gitignore). Hướng dẫn: `docs/5/37`. **3D**: terrain DEM chỉ bật khi zoom ≥ 12, `dem.maxzoom=11`, building `minzoom=14` (tối ưu lag)
+17. `/tiles` proxy validate z (0–22) + x/y trong khoảng, whitelist host, không có `?url=`, lỗi trả 502 + `X-Tile-Proxy-Status: fallback` (FE hiện banner). `tile_mode`: `proxy` (mặc định, `/tiles/{z}/{x}/{y}?style=...`) | `direct`
+18. Geolocation: log `console.error('[MapView] Geolocation error:')`, user thấy alert. `mountedRef` phải set `true` trong effect (StrictMode chạy 2 lần)
+19. MyProposalsPage mini map + `LocationMapModal` dùng chung `MapCanvas` adapter; click mini map → realtime sync lat/lng vào DynamicForm qua `initialData`
+20. Admin `/admin/map-config`: chọn renderer/provider/mode, preview dùng đúng renderer (`MapCanvas`), test kết nối vector/raster/PMTiles, lưu `renderer`/`default_mode`/`layers_config` → phát `mapconfig:refresh`
 
+### 4.7. Reverse Geocoding
+- `geocodeService.reverse(lat,lng)` gọi Geoapify (`/v1/geocode/reverse`, `lang=vi`, `countrycodes=vn`) → chuẩn hóa + cache `geocode_cache` (4 chữ số thập phân). Trả kèm `admin` = kết quả khớp Data List
+- **`address` dựng chuẩn**: `[số nhà] [tên đường], {xã/phường}, {tỉnh/thành}, Việt Nam` (tối thiểu xã + tỉnh + Việt Nam). Ưu tiên canonical từ Data List; KHÔNG dùng `formatted` thô
+- `dataListService.matchAdministrative(geo)`: khớp tỉnh (`state→city→county`) với `dm_tinh`; khớp phường/xã (`suburb→city→district→quarter→county`) với list `Danh muc Phuong Xa`. Bỏ tiền tố qua `normalizeAdminName`
+- `addressEnrichment.enrichDynamicData` tự điền `address`/`province`/`ma_tinh`/`vung_mien`/`xa_phuong` **chỉ khi ô trống**, gọi trước `applyDiaGioi` ở `proposalService`/`myProposalService`/`adminProposalService`/`stationService`/`excelService` (gate `GEOCODE_ON_IMPORT`)
+- FE: `DynamicForm` watcher `latitude`/`longitude` (debounce 700ms) gọi `POST /api/geocode/reverse`
+- Config `geocode_configs`; admin `GET/PUT /api/admin/geocode-config` + `POST /api/admin/geocode-config/test` (SUPER_ADMIN). Panel `GeocodeConfigPanel` cuối `/admin/map-config`
 
-### Map Tile Rules
-9. Cấu hình bản đồ (`map_configs`) **áp dụng thật**: `MapView` + `LocationMapModal` + mini map `MyProposalsPage` đều đọc qua `useMapConfig`/`utils/mapTile.js`.
-10. `tile_mode`: `proxy` (mặc định, `/tiles/{z}/{x}/{y}` — server giữ key) | `direct` (browser gọi thẳng provider, key client-side). `retina` bật `@2x`.
-11. Public `GET /api/map-configs` **ẩn `api_key`** khi proxy; admin đọc full qua `GET /api/map-configs/admin` (SUPER_ADMIN).
-12. Tile lỗi liên tục → fallback Esri→OSM + banner cảnh báo (không còn im lặng trắng map). Geoapify là provider chính (`maps.geoapify.com`, whitelist proxy).
-12b. **Provider miễn phí không cần key**: OSM mirror `tile.openstreetmap.de` (style `osm-de`) và `{s}.tile.openstreetmap.fr/osmfr` (`osm-fr`) trong `leaflet-osm`; `esri-basemap` (World_Street_Map/World_Imagery/World_Topo_Map); OpenTopoMap. Mặc định `map_configs` = **`leaflet-osm`/`osm-de`** để không tốn quota tile Geoapify. **CARTO (`basemaps.cartocdn.com`) nay cần API key — tile có watermark "API KEY REQUIRED" → đã gỡ khỏi catalog.** OSM gốc `tile.openstreetmap.org` bị chặn TLS ở tầng mạng (cả host lẫn container) → không dùng được. Xem `docs/5/34`.
-13. Renderer seam: `frontend/src/components/map/renderers/`; `renderer` chưa hỗ trợ → cảnh báo + fallback Leaflet.
-14. Geolocation: debug log `console.error('[MapView] Geolocation error:')` khi có lỗi, user thấy alert. `mountedRef` phải được set `true` trong effect (StrictMode chạy effect 2 lần).
-15. MyProposalsPage mini map: click → realtime sync lat/lng vào DynamicForm qua `initialData` prop.
-16. Admin preview `/admin/map-config`: `TileLayer` cần `key` theo provider/style (react-leaflet không cập nhật `subdomains` sau mount → lỗi `{s}` gây trắng trang). Test kết nối dùng `new Image()` thay HEAD.
-17. Lưu config map → phát sự kiện `mapconfig:refresh`; `useMapConfig` (TTL 60s) + `MapView` refetch tự động. Provider không còn trong catalog → `buildTileConfig` dùng `tile_url` đã lưu (cảnh báo nhẹ) thay vì dead-end. `MapView` phải đọc style đã lưu (`style_url`), không hardcode index 0.
+### 4.8. Create Form Modal
+- Tất cả create form modal phải có nút X (icon lucide-react) góc phải title
 
-### Reverse Geocoding Rules
-- `geocodeService.reverse(lat,lng)` gọi Geoapify (`/v1/geocode/reverse`, `lang=vi`, `countrycodes=vn`) → chuẩn hóa + **cache** `geocode_cache` (4 chữ số thập phân). Trả kèm `admin` = kết quả khớp Data List.
-- **`address` được dựng chuẩn**: `[số nhà] [tên đường], {xã/phường}, {tỉnh/thành}, Việt Nam` (tối thiểu xã + tỉnh + Việt Nam). Ưu tiên giá trị canonical từ Data List; fallback trường Geoapify (`suburb`/`city`...). KHÔNG dùng `formatted` thô (tránh postcode/POI name).
-- `dataListService.matchAdministrative(geo)`: khớp tỉnh (`state→city→county`) với `dm_tinh`; khớp phường/xã (`suburb→city→district→quarter→county`) với list `Danh muc Phuong Xa`. Bỏ tiền tố qua `normalizeAdminName`; không khớp → `null`.
-- `addressEnrichment.enrichDynamicData` tự điền `address`/`province`/`ma_tinh`/`vung_mien`/`xa_phuong` **chỉ khi ô trống**, gọi trước `applyDiaGioi` ở `proposalService`/`myProposalService`/`adminProposalService`/`stationService`/`excelService` (gate `GEOCODE_ON_IMPORT`).
-- FE: `DynamicForm` watcher theo `latitude`/`longitude` (debounce 700ms) gọi `POST /api/geocode/reverse`; điền `address/province/xa_phuong/ma_tinh/vung_mien`, không ghi đè ô đã nhập.
-- Config: `geocode_configs`; admin `GET/PUT /api/admin/geocode-config` + `POST /api/admin/geocode-config/test` (SUPER_ADMIN). Panel `GeocodeConfigPanel` cuối trang `/admin/map-config`.
+### 4.9. Ownership
+- Update/delete proposal phải check `user_id` khớp user đang login; admin bypass
+- Sai chủ trả 403 (không trả 404 để tránh oracle IDOR)
 
-### Create Form Modal Rules
-12. Tất cả create form modals phải có nút X (X icon lucide-react) ở góc phải title
+### 4.10. Dynamic Field
+- Field `source_type=fixed` không đổi key hoặc xóa
+- Field `source_type=json` lưu cột `custom_data`
+- Select/Multiselect 2 nguồn: manual options hoặc Data List
+- Cascading select: child field có `parent_field` + `relation_key`
+- Formula: pre-compute (trong form) / post-compute (sau tạo record)
+- Type `user` lưu `{ id }`; `source_config.auto_user`: `current_user` | `parent_sales` | `owner_or_manager` → tự điền + khóa readonly
 
-### Ownership Rules
-13. Khi update/delete proposal, phải check `user_id` khớp với user đang login
-14. Admin có thể bypass ownership check
+### 4.11. Data List
+- Data List name unique
+- Columns config `[{key,label,type}]`, type = `text` hoặc `number`
+- Row data lưu JSON cột `data`
+- Delete row → orphaned children set `parent_row_id = NULL`
 
-### Dynamic Field Rules
-15. Field `source_type=fixed` không được đổi key hoặc xóa
-16. Field `source_type=json` lưu trong cột `custom_data` JSON của entity
-17. Select/Multiselect có 2 nguồn: manual options hoặc Data List
-18. Cascading select: child field có `parent_field` + `relation_key`
-19. Formula field: pre-compute (trong form), post-compute (sau khi tạo record)
-
-### Data List Rules
-20. Data List name phải unique
-21. Columns config: `[{key, label, type}]`, type = `text` hoặc `number`
-22. Row data lưu JSON trong cột `data`
-23. Delete row → orphaned children set `parent_row_id = NULL`
+### 4.12. Security & Rate Limiting
+- Mật khẩu bcrypt; JWT 12h (`JWT_EXPIRES_IN`) + `token_version` revoke; FE `api.js` interceptor 401 → xóa token + về `/login`
+- `helmet`, CORS theo `CORS_ORIGINS`, body limit 10MB, `compression`, `trust proxy 1`
+- **Upload**: allowlist MIME/ext, chặn svg/html/js/exe/php (kể cả double-ext), tên random + ext ép từ MIME, verify chữ ký thật. KHÔNG serve static `/uploads`; tải qua `/files/:id/download|image` có auth + ownership (admin bypass, owner, guest cùng IP). `optionalAuth`/`requireAuth` hỗ trợ `?token=` cho `<img>`
+- **Public proposals rút gọn**: `GET /api/proposals` / `:id` chỉ trả `id,latitude,longitude,address,status,created_at` (không PII)
+- Rate limit (`middlewares/rateLimits.js`): auth 10–30/ph, admin 60–120/ph, excel 10–30/ph, guest submit 5/h, guest upload 10/h, guest track 30/h, public data 120/ph, geocode 30–60/ph
 
 ## 5. Coding Conventions
 
@@ -150,11 +159,9 @@ API routes:              /api/[resource]
 ```
 
 ### General Rules
-- JavaScript (không dùng TypeScript)
-- Async/await cho bất đồng bộ
-- Try-catch cho error handling
+- JavaScript (không TypeScript); async/await; try-catch
 - Không thêm comments trừ khi được yêu cầu
-- **Backend test OK ≠ Frontend OK**: Sau khi fix backend, PHẢI kiểm tra frontend như mở trình duyệt test — verify nút bấm hiển thị đúng, gọi đúng API, hiển thị dữ liệu đúng, không ẩn/hiện sai. Không được chỉ test backend rồi kết luận frontend OK.
+- **Backend test OK ≠ Frontend OK**: sau khi fix backend PHẢI kiểm tra frontend như mở trình duyệt — nút bấm, API gọi, dữ liệu hiển thị, ẩn/hiện đúng. Không chỉ test backend rồi kết luận.
 
 ## 6. Folder Responsibilities
 
@@ -162,26 +169,34 @@ API routes:              /api/[resource]
 ```
 frontend/src/
 ├── components/
-│   ├── dynamic/        DynamicForm, DynamicTable, DynamicField, FieldRenderer,
-│   │                   FileUpload, FileViewer, FileListPopup, DynamicFilter,
-│   │                   FormulaEditor
-│   ├── admin/          FieldManager, FormBuilder, ViewBuilder, DragDropList,
-│   │                   DataListManager, DataListEditor, RecordDetailPopup
-│   └── (common)        Toast, Pagination, ErrorMessage, Loading, EmptyState,
-│                       ConfirmDialog, FormInput
+│   ├── dynamic/    DynamicForm, DynamicTable, DynamicField, FieldRenderer, FileUpload,
+│   │               FileViewer, FileListPopup, DynamicFilter, FormulaEditor, UserChip, UserField
+│   ├── admin/      FieldManager, FormBuilder, ViewBuilder, DragDropList, DataListManager,
+│   │               DataListEditor, RecordDetailPopup, FieldMappingPanel, TemplateEditor,
+│   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel
+│   ├── layout/     AdminHeader, AdminSidebar, UserHeader, UserSidebar, NotificationBell
+│   ├── map/        MapCanvas + renderers/ (index registry, leafletRuntime, maplibreRuntime,
+│   │               leafletRenderer, maplibreRenderer, README)
+│   ├── ui/         Button, Input, Select, Dialog, DataTable, FilterBar, Badge, PageHeader, ...
+│   └── (common)    MapView, MapFilterPanel, LocationMapModal, Toast, Pagination, ErrorMessage,
+│                   Loading, EmptyState, ConfirmDialog, FormInput, DuplicateCheckPanel, RoleRoute
 ├── pages/
-│   ├── admin/          AdminDashboard, AdminUsersPage, AdminStationsPage,
-│   │                   AdminProposalsPage, AdminFieldsPage, AdminFormsPage,
-│   │                   AdminViewsPage, AdminFormBuilderPage, AdminViewBuilderPage,
-│   │                   AdminDataListsPage, AdminRecordFilesPage
-│   └── user/           MapPage, MyProposalsPage, ProfilePage
-├── services/           api.js (all API calls)
-├── hooks/              useFieldOptions, useDataList
-├── layouts/            PublicLayout, UserLayout, AdminLayout
-├── contexts/           AuthContext
-├── utils/              mapHelpers, formatNumber
-├── App.jsx             routing + lazy page imports
-└── main.jsx            entry point
+│   ├── auth/       LoginPage, RegisterPage
+│   ├── user/       MapPage, MyProposalsPage, GuestProposalPage, ProfilePage
+│   └── admin/      AdminDashboard, AdminUsersPage, AdminStationsPage, AdminProposalsPage,
+│                   AdminFieldsPage, AdminFormsPage, AdminFormBuilderPage, AdminViewsPage,
+│                   AdminViewBuilderPage, AdminDataListsPage, AdminRecordFilesPage,
+│                   AdminMapConfigPage, AdminRolesPage, AdminApiConfigPage, AdminAuditLogPage,
+│                   RecordDetailPage
+├── services/       api.js (all API calls)
+├── hooks/          useFieldOptions, useDataList, useDataListMap, useMapConfig,
+│                   useDebouncedValue, useMediaQuery
+├── layouts/        PublicLayout, GuestLayout, UserLayout, AdminLayout
+├── contexts/       AuthContext
+├── utils/          mapHelpers, mapTile, mapStyles, mapModes, tileProviders, tileProviderCatalog,
+│                   formatNumber, dataListCache, dataListLabel, provinceData
+├── App.jsx         routes (pages import eager, chưa lazy)
+└── main.jsx        entry point
 ```
 
 ### Backend
@@ -189,263 +204,202 @@ frontend/src/
 backend/src/
 ├── app.js              entry point + middleware stack
 ├── config/             swagger.js
-├── middlewares/         auth.js (JWT), validators.js (16 validators)
-├── routes/             auth, stations, proposals, myProposals, adminProposals,
-│                       adminUsers, dashboard, excel, mapUtils, fieldDefinitions,
-│                       forms, formFields, views, viewFields, dynamicEngine,
-│                       files, dataLists, formulas, apiConfigs, externalUsers
+├── middlewares/        auth.js (JWT), rateLimits.js, validators.js
+├── routes/             auth, stations, proposals, myProposals, adminProposals, adminUsers,
+│                       dashboard, excel, mapUtils, mapConfigs, tiles, geocode, adminGeocodeConfig,
+│                       fieldDefinitions, forms, formFields, views, viewFields, dynamicEngine,
+│                       files, dataLists, dataListsPublic, formulas, apiConfigs, fieldMappings,
+│                       queueLogs, externalUsers, oneOfficeSync, notifications
 ├── controllers/        (matching routes)
-├── services/           auth, station, proposal, myProposal, adminProposal,
-│                       adminUser, dashboard, map, fieldDefinition, form,
-│                       formField, view, viewField, dynamicEngine, dynamicUtils,
-│                       file, excel, dataList, formula, apiConfig, sync,
-│                       personnelSync, externalUser
+├── services/           auth, station, proposal, myProposal, adminProposal, adminUser, dashboard,
+│                       map, mapConfig, proximity, fieldDefinition, form, formField, view,
+│                       viewField, dynamicEngine, dynamicUtils, file, fileSync, excel, dataList,
+│                       formula, apiConfig, fieldMapper, fieldMapping, oneOffice, sync,
+│                       personnelSync, externalUser, notification, template, addressEnrichment,
+│                       geocode, queue
 ├── workers/            queueWorker (push/pull), personnelSyncWorker (cron nhân sự)
-├── utils/              db.js (MySQL pool), cronMatcher.js
+└── utils/              db.js (MySQL pool), ttlCache.js, cronMatcher.js
 ```
 
 ## 7. API Conventions
 
 - All routes start with `/api`
-- Authentication: JWT (Bearer token)
-- Admin endpoints require `ADMIN` role
-- Response format: `{ success, data, message, pagination? }`
-- Validation happens on backend, not frontend
-- Body size limit: 10MB
-- Rate limiting: Auth (10-30/min), Admin (60-120/min), Excel (10-30/min)
+- Auth: JWT Bearer token (hỗ trợ `?token=` cho file/img)
+- Response: `{ success, data, message, pagination? }`
+- Validation trên backend (`middlewares/validators.js`)
+- Body size limit 10MB
+- Env chính (`.env.example`): `TZ=Asia/Ho_Chi_Minh`, `JWT_SECRET`/`JWT_EXPIRES_IN=12h`, `CORS_ORIGINS`, `BASE_URL`, `FRONTEND_URL`, `CAPTCHA_ENABLED`/`TURNSTILE_SECRET_KEY`, `ORPHAN_FILE_TTL_HOURS`, `ENABLE_SWAGGER`, `VITE_API_URL=/api` (relative, không URL tuyệt đối)
 
 ## 8. Database Rules
 
-- Never store plaintext passwords (use bcrypt)
-- All tables use primary key `id`
-- Required columns: `created_at`, `updated_at`
-- Use foreign keys where appropriate
-- **KHÔNG được DROP TABLE rồi CREATE TABLE lại**
-- **Không modify schema mà không có migration plan**
-- **Schema bằng file SQL thủ công trong `database/` (đánh số thứ tự); áp dụng tự động qua `scripts/migrate.sh` có tracking (`schema_migrations`). Chỉ viết script tiến tới, idempotent; không DROP.**
-- **DB mới: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động.**
+- Không lưu mật khẩu plaintext (bcrypt)
+- Mọi bảng có PK `id`; `created_at`/`updated_at`; FK nơi phù hợp
+- **KHÔNG DROP TABLE rồi CREATE lại**; không modify schema mà không có migration plan
+- Schema = file SQL thủ công trong `database/` (đánh số); áp dụng qua `scripts/migrate.sh` có tracking `schema_migrations`; chỉ viết script tiến tới, idempotent
+- **DB mới**: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động
 
-### Database Tables (17 bảng)
+### Database Tables (22 bảng)
 
 | Bảng | Mô tả |
 |------|-------|
-| `users` | Tài khoản người dùng |
+| `users` | Tài khoản (`role`, `status`, `parent_id`, `external_id`, `token_version`, `custom_data`) |
 | `stations` | Trạm sạc |
-| `station_proposals` | Đề xuất trạm mới (+ `reject_reason`, `reviewed_by`, `reviewed_at`) |
-| `field_definitions` | Định nghĩa trường động (13 types) |
-| `forms` | Cấu hình form |
-| `form_fields` | Trường trong form (order_index, visible, config) |
-| `views` | Cấu hình view/table |
-| `view_fields` | Trường trong view (width, sortable, filterable) |
-| `files` | File uploaded |
-| `data_lists` | Danh sách dữ liệu (columns_config JSON) |
-| `data_list_rows` | Rows trong data list (data JSON) |
-| `map_configs` | Cấu hình tile provider, center, zoom, renderer/tile_mode/retina cho bản đồ |
-| `geocode_configs` | Cấu hình reverse geocoding (provider/api_key/lang/countrycodes/cache_ttl) |
-| `geocode_cache` | Cache kết quả reverse geocode (lat_key/lng_key → JSON) |
+| `station_proposals` | Đề xuất (+ `reject_reason`, `reviewed_by/at`, `submission_source`, `tracking_code`, sync 1Office) |
+| `proposal_sequences` | Sinh mã tuần tự theo prefix |
+| `field_definitions` | Định nghĩa trường động (13 types + `user`) |
+| `forms` / `form_fields` | Cấu hình form + field (`order_index`, `visible`, `purpose`, `layout_config`) |
+| `views` / `view_fields` | Cấu hình bảng + cột (`width`, `sortable`, `filterable`) |
+| `files` | File uploaded (`storage_key`, `uploaded_by`, `submitter_ip`) |
+| `data_lists` / `data_list_rows` | Danh mục dùng chung (`columns_config` / `data` JSON) |
+| `map_configs` | Tile provider, center, zoom, renderer/tile_mode/retina |
+| `geocode_configs` | Cấu hình reverse geocoding |
+| `geocode_cache` | Cache reverse geocode (lat_key/lng_key → JSON) |
 | `user_external_map` | Map user nội bộ ↔ ID hệ ngoài |
-| `external_users` | Nhân sự hệ ngoài (pull từ 1Office) — nguồn dropdown "Mã NS - Tên" |
+| `external_users` | Nhân sự 1Office (pull) — nguồn dropdown "Mã NS - Tên" |
 | `notifications` | Thông báo trong app (chuông header) |
+| `api_configs` | Cấu hình API ngoài (`system_key`, `api_type`, `auth_config`, `sync_*`) |
+| `api_field_mappings` | Mapping field app ↔ 1Office (unique `target_field`) |
+| `api_queue_logs` | Queue push/pull + audit log |
+| `schema_migrations` | Tracking migration đã chạy |
 
-### Database Migrations
-- `database/14-alter-field-definitions-add-display-format-unit.sql` — Thêm `display_format` và `unit` vào `field_definitions`
-- `database/45-create-user-external-map.sql`, `database/46-add-system-key-api-configs.sql`
-- `database/47-add-api-type-and-sync-schedule-to-api-configs.sql` — `api_type` + cột `sync_*`
-- `database/48-create-external-users.sql` — bảng `external_users`
-- `database/49-add-proposal-review-fields.sql` — `reject_reason`/`reviewed_by`/`reviewed_at`
-- `database/50-create-notifications.sql` — bảng `notifications`
-- `database/53-alter-map-configs-add-renderer-tile-mode-retina.sql` — `map_configs.renderer/tile_mode/retina`
-- `database/54-create-geocode-configs.sql` — bảng `geocode_configs`
-- `database/55-create-geocode-cache.sql` — bảng `geocode_cache`
-- `database/56-add-performance-indexes.sql` — index `created_at` + `(list_id, sort_order)`
+Migrations nằm ở `database/` (01→56). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes.
 
 ## 9. Swagger & Documentation
 
-- Swagger UI: `http://localhost:3000/api-docs`
-- Swagger JSON: `http://localhost:3000/api-docs.json`
-- Khi thêm endpoint mới → phải thêm `@swagger` JSDoc trong route file
+- Swagger UI: `http://localhost:3000/api-docs`; JSON: `/api-docs.json`
+- Thêm endpoint mới → phải thêm `@swagger` JSDoc trong route file
 - Docs folder:
-  - `docs/0/` — Backup
+  - `docs/0/` — Backup, tổng quan dự án ban đầu
   - `docs/1/` — Kế hoạch, đề xuất
-  - `docs/2/` — Tài liệu tổng hợp (backend-features, field-configuration, ui-ux-features, bảo mật, swagger)
+  - `docs/2/` — Tài liệu tổng hợp (backend-features, field-configuration, ui-ux-features, bảo mật, swagger, tích hợp 1Office)
   - `docs/3/` — Bug fixes
   - `docs/4/` — Thiết kế tính năng (Formula Pre/Post, Excel theo View, Cascading Select, Dynamic Form/View)
+  - `docs/5/` — Kế hoạch & triển khai các mốc lớn (tìm kiếm, stress test, guest form, RBAC, 1Office, bản đồ, reverse geocode, MapLibre 35–36, self-host PMTiles 37)
+  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
+  - `docs/7/` — Review toàn mã nguồn (P0/P1/P2 + chuẩn hóa UIUX + kế hoạch test frontend). Nguồn chính xác nhất về bug đã/chưa fix.
 
-## 10. Docker Development
+## 10. Docker & Deploy
 
-```
-- Development uses Docker Compose
-- Source code mounted as volumes (hot reload enabled)
-- DO NOT remove source-code volumes
-- MySQL data uses persistent Docker volume
-- DO NOT use docker compose down -v unless requested
-```
-
-### Docker Services
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:3000`
-- MySQL: `localhost:3306`
-
-### Docker Timezone
-- **Bắt buộc `TZ=Asia/Ho_Chi_Minh`** cho `backend` và `mysql` (cả `docker-compose.yml` dev lẫn `docker-compose.simple.yml` prod). `node:20` và `mysql:8.0` đã có tzdata nên `TZ` env có hiệu lực. Kiểm tra: `docker exec station-backend date` phải hiện `+07`.
-- `app.js` cũng set `process.env.TZ='Asia/Ho_Chi_Minh'` làm mặc định.
-
-### Docker node_modules
-- Named volume: `frontend_node_modules`, `backend_node_modules`
-- Install new package: `docker exec station-frontend npm install <pkg>`
-- After install: rebuild container
+- Compose dev: `docker-compose.yml`; prod: `docker-compose.simple.yml`; phpMyAdmin: `docker-compose.pma.yml`
+- Services: Frontend `:5173`, Backend `:3000`, MySQL `:3306`
+- Source code mount volumes (hot reload). **KHÔNG** xóa source volumes; **KHÔNG** `docker compose down -v` trừ khi được yêu cầu
+- Named volume: `frontend_node_modules`, `backend_node_modules`. Cài package mới: `docker exec station-frontend npm install <pkg>` rồi rebuild
+- **Bắt buộc `TZ=Asia/Ho_Chi_Minh`** cho `backend` + `mysql` (cả dev lẫn prod); `app.js` cũng set mặc định. Kiểm tra: `docker exec station-backend date` phải hiện `+07`
+- Scripts: `deploy.sh` (deploy 1 lệnh), `update.sh` (cập nhật VPS), `scripts/migrate.sh`, `scripts/sync-data.sh`
 
 ## 11. Dynamic System Architecture
 
 ### Field Types
-- 13 types: text, textarea, number, email, phone, url, date, datetime, boolean, select, multiselect, file, formula
-- Each type has specific config (number_format, decimal_places, display_format, unit, date_format, file_config, formula_config, option_style)
-- Fields stored in `field_definitions` table
+- 13 types chuẩn + `user`. Config riêng theo type: `number_format`, `decimal_places`, `display_format`, `unit`, `date_format`, `file_config`, `formula_config`, `option_style`, `source_config`
+- Lưu ở `field_definitions`; code còn xử lý `password`/`table` (legacy, xem `docs/7/04`)
 
 ### User Field (type `user`)
-- Lưu `{ id }` (users.id); hiển thị chip tên, click xem chi tiết (CTV ẩn).
-- `source_config.auto_user`: `current_user` (người đăng nhập) | `parent_sales` (sales quản lý) | `owner_or_manager` (CTV → sales quản lý, còn lại → người tạo). Field auto sẽ **tự điền + khoá readonly**.
-- BE: `dynamicUtils.applyAutoUserFields` (create/update proposal). FE: `DynamicForm.resolveAutoUserId`.
+- Lưu `{ id }`; hiển thị chip tên, click xem chi tiết (CTV ẩn)
+- `source_config.auto_user`: `current_user` | `parent_sales` | `owner_or_manager`
+- BE: `dynamicUtils.applyAutoUserFields` (create/update proposal). FE: `DynamicForm.resolveAutoUserId`
 
 ### Form/View Builder
-- Admin tạo Forms/Views tại `/admin/forms` và `/admin/views`
-- **`DynamicForm` resolve form theo `purpose` (ưu tiên) khi được truyền** (`getByEntityAndPurpose`), `formId` chỉ là fallback. Lý do: cùng entity có form `all`/`create`/`view` (vd proposals: 9=all, 13=create, 14=view); hardcode `formId` cũ dễ trỏ nhầm form `all`.
-- FormBuilder: drag & drop fields, configure visibility + colSpan; **section có nút ▲▼ di chuyển + điều kiện hiển thị** (`section.visibleWhen = { field, value }`, lưu trong `layout_config`). `DynamicForm` chỉ render section khi `formData[field] === value`.
-- ViewBuilder: drag & drop columns, configure visibility + width + sortable + filterable
+- Tạo Forms/Views tại `/admin/forms`, `/admin/views`
+- **`DynamicForm` resolve form theo `purpose` (ưu tiên)** (`getByEntityAndPurpose`), `formId` chỉ fallback. Lý do: cùng entity có form `all`/`create`/`view`; hardcode `formId` dễ trỏ nhầm
+- FormBuilder: drag & drop fields, visibility + colSpan; section có nút ▲▼ di chuyển + điều kiện hiển thị (`section.visibleWhen = { field, value }` trong `layout_config`)
+- ViewBuilder: drag & drop columns, visibility + width + sortable + filterable
 
 ### Select/Multiselect Data Sources
-- **Manual options**: Admin nhập thủ công `[{label, value, color, borderRadius}]`
-- **Data List**: Lấy từ data_lists table, config `data_list_id` + `data_list_column`
-- **Cascading**: Child field có `parent_field` + `relation_key`
-- Frontend transform flat rows → tree map `{tree, unique}` cho O(1) lookup
-
-### Cascading Select Flow
-```
-DB: field_definitions (parent_field, relation_key, data_list_id, data_list_column)
-  ↓
-Backend: getFormConfig trả field metadata
-  ↓
-Frontend: loadFormConfig fetch data lists → build tree map
-  ↓
-getFilteredOptions: root → unique[col], child → tree[relationKey][parentVal]
-  ↓
-DynamicField render: custom dropdown with badge styling
-```
+- **Manual options**: `[{label, value, color, borderRadius}]`
+- **Data List**: `data_list_id` + `data_list_column`
+- **Cascading**: child field `parent_field` + `relation_key`; API `GET /api/data-lists/:id/children?column&parent_column&parent_value`
+- FE transform flat rows → tree map `{tree, unique}` cho O(1) lookup; `useFieldOptions` đọc data-list (manual ưu tiên)
 
 ### Formula System
-- **Pre-compute**: Tính trong lúc điền form, trước khi submit
-- **Post-compute**: Tính SAU khi record tạo xong, dùng record metadata (id, entity, base_url, created_at)
+- **Pre-compute**: tính trong form trước submit. **Post-compute**: sau INSERT/UPDATE, dùng metadata (id, entity, base_url, created_at)
 - Config: `formula_config = { compute_mode, expression, referencedFields, outputType, outputFormat, decimalPlaces, unit }`
-- Pre: `computeFormula()` dùng mathjs v15.2.0 evaluator
-- Post: Backend compute sau INSERT → update record → return kết quả
-- Post metadata: `user_name`/`user_role`/`sales_name` lấy theo **người tạo** (`record.user_id`); nếu không truyền `userId`, engine **tự lấy `station_proposals.user_id` theo `recordId`**. Scope được nạp `''` cho mọi field key thiếu (tránh mathjs `Undefined symbol`).
-- So sánh chuỗi trong công thức: dùng `compareText(a, b) == 0` (mathjs evaluator KHÔNG hỗ trợ `==` trực tiếp với chuỗi).
-- Recompute hàng loạt record: `backend/scripts/recomputeFormulas.js` (exclude `ma_de_xuat`).
-- 26 custom functions: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW
+- Pre dùng mathjs v15.2.0; post metadata `user_name/user_role/sales_name` theo người tạo (`record.user_id`); scope nạp `''` cho field thiếu
+- So sánh chuỗi dùng `compareText(a,b) == 0` (mathjs không hỗ trợ `==` với chuỗi)
+- Sinh mã tuần tự: hàm `SEQ`/`setSeq` qua bảng `proposal_sequences`; `formulaService.reconcileSequences`/`parseCodeToSeq` đồng bộ sau import
+- Recompute hàng loạt: `backend/scripts/recomputeFormulas.js` (exclude `ma_de_xuat`)
+- 26+ hàm custom: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW, SEQ...
 
 ### Formula Visual Editor
-- Component: `FormulaEditor.jsx` — inline editor với compute mode selector, field/operator/function buttons
-- Features: autocomplete dropdown (detect word at cursor, keyboard navigation), collapsible sections, operators-grid-3, function hints
-- Output config: numberFormat selector (plain/comma/dot/space), decimalPlaces, unit
+- `FormulaEditor.jsx`: compute mode selector, field/operator/function buttons, autocomplete tại cursor (keyboard nav), output config (numberFormat/comma/dot/space, decimalPlaces, unit)
 - API: `POST /api/formulas/validate`, `POST /api/formulas/preview`
 
 ### Number Formatting
-- Utility: `frontend/src/utils/formatNumber.js`
-- `formatNumber(value, { format, decimalPlaces, unit })` — format số theo cấu hình
-- 4 display formats: `plain` (1000), `comma` (1,000), `dot` (1.000), `space` (1 000)
-- `parseFormattedNumber(str)` — parse formatted string về number
-- Applied in: FieldRenderer, FormulaEditor output, DynamicForm computeFormula, DataListEditor cells
-- DB: `display_format` VARCHAR(20) DEFAULT 'plain', `unit` VARCHAR(50) trong `field_definitions`
+- `frontend/src/utils/formatNumber.js`: `formatNumber(value, {format, decimalPlaces, unit})`, `parseFormattedNumber(str)`
+- 4 formats: `plain` (1000), `comma` (1,000), `dot` (1.000), `space` (1 000)
+- Áp dụng: FieldRenderer, FormulaEditor output, DynamicForm computeFormula, DataListEditor
 
 ### File Management
-- Upload: `POST /api/files/upload` (multer disk storage, 10MB limit)
-- Download: Auth-aware, Content-Disposition, UTF-8 charset
-- File types: image, video, audio, pdf, word (.docx → HTML via mammoth), excel (.xlsx → table via xlsx), text
-- File viewer: zoom image, play video/audio, render PDF/Word/Excel inline
+- Upload `POST /api/files/upload` (multer disk, 10MB); download `/files/:id/download` (auth-aware, Content-Disposition UTF-8)
+- Types: image, video, audio, pdf, word (.docx → HTML via mammoth), excel (.xlsx → table via xlsx), text
+- Viewer: zoom ảnh, play video/audio, render PDF/Word/Excel inline
 
 ### Excel Import/Export
-- **Hiện tại**: Hardcoded columns cho stations và proposals
-- **Planned**: Dùng View Columns + Available Fields từ admin/views
-- Export: ExcelJS → .xlsx
-- Import: Preview → Validate → Confirm (transaction, all-or-nothing)
+- Hiện tại: cột hardcode cho stations/proposals; **planned**: dùng View Columns + Available Fields
+- Export ExcelJS → .xlsx; Import: Preview → Validate → Confirm (transaction, all-or-nothing, re-validate lại khi confirm)
 
-### 1Office API Field Mapping Rules
-- **Content-Type**: `application/x-www-form-urlencoded` (KHÔNG phải JSON)
-- **Auth**: `access_token` query param (KHÔNG phải Bearer header)
+## 12. 1Office Integration
+
+- **Content-Type**: `application/x-www-form-urlencoded`; **Auth**: `access_token` query param
 - **9/14 source types hoạt động**: text, textarea, number, email, phone, date, select, boolean, file
-- **5/14 source types chuyển sang text**: url, multiselect, datetime, formula, table
-- **1Office select fields dùng ID**: formal_name (1=Ông), scale_id (3=25-50 NV)
-- **1Office cf2 dùng label**: "VIP", "VVIP" (KHÔNG phải ID)
-- **1Office `user_ids`/`manager_user_ids` nhận CODE/TÊN, KHÔNG nhận ID**: kiểu `string comma` (vd `'NV06,NV08,Nguyễn Văn C'`). `user_external_map.external_id` lưu **`personnel_id`** ("ID Hồ sơ nhân sự" trong UI 1Office). Push quy đổi `personnel_id` → `code` (ưu tiên) hoặc `fullname`; pull dùng `field_raws=user_ids,manager_user_ids` trả `ID` liên hệ → quy đổi `ID` → `personnel_id`. Cần `admin_token` trong `api_configs.auth_config`; thiếu → bỏ qua field (không gửi sai). Lưu ý 3 ID khác nhau: `ID` (contact), `personnel_id`, `code`. **Chỉ nhận người CÓ tài khoản 1Office** — nhân sự chưa có tài khoản bị 1Office bỏ qua (app gắn `warnings` trong kết quả push; dropdown `UserExternalPanel` disable người `contact_id` rỗng).
-- **File đính kèm**: field `files` = JSON string `[{name,file}]` trong body `contact/insert` (hoặc `update`); KHÔNG dùng endpoint upload-file riêng; gửi **tất cả file trong 1 request**; `update` **append** file (chỉ gửi file mới để tránh trùng); tên file nên **bỏ đuôi** vì 1Office tự thêm đuôi theo nội dung
-- **Mapping target đặc biệt**: `desc` (nguồn = Desc Template, cố định) và `files` (gộp mọi field file) luôn link sẵn; `api_field_mappings` unique theo `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn). **`desc`/`files` là special target — KHÔNG dùng làm nguồn pull** (`syncService` tự loại khỏi push/pull mappings) để tránh desc bị lặp (pull ghi desc vào `description` rồi push lại lồng vào desc).
-- **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region — API nhận nhưng không lưu (khóa kéo–thả ở FieldMappingPanel)
-- **FieldMappingPanel**: Contact Fields cho sửa **Label + Ghi chú** (nút bút chì), lưu vào `api_configs.field_metadata` (`{label, description}`); `getFieldTypes` **luôn ưu tiên `saved.label`** nên label không mất sau "Get"; special `desc`/`files` không sửa. Proposal Fields chia **Đã link** (có mapping nguồn) / **Chưa link**; cả 2 cột đều có ô tìm kiếm lọc theo label/key.
-- **Non-working arrays**: contacts[] — API không parse; detail[] — chỉ lưu department_id
-- **Desc field HTML**: type `html` trong docs, INSERT lưu HTML đúng, GET strip HTML → plain text, Web UI render HTML đúng
+- **5/14 chuyển text**: url, multiselect, datetime, formula, table
+- 1Office select fields dùng ID (formal_name, scale_id); `cf2` dùng label ("VIP", "VVIP")
+- **`user_ids`/`manager_user_ids` nhận CODE/TÊN, KHÔNG nhận ID**: string comma (vd `'NV06,NV08,Nguyễn Văn C'`). `user_external_map.external_id` lưu `personnel_id`. Push quy đổi `personnel_id` → `code` (ưu tiên) hoặc `fullname`; pull `field_raws=user_ids,manager_user_ids` trả `ID` liên hệ → quy đổi `ID` → `personnel_id`. Cần `admin_token` trong `api_configs.auth_config`. 3 ID khác nhau: `ID` (contact), `personnel_id`, `code`. Chỉ nhận người CÓ tài khoản 1Office (app gắn `warnings`; `UserExternalPanel` disable người `contact_id` rỗng)
+- **File đính kèm**: field `files` = JSON string `[{name,file}]` trong body `contact/insert|update`; KHÔNG endpoint upload riêng; gửi tất cả file 1 request; `update` append (chỉ gửi file mới); tên file bỏ đuôi
+- **Mapping đặc biệt**: `desc` (nguồn Desc Template, cố định) + `files` luôn link sẵn; `api_field_mappings` unique `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn). **`desc`/`files` KHÔNG dùng làm nguồn pull** (`syncService` tự loại) tránh desc lặp
+- **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region (khóa kéo–thả)
+- **Non-working arrays**: contacts[] không parse; detail[] chỉ lưu department_id
+- **Desc field HTML**: INSERT lưu HTML, GET strip → plain text, Web UI render HTML
+- **FieldMappingPanel**: Contact Fields sửa Label + Ghi chú (nút bút chì) → `api_configs.field_metadata`; `getFieldTypes` ưu tiên `saved.label`; special `desc`/`files` không sửa. Proposal Fields chia Đã link / Chưa link, có tìm kiếm
 - **Code**: `backend/src/services/fieldMapper.js` (ONE_OFFICE_FIELDS), `frontend/src/components/admin/FieldMappingPanel.jsx` (SOURCE_TYPES_FORCE_TEXT)
-- **Phân loại config API**: `api_configs.api_type` = `contact` (liên hệ) | `personnel` (nhân sự). Cùng `system_key='1office'`.
-- **API nhân sự (personnel)**: chỉ **pull** — `personnelSyncService.syncFrom1Office` gọi `/api/personnel/profile/gets` (API **Hồ sơ nhân sự**, cần **token riêng cho object `personnel/profile`**; token `admin/user` và token liên hệ KHÔNG dùng được → `"accesstoken not of object"`) → upsert bảng `external_users`. Map: `ID`→`external_id` (personnel_id), `raw_user_id`→`contact_id` (account ID cho pull), `code`→`code` (Mã NS), `name`→`fullname`, `department_id`(tên)→`department_name`; bỏ dòng header `code='STT'`. Sync tay (`POST /api/admin/api-configs/:id/sync-personnel`) + cron (`api_configs.sync_cron`, `sync_enabled`; tick 20s bằng `backend/src/utils/cronMatcher.js` + `workers/personnelSyncWorker.js`, KHÔNG dùng node-cron v4 vì bỏ mốc phút).
-- **Push/pull user dùng `external_users`** (không gọi API lúc push): `fieldMapper.getExternalUserMaps` (cache 30s), fallback API khi bảng trống. Dropdown mapping ở `/admin/users`: `GET /api/admin/external-users`.
+- **Phân loại config**: `api_configs.api_type` = `contact` | `personnel` (cùng `system_key='1office'`)
+- **API nhân sự (personnel)**: chỉ **pull** — `personnelSyncService.syncFrom1Office` gọi `/api/personnel/profile/gets` (cần **token riêng cho object `personnel/profile`**; token khác → `"accesstoken not of object"`) → upsert `external_users`. Map: `ID`→`external_id`, `raw_user_id`→`contact_id`, `code`→`code`, `name`→`fullname`, `department_id`→`department_name`; bỏ header `code='STT'`. Sync tay `POST /api/admin/api-configs/:id/sync-personnel` + cron (`sync_cron`, `sync_enabled`, tick 20s qua `cronMatcher.js` + `personnelSyncWorker.js`, KHÔNG dùng node-cron v4)
+- **Push/pull user dùng `external_users`** (không gọi API lúc push): `fieldMapper.getExternalUserMaps` (cache 30s), fallback API khi bảng trống. Dropdown `GET /api/admin/external-users`
 
-## 12. Performance Optimizations
+## 13. Performance Optimizations
 
 ### Đã áp dụng
-- Module-level caching trong `useFieldOptions` (fetch 1 lần, dùng lại)
-- `useCallback` trong admin pages load functions
-- `useMemo` cho filteredData, sortedData, parentFieldMap
+- Module-level caching `useFieldOptions`; `dataListCache.js` cache + dedupe in-flight; build tree O(n) bằng Set
+- `useCallback`/`useMemo` cho load functions, filteredData, sortedData, parentFieldMap
 - `React.lazy` + `Suspense` cho FileListPopup trong FieldRenderer
-- Cancelled flag pattern trong useFieldOptions, useDataList
-- Object URL cleanup on unmount (FileViewer, FileListPopup)
-- `Cache-Control: no-store` trong Vite dev server config
-- Manual chunks: leaflet tách riêng trong vite.config.js
-- **Data list**: `utils/dataListCache.js` cache module-level + dedupe in-flight; `useFieldOptions(entity, keys)` lazy-load đúng data list của field được hỏi; build tree O(n) bằng Set.
-- **Config server-side**: `utils/ttlCache.js` cache `getFieldDefinitionsByEntity`/`getFormConfig`/`getViewConfig`/`dataListService.getById` (TTL) + xoá cache khi ghi (middleware `app.js`).
-- **Dedupe client**: `dedupGet`/`dedupGetWithAuth` trong `services/api.js` cho form/view/field-definitions (chống gọi trùng do StrictMode).
-- **Nén**: `compression` middleware (data list 4 ~528KB → ~42KB brotli).
-- **Index**: migration 56 (`station_proposals(user_id,created_at)/(status,created_at)`, `stations(created_at)`, `data_list_rows(list_id,sort_order)`).
-- **Debounce search**: `hooks/useDebouncedValue.js` ở các trang danh sách.
-- **Map endpoint**: `GET /stations` không `limit` (map) chỉ trả marker fields, bỏ merge `custom_data`; proposals cap 20000.
+- Cancelled flag pattern; Object URL cleanup on unmount
+- `Cache-Control: no-store` (Vite dev); manual chunks leaflet (`vite.config.js`); `maplibre-gl` lazy-load (dynamic import, chunk riêng ~1MB)
+- Server-side TTL cache (`utils/ttlCache.js`) cho `getFieldDefinitionsByEntity`/`getFormConfig`/`getViewConfig`/`dataListService.getById` + xóa cache khi ghi (middleware `app.js`)
+- Dedupe client: `dedupGet`/`dedupGetWithAuth` trong `services/api.js` (chống StrictMode)
+- Nén `compression` (data list ~528KB → ~42KB brotli)
+- Index migration 56 (`station_proposals(user_id,created_at)/(status,created_at)`, `stations(created_at)`, `data_list_rows(list_id,sort_order)`)
+- Debounce search `hooks/useDebouncedValue.js` ở các trang danh sách
+- Map endpoint: `GET /stations` không `limit` chỉ trả marker fields (bỏ merge `custom_data`); proposals cap 20000
 
 ### Chưa có (cơ hội cải thiện)
-- Route-level code splitting (tất cả pages eagerly imported)
-- API response caching (không có SWR/ETag)
-- Context value memoization (AuthProvider)
-- Debounced search
+- Route-level code splitting (pages import eager trong `App.jsx`)
+- API response caching (không SWR/ETag)
+- Context value memoization (`AuthProvider`)
 - Skeleton loading states
+- Hợp nhất 2 validator động (`dynamicUtils.validateField` vs `validators.validateDynamicFields`) — xem `docs/7/04`
 
-## 13. Testing
+## 14. Testing
 
-After changing code:
-1. Check frontend build (`npm run build`)
-2. Check backend starts without errors
-3. Check Docker containers running
-4. Manually verify the feature works
-5. Check existing features still work
-6. Check Swagger UI loads correctly
+Sau khi đổi code:
+1. Frontend build (`npm run build` trong `frontend/`)
+2. Backend khởi động không lỗi
+3. Docker containers chạy
+4. Verify thủ công feature + feature cũ
+5. Swagger UI load đúng
 
-When automated tests do not exist, perform manual verification.
-
-### Playwright Frontend Testing
-
-Playwright đã cài sẵn trong `frontend/package.json`. Test trên host (không chạy trong Docker).
-
-**Cách chạy:**
+### Playwright E2E (root)
 ```powershell
-# Từ thư mục frontend/
-node test-1office.cjs
+npm run test:e2e          # playwright test e2e/FE-01-smoke.spec.js
+npm run test:e2e:headed
 ```
+- Config `playwright.config.js`: `testDir=./e2e`, `baseURL=http://localhost:5173`, project chromium
 
-**Quy tắc viết test:**
-- File test đặt tại `frontend/test-*.cjs` (dùng `.cjs` vì package.json có `"type": "module"`)
-- Dùng `chromium.launch({ headless: true })` — không cần giao diện
-- Login trước khi test các trang admin: `page.request.post(API + '/api/auth/login', { data: { email, password } })` → lưu token vào localStorage
-- Dùng `page.waitForLoadState('networkidle')` + `page.waitForTimeout(1000-2000)` sau mỗi hành động
-- CSS selectors: dùng `button:has-text("Text")`, `span.font-medium`, `input[placeholder*="..."]`
-- KHÔNG dùng `text=...` trong `page.$()` — phải dùng `page.getByText()` hoặc `page.locator()`
-- Test results lưu vào `test-1office-results.json`
+### Playwright host (frontend)
+- Test tại `frontend/test-*.cjs` (dùng `.cjs` vì package.json `"type":"module"`); chạy `node test-1office.cjs` từ `frontend/`
+- `chromium.launch({ headless: true })`; login bằng `page.request.post(API + '/api/auth/login', ...)` → lưu token localStorage
+- Sau mỗi hành động: `waitForLoadState('networkidle')` + `waitForTimeout(1000-2000)`
+- Selectors: `button:has-text("Text")`, `span.font-medium`, `input[placeholder*="..."]`; KHÔNG dùng `text=...` trong `page.$()`
+- Results lưu `test-1office-results.json`
 
-**Ví dụ test pattern:**
 ```javascript
 const { chromium } = require('playwright');
 const BASE = 'http://localhost:5173';
@@ -454,50 +408,43 @@ const API = 'http://localhost:3000';
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-
-  // Login
-  await page.goto(`${BASE}/login`);
-  await page.waitForLoadState('networkidle');
-  await page.fill('input[type="email"]', 'admin@station.com');
-  await page.fill('input[type="password"]', '123456');
-  await page.click('button[type="submit"]');
-  await page.waitForTimeout(2000);
-
-  // Test page
+  const res = await page.request.post(`${API}/api/auth/login`, { data: { email: 'admin@station.com', password: '123456' } });
+  const { data } = await res.json();
   await page.goto(`${BASE}/admin/api-configs`);
+  await page.evaluate((t) => localStorage.setItem('token', t), data.token);
+  await page.reload();
   await page.waitForLoadState('networkidle');
-  const btn = await page.$('button:has-text("Mapping")');
-  console.log('Mapping button:', btn ? 'PASS' : 'FAIL');
-
+  console.log('Mapping button:', (await page.$('button:has-text("Mapping")')) ? 'PASS' : 'FAIL');
   await browser.close();
 }
 main();
 ```
 
-## 14. PowerShell UTF-8 Encoding
+## 15. PowerShell UTF-8 Encoding
 
-PowerShell 5.1 (Windows) mặc định dùng Windows-1252 → tiếng Việt hiển thị sai (mojibake).
-MUST set UTF-8 encoding trước khi chạy任何 command:
-
+PowerShell 5.1 (Windows) mặc định Windows-1252 → tiếng Việt sai (mojibake). MUST set UTF-8 trước mọi command:
 ```powershell
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 ```
-
-Khi chạy docker exec mysql, thêm `--default-character-set=utf8mb4`:
+Khi `docker exec` mysql thêm `--default-character-set=utf8mb4`:
 ```powershell
 docker exec station-mysql mysql -u root -ppassword station_management --default-character-set=utf8mb4 -e "QUERY"
 ```
+**KHÔNG dùng `Get-Content`/`Set-Content` của PowerShell để sửa file source** (double-encoding → mojibake). Luôn dùng công cụ `Edit`/`Write` (UTF-8). Nếu buộc phải thao tác file: `[System.IO.File]::ReadAllText/WriteAllText` với `[System.Text.UTF8Encoding]::new($false)`.
 
-**KHÔNG dùng `Get-Content`/`Set-Content` của PowerShell để sửa file source** (gây double-encoding → mojibake tiếng Việt). Luôn dùng công cụ `Edit`/`Write` (UTF-8). Nếu buộc phải thao tác file bằng PowerShell, dùng `[System.IO.File]::ReadAllText/WriteAllText` với `[System.Text.UTF8Encoding]::new($false)`.
+## 16. Known Issues
 
-## 15. Definition of Done
+- Xem `docs/7/` (review toàn mã nguồn, cập nhật 10/09/2026): P0 đã fix hết; P1 đã fix; một số P2/P3 còn lại (validator động trùng, select import chưa validate, Swagger lệch role, `AdminMapConfigPage` dùng relative URL...)
+- `AGENTS.md` mô tả 13 types nhưng code có thêm `user`/`password`/`table` — `table` chưa có cột DB tương ứng
+- MapLibre + 4 mode + self-host PMTiles đã triển khai (kế hoạch 36, Phase 1–8). File `frontend/public/pmtiles/vietnam.pmtiles` (~299MB) **không commit** — cần build lại theo `docs/5/37`. Glyphs nhãn đang dùng remote OpenFreeMap; self-host offline hoàn toàn cần thêm glyphs.
 
-Task is complete when:
+## 17. Definition of Done
+
 - [ ] Feature works end-to-end
-- [ ] Frontend has no runtime errors
-- [ ] Backend API returns expected results
-- [ ] Authorization is enforced
-- [ ] Existing features are not broken
-- [ ] Docker hot reload still works
-- [ ] No console errors
+- [ ] Frontend không lỗi runtime
+- [ ] Backend API trả đúng
+- [ ] Authorization được enforce
+- [ ] Không phá feature cũ
+- [ ] Docker hot reload vẫn chạy
+- [ ] Không console error

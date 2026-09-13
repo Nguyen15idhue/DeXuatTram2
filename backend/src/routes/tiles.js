@@ -7,11 +7,6 @@ const pool = require('../utils/db');
 const mapConfigService = require('../services/mapConfigService');
 
 const ALLOWED_TILE_HOSTS = [
-  'tile.openstreetmap.org',
-  'a.tile.openstreetmap.org',
-  'b.tile.openstreetmap.org',
-  'c.tile.openstreetmap.org',
-  'tiles.openstreetmap.org',
   'tile.openstreetmap.de',
   'a.tile.openstreetmap.fr',
   'b.tile.openstreetmap.fr',
@@ -20,17 +15,13 @@ const ALLOWED_TILE_HOSTS = [
   'b.tile.opentopomap.org',
   'c.tile.opentopomap.org',
   'server.arcgisonline.com',
-  'basemaps.cartocdn.com',
-  'a.basemaps.cartocdn.com',
-  'b.basemaps.cartocdn.com',
-  'c.basemaps.cartocdn.com',
   'maps.geoapify.com',
   'api.mapbox.com',
   'maps.hereapi.com',
   'api.tomtom.com',
 ];
 
-const DEFAULT_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const DEFAULT_TILE_URL = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
 const TILE_CACHE_MAX_AGE = 7 * 24 * 60 * 60;
 const USER_AGENT = 'StationManagement/1.0 (MapTileProxy)';
 const FALLBACK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -38,48 +29,53 @@ const FALLBACK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAA
 const TARGET_TTL = 30000;
 let targetCache = { key: null, value: null, at: 0 };
 
-function buildProviderTileUrl(config) {
+function buildProviderTileUrl(config, styleOverride) {
   const providers = mapConfigService.getTileProviders();
   const provider = providers.find(p => p.id === config.tile_provider_id);
   let url = '';
+  const wantedStyle = styleOverride || config.style_url;
   if (provider) {
     const styles = provider.tile_url_styles || [];
-    const selectedStyle = styles.find(s => s.value === config.style_url || s.value === config.style_value) || styles[0];
+    const selectedStyle = styles.find(s => s.value === wantedStyle) || styles[0];
     if (selectedStyle && selectedStyle.url) url = selectedStyle.url;
     else if (provider.tile_url_template) url = provider.tile_url_template;
     else if (provider.tile_url) url = provider.tile_url;
   }
   if (!url) url = config.tile_url || DEFAULT_TILE_URL;
+  url = url.replace('{style}', wantedStyle || '');
   url = url.replace('{key}', config.api_key || '');
-  if (Number(config.retina) && url.includes('.png')) url = url.replace('.png', '@2x.png');
+  const retinaOk = provider ? provider.supports_retina === true : true;
+  if (Number(config.retina) && retinaOk && url.includes('.png')) url = url.replace('.png', '@2x.png');
   return url;
 }
 
-async function getTileTarget(entity) {
+async function getTileTarget(entity, styleOverride) {
   const now = Date.now();
-  if (targetCache.key === entity && now - targetCache.at < TARGET_TTL) return targetCache.value;
+  const cacheKey = `${entity || 'stations'}|${styleOverride || ''}`;
+  if (targetCache.key === cacheKey && now - targetCache.at < TARGET_TTL) return targetCache.value;
   let value = null;
   try {
     const [rows] = await pool.query('SELECT * FROM map_configs WHERE entity = ? LIMIT 1', [entity || 'stations']);
     if (rows.length > 0) {
       const config = rows[0];
       if ((config.tile_mode || 'proxy') === 'proxy') {
-        value = buildProviderTileUrl(config);
+        value = buildProviderTileUrl(config, styleOverride);
       }
     }
   } catch (err) {
     console.error('[TileProxy] config error:', err.message);
   }
-  targetCache = { key: entity, value, at: now };
+  targetCache = { key: cacheKey, value, at: now };
   return value;
 }
 
 function sendFallback(res) {
   if (res.headersSent) return;
   res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.setHeader('X-Tile-Proxy-Status', 'fallback');
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.status(200).end(FALLBACK_PNG);
+  res.status(502).end(FALLBACK_PNG);
 }
 
 function fetchTile(tileUrl, res, redirectCount) {
@@ -155,9 +151,10 @@ router.get('/:z/:x/:y', async (req, res) => {
   }
 
   const entity = req.query.entity || 'stations';
+  const style = req.query.style || '';
   let tileUrl = null;
   try {
-    tileUrl = await getTileTarget(entity);
+    tileUrl = await getTileTarget(entity, style);
   } catch (err) {
     console.error('[TileProxy] target error:', err.message);
   }

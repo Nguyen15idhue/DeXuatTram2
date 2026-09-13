@@ -22,7 +22,7 @@ router.get('/tile-providers', mapConfigController.getTileProviders);
  *   get:
  *     tags: [Map Config]
  *     summary: Lấy cấu hình bản đồ
- *     description: Lấy config theo entity (stations mặc định)
+ *     description: Lấy config theo entity (stations mặc định). Trả kèm `renderer`, `tile_mode`, `default_mode` và `layers_config`; ẩn `api_key`/secret trong `tile_url` khi proxy.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -79,6 +79,7 @@ router.post('/', requireAuth, requireSuperAdmin, mapConfigController.createConfi
  *   put:
  *     tags: [Map Config]
  *     summary: Cập nhật cấu hình bản đồ
+ *     description: Chỉ nhận các cột trong allow-list (name, tile_provider_id, style_url, renderer, tile_mode, retina, default_mode, layers_config...). Cột lạ bị bỏ qua. `layers_config` là JSON mảng layer.
  *     security:
  *       - bearerAuth: []
  *     parameters:

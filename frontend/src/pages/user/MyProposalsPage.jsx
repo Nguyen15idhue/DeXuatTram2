@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { myProposalService, excelService, proposalService } from '../../services/api';
@@ -12,24 +10,11 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
+import MapCanvas from '../../components/map/MapCanvas';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useMapConfig from '../../hooks/useMapConfig';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import 'leaflet/dist/leaflet.css';
 import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X } from 'lucide-react';
-
-const markerIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
-
-function MapClickHandler({ onMapClick }) {
-  useMapEvents({ click(e) { onMapClick(e.latlng); } });
-  return null;
-}
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_FORM_ID = 13;
@@ -40,7 +25,7 @@ const MyProposalsPage = () => {
   const location = useLocation();
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
-  const { tileUrl, attribution: mapAttribution, subdomains: mapSubdomains } = useMapConfig();
+  const { renderer: mapRenderer, vectorStyle: mapVectorStyle, apiKey: mapApiKey, tileUrl, attribution: mapAttribution, subdomains: mapSubdomains } = useMapConfig();
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -156,8 +141,8 @@ const MyProposalsPage = () => {
     setError('');
   };
 
-  const handleMapClick = (latlng) => {
-    setMapCoords({ latitude: latlng.lat.toFixed(6), longitude: latlng.lng.toFixed(6) });
+  const handleMapClick = (lat, lng) => {
+    setMapCoords({ latitude: Number(lat).toFixed(6), longitude: Number(lng).toFixed(6) });
   };
 
   useEffect(() => {
@@ -384,13 +369,27 @@ const MyProposalsPage = () => {
             </div>
             <div className="border border-base-300 rounded-lg p-3 mb-4">
               <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
-              <MapContainer center={[10.762622, 106.660172]} zoom={13} style={{ height: '200px', width: '100%' }}>
-                <TileLayer url={tileUrl} attribution={mapAttribution} subdomains={mapSubdomains ? mapSubdomains.split(',') : []} />
-                <MapClickHandler onMapClick={handleMapClick} />
-                {mapCoords.latitude && mapCoords.longitude && (
-                  <Marker position={[parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)]} icon={markerIcon} />
-                )}
-              </MapContainer>
+              <div style={{ height: '200px', width: '100%' }}>
+                <MapCanvas
+                  renderer={mapRenderer}
+                  center={[10.762622, 106.660172]}
+                  zoom={13}
+                  tile={{ url: tileUrl, attribution: mapAttribution, subdomains: mapSubdomains }}
+                  vectorStyle={mapVectorStyle}
+                  apiKey={mapApiKey}
+                  stations={[]}
+                  proposals={[]}
+                  showCluster={false}
+                  showStationLabels={false}
+                  showProvinceLabels={false}
+                  showBoundaries={false}
+                  provincePoints={[]}
+                  selectingLocation
+                  onMapSelectClick={handleMapClick}
+                  selectedPosition={mapCoords.latitude && mapCoords.longitude ? [parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)] : null}
+                  locationPoint
+                />
+              </div>
               {mapCoords.latitude && mapCoords.longitude && (
                 <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
                   <MapPin size={14} />

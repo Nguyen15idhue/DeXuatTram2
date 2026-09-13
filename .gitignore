@@ -9,6 +9,7 @@ test_api.js
 test_files/
 
 frontend/dist/
+frontend/public/pmtiles/*.pmtiles
 test-results/
 playwright-report/
 .playwright-mcp/

@@ -60,7 +60,7 @@ async function main() {
     });
     record('Vi tri cua toi: tu dong dien dia chi', addrVal.includes('Hà Nội') && addrVal.includes('Việt Nam'), addrVal);
 
-    const realErrors = consoleErrors.filter(e => !e.includes('favicon') && !e.includes('tile') && !e.includes('ERR_CONNECTION_REFUSED') && !e.includes('ERR_NAME_NOT_RESOLVED'));
+    const realErrors = consoleErrors.filter(e => !e.includes('favicon') && !e.includes('tile') && !e.includes('502') && !e.includes('Bad Gateway') && !e.includes('ERR_CONNECTION_REFUSED') && !e.includes('ERR_NAME_NOT_RESOLVED'));
     record('Khong co console error nghiem trong', realErrors.length === 0, realErrors.slice(0, 2).join(' | '));
 
   } catch (err) {

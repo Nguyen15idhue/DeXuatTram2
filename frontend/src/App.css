@@ -231,16 +231,18 @@ body {
   font-weight: 600;
 }
 
-/* Map Legend - top left */
+/* Map Legend - top right (ke ben trai cum nut dieu khien; tranh xung dot voi bo loc o goc tren trai) */
 .map-legend {
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 64px;
+  left: auto;
+  bottom: auto;
   background: white;
   border-radius: 8px;
   padding: 10px 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  z-index: 1000;
+  z-index: 900;
   font-size: 11px;
   max-width: 150px;
 }
@@ -1174,6 +1176,7 @@ select:focus {
 
   .map-legend {
     top: 10px;
+    right: 64px;
     z-index: 1;
     font-size: 13px;
     padding: 12px 14px;

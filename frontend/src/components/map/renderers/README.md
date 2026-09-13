@@ -1,34 +1,40 @@
 # Map Renderer Seam
 
-Lớp trừu tượng renderer để sau này cắm Google Maps / MapLibre mà không đụng logic dữ liệu
+Lớp trừu tượng renderer để cắm MapLibre/Google Maps mà không đụng logic dữ liệu
 (stations/proposals/filter/duplicate lines).
 
-## Hiện trạng
+## Kiến trúc
 
-- Chỉ hỗ trợ `leaflet` (đang dùng trực tiếp trong `MapView.jsx`).
-- `map_configs.renderer` quyết định renderer. Giá trị chưa hỗ trợ → `resolveRenderer()`
-  trả về Leaflet kèm cờ `fallback=true` để UI cảnh báo, KHÔNG vỡ map.
+- `leafletRenderer.js` — metadata renderer (`id`, `name`, `supports`).
+- `leafletRuntime.js` — `createLeafletRuntime({ container, center, zoom })` trả runtime thao tác map.
+- `index.js` — registry: `resolveRenderer(id)` (metadata + fallback), `createRuntime(id, args)` (tạo runtime), `listRenderers()`.
+- `MapCanvas.jsx` (`components/map/`) — component React mount runtime + đẩy dữ liệu vào runtime. `MapView` dùng `MapCanvas`, KHÔNG import Leaflet trực tiếp.
 
-## Interface đề xuất khi thêm renderer mới
+## Adapter interface (`createRuntime`)
 
-Một renderer cần cung cấp:
+Runtime trả về các hàm/thuộc tính:
 
-| Thuộc tính / hàm | Mô tả |
+| Hàm | Mô tả |
 |---|---|
-| `id`, `name` | Định danh renderer |
-| `supportsRasterTiles` | Có hiển thị tile raster XYZ (png) không |
-| `supportsVectorTiles` | Có hiển thị vector tile/style.json không |
-| `supportsClustering` | Có gom cụm marker không |
+| `supports` | `{ raster, vector, terrain, cluster, labels, polylines }` |
+| `setView(center, zoom)` | Đặt tâm/zoom |
+| `flyTo(position, zoom)` | Bay tới vị trí |
+| `getCenter()`, `getZoom()` | Đọc trạng thái |
+| `setTileLayer({ url, attribution, subdomains, maxZoom, onTileError })` | Tile base; đếm lỗi → gọi `onTileError` sau 6 lần |
+| `setMarkers(items, { cluster, showLabels, onMarkerClick, renderPopup })` | Marker + cluster + tooltip + popup |
+| `setPolylines(pairs, { renderPopup, showLabels })` | Đường trùng lặp + nhãn khoảng cách + popup |
+| `setProvinceLabels(points, show)` | Nhãn tỉnh (divIcon) |
+| `setBoundaries(geojson, show)` | Ranh giới tỉnh (GeoJSON) |
+| `setPoints(points)` | Marker phụ ({ position, color, renderPopup }) |
+| `on(event, handler)` / `off(...)` | Sự kiện map (`click`, `zoomend`...) |
+| `remove()` | Dọn map |
 
-Khi triển khai đầy đủ (Google/Maplibre), bổ sung các hàm thao tác map:
-`mount(container, options)`, `setView(center, zoom)`, `setTileLayer(tileConfig)`,
-`addMarkers(points, { cluster, onMarkerClick, renderPopup })`, `addPolylines(lines)`,
-`on(event, cb)`, `destroy()`.
+Renderer chưa hỗ trợ → `createRuntime`/`resolveRenderer` fallback Leaflet kèm cảnh báo, **không vỡ map**.
 
-## Google Maps (kế hoạch)
+## Thêm renderer mới (MapLibre — Phase 4)
 
-- Thư viện: `@vis.gl/react-google-maps` hoặc load Google Maps JS API động.
-- Cluster: `@googlemaps/markerclusterer`.
-- Popup: render HTML bằng DOM thuần (KHÔNG dùng `<Link>` vì popup tạo ngoài React Router
-  context → lỗi `basename`; xem `AGENTS.md` mục Map Marker Rules 8b).
-- Key: nhập qua Admin → Map Config (`tile_provider_id='google-maps'`, `renderer='google'`).
+1. Thêm `create<X>Runtime` vào `renderers/`.
+2. Đăng ký trong `index.js` (`RUNTIMES`/`RENDERERS`).
+3. MapCanvas giữ nguyên interface → chỉ đổi `renderer` trong `map_configs`.
+
+Popup phải dựng DOM thuần (KHÔNG dùng `<Link>` — popup tạo ngoài React Router context → lỗi `basename`; xem `AGENTS.md` mục Map Marker Rules).

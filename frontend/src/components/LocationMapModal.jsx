@@ -1,20 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MapContainer, TileLayer, Marker, Circle, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
 import { MapPinned } from 'lucide-react';
 import { stationService, proposalService } from '../services/api';
-import { getMarkerColor, createCustomIcon } from '../utils/mapHelpers';
+import { getMarkerColor } from '../utils/mapHelpers';
 import useMapConfig from '../hooks/useMapConfig';
+import MapCanvas from './map/MapCanvas';
 
 const RADIUS_OPTIONS = [5, 10, 20, 50];
-
-const pointIcon = L.divIcon({
-  className: 'location-point-icon',
-  html: '<div class="location-point"><span class="location-point-ring"></span><span class="location-point-dot"></span></div>',
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-});
 
 const zoomForRadius = (radius) => {
   if (radius <= 5) return 12;
@@ -32,20 +24,39 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
   return 2 * R * Math.asin(Math.sqrt(a));
 };
 
-function FitRadius({ position, radius }) {
-  const map = useMap();
-  useEffect(() => {
-    const zoom = zoomForRadius(radius);
-    map.setView(position, zoom, { animate: true });
-  }, [position, radius, map]);
-  return null;
+function createNearbyPopup(title, item, status) {
+  const div = document.createElement('div');
+  div.className = 'popup-content';
+  const h3 = document.createElement('h3');
+  h3.textContent = title;
+  div.appendChild(h3);
+  const addRow = (label, value) => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = `${label}: `;
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(value || ''));
+    div.appendChild(p);
+  };
+  const statusP = document.createElement('p');
+  const statusStrong = document.createElement('strong');
+  statusStrong.textContent = 'Trạng thái: ';
+  statusP.appendChild(statusStrong);
+  const span = document.createElement('span');
+  span.style.color = getMarkerColor(status);
+  span.textContent = status;
+  statusP.appendChild(span);
+  div.appendChild(statusP);
+  addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
+  addRow('Địa chỉ', item.address);
+  return div;
 }
 
 const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose }) => {
   const [radius, setRadius] = useState(radiusKm);
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
-  const { tileUrl, attribution, subdomains } = useMapConfig();
+  const { renderer, vectorStyle, apiKey, tileUrl, attribution, subdomains } = useMapConfig();
   const position = useMemo(() => [parseFloat(lat), parseFloat(lng)], [lat, lng]);
 
   const valid = open && !Number.isNaN(position[0]) && !Number.isNaN(position[1]);
@@ -78,15 +89,16 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
     return { stations: nearStations, proposals: nearProposals };
   }, [position, radius, stations, proposals]);
 
+  const fitView = useMemo(() => ({ center: position, zoom: zoomForRadius(radius) }), [position, radius]);
+  const circle = useMemo(() => ({ center: position, radiusM: radius * 1000 }), [position, radius]);
+
   if (!valid) return null;
 
   const total = nearby.stations.length + nearby.proposals.length;
-
-  const addRow = (label, value) => (
-    <>
-      <strong>{label}: </strong>{value || ''}<br />
-    </>
-  );
+  const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status) }));
+  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status) }));
+  const renderStationPopup = (item) => createNearbyPopup(item.name || `Trạm #${item.id}`, item, item.status);
+  const renderProposalPopup = (item) => createNearbyPopup(`Đề xuất #${item.id}`, item, item.status);
 
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
@@ -117,49 +129,27 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
         </div>
 
         <div className="location-map-body">
-          <MapContainer
+          <MapCanvas
+            renderer={renderer}
             center={position}
             zoom={zoomForRadius(radius)}
-            scrollWheelZoom
-            style={{ height: '100%', width: '100%' }}
-          >
-            <TileLayer
-              url={tileUrl}
-              attribution={attribution}
-              subdomains={subdomains ? subdomains.split(',') : []}
-            />
-            <FitRadius position={position} radius={radius} />
-            <Marker position={position} icon={pointIcon} />
-            <Circle
-              center={position}
-              radius={radius * 1000}
-              pathOptions={{ color: '#2563eb', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.1 }}
-            />
-            {nearby.stations.map((s) => (
-              <Marker key={`s-${s.id}`} position={[parseFloat(s.latitude), parseFloat(s.longitude)]} icon={createCustomIcon(getMarkerColor(s.status))}>
-                <Popup>
-                  <div className="popup-content">
-                    <h3>{s.name || `Trạm #${s.id}`}</h3>
-                    {addRow('Trạng thái', s.status)}
-                    {addRow('Khoảng cách', `${s._distanceKm.toFixed(2)} km`)}
-                    {addRow('Địa chỉ', s.address)}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-            {nearby.proposals.map((p) => (
-              <Marker key={`p-${p.id}`} position={[parseFloat(p.latitude), parseFloat(p.longitude)]} icon={createCustomIcon(getMarkerColor(p.status))}>
-                <Popup>
-                  <div className="popup-content">
-                    <h3>Đề xuất #{p.id}</h3>
-                    {addRow('Trạng thái', p.status)}
-                    {addRow('Khoảng cách', `${p._distanceKm.toFixed(2)} km`)}
-                    {addRow('Địa chỉ', p.address)}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
+            tile={{ url: tileUrl, attribution, subdomains }}
+            vectorStyle={vectorStyle}
+            apiKey={apiKey}
+            stations={canvasStations}
+            proposals={canvasProposals}
+            showCluster={false}
+            showStationLabels={false}
+            showProvinceLabels={false}
+            showBoundaries={false}
+            provincePoints={[]}
+            selectedPosition={position}
+            locationPoint
+            circle={circle}
+            fitView={fitView}
+            renderStationPopup={renderStationPopup}
+            renderProposalPopup={renderProposalPopup}
+          />
         </div>
       </div>
     </div>,

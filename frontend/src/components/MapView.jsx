@@ -1,109 +1,56 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import 'leaflet.markercluster';
 import { stationService, proposalService, api } from '../services/api';
-import { getMarkerColor, createCustomIcon, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
+import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
-import { getProviderById } from '../utils/tileProviders';
+import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
+import { buildMapStyle, loadPmtilesStyle } from '../utils/mapStyles';
+import { MAP_MODES, DEFAULT_MODE } from '../utils/mapModes';
 import { resolveRenderer } from './map/renderers';
-
-const FALLBACK_TILES = [
-  {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
-    subdomains: '',
-  },
-  {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: OSM_ATTRIBUTION,
-    subdomains: 'a,b,c',
-  },
-];
+import MapCanvas from './map/MapCanvas';
+import useMediaQuery from '../hooks/useMediaQuery';
 
 const EMPTY_PAIRS = [];
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-function FlyToLocation({ position }) {
-  const map = useMap();
-  useEffect(() => {
-    if (position) {
-      map.flyTo(position, 16, { duration: 1.5 });
-    }
-  }, [position, map]);
-  return null;
-}
 
 const dupLabelOf = (p) => {
   if (p.code) return p.code;
   return p.kind === 'station' ? `Trạm #${p.id}` : `Đề xuất #${p.id}`;
 };
 
-function DuplicateLines({ pairs }) {
-  const map = useMap();
-  const layerRef = useRef(null);
-  const ZOOM_SHOW_LABEL = 12;
-
-  useEffect(() => {
-    const updateLabels = () => {
-      map.getContainer().classList.toggle('hide-dup-labels', map.getZoom() < ZOOM_SHOW_LABEL);
-    };
-    updateLabels();
-    map.on('zoomend', updateLabels);
-    if (layerRef.current) {
-      map.removeLayer(layerRef.current);
-      layerRef.current = null;
-    }
-    if (!pairs || pairs.length === 0) return;
-
-    const group = L.layerGroup();
-    pairs.forEach(pr => {
-      const aLat = parseFloat(pr.a?.latitude);
-      const aLng = parseFloat(pr.a?.longitude);
-      const bLat = parseFloat(pr.b?.latitude);
-      const bLng = parseFloat(pr.b?.longitude);
-      if ([aLat, aLng, bLat, bLng].some(v => isNaN(v))) return;
-      const color = pr.distance_m < 500 ? '#ef4444' : '#f97316';
-      const line = L.polyline([[aLat, aLng], [bLat, bLng]], { color, weight: 3, opacity: 0.85 });
-      line.bindTooltip(`${pr.distance_m}m`, { permanent: true, direction: 'center', className: 'dup-distance-label' });
-      line.bindPopup(`<div class="popup-content"><h3>${dupLabelOf(pr.a)} ↔ ${dupLabelOf(pr.b)}</h3><p><strong>Khoảng cách:</strong> ${pr.distance_m}m</p></div>`);
-      group.addLayer(line);
-    });
-    group.addTo(map);
-    layerRef.current = group;
-
-    return () => {
-      map.off('zoomend', updateLabels);
-      map.getContainer().classList.remove('hide-dup-labels');
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-    };
-  }, [map, pairs]);
-
-  return null;
+export function createDuplicatePopupContent(pair) {
+  const div = document.createElement('div');
+  div.className = 'popup-content';
+  const h3 = document.createElement('h3');
+  h3.textContent = `${dupLabelOf(pair.a)} ↔ ${dupLabelOf(pair.b)}`;
+  div.appendChild(h3);
+  const p = document.createElement('p');
+  const strong = document.createElement('strong');
+  strong.textContent = 'Khoảng cách: ';
+  p.appendChild(strong);
+  p.appendChild(document.createTextNode(`${Number(pair.distance_m) || 0}m`));
+  div.appendChild(p);
+  return div;
 }
 
-function MapEventsHandler({ selectingLocation, onMapSelectClick }) {
-  useMapEvents({
-    click(e) {
-      if (selectingLocation && onMapSelectClick) {
-        onMapSelectClick(e.latlng.lat, e.latlng.lng);
-      }
-    }
-  });
-  return null;
+function createPositionPopupContent(title, position) {
+  const div = document.createElement('div');
+  div.className = 'popup-content';
+  const h3 = document.createElement('h3');
+  h3.textContent = title;
+  div.appendChild(h3);
+  const lat = document.createElement('p');
+  const latStrong = document.createElement('strong');
+  latStrong.textContent = 'Vĩ độ: ';
+  lat.appendChild(latStrong);
+  lat.appendChild(document.createTextNode(Number(position[0]).toFixed(6)));
+  div.appendChild(lat);
+  const lng = document.createElement('p');
+  const lngStrong = document.createElement('strong');
+  lngStrong.textContent = 'Kinh độ: ';
+  lng.appendChild(lngStrong);
+  lng.appendChild(document.createTextNode(Number(position[1]).toFixed(6)));
+  div.appendChild(lng);
+  return div;
 }
 
 const MAP_LEGEND = [
@@ -114,63 +61,6 @@ const MAP_LEGEND = [
   { status: 'APPROVED', label: 'Đã duyệt' },
   { status: 'REJECTED', label: 'Từ chối' },
 ];
-
-function getProvinceIcon(province) {
-  return L.divIcon({
-    className: 'province-label-icon',
-    html: `<div class="province-label">${province.name}</div>`,
-    iconSize: [120, 24],
-    iconAnchor: [60, 12],
-  });
-}
-
-function DynamicTileLayer({ tileUrl, attribution, subdomains, onTileError }) {
-  const map = useMap();
-  const layerRef = useRef(null);
-  const errCountRef = useRef(0);
-  const firedRef = useRef(false);
-  const loadedRef = useRef(false);
-
-  useEffect(() => {
-    if (layerRef.current) {
-      map.removeLayer(layerRef.current);
-      layerRef.current = null;
-    }
-    errCountRef.current = 0;
-    firedRef.current = false;
-    loadedRef.current = false;
-    if (!tileUrl) return;
-
-    const layer = L.tileLayer(tileUrl, {
-      attribution: attribution || '',
-      subdomains: subdomains || '',
-      maxZoom: 20,
-    });
-
-    layer.on('tileerror', () => {
-      if (loadedRef.current) return;
-      errCountRef.current += 1;
-      if (errCountRef.current >= 6 && !firedRef.current) {
-        firedRef.current = true;
-        if (onTileError) onTileError();
-      }
-    });
-    layer.on('tileload', () => {
-      loadedRef.current = true;
-      errCountRef.current = 0;
-    });
-    layer.addTo(map);
-    layerRef.current = layer;
-    return () => {
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-    };
-  }, [map, tileUrl, attribution, subdomains, onTileError]);
-
-  return null;
-}
 
 function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
   return (
@@ -334,133 +224,6 @@ function createProposalPopupContent(item, user) {
   return div;
 }
 
-function MapLayerController({ stations, proposals, onMarkerClick, user, showStationLabels, showCluster = true }) {
-  const map = useMap();
-  const clusterRef = useRef(null);
-
-  useEffect(() => {
-    if (clusterRef.current) {
-      map.removeLayer(clusterRef.current);
-      clusterRef.current = null;
-    }
-
-    const cluster = showCluster
-      ? L.markerClusterGroup({
-          maxClusterRadius: 50,
-          spiderfyOnMaxZoom: true,
-          showCoverageOnHover: false,
-          zoomToBoundsOnClick: true,
-        })
-      : L.layerGroup();
-
-    const allItems = [
-      ...stations.map(s => ({ ...s, _type: 'station' })),
-      ...proposals.map(p => ({ ...p, _type: 'proposal' })),
-    ];
-
-    const markers = [];
-
-    allItems.forEach(item => {
-      const lat = parseFloat(item.latitude);
-      const lng = parseFloat(item.longitude);
-      if (isNaN(lat) || isNaN(lng)) return;
-
-      const marker = L.marker([lat, lng], {
-        icon: createCustomIcon(getMarkerColor(item.status)),
-      });
-
-      if (showStationLabels) {
-        const label = item._type === 'station' ? (item.name || `Trạm #${item.id}`) : `Đề xuất #${item.id}`;
-        marker.bindTooltip(label, { permanent: false, direction: 'top', offset: [0, -8], className: 'marker-label-tooltip' });
-      }
-
-      if (item._type === 'station') {
-        marker.bindPopup(() => createStationPopupContent(item, user), { className: 'station-popup' });
-      } else {
-        marker.bindPopup(() => createProposalPopupContent(item, user), { className: 'proposal-popup' });
-      }
-
-      marker.on('click', () => onMarkerClick && onMarkerClick(item, item._type));
-      markers.push(marker);
-    });
-
-    if (markers.length > 0) {
-      markers.forEach(m => cluster.addLayer(m));
-    }
-
-    map.addLayer(cluster);
-    clusterRef.current = cluster;
-
-    return () => {
-      if (clusterRef.current) {
-        map.removeLayer(clusterRef.current);
-        clusterRef.current = null;
-      }
-    };
-  }, [map, stations, proposals, onMarkerClick, user, showStationLabels, showCluster]);
-
-  return null;
-}
-
-function ProvinceBoundaryLayer({ show }) {
-  const map = useMap();
-  const layerRef = useRef(null);
-
-  useEffect(() => {
-    if (!show) {
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    fetch('/vietnam-provinces.geojson')
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(geojson => {
-        if (cancelled) return;
-        const layer = L.geoJSON(geojson, {
-          style: {
-            color: '#1565C0',
-            weight: 2,
-            opacity: 0.7,
-            dashArray: '8, 5',
-            fillColor: 'transparent',
-            fillOpacity: 0,
-          },
-          onEachFeature: (feature, layer) => {
-            if (feature.properties?.name) {
-              layer.bindTooltip(feature.properties.name, {
-                sticky: true,
-                className: 'province-boundary-tooltip',
-              });
-            }
-          },
-        });
-        layer.addTo(map);
-        layerRef.current = layer;
-      })
-      .catch(err => {
-        console.error('Failed to load province boundaries:', err);
-      });
-
-    return () => {
-      cancelled = true;
-      if (layerRef.current) {
-        map.removeLayer(layerRef.current);
-        layerRef.current = null;
-      }
-    };
-  }, [map, show]);
-
-  return null;
-}
-
 const MapView = ({
   onMarkerClick,
   selectingLocation,
@@ -494,9 +257,10 @@ const MapView = ({
   const [resolvedSubdomains, setResolvedSubdomains] = useState('');
   const [tileFailed, setTileFailed] = useState(false);
   const [tileWarning, setTileWarning] = useState('');
+  const [runtimeWarning, setRuntimeWarning] = useState('');
+  const [boundaries, setBoundaries] = useState(null);
   const [configVersion, setConfigVersion] = useState(0);
   const mountedRef = useRef(true);
-  const fallbackRef = useRef(-1);
 
   const [config, setConfig] = useState({
     tile_provider_id: 'leaflet-osm',
@@ -514,6 +278,31 @@ const MapView = ({
     center_lng: VIETNAM_CENTER.lng,
     default_zoom: VIETNAM_DEFAULT_ZOOM,
   });
+
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const [activeMode, setActiveMode] = useState(DEFAULT_MODE);
+  const [active3d, setActive3d] = useState(false);
+  const [pmtilesStyle, setPmtilesStyle] = useState(null);
+
+  useEffect(() => {
+    setActiveMode(config.default_mode || DEFAULT_MODE);
+    setActive3d(!!Number(config.enable_3d));
+  }, [config.default_mode, config.enable_3d, config.renderer, config.tile_provider_id]);
+
+  const pmtilesUrl = useMemo(
+    () => (/\.pmtiles(\?|$)/i.test(config.tile_url || '') ? config.tile_url : ''),
+    [config.tile_url]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (config.renderer !== 'maplibre' || !pmtilesUrl) {
+      setPmtilesStyle(null);
+      return undefined;
+    }
+    loadPmtilesStyle(pmtilesUrl).then((s) => { if (!cancelled) setPmtilesStyle(s); });
+    return () => { cancelled = true; };
+  }, [config.renderer, pmtilesUrl]);
 
   useEffect(() => {
     if (highlightPosition) {
@@ -544,6 +333,7 @@ const MapView = ({
       api_key: apiKey,
       tile_mode: opts.tileMode,
       retina: opts.retina,
+      renderer: opts.renderer,
       tile_url: opts.tileUrl,
       tile_attribution: opts.tileAttribution,
       tile_subdomains: opts.tileSubdomains,
@@ -552,16 +342,13 @@ const MapView = ({
   }, []);
 
   const handleTileError = useCallback(() => {
-    fallbackRef.current += 1;
-    const next = FALLBACK_TILES[fallbackRef.current];
-    if (next) {
-      setResolvedTileUrl(next.url);
-      setResolvedAttribution(next.attribution);
-      setResolvedSubdomains(next.subdomains);
-      setTileFailed(false);
-    } else {
-      setTileFailed(true);
-    }
+    setTileFailed(true);
+  }, []);
+
+  const handleRuntimeInfo = useCallback(({ fallback, requested }) => {
+    setRuntimeWarning(fallback
+      ? `Renderer "${requested}" không khởi động được (thiếu WebGL?), đang dùng Leaflet.`
+      : '');
   }, []);
 
   useEffect(() => {
@@ -582,6 +369,7 @@ const MapView = ({
     const controller = new AbortController();
     const fetchConfig = async () => {
       try {
+        await loadTileProviders();
         const data = await api.get('/map-configs?entity=stations');
         if (controller.signal.aborted) return;
         if (data.success && data.data) {
@@ -590,19 +378,19 @@ const MapView = ({
           const apiKey = d.api_key || '';
           const tileMode = d.tile_mode || 'proxy';
           const retina = !!Number(d.retina);
-          const providerStyles = (getProviderById(providerId)?.tile_url_styles) || [];
-          const savedStyleIdx = Math.max(0, providerStyles.findIndex(s => s.value === (d.style_url || d.style_value)));
+          const provider = getProviderById(providerId);
+          const providerStyles = (provider?.tile_url_styles || provider?.style_options) || [];
+          const savedStyleIdx = Math.max(0, providerStyles.findIndex(s => s.value === d.style_url));
           const tile = buildTileUrl(providerId, apiKey, providerStyles.length ? savedStyleIdx : null, {
-            tileMode, retina,
+            tileMode, retina, renderer: d.renderer,
             tileUrl: d.tile_url, tileAttribution: d.tile_attribution,
-            tileSubdomains: d.tile_subdomains, styleUrl: d.style_url || d.style_value,
+            tileSubdomains: d.tile_subdomains, styleUrl: d.style_url,
           });
           const rendererInfo = resolveRenderer(d.renderer);
           const warning = tile.warning || (rendererInfo.fallback
             ? `Renderer "${rendererInfo.requested}" chưa hỗ trợ, đang dùng Leaflet.`
             : '');
 
-          fallbackRef.current = -1;
           setTileFailed(false);
           setResolvedTileUrl(tile.url);
           setResolvedAttribution(tile.attribution);
@@ -641,27 +429,42 @@ const MapView = ({
 
   useEffect(() => {
     if (!config.tile_provider_id) return;
-    if (activeLayerIdx === 0 && !config.api_key && config.tile_mode !== 'proxy') return;
     const tile = buildTileUrl(config.tile_provider_id, config.api_key, activeLayerIdx, {
       tileMode: config.tile_mode,
       retina: !!config.retina,
+      renderer: config.renderer,
       tileUrl: config.tile_url,
       tileAttribution: config.tile_attribution,
       tileSubdomains: config.tile_subdomains,
       styleUrl: config.style_url,
     });
-    fallbackRef.current = -1;
     setTileFailed(false);
     setResolvedTileUrl(tile.url);
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
     setTileWarning(tile.warning || '');
-  }, [activeLayerIdx, config.tile_provider_id, config.api_key, config.tile_mode, config.retina, buildTileUrl]);
+  }, [activeLayerIdx, config.tile_provider_id, config.api_key, config.tile_mode, config.retina, config.renderer, config.style_url, config.tile_url, config.tile_attribution, config.tile_subdomains, buildTileUrl]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (!showBoundaries) return undefined;
+    let cancelled = false;
+    const controller = new AbortController();
+    fetch('/vietnam-provinces.geojson', { signal: controller.signal })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(geojson => { if (!cancelled) setBoundaries(geojson); })
+      .catch(err => {
+        if (err.name !== 'AbortError') console.error('Failed to load province boundaries:', err);
+      });
+    return () => { cancelled = true; controller.abort(); };
+  }, [showBoundaries]);
 
   const visibleStations = useMemo(() => {
     if (!filters) return stations;
@@ -697,6 +500,40 @@ const MapView = ({
     const ids = new Set(highlightIds.proposals);
     return visibleProposals.filter(p => ids.has(p.id));
   }, [visibleProposals, highlightIds]);
+
+  const canvasStations = useMemo(
+    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status) })),
+    [layerStations]
+  );
+  const canvasProposals = useMemo(
+    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status) })),
+    [layerProposals]
+  );
+
+  const renderStationPopup = useCallback((item) => createStationPopupContent(item, user), [user]);
+  const renderProposalPopup = useCallback((item) => createProposalPopupContent(item, user), [user]);
+  const renderDuplicatePopup = useCallback((pair) => createDuplicatePopupContent(pair), []);
+  const renderSelectedPopup = useCallback(
+    () => createPositionPopupContent('Vị trí đã chọn', selectedPosition || [0, 0]),
+    [selectedPosition]
+  );
+  const renderMyLocationPopup = useCallback(
+    () => createPositionPopupContent('Vị trí của tôi', myLocation || [0, 0]),
+    [myLocation]
+  );
+
+  const tileConfig = useMemo(
+    () => ({ url: resolvedTileUrl, attribution: resolvedAttribution, subdomains: resolvedSubdomains }),
+    [resolvedTileUrl, resolvedAttribution, resolvedSubdomains]
+  );
+
+  const vectorStyle = useMemo(() => {
+    if (config.renderer !== 'maplibre') return '';
+    if (activeMode === 'streets' && pmtilesUrl && pmtilesStyle) return pmtilesStyle;
+    const provider = getProviderById(config.tile_provider_id);
+    const providerStyle = provider?.style_url && !provider.style_url.includes('{domain}') ? provider.style_url : '';
+    return buildMapStyle(activeMode, { styleUrl: providerStyle || config.style_url, pmtilesUrl });
+  }, [config.renderer, activeMode, config.tile_provider_id, config.style_url, pmtilesUrl, pmtilesStyle]);
 
   const handleMyLocation = useCallback((openForm = false) => {
     if (!navigator.geolocation) {
@@ -764,80 +601,51 @@ const MapView = ({
 
   const currentProvider = getProviderById(config.tile_provider_id);
   const tileUrlStyles = currentProvider?.tile_url_styles || [];
-  const layerOptions = tileUrlStyles.length > 1 ? tileUrlStyles : [];
+  const isMaplibre = config.renderer === 'maplibre';
+  const layerOptions = isMaplibre ? MAP_MODES : (tileUrlStyles.length > 1 ? tileUrlStyles : []);
+  const activeLayerIndex = isMaplibre
+    ? Math.max(0, MAP_MODES.findIndex(m => m.id === activeMode))
+    : activeLayerIdx;
+  const handleLayerSwitch = (idx) => {
+    if (isMaplibre) setActiveMode(MAP_MODES[idx].id);
+    else setActiveLayerIdx(idx);
+  };
 
   return (
     <div style={{ flex: 1, height: '100%', width: '100%', position: 'relative' }}>
-      <MapContainer
+      <MapCanvas
+        renderer={config.renderer}
         center={center}
         zoom={zoom}
-        scrollWheelZoom={true}
-        zoomControl={false}
-        style={{ height: '100%', width: '100%' }}
-      >
-        <ZoomControl position="bottomleft" />
+        tile={tileConfig}
+        vectorStyle={vectorStyle}
+        apiKey={config.api_key || ''}
+        stations={canvasStations}
+        proposals={canvasProposals}
+        pairs={pairs}
+        showCluster={showCluster}
+        showStationLabels={showStationLabels}
+        showProvinceLabels={showProvinceLabels}
+        showBoundaries={showBoundaries}
+        boundariesGeojson={boundaries}
+        provincePoints={PROVINCES}
+        selectedPosition={selectedPosition}
+        myLocation={myLocation}
+        onMarkerClick={onMarkerClick}
+        renderStationPopup={renderStationPopup}
+        renderProposalPopup={renderProposalPopup}
+        renderDuplicatePopup={renderDuplicatePopup}
+        renderSelectedPopup={renderSelectedPopup}
+        renderMyLocationPopup={renderMyLocationPopup}
+        selectingLocation={selectingLocation}
+        onMapSelectClick={onMapSelectClick}
+        flyToPosition={highlightPosition || myLocation}
+        enable3d={isMaplibre && active3d && !isMobile}
+        onTileError={handleTileError}
+        onRuntimeInfo={handleRuntimeInfo}
+      />
 
-        <DynamicTileLayer
-          tileUrl={resolvedTileUrl}
-          attribution={resolvedAttribution}
-          subdomains={resolvedSubdomains}
-          onTileError={handleTileError}
-        />
-
-        <MapEventsHandler
-          selectingLocation={selectingLocation}
-          onMapSelectClick={onMapSelectClick}
-        />
-
-        {highlightPosition && <FlyToLocation position={highlightPosition} />}
-        {myLocation && <FlyToLocation position={myLocation} />}
-        {selectedPosition && (
-          <Marker position={selectedPosition} icon={createCustomIcon('#ea4335')}>
-            <Popup>
-              <div className="popup-content">
-                <h3>Vị trí đã chọn</h3>
-                <p><strong>Vĩ độ:</strong> {selectedPosition[0].toFixed(6)}</p>
-                <p><strong>Kinh độ:</strong> {selectedPosition[1].toFixed(6)}</p>
-              </div>
-            </Popup>
-          </Marker>
-        )}
-        {myLocation && (
-          <Marker position={myLocation} icon={createCustomIcon('#4285f4')}>
-            <Popup>
-              <div className="popup-content">
-                <h3>Vị trí của tôi</h3>
-                <p><strong>Vĩ độ:</strong> {myLocation[0].toFixed(6)}</p>
-                <p><strong>Kinh độ:</strong> {myLocation[1].toFixed(6)}</p>
-              </div>
-            </Popup>
-          </Marker>
-        )}
-
-        <MapLayerController
-          stations={layerStations}
-          proposals={layerProposals}
-          onMarkerClick={onMarkerClick}
-          user={user}
-          showStationLabels={showStationLabels}
-          showCluster={showCluster}
-        />
-
-        <DuplicateLines pairs={pairs} />
-
-        <ProvinceBoundaryLayer show={showBoundaries} />
-
-        {showProvinceLabels && PROVINCES.map((p) => (
-          <Marker
-            key={`province-${p.name}`}
-            position={[p.lat, p.lng]}
-            icon={getProvinceIcon(p)}
-            interactive={false}
-          />
-        ))}
-      </MapContainer>
-
-      {(tileWarning || tileFailed) && (
+      {(tileWarning || tileFailed || runtimeWarning) && (
         <div style={{
           position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
           zIndex: 1000, maxWidth: '90%', padding: '8px 14px', borderRadius: 8,
@@ -845,7 +653,7 @@ const MapView = ({
         }}>
           {tileFailed
             ? 'Không tải được bản đồ. Vào Admin → Cấu hình bản đồ để kiểm tra provider/API key.'
-            : tileWarning}
+            : (runtimeWarning || tileWarning)}
         </div>
       )}
 
@@ -878,11 +686,20 @@ const MapView = ({
           onClick={() => setShowBoundaries(v => !v)}
         />
 
+        {isMaplibre && (
+          <MapControlButton
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/><path d="M12 12l9-5M12 12v10M12 12L3 7"/></svg>}
+            tooltip={active3d ? 'Tắt 3D' : 'Bật 3D (nhà nổi + địa hình)'}
+            active={active3d}
+            onClick={() => setActive3d(v => !v)}
+          />
+        )}
+
         {layerOptions.length > 0 && (
           <MapLayerSwitcher
             layers={layerOptions}
-            activeIdx={activeLayerIdx}
-            onSwitch={(idx) => setActiveLayerIdx(idx)}
+            activeIdx={activeLayerIndex}
+            onSwitch={handleLayerSwitch}
           />
         )}
       </div>

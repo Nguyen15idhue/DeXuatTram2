@@ -8,12 +8,12 @@ function check(name, ok, detail = '') {
 }
 async function main() {
   let r = await fetch(`${API}/tiles/abc/1/1`);
-  check('BE invalid tile returns image not JSON', r.status === 200 && (r.headers.get('content-type') || '').includes('image/png'), `status=${r.status}`);
+  check('BE invalid tile signals fallback (502 + header)', r.status === 502 && r.headers.get('x-tile-proxy-status') === 'fallback', `status=${r.status}`);
   r = await fetch(`${API}/tiles/2/99/1`);
-  check('BE out-of-range tile fallback image', r.status === 200 && (r.headers.get('content-type') || '').includes('image/png'), `status=${r.status}`);
+  check('BE out-of-range tile signals fallback (502 + header)', r.status === 502 && r.headers.get('x-tile-proxy-status') === 'fallback', `status=${r.status}`);
   r = await fetch(`${API}/tiles/10/10/10?url=https://evil.example.com/x.png`);
   const buf = Buffer.from(await r.arrayBuffer());
-  check('BE ?url= ignored (open-proxy closed)', r.status === 200 && !buf.includes('evil'), `bytes=${buf.length}`);
+  check('BE ?url= ignored (open-proxy closed)', (r.status === 200 || r.status === 502) && !buf.includes('evil'), `status=${r.status} bytes=${buf.length}`);
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();

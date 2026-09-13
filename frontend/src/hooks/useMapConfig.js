@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { buildTileConfig } from '../utils/mapTile';
+import { buildMapStyle } from '../utils/mapStyles';
+import { getProviderById } from '../utils/tileProviders';
 
 const TTL = 60000;
 let cache = null;
@@ -55,6 +57,17 @@ export default function useMapConfig() {
   }, [version]);
 
   const tile = buildTileConfig(config || {});
+  const renderer = (config && config.renderer) || 'leaflet';
+  const provider = config ? getProviderById(config.tile_provider_id) : null;
+  const providerStyleUrl = provider && provider.style_url && !provider.style_url.includes('{domain}')
+    ? provider.style_url
+    : '';
+  const vectorStyle = renderer === 'maplibre'
+    ? buildMapStyle(config && config.default_mode, {
+        styleUrl: providerStyleUrl || (config && config.style_url),
+        pmtilesUrl: config && /\.pmtiles(\?|$)/i.test(config.tile_url || '') ? config.tile_url : '',
+      })
+    : '';
 
   return {
     config,
@@ -62,5 +75,8 @@ export default function useMapConfig() {
     tileUrl: tile.url,
     attribution: tile.attribution,
     subdomains: tile.subdomains,
+    renderer,
+    vectorStyle,
+    apiKey: (config && config.api_key) || '',
   };
 }

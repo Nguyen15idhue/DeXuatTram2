@@ -22,7 +22,8 @@ export function buildTileConfig(config = {}, styleIdx) {
   const apiKey = config.api_key || '';
   const tileMode = config.tile_mode || 'proxy';
   const retina = !!Number(config.retina);
-  const styleValue = config.style_url || config.style_value || '';
+  const renderer = config.renderer || 'leaflet';
+  const styleValue = config.style_url || '';
   const fallback = { url: PROXY_TILE, attribution: OSM_ATTRIBUTION, subdomains: '', warning: '' };
 
   const provider = getProviderById(providerId);
@@ -38,15 +39,31 @@ export function buildTileConfig(config = {}, styleIdx) {
     }
     return { ...fallback, warning: 'Không tìm thấy provider đã lưu, đang dùng bản đồ mặc định.' };
   }
-  if (provider.incompatible_with_leaflet) {
+  if (provider.incompatible_with_leaflet && renderer !== 'maplibre') {
     return { ...fallback, warning: `${provider.name} không dùng được với Leaflet, đang dùng bản đồ mặc định.` };
   }
 
-  if (tileMode === 'proxy') {
+  if (renderer === 'maplibre' && provider.style_url) {
     return {
-      url: PROXY_TILE,
+      url: '',
+      style: provider.style_url,
       attribution: provider.attribution || OSM_ATTRIBUTION,
-      subdomains: provider.subdomains || '',
+      subdomains: '',
+      warning: '',
+    };
+  }
+
+  if (tileMode === 'proxy') {
+    const styles = provider.tile_url_styles || provider.style_options || [];
+    const selected = (styleIdx !== undefined && styleIdx !== null)
+      ? (styles[styleIdx] || styles[0])
+      : (styles.find(s => s.value === styleValue) || styles[0]);
+    const styleVal = selected?.value || styleValue || '';
+    const qs = styleVal ? `?style=${encodeURIComponent(styleVal)}` : '';
+    return {
+      url: PROXY_TILE + qs,
+      attribution: provider.attribution || OSM_ATTRIBUTION,
+      subdomains: '',
       warning: '',
     };
   }

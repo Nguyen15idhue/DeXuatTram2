@@ -136,7 +136,6 @@ const MapPage = () => {
       />
 
       <MapView
-        key={mapKey}
         selectingLocation={selectingLocation}
         onLocationSelected={handleLocationSelected}
         onMapSelectClick={handleMapSelectClick}

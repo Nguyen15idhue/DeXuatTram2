@@ -1,355 +1,28 @@
-export const TILE_PROVIDERS = [
-  {
-    id: 'leaflet-osm',
-    name: 'Leaflet + OpenStreetMap',
-    type: 'free',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'plugin',
-    supports_retina: false,
-    tile_url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
-    tile_url_template: '',
-    tile_url_styles: [
-      {
-        value: 'osm-de', label: 'Sáng (OSM Đức)',
-        url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png',
-        subdomains: '',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'osm-fr', label: 'OSM Pháp',
-        url: 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
-        subdomains: 'a,b,c',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'opentopo', label: 'Địa hình (OpenTopoMap)',
-        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        subdomains: 'a,b,c',
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | style: &copy; <a href="https://opentopomap.org/">OpenTopoMap</a> (CC-BY-SA)',
-      },
-      {
-        value: 'esri-imagery', label: 'Vệ tinh (Esri)',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        subdomains: '',
-        attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
-      },
-    ],
-    style_url: '',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    subdomains: '',
-    api_key: '',
-    description: 'Miễn phí, KHÔNG cần key. OSM mirror (Đức/Pháp) + OpenTopoMap + Esri. OSM gốc bị chặn mạng; CARTO cần key (có watermark).',
-  },
-  {
-    id: 'esri-basemap',
-    name: 'Esri Basemaps',
-    type: 'free',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'plugin',
-    supports_retina: false,
-    tile_url: '',
-    tile_url_template: '',
-    tile_url_styles: [
-      {
-        value: 'World_Street_Map', label: 'Đường phố',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-        subdomains: '',
-        attribution: '&copy; Esri &mdash; Source: Esri, HERE, Garmin, OpenStreetMap contributors',
-      },
-      {
-        value: 'World_Imagery', label: 'Vệ tinh',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        subdomains: '',
-        attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
-      },
-      {
-        value: 'World_Topo_Map', label: 'Địa hình',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-        subdomains: '',
-        attribution: '&copy; Esri',
-      },
-    ],
-    style_url: '',
-    attribution: '&copy; Esri',
-    subdomains: '',
-    api_key: '',
-    description: 'Miễn phí, KHÔNG cần key. Esri World_Street/Imagery/Topo — thay thế OSM trực tiếp bị chặn.',
-  },
-  {
-    id: 'maplibre-osm',
-    name: 'MapLibre GL JS + OSM',
-    type: 'free',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'built-in',
-    tile_url: '',
-    tile_url_template: '',
-    style_url: 'https://demotiles.maplibre.org/style.json',
-    attribution: 'Trong style JSON',
-    subdomains: '',
-    api_key: '',
-    description: 'Miễn phí, mã nguồn mở. Built-in cluster qua GeoJSON Source (cluster: true). Không tương thích Leaflet — dùng MapLibre GL JS renderer.',
-    incompatible_with_leaflet: true,
-  },
-  {
-    id: 'openlayers-osm',
-    name: 'OpenLayers + OSM',
-    type: 'free',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'built-in',
-    tile_url: '',
-    tile_url_template: '',
-    style_url: '',
-    attribution: 'Tự động từ OSM',
-    subdomains: '',
-    api_key: '',
-    description: 'Miễn phí, mã nguồn mở. Built-in cluster qua ol.source.Cluster. Không tương thích Leaflet — dùng OpenLayers renderer.',
-    incompatible_with_leaflet: true,
-  },
-  {
-    id: 'maplibre-self-hosted',
-    name: 'MapLibre + Self-hosted Tiles',
-    type: 'self-hosted',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'built-in',
-    tile_url: 'https://{domain}/tiles/{z}/{x}/{y}.pbf',
-    tile_url_template: '',
-    style_url: 'https://{domain}/style.json',
-    attribution: 'Cấu hình theo bản quyền dữ liệu tự host',
-    subdomains: '',
-    api_key: '',
-    description: 'Tự host tile server. Built-in cluster qua GeoJSON Source.',
-  },
-  {
-    id: 'leaflet-self-hosted',
-    name: 'Leaflet + Self-hosted Tiles',
-    type: 'self-hosted',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'plugin',
-    tile_url: 'https://{domain}/tiles/{z}/{x}/{y}.png',
-    tile_url_template: '',
-    style_url: '',
-    attribution: 'Cấu hình theo bản quyền dữ liệu tự host',
-    subdomains: '',
-    api_key: '',
-    description: 'Tự host tile server. Tích hợp plugin Leaflet.markercluster.',
-  },
-  {
-    id: 'geoapify',
-    name: 'Geoapify (OSM)',
-    type: 'api',
-    auth_type: 'token',
-    requires_key: true,
-    has_cluster: true,
-    cluster_method: 'plugin',
-    supports_retina: true,
-    tile_url: '',
-    tile_url_template: '',
-    tile_url_styles: [
-      {
-        value: 'osm-carto', label: 'OSM Carto',
-        url: 'https://maps.geoapify.com/v1/tile/osm-carto/{z}/{x}/{y}.png?apiKey={key}',
-        subdomains: '',
-        attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'osm-bright', label: 'OSM Bright',
-        url: 'https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey={key}',
-        subdomains: '',
-        attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'positron', label: 'Positron',
-        url: 'https://maps.geoapify.com/v1/tile/positron/{z}/{x}/{y}.png?apiKey={key}',
-        subdomains: '',
-        attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'dark-matter', label: 'Dark Matter',
-        url: 'https://maps.geoapify.com/v1/tile/dark-matter/{z}/{x}/{y}.png?apiKey={key}',
-        subdomains: '',
-        attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'toner', label: 'Toner',
-        url: 'https://maps.geoapify.com/v1/tile/toner/{z}/{x}/{y}.png?apiKey={key}',
-        subdomains: '',
-        attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-      },
-      {
-        value: 'klokantech-basic', label: 'Klokantech Basic',
-        url: 'https://maps.geoapify.com/v1/tile/klokantech-basic/{z}/{x}/{y}.png?apiKey={key}',
-        subdomains: '',
-        attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-      },
-    ],
-    style_url: '',
-    attribution: 'Powered by <a href="https://www.geoapify.com/">Geoapify</a> | <a href="https://openmaptiles.org/">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> contributors',
-    subdomains: '',
-    api_key: '',
-    api_key_placeholder: 'YOUR_GEOAPIFY_KEY',
-    description: 'Tile OSM chất lượng cao, cần API key. Hỗ trợ retina @2x. Dùng được cả cho reverse geocoding.',
-  },
-  {
-    id: 'mapbox',
-    name: 'Mapbox GL JS',
-    type: 'api',
-    auth_type: 'token',
-    requires_key: true,
-    has_cluster: true,
-    cluster_method: 'built-in',
-    tile_url: '',
-    tile_url_template: 'https://api.mapbox.com/styles/v1/{style}/tiles/256/{z}/{x}/{y}@2x?access_token={key}',
-    tile_url_styles: [
-      { value: 'mapbox/streets-v12', label: 'Streets' },
-      { value: 'mapbox/outdoors-v12', label: 'Outdoors' },
-      { value: 'mapbox/light-v11', label: 'Light' },
-      { value: 'mapbox/dark-v11', label: 'Dark' },
-      { value: 'mapbox/satellite-streets-v12', label: 'Satellite Streets' },
-      { value: 'mapbox/navigation-day-v1', label: 'Navigation Day' },
-      { value: 'mapbox/navigation-night-v1', label: 'Navigation Night' },
-    ],
-    style_url: 'mapbox://styles/mapbox/streets-v12',
-    attribution: '&copy; Mapbox &copy; OpenStreetMap',
-    subdomains: '',
-    api_key: '',
-    api_key_placeholder: 'pk.eyJ1...',
-    description: 'Free tier / Trả phí. Access Token + Style URL. Built-in cluster.',
-    style_options: [
-      { value: 'mapbox/streets-v12', label: 'Streets' },
-      { value: 'mapbox/outdoors-v12', label: 'Outdoors' },
-      { value: 'mapbox/light-v11', label: 'Light' },
-      { value: 'mapbox/dark-v11', label: 'Dark' },
-      { value: 'mapbox/satellite-streets-v12', label: 'Satellite Streets' },
-      { value: 'mapbox/navigation-day-v1', label: 'Navigation Day' },
-      { value: 'mapbox/navigation-night-v1', label: 'Navigation Night' },
-    ],
-  },
-  {
-    id: 'google-maps',
-    name: 'Google Maps Platform',
-    type: 'api',
-    auth_type: 'token',
-    requires_key: true,
-    has_cluster: true,
-    cluster_method: 'library',
-    tile_url: '',
-    tile_url_template: '',
-    tile_url_styles: [],
-    style_url: '',
-    attribution: '&copy; Google',
-    subdomains: '',
-    api_key: '',
-    api_key_placeholder: 'AIza...',
-    description: 'Free tier / Trả phí. API Key + Map ID. Dùng Google Maps JavaScript API (không tương thích Leaflet TileLayer).',
-    incompatible_with_leaflet: true,
-  },
-  {
-    id: 'here-maps',
-    name: 'HERE Maps (HERE SDK/JS)',
-    type: 'api',
-    auth_type: 'token',
-    requires_key: true,
-    has_cluster: true,
-    cluster_method: 'built-in',
-    tile_url: '',
-    tile_url_template: 'https://maps.hereapi.com/v3/base/mc/{z}/{x}/{y}/png?style={style}&apiKey={key}',
-    tile_url_styles: [
-      { value: 'explore.day', label: 'Explore Day' },
-      { value: 'explore.night', label: 'Explore Night' },
-      { value: 'explore.satellite.day', label: 'Satellite Day' },
-      { value: 'explore.carnav.day', label: 'Carnav Day' },
-      { value: 'explore.grey.day', label: 'Grey Day' },
-      { value: 'explore.traffic.day', label: 'Traffic Day' },
-      { value: 'explore.traffic.night', label: 'Traffic Night' },
-    ],
-    style_url: '',
-    attribution: '&copy; HERE',
-    subdomains: '',
-    api_key: '',
-    api_key_placeholder: 'YOUR_API_KEY',
-    description: 'Free tier / Trả phí. API Key + Engine/Layer Config. Built-in H.clustering.Provider.',
-    style_options: [
-      { value: 'explore.day', label: 'Explore Day' },
-      { value: 'explore.night', label: 'Explore Night' },
-      { value: 'explore.satellite.day', label: 'Satellite Day' },
-      { value: 'explore.carnav.day', label: 'Carnav Day' },
-      { value: 'explore.grey.day', label: 'Grey Day' },
-    ],
-  },
-  {
-    id: 'tomtom-maps',
-    name: 'TomTom Maps SDK',
-    type: 'api',
-    auth_type: 'token',
-    requires_key: true,
-    has_cluster: true,
-    cluster_method: 'library',
-    tile_url: '',
-    tile_url_template: 'https://api.tomtom.com/map/1/tile/{style}/{z}/{x}/{y}.png?key={key}',
-    tile_url_styles: [
-      { value: 'main', label: 'Main' },
-      { value: 'hybrid', label: 'Hybrid' },
-      { value: 'satellite', label: 'Satellite' },
-    ],
-    style_url: 'tomtom://vector/style/main',
-    attribution: '&copy; TomTom',
-    subdomains: '',
-    api_key: '',
-    api_key_placeholder: 'YOUR_API_KEY',
-    description: 'Free tier / Trả phí. API Key + Style URL (tùy chọn). Cluster qua thư viện hỗ trợ.',
-    style_options: [
-      { value: 'tomtom://vector/style/main', label: 'Main' },
-      { value: 'tomtom://vector/style/hybrid', label: 'Hybrid' },
-      { value: 'tomtom://vector/style/satellite', label: 'Satellite' },
-    ],
-  },
-  {
-    id: 'arcgis-js',
-    name: 'ArcGIS Maps SDK for JS',
-    type: 'api',
-    auth_type: 'none',
-    requires_key: false,
-    has_cluster: true,
-    cluster_method: 'built-in',
-    tile_url: '',
-    tile_url_template: 'https://server.arcgisonline.com/ArcGIS/rest/services/{style}/MapServer/tile/{z}/{y}/{x}',
-    tile_url_styles: [
-      { value: 'World_Street_Map', label: 'Streets' },
-      { value: 'World_Topo_Map', label: 'Topographic' },
-      { value: 'World_Imagery', label: 'Satellite' },
-      { value: 'World_Terrain_Base', label: 'Terrain' },
-      { value: 'Canvas/World_Dark_Gray_Base', label: 'Dark Gray' },
-      { value: 'Canvas/World_Light_Gray_Base', label: 'Light Gray' },
-    ],
-    style_url: 'World_Street_Map',
-    attribution: '&copy; Esri',
-    subdomains: '',
-    api_key: '',
-    api_key_placeholder: 'YOUR_API_KEY',
-    description: 'Basemap Esri dùng được ngay, không cần key (đã kiểm chứng). Key chỉ cần khi dùng ArcGIS SDK nâng cao.',
-    style_options: [
-      { value: 'arcgis/topographic', label: 'Topographic' },
-      { value: 'arcgis/streets', label: 'Streets' },
-      { value: 'arcgis/navigation', label: 'Navigation' },
-      { value: 'arcgis/satellite', label: 'Satellite' },
-      { value: 'arcgis/imagery', label: 'Imagery' },
-      { value: 'arcgis/dark-gray', label: 'Dark Gray' },
-      { value: 'arcgis/light-gray', label: 'Light Gray' },
-    ],
-  },
-];
+import { TILE_PROVIDER_CATALOG } from './tileProviderCatalog';
+import { API_URL } from '../services/api';
+
+export const TILE_PROVIDERS = TILE_PROVIDER_CATALOG;
+
+let catalog = TILE_PROVIDER_CATALOG;
+let loadPromise = null;
+
+export async function loadTileProviders() {
+  if (loadPromise) return loadPromise;
+  const base = typeof API_URL === 'string' && API_URL ? API_URL : '/api';
+  loadPromise = fetch(`${base}/map-configs/tile-providers`)
+    .then(res => (res.ok ? res.json() : null))
+    .then(json => {
+      const list = json && json.success && Array.isArray(json.data) ? json.data : null;
+      if (list && list.length > 0) catalog = list;
+      return catalog;
+    })
+    .catch(() => catalog);
+  return loadPromise;
+}
+
+export function getTileProviders() {
+  return catalog;
+}
 
 export const TILE_CATEGORIES = [
   { id: 'free', label: 'Miễn phí', description: 'Mã nguồn mở, không cần API key' },
@@ -363,17 +36,17 @@ export const AUTH_TYPES = [
 ];
 
 export function getProviderById(id) {
-  return TILE_PROVIDERS.find(p => p.id === id);
+  return catalog.find(p => p.id === id);
 }
 
 export function getProvidersByType(type) {
-  return TILE_PROVIDERS.filter(p => p.type === type);
+  return catalog.filter(p => p.type === type);
 }
 
 export function getFreeProviders() {
-  return TILE_PROVIDERS.filter(p => p.type === 'free');
+  return catalog.filter(p => p.type === 'free');
 }
 
 export function getApiProviders() {
-  return TILE_PROVIDERS.filter(p => p.type === 'api');
+  return catalog.filter(p => p.type === 'api');
 }

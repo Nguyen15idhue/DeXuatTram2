@@ -1,22 +1,18 @@
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import { TILE_PROVIDERS, getProviderById, TILE_CATEGORIES } from '../../utils/tileProviders';
+import { TILE_PROVIDER_CATALOG } from '../../utils/tileProviderCatalog';
+import { loadTileProviders, getProviderById, TILE_CATEGORIES } from '../../utils/tileProviders';
+import { isValidTileUrl } from '../../utils/mapTile';
+import { MAP_MODES, DEFAULT_MODE } from '../../utils/mapModes';
+import { buildMapStyle } from '../../utils/mapStyles';
+import { listRenderers } from '../../components/map/renderers';
+import MapCanvas from '../../components/map/MapCanvas';
 import { useAuth } from '../../contexts/AuthContext';
 import Toast from '../../components/Toast';
 import GeocodeConfigPanel from '../../components/admin/GeocodeConfigPanel';
 import { API_URL } from '../../services/api';
 import { Settings, Save, Wifi, WifiOff } from 'lucide-react';
 
-const FALLBACK_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
-function isValidTileUrl(url) {
-  if (!url || typeof url !== 'string') return false;
-  const placeholderPattern = /\{[^}]+\}/g;
-  const matches = url.match(placeholderPattern) || [];
-  const validPlaceholders = ['{z}', '{x}', '{y}', '{s}', '{r}'];
-  return matches.every(m => validPlaceholders.includes(m));
-}
+const FALLBACK_TILE = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
 
 function getSafeTileUrl(url) {
   if (isValidTileUrl(url)) return url;
@@ -26,6 +22,7 @@ function getSafeTileUrl(url) {
 const AdminMapConfigPage = () => {
   const { token } = useAuth();
   const [config, setConfig] = useState(null);
+  const [allProviders, setAllProviders] = useState(TILE_PROVIDER_CATALOG);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ message: '', type: 'success' });
@@ -38,11 +35,21 @@ const AdminMapConfigPage = () => {
   const [isCustom, setIsCustom] = useState(false);
   const [tileMode, setTileMode] = useState('proxy');
   const [retina, setRetina] = useState(false);
+  const [renderer, setRenderer] = useState('leaflet');
+  const [defaultMode, setDefaultMode] = useState(DEFAULT_MODE);
+  const [enable3d, setEnable3d] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [testStatus, setTestStatus] = useState(null);
   const [testUrl, setTestUrl] = useState('');
+  const [directTest, setDirectTest] = useState(false);
 
   useEffect(() => { loadConfig(); }, []);
+
+  useEffect(() => {
+    let active = true;
+    loadTileProviders().then(list => { if (active && Array.isArray(list)) setAllProviders(list); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (toast.message) {
@@ -65,6 +72,11 @@ const AdminMapConfigPage = () => {
         if (provider) {
           setSelectedProviderId(pid);
           setIsCustom(false);
+          if (provider.type === 'self-hosted') {
+            setCustomTileUrl(c.tile_url || provider.tile_url || '');
+            setCustomAttribution(c.tile_attribution || provider.attribution || '');
+            setCustomSubdomains(c.tile_subdomains || '');
+          }
           if (provider.tile_url_styles && provider.tile_url_styles.length > 0) {
             if (c.style_url && provider.tile_url_styles.find(s => s.value === c.style_url)) {
               setSelectedStyle(c.style_url);
@@ -89,6 +101,9 @@ const AdminMapConfigPage = () => {
         setApiKey(c.api_key || '');
         setTileMode(c.tile_mode || 'proxy');
         setRetina(!!Number(c.retina));
+        setRenderer(c.renderer || 'leaflet');
+        setDefaultMode(c.default_mode || DEFAULT_MODE);
+        setEnable3d(!!Number(c.enable_3d));
       }
     } catch (e) {
       console.error(e);
@@ -99,7 +114,7 @@ const AdminMapConfigPage = () => {
 
   const selectedProvider = isCustom ? null : getProviderById(selectedProviderId);
 
-  const OSM_LIGHT = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const OSM_LIGHT = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
   const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
   const resolveTileUrl = (providerId, style, key) => {
@@ -130,12 +145,15 @@ const AdminMapConfigPage = () => {
     };
   };
 
-  const isLeafletIncompatible = selectedProvider?.incompatible_with_leaflet && !isCustom;
+  const isLeafletIncompatible = renderer === 'leaflet' && selectedProvider?.incompatible_with_leaflet && !isCustom;
 
   const getActiveTileConfig = () => {
     if (isCustom) {
       const url = getSafeTileUrl(customTileUrl);
       return { url, attribution: customAttribution, subdomains: customSubdomains };
+    }
+    if (selectedProvider?.type === 'self-hosted' && customTileUrl) {
+      return { url: customTileUrl, attribution: customAttribution || selectedProvider.attribution || '', subdomains: customSubdomains || '' };
     }
     if (!selectedProvider) return { url: OSM_LIGHT, attribution: OSM_ATTR, subdomains: 'a,b,c' };
     const url = resolveTileUrl(selectedProviderId, selectedStyle, apiKey);
@@ -143,14 +161,87 @@ const AdminMapConfigPage = () => {
     return { url, attribution: meta.attribution, subdomains: meta.subdomains };
   };
 
+  const getStorageTileUrl = () => {
+    if (isCustom || selectedProvider?.type === 'self-hosted') return customTileUrl;
+    const p = selectedProvider;
+    if (!p) return '';
+    const styleObj = (p.tile_url_styles || []).find(s => s.value === selectedStyle) || (p.tile_url_styles || [])[0];
+    if (styleObj && styleObj.url) return styleObj.url;
+    if (p.tile_url_template) return p.tile_url_template;
+    if (p.tile_url) return p.tile_url;
+    return '';
+  };
+
+  const getPreviewTileConfig = () => {
+    if (tileMode === 'proxy' && !isCustom && selectedProvider) {
+      const styleVal = selectedStyle || '';
+      const qs = styleVal ? `?style=${encodeURIComponent(styleVal)}` : '';
+      const meta = resolveStyleMeta(selectedProviderId, selectedStyle);
+      return { url: `/tiles/{z}/{x}/{y}${qs}`, attribution: meta.attribution, subdomains: '' };
+    }
+    return getActiveTileConfig();
+  };
+
   const handleTestConnection = () => {
-    const tile = getActiveTileConfig();
+    const builtStyle = renderer === 'maplibre'
+      ? buildMapStyle(defaultMode, {
+          styleUrl: selectedProvider?.style_url || '',
+          pmtilesUrl: (selectedProvider?.id === 'maplibre-self-hosted' && /\.pmtiles(\?|$)/i.test(customTileUrl || '')) ? customTileUrl : '',
+        })
+      : '';
+    const pmtilesUrl = (renderer === 'maplibre' && typeof builtStyle === 'object' && builtStyle?.sources?.openmaptiles?.url)
+      ? String(builtStyle.sources.openmaptiles.url).replace(/^pmtiles:\/\//, '')
+      : '';
+    if (pmtilesUrl) {
+      setTestUrl(pmtilesUrl);
+      setTestStatus('testing');
+      let done = false;
+      const timeout = setTimeout(() => { if (!done) { done = true; setTestStatus('error'); setTestUrl(`${pmtilesUrl}\nQuá thời gian 8s`); } }, 8000);
+      fetch(pmtilesUrl)
+        .then((r) => {
+          if (done) return; done = true; clearTimeout(timeout);
+          setTestStatus(r.ok ? 'success' : 'error');
+          if (!r.ok) setTestUrl(`${pmtilesUrl}\nHTTP ${r.status}`);
+          else setTestUrl(`${pmtilesUrl}\nPMTiles OK (${r.headers.get('accept-ranges') === 'bytes' ? 'range OK' : 'no range'})`);
+        })
+        .catch((e) => { if (done) return; done = true; clearTimeout(timeout); setTestStatus('error'); setTestUrl(`${pmtilesUrl}\n${e.message}`); });
+      return;
+    }
+    const vectorStyle = typeof builtStyle === 'string' ? builtStyle : '';
+    if (vectorStyle) {
+      setTestUrl(vectorStyle);
+      setTestStatus('testing');
+      let done = false;
+      const timeout = setTimeout(() => {
+        if (done) return;
+        done = true;
+        setTestStatus('error');
+        setTestUrl(`${vectorStyle}\nQuá thời gian 8s (style/vector không tải được).`);
+      }, 8000);
+      fetch(vectorStyle)
+        .then((r) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeout);
+          setTestStatus(r.ok ? 'success' : 'error');
+          if (!r.ok) setTestUrl(`${vectorStyle}\nHTTP ${r.status}`);
+        })
+        .catch((e) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeout);
+          setTestStatus('error');
+          setTestUrl(`${vectorStyle}\n${e.message}`);
+        });
+      return;
+    }
+    const tile = directTest ? getActiveTileConfig() : getPreviewTileConfig();
     if (!isValidTileUrl(tile.url)) {
       setTestStatus('error');
       setTestUrl('URL chưa hợp lệ: còn placeholder chưa thay ({domain}, {key}...) hoặc chưa chọn provider phù hợp.');
       return;
     }
-    if (!isCustom && selectedProvider?.requires_key && !apiKey.trim()) {
+    if (!isCustom && selectedProvider?.requires_key && !apiKey.trim() && directTest) {
       setTestStatus('error');
       setTestUrl(`${selectedProvider.name} cần API key — hãy nhập key trước khi test.`);
       return;
@@ -174,13 +265,30 @@ const AdminMapConfigPage = () => {
       if (note) setTestUrl(`${testTileUrl}\n${note}`);
     };
     img.onload = () => finish(true);
-    img.onerror = () => finish(false, 'Không tải được tile (host bị chặn ở trình duyệt, key sai, hoặc provider không cho phép tải trực tiếp).');
+    img.onerror = () => finish(false, directTest
+      ? 'Không tải được tile (host bị chặn ở trình duyệt, key sai, hoặc provider không cho phép tải trực tiếp).'
+      : 'Proxy không lấy được tile (nguồn bị chặn hoặc cấu hình sai). Xem log backend [TileProxy].');
     img.src = testTileUrl;
   };
 
+  const buildLayersConfig = () => {
+    if (isCustom) {
+      return [{ id: 'base', role: 'base', type: 'raster', provider: 'custom', url: customTileUrl, mode: defaultMode }];
+    }
+    const isVector = (selectedProvider?.capabilities || []).includes('vector') && !selectedProvider?.tile_url_styles?.length;
+    return [{
+      id: 'base',
+      role: 'base',
+      type: isVector ? 'vector' : 'raster',
+      provider: selectedProviderId,
+      style: selectedStyle || selectedProvider?.style_url || '',
+      mode: defaultMode,
+    }];
+  };
+
   const handleSave = async () => {
-    if (!isCustom && selectedProvider?.incompatible_with_leaflet) {
-      setToast({ message: `${selectedProvider.name} không dùng được với Leaflet. Hãy chọn provider khác.`, type: 'error' });
+    if (renderer === 'leaflet' && !isCustom && selectedProvider?.incompatible_with_leaflet) {
+      setToast({ message: `${selectedProvider.name} không dùng được với Leaflet. Hãy chọn renderer MapLibre hoặc provider khác.`, type: 'error' });
       return;
     }
     if (!isCustom && selectedProvider?.requires_key && !apiKey.trim()) {
@@ -188,24 +296,31 @@ const AdminMapConfigPage = () => {
       return;
     }
     const preTile = getActiveTileConfig();
-    if (!isCustom && preTile.url.includes('{domain}')) {
+    if (!isCustom && renderer === 'leaflet' && preTile.url.includes('{domain}')) {
       setToast({ message: 'Tự host cần nhập Tile URL cụ thể qua mục "Tùy chỉnh thủ công".', type: 'error' });
+      return;
+    }
+    if (renderer === 'maplibre' && !isCustom && selectedProvider && !selectedProvider.style_url && !selectedProvider.tile_url && !selectedProvider.tile_url_styles?.length) {
+      setToast({ message: `${selectedProvider.name} chưa có style/tile cho MapLibre. Nhập Tile URL thủ công.`, type: 'error' });
       return;
     }
     setSaving(true);
     const tile = getActiveTileConfig();
     const body = {
       tile_provider_id: isCustom ? 'custom' : selectedProviderId,
-      tile_url: tile.url,
+      tile_url: getStorageTileUrl(),
       tile_attribution: tile.attribution,
       tile_subdomains: tile.subdomains,
       tile_provider: isCustom ? 'custom' : selectedProviderId,
       api_key: apiKey,
-      style_url: selectedStyle,
+      style_url: renderer === 'maplibre' ? (selectedProvider?.style_url || '') : selectedStyle,
       auth_type: selectedProvider?.auth_type || 'none',
-      renderer: config.renderer || 'leaflet',
+      renderer,
       tile_mode: tileMode,
       retina: retina ? 1 : 0,
+      default_mode: defaultMode,
+      layers_config: buildLayersConfig(),
+      enable_3d: enable3d ? 1 : 0,
       show_boundaries: config.show_boundaries,
       show_cluster: config.show_cluster,
       show_province_labels: config.show_province_labels,
@@ -242,17 +357,28 @@ const AdminMapConfigPage = () => {
   if (loading) return <div className="flex items-center justify-center h-64"><span className="loading loading-spinner loading-lg" /><p className="ml-3 text-base-content/60">Đang tải...</p></div>;
   if (!config) return <div className="alert alert-error"><span>Không tìm thấy cấu hình</span></div>;
 
-  const tile = getActiveTileConfig();
+  const tile = directTest ? getActiveTileConfig() : getPreviewTileConfig();
   const safeTileUrl = getSafeTileUrl(tile.url);
   const center = [parseFloat(config.center_lat) || 16, parseFloat(config.center_lng) || 108];
   const subdomains = tile.subdomains ? tile.subdomains.split(',') : [];
-  const leafletProviders = TILE_PROVIDERS.filter(p => !p.incompatible_with_leaflet);
-  const otherRenderers = TILE_PROVIDERS.filter(p => p.incompatible_with_leaflet);
-  const filteredProviders = filterType === 'all' ? leafletProviders : leafletProviders.filter(p => p.type === filterType);
+  const renderers = listRenderers();
+  const compatibleProviders = renderer === 'leaflet'
+    ? allProviders.filter(p => !p.incompatible_with_leaflet)
+    : allProviders;
+  const otherRenderers = renderer === 'leaflet' ? allProviders.filter(p => p.incompatible_with_leaflet) : [];
+  const filteredProviders = filterType === 'all' ? compatibleProviders : compatibleProviders.filter(p => p.type === filterType);
   const showApiKeyInput = selectedProvider?.requires_key && !isCustom;
   const showStyleSelect = (selectedProvider?.style_options || selectedProvider?.tile_url_styles) && !isCustom;
   const currentStyleOptions = selectedProvider?.tile_url_styles || selectedProvider?.style_options || [];
   const showCustomInputs = isCustom || (selectedProvider && (selectedProvider.type === 'self-hosted'));
+  const previewVectorStyle = renderer === 'maplibre'
+    ? buildMapStyle(defaultMode, {
+        styleUrl: selectedProvider?.style_url || '',
+        pmtilesUrl: (selectedProvider?.id === 'maplibre-self-hosted' && /\.pmtiles(\?|$)/i.test(customTileUrl || '')) ? customTileUrl : '',
+      })
+    : '';
+  const canPreview = renderer === 'maplibre' ? !!(previewVectorStyle || tile.url) : !!safeTileUrl;
+  const previewStyleLabel = typeof previewVectorStyle === 'string' ? previewVectorStyle : (renderer === 'maplibre' ? `style: ${defaultMode}` : '');
 
   return (
     <div className="p-4 md:p-6">
@@ -264,6 +390,46 @@ const AdminMapConfigPage = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Left: Config */}
         <div className="flex flex-col gap-4">
+          {/* Renderer + Mode */}
+          <div className="bg-white border border-base-300 rounded-lg p-4">
+            <h3 className="text-base font-bold mb-3">Renderer</h3>
+            <div className="grid grid-cols-2 gap-1.5 mb-4">
+              {renderers.map(r => (
+                <div
+                  key={r.id}
+                  onClick={() => { setRenderer(r.id); setTestStatus(null); }}
+                  className={`px-2.5 py-2 rounded-md cursor-pointer text-xs border-2 transition-all ${renderer === r.id ? 'border-primary bg-primary/5' : 'border-base-300 bg-white'}`}
+                >
+                  <div className="font-semibold">{r.name}</div>
+                  <div className="text-[10px] text-base-content/50">
+                    {[
+                      r.supports?.raster ? 'raster' : null,
+                      r.supports?.vector ? 'vector' : null,
+                      r.supports?.terrain ? 'terrain' : null,
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <h3 className="text-base font-bold mb-3">Mode / Layer</h3>
+            <div className="grid grid-cols-2 gap-1.5">
+              {MAP_MODES.map(m => (
+                <div
+                  key={m.id}
+                  onClick={() => setDefaultMode(m.id)}
+                  className={`px-2.5 py-2 rounded-md cursor-pointer text-xs border-2 transition-all ${defaultMode === m.id ? 'border-primary bg-primary/5' : 'border-base-300 bg-white'}`}
+                >
+                  <div className="font-semibold">{m.label}</div>
+                  <div className="text-[10px] text-base-content/50">{m.hint}</div>
+                </div>
+              ))}
+            </div>
+            <label className={`flex items-center gap-2 mt-3 cursor-pointer ${renderer !== 'maplibre' ? 'opacity-50' : ''}`}>
+              <input type="checkbox" className="checkbox checkbox-sm" checked={enable3d} disabled={renderer !== 'maplibre'} onChange={() => setEnable3d(v => !v)} />
+              <span className="text-sm">3D (nhà nổi + địa hình) — chỉ renderer MapLibre; mobile tự tắt</span>
+            </label>
+          </div>
+
           {/* Map Provider */}
           <div className="bg-white border border-base-300 rounded-lg p-4">
             <h3 className="text-base font-bold mb-3">Map Provider</h3>
@@ -292,15 +458,15 @@ const AdminMapConfigPage = () => {
             </div>
             {isLeafletIncompatible && (
               <div className="alert alert-warning text-sm mt-2">
-                <span>{selectedProvider.name} không tương thích với Leaflet TileLayer. Dùng renderer tương ứng ({selectedProvider.name}) hoặc chọn provider khác.</span>
+                <span>{selectedProvider.name} không tương thích Leaflet. Chọn renderer MapLibre hoặc provider khác.</span>
               </div>
             )}
             {otherRenderers.length > 0 && (
               <details className="mt-2 text-xs text-base-content/60">
-                <summary className="cursor-pointer font-semibold">Renderer khác (tham khảo — chưa hỗ trợ, không chọn được)</summary>
+                <summary className="cursor-pointer font-semibold">Provider cần renderer khác ({otherRenderers.length})</summary>
                 <ul className="mt-1 ml-4 list-disc">
                   {otherRenderers.map(p => (
-                    <li key={p.id}><span className="font-semibold">{p.name}</span> — {p.description}</li>
+                    <li key={p.id}><span className="font-semibold">{p.name}</span> — cần renderer MapLibre</li>
                   ))}
                 </ul>
               </details>
@@ -394,6 +560,13 @@ const AdminMapConfigPage = () => {
                 {testStatus === 'success' && <span className="text-success font-semibold text-xs">Kết nối OK</span>}
                 {testStatus === 'error' && <span className="text-error font-semibold text-xs">Lỗi kết nối</span>}
               </div>
+              <label className="flex items-center gap-2 mb-1.5 cursor-pointer">
+                <input type="checkbox" className="checkbox checkbox-xs" checked={directTest} onChange={() => { setDirectTest(v => !v); setTestStatus(null); }} />
+                <span className="text-[11px] text-base-content/60">Test trực tiếp (bỏ qua proxy) — dùng để chẩn đoán</span>
+              </label>
+              <div className="text-[11px] text-base-content/50 mb-1.5">
+                {directTest ? 'Đang test URL trực tiếp tới provider.' : 'Đang test qua proxy /tiles (giống production).'}
+              </div>
               {testUrl && (
                 <div className="text-[11px] text-base-content/60 break-all font-mono bg-white px-2 py-1 rounded border border-base-300">
                   {testUrl}
@@ -448,18 +621,34 @@ const AdminMapConfigPage = () => {
         <div className="flex flex-col gap-4">
           <div className="bg-white border border-base-300 rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 bg-base-200 border-b border-base-300 flex justify-between items-center">
-              <span className="text-sm font-semibold">Xem trước bản đồ</span>
+              <span className="text-sm font-semibold">Xem trước bản đồ ({renderer})</span>
               <span className="text-[11px] text-base-content/50">
-                {safeTileUrl ? `Tile: ${safeTileUrl.substring(0, 40)}...` : 'Chưa có tile URL hợp lệ'}
+                {renderer === 'maplibre'
+                  ? (previewStyleLabel ? `Style: ${String(previewStyleLabel).substring(0, 40)}` : 'Chưa có style/vector')
+                  : (safeTileUrl ? `Tile: ${safeTileUrl.substring(0, 40)}...` : 'Chưa có tile URL hợp lệ')}
               </span>
             </div>
-            {safeTileUrl ? (
-              <MapContainer center={center} zoom={config.default_zoom || 6} style={{ height: 400, width: '100%' }}>
-                <TileLayer key={`${selectedProviderId}-${selectedStyle}-${apiKey}-${customTileUrl}`} attribution={tile.attribution} url={safeTileUrl} subdomains={subdomains} />
-              </MapContainer>
+            {canPreview ? (
+              <div style={{ height: 400, width: '100%' }}>
+                <MapCanvas
+                  renderer={renderer}
+                  center={center}
+                  zoom={config.default_zoom || 6}
+                  tile={{ url: tile.url, attribution: tile.attribution, subdomains: tile.subdomains }}
+                  vectorStyle={previewVectorStyle}
+                  apiKey={apiKey}
+                  stations={[]}
+                  proposals={[]}
+                  showCluster={false}
+                  showStationLabels={false}
+                  showProvinceLabels={false}
+                  showBoundaries={false}
+                  provincePoints={[]}
+                />
+              </div>
             ) : (
               <div className="h-[400px] flex items-center justify-center text-base-content/40 text-sm">
-                Nhập tile URL để xem preview
+                Chọn provider/style để xem preview
               </div>
             )}
           </div>
