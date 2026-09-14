@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, dataListService, fieldDefinitionService, formService, geocodeService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
-import { parseFormattedNumber, formatNumber } from '../../utils/formatNumber';
+import { parseFormattedNumber, formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { getDataListLabel } from '../../utils/dataListLabel';
 import { fetchDataList } from '../../utils/dataListCache';
 
@@ -116,7 +116,6 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             readonly: cfg.readonly || false,
             labelOverride: cfg.labelOverride || '',
             placeholderOverride: cfg.placeholderOverride || '',
-            requiredOverride: cfg.requiredOverride,
             autoUser: sc.auto_user || 'none',
             autoUserId
           };
@@ -443,7 +442,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     const newErrors = {};
     fields.forEach(f => {
       if (!isFieldVisible(f)) return;
-      const isRequired = f.requiredOverride !== undefined ? f.requiredOverride : f.required;
+      const isRequired = f.required;
       if (isRequired) {
         const val = formData[f.key];
         if (val === '' || val === null || val === undefined) {
@@ -498,7 +497,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     const resolvedOptions = getFilteredOptions(field);
     const displayLabel = field.labelOverride || field.label;
     const displayPlaceholder = field.placeholderOverride || '';
-    const isRequired = field.requiredOverride !== undefined ? field.requiredOverride : field.required;
+    const isRequired = field.required;
 
     const fieldForRender = {
       ...field,
@@ -513,9 +512,10 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       const fc = field.formula_config || {};
       const isPost = fc.compute_mode === 'post';
       const rawVal = formData[field.key];
-      const isNumeric = rawVal !== '' && rawVal !== null && rawVal !== undefined && !isNaN(Number(rawVal)) && fc.outputType !== 'text';
+      const { num: parsedNum, unit: parsedUnit } = parseLeadingNumber(rawVal);
+      const isNumeric = rawVal !== '' && rawVal !== null && rawVal !== undefined && !isNaN(parsedNum) && fc.outputType !== 'text';
       const displayVal = isNumeric
-        ? formatNumber(Number(rawVal), { format: fc.numberFormat || 'plain', decimalPlaces: fc.decimalPlaces, unit: fc.unit })
+        ? formatNumber(parsedNum, { format: fc.numberFormat || fc.outputFormat || 'plain', decimalPlaces: fc.decimalPlaces, unit: fc.unit || parsedUnit })
         : (rawVal || '');
       return (
         <input
@@ -584,7 +584,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
                 <div className="dynamic-form-field">
                   <label>
                     {cellField.labelOverride || cellField.label}
-                    {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span className="text-red-600"> *</span>}
+                    {cellField.required && <span className="text-red-600"> *</span>}
                   </label>
                   {renderField(cellField)}
                   {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
@@ -635,7 +635,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
                 <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
                   <label>
                     {field.labelOverride || field.label}
-                    {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span className="text-red-600"> *</span>}
+                    {field.required && <span className="text-red-600"> *</span>}
                   </label>
                   {renderField(field)}
                   {field.help_text && <div className="field-help">{field.help_text}</div>}
@@ -658,7 +658,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
               <label>
                 {field.labelOverride || field.label}
-                {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span className="text-red-600"> *</span>}
+                {field.required && <span className="text-red-600"> *</span>}
               </label>
               {renderField(field)}
               {field.help_text && <div className="field-help">{field.help_text}</div>}

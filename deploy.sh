@@ -8,6 +8,9 @@ COMPOSE_FILE="docker-compose.simple.yml"
 VOL="dexuattram2_mysql_data"
 DATADIR_TAR="docker/mysql-datadir.tar.gz"
 LITE_DUMP="docker/station_lite_dump.sql"
+# Dump lite phan anh schema tới mốc migration này; các file database/ có số <= mốc
+# duoc coi la da co trong dump. Migration > mốc sẽ được chạy để bù phần thiếu.
+DUMP_MAX_MIGRATION=44
 DB_ROOT_PW='RootPass2026!'
 DB_APP_PW='AppPass2026!'
 DEFAULT_WEB_PORT="8081"
@@ -156,9 +159,24 @@ if [ "$SKIP_SCHEMA" != "1" ]; then
     fi
     docker compose -f "$COMPOSE_FILE" exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL innodb_flush_log_at_trx_commit=1; SET GLOBAL sync_binlog=1;"' >/dev/null 2>&1 || true
     log "Import xong."
-    if [ -x scripts/migrate.sh ]; then
-      log "Danh dau schema hien tai (mark-all)..."
-      scripts/migrate.sh mark-all --yes
+
+    if [ -f scripts/migrate.sh ]; then
+      log "Danh dau cac migration da co trong dump (so <= ${DUMP_MAX_MIGRATION})..."
+      for f in database/*.sql; do
+        [ -e "$f" ] || continue
+        name="$(basename "$f")"
+        num="${name%%-*}"
+        case "$num" in ''|*[!0-9]*) continue ;; esac
+        if [ "$num" -le "$DUMP_MAX_MIGRATION" ]; then
+          bash scripts/migrate.sh mark "$name" >/dev/null
+        fi
+      done
+
+      log "Ap cac migration con thieu (> ${DUMP_MAX_MIGRATION})..."
+      if ! bash scripts/migrate.sh run; then
+        echo "LOI: ap migration that bai. Xem log phia tren."
+        exit 1
+      fi
     fi
   fi
 fi

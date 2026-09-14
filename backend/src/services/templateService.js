@@ -42,7 +42,7 @@ async function getFieldMap() {
   if (fieldCache && now - fieldCacheTime < CACHE_TTL) return fieldCache;
 
   const [rows] = await pool.query(
-    'SELECT `key`, label, type, source_config FROM field_definitions WHERE status = ?',
+    'SELECT `key`, label, type, source_config, formula_config FROM field_definitions WHERE status = ?',
     ['active']
   );
   fieldCache = {};
@@ -50,7 +50,8 @@ async function getFieldMap() {
     fieldCache[row.key] = {
       label: row.label || row.key,
       type: row.type || 'text',
-      source_config: row.source_config
+      source_config: row.source_config,
+      formula_config: row.formula_config
     };
   }
   fieldCacheTime = now;
@@ -210,8 +211,17 @@ const TD_VALUE = 'border:1px solid #ddd;padding:6px 10px;vertical-align:top;over
 function render2ColLayout(fields, proposal, fieldMap) {
   let html = `<table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px"><tbody>`;
   for (const key of fields) {
-    const raw = getFieldValue(proposal, key);
     const label = getFieldLabel(key, fieldMap);
+    if (getFieldTypeInfo(key, fieldMap) === 'table') {
+      const raw = getFieldValue(proposal, key);
+      const value = formatFieldValue(key, raw, fieldMap);
+      if (!value) continue;
+      html += `<tr><td colspan="2" style="${TD_VALUE};background:#fafafa">`;
+      html += `<div style="font-weight:600;margin-bottom:6px">${escapeHtml(label)}</div>`;
+      html += `${value}</td></tr>`;
+      continue;
+    }
+    const raw = getFieldValue(proposal, key);
     const value = formatFieldValue(key, raw, fieldMap) || '<span style="color:#aaa">—</span>';
     html += `<tr><td style="${TD_LABEL}">${escapeHtml(label)}</td><td style="${TD_VALUE}">${value}</td></tr>`;
   }
@@ -286,11 +296,25 @@ function formatFieldValue(fieldKey, value, fieldMap) {
         try { sc = JSON.parse(sc); } catch { sc = {}; }
       }
       const columns = (sc && sc.columns) || [];
-      let tableHtml = '<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:12px;margin:4px 0">';
+      const colCount = columns.length || 1;
+      const rawWidths = columns.map(c => { const w = Number(c.width); return w > 0 ? w : 0; });
+      const totalWidth = rawWidths.reduce((a, b) => a + b, 0);
+      const DATA_WIDTH_TOTAL = 94;
+      const colWidth = (idx) => {
+        if (totalWidth > 0) {
+          const w = rawWidths[idx] > 0 ? rawWidths[idx] : (totalWidth / colCount);
+          return ((w / totalWidth) * DATA_WIDTH_TOTAL).toFixed(2) + '%';
+        }
+        return (DATA_WIDTH_TOTAL / colCount).toFixed(2) + '%';
+      };
+      let tableHtml = '<table style="width:100%;table-layout:fixed;border-collapse:collapse;border:1px solid #ddd;font-size:12px;margin:4px 0">';
+      tableHtml += '<colgroup><col style="width:6%">';
+      columns.forEach((c, idx) => { tableHtml += `<col style="width:${colWidth(idx)}">`; });
+      tableHtml += '</colgroup>';
       tableHtml += '<thead><tr style="background:#f1f5f9">';
-      tableHtml += '<th style="border:1px solid #ddd;padding:4px 6px;text-align:center;width:36px">STT</th>';
+      tableHtml += '<th style="border:1px solid #ddd;padding:4px 6px;text-align:center">STT</th>';
       for (const col of columns) {
-        tableHtml += `<th style="border:1px solid #ddd;padding:4px 6px;text-align:left">${escapeHtml(col.label || col.key)}</th>`;
+        tableHtml += `<th style="border:1px solid #ddd;padding:4px 6px;text-align:left;word-break:break-word">${escapeHtml(col.label || col.key)}</th>`;
       }
       tableHtml += '</tr></thead><tbody>';
       tableRows.forEach((row, idx) => {
@@ -373,6 +397,39 @@ function formatFieldValue(fieldKey, value, fieldMap) {
       const n = Number(value);
       if (Number.isInteger(n) && n > 0) return escapeHtml(`User #${n}`);
       return escapeHtml(String(value));
+    }
+    case 'url': {
+      const str = String(value).trim();
+      const href = /^https?:\/\//i.test(str) ? str : `https://${str}`;
+      return `<a href="${escapeHtml(href)}" target="_blank" style="color:#3498db;text-decoration:underline">${escapeHtml(str)}</a>`;
+    }
+    case 'formula': {
+      const str = String(value).trim();
+      const info = fieldMap[fieldKey] || {};
+      let fc = info.formula_config;
+      if (typeof fc === 'string') {
+        try { fc = JSON.parse(fc); } catch { fc = null; }
+      }
+      if (fc && fc.outputType === 'url') {
+        if (fc.url_template && /^\d+$/.test(str)) {
+          const href = fc.url_template.replace('{value}', str);
+          return `<a href="${escapeHtml(href)}" target="_blank" style="color:#3498db;text-decoration:underline">${escapeHtml(fc.label || str)}</a>`;
+        }
+        if (/^https?:\/\//i.test(str)) {
+          return `<a href="${escapeHtml(str)}" target="_blank" style="color:#3498db;text-decoration:underline">${escapeHtml(str)}</a>`;
+        }
+      }
+      if (/^https?:\/\//i.test(str)) {
+        return `<a href="${escapeHtml(str)}" target="_blank" style="color:#3498db;text-decoration:underline">${escapeHtml(str)}</a>`;
+      }
+      {
+        const m = str.match(/^(-?\d+(?:[.,]\d+)?)\s*(.*)$/);
+        if (m && !isNaN(Number(m[1]))) {
+          const fmt = (fc && (fc.numberFormat || fc.outputFormat)) || 'plain';
+          return escapeHtml(formatTableNumber(Number(m[1]), { display_format: fmt, decimal_places: fc && fc.decimalPlaces, unit: (fc && fc.unit) || m[2] }));
+        }
+      }
+      return escapeHtml(str);
     }
     default:
       return escapeHtml(String(value));

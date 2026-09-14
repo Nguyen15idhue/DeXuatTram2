@@ -2,7 +2,7 @@ import { useState, lazy, Suspense } from 'react';
 import UserChip from './UserChip';
 import { create, all } from 'mathjs';
 import { Zap } from 'lucide-react';
-import { formatNumber } from '../../utils/formatNumber';
+import { formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { getDataListLabelFromMap } from '../../utils/dataListLabel';
 
 const math = create(all);
@@ -36,7 +36,7 @@ const getFileUrl = (file, entity, entityId) => {
   return '';
 };
 
-const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} }) => {
+const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, expandTable = false }) => {
   const [showFilePopup, setShowFilePopup] = useState(false);
   const [showAvatarPopup, setShowAvatarPopup] = useState(false);
   const [showTablePopup, setShowTablePopup] = useState(false);
@@ -235,8 +235,9 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
         }
         return <a href={value} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{field.formula_config.label || value}</a>;
       }
-      if (typeof value === 'number' || (value !== null && value !== undefined && value !== '' && !isNaN(Number(value)))) {
-        return <span>{formatNumber(Number(value), { format: field.formula_config.numberFormat || 'plain', decimalPlaces: field.formula_config.decimalPlaces, unit: field.formula_config.unit })}</span>;
+      const { num, unit } = parseLeadingNumber(value);
+      if (!isNaN(num)) {
+        return <span>{formatNumber(num, { format: field.formula_config.numberFormat || field.formula_config.outputFormat || 'plain', decimalPlaces: field.formula_config.decimalPlaces, unit: field.formula_config.unit || unit })}</span>;
       }
       return <span>{String(value)}</span>;
     }
@@ -256,6 +257,68 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
         }
         return row[col.key] ?? '-';
       };
+      const tableEl = (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'center', width: 40 }}>STT</th>
+              {columns.map(col => (
+                <th key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'left' }}>
+                  {col.label || col.key}
+                  {col.formula && <Zap size={10} style={{ color: '#d97706', marginLeft: 2, verticalAlign: 'middle' }} />}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>
+                <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#999' }}>{idx + 1}</td>
+                {columns.map(col => (
+                  <td key={col.key} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', background: col.formula ? '#f0fdf4' : undefined }}>
+                    {(() => {
+                      const v = computeCell(col, row);
+                      if (typeof v === 'number') {
+                        return formatNumber(v, { format: col.display_format || 'plain', decimalPlaces: col.decimal_places, unit: col.unit });
+                      }
+                      return v;
+                    })()}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          {columns.some(col => col.footer_formula) && (
+            <tfoot>
+              <tr>
+                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', textAlign: 'center', fontWeight: 700 }}></td>
+                {columns.map(col => {
+                  if (!col.footer_formula) return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9' }}></td>;
+                  const values = rows.map(r => {
+                    const raw = computeCell(col, r);
+                    const n = parseFloat(raw);
+                    return isNaN(n) ? null : n;
+                  }).filter(v => v !== null);
+                  const FOOTER_LABELS = { SUM: 'Tổng', AVG: 'TB', MIN: 'Min', MAX: 'Max', COUNT: 'Đếm' };
+                  let footerVal = '';
+                  switch (col.footer_formula) {
+                    case 'SUM': footerVal = values.reduce((a, b) => a + b, 0); break;
+                    case 'AVG': footerVal = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0; break;
+                    case 'MIN': footerVal = values.length ? Math.min(...values) : 0; break;
+                    case 'MAX': footerVal = values.length ? Math.max(...values) : 0; break;
+                    case 'COUNT': footerVal = values.length; break;
+                  }
+                  const label = FOOTER_LABELS[col.footer_formula] || col.footer_formula;
+                  return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}><span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{label}:</span>{typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}</td>;
+                })}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      );
+      if (expandTable) {
+        return <div style={{ overflowX: 'auto', maxWidth: '100%' }}>{tableEl}</div>;
+      }
       return (
         <>
           <span
@@ -272,63 +335,7 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {} })
                   <h3 style={{ margin: 0, fontSize: 15 }}>{field.label || field.key} — {rows.length} dòng</h3>
                   <button className="btn btn-xs btn-ghost" onClick={() => setShowTablePopup(false)}>✕</button>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'center', width: 40 }}>STT</th>
-                      {columns.map(col => (
-                        <th key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'left' }}>
-                          {col.label || col.key}
-                          {col.formula && <Zap size={10} style={{ color: '#d97706', marginLeft: 2, verticalAlign: 'middle' }} />}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row, idx) => (
-                      <tr key={idx}>
-                        <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#999' }}>{idx + 1}</td>
-                        {columns.map(col => (
-                          <td key={col.key} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', background: col.formula ? '#f0fdf4' : undefined }}>
-                            {(() => {
-                              const v = computeCell(col, row);
-                              if (typeof v === 'number') {
-                                return formatNumber(v, { format: col.display_format || 'plain', decimalPlaces: col.decimal_places, unit: col.unit });
-                              }
-                              return v;
-                            })()}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                  {columns.some(col => col.footer_formula) && (
-                    <tfoot>
-                      <tr>
-                        <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', textAlign: 'center', fontWeight: 700 }}></td>
-                        {columns.map(col => {
-                          if (!col.footer_formula) return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9' }}></td>;
-                          const values = rows.map(r => {
-                            const raw = computeCell(col, r);
-                            const n = parseFloat(raw);
-                            return isNaN(n) ? null : n;
-                          }).filter(v => v !== null);
-                          const FOOTER_LABELS = { SUM: 'Tổng', AVG: 'TB', MIN: 'Min', MAX: 'Max', COUNT: 'Đếm' };
-                          let footerVal = '';
-                          switch (col.footer_formula) {
-                            case 'SUM': footerVal = values.reduce((a, b) => a + b, 0); break;
-                            case 'AVG': footerVal = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0; break;
-                            case 'MIN': footerVal = values.length ? Math.min(...values) : 0; break;
-                            case 'MAX': footerVal = values.length ? Math.max(...values) : 0; break;
-                            case 'COUNT': footerVal = values.length; break;
-                          }
-                          const label = FOOTER_LABELS[col.footer_formula] || col.footer_formula;
-                          return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}><span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{label}:</span>{typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}</td>;
-                        })}
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
+                {tableEl}
               </div>
             </div>
           )}

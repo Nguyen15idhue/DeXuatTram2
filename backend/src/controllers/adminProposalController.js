@@ -28,9 +28,9 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, search, page = 1, limit = 10 } = req.query;
+    const { status, search, page = 1, limit = 10, uu_tien } = req.query;
     const scope = await scopeFor(req);
-    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope);
+    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien);
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);

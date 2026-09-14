@@ -24,7 +24,7 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
   return 2 * R * Math.asin(Math.sqrt(a));
 };
 
-function createNearbyPopup(title, item, status) {
+function createNearbyPopup(title, item, status, entity) {
   const div = document.createElement('div');
   div.className = 'popup-content';
   const h3 = document.createElement('h3');
@@ -43,7 +43,7 @@ function createNearbyPopup(title, item, status) {
   statusStrong.textContent = 'Trạng thái: ';
   statusP.appendChild(statusStrong);
   const span = document.createElement('span');
-  span.style.color = getMarkerColor(status);
+  span.style.color = getMarkerColor(status, entity);
   span.textContent = status;
   statusP.appendChild(span);
   div.appendChild(statusP);
@@ -95,10 +95,10 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   if (!valid) return null;
 
   const total = nearby.stations.length + nearby.proposals.length;
-  const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status) }));
-  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status) }));
-  const renderStationPopup = (item) => createNearbyPopup(item.name || `Trạm #${item.id}`, item, item.status);
-  const renderProposalPopup = (item) => createNearbyPopup(`Đề xuất #${item.id}`, item, item.status);
+  const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station') }));
+  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal') }));
+  const renderStationPopup = (item) => createNearbyPopup(item.name || `Trạm #${item.id}`, item, item.status, 'station');
+  const renderProposalPopup = (item) => createNearbyPopup(`Đề xuất #${item.id}`, item, item.status, 'proposal');
 
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>

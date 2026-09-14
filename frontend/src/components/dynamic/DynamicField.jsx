@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 import UserField from './UserField';
-import { formatNumber, parseFormattedNumber } from '../../utils/formatNumber';
+import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -539,11 +539,12 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     case 'formula': {
       const displayValue = (() => {
         if (value === null || value === undefined || value === '') return '';
-        if (typeof value === 'number' || !isNaN(Number(value))) {
-          return formatNumber(Number(value), {
-            format: field.formula_config?.numberFormat || 'plain',
+        const { num, unit } = parseLeadingNumber(value);
+        if (!isNaN(num)) {
+          return formatNumber(num, {
+            format: field.formula_config?.numberFormat || field.formula_config?.outputFormat || 'plain',
             decimalPlaces: field.formula_config?.decimalPlaces,
-            unit: field.formula_config?.unit
+            unit: field.formula_config?.unit || unit
           });
         }
         return String(value);

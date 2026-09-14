@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-MYSQL_CONTAINER="station-mysql"
+MYSQL_CONTAINER="${MYSQL_CONTAINER:-station-mysql}"
 DB_DIR="database"
 SKIP_FILE="01-create-tables.sql"
 

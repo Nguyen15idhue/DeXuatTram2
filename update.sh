@@ -4,10 +4,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 COMPOSE_FILE="docker-compose.simple.yml"
 
-if [ -x scripts/migrate.sh ]; then
+if [ -f scripts/migrate.sh ]; then
   echo "[update] Chay migration DB..."
   rc=0
-  scripts/migrate.sh run || rc=$?
+  bash scripts/migrate.sh run || rc=$?
   if [ "$rc" -ne 0 ]; then
     if [ "$rc" = "2" ]; then
       echo "[update] DB chua co tracking. Chay: scripts/migrate.sh mark-all --yes (sau khi xac minh schema), roi chay lai update."

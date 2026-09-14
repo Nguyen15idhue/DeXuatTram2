@@ -28,7 +28,9 @@ const LAYOUTS = [
   { value: 'table', label: 'Bảng' }
 ];
 
+const PROPOSALS_ENTITY = 'station_proposals';
 const PROPOSALS_FORM_ID = 13;
+const NON_RENDERABLE_TYPES = ['file', 'password'];
 
 const TemplateEditor = ({ configId, onClose }) => {
   const { token } = useAuth();
@@ -41,6 +43,7 @@ const TemplateEditor = ({ configId, onClose }) => {
   const [proposalId, setProposalId] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [formFields, setFormFields] = useState([]);
+  const [allFields, setAllFields] = useState([]);
   const [formSections, setFormSections] = useState([]);
   const [selectedSection, setSelectedSection] = useState(null);
   const [editingSectionId, setEditingSectionId] = useState(null);
@@ -48,44 +51,57 @@ const TemplateEditor = ({ configId, onClose }) => {
   const [dragOverSection, setDragOverSection] = useState(null);
   const [draggedFieldKey, setDraggedFieldKey] = useState(null);
 
-  const loadFormConfig = useCallback(async () => {
+  const loadForm = useCallback(async () => {
+    const api = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    let resolvedId = PROPOSALS_FORM_ID;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/forms/${PROPOSALS_FORM_ID}`, {
+      const res = await fetch(`${api}/forms/by-entity-purpose?entity=${PROPOSALS_ENTITY}&purpose=view`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (data.success && data.data) {
-        const form = data.data;
-        let layoutConfig = form.layout_config;
+        resolvedId = data.data.id;
+        let layoutConfig = data.data.layout_config;
         if (typeof layoutConfig === 'string') {
           try { layoutConfig = JSON.parse(layoutConfig); } catch { layoutConfig = { sections: [] }; }
         }
-        const sections = layoutConfig.sections || [];
-        setFormSections(sections);
+        setFormSections(layoutConfig.sections || []);
       }
     } catch {}
-  }, [token]);
-
-  const loadFormFields = useCallback(async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/forms/${PROPOSALS_FORM_ID}/fields`, {
+      const res = await fetch(`${api}/forms/${resolvedId}/fields`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (data.success && data.data) {
-        setFormFields(data.data.map(f => {
-          const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
-          return {
-            fieldId: f.field_id,
-            key: f.field_key || f.key,
-            label: f.field_label || f.label,
-            type: f.field_type || f.type,
-            rowId: cfg.rowId,
-            colIndex: cfg.colIndex,
-            rowIndex: cfg.rowIndex,
-            colSpan: cfg.colSpan
-          };
-        }));
+        const skip = new Set(NON_RENDERABLE_TYPES);
+        setFormFields(data.data
+          .filter(f => !skip.has(f.type))
+          .map(f => {
+            const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
+            return {
+              fieldId: f.field_id,
+              key: f.field_key || f.key,
+              label: f.field_label || f.label,
+              type: f.field_type || f.type,
+              rowId: cfg.rowId,
+              colIndex: cfg.colIndex,
+              rowIndex: cfg.rowIndex,
+              colSpan: cfg.colSpan
+            };
+          }));
+      }
+    } catch {}
+    try {
+      const res = await fetch(`${api}/field-definitions?entity=${PROPOSALS_ENTITY}&status=active`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        const skip = new Set(NON_RENDERABLE_TYPES);
+        setAllFields(data.data
+          .filter(f => !skip.has(f.type))
+          .map(f => ({ fieldId: f.id, key: f.key, label: f.label, type: f.type })));
       }
     } catch {}
   }, [token]);
@@ -106,10 +122,9 @@ const TemplateEditor = ({ configId, onClose }) => {
   }, [configId, token]);
 
   useEffect(() => {
-    loadFormConfig();
-    loadFormFields();
+    loadForm();
     loadTemplate();
-  }, [loadFormConfig, loadFormFields, loadTemplate]);
+  }, [loadForm, loadTemplate]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -283,14 +298,15 @@ const TemplateEditor = ({ configId, onClose }) => {
   }
 
   const usedKeys = getUsedFieldKeys();
-  const allFieldKeys = formFields.map(f => f.key);
-  const availableFields = formFields.filter(f => !usedKeys.has(f.key));
+  const availableFields = allFields.filter(f => !usedKeys.has(f.key));
+
+  const findField = (key) => allFields.find(f => f.key === key) || formFields.find(f => f.key === key);
 
   const getSectionFieldDetails = (sectionId) => {
     const section = template.sections.find(s => s.id === sectionId);
     if (!section) return [];
     return section.fields.map(fk => {
-      const ff = formFields.find(f => f.key === fk);
+      const ff = findField(fk);
       return ff || { key: fk, label: fk, type: 'text' };
     });
   };
@@ -489,7 +505,7 @@ const TemplateEditor = ({ configId, onClose }) => {
                             })}
                           >
                             <option value="">Chọn field</option>
-                            {formFields.filter(f => f.type === 'select' || f.type === 'text').map(f => (
+                            {allFields.filter(f => f.type === 'select' || f.type === 'text').map(f => (
                               <option key={f.key} value={f.key}>{f.label}</option>
                             ))}
                           </select>
@@ -529,7 +545,7 @@ const TemplateEditor = ({ configId, onClose }) => {
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {section.fields.map((fieldKey, fieldIdx) => {
-                          const ff = formFields.find(f => f.key === fieldKey);
+                          const ff = findField(fieldKey);
                           return (
                             <div
                               key={fieldKey}

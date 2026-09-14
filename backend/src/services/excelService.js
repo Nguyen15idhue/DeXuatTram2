@@ -19,9 +19,32 @@ const ENTITY_TABLE_MAP = {
 };
 
 const VALID_STATUSES = {
-  stations: ['ACTIVE', 'DEPLOYING'],
+  stations: ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'],
   users: ['ACTIVE', 'LOCKED'],
   station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED']
+};
+
+const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
+
+const DEFAULT_STATUS = {
+  stations: 'ACTIVE',
+  users: 'ACTIVE',
+  station_proposals: 'PENDING'
+};
+
+// Do dai toi da cac cot fixed (theo schema) de bao loi o preview thay vi "Data too long" khi confirm
+const MAX_LENGTHS = {
+  'users.full_name': 100,
+  'users.email': 100,
+  'users.phone': 20,
+  'users.external_id': 100,
+  'stations.name': 200,
+  'stations.address': 255,
+  'station_proposals.owner_name': 100,
+  'station_proposals.owner_phone': 20,
+  'station_proposals.address': 255,
+  'station_proposals.area': 50,
+  'station_proposals.land_type': 100
 };
 
 const HEADER_STYLE = {
@@ -229,8 +252,16 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
 
     let value = Object.prototype.hasOwnProperty.call(valueByKey, col.key) ? valueByKey[col.key] : '';
 
-    if (value && typeof value === 'object' && value.result !== undefined) {
-      value = value.result;
+    if (value && typeof value === 'object') {
+      if (Array.isArray(value.richText)) {
+        value = value.richText.map((t) => ((t && t.text) ? t.text : '')).join('');
+      } else if (value.result !== undefined) {
+        value = value.result;
+      } else if (value.text !== undefined) {
+        value = value.text; // hyperlink { text, hyperlink }
+      } else if (value.hyperlink !== undefined) {
+        value = value.hyperlink;
+      }
     }
 
     if (value == null || value === '') {
@@ -241,6 +272,21 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
       value = value.toISOString().split('T')[0];
     } else {
       value = String(value).trim();
+    }
+
+    if (value !== '' && col.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      errors.push(`${col.label}: email không hợp lệ (${value})`);
+      return;
+    }
+
+    if (value !== '' && entity === 'users' && col.type === 'phone') {
+      value = String(value).replace(/\s+/g, ' ').trim(); // gom khoang trang/xuong dong
+    }
+
+    const maxLen = MAX_LENGTHS[`${entity}.${col.key}`];
+    if (maxLen && value !== '' && String(value).length > maxLen) {
+      errors.push(`${col.label}: tối đa ${maxLen} ký tự (hiện ${String(value).length}). Giá trị: ${String(value).replace(/\s+/g, ' ').slice(0, 40)}`);
+      return;
     }
 
     if (value === '' && col.required) {
@@ -281,7 +327,14 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
         if (value !== '' && !VALID_STATUSES[entity].includes(upper)) {
           errors.push(`${col.label}: trạng thái không hợp lệ "${value}". Chấp nhận: ${VALID_STATUSES[entity].join(', ')}`);
         } else {
-          fixedData[col.key] = upper || VALID_STATUSES[entity][0];
+          fixedData[col.key] = upper || DEFAULT_STATUS[entity] || VALID_STATUSES[entity][0];
+        }
+      } else if (col.type === 'select' && entity === 'users' && col.key === 'role') {
+        const upper = String(value).toUpperCase();
+        if (value !== '' && !VALID_ROLES.includes(upper)) {
+          errors.push(`${col.label}: vai trò không hợp lệ "${value}". Chấp nhận: ${VALID_ROLES.join(', ')}`);
+        } else {
+          fixedData[col.key] = upper || 'CTV';
         }
       } else {
         fixedData[col.key] = value;
@@ -654,6 +707,54 @@ exports.importPreviewDynamic = async (req, res) => {
       validRows.push(...keptRows);
     }
 
+    if (entity === 'users') {
+      const [existingUsers] = await pool.query('SELECT LOWER(email) AS email, external_id FROM users');
+      const usedEmails = new Set(existingUsers.map(r => (r.email || '').toLowerCase()).filter(Boolean));
+      const usedExt = new Set(existingUsers.map(r => r.external_id).filter(v => v !== null && v !== ''));
+      const fileEmails = new Set();
+      const fileExt = new Set();
+      const isSuper = req.user && req.user.role === 'SUPER_ADMIN';
+      const keptRows = [];
+      for (const vr of validRows) {
+        const email = String(vr.fixedData.email || '').trim().toLowerCase();
+        const ext = String(vr.fixedData.external_id || '').trim();
+        const role = String(vr.fixedData.role || 'CTV').toUpperCase();
+        const rowErrors = [];
+        if (email) {
+          if (usedEmails.has(email) || fileEmails.has(email)) rowErrors.push(`Email "${vr.fixedData.email}" đã tồn tại, không cho import`);
+          else fileEmails.add(email);
+        }
+        if (ext) {
+          if (usedExt.has(ext) || fileExt.has(ext)) rowErrors.push(`Mã ngoài "${ext}" đã tồn tại, không cho import`);
+          else fileExt.add(ext);
+        }
+        if (role === 'SUPER_ADMIN' && !isSuper) rowErrors.push('Không được import tài khoản Super Admin');
+        if (rowErrors.length > 0) { errors.push({ row: vr.rowNumber, errors: rowErrors }); continue; }
+        keptRows.push(vr);
+      }
+      validRows.length = 0;
+      validRows.push(...keptRows);
+    }
+
+    if (entity === 'stations' || entity === 'station_proposals') {
+      const keptRows = [];
+      for (const vr of validRows) {
+        const province = vr.dynamicData.province;
+        if (province !== undefined && province !== null && String(province).trim() !== '') {
+          try {
+            const found = await dataListService.getDiaGioiByTenTinh(province);
+            if (!found) {
+              errors.push({ row: vr.rowNumber, errors: [`Tỉnh/Thành phố "${province}" không có trong danh mục`] });
+              continue;
+            }
+          } catch { /* silent */ }
+        }
+        keptRows.push(vr);
+      }
+      validRows.length = 0;
+      validRows.push(...keptRows);
+    }
+
     res.json({
       success: true,
       data: {
@@ -733,8 +834,7 @@ exports.importConfirmDynamic = async (req, res) => {
           if (coordErr) throw new Error(coordErr);
         }
         if (entity === 'station_proposals') {
-          const reqErr = validateRequired(fixedData.owner_name, 'Chủ mặt bằng') || validatePhone(fixedData.owner_phone) || validateRequired(fixedData.address, 'Địa chỉ');
-          if (reqErr) throw new Error(reqErr);
+          // required theo field_definitions (cot col.required da enforce o tren); chi giu invariant toa do
           const lat = parseFloat(fixedData.latitude);
           const lng = parseFloat(fixedData.longitude);
           const nearby = await proximityService.checkNearby(lat, lng, 200);
@@ -796,6 +896,10 @@ exports.importConfirmDynamic = async (req, res) => {
           if (!fixedData.status) fixedData.status = 'ACTIVE';
           if (fixedData.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
             throw new Error('Không được import tài khoản Super Admin');
+          }
+          // external_id rong -> NULL (cot UNIQUE, nhieu ban ghi rong se vi pham unique)
+          if (fixedData.external_id !== undefined && String(fixedData.external_id).trim() === '') {
+            delete fixedData.external_id;
           }
         }
 

@@ -8,9 +8,11 @@ import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import ImportErrorList from '../../components/admin/ImportErrorList';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { Zap, Download, Upload, Plus, Search, RotateCcw, X, Trash2 } from 'lucide-react';
 
 const STATIONS_VIEW_ID = 6;
@@ -20,8 +22,9 @@ const AdminStationsPage = () => {
   const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('stations', ['status']);
+  const { getSelectOptions } = useFieldOptions('stations', ['status', 'mo_hinh_tram']);
   const statusOptions = getSelectOptions('status');
+  const moHinhOptions = getSelectOptions('mo_hinh_tram');
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,6 +36,8 @@ const AdminStationsPage = () => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterUuTien, setFilterUuTien] = useState('');
+  const [filterMoHinh, setFilterMoHinh] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
@@ -43,6 +48,7 @@ const AdminStationsPage = () => {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+  const [importFailures, setImportFailures] = useState([]);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/stations\/(view|edit)=(\d+)/);
@@ -72,8 +78,12 @@ const AdminStationsPage = () => {
       const params = new URLSearchParams({ page, limit: 10 });
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
+      const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
+      const mh = overrides.filterMoHinh !== undefined ? overrides.filterMoHinh : filterMoHinh;
       if (s) params.append('search', s);
       if (st) params.append('status', st);
+      if (ut) params.append('uu_tien', ut);
+      if (mh) params.append('mo_hinh_tram', mh);
       const res = await stationService.getAllWithParams(params.toString());
       if (res.success) {
         setStations(res.data);
@@ -84,7 +94,7 @@ const AdminStationsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filterStatus]);
+  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh]);
 
   useEffect(() => { loadStations(1); }, [loadStations]);
 
@@ -93,9 +103,11 @@ const AdminStationsPage = () => {
   const handleReset = () => {
     setSearch('');
     setFilterStatus('');
+    setFilterUuTien('');
+    setFilterMoHinh('');
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadStations(1, { search: '', filterStatus: '' });
+    loadStations(1, { search: '', filterStatus: '', filterUuTien: '', filterMoHinh: '' });
   };
 
   const openCreate = () => {
@@ -207,6 +219,7 @@ const AdminStationsPage = () => {
       setError('');
       const res = await excelService.previewImport('stations', importFile, token);
       if (res.success) {
+        setImportFailures([]);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
@@ -230,6 +243,7 @@ const AdminStationsPage = () => {
         setShowImport(false);
         loadStations(1);
       } else {
+        setImportFailures((res.data && res.data.failDetails) || []);
         setError(res.message || 'Lỗi import');
       }
     } catch {
@@ -255,15 +269,26 @@ const AdminStationsPage = () => {
     <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <Zap size={24} className="text-primary" />
+          <Zap size={24} className="text-primary shrink-0" />
           <h1 className="text-2xl font-bold">Quản lý Trạm</h1>
         </div>
         {!isSales && (
-          <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
-            <Plus size={14} /> Thêm trạm
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
+              <Plus size={14} /> Thêm trạm
+            </button>
+            <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
+              <Download size={14} /> Template
+            </button>
+            <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportStations}>
+              <Download size={14} /> Export
+            </button>
+            <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+              <Upload size={14} /> Import
+            </button>
+          </div>
         )}
       </div>
 
@@ -289,42 +314,41 @@ const AdminStationsPage = () => {
         type="danger"
       />
 
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
         <input
           type="text"
           placeholder="Search theo tên, địa chỉ, mã trạm..."
-          className="input input-bordered input-sm flex-1"
+          className="input input-bordered input-sm w-full sm:flex-1 sm:min-w-[200px] sm:max-w-md"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
         />
-        <select className="select select-bordered select-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+        <select className="select select-bordered select-sm w-full sm:w-40" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           {statusOptions.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <button className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
-          <Search size={14} /> Tìm
-        </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
-          <RotateCcw size={14} /> Reset
-        </button>
-        {!isSales && (
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
-            <Download size={14} /> Template
+        <select className="select select-bordered select-sm w-full sm:w-40" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
+          <option value="">Tất cả loại ưu tiên</option>
+          {PRIORITY_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <select className="select select-bordered select-sm w-full sm:w-40" value={filterMoHinh} onChange={(e) => setFilterMoHinh(e.target.value)}>
+          <option value="">Tất cả mô hình</option>
+          {moHinhOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-2">
+          <button className="btn btn-primary btn-sm gap-1 flex-1 sm:flex-none" onClick={handleSearch}>
+            <Search size={14} /> Tìm
           </button>
-        )}
-        {!isSales && (
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportStations}>
-            <Download size={14} /> Export
+          <button className="btn btn-ghost btn-sm gap-1 flex-1 sm:flex-none" onClick={handleReset}>
+            <RotateCcw size={14} /> Reset
           </button>
-        )}
-        {!isSales && (
-          <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
-            <Upload size={14} /> Import
-          </button>
-        )}
+        </div>
       </div>
 
       {!isSales && selectedIds.length > 0 && (
@@ -383,6 +407,7 @@ const AdminStationsPage = () => {
                     </div>
                   )}
                 </div>
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>

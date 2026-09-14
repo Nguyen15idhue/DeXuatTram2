@@ -9,6 +9,7 @@ import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import ImportErrorList from '../../components/admin/ImportErrorList';
 import Pagination from '../../components/Pagination';
 import MapCanvas from '../../components/map/MapCanvas';
 import useFieldOptions from '../../hooks/useFieldOptions';
@@ -39,6 +40,7 @@ const MyProposalsPage = () => {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+  const [importFailures, setImportFailures] = useState([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
   const [nearbyWarning, setNearbyWarning] = useState('');
@@ -234,6 +236,7 @@ const MyProposalsPage = () => {
       setImportLoading(true);
       const res = await excelService.previewImport('station_proposals', importFile, token);
       if (res.success) {
+        setImportFailures([]);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
@@ -256,6 +259,7 @@ const MyProposalsPage = () => {
         setToast({ message: res.message, type: 'success' });
         loadProposals(1);
       } else {
+        setImportFailures((res.data && res.data.failDetails) || []);
         setError(res.message || 'Lỗi import');
       }
     } catch {
@@ -458,6 +462,7 @@ const MyProposalsPage = () => {
                     </div>
                   )}
                 </div>
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>

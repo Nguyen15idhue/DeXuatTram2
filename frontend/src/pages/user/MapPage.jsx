@@ -159,7 +159,7 @@ const MapPage = () => {
       )}
 
       {showForm && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open map-form-modal">
           <div className="modal-box max-w-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Đề xuất trạm mới</h3>

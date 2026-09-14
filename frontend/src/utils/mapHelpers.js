@@ -1,7 +1,9 @@
 import L from 'leaflet';
 import { mapService } from '../services/api';
+import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP } from './mapStatuses';
 
 export const MARKER_COLORS = {
+  PLANNING: '#a855f7',
   ACTIVE: '#22c55e',
   DEPLOYING: '#eab308',
   PENDING: '#f97316',
@@ -10,7 +12,11 @@ export const MARKER_COLORS = {
   REJECTED: '#ef4444'
 };
 
-export const getMarkerColor = (status) => {
+export const getMarkerColor = (status, entity) => {
+  if (entity === 'station' && STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
+  if (entity === 'proposal' && PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
+  if (STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
+  if (PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
   return MARKER_COLORS[status] || '#6b7280';
 };
 

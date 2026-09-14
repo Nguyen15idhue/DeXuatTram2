@@ -8,7 +8,9 @@ const proximityService = require('./proximityService');
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
-            p.created_at, p.user_id, u.parent_id AS owner_parent_id
+            p.created_at, p.user_id, u.parent_id AS owner_parent_id,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
      ORDER BY p.created_at DESC
@@ -20,7 +22,9 @@ exports.getAllProposals = async () => {
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
-            p.created_at, p.user_id, u.parent_id AS owner_parent_id
+            p.created_at, p.user_id, u.parent_id AS owner_parent_id,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
      WHERE p.id = ?`,
@@ -63,7 +67,7 @@ exports.createProposal = async (userId, data) => {
     const [result] = await conn.query(
       `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
+      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
     );
 
     recordId = result.insertId;
@@ -141,7 +145,7 @@ exports.createGuestProposal = async (data, ip) => {
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
 
   const phone = normalizePhone(fixedData.owner_phone);
-  if (!/^0(3|5|7|8|9)\d{8}$/.test(phone)) {
+  if (phone && !/^0(3|5|7|8|9)\d{8}$/.test(phone)) {
     const err = new Error('Số điện thoại phải là số di động Việt Nam 10 chữ số');
     err.statusCode = 400;
     throw err;
@@ -176,16 +180,18 @@ exports.createGuestProposal = async (data, ip) => {
     throw err;
   }
 
-  const [samePhone] = await pool.query(
-    "SELECT id, latitude, longitude FROM station_proposals WHERE owner_phone = ? AND status != 'REJECTED'",
-    [phone]
-  );
-  for (const row of samePhone) {
-    const d = proximityService.haversineM(lat, lng, Number(row.latitude), Number(row.longitude));
-    if (d < 1000) {
-      const err = new Error('Số điện thoại này đã gửi đề xuất gần vị trí này (trong 1000m)');
-      err.statusCode = 400;
-      throw err;
+  if (phone) {
+    const [samePhone] = await pool.query(
+      "SELECT id, latitude, longitude FROM station_proposals WHERE owner_phone = ? AND status != 'REJECTED'",
+      [phone]
+    );
+    for (const row of samePhone) {
+      const d = proximityService.haversineM(lat, lng, Number(row.latitude), Number(row.longitude));
+      if (d < 1000) {
+        const err = new Error('Số điện thoại này đã gửi đề xuất gần vị trí này (trong 1000m)');
+        err.statusCode = 400;
+        throw err;
+      }
     }
   }
 
@@ -261,7 +267,7 @@ exports.createGuestProposal = async (data, ip) => {
     const [result] = await conn.query(
       `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip)
        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?)`,
-      [fixedData.latitude, fixedData.longitude, fixedData.owner_name, phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null]
+      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null]
     );
 
     recordId = result.insertId;

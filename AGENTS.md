@@ -36,10 +36,13 @@ Swagger UI:  http://localhost:3000/api-docs
 - Status: `ACTIVE`, `LOCKED`
 
 ### Station (trạm đã có thật)
-- Status: `ACTIVE`, `DEPLOYING`
+- Status: `PLANNING`, `ACTIVE`, `DEPLOYING`, `REJECTED` (`REJECTED` của trạm **tách biệt** `REJECTED` của proposal)
+- `mo_hinh_tram`: select TDT/LK/NQ (label đầy đủ, value viết tắt)
+- `loai_uu_tien`: formula post — TDT→1 (Cấp 1), LK/NQ/trống→2 (Cấp 2)
 
 ### Station Proposal (đề xuất trạm mới)
 - Status: `PENDING`, `REVIEWING`, `APPROVED`, `REJECTED`
+- `loai_uu_tien`: formula post theo `mo_hinh_dau_tu` — TDT→1, LK/NQ/trống→2
 - `submission_source`: `user` | `guest`; `tracking_code`, `submitter_ip`
 - Sync 1Office: `contact_1office_id`, `contact_1office_code`, `sync_status`, `last_synced_at`, `last_synced_data`
 - `ma_de_xuat_gen` là cột generated từ `custom_data`
@@ -72,6 +75,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - CTV sửa được khi `PENDING`/`REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` cho người đã từ chối (cả `myProposalService` và `adminProposalService.updateProposal`)
 - CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API
 - `PUT /my-proposals/:id` gắn `validateUpdateProposal`; `PUT /admin/proposals/:id` merge giá trị cũ khi field vắng (chống ghi NULL)
+- Trang `/admin/proposals` có bộ lọc **trạng thái (nhãn tiếng Việt)** + **Loại ưu tiên Cấp 1/Cấp 2** (`GET /admin/proposals?status=&uu_tien=`); options nhãn trạng thái lưu ở `field_definitions.options` (migration 73)
 
 ### 4.3. Notification Bell
 - `NotificationBell` ở header user + admin (polling 30s + sự kiện `notifications:refresh`; nhấp nháy + badge chưa đọc)
@@ -88,14 +92,14 @@ Swagger UI:  http://localhost:3000/api-docs
 - File guest dọn định kỳ qua `ORPHAN_FILE_TTL_HOURS` (mặc định 24h)
 
 ### 4.5. Map Marker & Page
-- Station `ACTIVE` → marker xanh; `DEPLOYING` → vàng; Proposal → marker màu trạng thái đề xuất
+- Marker màu theo trạng thái, **phân biệt theo entity** (`getMarkerColor(status, 'station'|'proposal')`; constants `utils/mapStatuses.js`): Station `PLANNING` tím `#a855f7`, `ACTIVE` xanh `#22c55e`, `DEPLOYING` vàng `#eab308`, `REJECTED` đỏ sẫm `#b91c1c`; Proposal `PENDING` cam, `REVIEWING` xanh dương, `APPROVED` xanh lá, `REJECTED` đỏ `#ef4444`
 - Popup marker (`MapView`): link "Xem chi tiết" mở `/admin/stations|proposals/view=<id>` cho `SUPER_ADMIN|ADMIN|SALES` (dùng `canOpenAdminRecord`); render bằng thẻ `<a>` thuần (KHÔNG dùng `<Link>` vì popup ngoài React Router context → lỗi `basename`)
 - Popup đề xuất gate sở hữu (`canViewProposal`): ADMIN/SUPER luôn xem; SALES chỉ đề xuất của mình (`user_id`) hoặc CTV thuộc nhánh (`owner_parent_id`); ngoài nhánh hiện dòng đỏ. `GET /proposals` trả thêm `user_id`, `owner_parent_id` (backend vẫn chặn thật qua `denyOutsideBranch`)
-- Trang `/map` có bộ lọc `MapFilterPanel` (phạm vi "Của tôi"/"Tất cả", ẩn/hiện trạm & đề xuất, chip trạng thái). Desktop = card nổi; mobile (<768px) = bottom sheet
+- Trang `/map` có bộ lọc `MapFilterPanel` (phạm vi "Của tôi"/"Tất cả", ẩn/hiện trạm & đề xuất, chip trạng thái trạm/đề xuất, chip **Loại ưu tiên Cấp 1/Cấp 2** áp cho cả trạm & đề xuất theo `loai_uu_tien`). Desktop = card nổi; mobile (<768px) = bottom sheet
 - `MapView` nhận prop `filters`; lọc client-side bằng `useMemo` trước `MapLayerController`. Mặc định `EMPTY_MAP_FILTERS` = hiện tất cả
-- `GET /stations` **không `limit`** → trả toàn bộ marker fields (map); có `limit` → phân trang. Proposals cap 20000
+- `GET /stations` **không `limit`** → trả toàn bộ marker fields (map), kèm `loai_uu_tien`/`mo_hinh_tram` trích từ `custom_data`; có `limit` → phân trang. Proposals cap 20000, kèm `mo_hinh_dau_tu`/`loai_uu_tien`
 - `RecordDetailPopup` nút "Xem bản đồ" mở `LocationMapModal` (chỉ khi có tọa độ): tâm tại record, vành nét đứt xoay (`location-point-ring`), bán kính **5/10/20/50 km** (`L.Circle`) + hiện trạm/đề xuất lân cận (`proximityService`)
-- Trang `/map` có nút **chuyển Mode** (Đường phố/Vệ tinh/Vệ tinh + nhãn/Địa hình — `MAP_MODES`) và nút **bật/tắt 3D** khi renderer là MapLibre; thay đổi cục bộ theo phiên (không ghi `map_configs`), mobile ẩn 3D. Legend (`.map-legend`) ở **góc trên-phải** (`top:12; right:64px`) để không đè bộ lọc (`.map-filter` ở trên-trái)
+- Trang `/map` có nút **chuyển Mode** (Đường phố/Vệ tinh/Vệ tinh + nhãn/Địa hình — `MAP_MODES`) và nút **bật/tắt 3D** khi renderer là MapLibre; thay đổi cục bộ theo phiên (không ghi `map_configs`), mobile ẩn 3D. Legend (`.map-legend`) ở **góc trên-phải** (`top:12; right:64px`) để không đè bộ lọc (`.map-filter` ở trên-trái); legend tách **2 cột Trạm / Đề xuất**, nút "Chú thích" (cụm controls) thu gọn/mở rộng — mobile (<768px) **mặc định đóng**
 
 ### 4.6. Map Tile & Renderer
 9. Cấu hình `map_configs` áp dụng thật: `MapView` + `LocationMapModal` + mini map `MyProposalsPage` đọc qua `useMapConfig`/`utils/mapTile.js`
@@ -193,8 +197,8 @@ frontend/src/
 │                   useDebouncedValue, useMediaQuery
 ├── layouts/        PublicLayout, GuestLayout, UserLayout, AdminLayout
 ├── contexts/       AuthContext
-├── utils/          mapHelpers, mapTile, mapStyles, mapModes, tileProviders, tileProviderCatalog,
-│                   formatNumber, dataListCache, dataListLabel, provinceData
+├── utils/          mapHelpers, mapStatuses, mapTile, mapStyles, mapModes, tileProviders,
+│                   tileProviderCatalog, formatNumber, dataListCache, dataListLabel, provinceData
 ├── App.jsx         routes (pages import eager, chưa lazy)
 └── main.jsx        entry point
 ```
@@ -262,7 +266,7 @@ backend/src/
 | `api_queue_logs` | Queue push/pull + audit log |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→56). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes.
+Migrations nằm ở `database/` (01→73). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt.
 
 ## 9. Swagger & Documentation
 
@@ -314,7 +318,7 @@ Migrations nằm ở `database/` (01→56). Một số mốc quan trọng: `14` 
 - **Pre-compute**: tính trong form trước submit. **Post-compute**: sau INSERT/UPDATE, dùng metadata (id, entity, base_url, created_at)
 - Config: `formula_config = { compute_mode, expression, referencedFields, outputType, outputFormat, decimalPlaces, unit }`
 - Pre dùng mathjs v15.2.0; post metadata `user_name/user_role/sales_name` theo người tạo (`record.user_id`); scope nạp `''` cho field thiếu
-- So sánh chuỗi dùng `compareText(a,b) == 0` (mathjs không hỗ trợ `==` với chuỗi)
+- So sánh chuỗi dùng `equalText(a,b)` hoặc `compareText(a,b) == 0` (mathjs không hỗ trợ `==` với chuỗi)
 - Sinh mã tuần tự: hàm `SEQ`/`setSeq` qua bảng `proposal_sequences`; `formulaService.reconcileSequences`/`parseCodeToSeq` đồng bộ sau import
 - Recompute hàng loạt: `backend/scripts/recomputeFormulas.js` (exclude `ma_de_xuat`)
 - 26+ hàm custom: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW, SEQ...
@@ -368,7 +372,7 @@ Migrations nằm ở `database/` (01→56). Một số mốc quan trọng: `14` 
 - Nén `compression` (data list ~528KB → ~42KB brotli)
 - Index migration 56 (`station_proposals(user_id,created_at)/(status,created_at)`, `stations(created_at)`, `data_list_rows(list_id,sort_order)`)
 - Debounce search `hooks/useDebouncedValue.js` ở các trang danh sách
-- Map endpoint: `GET /stations` không `limit` chỉ trả marker fields (bỏ merge `custom_data`); proposals cap 20000
+- Map endpoint: `GET /stations` không `limit` chỉ trả marker fields + `loai_uu_tien`/`mo_hinh_tram` (JSON_EXTRACT, bỏ merge `custom_data`); proposals cap 20000 + `mo_hinh_dau_tu`/`loai_uu_tien`
 
 ### Chưa có (cơ hội cải thiện)
 - Route-level code splitting (pages import eager trong `App.jsx`)

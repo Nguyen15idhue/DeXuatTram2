@@ -1,23 +1,13 @@
 import { useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { getMarkerColor } from '../utils/mapHelpers';
-
-const STATION_STATUSES = [
-  { value: 'ACTIVE', label: 'Đang hoạt động' },
-  { value: 'DEPLOYING', label: 'Đang triển khai' },
-];
-
-const PROPOSAL_STATUSES = [
-  { value: 'PENDING', label: 'Đang đề xuất' },
-  { value: 'REVIEWING', label: 'Đang xem xét' },
-  { value: 'APPROVED', label: 'Đã duyệt' },
-  { value: 'REJECTED', label: 'Từ chối' },
-];
+import { STATION_STATUSES, PROPOSAL_STATUSES, PRIORITY_OPTIONS } from '../utils/mapStatuses';
 
 export const EMPTY_MAP_FILTERS = {
   scope: 'all',
   stationStatuses: [],
   proposalStatuses: [],
+  priorities: [],
   hideStations: false,
   hideProposals: false,
 };
@@ -33,21 +23,42 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
     filters.scope === 'mine' ? 1 : 0,
     filters.stationStatuses.length ? 1 : 0,
     filters.proposalStatuses.length ? 1 : 0,
+    filters.priorities.length ? 1 : 0,
     filters.hideStations || filters.hideProposals ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
-  const renderStatusChips = (options, key) => (
+  const renderStatusChips = (options, key, entity) => (
     <div className="map-filter-chips">
       {options.map((s) => {
-        const active = filters[key].includes(s.value);
+        const list = filters[key] || [];
+        const active = list.includes(s.value);
         return (
           <button
             key={s.value}
             type="button"
             className={`map-filter-chip ${active ? 'active' : ''}`}
-            onClick={() => set({ [key]: toggleValue(filters[key], s.value) })}
+            onClick={() => set({ [key]: toggleValue(list, s.value) })}
           >
-            <span className="map-filter-dot" style={{ background: getMarkerColor(s.value) }} />
+            <span className="map-filter-dot" style={{ background: getMarkerColor(s.value, entity) }} />
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const renderPriorityChips = () => (
+    <div className="map-filter-chips">
+      {PRIORITY_OPTIONS.map((s) => {
+        const list = filters.priorities || [];
+        const active = list.includes(s.value);
+        return (
+          <button
+            key={s.value}
+            type="button"
+            className={`map-filter-chip ${active ? 'active' : ''}`}
+            onClick={() => set({ priorities: toggleValue(list, s.value) })}
+          >
             {s.label}
           </button>
         );
@@ -81,12 +92,17 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
 
       <div className="map-filter-group">
         <span className="map-filter-label">Trạng thái trạm</span>
-        {renderStatusChips(STATION_STATUSES, 'stationStatuses')}
+        {renderStatusChips(STATION_STATUSES, 'stationStatuses', 'station')}
       </div>
 
       <div className="map-filter-group">
         <span className="map-filter-label">Trạng thái đề xuất</span>
-        {renderStatusChips(PROPOSAL_STATUSES, 'proposalStatuses')}
+        {renderStatusChips(PROPOSAL_STATUSES, 'proposalStatuses', 'proposal')}
+      </div>
+
+      <div className="map-filter-group">
+        <span className="map-filter-label">Loại ưu tiên (trạm &amp; đề xuất)</span>
+        {renderPriorityChips()}
       </div>
 
       <button type="button" className="btn btn-ghost btn-xs w-full" onClick={() => onChange({ ...EMPTY_MAP_FILTERS })}>

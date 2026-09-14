@@ -19,6 +19,12 @@ const adminProposalController = require('../controllers/adminProposalController'
  *           type: string
  *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
  *       - in: query
+ *         name: uu_tien
+ *         schema:
+ *           type: string
+ *           enum: ['1', '2']
+ *         description: Lọc theo loại ưu tiên (1 = Cấp 1/TDT, 2 = Cấp 2/LK/NQ)
+ *       - in: query
  *         name: page
  *         schema:
  *           type: integer

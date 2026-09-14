@@ -10,7 +10,7 @@ exports.getBranchUserIds = async (salesId) => {
   return rows.map(r => r.id);
 };
 
-exports.getAllProposals = async (status, search, page, limit, scope = {}) => {
+exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien) => {
   const offset = (page - 1) * limit;
   const where = [];
   const params = [];
@@ -26,6 +26,11 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}) => {
   if (status) {
     where.push('p.status = ?');
     params.push(status);
+  }
+
+  if (uuTien) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) = ?");
+    params.push(String(uuTien));
   }
 
   if (search) {

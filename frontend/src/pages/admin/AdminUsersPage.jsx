@@ -9,6 +9,7 @@ import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import ImportErrorList from '../../components/admin/ImportErrorList';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2 } from 'lucide-react';
@@ -44,6 +45,7 @@ const AdminUsersPage = () => {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+  const [importFailures, setImportFailures] = useState([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const createRoleAllowlist = isSales ? ['CTV'] : (!isSuperAdmin ? ['CTV', 'SALES', 'ADMIN'] : null);
   const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
@@ -334,6 +336,7 @@ const AdminUsersPage = () => {
       setImportLoading(true);
       const res = await excelService.previewImport('users', importFile, token);
       if (res.success) {
+        setImportFailures([]);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
@@ -356,6 +359,7 @@ const AdminUsersPage = () => {
         setToast({ message: res.message, type: 'success' });
         loadUsers();
       } else {
+        setImportFailures((res.data && res.data.failDetails) || []);
         setError(res.message || 'Lỗi import');
       }
     } catch {
@@ -393,15 +397,35 @@ const AdminUsersPage = () => {
     <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <Users size={24} className="text-primary" />
+          <Users size={24} className="text-primary shrink-0" />
           <h1 className="text-2xl font-bold">Quản lý Users</h1>
         </div>
-        <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowCreateForm(true)}>
-          <Plus size={14} />
-          Tạo user
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowCreateForm(true)}>
+            <Plus size={14} />
+            Tạo user
+          </button>
+          {!isSales && (
+            <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
+              <FileSpreadsheet size={14} />
+              Template
+            </button>
+          )}
+          {!isSales && (
+            <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
+              <Download size={14} />
+              Export
+            </button>
+          )}
+          {!isSales && (
+            <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+              <Upload size={14} />
+              Import
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(); }} />}
@@ -427,49 +451,31 @@ const AdminUsersPage = () => {
       />
 
       {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <div className="form-control flex-1">
-          <input
-            type="text"
-            placeholder="Search theo tên, email, SĐT, mã ngoài..."
-            className="input input-bordered input-sm w-full"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+        <input
+          type="text"
+          placeholder="Search theo tên, email, SĐT, mã ngoài..."
+          className="input input-bordered input-sm w-full sm:flex-1 sm:max-w-md"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+        />
+        <div className="flex items-center gap-2">
+          <select className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none sm:w-44" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <button className="btn btn-primary btn-sm gap-1 flex-1 sm:flex-none" onClick={handleSearch}>
+            <Search size={14} />
+            Tìm
+          </button>
+          <button className="btn btn-ghost btn-sm gap-1 flex-1 sm:flex-none" onClick={handleReset}>
+            <RotateCcw size={14} />
+            Reset
+          </button>
         </div>
-        <select className="select select-bordered select-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="">Tất cả trạng thái</option>
-          {statusOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <button className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
-          <Search size={14} />
-          Tìm
-        </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
-          <RotateCcw size={14} />
-          Reset
-        </button>
-        {!isSales && (
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
-            <FileSpreadsheet size={14} />
-            Template
-          </button>
-        )}
-        {!isSales && (
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
-            <Download size={14} />
-            Export
-          </button>
-        )}
-        {!isSales && (
-          <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
-            <Upload size={14} />
-            Import
-          </button>
-        )}
       </div>
 
       {selectedIds.length > 0 && (
@@ -529,6 +535,7 @@ const AdminUsersPage = () => {
                     </div>
                   )}
                 </div>
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>

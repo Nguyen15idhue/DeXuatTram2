@@ -12,6 +12,7 @@ import ErrorMessage from '../../components/ErrorMessage';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
@@ -28,6 +29,7 @@ const AdminProposalsPage = () => {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [filterUuTien, setFilterUuTien] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [error, setError] = useState('');
@@ -83,8 +85,10 @@ const AdminProposalsPage = () => {
       setLoading(true);
       const params = new URLSearchParams({ page, limit: 10 });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
+      const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
       if (f) params.append('status', f);
+      if (ut) params.append('uu_tien', ut);
       if (s) params.append('search', s);
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
@@ -96,7 +100,7 @@ const AdminProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedSearch, token]);
+  }, [filter, filterUuTien, debouncedSearch, token]);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
@@ -169,11 +173,12 @@ const AdminProposalsPage = () => {
   const handleReset = () => {
     setSearch('');
     setFilter('');
+    setFilterUuTien('');
     if (dupRef.current) dupRef.current.reset();
     setDupMode(false);
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadProposals(1, { filter: '', search: '' });
+    loadProposals(1, { filter: '', filterUuTien: '', search: '' });
   };
 
   const handleExportProposals = async () => {
@@ -429,9 +434,9 @@ const AdminProposalsPage = () => {
     <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <ClipboardList size={24} className="text-primary" />
+          <ClipboardList size={24} className="text-primary shrink-0" />
           <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -473,27 +478,39 @@ const AdminProposalsPage = () => {
             )}
           </div>
 
-          <input
-            type="text"
-            className="input input-bordered input-sm"
-            placeholder="Tìm theo tên, địa chỉ, SĐT, mã đề xuất..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loadProposals(1)}
-          />
-          <select className="select select-bordered select-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="">Tất cả</option>
-            {statusOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
             <Download size={14} />
             Export
           </button>
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset} title="Đặt lại bộ lọc">
             <RotateCcw size={14} />
+            <span className="hidden sm:inline">Đặt lại</span>
           </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+        <input
+          type="text"
+          className="input input-bordered input-sm w-full sm:flex-1 sm:max-w-md"
+          placeholder="Tìm theo tên, địa chỉ, SĐT, mã đề xuất..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && loadProposals(1)}
+        />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none sm:w-44" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <select className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none sm:w-44" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
+            <option value="">Tất cả loại ưu tiên</option>
+            {PRIORITY_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 

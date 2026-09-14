@@ -105,9 +105,13 @@ exports.updateFieldDefinition = async (id, data) => {
   const existing = await exports.getFieldDefinitionById(id);
   if (!existing) throw new Error('Field not found');
 
-  // Field bị khóa: chỉ cho phép đổi label, mọi thuộc tính khác giữ nguyên
+  // Field bị khóa: chỉ cho phép đổi label + required (nguồn bắt buộc duy nhất),
+  // mọi thuộc tính khác (key/type/source_type/...) giữ nguyên
   const effectiveData = existing.is_locked
-    ? { label: data.label !== undefined ? data.label : existing.label }
+    ? {
+        label: data.label !== undefined ? data.label : existing.label,
+        required: data.required !== undefined ? data.required : existing.required
+      }
     : data;
 
   const merged = {

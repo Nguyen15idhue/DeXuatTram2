@@ -1,5 +1,8 @@
 # Các bước cần làm trên mã nguồn trước khi Deploy VPS
 
+> ⚠️ **TÀI LIỆU LỊCH SỬ (checklist đã hoàn tất ngày 10/09/2026).** Tài liệu vận hành chuẩn hiện tại: **`docs/6/Huong_dan_deploy_va_cap_nhat_VPS.md`**.
+> Lưu ý: các bước tạo `docker-compose.prod.yml` (mục 5) **không còn dùng** — stack thật là `docker-compose.simple.yml`. Việc khởi tạo DB `01→44` cũng đã thay bằng cơ chế base dump + migration (xem mục 7 tài liệu chuẩn).
+
 > Nguồn: `docs/6/Chuanbi_deploy.md` (mục 4 & 9). Tài liệu này là checklist thi công trên mã nguồn hiện tại.
 > Trạng thái dùng: ⬜ Chưa làm · 🔄 Đang làm · ✅ Xong · ⚠️ Cần xem lại
 > Kết quả test điền vào cột "Kết quả sau test".

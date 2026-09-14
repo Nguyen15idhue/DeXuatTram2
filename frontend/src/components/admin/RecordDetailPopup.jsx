@@ -355,7 +355,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                     dataListOptions={dataListOptions}
                   />
                 ) : (
-                  <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
+                  <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />
                 )}
               </span>
             </div>
@@ -417,7 +417,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                                   dataListOptions={dataListOptions}
                                 />
                               ) : (
-                                <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} />
+                                <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />
                               )}
                             </div>
                           );

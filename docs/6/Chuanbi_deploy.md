@@ -1,5 +1,12 @@
 # Kế hoạch Deploy lên VPS
 
+> ⚠️ **TÀI LIỆU LỊCH SỬ (từ 10/09/2026) — KHÔNG dùng để deploy.**
+> Tài liệu vận hành chuẩn hiện tại: **`docs/6/Huong_dan_deploy_va_cap_nhat_VPS.md`**.
+> Một số nội dung dưới đây đã **sai so với mã nguồn hiện tại**:
+> - `docker-compose.prod.yml` / `frontend/Dockerfile.prod` + nginx: **không dùng**. Stack thật là `docker-compose.simple.yml` (frontend Vite + backend `Dockerfile.prod` + MySQL `8.0.44-debian` + Caddy profile `tls` tùy chọn).
+> - Khởi tạo DB bằng `database/baseline/station_management_baseline.sql` (16 bảng, mốc ~44): **lỗi thời**. Deploy hiện tại import `docker/station_lite_dump.sql` rồi `deploy.sh` tự chạy migration còn thiếu (45→mới nhất) — xem mục 7 của tài liệu chuẩn.
+> - Chạy tay `database/01 → 44`: **không dùng** (thiếu bảng/cột và lỗi FK).
+
 > **Chốt 05/09/2026**: storage uploads dùng **Cách A — named volume** (`uploads_data`). MySQL giữ container + named volume `mysql_data` + cron `mysqldump`. Chi tiết vòng đời/backup ở mục 10.
 >
 > **Cập nhật 10/09/2026**: bổ sung gap analysis giữa doc và mã nguồn thực tế (mục 1), phần chuẩn bị VPS (mục 2), các file cần tạo/sửa (mục 4), checklist sau deploy (mục 8).

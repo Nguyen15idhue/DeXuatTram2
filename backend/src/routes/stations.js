@@ -21,8 +21,20 @@ const stationController = require('../controllers/stationController');
  *         name: status
  *         schema:
  *           type: string
- *           enum: [ACTIVE, DEPLOYING]
+ *           enum: [PLANNING, ACTIVE, DEPLOYING, REJECTED]
  *         description: Lọc theo trạng thái
+ *       - in: query
+ *         name: uu_tien
+ *         schema:
+ *           type: string
+ *           enum: ['1', '2']
+ *         description: Lọc theo loại ưu tiên (1 = TDT, 2 = LK/NQ)
+ *       - in: query
+ *         name: mo_hinh_tram
+ *         schema:
+ *           type: string
+ *           enum: [TDT, LK, NQ]
+ *         description: Lọc theo mô hình trạm
  *       - in: query
  *         name: page
  *         schema:

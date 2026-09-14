@@ -4,7 +4,7 @@ const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 
-exports.getAllStations = async (search, status, page, limit, mapMode = false) => {
+exports.getAllStations = async (search, status, page, limit, mapMode = false, extra = {}) => {
   const offset = (page - 1) * limit;
   let where = [];
   let params = [];
@@ -20,13 +20,23 @@ exports.getAllStations = async (search, status, page, limit, mapMode = false) =>
     params.push(status);
   }
 
+  if (extra.moHinhTram) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram')) = ?");
+    params.push(extra.moHinhTram);
+  }
+
+  if (extra.uuTien) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien')) = ?");
+    params.push(String(extra.uuTien));
+  }
+
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
   const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM stations s ${whereClause}`, params);
   const total = countResult[0].total;
 
   const columns = mapMode
-    ? 's.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.created_at'
+    ? "s.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.created_at, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien')) AS loai_uu_tien, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram')) AS mo_hinh_tram"
     : 's.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.custom_data, s.created_at';
 
   const [stations] = await pool.query(
@@ -75,7 +85,7 @@ exports.createStation = async (data) => {
 
     const [result] = await conn.query(
       'INSERT INTO stations (name, latitude, longitude, address, status, description, custom_data) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address, fixedData.status || 'ACTIVE', fixedData.description || '', customData]
+      [fixedData.name || '', fixedData.latitude, fixedData.longitude, fixedData.address || '', fixedData.status || 'ACTIVE', fixedData.description || '', customData]
     );
 
     recordId = result.insertId;

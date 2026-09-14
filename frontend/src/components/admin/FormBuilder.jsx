@@ -1001,10 +1001,11 @@ const FormBuilder = ({ formId, onSaved }) => {
               </div>
             </div>
             <div className="form-row">
-              <label className="checkbox-label">
-                <input type="checkbox" checked={selectedField.config?.requiredOverride ?? availableFields.find(f => f.id === selectedField.fieldId)?.required ?? false}
-                  onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'requiredOverride', e.target.checked)} />
-                Bắt buộc
+              <label className="checkbox-label" title="Bắt buộc được cấu hình tại Admin → Fields">
+                <span className="text-gray-500">
+                  Bắt buộc nhập: cấu hình tại&nbsp;
+                  <a href="/admin/fields" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>Admin → Fields</a>
+                </span>
               </label>
               <label className="checkbox-label">
                 <input type="checkbox" checked={selectedField.config?.readonly || false}

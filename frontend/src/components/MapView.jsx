@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { stationService, proposalService, api } from '../services/api';
 import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
+import { STATION_STATUSES, PROPOSAL_STATUSES } from '../utils/mapStatuses';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
@@ -53,14 +54,10 @@ function createPositionPopupContent(title, position) {
   return div;
 }
 
-const MAP_LEGEND = [
-  { status: 'ACTIVE', label: 'Đang hoạt động' },
-  { status: 'DEPLOYING', label: 'Đang triển khai' },
-  { status: 'PENDING', label: 'Đang đề xuất' },
-  { status: 'REVIEWING', label: 'Đang xem xét' },
-  { status: 'APPROVED', label: 'Đã duyệt' },
-  { status: 'REJECTED', label: 'Từ chối' },
-];
+const MAP_LEGEND = {
+  stations: STATION_STATUSES,
+  proposals: PROPOSAL_STATUSES
+};
 
 function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
   return (
@@ -174,7 +171,7 @@ function createStationPopupContent(item, user) {
   statusStrong.textContent = 'Trạng thái: ';
   statusP.appendChild(statusStrong);
   const statusSpan = document.createElement('span');
-  statusSpan.style.color = getMarkerColor(item.status);
+  statusSpan.style.color = getMarkerColor(item.status, 'station');
   statusSpan.textContent = item.status;
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
@@ -210,7 +207,7 @@ function createProposalPopupContent(item, user) {
   statusStrong.textContent = 'Trạng thái: ';
   statusP.appendChild(statusStrong);
   const statusSpan = document.createElement('span');
-  statusSpan.style.color = getMarkerColor(item.status);
+  statusSpan.style.color = getMarkerColor(item.status, 'proposal');
   statusSpan.textContent = item.status;
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
@@ -249,7 +246,7 @@ const MapView = ({
   const [showStationLabels, setShowStationLabels] = useState(true);
   const [showProvinceLabels, setShowProvinceLabels] = useState(true);
   const [showBoundaries, setShowBoundaries] = useState(true);
-  const [showLegend, setShowLegend] = useState(true);
+  const [showLegend, setShowLegend] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
   const [showCluster, setShowCluster] = useState(true);
   const [activeLayerIdx, setActiveLayerIdx] = useState(0);
   const [resolvedTileUrl, setResolvedTileUrl] = useState(PROXY_TILE);
@@ -469,9 +466,16 @@ const MapView = ({
   const visibleStations = useMemo(() => {
     if (!filters) return stations;
     if (filters.hideStations) return [];
+    let list = stations;
     const statuses = filters.stationStatuses || [];
-    if (statuses.length === 0) return stations;
-    return stations.filter(s => statuses.includes(s.status));
+    if (statuses.length > 0) {
+      list = list.filter(s => statuses.includes(s.status));
+    }
+    const priorities = filters.priorities || [];
+    if (priorities.length > 0) {
+      list = list.filter(s => priorities.includes(String(s.loai_uu_tien)));
+    }
+    return list;
   }, [stations, filters]);
 
   const visibleProposals = useMemo(() => {
@@ -485,6 +489,10 @@ const MapView = ({
     const statuses = filters.proposalStatuses || [];
     if (statuses.length > 0) {
       list = list.filter(p => statuses.includes(p.status));
+    }
+    const priorities = filters.priorities || [];
+    if (priorities.length > 0) {
+      list = list.filter(p => priorities.includes(String(p.loai_uu_tien)));
     }
     return list;
   }, [proposals, filters, user]);
@@ -502,11 +510,11 @@ const MapView = ({
   }, [visibleProposals, highlightIds]);
 
   const canvasStations = useMemo(
-    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status) })),
+    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station') })),
     [layerStations]
   );
   const canvasProposals = useMemo(
-    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status) })),
+    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal') })),
     [layerProposals]
   );
 
@@ -707,12 +715,26 @@ const MapView = ({
       {showLegend && (
         <div className="map-legend">
           <div className="map-legend-title">Chú thích</div>
-          {MAP_LEGEND.map((item) => (
-            <div key={item.status} className="map-legend-item">
-              <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.status) }} />
-              <span className="map-legend-label">{item.label}</span>
+          <div className="map-legend-columns">
+            <div className="map-legend-col">
+              <div className="map-legend-col-title">Trạm</div>
+              {MAP_LEGEND.stations.map((item) => (
+                <div key={`s-${item.value}`} className="map-legend-item">
+                  <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'station') }} />
+                  <span className="map-legend-label">{item.label}</span>
+                </div>
+              ))}
             </div>
-          ))}
+            <div className="map-legend-col">
+              <div className="map-legend-col-title">Đề xuất</div>
+              {MAP_LEGEND.proposals.map((item) => (
+                <div key={`p-${item.value}`} className="map-legend-item">
+                  <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />
+                  <span className="map-legend-label">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

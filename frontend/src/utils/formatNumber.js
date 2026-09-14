@@ -40,6 +40,14 @@ export function formatNumber(value, { format = 'plain', decimalPlaces, unit } = 
   return result;
 }
 
+export function parseLeadingNumber(value) {
+  if (typeof value === 'number') return { num: value, unit: '' };
+  if (typeof value !== 'string') return { num: NaN, unit: '' };
+  const m = value.match(/^(-?\d+(?:[.,]\d+)?)\s*(.*)$/);
+  if (m && !isNaN(Number(m[1]))) return { num: Number(m[1]), unit: (m[2] || '').trim() };
+  return { num: NaN, unit: '' };
+}
+
 export function parseFormattedNumber(str) {
   if (str === null || str === undefined) return NaN;
   const cleaned = String(str).replace(/[^0-9.,\-]/g, '');

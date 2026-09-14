@@ -1,6 +1,65 @@
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\d{10}$/;
 
+const dynamicUtils = require('../services/dynamicUtils');
+
+// required la nguon duy nhat theo field_definitions (Admin -> Fields).
+// Cac key duoi day la invariant he thong, luon bat buoc (khong phu thuoc cau hinh):
+const ALWAYS_REQUIRED = {
+  stations: { latitude: 'Vĩ độ', longitude: 'Kinh độ' },
+  station_proposals: { latitude: 'Vĩ độ', longitude: 'Kinh độ' },
+  users: { full_name: 'Họ tên', email: 'Email', password: 'Mật khẩu' },
+};
+const ALWAYS_REQUIRED_UPDATE = {
+  users: { email: 'Email' },
+};
+
+const hasValue = (v) => !(v === undefined || v === null || v === '');
+
+async function validateAgainstEntity(req, res, entity, { partial = false, always = null } = {}) {
+  const data = (req && req.body) || {};
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
+  const defs = partial
+    ? fieldDefs.filter((f) => Object.prototype.hasOwnProperty.call(data, f.key))
+    : fieldDefs;
+  const errors = await dynamicUtils.validateData(entity, data, defs);
+
+  const alwaysKeys = always || (partial ? (ALWAYS_REQUIRED_UPDATE[entity] || {}) : (ALWAYS_REQUIRED[entity] || {}));
+  for (const [key, label] of Object.entries(alwaysKeys)) {
+    if (!hasValue(data[key])) errors.push(`${label} là bắt buộc`);
+  }
+
+  if (entity === 'stations' || entity === 'station_proposals') {
+    if (hasValue(data.latitude)) {
+      const n = Number(data.latitude);
+      if (isNaN(n) || n < -90 || n > 90) errors.push('Vĩ độ không hợp lệ (phải từ -90 đến 90)');
+    }
+    if (hasValue(data.longitude)) {
+      const n = Number(data.longitude);
+      if (isNaN(n) || n < -180 || n > 180) errors.push('Kinh độ không hợp lệ (phải từ -180 đến 180)');
+    }
+  }
+
+  const uniqueErrors = [...new Set(errors)];
+  if (uniqueErrors.length > 0) {
+    res.status(400).json({ success: false, message: uniqueErrors[0], errors: uniqueErrors });
+    return true;
+  }
+  return false;
+}
+
+function makeEntityValidator(entity, opts = {}) {
+  return async function (req, res, next) {
+    try {
+      const handled = await validateAgainstEntity(req, res, entity, opts);
+      if (handled) return;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
 function parseOptions(optionsJson) {
   if (!optionsJson) return [];
   if (Array.isArray(optionsJson)) return optionsJson;
@@ -135,17 +194,8 @@ function validationResponse(res, errors) {
   return null;
 }
 
-function validateRegister(req, res, next) {
-  const { full_name, email, phone, password } = req.body;
-  const errors = runValidations([
-    validateFullName(full_name),
-    validateEmail(email),
-    validatePhone(phone),
-    validatePassword(password)
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
+// Invariant: full_name + email + password bat buoc; phone/truong khac theo field_definitions
+const validateRegister = makeEntityValidator('users');
 
 function validateLogin(req, res, next) {
   const { email, password } = req.body;
@@ -157,81 +207,13 @@ function validateLogin(req, res, next) {
   next();
 }
 
-function validateCreateStation(req, res, next) {
-  const { name, latitude, longitude, address, status } = req.body;
-  const errors = runValidations([
-    validateRequired(name, 'Tên trạm'),
-    validateLatitude(latitude),
-    validateLongitude(longitude),
-    validateRequired(address, 'Địa chỉ'),
-    validateEnum(status, ['ACTIVE', 'DEPLOYING'], 'Trạng thái')
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
-
-function validateUpdateStation(req, res, next) {
-  const { name, latitude, longitude, address, status } = req.body;
-  const errors = runValidations([
-    validateRequired(name, 'Tên trạm'),
-    validateLatitude(latitude),
-    validateLongitude(longitude),
-    validateRequired(address, 'Địa chỉ'),
-    validateEnum(status, ['ACTIVE', 'DEPLOYING'], 'Trạng thái')
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
-
-function validateCreateProposal(req, res, next) {
-  const { latitude, longitude, owner_name, owner_phone, address } = req.body;
-  const errors = runValidations([
-    validateLatitude(latitude),
-    validateLongitude(longitude),
-    validateRequired(owner_name, 'Chủ mặt bằng'),
-    validatePhone(owner_phone),
-    validateRequired(address, 'Địa chỉ')
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
-
-function validateUpdateProposal(req, res, next) {
-  const { latitude, longitude, owner_name, owner_phone, address, status } = req.body;
-  const errors = runValidations([
-    latitude !== undefined ? validateLatitude(latitude) : null,
-    longitude !== undefined ? validateLongitude(longitude) : null,
-    owner_name !== undefined ? validateRequired(owner_name, 'Chủ mặt bằng') : null,
-    owner_phone !== undefined ? validatePhone(owner_phone) : null,
-    address !== undefined ? validateRequired(address, 'Địa chỉ') : null,
-    status !== undefined ? validateEnum(status, ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED'], 'Trạng thái') : null
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
-function validateCreateUser(req, res, next) {
-  const { full_name, email, phone, password } = req.body;
-  const errors = runValidations([
-    validateFullName(full_name),
-    validateEmail(email),
-    validatePhone(phone),
-    validatePassword(password)
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
-
-function validateUpdateUser(req, res, next) {
-  const { full_name, email, phone, status } = req.body;
-  const errors = runValidations([
-    validateFullName(full_name),
-    validateEmail(email),
-    phone ? validatePhone(phone) : null,
-    status !== undefined ? validateEnum(status, ['ACTIVE', 'LOCKED'], 'Trạng thái') : null
-  ]);
-  if (validationResponse(res, errors)) return;
-  next();
-}
+// Required theo field_definitions + invariant (lat/lng cho geo, email/password cho users)
+const validateCreateStation = makeEntityValidator('stations');
+const validateUpdateStation = makeEntityValidator('stations', { partial: true });
+const validateCreateProposal = makeEntityValidator('station_proposals');
+const validateUpdateProposal = makeEntityValidator('station_proposals', { partial: true });
+const validateCreateUser = makeEntityValidator('users');
+const validateUpdateUser = makeEntityValidator('users', { partial: true });
 
 module.exports = {
   validateEmail,

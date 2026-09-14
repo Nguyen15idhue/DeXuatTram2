@@ -471,7 +471,7 @@ const FieldManager = () => {
                     </div>
                   </div>
                   <label style={{ ...LABEL_STYLE, marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
-                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} disabled={editingIsLocked} />
+                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} />
                     Bắt buộc nhập
                   </label>
                 </div>

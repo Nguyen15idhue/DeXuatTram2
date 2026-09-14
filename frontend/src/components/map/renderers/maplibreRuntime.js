@@ -93,7 +93,17 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     center: [center?.[1] ?? 108, center?.[0] ?? 16],
     zoom: zoom ?? 6,
     attributionControl: false,
+    renderWorldCopies: false,
+    maxPitch: 60,
+    fadeDuration: 0,
+    refreshExpiredTiles: false,
   });
+
+  try {
+    if (typeof map.setPixelRatio === 'function') {
+      map.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    }
+  } catch { /* noop */ }
 
   let loaded = false;
   let markersState = null;
@@ -103,8 +113,12 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let pointsState = null;
   let circleState = null;
   let enabled3d = false;
+  let terrainOn = false;
+  let moving = false;
   let popup = null;
-  const extraMarkers = [];
+  const stationDomMarkers = [];
+  const provinceMarkers = [];
+  const pointMarkers = [];
   const sourceIds = new Set();
 
   function removeManagedSource(id) {
@@ -114,12 +128,18 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     try { map.removeSource(id); } catch { /* noop */ } finally { sourceIds.delete(id); }
   }
 
-  function clearOverlays() {
-    [...sourceIds].forEach(removeManagedSource);
-    while (extraMarkers.length) {
-      const m = extraMarkers.pop();
+  function removeMarkers(list) {
+    while (list.length) {
+      const m = list.pop();
       try { m.remove(); } catch { /* noop */ }
     }
+  }
+
+  function clearOverlays() {
+    [...sourceIds].forEach(removeManagedSource);
+    removeMarkers(stationDomMarkers);
+    removeMarkers(provinceMarkers);
+    removeMarkers(pointMarkers);
     if (popup) { try { popup.remove(); } catch { /* noop */ } popup = null; }
   }
 
@@ -127,8 +147,35 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     if (!item || !item.renderPopup) return;
     popup = new maplibregl.Popup({ offset: 12, closeButton: true })
       .setLngLat(lngLat)
-      .setDOMContent(item.renderPopup())
+      .setDOMContent(item.renderPopup(item))
       .addTo(map);
+  }
+
+  function bindMarkerInteractions() {
+    map.on('click', 'app-unclustered', (e) => {
+      const f = e.features && e.features[0];
+      if (!f) return;
+      const state = markersState || {};
+      const item = (state.items || [])[f.properties._idx];
+      if (!item) return;
+      const opts = state.options || {};
+      if (opts.renderPopup) openPopup({ ...item, renderPopup: opts.renderPopup }, f.geometry.coordinates);
+      if (opts.onMarkerClick) opts.onMarkerClick(item, item._type);
+    });
+    map.on('mouseenter', 'app-unclustered', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'app-unclustered', () => { map.getCanvas().style.cursor = ''; });
+
+    map.on('click', 'app-clusters', (e) => {
+      const f = e.features && e.features[0];
+      if (!f) return;
+      const src = map.getSource('app-markers');
+      if (!src || typeof src.getClusterExpansionZoom !== 'function') return;
+      src.getClusterExpansionZoom(f.properties.cluster_id)
+        .then((zoom) => { map.easeTo({ center: f.geometry.coordinates, zoom }); })
+        .catch(() => { /* noop */ });
+    });
+    map.on('mouseenter', 'app-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'app-clusters', () => { map.getCanvas().style.cursor = ''; });
   }
 
   function applyMarkers() {
@@ -136,6 +183,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     if (!items) return;
     const { cluster = true, showLabels = false, onMarkerClick, renderPopup } = options || {};
     if (!cluster) {
+      removeMarkers(stationDomMarkers);
       items.forEach((item) => {
         const lng = parseFloat(item.longitude);
         const lat = parseFloat(item.latitude);
@@ -154,7 +202,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           });
         }
         if (onMarkerClick) el.addEventListener('click', () => onMarkerClick(item, item._type));
-        extraMarkers.push(marker);
+        stationDomMarkers.push(marker);
       });
       return;
     }
@@ -201,7 +249,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         type: 'symbol',
         source: 'app-markers',
         filter: ['has', 'point_count'],
-        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 },
+        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12, 'text-font': ['Noto Sans Regular'] },
         paint: { 'text-color': '#ffffff' },
       });
       map.addLayer({
@@ -228,6 +276,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
               'text-size': 11,
               'text-offset': [0, 1.2],
               'text-anchor': 'top',
+              'text-font': ['Noto Sans Regular'],
             },
             paint: { 'text-color': '#1f2937', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
           });
@@ -275,6 +324,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
             'symbol-placement': 'line-center',
             'text-field': ['concat', ['to-string', ['get', '_distance']], 'm'],
             'text-size': 11,
+            'text-font': ['Noto Sans Regular'],
           },
           paint: { 'text-color': '#374151', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
         });
@@ -291,6 +341,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   }
 
   function applyProvinceLabels() {
+    removeMarkers(provinceMarkers);
     const { points, show } = provinceState || {};
     if (!points || !show) return;
     points.forEach((province) => {
@@ -298,7 +349,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       el.className = 'province-label';
       el.textContent = province.name;
       const marker = new maplibregl.Marker({ element: el }).setLngLat([province.lng, province.lat]).addTo(map);
-      extraMarkers.push(marker);
+      provinceMarkers.push(marker);
     });
   }
 
@@ -320,6 +371,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   }
 
   function applyPoints() {
+    removeMarkers(pointMarkers);
     const { points } = pointsState || {};
     if (!points) return;
     points.forEach((point) => {
@@ -340,7 +392,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           openPopup({ renderPopup: point.renderPopup }, [point.position[1], point.position[0]]);
         });
       }
-      extraMarkers.push(marker);
+      pointMarkers.push(marker);
     });
   }
 
@@ -368,65 +420,148 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     }
   }
 
-  function syncTerrain() {
-    if (!enabled3d || !loaded) return;
-    try {
-      if (map.getZoom() >= 12 && map.getSource('dem')) {
-        map.setTerrain({ source: 'dem', exaggeration: 1.1 });
-      } else {
-        map.setTerrain(null);
+  function findBuildingLayers() {
+    const layers = map.getStyle()?.layers || [];
+    let flat = null;
+    let extrude = null;
+    for (const l of layers) {
+      if (l['source-layer'] !== 'building') continue;
+      if (l.type === 'fill') flat = l.id;
+      else if (l.type === 'fill-extrusion') extrude = l.id;
+    }
+    return { flat, extrude };
+  }
+
+  function ensureDemSource() {
+    if (map.getSource('dem')) return;
+    map.addSource('dem', {
+      type: 'raster-dem',
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      encoding: 'terrarium',
+      tileSize: 256,
+      maxzoom: 11,
+    });
+  }
+
+  const overlayTopOrder = [
+    'app-polylines-line',
+    'app-polylines-label',
+    'app-boundaries-line',
+    'app-clusters',
+    'app-cluster-count',
+    'app-unclustered',
+    'app-marker-labels',
+  ];
+
+  function bringOverlaysToTop() {
+    overlayTopOrder.forEach((id) => {
+      if (map.getLayer(id)) {
+        try { map.moveLayer(id); } catch { /* noop */ }
       }
+    });
+  }
+
+  function syncTerrain() {
+    if (!loaded) return;
+    const want = enabled3d && !moving && map.getPitch() > 10
+      && map.getZoom() >= 15 && !!map.getSource('dem');
+    if (want === terrainOn) return;
+    terrainOn = want;
+    try {
+      map.setTerrain(want ? { source: 'dem', exaggeration: 1.1 } : null);
     } catch { /* noop */ }
+  }
+
+  const handleMoveStart = () => {
+    if (!enabled3d || moving) return;
+    moving = true;
+    syncTerrain();
+  };
+
+  const handleMoveEnd = () => {
+    if (!enabled3d || !moving) return;
+    moving = false;
+    syncTerrain();
+  };
+
+  function unbindTerrainEvents() {
+    map.off('zoomend', syncTerrain);
+    map.off('moveend', handleMoveEnd);
+    map.off('movestart', handleMoveStart);
+    map.off('zoomstart', handleMoveStart);
+  }
+
+  function bindTerrainEvents() {
+    unbindTerrainEvents();
+    map.on('zoomend', syncTerrain);
+    map.on('moveend', handleMoveEnd);
+    map.on('movestart', handleMoveStart);
+    map.on('zoomstart', handleMoveStart);
   }
 
   function apply3D() {
     if (!loaded) return;
+    const { flat, extrude } = findBuildingLayers();
+
     if (enabled3d) {
       try {
-        if (!map.getSource('dem')) {
-          map.addSource('dem', {
-            type: 'raster-dem',
-            tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-            encoding: 'terrarium',
-            tileSize: 256,
-            maxzoom: 11,
-          });
+        ensureDemSource();
+
+        if (extrude) {
+          map.setLayoutProperty(extrude, 'visibility', 'visible');
+          map.setLayerZoomRange(extrude, 15, 24);
+          map.setPaintProperty(extrude, 'fill-extrusion-opacity', 1);
+          map.setFilter(extrude, ['>=', ['coalesce', ['get', 'render_height'], 0], 10]);
+        } else if (map.getSource('openmaptiles')) {
+          if (!map.getLayer('app-buildings')) {
+            map.addLayer({
+              id: 'app-buildings',
+              type: 'fill-extrusion',
+              source: 'openmaptiles',
+              'source-layer': 'building',
+              minzoom: 15,
+              filter: ['>=', ['coalesce', ['get', 'render_height'], 0], 10],
+              paint: {
+                'fill-extrusion-color': '#c9c4bd',
+                'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 10],
+                'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+                'fill-extrusion-opacity': 1,
+              },
+            });
+          } else {
+            map.setLayoutProperty('app-buildings', 'visibility', 'visible');
+          }
         }
-        if (!map.getLayer('hillshade')) {
-          map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': 0.3 } });
-        }
-        if (map.getSource('openmaptiles') && !map.getLayer('app-buildings')) {
-          map.addLayer({
-            id: 'app-buildings',
-            type: 'fill-extrusion',
-            source: 'openmaptiles',
-            'source-layer': 'building',
-            minzoom: 14,
-            paint: {
-              'fill-extrusion-color': '#c9c4bd',
-              'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 8],
-              'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-              'fill-extrusion-opacity': 0.7,
-            },
-          });
-        }
-        map.off('zoom', syncTerrain);
-        map.on('zoom', syncTerrain);
+        if (flat) map.setLayerZoomRange(flat, 13, 15);
+
+        bindTerrainEvents();
         syncTerrain();
       } catch (err) {
         console.error('[MapLibre] 3D error:', err.message);
       }
-      map.easeTo({ pitch: 55, duration: 800 });
+      if (map.getPitch() < 30) map.easeTo({ pitch: 45, duration: 700 });
     } else {
+      moving = false;
+      unbindTerrainEvents();
       try {
-        map.off('zoom', syncTerrain);
-        if (map.getLayer('app-buildings')) map.removeLayer('app-buildings');
-        if (map.getLayer('hillshade')) map.removeLayer('hillshade');
-        map.setTerrain(null);
-        if (map.getSource('dem')) map.removeSource('dem');
+        if (terrainOn) { map.setTerrain(null); terrainOn = false; }
+
+        if (extrude) {
+          map.setLayoutProperty(extrude, 'visibility', 'none');
+          map.setLayerZoomRange(extrude, 14, 24);
+          map.setPaintProperty(extrude, 'fill-extrusion-opacity', 0.8);
+          map.setFilter(extrude, null);
+        }
+        if (map.getLayer('app-buildings')) map.setLayoutProperty('app-buildings', 'visibility', 'none');
+        if (flat) {
+          map.setLayerZoomRange(flat, 13, 14);
+          map.setLayoutProperty(flat, 'visibility', 'visible');
+        }
       } catch { /* noop */ }
-      if (map.getPitch() > 0) map.easeTo({ pitch: 0, duration: 600 });
+      if (map.getPitch() > 0) map.easeTo({ pitch: 0, duration: 500 });
     }
+
+    bringOverlaysToTop();
   }
 
   function applyAll() {
@@ -454,6 +589,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   };
   map.on('load', onStyleReady);
   map.on('style.load', onStyleReady);
+  bindMarkerInteractions();
 
   const runtime = {
     id: 'maplibre',
@@ -515,10 +651,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     setProvinceLabels(points, show) {
       provinceState = { points, show };
       if (!loaded) return;
-      // remove previous label markers only
-      extraMarkers.splice(0).forEach((m) => { try { m.remove(); } catch { /* noop */ } });
       applyProvinceLabels();
-      applyPoints();
     },
 
     setBoundaries(geojson, show) {
