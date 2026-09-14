@@ -231,6 +231,27 @@ body {
   font-weight: 600;
 }
 
+.map-layer-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 6px;
+}
+
+.map-layer-group-title {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+
+.map-layer-credit {
+  padding: 4px 12px 6px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
 /* Map Legend - top right (ke ben trai cum nut dieu khien; tranh xung dot voi bo loc o goc tren trai) */
 .map-legend {
   position: absolute;
@@ -2886,6 +2907,21 @@ fieldset.form-section,
   white-space: nowrap;
   pointer-events: none;
   text-align: center;
+  line-height: 1.2;
+}
+.admin-ward-label {
+  background: transparent !important;
+  border: none !important;
+}
+.admin-ward-label span {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  font-weight: 500;
+  color: #1f2937;
+  text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;
+  white-space: nowrap;
+  pointer-events: none;
   line-height: 1.2;
 }
 .marker-cluster-small,

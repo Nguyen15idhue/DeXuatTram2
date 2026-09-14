@@ -6,6 +6,17 @@ import 'leaflet.markercluster';
 import { createCustomIcon } from '../../../utils/mapHelpers';
 
 const ZOOM_SHOW_DUP_LABEL = 12;
+const WARD_MIN_ZOOM = 12;
+const WARD_MAX_LABELS = 400;
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export function createLeafletRuntime({ container, center, zoom, zoomControl = false }) {
   const map = L.map(container, {
@@ -23,10 +34,45 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
   let polylineLayer = null;
   let boundaryLayer = null;
   let provinceLabelLayer = null;
+  let wardLabelLayer = null;
+  let wardState = { points: [], show: false };
   let pointLayer = null;
   let circleLayer = null;
   let dupLabelToggle = null;
   let tileErr = { count: 0, fired: false, loaded: false, handler: null };
+
+  function renderWardLabels() {
+    if (wardLabelLayer) {
+      map.removeLayer(wardLabelLayer);
+      wardLabelLayer = null;
+    }
+    const { points, show } = wardState;
+    if (!show || !points || points.length === 0) return;
+    if (map.getZoom() < WARD_MIN_ZOOM) return;
+    const bounds = map.getBounds().pad(0.15);
+    const visible = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const p = points[i];
+      if (bounds.contains([p.lat, p.lng])) {
+        visible.push(p);
+        if (visible.length >= WARD_MAX_LABELS) break;
+      }
+    }
+    if (visible.length === 0) return;
+    wardLabelLayer = L.layerGroup(visible.map((p) => L.marker([p.lat, p.lng], {
+      interactive: false,
+      keyboard: false,
+      icon: L.divIcon({
+        className: 'admin-ward-label',
+        html: `<span>${escapeHtml(p.name)}</span>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      }),
+    })));
+    wardLabelLayer.addTo(map);
+  }
+
+  map.on('zoomend moveend', renderWardLabels);
 
   const runtime = {
     id: 'leaflet',
@@ -184,6 +230,11 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         })
       );
       provinceLabelLayer.addTo(map);
+    },
+
+    setWardLabels(points, show) {
+      wardState = { points: points || [], show: !!show };
+      renderWardLabels();
     },
 
     setBoundaries(geojson, show) {

@@ -118,6 +118,30 @@ export function loadLibertyBaseStyle() {
   return fetchLibertyRaw();
 }
 
+function fetchJson(url) {
+  return fetch(url)
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null);
+}
+
+let provinceLabelsPromise = null;
+export function loadProvinceLabels() {
+  if (!provinceLabelsPromise) provinceLabelsPromise = fetchJson('/vn-provinces-labels.geojson');
+  return provinceLabelsPromise;
+}
+
+let provinceLabelsOldPromise = null;
+export function loadProvinceLabelsOld() {
+  if (!provinceLabelsOldPromise) provinceLabelsOldPromise = fetchJson('/vn-provinces-labels-old.geojson');
+  return provinceLabelsOldPromise;
+}
+
+let wardLabelsPromise = null;
+export function loadWardLabels() {
+  if (!wardLabelsPromise) wardLabelsPromise = fetchJson('/vn-wards-labels.geojson');
+  return wardLabelsPromise;
+}
+
 const pmtilesStyleCache = new Map();
 
 export async function loadPmtilesStyle(pmtilesUrl) {
@@ -152,7 +176,7 @@ export function isStyleUrl(value) {
 }
 
 const HYBRID_LINE_PREFIXES = ['road_', 'boundary_', 'waterway_'];
-const HYBRID_SYMBOL_EXCLUDE = new Set(['road_one_way_arrow', 'road_one_way_arrow_opposite', 'poi_r20']);
+const HYBRID_SYMBOL_EXCLUDE = new Set(['road_one_way_arrow', 'road_one_way_arrow_opposite', 'poi_r20', 'label_other']);
 
 function keepHybridLayer(layer) {
   if (!layer || !layer.id) return false;

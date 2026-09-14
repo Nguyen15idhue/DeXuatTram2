@@ -110,6 +110,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let polylinesState = null;
   let provinceState = null;
   let boundaryState = null;
+  let wardState = null;
   let pointsState = null;
   let circleState = null;
   let enabled3d = false;
@@ -370,6 +371,48 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     }
   }
 
+  function applyWardLabels() {
+    const SRC = 'app-ward-labels';
+    const LAYER = 'app-ward-labels-symbol';
+    if (map.getLayer(LAYER)) { try { map.removeLayer(LAYER); } catch { /* noop */ } }
+    if (map.getSource(SRC)) removeManagedSource(SRC);
+    const { points, show } = wardState || {};
+    if (!show || !points || points.length === 0) return;
+    if (!map.getStyle().glyphs) {
+      try { map.setGlyphs('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'); } catch { /* noop */ }
+    }
+    const data = {
+      type: 'FeatureCollection',
+      features: points.map((p) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+        properties: { name: p.name, province: p.province || '' },
+      })),
+    };
+    map.addSource(SRC, { type: 'geojson', data });
+    sourceIds.add(SRC);
+    map.addLayer({
+      id: LAYER,
+      type: 'symbol',
+      source: SRC,
+      minzoom: 11,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11, 9, 14, 12, 17, 14],
+        'text-allow-overlap': false,
+        'text-optional': true,
+        'text-padding': 4,
+      },
+      paint: {
+        'text-color': '#1f2937',
+        'text-halo-color': 'rgba(255,255,255,0.95)',
+        'text-halo-width': 1.4,
+      },
+    });
+    bringOverlaysToTop();
+  }
+
   function applyPoints() {
     removeMarkers(pointMarkers);
     const { points } = pointsState || {};
@@ -573,6 +616,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     applyMarkers();
     applyProvinceLabels();
     applyPoints();
+    applyWardLabels();
     apply3D();
   }
 
@@ -652,6 +696,12 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       provinceState = { points, show };
       if (!loaded) return;
       applyProvinceLabels();
+    },
+
+    setWardLabels(points, show) {
+      wardState = { points, show };
+      if (!loaded) return;
+      applyWardLabels();
     },
 
     setBoundaries(geojson, show) {

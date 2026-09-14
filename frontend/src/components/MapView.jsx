@@ -5,7 +5,7 @@ import { STATION_STATUSES, PROPOSAL_STATUSES } from '../utils/mapStatuses';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
-import { buildMapStyle, loadPmtilesStyle, loadLibertyBaseStyle } from '../utils/mapStyles';
+import { buildMapStyle, loadPmtilesStyle, loadLibertyBaseStyle, loadProvinceLabels, loadProvinceLabelsOld, loadWardLabels } from '../utils/mapStyles';
 import { MAP_MODES, DEFAULT_MODE } from '../utils/mapModes';
 import { resolveRenderer } from './map/renderers';
 import MapCanvas from './map/MapCanvas';
@@ -59,6 +59,22 @@ const MAP_LEGEND = {
   proposals: PROPOSAL_STATUSES
 };
 
+const ADMIN_LABEL_OPTIONS = [
+  { id: 'new', label: 'Nhãn mới' },
+  { id: 'old', label: 'Nhãn cũ' },
+  { id: 'off', label: 'Tắt nhãn' },
+];
+
+const featureCollectionToPoints = (fc) => {
+  if (!fc || !Array.isArray(fc.features)) return [];
+  return fc.features.map((f) => ({
+    name: f.properties.name,
+    lat: f.geometry.coordinates[1],
+    lng: f.geometry.coordinates[0],
+    province: f.properties.province,
+  }));
+};
+
 function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
   return (
     <button
@@ -73,7 +89,7 @@ function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
   );
 }
 
-function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
+function MapLayerSwitcher({ groups }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -88,7 +104,8 @@ function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  if (!layers || layers.length <= 1) return null;
+  const visibleGroups = (groups || []).filter((g) => (g.options || []).length > 1);
+  if (visibleGroups.length === 0) return null;
 
   return (
     <div className="map-layer-switcher" ref={ref}>
@@ -106,15 +123,22 @@ function MapLayerSwitcher({ layers, activeIdx, onSwitch }) {
       </button>
       {open && (
         <div className="map-layer-dropdown">
-          {layers.map((layer, idx) => (
-            <button
-              type="button"
-              key={idx}
-              className={`map-layer-option ${idx === activeIdx ? 'map-layer-option-active' : ''}`}
-              onClick={() => { onSwitch(idx); setOpen(false); }}
-            >
-              {layer.label}
-            </button>
+          {visibleGroups.map((group, gi) => (
+            <div key={group.key || gi} className="map-layer-group">
+              {gi > 0 && <div className="map-layer-divider" />}
+              {group.title && <div className="map-layer-group-title">{group.title}</div>}
+              {group.options.map((layer, idx) => (
+                <button
+                  type="button"
+                  key={idx}
+                  className={`map-layer-option ${idx === group.activeIdx ? 'map-layer-option-active' : ''}`}
+                  onClick={() => { group.onSwitch(idx); setOpen(false); }}
+                >
+                  {layer.label}
+                </button>
+              ))}
+              {group.credit && <div className="map-layer-credit">{group.credit}</div>}
+            </div>
           ))}
         </div>
       )}
@@ -244,7 +268,10 @@ const MapView = ({
   const [locationLoading, setLocationLoading] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(null);
   const [showStationLabels, setShowStationLabels] = useState(true);
-  const [showProvinceLabels, setShowProvinceLabels] = useState(true);
+  const [adminLabelVersion, setAdminLabelVersion] = useState('new');
+  const [provinceLabelPoints, setProvinceLabelPoints] = useState(PROVINCES);
+  const [provinceLabelPointsOld, setProvinceLabelPointsOld] = useState([]);
+  const [wardLabelPoints, setWardLabelPoints] = useState([]);
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [showLegend, setShowLegend] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
   const [showCluster, setShowCluster] = useState(true);
@@ -312,6 +339,36 @@ const MapView = ({
     loadLibertyBaseStyle().then((s) => { if (!cancelled) setLibertyBase(s); });
     return () => { cancelled = true; };
   }, [config.renderer]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadProvinceLabels().then((fc) => {
+      if (cancelled) return;
+      const points = featureCollectionToPoints(fc);
+      if (points.length > 0) setProvinceLabelPoints(points);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadProvinceLabelsOld().then((fc) => {
+      if (cancelled) return;
+      setProvinceLabelPointsOld(featureCollectionToPoints(fc));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (adminLabelVersion !== 'new' || wardLabelPoints.length > 0) return undefined;
+    let cancelled = false;
+    loadWardLabels().then((fc) => {
+      if (cancelled) return;
+      const points = featureCollectionToPoints(fc);
+      if (points.length > 0) setWardLabelPoints(points);
+    });
+    return () => { cancelled = true; };
+  }, [adminLabelVersion, wardLabelPoints.length]);
 
   useEffect(() => {
     if (highlightPosition) {
@@ -418,7 +475,7 @@ const MapView = ({
             center_lng: parseFloat(d.center_lng) || prev.center_lng,
             default_zoom: parseInt(d.default_zoom) || prev.default_zoom,
           }));
-          setShowProvinceLabels(d.show_province_labels !== false);
+          setAdminLabelVersion(d.show_province_labels === false ? 'off' : 'new');
           setShowBoundaries(d.show_boundaries !== false);
           setShowCluster(d.show_cluster !== false);
           setActiveLayerIdx(providerStyles.length ? savedStyleIdx : 0);
@@ -633,6 +690,20 @@ const MapView = ({
     else setActiveLayerIdx(idx);
   };
 
+  const showAdminLabels = adminLabelVersion !== 'off';
+  const activeProvincePoints = !showAdminLabels
+    ? []
+    : (adminLabelVersion === 'old' ? provinceLabelPointsOld : provinceLabelPoints);
+  const showWardLabels = adminLabelVersion === 'new';
+  const activeWardPoints = showWardLabels ? wardLabelPoints : [];
+  const adminOptionIdx = Math.max(0, ADMIN_LABEL_OPTIONS.findIndex(o => o.id === adminLabelVersion));
+  const handleAdminSwitch = (idx) => setAdminLabelVersion(ADMIN_LABEL_OPTIONS[idx].id);
+
+  const layerGroups = [
+    { key: 'base', title: 'Nền bản đồ', options: layerOptions, activeIdx: activeLayerIndex, onSwitch: handleLayerSwitch },
+    { key: 'admin', title: 'Nhãn hành chính', options: ADMIN_LABEL_OPTIONS, activeIdx: adminOptionIdx, onSwitch: handleAdminSwitch, credit: '© Open Admin Data · viettrace (CC-BY-4.0)' },
+  ];
+
   return (
     <div style={{ flex: 1, height: '100%', width: '100%', position: 'relative' }}>
       <MapCanvas
@@ -647,10 +718,12 @@ const MapView = ({
         pairs={pairs}
         showCluster={showCluster}
         showStationLabels={showStationLabels}
-        showProvinceLabels={showProvinceLabels}
+        showProvinceLabels={showAdminLabels}
         showBoundaries={showBoundaries}
         boundariesGeojson={boundaries}
-        provincePoints={PROVINCES}
+        provincePoints={activeProvincePoints}
+        wardPoints={activeWardPoints}
+        showWardLabels={showWardLabels}
         selectedPosition={selectedPosition}
         myLocation={myLocation}
         onMarkerClick={onMarkerClick}
@@ -695,13 +768,6 @@ const MapView = ({
         />
 
         <MapControlButton
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>}
-          tooltip="Tên tỉnh"
-          active={showProvinceLabels}
-          onClick={() => setShowProvinceLabels(v => !v)}
-        />
-
-        <MapControlButton
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 2"/></svg>}
           tooltip="Ranh giới"
           active={showBoundaries}
@@ -717,13 +783,7 @@ const MapView = ({
           />
         )}
 
-        {layerOptions.length > 0 && (
-          <MapLayerSwitcher
-            layers={layerOptions}
-            activeIdx={activeLayerIndex}
-            onSwitch={handleLayerSwitch}
-          />
-        )}
+        <MapLayerSwitcher groups={layerGroups} />
       </div>
 
       {showLegend && (

@@ -17,6 +17,8 @@ export default function MapCanvas({
   showBoundaries = true,
   boundariesGeojson = null,
   provincePoints = [],
+  wardPoints = [],
+  showWardLabels = false,
   selectedPosition = null,
   myLocation = null,
   locationPoint = false,
@@ -120,6 +122,10 @@ export default function MapCanvas({
   useEffect(() => {
     runtimeRef.current?.setProvinceLabels(provincePoints, showProvinceLabels);
   }, [runtimeVersion, provincePoints, showProvinceLabels]);
+
+  useEffect(() => {
+    runtimeRef.current?.setWardLabels(wardPoints, showWardLabels);
+  }, [runtimeVersion, wardPoints, showWardLabels]);
 
   useEffect(() => {
     runtimeRef.current?.setBoundaries(boundariesGeojson, showBoundaries);
