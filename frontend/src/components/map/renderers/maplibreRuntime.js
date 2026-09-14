@@ -115,7 +115,6 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let circleState = null;
   let enabled3d = false;
   let terrainOn = false;
-  let moving = false;
   let popup = null;
   const stationDomMarkers = [];
   const provinceMarkers = [];
@@ -506,7 +505,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
   function syncTerrain() {
     if (!loaded) return;
-    const want = enabled3d && !moving && map.getPitch() > 10
+    const want = enabled3d && map.getPitch() > 10
       && map.getZoom() >= 15 && !!map.getSource('dem');
     if (want === terrainOn) return;
     terrainOn = want;
@@ -515,31 +514,17 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     } catch { /* noop */ }
   }
 
-  const handleMoveStart = () => {
-    if (!enabled3d || moving) return;
-    moving = true;
-    syncTerrain();
-  };
-
-  const handleMoveEnd = () => {
-    if (!enabled3d || !moving) return;
-    moving = false;
-    syncTerrain();
-  };
-
   function unbindTerrainEvents() {
     map.off('zoomend', syncTerrain);
-    map.off('moveend', handleMoveEnd);
-    map.off('movestart', handleMoveStart);
-    map.off('zoomstart', handleMoveStart);
+    map.off('moveend', syncTerrain);
+    map.off('pitchend', syncTerrain);
   }
 
   function bindTerrainEvents() {
     unbindTerrainEvents();
     map.on('zoomend', syncTerrain);
-    map.on('moveend', handleMoveEnd);
-    map.on('movestart', handleMoveStart);
-    map.on('zoomstart', handleMoveStart);
+    map.on('moveend', syncTerrain);
+    map.on('pitchend', syncTerrain);
   }
 
   function apply3D() {
@@ -584,7 +569,6 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       }
       if (map.getPitch() < 30) map.easeTo({ pitch: 45, duration: 700 });
     } else {
-      moving = false;
       unbindTerrainEvents();
       try {
         if (terrainOn) { map.setTerrain(null); terrainOn = false; }

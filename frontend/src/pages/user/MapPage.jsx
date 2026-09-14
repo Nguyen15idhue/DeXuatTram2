@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import MapView from '../../components/MapView';
 import MapFilterPanel, { EMPTY_MAP_FILTERS } from '../../components/MapFilterPanel';
 import { useAuth } from '../../contexts/AuthContext';
-import { proposalService } from '../../services/api';
+import { proposalService, stationService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Toast from '../../components/Toast';
 import { MapPin, X } from 'lucide-react';
@@ -10,12 +10,14 @@ import { MapPin, X } from 'lucide-react';
 const MapPage = () => {
   const { token, user } = useAuth();
   const [showForm, setShowForm] = useState(false);
+  const [showStationForm, setShowStationForm] = useState(false);
   const [coords, setCoords] = useState({ lat: 0, lng: 0 });
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [mapKey, setMapKey] = useState(0);
   const [selectingLocation, setSelectingLocation] = useState(false);
   const [highlightPosition, setHighlightPosition] = useState(null);
+  const [pendingTarget, setPendingTarget] = useState('proposal');
   const [nearbyWarning, setNearbyWarning] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_MAP_FILTERS });
@@ -40,6 +42,13 @@ const MapPage = () => {
     setError('');
     setNearbyWarning('');
     setShowForm(true);
+    setSelectingLocation(false);
+  }, []);
+
+  const openStationForm = useCallback((lat, lng) => {
+    setCoords({ lat, lng });
+    setHighlightPosition([lat, lng]);
+    setShowStationForm(true);
     setSelectingLocation(false);
   }, []);
 
@@ -70,26 +79,28 @@ const MapPage = () => {
     return () => { cancelled = true; };
   }, [showForm, coords.lat, coords.lng, token]);
 
-  const handleLocationSelected = useCallback((lat, lng, mode) => {
+  const handleLocationSelected = useCallback((lat, lng, mode, target) => {
     if (mode === 'select') {
+      setPendingTarget(target === 'station' ? 'station' : 'proposal');
       setSelectingLocation(true);
       setToast({ message: isMobile ? 'Kéo marker đến vị trí cần chọn, sau đó ấn Xác nhận' : 'Click trên bản đồ để chọn vị trí', type: 'info' });
       return;
     }
     if (lat !== null && lng !== null) {
-      openProposalForm(lat, lng);
+      if (target === 'station') openStationForm(lat, lng);
+      else openProposalForm(lat, lng);
     }
-  }, [isMobile, openProposalForm]);
+  }, [isMobile, openProposalForm, openStationForm]);
 
   const handleMapSelectClick = useCallback((lat, lng) => {
     setHighlightPosition([lat, lng]);
   }, []);
 
   const handleConfirmPosition = useCallback(() => {
-    if (highlightPosition) {
-      openProposalForm(highlightPosition[0], highlightPosition[1]);
-    }
-  }, [highlightPosition, openProposalForm]);
+    if (!highlightPosition) return;
+    if (pendingTarget === 'station') openStationForm(highlightPosition[0], highlightPosition[1]);
+    else openProposalForm(highlightPosition[0], highlightPosition[1]);
+  }, [highlightPosition, pendingTarget, openProposalForm, openStationForm]);
 
   const handleSubmit = async (formData) => {
     setError('');
@@ -122,6 +133,18 @@ const MapPage = () => {
     } catch {
       setError('Lỗi kết nối server');
     }
+  };
+
+  const handleStationSubmit = async (formData) => {
+    const submitData = { ...formData };
+    if (!submitData.name || !submitData.latitude || !submitData.longitude || !submitData.address) {
+      throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc (Tên, Vĩ độ, Kinh độ, Địa chỉ)');
+    }
+    const res = await stationService.create(submitData, token);
+    if (!res.success) throw new Error(res.message || 'Tạo trạm thất bại');
+    setShowStationForm(false);
+    setToast({ message: 'Tạo trạm thành công!', type: 'success' });
+    setMapKey(prev => prev + 1);
   };
 
   return (
@@ -190,6 +213,31 @@ const MapPage = () => {
           </div>
           <form method="dialog" className="modal-backdrop">
             <button onClick={() => { setShowForm(false); setSelectingLocation(false); }}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {showStationForm && (
+        <dialog className="modal modal-open map-form-modal">
+          <div className="modal-box max-w-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Thêm trạm mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowStationForm(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <DynamicForm
+              entity="stations"
+              purpose="create"
+              onSubmit={handleStationSubmit}
+              initialData={{ latitude: coords.lat, longitude: coords.lng }}
+            >
+              <button type="button" className="btn btn-ghost" onClick={() => setShowStationForm(false)}>Hủy</button>
+            </DynamicForm>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowStationForm(false)}>close</button>
           </form>
         </dialog>
       )}

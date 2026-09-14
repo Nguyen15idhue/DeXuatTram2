@@ -96,7 +96,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
       return map.getZoom();
     },
 
-    setTileLayer({ url, attribution, subdomains, maxZoom = 20, overlays, onTileError } = {}) {
+    setTileLayer({ url, attribution, subdomains, maxZoom = 22, maxNativeZoom = 19, overlays, onTileError } = {}) {
       if (tileLayer) {
         map.removeLayer(tileLayer);
         tileLayer = null;
@@ -111,6 +111,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         attribution: attribution || '',
         subdomains: subdomains || '',
         maxZoom,
+        maxNativeZoom,
         zIndex: 1,
       });
       tileLayer.on('tileerror', () => {
@@ -133,6 +134,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
           attribution: ov.attribution || '',
           subdomains: ov.subdomains || '',
           maxZoom,
+          maxNativeZoom: ov.max_zoom || maxNativeZoom,
           zIndex: 2 + idx,
         });
         overlayLayer.addTo(map);

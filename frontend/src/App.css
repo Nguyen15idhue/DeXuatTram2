@@ -374,6 +374,18 @@ body {
   background: #f0f4ff;
 }
 
+.map-fab-station {
+  color: #0f9d58;
+}
+
+.map-fab-station:hover {
+  background: #eaf7ef;
+}
+
+.map-fab-station-active {
+  background: #dcfce7;
+}
+
 .map-fab-create {
   color: white;
   background: #4285f4;
@@ -411,6 +423,13 @@ body {
   gap: 4px;
   min-width: 240px;
   animation: fabMenuIn 0.2s ease;
+}
+
+.map-create-title {
+  font-weight: 700;
+  color: #1e3a8a;
+  font-size: 14px;
+  padding: 6px 14px 2px;
 }
 
 @keyframes fabMenuIn {

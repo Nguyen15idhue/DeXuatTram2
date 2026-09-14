@@ -262,6 +262,7 @@ const MapView = ({
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [createTarget, setCreateTarget] = useState('proposal');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [resolvingUrl, setResolvingUrl] = useState(false);
   const [myLocation, setMyLocation] = useState(null);
@@ -280,6 +281,7 @@ const MapView = ({
   const [resolvedAttribution, setResolvedAttribution] = useState(OSM_ATTRIBUTION);
   const [resolvedSubdomains, setResolvedSubdomains] = useState('');
   const [resolvedOverlays, setResolvedOverlays] = useState([]);
+  const [resolvedMaxNativeZoom, setResolvedMaxNativeZoom] = useState(19);
   const [tileFailed, setTileFailed] = useState(false);
   const [tileWarning, setTileWarning] = useState('');
   const [runtimeWarning, setRuntimeWarning] = useState('');
@@ -462,6 +464,7 @@ const MapView = ({
           setResolvedAttribution(tile.attribution);
           setResolvedSubdomains(tile.subdomains);
           setResolvedOverlays(tile.overlays || []);
+          setResolvedMaxNativeZoom(tile.maxNativeZoom || 19);
           setTileWarning(warning);
 
           setConfig(prev => ({
@@ -510,6 +513,7 @@ const MapView = ({
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
     setResolvedOverlays(tile.overlays || []);
+    setResolvedMaxNativeZoom(tile.maxNativeZoom || 19);
     setTileWarning(tile.warning || '');
   }, [activeLayerIdx, config.tile_provider_id, config.api_key, config.tile_mode, config.retina, config.renderer, config.style_url, config.tile_url, config.tile_attribution, config.tile_subdomains, buildTileUrl]);
 
@@ -602,8 +606,8 @@ const MapView = ({
   );
 
   const tileConfig = useMemo(
-    () => ({ url: resolvedTileUrl, attribution: resolvedAttribution, subdomains: resolvedSubdomains, overlays: resolvedOverlays }),
-    [resolvedTileUrl, resolvedAttribution, resolvedSubdomains, resolvedOverlays]
+    () => ({ url: resolvedTileUrl, attribution: resolvedAttribution, subdomains: resolvedSubdomains, overlays: resolvedOverlays, maxNativeZoom: resolvedMaxNativeZoom }),
+    [resolvedTileUrl, resolvedAttribution, resolvedSubdomains, resolvedOverlays, resolvedMaxNativeZoom]
   );
 
   const vectorStyle = useMemo(() => {
@@ -629,7 +633,7 @@ const MapView = ({
         setLocationLoading(false);
         setShowCreateMenu(false);
         if (openForm && onLocationSelected) {
-          onLocationSelected(latitude, longitude);
+          onLocationSelected(latitude, longitude, null, createTarget);
         }
       },
       (error) => {
@@ -644,7 +648,7 @@ const MapView = ({
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-  }, [onLocationSelected]);
+  }, [onLocationSelected, createTarget]);
 
   const handleGoogleMapSubmit = useCallback(async () => {
     if (!googleMapUrl.trim()) return;
@@ -654,7 +658,7 @@ const MapView = ({
       setGoogleMapUrl('');
       setResolvingUrl(false);
       setShowCreateMenu(false);
-      if (onLocationSelected) onLocationSelected(result.lat, result.lng);
+      if (onLocationSelected) onLocationSelected(result.lat, result.lng, null, createTarget);
       return;
     }
     if (result && result.needResolve) {
@@ -663,13 +667,22 @@ const MapView = ({
       if (resolved && !resolved.needResolve) {
         setGoogleMapUrl('');
         setShowCreateMenu(false);
-        if (onLocationSelected) onLocationSelected(resolved.lat, resolved.lng);
+        if (onLocationSelected) onLocationSelected(resolved.lat, resolved.lng, null, createTarget);
         return;
       }
     }
     setResolvingUrl(false);
     alert('Không thể đọc tọa độ từ link này. Vui lòng kiểm tra lại định dạng link.');
-  }, [googleMapUrl, onLocationSelected]);
+  }, [googleMapUrl, onLocationSelected, createTarget]);
+
+  const openCreateMenu = (target) => {
+    if (showCreateMenu && createTarget === target) {
+      setShowCreateMenu(false);
+      return;
+    }
+    setCreateTarget(target);
+    setShowCreateMenu(true);
+  };
 
   if (loading) {
     return <div className="map-loading">Đang tải bản đồ...</div>;
@@ -816,6 +829,7 @@ const MapView = ({
       <div className="map-fab-group">
         {showCreateMenu && (
           <div className="map-create-menu">
+            <div className="map-create-title">{createTarget === 'station' ? 'Tạo trạm mới' : 'Tạo đề xuất mới'}</div>
             <button type="button" className="map-create-option" onClick={() => handleMyLocation(true)} disabled={locationLoading}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
@@ -826,7 +840,7 @@ const MapView = ({
             <button
               type="button"
               className="map-create-option"
-              onClick={() => { setShowCreateMenu(false); if (onLocationSelected) onLocationSelected(null, null, 'select'); }}
+              onClick={() => { setShowCreateMenu(false); if (onLocationSelected) onLocationSelected(null, null, 'select', createTarget); }}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
@@ -858,6 +872,20 @@ const MapView = ({
           </div>
         )}
 
+        {user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role) && (
+          <button
+            type="button"
+            className={`map-fab map-fab-station ${showCreateMenu && createTarget === 'station' ? 'map-fab-station-active' : ''}`}
+            onClick={() => openCreateMenu('station')}
+            title="Tạo trạm nhanh"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12.5 7l-4 5.5h3l-1 4.5 4-5.5h-3z"/>
+            </svg>
+          </button>
+        )}
+
         <button
           type="button"
           className="map-fab map-fab-location"
@@ -873,8 +901,8 @@ const MapView = ({
 
         <button
           type="button"
-          className={`map-fab map-fab-create ${showCreateMenu ? 'map-fab-active' : ''}`}
-          onClick={() => setShowCreateMenu(!showCreateMenu)}
+          className={`map-fab map-fab-create ${showCreateMenu && createTarget === 'proposal' ? 'map-fab-active' : ''}`}
+          onClick={() => openCreateMenu('proposal')}
           title="Tạo đề xuất mới"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

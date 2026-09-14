@@ -24,7 +24,7 @@ export function buildTileConfig(config = {}, styleIdx) {
   const retina = !!Number(config.retina);
   const renderer = config.renderer || 'leaflet';
   const styleValue = config.style_url || '';
-  const fallback = { url: PROXY_TILE, attribution: OSM_ATTRIBUTION, subdomains: '', warning: '' };
+  const fallback = { url: PROXY_TILE, attribution: OSM_ATTRIBUTION, subdomains: '', maxNativeZoom: 19, warning: '' };
 
   const provider = getProviderById(providerId);
   if (!provider) {
@@ -62,6 +62,7 @@ export function buildTileConfig(config = {}, styleIdx) {
       url: picked.url,
       attribution: picked.attribution || provider.attribution || OSM_ATTRIBUTION,
       subdomains: picked.subdomains !== undefined ? picked.subdomains : (provider.subdomains || ''),
+      maxNativeZoom: picked.max_zoom || provider.max_zoom || 19,
       overlays: picked.overlays,
       warning: '',
     };
@@ -78,6 +79,7 @@ export function buildTileConfig(config = {}, styleIdx) {
       url: PROXY_TILE + qs,
       attribution: provider.attribution || OSM_ATTRIBUTION,
       subdomains: '',
+      maxNativeZoom: selected?.max_zoom || provider.max_zoom || 19,
       warning: '',
     };
   }
@@ -105,6 +107,7 @@ export function buildTileConfig(config = {}, styleIdx) {
     url,
     attribution: selectedStyle?.attribution || provider.attribution || OSM_ATTRIBUTION,
     subdomains: selectedStyle?.subdomains !== undefined ? selectedStyle.subdomains : (provider.subdomains || ''),
+    maxNativeZoom: selectedStyle?.max_zoom || provider.max_zoom || 19,
     warning: '',
   };
 }

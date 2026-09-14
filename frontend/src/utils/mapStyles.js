@@ -11,11 +11,14 @@ const ESRI_IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World
 const ESRI_LABELS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 const OPENTOPO = 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png';
 
-export function rasterStyle(id, tiles, attribution) {
+const MAX_ZOOM_ESRI = 19;
+const MAX_ZOOM_OPENTOPO = 17;
+
+export function rasterStyle(id, tiles, attribution, maxzoom = MAX_ZOOM_ESRI) {
   return {
     version: 8,
     sources: {
-      [id]: { type: 'raster', tiles: [tiles], tileSize: 256, attribution: attribution || '' },
+      [id]: { type: 'raster', tiles: [tiles], tileSize: 256, maxzoom, attribution: attribution || '' },
     },
     layers: [{ id, type: 'raster', source: id }],
   };
@@ -208,6 +211,7 @@ export function buildHybridStyle(baseStyle, options = {}) {
     type: 'raster',
     tiles: [imageryUrl],
     tileSize: 256,
+    maxzoom: MAX_ZOOM_ESRI,
     attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
   };
   const layers = [{
@@ -244,7 +248,7 @@ export function buildMapStyle(mode, options = {}) {
   }
 
   if (m === 'terrain') {
-    return rasterStyle('terrain', OPENTOPO, '&copy; <a href="https://opentopomap.org/">OpenTopoMap</a> (CC-BY-SA)');
+    return rasterStyle('terrain', OPENTOPO, '&copy; <a href="https://opentopomap.org/">OpenTopoMap</a> (CC-BY-SA)', MAX_ZOOM_OPENTOPO);
   }
 
   if (m === 'hybrid') {
@@ -255,8 +259,8 @@ export function buildMapStyle(mode, options = {}) {
     return {
       version: 8,
       sources: {
-        satellite: { type: 'raster', tiles: [ESRI_IMAGERY], tileSize: 256, attribution: '&copy; Esri &mdash; Source: Esri, Maxar' },
-        labels: { type: 'raster', tiles: [ESRI_LABELS], tileSize: 256, attribution: '&copy; Esri' },
+        satellite: { type: 'raster', tiles: [ESRI_IMAGERY], tileSize: 256, maxzoom: MAX_ZOOM_ESRI, attribution: '&copy; Esri &mdash; Source: Esri, Maxar' },
+        labels: { type: 'raster', tiles: [ESRI_LABELS], tileSize: 256, maxzoom: MAX_ZOOM_ESRI, attribution: '&copy; Esri' },
       },
       layers: [
         { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-fade-duration': 300 } },

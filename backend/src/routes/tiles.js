@@ -78,7 +78,7 @@ function sendFallback(res) {
   res.status(502).end(FALLBACK_PNG);
 }
 
-function fetchTile(tileUrl, res, redirectCount) {
+function fetchTile(tileUrl, res, redirectCount, retries = 1) {
   if (redirectCount > 3) {
     return sendFallback(res);
   }
@@ -95,6 +95,14 @@ function fetchTile(tileUrl, res, redirectCount) {
   }
 
   const client = parsed.protocol === 'https:' ? https : http;
+
+  const retry = () => {
+    if (retries > 0 && !res.headersSent) {
+      fetchTile(tileUrl, res, redirectCount, retries - 1);
+      return true;
+    }
+    return false;
+  };
 
   const proxyReq = client.get(tileUrl, {
     headers: {
@@ -130,12 +138,14 @@ function fetchTile(tileUrl, res, redirectCount) {
   });
 
   proxyReq.on('error', (err) => {
+    if (retry()) return;
     console.error('[TileProxy] error:', err.message);
     sendFallback(res);
   });
 
   proxyReq.on('timeout', () => {
     proxyReq.destroy();
+    if (retry()) return;
     sendFallback(res);
   });
 }
