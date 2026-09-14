@@ -2,6 +2,65 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\d{10}$/;
 
 const dynamicUtils = require('../services/dynamicUtils');
+const pool = require('../utils/db');
+
+function evalCondition(data, c) {
+  if (!c || !c.field) return true;
+  const val = data[c.field];
+  const v = c.value ?? '';
+  switch (c.operator) {
+    case '=': return String(val ?? '') === String(v);
+    case '!=': return String(val ?? '') !== String(v);
+    case 'contains': return String(val ?? '').toLowerCase().includes(String(v).toLowerCase());
+    case '>': return Number(val) > Number(v);
+    case '<': return Number(val) < Number(v);
+    case 'empty': return val === '' || val === null || val === undefined;
+    case 'not_empty': return val !== '' && val !== null && val !== undefined;
+    default: return true;
+  }
+}
+
+// Tra ve tap key field CAN validate: chi gom field CO trong form dang dung va DANG hien thi
+// (bo qua field khong nam trong form, va field bi an theo section.visibleWhen / field.conditions)
+async function getApplicableFieldKeys(entity, data, purpose = 'create') {
+  const [forms] = await pool.query(
+    "SELECT id, layout_config FROM forms WHERE entity = ? AND status = 'active' ORDER BY (purpose = ?) DESC, id ASC LIMIT 1",
+    [entity, purpose]
+  );
+  if (forms.length === 0) return new Set();
+  const form = forms[0];
+
+  let layout = form.layout_config;
+  if (typeof layout === 'string') { try { layout = JSON.parse(layout); } catch { layout = {}; } }
+  const rowHidden = {};
+  ((layout && layout.sections) || []).forEach((sec) => {
+    let visible = true;
+    if (sec.visibleWhen && sec.visibleWhen.field) {
+      visible = String(data[sec.visibleWhen.field] ?? '') === String(sec.visibleWhen.value ?? '');
+    }
+    (sec.rows || []).forEach((row) => { rowHidden[row.id] = !visible; });
+  });
+
+  const [ffs] = await pool.query(
+    'SELECT fd.`key` AS field_key, ff.config FROM form_fields ff JOIN field_definitions fd ON fd.id = ff.field_id WHERE ff.form_id = ?',
+    [form.id]
+  );
+
+  const applicable = new Set();
+  ffs.forEach((f) => {
+    let cfg = f.config;
+    if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg); } catch { cfg = {}; } }
+    if (!cfg) cfg = {};
+    let visible = true;
+    if (cfg.rowId && rowHidden[cfg.rowId]) visible = false;
+    if (visible && Array.isArray(cfg.conditions) && cfg.conditions.length > 0) {
+      const results = cfg.conditions.map((c) => evalCondition(data, c));
+      visible = cfg.conditionLogic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+    }
+    if (visible) applicable.add(f.field_key);
+  });
+  return applicable;
+}
 
 // required la nguon duy nhat theo field_definitions (Admin -> Fields).
 // Cac key duoi day la invariant he thong, luon bat buoc (khong phu thuoc cau hinh):
@@ -19,9 +78,28 @@ const hasValue = (v) => !(v === undefined || v === null || v === '');
 async function validateAgainstEntity(req, res, entity, { partial = false, always = null } = {}) {
   const data = (req && req.body) || {};
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
-  const defs = partial
+  let defs = partial
     ? fieldDefs.filter((f) => Object.prototype.hasOwnProperty.call(data, f.key))
     : fieldDefs;
+
+  try {
+    const purpose = (req.method === 'PUT' || req.method === 'PATCH') ? 'view' : 'create';
+    const applicable = await getApplicableFieldKeys(entity, data, purpose);
+    if (applicable && applicable.size > 0) defs = defs.filter((f) => applicable.has(f.key));
+  } catch { /* silent */ }
+
+  // Toa do: decimal_places chi la dinh dang hien thi -> khong chan theo so chu so thap phan
+  defs = defs.map((f) => ((f.key === 'latitude' || f.key === 'longitude') ? { ...f, decimal_places: null } : f));
+
+  // Chuan hoa so dien thoai: bo khoang trang/ky tu khong phai so truoc khi validate + luu
+  fieldDefs.forEach((f) => {
+    if (f.type !== 'phone') return;
+    const v = data[f.key];
+    if (typeof v === 'string' && v.trim() !== '') {
+      data[f.key] = v.replace(/[^\d]/g, '');
+    }
+  });
+
   const errors = await dynamicUtils.validateData(entity, data, defs);
 
   const alwaysKeys = always || (partial ? (ALWAYS_REQUIRED_UPDATE[entity] || {}) : (ALWAYS_REQUIRED[entity] || {}));

@@ -440,7 +440,17 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
   const validate = () => {
     const newErrors = {};
+    const sectionHidden = {};
+    const sections = (formConfig && formConfig.layout_config && formConfig.layout_config.sections) || [];
+    sections.forEach(sec => {
+      let visible = true;
+      if (sec.visibleWhen && sec.visibleWhen.field) {
+        visible = String(formData[sec.visibleWhen.field] ?? '') === String(sec.visibleWhen.value ?? '');
+      }
+      (sec.rows || []).forEach(row => { sectionHidden[row.id] = !visible; });
+    });
     fields.forEach(f => {
+      if (f.config && f.config.rowId && sectionHidden[f.config.rowId]) return;
       if (!isFieldVisible(f)) return;
       const isRequired = f.required;
       if (isRequired) {
