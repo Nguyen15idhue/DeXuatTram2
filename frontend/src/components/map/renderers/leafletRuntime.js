@@ -18,6 +18,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
   });
 
   let tileLayer = null;
+  const labelLayers = [];
   let markerLayer = null;
   let polylineLayer = null;
   let boundaryLayer = null;
@@ -49,10 +50,14 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
       return map.getZoom();
     },
 
-    setTileLayer({ url, attribution, subdomains, maxZoom = 20, onTileError } = {}) {
+    setTileLayer({ url, attribution, subdomains, maxZoom = 20, overlays, onTileError } = {}) {
       if (tileLayer) {
         map.removeLayer(tileLayer);
         tileLayer = null;
+      }
+      while (labelLayers.length) {
+        const layer = labelLayers.pop();
+        try { map.removeLayer(layer); } catch { /* noop */ }
       }
       tileErr = { count: 0, fired: false, loaded: false, handler: onTileError || null };
       if (!url) return;
@@ -60,6 +65,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         attribution: attribution || '',
         subdomains: subdomains || '',
         maxZoom,
+        zIndex: 1,
       });
       tileLayer.on('tileerror', () => {
         if (tileErr.loaded) return;
@@ -74,6 +80,18 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         tileErr.count = 0;
       });
       tileLayer.addTo(map);
+
+      (Array.isArray(overlays) ? overlays : []).forEach((ov, idx) => {
+        if (!ov || !ov.url) return;
+        const overlayLayer = L.tileLayer(ov.url, {
+          attribution: ov.attribution || '',
+          subdomains: ov.subdomains || '',
+          maxZoom,
+          zIndex: 2 + idx,
+        });
+        overlayLayer.addTo(map);
+        labelLayers.push(overlayLayer);
+      });
     },
 
     setMarkers(items, { cluster = true, showLabels = false, onMarkerClick, renderPopup } = {}) {

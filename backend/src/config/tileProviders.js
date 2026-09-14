@@ -37,6 +37,16 @@ const TILE_PROVIDERS = [
         subdomains: '',
         attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
       },
+      {
+        value: 'hybrid', label: 'Vệ tinh + nhãn',
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        subdomains: '',
+        attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics | Labels: Esri',
+        overlays: [
+          { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri' },
+          { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri' },
+        ],
+      },
     ],
     style_url: '',
     style_options: [],

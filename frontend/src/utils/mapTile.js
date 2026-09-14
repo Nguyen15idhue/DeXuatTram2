@@ -53,6 +53,20 @@ export function buildTileConfig(config = {}, styleIdx) {
     };
   }
 
+  const styleList = provider.tile_url_styles || provider.style_options || [];
+  const picked = (styleIdx !== undefined && styleIdx !== null)
+    ? (styleList[styleIdx] || styleList[0])
+    : (styleList.find(s => s.value === styleValue) || styleList[0]);
+  if (picked && Array.isArray(picked.overlays) && picked.overlays.length > 0) {
+    return {
+      url: picked.url,
+      attribution: picked.attribution || provider.attribution || OSM_ATTRIBUTION,
+      subdomains: picked.subdomains !== undefined ? picked.subdomains : (provider.subdomains || ''),
+      overlays: picked.overlays,
+      warning: '',
+    };
+  }
+
   if (tileMode === 'proxy') {
     const styles = provider.tile_url_styles || provider.style_options || [];
     const selected = (styleIdx !== undefined && styleIdx !== null)

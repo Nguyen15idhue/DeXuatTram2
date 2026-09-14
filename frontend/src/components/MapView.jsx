@@ -5,7 +5,7 @@ import { STATION_STATUSES, PROPOSAL_STATUSES } from '../utils/mapStatuses';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
-import { buildMapStyle, loadPmtilesStyle } from '../utils/mapStyles';
+import { buildMapStyle, loadPmtilesStyle, loadLibertyBaseStyle } from '../utils/mapStyles';
 import { MAP_MODES, DEFAULT_MODE } from '../utils/mapModes';
 import { resolveRenderer } from './map/renderers';
 import MapCanvas from './map/MapCanvas';
@@ -252,6 +252,7 @@ const MapView = ({
   const [resolvedTileUrl, setResolvedTileUrl] = useState(PROXY_TILE);
   const [resolvedAttribution, setResolvedAttribution] = useState(OSM_ATTRIBUTION);
   const [resolvedSubdomains, setResolvedSubdomains] = useState('');
+  const [resolvedOverlays, setResolvedOverlays] = useState([]);
   const [tileFailed, setTileFailed] = useState(false);
   const [tileWarning, setTileWarning] = useState('');
   const [runtimeWarning, setRuntimeWarning] = useState('');
@@ -280,6 +281,7 @@ const MapView = ({
   const [activeMode, setActiveMode] = useState(DEFAULT_MODE);
   const [active3d, setActive3d] = useState(false);
   const [pmtilesStyle, setPmtilesStyle] = useState(null);
+  const [libertyBase, setLibertyBase] = useState(null);
 
   useEffect(() => {
     setActiveMode(config.default_mode || DEFAULT_MODE);
@@ -300,6 +302,16 @@ const MapView = ({
     loadPmtilesStyle(pmtilesUrl).then((s) => { if (!cancelled) setPmtilesStyle(s); });
     return () => { cancelled = true; };
   }, [config.renderer, pmtilesUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (config.renderer !== 'maplibre') {
+      setLibertyBase(null);
+      return undefined;
+    }
+    loadLibertyBaseStyle().then((s) => { if (!cancelled) setLibertyBase(s); });
+    return () => { cancelled = true; };
+  }, [config.renderer]);
 
   useEffect(() => {
     if (highlightPosition) {
@@ -392,6 +404,7 @@ const MapView = ({
           setResolvedTileUrl(tile.url);
           setResolvedAttribution(tile.attribution);
           setResolvedSubdomains(tile.subdomains);
+          setResolvedOverlays(tile.overlays || []);
           setTileWarning(warning);
 
           setConfig(prev => ({
@@ -439,6 +452,7 @@ const MapView = ({
     setResolvedTileUrl(tile.url);
     setResolvedAttribution(tile.attribution);
     setResolvedSubdomains(tile.subdomains);
+    setResolvedOverlays(tile.overlays || []);
     setTileWarning(tile.warning || '');
   }, [activeLayerIdx, config.tile_provider_id, config.api_key, config.tile_mode, config.retina, config.renderer, config.style_url, config.tile_url, config.tile_attribution, config.tile_subdomains, buildTileUrl]);
 
@@ -531,8 +545,8 @@ const MapView = ({
   );
 
   const tileConfig = useMemo(
-    () => ({ url: resolvedTileUrl, attribution: resolvedAttribution, subdomains: resolvedSubdomains }),
-    [resolvedTileUrl, resolvedAttribution, resolvedSubdomains]
+    () => ({ url: resolvedTileUrl, attribution: resolvedAttribution, subdomains: resolvedSubdomains, overlays: resolvedOverlays }),
+    [resolvedTileUrl, resolvedAttribution, resolvedSubdomains, resolvedOverlays]
   );
 
   const vectorStyle = useMemo(() => {
@@ -540,8 +554,8 @@ const MapView = ({
     if (activeMode === 'streets' && pmtilesUrl && pmtilesStyle) return pmtilesStyle;
     const provider = getProviderById(config.tile_provider_id);
     const providerStyle = provider?.style_url && !provider.style_url.includes('{domain}') ? provider.style_url : '';
-    return buildMapStyle(activeMode, { styleUrl: providerStyle || config.style_url, pmtilesUrl });
-  }, [config.renderer, activeMode, config.tile_provider_id, config.style_url, pmtilesUrl, pmtilesStyle]);
+    return buildMapStyle(activeMode, { styleUrl: providerStyle || config.style_url, pmtilesUrl, libertyBase });
+  }, [config.renderer, activeMode, config.tile_provider_id, config.style_url, pmtilesUrl, pmtilesStyle, libertyBase]);
 
   const handleMyLocation = useCallback((openForm = false) => {
     if (!navigator.geolocation) {

@@ -100,6 +100,24 @@ export function buildPmtilesStyle(pmtilesUrl, options = {}) {
   };
 }
 
+let libertyRawPromise = null;
+
+function fetchLibertyRaw() {
+  if (!libertyRawPromise) {
+    libertyRawPromise = fetch('/pmtiles/liberty-style.json')
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .catch(() => null);
+  }
+  return libertyRawPromise;
+}
+
+export function loadLibertyBaseStyle() {
+  return fetchLibertyRaw();
+}
+
 const pmtilesStyleCache = new Map();
 
 export async function loadPmtilesStyle(pmtilesUrl) {
@@ -107,24 +125,19 @@ export async function loadPmtilesStyle(pmtilesUrl) {
   const absolute = toAbsolute(pmtilesUrl);
   if (pmtilesStyleCache.has(absolute)) return pmtilesStyleCache.get(absolute);
   const promise = (async () => {
-    try {
-      const res = await fetch('/pmtiles/liberty-style.json');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const base = await res.json();
-      const style = JSON.parse(JSON.stringify(base));
-      if (style.sources) {
-        delete style.sources.ne2_shaded;
-        style.sources.openmaptiles = {
-          type: 'vector',
-          url: `pmtiles://${absolute}`,
-          attribution: (base.sources && base.sources.openmaptiles && base.sources.openmaptiles.attribution) || '',
-        };
-      }
-      style.layers = (style.layers || []).filter((l) => l.source !== 'ne2_shaded');
-      return style;
-    } catch {
-      return buildPmtilesStyle(pmtilesUrl);
+    const base = await fetchLibertyRaw();
+    if (!base) return buildPmtilesStyle(pmtilesUrl);
+    const style = JSON.parse(JSON.stringify(base));
+    if (style.sources) {
+      delete style.sources.ne2_shaded;
+      style.sources.openmaptiles = {
+        type: 'vector',
+        url: `pmtiles://${absolute}`,
+        attribution: (base.sources && base.sources.openmaptiles && base.sources.openmaptiles.attribution) || '',
+      };
     }
+    style.layers = (style.layers || []).filter((l) => l.source !== 'ne2_shaded');
+    return style;
   })();
   pmtilesStyleCache.set(absolute, promise);
   return promise;
@@ -136,6 +149,65 @@ export function isStyleUrl(value) {
   if (typeof value !== 'string' || !value) return false;
   if (value.includes('{domain}') || value.includes('{key}') || value.includes('{z}')) return false;
   return STYLE_URL_RE.test(value) || /\.json(\?|#|$)/i.test(value);
+}
+
+const HYBRID_LINE_PREFIXES = ['road_', 'boundary_', 'waterway_'];
+const HYBRID_SYMBOL_EXCLUDE = new Set(['road_one_way_arrow', 'road_one_way_arrow_opposite', 'poi_r20']);
+
+function keepHybridLayer(layer) {
+  if (!layer || !layer.id) return false;
+  if (layer.type === 'symbol') return !HYBRID_SYMBOL_EXCLUDE.has(layer.id);
+  if (layer.type === 'line') return HYBRID_LINE_PREFIXES.some((p) => layer.id.startsWith(p));
+  return false;
+}
+
+function localizeLabelField(layer) {
+  if (layer.type !== 'symbol' || !layer.layout || !layer.layout['text-field']) return;
+  if (/shield|one_way/.test(layer.id)) return;
+  layer.layout['text-field'] = ['coalesce', ['get', 'name:vi'], ['get', 'name'], layer.layout['text-field']];
+}
+
+export function buildHybridStyle(baseStyle, options = {}) {
+  if (!baseStyle || !Array.isArray(baseStyle.layers)) return null;
+  const imageryUrl = options.imageryUrl || ESRI_IMAGERY;
+  const sources = { ...(baseStyle.sources || {}) };
+  delete sources.ne2_shaded;
+  if (options.pmtilesUrl) {
+    sources.openmaptiles = {
+      type: 'vector',
+      url: `pmtiles://${toAbsolute(options.pmtilesUrl)}`,
+      attribution: (baseStyle.sources && baseStyle.sources.openmaptiles && baseStyle.sources.openmaptiles.attribution) || '',
+    };
+  }
+  if (!sources.openmaptiles) return null;
+  sources.satellite = {
+    type: 'raster',
+    tiles: [imageryUrl],
+    tileSize: 256,
+    attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+  };
+  const layers = [{
+    id: 'satellite',
+    type: 'raster',
+    source: 'satellite',
+    paint: { 'raster-opacity': 1, 'raster-fade-duration': 300 },
+  }];
+  const seen = new Set();
+  baseStyle.layers.forEach((layer) => {
+    if (!keepHybridLayer(layer) || seen.has(layer.id)) return;
+    seen.add(layer.id);
+    const clone = JSON.parse(JSON.stringify(layer));
+    if (clone.id === 'poi_transit') clone.minzoom = Math.max(clone.minzoom || 0, 12);
+    localizeLabelField(clone);
+    layers.push(clone);
+  });
+  return {
+    version: 8,
+    glyphs: baseStyle.glyphs,
+    sprite: baseStyle.sprite,
+    sources,
+    layers,
+  };
 }
 
 export function buildMapStyle(mode, options = {}) {
@@ -152,6 +224,10 @@ export function buildMapStyle(mode, options = {}) {
   }
 
   if (m === 'hybrid') {
+    const detailed = options.libertyBase
+      ? buildHybridStyle(options.libertyBase, { imageryUrl: options.imageryUrl, pmtilesUrl })
+      : null;
+    if (detailed) return detailed;
     return {
       version: 8,
       sources: {
@@ -159,7 +235,7 @@ export function buildMapStyle(mode, options = {}) {
         labels: { type: 'raster', tiles: [ESRI_LABELS], tileSize: 256, attribution: '&copy; Esri' },
       },
       layers: [
-        { id: 'satellite', type: 'raster', source: 'satellite' },
+        { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-fade-duration': 300 } },
         { id: 'labels', type: 'raster', source: 'labels' },
       ],
     };

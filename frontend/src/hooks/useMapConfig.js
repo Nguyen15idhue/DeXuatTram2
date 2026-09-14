@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { buildTileConfig } from '../utils/mapTile';
-import { buildMapStyle } from '../utils/mapStyles';
+import { buildMapStyle, loadLibertyBaseStyle } from '../utils/mapStyles';
 import { getProviderById } from '../utils/tileProviders';
 
 const TTL = 60000;
@@ -33,12 +33,24 @@ export default function useMapConfig() {
   const [config, setConfig] = useState(cache);
   const [version, setVersion] = useState(0);
   const [loading, setLoading] = useState(!cache);
+  const [libertyBase, setLibertyBase] = useState(null);
 
   useEffect(() => {
     const onRefresh = () => { clearMapConfigCache(); setVersion((v) => v + 1); };
     window.addEventListener('mapconfig:refresh', onRefresh);
     return () => window.removeEventListener('mapconfig:refresh', onRefresh);
   }, []);
+
+  useEffect(() => {
+    const renderer = (config && config.renderer) || 'leaflet';
+    if (renderer !== 'maplibre') {
+      setLibertyBase(null);
+      return undefined;
+    }
+    let cancelled = false;
+    loadLibertyBaseStyle().then((s) => { if (!cancelled) setLibertyBase(s); });
+    return () => { cancelled = true; };
+  }, [config && config.renderer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +78,7 @@ export default function useMapConfig() {
     ? buildMapStyle(config && config.default_mode, {
         styleUrl: providerStyleUrl || (config && config.style_url),
         pmtilesUrl: config && /\.pmtiles(\?|$)/i.test(config.tile_url || '') ? config.tile_url : '',
+        libertyBase,
       })
     : '';
 

@@ -94,7 +94,7 @@ export default function MapCanvas({
     const runtime = runtimeRef.current;
     if (!runtime || !tile) return;
     runtime.setTileLayer({ ...tile, onTileError });
-  }, [runtimeVersion, tile?.url, tile?.attribution, tile?.subdomains, onTileError]);
+  }, [runtimeVersion, tile?.url, tile?.attribution, tile?.subdomains, tile?.overlays, onTileError]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
