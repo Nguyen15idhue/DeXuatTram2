@@ -55,9 +55,92 @@ const resolveAutoUserId = (sc, authUser) => {
   if (!authUser || !authUser.id) return null;
   if (mode === 'parent_sales') return authUser.parent_id || authUser.id;
   if (mode === 'owner_or_manager') {
-    return authUser.role === 'CTV' ? (authUser.parent_id || authUser.id) : authUser.id;
+    return ['CTV', 'NPP'].includes(authUser.role) ? (authUser.parent_id || authUser.id) : authUser.id;
   }
   return authUser.id;
+};
+
+const MAX_TAB_DEPTH = 5;
+
+const evalVisibleWhen = (node, formData) => {
+  if (!node || !node.visibleWhen || !node.visibleWhen.field) return true;
+  return String(formData[node.visibleWhen.field] ?? '') === String(node.visibleWhen.value ?? '');
+};
+
+const markRows = (rowHidden, rows, visible) => {
+  (rows || []).forEach((row) => {
+    if (!row || !row.id) return;
+    rowHidden[row.id] = rowHidden[row.id] === false ? false : !visible;
+  });
+};
+
+const walkLayout = (node, visible, formData, sectionMap, pathSet, depth, isReferenced, rowHidden) => {
+  if (!node || depth > MAX_TAB_DEPTH) return;
+  const myVisible = isReferenced ? visible : (visible && evalVisibleWhen(node, formData));
+  if (node.type === 'tabs' || Array.isArray(node.tabs)) {
+    (node.tabs || []).forEach((tab) => {
+      if (!tab) return;
+      const tabVisible = myVisible && evalVisibleWhen(tab, formData);
+      (tab.sectionRefs || []).forEach((refId) => {
+        if (pathSet.has(refId)) return;
+        const sec = sectionMap[refId];
+        if (!sec) return;
+        const next = new Set(pathSet);
+        next.add(refId);
+        walkLayout(sec, tabVisible, formData, sectionMap, next, depth + 1, true, rowHidden);
+      });
+      if (Array.isArray(tab.tabs)) {
+        walkLayout(tab, tabVisible, formData, sectionMap, pathSet, depth + 1, false, rowHidden);
+      }
+    });
+    markRows(rowHidden, node.rows, myVisible);
+  } else {
+    markRows(rowHidden, node.rows, myVisible);
+  }
+};
+
+const computeRowHidden = (layoutConfig, formData) => {
+  const rowHidden = {};
+  const sections = (layoutConfig && layoutConfig.sections) || [];
+  const sectionMap = {};
+  sections.forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
+  sections.forEach((sec) => walkLayout(sec, true, formData, sectionMap, new Set(), 1, false, rowHidden));
+  return rowHidden;
+};
+
+const buildSectionMap = (layoutConfig) => {
+  const sectionMap = {};
+  ((layoutConfig && layoutConfig.sections) || []).forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
+  return sectionMap;
+};
+
+const findTabForRow = (layoutConfig, rowId) => {
+  const sectionMap = buildSectionMap(layoutConfig);
+  const sections = (layoutConfig && layoutConfig.sections) || [];
+  const search = (node, path, depth) => {
+    if (!node || depth > MAX_TAB_DEPTH) return null;
+    if (node.type === 'tabs' || Array.isArray(node.tabs)) {
+      for (const tab of (node.tabs || [])) {
+        if (!tab) continue;
+        for (const refId of (tab.sectionRefs || [])) {
+          const sec = sectionMap[refId];
+          if (sec && !(sec.type === 'tabs' || Array.isArray(sec.tabs)) && (sec.rows || []).some((r) => r.id === rowId)) {
+            return { path, tabId: tab.id };
+          }
+        }
+        if (Array.isArray(tab.tabs)) {
+          const found = search(tab, `${path}/${tab.id}`, depth + 1);
+          if (found) return found;
+        }
+      }
+    }
+    return null;
+  };
+  for (const sec of sections) {
+    const found = search(sec, sec.id, 1);
+    if (found) return found;
+  }
+  return null;
 };
 
 const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {} }) => {
@@ -71,13 +154,14 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const [errors, setErrors] = useState({});
   const [dataListOptions, setDataListOptions] = useState({});
   const [resolvedFormId, setResolvedFormId] = useState(null);
+  const [activeTabs, setActiveTabs] = useState({});
   const [geocoding, setGeocoding] = useState(false);
   const geocodeTimerRef = useRef(null);
   const geocodeSeqRef = useRef(0);
 
   useEffect(() => {
+    if (formIdProp) { setResolvedFormId(formIdProp); return; }
     if (purpose) { resolveFormId(); return; }
-    if (formIdProp) setResolvedFormId(formIdProp);
   }, [entity, formIdProp, purpose]);
 
   const resolveFormId = async () => {
@@ -440,15 +524,10 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
   const validate = () => {
     const newErrors = {};
-    const sectionHidden = {};
-    const sections = (formConfig && formConfig.layout_config && formConfig.layout_config.sections) || [];
-    sections.forEach(sec => {
-      let visible = true;
-      if (sec.visibleWhen && sec.visibleWhen.field) {
-        visible = String(formData[sec.visibleWhen.field] ?? '') === String(sec.visibleWhen.value ?? '');
-      }
-      (sec.rows || []).forEach(row => { sectionHidden[row.id] = !visible; });
-    });
+    const layoutForValidate = formConfig?.layout_config
+      ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+      : null;
+    const sectionHidden = computeRowHidden(layoutForValidate, formData);
     fields.forEach(f => {
       if (f.config && f.config.rowId && sectionHidden[f.config.rowId]) return;
       if (!isFieldVisible(f)) return;
@@ -481,10 +560,33 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         if (tc.max_rows != null && rows.length > tc.max_rows) {
           newErrors[f.key] = `${f.label || f.key} không được quá ${tc.max_rows} dòng`;
         }
+        const reqCols = (tc.columns || []).filter(c => c && c.required);
+        if (reqCols.length > 0 && !newErrors[f.key]) {
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i] || {};
+            const missing = reqCols.filter(c => {
+              const v = row[c.key];
+              return v === '' || v === null || v === undefined;
+            });
+            if (missing.length > 0) {
+              newErrors[f.key] = `${f.label || f.key}: dòng ${i + 1} thiếu ${missing.map(c => c.label || c.key).join(', ')}`;
+              break;
+            }
+          }
+        }
       }
     });
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const errorKeys = Object.keys(newErrors);
+    if (errorKeys.length > 0) {
+      const firstField = fields.find(f => f.key === errorKeys[0]);
+      const rowId = firstField?.config?.rowId;
+      if (rowId) {
+        const loc = findTabForRow(layoutForValidate, rowId);
+        if (loc) setActiveTabs(prev => ({ ...prev, [loc.path]: loc.tabId }));
+      }
+    }
+    return errorKeys.length === 0;
   };
 
   const handleSubmit = async (e) => {
@@ -579,9 +681,12 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
   const renderLayoutForm = () => {
     const rowsToRender = hasSections ? null : layoutConfig.rows;
+    const sectionMap = buildSectionMap(layoutConfig);
 
     const renderRow = (row) => {
       const desktopCol = parseInt(row.columns.split(':')[1]);
+      const cells = Array.from({ length: desktopCol }).map((_, colIdx) => getCellField(row.id, colIdx));
+      if (!cells.some((f) => f && isFieldVisible(f))) return null;
       return (
         <div key={row.id} className={`form-row form-row-${row.columns}`} data-cols={row.columns}>
           {Array.from({ length: desktopCol }).map((_, colIdx) => {
@@ -607,31 +712,89 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       );
     };
 
+    const renderSectionContent = (section) => (section.rows || []).map((row) => renderRow(row));
+
+    const renderSectionBlock = (section) => (
+      <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+        {section.title && (
+          <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
+            {section.title}
+          </legend>
+        )}
+        {section.collapsible ? (
+          <details open>
+            <summary style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280', marginBottom: 8 }}> Chi tiết</summary>
+            {renderSectionContent(section)}
+          </details>
+        ) : (
+          renderSectionContent(section)
+        )}
+      </fieldset>
+    );
+
+    const renderTabGroup = (node, path, depth) => {
+      if (!node || depth > MAX_TAB_DEPTH) return null;
+      if (!evalVisibleWhen(node, formData)) return null;
+      const tabs = (node.tabs || []).filter(Boolean);
+      if (tabs.length === 0) return null;
+      const activeId = activeTabs[path] || tabs[0].id;
+      return (
+        <fieldset key={node.id || path} className="form-section form-tabs" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+          {node.title && (
+            <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
+              {node.title}
+            </legend>
+          )}
+          <div className="form-tabs-bar" role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e2e8f0', marginBottom: 12, overflowX: 'auto' }}>
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeId;
+              return (
+                <button
+                  type="button"
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTabs((prev) => ({ ...prev, [path]: tab.id }))}
+                  style={{
+                    padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    border: 'none', borderBottom: isActive ? '2px solid #4f46e5' : '2px solid transparent',
+                    background: 'transparent', color: isActive ? '#4f46e5' : '#6b7280', whiteSpace: 'nowrap'
+                  }}
+                >
+                  {tab.title}
+                </button>
+              );
+            })}
+          </div>
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeId;
+            return (
+              <div key={tab.id} role="tabpanel" style={{ display: isActive ? 'block' : 'none' }}>
+                {(tab.sectionRefs || []).map((refId) => {
+                  const sec = sectionMap[refId];
+                  if (!sec) return null;
+                  if (sec.type === 'tabs' || Array.isArray(sec.tabs)) {
+                    return renderTabGroup(sec, `${path}/${tab.id}`, depth + 1);
+                  }
+                  return <div key={refId} className="form-tab-section">{renderSectionContent(sec)}</div>;
+                })}
+                {Array.isArray(tab.tabs) && renderTabGroup(tab, `${path}/${tab.id}`, depth + 1)}
+              </div>
+            );
+          })}
+        </fieldset>
+      );
+    };
+
     return (
       <>
         {hasSections ? (
           layoutConfig.sections.map((section) => {
-            if (section.visibleWhen) {
-              const { field, value } = section.visibleWhen;
-              if (formData[field] !== value) return null;
+            if (section.type === 'tabs' || Array.isArray(section.tabs)) {
+              return renderTabGroup(section, section.id, 1);
             }
-            return (
-              <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
-                {section.title && (
-                  <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
-                    {section.title}
-                  </legend>
-                )}
-                {section.collapsible ? (
-                  <details open>
-                    <summary style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280', marginBottom: 8 }}> Chi tiết</summary>
-                    {section.rows.map(row => renderRow(row))}
-                  </details>
-                ) : (
-                  section.rows.map(row => renderRow(row))
-                )}
-              </fieldset>
-            );
+            if (!evalVisibleWhen(section, formData)) return null;
+            return renderSectionBlock(section);
           })
         ) : (
           rowsToRender.map(row => renderRow(row))

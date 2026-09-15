@@ -121,7 +121,7 @@ exports.updateProposal = async (id, userId, data) => {
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
-  const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9]+_[A-Z0-9]+_\d{4}$/.test(current.ma_de_xuat);
+    const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
   const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
   const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });

@@ -37,6 +37,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [formData, setFormData] = useState({});
   const [formConfig, setFormConfig] = useState(null);
   const [showMap, setShowMap] = useState(false);
+  const [activeTabs, setActiveTabs] = useState({});
   const dataListIds = (() => {
     const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
     [...viewFields, ...allFields].forEach(f => {
@@ -289,25 +290,23 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         cellMap[`${cfg.rowId}-${cfg.colIndex}`] = condOk ? (fieldsByKey[f.key || f.field_key] || null) : null;
       }
     });
-    return lc.sections.filter(sec => {
+    const rawSections = lc.sections || [];
+    const sectionMap = {};
+    rawSections.forEach(s => { if (s && s.id) sectionMap[s.id] = s; });
+    const visibleSection = (sec) => {
+      if (!sec) return false;
       if (sec.visibleWhen) {
         const val = getFieldValue(data, { key: sec.visibleWhen.field });
         if (val !== sec.visibleWhen.value) return false;
       }
       return true;
-    }).map(sec => ({
-      ...sec,
-      rows: (sec.rows || []).map(row => {
-        const cols = parseInt((row.columns || '1:1').split(':')[1]);
-        return {
-          ...row,
-          cells: Array.from({ length: cols }).map((_, ci) => cellMap[`${row.id}-${ci}`] || null)
-        };
-      })
-    }));
+    };
+    const sections = rawSections.filter(sec => visibleSection(sec));
+    return { sections, sectionMap, cellMap };
   };
 
-  const sections = getLayoutSections();
+  const layout = getLayoutSections();
+  const sections = layout ? layout.sections : null;
 
   if (loading) return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -332,6 +331,24 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const mapLng = parseFloat(record.longitude);
   const hasCoords = !Number.isNaN(mapLat) && !Number.isNaN(mapLng);
 
+  const renderFieldInput = (field) => {
+    const key = field.field_key || field.key;
+    const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
+    return mode === 'edit' ? (
+      <DynamicField
+        field={{ ...field, options: resolveFieldOptions(field) }}
+        value={value}
+        onChange={(val) => handleFieldChange(key, val)}
+        entityId={record.id}
+        entityType={entity}
+        allFields={allFields}
+        dataListOptions={dataListOptions}
+      />
+    ) : (
+      <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />
+    );
+  };
+
   const renderFieldSection = (fields, sectionLabel) => (
     <div className="popup-section">
       <h3 className="popup-section-title">{sectionLabel}</h3>
@@ -339,31 +356,98 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         {fields.map(field => {
           const key = field.field_key || field.key;
           const label = field.field_label || field.label;
-          const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
           return (
             <div key={key} className="popup-field-row">
               <span className="popup-field-label">{label}</span>
-              <span className="popup-field-value">
-                {mode === 'edit' ? (
-                  <DynamicField
-                    field={{ ...field, options: resolveFieldOptions(field) }}
-                    value={value}
-                    onChange={(val) => handleFieldChange(key, val)}
-                    entityId={record.id}
-                    entityType={entity}
-                    allFields={allFields}
-                    dataListOptions={dataListOptions}
-                  />
-                ) : (
-                  <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />
-                )}
-              </span>
+              <span className="popup-field-value">{renderFieldInput(field)}</span>
             </div>
           );
         })}
       </div>
     </div>
   );
+
+  const renderSectionRows = (sec) => (sec.rows || []).map(row => {
+    const cols = parseInt((row.columns || '1:1').split(':')[1]);
+    return (
+      <div key={row.id} className="form-row" data-cols={row.columns} style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+        {Array.from({ length: cols }).map((_, ci) => {
+          const field = layout ? (layout.cellMap[`${row.id}-${ci}`] || null) : null;
+          if (!field) return <div key={ci} className="form-cell-empty" />;
+          const label = field.field_label || field.label;
+          return (
+            <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
+              <div className="dynamic-form-field">
+                <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}</label>
+                {renderFieldInput(field)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  });
+
+  const renderTabGroup = (node, path, depth) => {
+    if (!node || depth > 5) return null;
+    const tabs = (node.tabs || []).filter(Boolean);
+    if (tabs.length === 0) return null;
+    const activeId = activeTabs[path] || tabs[0].id;
+    return (
+      <fieldset key={node.id || path} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+        {node.title && <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>{node.title}</legend>}
+        <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e2e8f0', marginBottom: 12, overflowX: 'auto' }}>
+          {tabs.map(tab => {
+            const isActive = tab.id === activeId;
+            return (
+              <button
+                type="button"
+                key={tab.id}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveTabs(prev => ({ ...prev, [path]: tab.id }))}
+                style={{
+                  padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  border: 'none', borderBottom: isActive ? '2px solid #4f46e5' : '2px solid transparent',
+                  background: 'transparent', color: isActive ? '#4f46e5' : '#6b7280', whiteSpace: 'nowrap'
+                }}
+              >
+                {tab.title}
+              </button>
+            );
+          })}
+        </div>
+        {tabs.map(tab => {
+          const isActive = tab.id === activeId;
+          return (
+            <div key={tab.id} role="tabpanel" style={{ display: isActive ? 'block' : 'none' }}>
+              {(tab.sectionRefs || []).map(refId => {
+                const sec = layout && layout.sectionMap[refId];
+                if (!sec) return null;
+                if (sec.type === 'tabs' || Array.isArray(sec.tabs)) {
+                  return renderTabGroup(sec, `${path}/${tab.id}`, depth + 1);
+                }
+                return <div key={refId}>{renderSectionRows(sec)}</div>;
+              })}
+              {Array.isArray(tab.tabs) && renderTabGroup(tab, `${path}/${tab.id}`, depth + 1)}
+            </div>
+          );
+        })}
+      </fieldset>
+    );
+  };
+
+  const renderSectionNode = (sec) => {
+    if (sec.type === 'tabs' || Array.isArray(sec.tabs)) {
+      return renderTabGroup(sec, sec.id, 1);
+    }
+    return (
+      <fieldset key={sec.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+        {sec.title && <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>{sec.title}</legend>}
+        {renderSectionRows(sec)}
+      </fieldset>
+    );
+  };
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -392,42 +476,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
         <div className="popup-body">
           {sections && sections.length > 0 ? (
-            sections.map(sec => (
-              <fieldset key={sec.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
-                {sec.title && <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>{sec.title}</legend>}
-                {sec.rows.map(row => (
-                  <div key={row.id} className="form-row" data-cols={row.columns} style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                    {row.cells.map((field, ci) => (
-                      <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
-                        {field ? (() => {
-                          const key = field.field_key || field.key;
-                          const label = field.field_label || field.label;
-                          const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
-                          return (
-                            <div className="dynamic-form-field">
-                              <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}</label>
-                              {mode === 'edit' ? (
-                                <DynamicField
-                                  field={{ ...field, options: resolveFieldOptions(field) }}
-                                  value={value}
-                                  onChange={(val) => handleFieldChange(key, val)}
-                                  entityId={record.id}
-                                  entityType={entity}
-                                  allFields={allFields}
-                                  dataListOptions={dataListOptions}
-                                />
-                              ) : (
-                                <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />
-                              )}
-                            </div>
-                          );
-                        })() : <div className="form-cell-empty" />}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </fieldset>
-            ))
+            sections.map(sec => renderSectionNode(sec))
           ) : (
             <>
               {mainFields.length > 0 && renderFieldSection(mainFields, 'Thông tin chính')}

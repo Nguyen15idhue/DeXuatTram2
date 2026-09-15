@@ -149,7 +149,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       const sections = [...(prev.sections || [])];
       const secIdx = sections.findIndex(s => s.id === sectionId);
       if (secIdx >= 0) {
-        const rows = [...sections[secIdx].rows];
+        const rows = [...(sections[secIdx].rows || [])];
         const idx = insertIndex !== undefined ? insertIndex : rows.length;
         rows.splice(idx, 0, { id: newId, columns: '1:2' });
         sections[secIdx] = { ...sections[secIdx], rows };
@@ -163,7 +163,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       ...prev,
       sections: (prev.sections || []).map(s => ({
         ...s,
-        rows: s.rows.filter(r => r.id !== rowId)
+        rows: (s.rows || []).filter(r => r.id !== rowId)
       }))
     }));
     setAssignedFields(prev => prev.map(f => {
@@ -180,7 +180,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       ...prev,
       sections: (prev.sections || []).map(s => ({
         ...s,
-        rows: s.rows.map(r => r.id === rowId ? { ...r, columns } : r)
+        rows: (s.rows || []).map(r => r.id === rowId ? { ...r, columns } : r)
       }))
     }));
     if (columns === '1:1') {
@@ -199,7 +199,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       const sections = [...(prev.sections || [])];
       const secIdx = sections.findIndex(s => s.id === sectionId);
       if (secIdx < 0) return prev;
-      const rows = [...sections[secIdx].rows];
+      const rows = [...(sections[secIdx].rows || [])];
       const idx = rows.findIndex(r => r.id === rowId);
       if (idx < 0) return prev;
       const newIdx = direction === 'up' ? idx - 1 : idx + 1;
@@ -246,7 +246,7 @@ const FormBuilder = ({ formId, onSaved }) => {
   const getAllRows = () => {
     const allRows = [];
     (layoutConfig.sections || []).forEach(sec => {
-      sec.rows.forEach(r => allRows.push({ ...r, sectionId: sec.id }));
+      (sec.rows || []).forEach(r => allRows.push({ ...r, sectionId: sec.id }));
     });
     return allRows;
   };
@@ -322,7 +322,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       const sections = [...(prev.sections || [])];
       const secIdx = sections.findIndex(s => s.id === sectionId);
       if (secIdx < 0) return prev;
-      const rows = [...sections[secIdx].rows];
+      const rows = [...(sections[secIdx].rows || [])];
       const srcIdx = rows.findIndex(r => r.id === sourceRowId);
       const tgtIdx = rows.findIndex(r => r.id === targetRowId);
       if (srcIdx < 0 || tgtIdx < 0) return prev;
@@ -344,17 +344,20 @@ const FormBuilder = ({ formId, onSaved }) => {
       const sections = [...(prev.sections || []), { id: newId, title: `Section ${prev.sections.length + 1}`, collapsible: false, rows: [] }];
       return { ...prev, sections };
     });
-    setActiveSectionId(newId);
   };
 
   const removeSection = (sectionId) => {
     setLayoutConfig(prev => {
-      const sections = (prev.sections || []).filter(s => s.id !== sectionId);
+      const sections = (prev.sections || [])
+        .filter(s => s.id !== sectionId)
+        .map(s => isTabGroup(s)
+          ? { ...s, tabs: (s.tabs || []).map(t => ({ ...t, sectionRefs: (t.sectionRefs || []).filter(id => id !== sectionId) })) }
+          : s);
       return { ...prev, sections };
     });
     setAssignedFields(prev => prev.map(f => {
       const section = (layoutConfig.sections || []).find(s => s.id === sectionId);
-      if (section && section.rows.some(r => r.id === f.config?.rowId)) {
+      if (section && (section.rows || []).some(r => r.id === f.config?.rowId)) {
         const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
         return { ...f, config: rest };
       }
@@ -407,6 +410,109 @@ const FormBuilder = ({ formId, onSaved }) => {
     setEditingSectionTitle('');
   };
 
+  // ===== Tab group management =====
+  const isTabGroup = (s) => !!s && (s.type === 'tabs' || Array.isArray(s.tabs));
+
+  const addTabGroup = () => {
+    const now = Date.now();
+    const newId = `tg${now}`;
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || []), {
+        id: newId,
+        type: 'tabs',
+        title: 'Nhượng quyền và Liên kết',
+        collapsible: false,
+        rows: [],
+        visibleWhen: { field: 'mo_hinh_dau_tu', value: '' },
+        tabs: [{ id: `tab${now}`, title: 'Tab 1', sectionRefs: [] }]
+      }];
+      return { ...prev, sections };
+    });
+  };
+
+  const updateTabGroup = (groupId, updates) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId ? { ...s, ...updates } : s)
+    }));
+  };
+
+  const removeTabGroup = (groupId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).filter(s => s.id !== groupId)
+    }));
+  };
+
+  const updateTab = (groupId, tabId, updates) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).map(t => t.id === tabId ? { ...t, ...updates } : t) }
+        : s)
+    }));
+  };
+
+  const addTab = (groupId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: [...(s.tabs || []), { id: `tab${Date.now()}`, title: `Tab ${(s.tabs || []).length + 1}`, sectionRefs: [] }] }
+        : s)
+    }));
+  };
+
+  const removeTab = (groupId, tabId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).filter(t => t.id !== tabId) }
+        : s)
+    }));
+  };
+
+  const moveTab = (groupId, tabId, dir) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => {
+        if (s.id !== groupId) return s;
+        const tabs = [...(s.tabs || [])];
+        const i = tabs.findIndex(t => t.id === tabId);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= tabs.length) return s;
+        [tabs[i], tabs[j]] = [tabs[j], tabs[i]];
+        return { ...s, tabs };
+      })
+    }));
+  };
+
+  const addSectionRef = (groupId, tabId, sectionId) => {
+    if (!sectionId) return;
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).map(t => t.id === tabId && !(t.sectionRefs || []).includes(sectionId)
+          ? { ...t, sectionRefs: [...(t.sectionRefs || []), sectionId] } : t) }
+        : s)
+    }));
+  };
+
+  const removeSectionRef = (groupId, tabId, sectionId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).map(t => t.id === tabId
+          ? { ...t, sectionRefs: (t.sectionRefs || []).filter(id => id !== sectionId) } : t) }
+        : s)
+    }));
+  };
+
+  const handleTabSectionDrop = (e, groupId, tabId) => {
+    e.preventDefault();
+    const sectionId = e.dataTransfer.getData('sectionId');
+    if (sectionId) addSectionRef(groupId, tabId, sectionId);
+  };
+
   // ===== Conditions =====
   const handleConditionChange = (fieldId, condIdx, key, value) => {
     setAssignedFields(prev => prev.map(f => {
@@ -446,16 +552,59 @@ const FormBuilder = ({ formId, onSaved }) => {
   };
 
   // ===== Save =====
+  const buildLayoutForSave = () => {
+    const regularIds = new Set((layoutConfig.sections || [])
+      .filter(s => !isTabGroup(s))
+      .map(s => s.id));
+    const sections = (layoutConfig.sections || []).map(s => {
+      if (isTabGroup(s)) {
+        const tabs = (s.tabs || []).map(t => ({
+          id: t.id,
+          title: t.title,
+          sectionRefs: (t.sectionRefs || []).filter(id => regularIds.has(id))
+        }));
+        return {
+          id: s.id,
+          type: 'tabs',
+          title: s.title,
+          collapsible: !!s.collapsible,
+          rows: [],
+          visibleWhen: s.visibleWhen || null,
+          tabs
+        };
+      }
+      return s;
+    });
+    return { ...layoutConfig, sections };
+  };
+
+  const validateLayout = (lc) => {
+    const errors = [];
+    (lc.sections || []).forEach(s => {
+      if (isTabGroup(s)) {
+        const tabs = s.tabs || [];
+        if (tabs.length === 0) errors.push(`Tab "${s.title || s.id}" phải có ít nhất 1 tab con`);
+        tabs.forEach(t => {
+          if (!(t.sectionRefs || []).length) errors.push(`Tab con "${t.title || t.id}" phải có ít nhất 1 section`);
+        });
+      }
+    });
+    return errors;
+  };
+
   const handleSave = async () => {
     if (!formName.trim()) { setError('Vui lòng nhập tên form'); return; }
+    const layoutForSave = buildLayoutForSave();
+    const layoutErrors = validateLayout(layoutForSave);
+    if (layoutErrors.length > 0) { setError(layoutErrors[0]); return; }
     setSaving(true);
     setError('');
     try {
       let res;
       if (formId) {
-        res = await formService.update(formId, { entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutConfig }, token);
+        res = await formService.update(formId, { entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutForSave }, token);
       } else {
-        res = await formService.create({ entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutConfig }, token);
+        res = await formService.create({ entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutForSave }, token);
       }
       if (!res.success) { setError(res.message || 'Lỗi lưu form'); setSaving(false); return; }
       const savedFormId = formId || res.data.id;
@@ -492,6 +641,177 @@ const FormBuilder = ({ formId, onSaved }) => {
   const filteredAvailable = availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id));
   const unassignedFields = assignedFields.filter(f => !f.config?.rowId);
   const conditionFields = assignedFields.filter(f => ['select', 'text', 'boolean'].includes(f.type));
+  const regularSections = (layoutConfig.sections || []).filter(s => !isTabGroup(s));
+
+  const renderTabGroupEditor = (section, secIdx) => (
+    <div key={section.id} className="section-block tab-group-block" style={{ border: '2px solid #6366f1', borderRadius: 8, marginBottom: 12, background: '#f5f3ff' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+        borderBottom: '1px solid #ddd6fe', background: '#ede9fe', borderRadius: '8px 8px 0 0', cursor: 'grab'
+      }}
+        draggable
+        onDragStart={(e) => { e.dataTransfer.setData('sectionId', section.id); e.dataTransfer.effectAllowed = 'move'; }}
+      >
+        <GripVertical size={14} className="text-gray-400" />
+        {editingSectionId === section.id ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+            <input
+              value={editingSectionTitle}
+              onChange={(e) => setEditingSectionTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEditSectionTitle(); if (e.key === 'Escape') setEditingSectionId(null); }}
+              autoFocus
+              style={{ fontSize: 13, padding: '2px 6px', flex: 1, border: '1px solid #6366f1', borderRadius: 4 }}
+            />
+            <button className="btn btn-xs btn-ghost" onClick={saveEditSectionTitle}><Check size={12} /></button>
+            <button className="btn btn-xs btn-ghost" onClick={() => setEditingSectionId(null)}><X size={12} /></button>
+          </div>
+        ) : (
+          <span
+            style={{ fontWeight: 600, fontSize: 13, flex: 1, cursor: 'text' }}
+            onDoubleClick={() => startEditSectionTitle(section)}
+            title="Double-click để sửa tên"
+          >
+            {section.title}
+          </span>
+        )}
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#ddd6fe', color: '#4338ca' }}>TAB</span>
+        {section.visibleWhen && section.visibleWhen.field && (
+          <span style={{
+            fontSize: 11, padding: '2px 8px', borderRadius: 4,
+            background: '#fff3cd', color: '#856404', border: '1px solid #ffc107'
+          }}>
+            {section.visibleWhen.field} = {section.visibleWhen.value || '...'}
+          </span>
+        )}
+        <button className="btn btn-xs btn-ghost" onClick={() => setConfigSectionId(configSectionId === section.id ? null : section.id)} title="Điều kiện hiển thị">
+          <Pencil size={12} />
+        </button>
+        <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, -1)} disabled={secIdx === 0} title="Di chuyển lên">
+          <ChevronUp size={12} />
+        </button>
+        <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, 1)} disabled={secIdx === (layoutConfig.sections || []).length - 1} title="Di chuyển xuống">
+          <ChevronDown size={12} />
+        </button>
+        <button className="btn btn-xs btn-ghost text-error" onClick={() => removeTabGroup(section.id)} title="Xóa tab">
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      {configSectionId === section.id && (
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid #ddd6fe', background: '#f8f9ff', fontSize: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={!section.visibleWhen}
+              onChange={(e) => updateTabGroup(section.id, {
+                visibleWhen: e.target.checked ? null : { field: section.visibleWhen?.field || '', value: section.visibleWhen?.value || '' }
+              })}
+            />
+            <span>Luôn hiển thị</span>
+          </label>
+          {section.visibleWhen && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <span className="text-gray-500">Hiện khi</span>
+              <select
+                className="select select-bordered select-xs"
+                value={section.visibleWhen.field || ''}
+                onChange={(e) => updateTabGroup(section.id, { visibleWhen: { ...section.visibleWhen, field: e.target.value } })}
+              >
+                <option value="">-- Chọn field --</option>
+                {conditionFields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+              </select>
+              <span>=</span>
+              {(() => {
+                const def = availableFields.find(af => af.key === section.visibleWhen.field);
+                const opts = def && Array.isArray(def.options) ? def.options : [];
+                if (opts.length > 0) {
+                  return (
+                    <select
+                      className="select select-bordered select-xs"
+                      value={section.visibleWhen.value || ''}
+                      onChange={(e) => updateTabGroup(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                    >
+                      <option value="">-- Chọn giá trị --</option>
+                      {opts.map((o, i) => {
+                        const val = (o && typeof o === 'object') ? (o.value ?? o.label) : o;
+                        const lbl = (o && typeof o === 'object') ? (o.label ?? o.value) : o;
+                        return <option key={i} value={val}>{lbl}</option>;
+                      })}
+                    </select>
+                  );
+                }
+                return (
+                  <input
+                    type="text"
+                    className="input input-bordered input-xs"
+                    placeholder="Giá trị"
+                    value={section.visibleWhen.value || ''}
+                    onChange={(e) => updateTabGroup(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                  />
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ padding: 8 }}>
+        {(section.tabs || []).map((tab, tabIdx) => (
+          <div
+            key={tab.id}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+            onDrop={(e) => handleTabSectionDrop(e, section.id, tab.id)}
+            style={{ border: '1px dashed #a5b4fc', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fff' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                value={tab.title}
+                onChange={(e) => updateTab(section.id, tab.id, { title: e.target.value })}
+                style={{ fontWeight: 600, fontSize: 13, flex: 1, border: '1px solid #e5e7eb', borderRadius: 4, padding: '2px 6px' }}
+              />
+              <button className="btn btn-xs btn-ghost" onClick={() => moveTab(section.id, tab.id, -1)} disabled={tabIdx === 0} title="Lên">
+                <ChevronUp size={12} />
+              </button>
+              <button className="btn btn-xs btn-ghost" onClick={() => moveTab(section.id, tab.id, 1)} disabled={tabIdx === (section.tabs || []).length - 1} title="Xuống">
+                <ChevronDown size={12} />
+              </button>
+              <button className="btn btn-xs btn-ghost text-error" onClick={() => removeTab(section.id, tab.id)} title="Xóa tab con">
+                <Trash2 size={12} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' }}>
+              {(tab.sectionRefs || []).map(refId => {
+                const sec = regularSections.find(s => s.id === refId);
+                return (
+                  <span key={refId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#e0e7ff', color: '#3730a3' }}>
+                    {sec ? sec.title : refId}
+                    <button className="btn btn-xs btn-ghost" style={{ padding: 0 }} onClick={() => removeSectionRef(section.id, tab.id, refId)}>
+                      <X size={10} />
+                    </button>
+                  </span>
+                );
+              })}
+              <select
+                value=""
+                onChange={(e) => addSectionRef(section.id, tab.id, e.target.value)}
+                className="select select-bordered select-xs"
+                style={{ fontSize: 11 }}
+              >
+                <option value="">+ Thêm section…</option>
+                {regularSections.filter(s => !(tab.sectionRefs || []).includes(s.id)).map(s => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Kéo section từ danh sách vào đây hoặc chọn ở dropdown.</div>
+          </div>
+        ))}
+        <button className="btn btn-xs btn-secondary" onClick={() => addTab(section.id)}>
+          <Plus size={12} /> Thêm tab con
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="form-builder">
@@ -551,14 +871,23 @@ const FormBuilder = ({ formId, onSaved }) => {
               {(layoutConfig.sections || []).length === 0 && (
                 <div className="builder-empty mb-3">
                   <p className="text-sm text-gray-500 mb-2">Chưa có section nào. Bấm nút bên dưới để thêm section đầu tiên.</p>
-                  <button className="btn btn-primary btn-sm gap-1" onClick={addSection}>
-                    <Plus size={14} /> Thêm section
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                    <button className="btn btn-primary btn-sm gap-1" onClick={addSection}>
+                      <Plus size={14} /> Thêm section
+                    </button>
+                    <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={addTabGroup}>
+                      <Layers size={14} /> Thêm tab
+                    </button>
+                  </div>
                 </div>
               )}
 
               {/* Render each section as a block */}
-              {(layoutConfig.sections || []).map((section, secIdx) => (
+              {(layoutConfig.sections || []).map((section, secIdx) => {
+                if (section.type === 'tabs' || Array.isArray(section.tabs)) {
+                  return renderTabGroupEditor(section, secIdx);
+                }
+                return (
                 <div key={section.id} className="section-block" style={{
                   border: '1px solid #d1d5db',
                   borderRadius: 8,
@@ -569,9 +898,9 @@ const FormBuilder = ({ formId, onSaved }) => {
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '6px 10px',
-                    borderBottom: section.rows.length > 0 ? '1px solid #e5e7eb' : 'none',
+                    borderBottom: (section.rows || []).length > 0 ? '1px solid #e5e7eb' : 'none',
                     background: '#f3f4f6',
-                    borderRadius: section.rows.length > 0 ? '8px 8px 0 0' : 8,
+                    borderRadius: (section.rows || []).length > 0 ? '8px 8px 0 0' : 8,
                     cursor: 'grab'
                   }}
                     draggable
@@ -692,8 +1021,8 @@ const FormBuilder = ({ formId, onSaved }) => {
                   )}
 
                   {/* Section body: rows */}
-                  <div style={{ padding: section.rows.length > 0 ? '8px' : '0', minHeight: section.rows.length === 0 ? 40 : 'auto' }}>
-                    {section.rows.length === 0 && (
+                  <div style={{ padding: (section.rows || []).length > 0 ? '8px' : '0', minHeight: (section.rows || []).length === 0 ? 40 : 'auto' }}>
+                    {(section.rows || []).length === 0 && (
                       <div
                         style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
                         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
@@ -724,7 +1053,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                       </div>
                     )}
 
-                    {section.rows.map((row, rowIdx) => {
+                    {(section.rows || []).map((row, rowIdx) => {
                       const desktopCols = parseInt(row.columns.split(':')[1]);
                       const isStacked = previewMode === 'mobile' && desktopCols > 1;
                       return (
@@ -745,7 +1074,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                                     const sections = [...(prev.sections || [])];
                                     const si = sections.findIndex(s => s.id === section.id);
                                     if (si >= 0) {
-                                      const rows = [...sections[si].rows];
+                                      const rows = [...(sections[si].rows || [])];
                                       rows.splice(rowIdx, 0, { id: newId, columns: '1:1' });
                                       sections[si] = { ...sections[si], rows };
                                     }
@@ -766,7 +1095,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                                   const sections = [...(prev.sections || [])];
                                   const si = sections.findIndex(s => s.id === section.id);
                                   if (si >= 0) {
-                                    const rows = [...sections[si].rows];
+                                    const rows = [...(sections[si].rows || [])];
                                     rows.splice(rowIdx, 0, { id: newId || `r${Date.now()}`, columns: '1:2' });
                                     sections[si] = { ...sections[si], rows };
                                   }
@@ -781,7 +1110,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                                 const sections = [...(prev.sections || [])];
                                 const si = sections.findIndex(s => s.id === section.id);
                                 if (si >= 0) {
-                                  const rows = [...sections[si].rows];
+                                  const rows = [...(sections[si].rows || [])];
                                   rows.splice(rowIdx, 0, { id: newId, columns: '1:2' });
                                   sections[si] = { ...sections[si], rows };
                                 }
@@ -820,7 +1149,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                                 <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'up', section.id)} disabled={rowIdx === 0} title="Lên">
                                   <ChevronUp size={14} />
                                 </button>
-                                <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'down', section.id)} disabled={rowIdx === section.rows.length - 1} title="Xuống">
+                                <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'down', section.id)} disabled={rowIdx === (section.rows || []).length - 1} title="Xuống">
                                   <ChevronDown size={14} />
                                 </button>
                                 <button className="btn btn-xs btn-ghost text-error" onClick={() => removeRow(row.id)} title="Xóa hàng">
@@ -872,7 +1201,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                     })}
 
                     {/* Insert row zone after last row in section */}
-                    {section.rows.length > 0 && (
+                    {(section.rows || []).length > 0 && (
                       <div
                         className={`insert-row-zone ${dragOverRow === `after-last-${section.id}` ? 'drag-over' : ''}`}
                         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`after-last-${section.id}`); }}
@@ -888,14 +1217,14 @@ const FormBuilder = ({ formId, onSaved }) => {
                                 const sections = [...(prev.sections || [])];
                                 const si = sections.findIndex(s => s.id === section.id);
                                 if (si >= 0) {
-                                  sections[si] = { ...sections[si], rows: [...sections[si].rows, { id: newId, columns: '1:1' }] };
+                                  sections[si] = { ...sections[si], rows: [...(sections[si].rows || []), { id: newId, columns: '1:1' }] };
                                 }
                                 return { ...prev, sections };
                               });
                               setTimeout(() => {
                                 setAssignedFields(prev => [...prev, {
                                   fieldId: field.id, label: field.label, key: field.key, type: field.type,
-                                  orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: section.rows.length, colIndex: 0 }
+                                  orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: (section.rows || []).length, colIndex: 0 }
                                 }]);
                               }, 0);
                               return;
@@ -905,7 +1234,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                             const sections = [...(prev.sections || [])];
                             const si = sections.findIndex(s => s.id === section.id);
                             if (si >= 0) {
-                              sections[si] = { ...sections[si], rows: [...sections[si].rows, { id: newId, columns: '1:2' }] };
+                              sections[si] = { ...sections[si], rows: [...(sections[si].rows || []), { id: newId, columns: '1:2' }] };
                             }
                             return { ...prev, sections };
                           });
@@ -917,7 +1246,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                             const sections = [...(prev.sections || [])];
                             const si = sections.findIndex(s => s.id === section.id);
                             if (si >= 0) {
-                              sections[si] = { ...sections[si], rows: [...sections[si].rows, { id: newId, columns: '1:2' }] };
+                              sections[si] = { ...sections[si], rows: [...(sections[si].rows || []), { id: newId, columns: '1:2' }] };
                             }
                             return { ...prev, sections };
                           });
@@ -926,15 +1255,19 @@ const FormBuilder = ({ formId, onSaved }) => {
                         </button>
                       </div>
                     )}
-                  </div>
+                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               {/* Add section button at bottom */}
               {(layoutConfig.sections || []).length > 0 && (
                 <div style={{ textAlign: 'center', margin: '8px 0' }}>
                   <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={addSection}>
                     <Plus size={14} /> Thêm section
+                  </button>
+                  <button className="btn btn-outline btn-primary btn-sm gap-1" style={{ marginLeft: 8 }} onClick={addTabGroup}>
+                    <Layers size={14} /> Thêm tab
                   </button>
                 </div>
               )}

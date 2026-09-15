@@ -20,25 +20,81 @@ function evalCondition(data, c) {
   }
 }
 
+const MAX_TAB_DEPTH = 5;
+
+// visibleWhen: field + value (khong ho tro operator o cap section/tab)
+function evalVisibleWhen(node, data) {
+  if (!node || !node.visibleWhen || !node.visibleWhen.field) return true;
+  return String(data[node.visibleWhen.field] ?? '') === String(node.visibleWhen.value ?? '');
+}
+
+// Luat "visible thang": row duoc coi la hien neu TON TAI it nhat 1 noi chua no dang hien
+function markRows(rowHidden, rows, visible) {
+  (rows || []).forEach((row) => {
+    if (!row || !row.id) return;
+    rowHidden[row.id] = rowHidden[row.id] === false ? false : !visible;
+  });
+}
+
+// Duyet de quy layout_config.sections + tabs[] (khong gioi han 2 cap, chan vong bang pathSet)
+function walkLayoutNode(node, visible, data, sectionMap, pathSet, depth, isReferenced, rowHidden) {
+  if (!node || depth > MAX_TAB_DEPTH) return;
+  const myVisible = isReferenced ? visible : (visible && evalVisibleWhen(node, data));
+
+  if (node.type === 'tabs' || Array.isArray(node.tabs)) {
+    (node.tabs || []).forEach((tab) => {
+      if (!tab) return;
+      const tabVisible = myVisible && evalVisibleWhen(tab, data);
+      (tab.sectionRefs || []).forEach((refId) => {
+        if (pathSet.has(refId)) return;
+        const sec = sectionMap[refId];
+        if (!sec) return;
+        const next = new Set(pathSet);
+        next.add(refId);
+        walkLayoutNode(sec, tabVisible, data, sectionMap, next, depth + 1, true, rowHidden);
+      });
+      if (Array.isArray(tab.tabs)) {
+        walkLayoutNode(tab, tabVisible, data, sectionMap, pathSet, depth + 1, false, rowHidden);
+      }
+    });
+    markRows(rowHidden, node.rows, myVisible);
+  } else {
+    markRows(rowHidden, node.rows, myVisible);
+  }
+}
+
 // Tra ve tap key field CAN validate: chi gom field CO trong form dang dung va DANG hien thi
 // (bo qua field khong nam trong form, va field bi an theo section.visibleWhen / field.conditions)
-async function getApplicableFieldKeys(entity, data, purpose = 'create') {
-  const [forms] = await pool.query(
-    "SELECT id, layout_config FROM forms WHERE entity = ? AND status = 'active' ORDER BY (purpose = ?) DESC, id ASC LIMIT 1",
-    [entity, purpose]
-  );
-  if (forms.length === 0) return new Set();
-  const form = forms[0];
+async function getApplicableFieldKeys(entity, data, purpose = 'create', formId = null) {
+  let form = null;
+
+  // formId duoc chi dinh -> whitelist (phai thuoc dung entity + dang active), sai thi bo qua
+  if (formId) {
+    const [picked] = await pool.query(
+      "SELECT id, layout_config FROM forms WHERE id = ? AND entity = ? AND status = 'active' LIMIT 1",
+      [formId, entity]
+    );
+    form = picked[0] || null;
+  }
+
+  if (!form) {
+    const [forms] = await pool.query(
+      "SELECT id, layout_config FROM forms WHERE entity = ? AND status = 'active' ORDER BY (purpose = ?) DESC, is_default DESC, id ASC LIMIT 1",
+      [entity, purpose]
+    );
+    form = forms[0] || null;
+  }
+
+  if (!form) return new Set();
 
   let layout = form.layout_config;
   if (typeof layout === 'string') { try { layout = JSON.parse(layout); } catch { layout = {}; } }
+  const sections = (layout && layout.sections) || [];
+  const sectionMap = {};
+  sections.forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
   const rowHidden = {};
-  ((layout && layout.sections) || []).forEach((sec) => {
-    let visible = true;
-    if (sec.visibleWhen && sec.visibleWhen.field) {
-      visible = String(data[sec.visibleWhen.field] ?? '') === String(sec.visibleWhen.value ?? '');
-    }
-    (sec.rows || []).forEach((row) => { rowHidden[row.id] = !visible; });
+  sections.forEach((sec) => {
+    walkLayoutNode(sec, true, data, sectionMap, new Set(), 1, false, rowHidden);
   });
 
   const [ffs] = await pool.query(
@@ -84,7 +140,9 @@ async function validateAgainstEntity(req, res, entity, { partial = false, always
 
   try {
     const purpose = (req.method === 'PUT' || req.method === 'PATCH') ? 'view' : 'create';
-    const applicable = await getApplicableFieldKeys(entity, data, purpose);
+    const rawFormId = (req.query && req.query.formId) ? parseInt(req.query.formId, 10) : null;
+    const formId = Number.isFinite(rawFormId) ? rawFormId : null;
+    const applicable = await getApplicableFieldKeys(entity, data, purpose, formId);
     if (applicable && applicable.size > 0) defs = defs.filter((f) => applicable.has(f.key));
   } catch { /* silent */ }
 

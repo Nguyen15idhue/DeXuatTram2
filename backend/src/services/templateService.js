@@ -71,16 +71,19 @@ exports.render = async (proposal, apiConfigId) => {
 
   let html = '';
   for (const section of template.sections) {
-    if (section.condition) {
-      const value = getFieldValue(safe, section.condition.field);
-      if (!evaluateCondition(value, section.condition.operator, section.condition.value)) {
-        continue;
-      }
-    }
-    html += renderSection(section, safe, fieldMap);
+    if (!isSectionVisible(section, safe)) continue;
+    html += renderSection(section, safe, fieldMap, 0);
   }
   return html;
 };
+
+const MAX_SECTION_DEPTH = 5;
+
+function isSectionVisible(section, proposal) {
+  if (!section || !section.condition) return true;
+  const value = getFieldValue(proposal, section.condition.field);
+  return evaluateCondition(value, section.condition.operator, section.condition.value);
+}
 
 exports.parseTemplate = (templateStr, data) => {
   if (!templateStr) return '';
@@ -99,17 +102,23 @@ exports.validateTemplate = (templateConfig) => {
     errors.push('sections phải là một array');
     return { valid: false, errors };
   }
-  for (const section of templateConfig.sections) {
+  const walk = (section, depth) => {
+    if (!section || depth > MAX_SECTION_DEPTH) return;
     if (!section.id) errors.push('Section thiếu id');
     if (!section.title) errors.push('Section thiếu title');
-    if (!section.fields || !Array.isArray(section.fields)) {
+    const hasChildren = Array.isArray(section.sections) && section.sections.length > 0;
+    if (!hasChildren && (!section.fields || !Array.isArray(section.fields))) {
       errors.push(`Section "${section.id}" thiếu fields array`);
     }
     if (section.condition) {
       if (!section.condition.field) errors.push(`Section "${section.id}" condition thiếu field`);
       if (!section.condition.operator) errors.push(`Section "${section.id}" condition thiếu operator`);
     }
-  }
+    if (Array.isArray(section.sections)) {
+      section.sections.forEach((child) => walk(child, depth + 1));
+    }
+  };
+  templateConfig.sections.forEach((section) => walk(section, 1));
   return { valid: errors.length === 0, errors };
 };
 
@@ -165,13 +174,36 @@ function getFieldTypeInfo(fieldKey, fieldMap) {
   return 'text';
 }
 
-function renderSection(section, proposal, fieldMap) {
+function renderSection(section, proposal, fieldMap, depth = 0) {
+  if (!section || depth > MAX_SECTION_DEPTH) return '';
   const title = section.title || '';
   const emoji = section.emoji || '📋';
   const color = section.color || '#e74c3c';
   const layout = section.layout || '2col';
   const isCollapsible = section.collapsible || false;
   const defaultCollapsed = section.default_collapsed || false;
+
+  const childSections = Array.isArray(section.sections) ? section.sections : null;
+  if (childSections) {
+    let childHtml = '';
+    for (const child of childSections) {
+      if (!isSectionVisible(child, proposal)) continue;
+      childHtml += renderSection(child, proposal, fieldMap, depth + 1);
+    }
+    if (!childHtml) return '';
+    let outer = '';
+    if (isCollapsible) {
+      outer += `<details${defaultCollapsed ? '' : ' open'} style="margin-bottom:16px">`;
+      outer += `<summary style="cursor:pointer;padding:8px 0;font-weight:600;font-size:14px">`;
+    }
+    outer += `<div style="background:${color};color:white;padding:10px 16px;border-radius:6px 6px 0 0;margin-top:16px;font-size:15px;font-weight:600">`;
+    outer += `${escapeHtml(emoji)} ${escapeHtml(title)}`;
+    outer += `</div>`;
+    if (isCollapsible) outer += `</summary>`;
+    outer += `<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;padding:0 12px 4px">${childHtml}</div>`;
+    if (isCollapsible) outer += `</details>`;
+    return outer;
+  }
 
   const fields = section.fields || [];
   if (fields.length === 0) return '';

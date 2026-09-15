@@ -120,6 +120,20 @@ exports.validateField = (fieldDef, value) => {
       if (tc.max_rows != null && value.length > tc.max_rows) {
         errors.push(`${fieldDef.label} không được quá ${tc.max_rows} dòng`);
       }
+      const reqCols = (tc.columns || []).filter(c => c && c.required);
+      if (reqCols.length > 0) {
+        for (let i = 0; i < value.length; i++) {
+          const row = value[i] || {};
+          const missing = reqCols.filter(c => {
+            const v = row[c.key];
+            return v === '' || v === null || v === undefined;
+          });
+          if (missing.length > 0) {
+            errors.push(`${fieldDef.label}: dòng ${i + 1} thiếu ${missing.map(c => c.label || c.key).join(', ')}`);
+            break;
+          }
+        }
+      }
       break;
     }
 
@@ -277,7 +291,7 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
     if (sc.auto_user === 'parent_sales') {
       id = parentId || currentId;
     } else if (sc.auto_user === 'owner_or_manager') {
-      id = currentRole === 'CTV' ? (parentId || currentId) : currentId;
+      id = ['CTV', 'NPP'].includes(currentRole) ? (parentId || currentId) : currentId;
     }
     dynamicData[f.key] = { id };
   });
