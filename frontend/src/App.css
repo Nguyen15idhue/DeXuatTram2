@@ -12,6 +12,14 @@ html, body, #root {
   width: 100%;
 }
 
+/* Viewport height tru dung vung nhin thay tren mobile (tru thanh dia chi + taskbar)
+   - 100%: fallback, bam layout viewport (dung ca tren trinh duyet cu khong ho tro dvh)
+   - 100dvh: dynamic viewport, dung khi thanh dia chi/taskbar an-hien */
+.app-viewport {
+  height: 100%;
+  height: 100dvh;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   line-height: 1.6;

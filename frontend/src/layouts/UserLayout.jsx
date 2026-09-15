@@ -17,7 +17,7 @@ const UserLayout = () => {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-base-200 overflow-hidden">
+    <div className="app-viewport flex flex-col bg-base-200 overflow-hidden">
       <UserHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
       <UserSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="flex-1 overflow-y-auto min-h-0">
