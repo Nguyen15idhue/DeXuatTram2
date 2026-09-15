@@ -36,6 +36,13 @@ exports.getById = async (id) => {
   return rows.length > 0 ? rows[0] : null;
 };
 
+exports.getDefaultPushConfig = async () => {
+  const [rows] = await pool.query(
+    "SELECT * FROM api_configs WHERE system_key = '1office' AND api_type = 'contact' AND is_active = 1 ORDER BY id ASC LIMIT 1"
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
 exports.create = async (data) => {
   const { name, base_url, auth_type, auth_config, description, is_active, created_by, api_type, sync_enabled, sync_cron, system_key } = data;
 

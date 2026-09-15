@@ -71,6 +71,7 @@ Swagger UI:  http://localhost:3000/api-docs
 
 ### 4.2. Proposal Lifecycle & Notification
 - Từ chối đề xuất: **bắt buộc** `reject_reason`; lưu `reviewed_by`, `reviewed_at` (`adminProposalService.updateStatus`)
+- Duyệt (`APPROVED`, lần đầu) → **tự tạo lệnh đẩy 1Office** (queue push, config contact active mặc định; duyệt lại khi đã APPROVED không tạo lệnh mới). FE hiện popup xác nhận "không thể hoàn tác" + toast lệnh chờ; đẩy thủ công vẫn giữ nguyên. Được duyệt **chưa thành trạm thật**.
 - Đổi status → tạo `notifications` cho chủ đề xuất (luôn tạo). **5 loại** + màu: `REJECTED` đỏ, `APPROVED` xanh lá, `PENDING` vàng, `REVIEWING` xanh lam, `RESUBMITTED` vàng
 - CTV sửa được khi `PENDING`/`REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` cho người đã từ chối (cả `myProposalService` và `adminProposalService.updateProposal`)
 - CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API
@@ -100,6 +101,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - `GET /stations` **không `limit`** → trả toàn bộ marker fields (map), kèm `loai_uu_tien`/`mo_hinh_tram` trích từ `custom_data`; có `limit` → phân trang. Proposals cap 20000, kèm `mo_hinh_dau_tu`/`loai_uu_tien`
 - `RecordDetailPopup` nút "Xem bản đồ" mở `LocationMapModal` (chỉ khi có tọa độ): tâm tại record, vành nét đứt xoay (`location-point-ring`), bán kính **5/10/20/50 km** (`L.Circle`) + hiện trạm/đề xuất lân cận (`proximityService`)
 - Trang `/map` (chỉ `ADMIN`/`SUPER_ADMIN`): FAB **"Tạo trạm nhanh"** (nằm trên FAB "Vị trí của tôi") mở **cùng menu 3 cách chọn toạ độ** như tạo đề xuất (`MapView.createTarget` = `proposal`/`station`; `onLocationSelected(lat,lng,mode,target)`); chọn xong mở modal `DynamicForm entity="stations" purpose="create"` với `latitude`/`longitude` + địa chỉ tự điền (reverse geocode). SALES/CTV không thấy nút. Menu có tiêu đề in đậm màu xanh đậm `Tạo trạm mới` (target `station`) / `Tạo đề xuất mới` (target `proposal`) ứng với từng chức năng
+- Trang `/huong-dan` (`frontend/src/pages/HelpPage.jsx`): tab "Người dùng" (mọi role) + tab "Quản trị (Super Admin)" chỉ hiện khi `role === 'SUPER_ADMIN'`. Nội dung ở `frontend/src/help/guideData.{user,adminData,adminConfig}.js`; ảnh annotate ở `frontend/public/help/{user,admin-data,admin-config}/` sinh bằng `frontend/scripts/help/gen-images-*.mjs` (+ `annotate.mjs`, `shared.mjs`, `aggregate.mjs`). Link ở `UserSidebar` + `AdminSidebar`
 - Trang `/map` có nút **chuyển Mode** (Đường phố/Vệ tinh/Vệ tinh + nhãn/Địa hình — `MAP_MODES`) và nút **bật/tắt 3D** khi renderer là MapLibre; thay đổi cục bộ theo phiên (không ghi `map_configs`), mobile ẩn 3D. Legend (`.map-legend`) ở **góc trên-phải** (`top:12; right:64px`) để không đè bộ lọc (`.map-filter` ở trên-trái); legend tách **2 cột Trạm / Đề xuất**, nút "Chú thích" (cụm controls) thu gọn/mở rộng — mobile (<768px) **mặc định đóng**
 
 ### 4.6. Map Tile & Renderer
@@ -349,13 +351,13 @@ Migrations nằm ở `database/` (01→73). Một số mốc quan trọng: `14` 
 
 ## 12. 1Office Integration
 
-- **Content-Type**: `application/x-www-form-urlencoded`; **Auth**: `access_token` query param
+- **Content-Type**: `application/x-www-form-urlencoded; charset=UTF-8` (thiếu charset gây mojibake tiếng Việt bên 1Office); **Auth**: `access_token` query param
 - **9/14 source types hoạt động**: text, textarea, number, email, phone, date, select, boolean, file
 - **5/14 chuyển text**: url, multiselect, datetime, formula, table
 - 1Office select fields dùng ID (formal_name, scale_id); `cf2` dùng label ("VIP", "VVIP")
 - **`user_ids`/`manager_user_ids` nhận CODE/TÊN, KHÔNG nhận ID**: string comma (vd `'NV06,NV08,Nguyễn Văn C'`). `user_external_map.external_id` lưu `personnel_id`. Push quy đổi `personnel_id` → `code` (ưu tiên) hoặc `fullname`; pull `field_raws=user_ids,manager_user_ids` trả `ID` liên hệ → quy đổi `ID` → `personnel_id`. Cần `admin_token` trong `api_configs.auth_config`. 3 ID khác nhau: `ID` (contact), `personnel_id`, `code`. Chỉ nhận người CÓ tài khoản 1Office (app gắn `warnings`; `UserExternalPanel` disable người `contact_id` rỗng)
 - **File đính kèm**: field `files` = JSON string `[{name,file}]` trong body `contact/insert|update`; KHÔNG endpoint upload riêng; gửi tất cả file 1 request; `update` append (chỉ gửi file mới); tên file bỏ đuôi
-- **Mapping đặc biệt**: `desc` (nguồn Desc Template, cố định) + `files` luôn link sẵn; `api_field_mappings` unique `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn). **`desc`/`files` KHÔNG dùng làm nguồn pull** (`syncService` tự loại) tránh desc lặp
+- **Mapping đặc biệt**: `desc` (nguồn Desc Template, render lại tươi mỗi lần push + tự strip HTML cũ trong Mô tả chống lồng desc, cố định) + `files` luôn link sẵn; `api_field_mappings` unique `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn). **`desc`/`files` KHÔNG dùng làm nguồn pull** (`syncService` tự loại) tránh desc lặp
 - **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region (khóa kéo–thả)
 - **Non-working arrays**: contacts[] không parse; detail[] chỉ lưu department_id
 - **Desc field HTML**: INSERT lưu HTML, GET strip → plain text, Web UI render HTML
@@ -448,6 +450,7 @@ docker exec station-mysql mysql -u root -ppassword station_management --default-
 - Xem `docs/7/` (review toàn mã nguồn, cập nhật 10/09/2026): P0 đã fix hết; P1 đã fix; một số P2/P3 còn lại (validator động trùng, select import chưa validate, Swagger lệch role, `AdminMapConfigPage` dùng relative URL...)
 - `AGENTS.md` mô tả 13 types nhưng code có thêm `user`/`password`/`table` — `table` chưa có cột DB tương ứng
 - MapLibre + 4 mode + self-host PMTiles đã triển khai (kế hoạch 36, Phase 1–8). File `frontend/public/pmtiles/vietnam.pmtiles` (~299MB) **không commit** — cần build lại theo `docs/5/37`. Glyphs nhãn đang dùng remote OpenFreeMap; self-host offline hoàn toàn cần thêm glyphs.
+- `/de-xuat` (guest) gọi `/api/field-definitions` bị **401 → redirect `/login`** ⇒ form đề xuất cho khách chưa đăng nhập bị chặn (cần nhường endpoint public). Phát hiện khi làm `docs/5/41`.
 
 ## 17. Definition of Done
 

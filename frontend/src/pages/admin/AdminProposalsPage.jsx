@@ -45,6 +45,7 @@ const AdminProposalsPage = () => {
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
+  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false });
   const dupRef = useRef(null);
   const tableRef = useRef(null);
   const syncPollRef = useRef(null);
@@ -116,6 +117,10 @@ const AdminProposalsPage = () => {
       setRejectModal({ open: true, id, reason: '', saving: false });
       return;
     }
+    if (newStatus === 'APPROVED') {
+      setApproveModal({ open: true, id, saving: false });
+      return;
+    }
     try {
       const res = await adminProposalService.updateStatus(id, newStatus, token);
       if (res.success) {
@@ -147,6 +152,44 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
       setRejectModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmApprove = async () => {
+    const { id } = approveModal;
+    setApproveModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(id, 'APPROVED', token);
+      if (res.success) {
+        const auto = res.autoPush;
+        let msg = 'Đã duyệt đề xuất';
+        if (auto && auto.queued) {
+          msg += ' — đã tạo lệnh đẩy sang 1Office, theo dõi trong Audit Log';
+        } else if (auto && !auto.queued) {
+          msg += ` — chưa đẩy được sang 1Office (${auto.reason || 'thiếu cấu hình'}), hãy đẩy thủ công`;
+        }
+        setToast({ message: msg, type: auto && auto.queued === false ? 'warning' : 'success' });
+        setApproveModal({ open: false, id: null, saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+        if (auto && auto.queued && auto.jobId) {
+          pollSyncJobs([auto.jobId], (jobs) => {
+            const ok = jobs.filter(j => j.status === 'completed').length;
+            const bad = jobs.filter(j => j.status !== 'completed').length;
+            setToast({
+              message: ok > 0 ? 'Đẩy sang 1Office thành công' : `Đẩy sang 1Office thất bại (${bad}) — xem Audit Log để Retry`,
+              type: ok > 0 ? 'success' : 'error'
+            });
+            loadProposals(pagination.page);
+          });
+        }
+      } else {
+        setError(res.message || 'Duyệt thất bại');
+        setApproveModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setApproveModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -582,6 +625,31 @@ const AdminProposalsPage = () => {
         confirmText="Xóa"
         type="danger"
       />
+
+      {approveModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Duyệt đề xuất</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false })}>
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-base-content/80">Đề xuất gửi sang 1Office <b>không thể hoàn tác</b>. Hãy xác nhận chắc chắn muốn gửi đề xuất này rồi mới thực hiện.</p>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false })}>Hủy</button>
+              <button
+                className="btn btn-success btn-sm"
+                disabled={approveModal.saving}
+                onClick={handleConfirmApprove}
+              >
+                {approveModal.saving ? 'Đang duyệt...' : 'Duyệt & gửi 1Office'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false })} />
+        </dialog>
+      )}
 
       {rejectModal.open && (
         <dialog className="modal modal-open">

@@ -42,4 +42,47 @@
   .leaflet-tile img {
     max-width: none !important;
   }
+
+  .hl-rgb {
+    position: relative;
+  }
+  .hl-rgb::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 14px;
+    padding: 2px;
+    background: linear-gradient(90deg, #ff004c, #ff8a00, #ffee00, #00e676, #00b0ff, #d500f9, #ff004c);
+    background-size: 300% 100%;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    animation: hl-rgb-pan 3s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes hl-rgb-pan {
+    to {
+      background-position: -300% 0;
+    }
+  }
+
+  .hl-dash {
+    position: relative;
+  }
+  .hl-dash::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 14px;
+    border: 2px dashed #0ea5e9;
+    animation: hl-dash-pulse 1.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes hl-dash-pulse {
+    50% {
+      opacity: 0.35;
+      box-shadow: 0 0 14px #0ea5e9;
+    }
+  }
 }

@@ -13,6 +13,7 @@ import MapPage from './pages/user/MapPage';
 import MyProposalsPage from './pages/user/MyProposalsPage';
 import GuestProposalPage from './pages/user/GuestProposalPage';
 import ProfilePage from './pages/user/ProfilePage';
+import HelpPage from './pages/HelpPage';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
@@ -55,6 +56,7 @@ function App() {
             <Route path="/my-proposals" element={<MyProposalsPage />} />
             <Route path="/my-proposals/*" element={<MyProposalsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/huong-dan" element={<HelpPage />} />
           </Route>
 
           <Route element={<AdminLayout />}>
@@ -77,6 +79,7 @@ function App() {
             <Route path="/admin/roles" element={<RoleRoute allowed={SUPER_ONLY}><AdminRolesPage /></RoleRoute>} />
             <Route path="/admin/api-configs" element={<RoleRoute allowed={SUPER_ONLY}><AdminApiConfigPage /></RoleRoute>} />
             <Route path="/admin/audit-log" element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminAuditLogPage /></RoleRoute>} />
+            <Route path="/admin/huong-dan" element={<HelpPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/login" replace />} />

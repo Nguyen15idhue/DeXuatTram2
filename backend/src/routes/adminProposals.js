@@ -183,7 +183,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateProposal, adminPropo
  * /api/admin/proposals/{id}/status:
  *   put:
  *     tags: [Admin - Proposals]
- *     summary: Admin cập nhật trạng thái đề xuất
+  *     summary: Admin cập nhật trạng thái đề xuất (duyệt APPROVED tự tạo lệnh đẩy 1Office)
  *     security:
  *       - bearerAuth: []
  *     parameters:

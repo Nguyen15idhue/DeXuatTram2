@@ -1,12 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Map, ClipboardList, User, Settings, Menu, LogOut } from 'lucide-react';
+import { Map, ClipboardList, User, Settings, Menu, LogOut, BookOpen } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 
 const navItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
   { path: '/my-proposals', label: 'Đề xuất của tôi', icon: ClipboardList },
   { path: '/profile', label: 'Hồ sơ', icon: User },
+  { path: '/huong-dan', label: 'Hướng dẫn', icon: BookOpen, hl: 'hl-rgb' },
 ];
 
 const UserHeader = ({ onMenuToggle }) => {
@@ -37,7 +38,7 @@ const UserHeader = ({ onMenuToggle }) => {
             to={item.path}
             className={`btn btn-ghost btn-sm gap-2 ${
               isActive(item.path) ? 'btn-active text-primary' : 'text-base-content/70'
-            }`}
+            } ${item.hl || ''}`}
           >
             <item.icon size={16} />
             {item.label}

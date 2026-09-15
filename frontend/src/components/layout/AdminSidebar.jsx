@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   BarChart3, Users, Zap, ClipboardList, Settings,
-  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History
+  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History, BookOpen
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 
@@ -71,11 +71,19 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <div className="border-t border-base-300 my-3 mx-1" />
         <Link
           to="/map"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200 hover:text-base-content transition-all duration-150"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200 hover:text-base-content transition-all duration-150 hl-dash"
           onClick={onNavClick}
         >
           <MapPin size={18} />
           <span className="truncate">Xem bản đồ</span>
+        </Link>
+        <Link
+          to="/admin/huong-dan"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === '/admin/huong-dan' ? 'bg-primary text-primary-content shadow-sm' : 'text-base-content/70 hover:bg-base-200 hover:text-base-content'}`}
+          onClick={onNavClick}
+        >
+          <BookOpen size={18} />
+          <span className="truncate">Hướng dẫn</span>
         </Link>
       </nav>
 

@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Map, ClipboardList, User, Settings, LogOut, X } from 'lucide-react';
+import { Map, ClipboardList, User, Settings, LogOut, X, BookOpen } from 'lucide-react';
 
 const menuItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
   { path: '/my-proposals', label: 'Đề xuất của tôi', icon: ClipboardList },
   { path: '/profile', label: 'Hồ sơ', icon: User },
+  { path: '/huong-dan', label: 'Hướng dẫn', icon: BookOpen, hl: 'hl-rgb' },
 ];
 
 const UserSidebar = ({ isOpen, onClose }) => {
@@ -44,7 +45,7 @@ const UserSidebar = ({ isOpen, onClose }) => {
                 isActive(item.path)
                   ? 'bg-primary text-white'
                   : 'text-base-content hover:bg-base-200'
-              }`}
+              } ${item.hl || ''}`}
               onClick={onClose}
             >
               <item.icon size={18} />

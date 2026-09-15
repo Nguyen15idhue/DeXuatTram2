@@ -92,9 +92,9 @@ exports.updateStatus = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
-    await adminProposalService.updateStatus(req.params.id, status, { reason, reviewerId: req.user.id });
+    const result = await adminProposalService.updateStatus(req.params.id, status, { reason, reviewerId: req.user.id });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal, message: 'Cập nhật trạng thái thành công' });
+    res.json({ success: true, data: proposal, autoPush: result.autoPush || null, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });

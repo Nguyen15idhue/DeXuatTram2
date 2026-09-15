@@ -59,7 +59,7 @@ const requestWithRetry = async (method, url, body, token, retryCount = 0) => {
           formBody.append(key, String(value));
         }
       }
-      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
       options.body = formBody.toString();
     }
 

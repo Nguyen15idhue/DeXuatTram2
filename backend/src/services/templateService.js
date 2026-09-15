@@ -61,9 +61,10 @@ async function getFieldMap() {
 exports.clearCache = () => { fieldCache = null; fieldCacheTime = 0; };
 
 exports.render = async (proposal, apiConfigId) => {
+  const safe = { ...proposal, description: sanitizePriorDesc(proposal.description) };
   const template = await apiConfigService.getDescTemplate(apiConfigId);
   if (!template || !template.sections || template.sections.length === 0) {
-    return proposal.description || '';
+    return safe.description || '';
   }
 
   const fieldMap = await getFieldMap();
@@ -71,12 +72,12 @@ exports.render = async (proposal, apiConfigId) => {
   let html = '';
   for (const section of template.sections) {
     if (section.condition) {
-      const value = getFieldValue(proposal, section.condition.field);
+      const value = getFieldValue(safe, section.condition.field);
       if (!evaluateCondition(value, section.condition.operator, section.condition.value)) {
         continue;
       }
     }
-    html += renderSection(section, proposal, fieldMap);
+    html += renderSection(section, safe, fieldMap);
   }
   return html;
 };
@@ -448,4 +449,12 @@ function getFieldArrayValue(proposal, fieldKey) {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function sanitizePriorDesc(desc) {
+  if (!desc || typeof desc !== 'string') return desc || '';
+  if (/<(table|div|details|tr|td)[\s>]/i.test(desc)) {
+    return desc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  return desc;
 }

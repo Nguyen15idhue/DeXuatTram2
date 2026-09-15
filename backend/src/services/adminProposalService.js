@@ -106,11 +106,12 @@ exports.updateStatus = async (id, status, opts = {}) => {
     throw Object.assign(new Error('Vui lòng nhập lý do từ chối'), { statusCode: 400 });
   }
 
-  const [rows] = await pool.query('SELECT id, user_id FROM station_proposals WHERE id = ?', [id]);
+  const [rows] = await pool.query('SELECT id, user_id, status, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
   if (rows.length === 0) {
     throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
   }
   const proposal = rows[0];
+  const prevStatus = proposal.status;
 
   await pool.query(
     `UPDATE station_proposals
@@ -131,8 +132,32 @@ exports.updateStatus = async (id, status, opts = {}) => {
     });
   }
 
-  return { id, status };
-};
+  let autoPush = null;
+  if (status === 'APPROVED' && prevStatus !== 'APPROVED') {
+    autoPush = await autoPushOnApprove(id, opts.reviewerId || null);
+  }
+
+  return { id, status, autoPush };
+}
+
+async function autoPushOnApprove(id, reviewerId) {
+  try {
+    const apiConfigService = require('./apiConfigService');
+    const syncService = require('./syncService');
+    const config = await apiConfigService.getDefaultPushConfig();
+    if (!config) {
+      return { queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
+    }
+    const results = await syncService.pushTo1Office([id], config.id, reviewerId);
+    const first = results && results[0];
+    if (!first || !first.success) {
+      return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đẩy' };
+    }
+    return { queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id };
+  } catch (e) {
+    return { queued: false, reason: e.message || 'Lỗi tạo lệnh đẩy' };
+  }
+}
 
 exports.updateProposal = async (id, data) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
