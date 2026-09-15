@@ -1,7 +1,7 @@
 const MATRIX = [
   { resource: 'Users (xem cây)', superAdmin: 'Toàn hệ thống', admin: 'Toàn hệ thống', sales: 'Nhánh mình', ctv: 'Không' },
-  { resource: 'Users (tạo)', superAdmin: 'Mọi role', admin: 'Trừ Super Admin', sales: 'Chỉ CTV', ctv: 'Không' },
-  { resource: 'Users (sửa/xóa)', superAdmin: 'Tất cả', admin: 'Trừ Super Admin', sales: 'CTV nhánh mình', ctv: 'Không' },
+  { resource: 'Users (tạo)', superAdmin: 'Mọi role', admin: 'Trừ Super Admin', sales: 'Chỉ CTV/NPP', ctv: 'Không' },
+  { resource: 'Users (sửa/xóa)', superAdmin: 'Tất cả', admin: 'Trừ Super Admin', sales: 'CTV/NPP nhánh mình', ctv: 'Không' },
   { resource: 'Stations (xem)', superAdmin: 'Tất cả', admin: 'Tất cả', sales: 'Tất cả', ctv: 'Không (trang user)' },
   { resource: 'Stations (thêm/sửa/xóa)', superAdmin: 'Có', admin: 'Có', sales: 'Không', ctv: 'Không' },
   { resource: 'Proposals (xem/quản lý)', superAdmin: 'Toàn hệ thống', admin: 'Toàn hệ thống', sales: 'Nhánh mình', ctv: 'Của mình (trang user)' },
@@ -24,7 +24,7 @@ const AdminRolesPage = () => {
               <th>Super Admin</th>
               <th>Admin</th>
               <th>Sales</th>
-              <th>CTV</th>
+              <th>CTV / NPP</th>
             </tr>
           </thead>
           <tbody>

@@ -24,7 +24,8 @@ export const startGuide = {
       purpose: 'Biết vai trò của mình để hiểu mình được làm gì, thấy gì.',
       substeps: [
         'CTV (cộng tác viên): tạo và quản lý đề xuất của chính mình; thuộc một bạn SALES quản lý.',
-        'SALES: như CTV, cộng thêm xem đề xuất của CTV thuộc nhánh mình và duyệt đề xuất.',
+        'NPP (Nhà phân phối): quyền giống hệt CTV, cũng thuộc một bạn SALES quản lý.',
+        'SALES: như CTV, cộng thêm xem đề xuất của CTV/NPP thuộc nhánh mình và duyệt đề xuất.',
         'ADMIN: quản lý toàn bộ đề xuất, trạm, người dùng.',
         'SUPER_ADMIN: toàn quyền, gồm cả cấu hình hệ thống (mục I.6 và III).',
       ],

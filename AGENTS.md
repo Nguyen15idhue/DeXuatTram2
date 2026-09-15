@@ -30,8 +30,8 @@ Swagger UI:  http://localhost:3000/api-docs
 ## 3. Business Entities
 
 ### User
-- Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV` (file 25, thay `USER`/`ADMIN` cũ)
-- `CTV.parent_id` trỏ `SALES` quản lý; `external_id` map hệ ngoài (unique)
+- Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV`, `NPP` (file 25, thay `USER`/`ADMIN` cũ; `NPP` thêm ở migration `77` — **hoạt động y hệt `CTV`**, không có RBAC riêng)
+- `CTV`/`NPP.parent_id` trỏ `SALES` quản lý; `external_id` map hệ ngoài (unique)
 - `token_version` tăng khi đổi mật khẩu → revoke JWT cũ
 - Status: `ACTIVE`, `LOCKED`
 
@@ -43,6 +43,7 @@ Swagger UI:  http://localhost:3000/api-docs
 ### Station Proposal (đề xuất trạm mới)
 - Status: `PENDING`, `REVIEWING`, `APPROVED`, `REJECTED`
 - `loai_uu_tien`: formula post theo `mo_hinh_dau_tu` — TDT→1, LK/NQ/trống→2
+- `mo_hinh_dau_tu`: **4 giá trị** `NQ`/`TDT`/`LK`/`NQ_LK` (migration 76). Chọn `NQ_LK` → form hiện **tab lồng** "Nhượng quyền và Liên kết" gồm 2 tab con "Nhượng quyền"/"Liên kết" (xem mục 11 — `layout_config.type:'tabs'`). Mã đề xuất dạng `NQ_LK_HCM_0001` (regex mã cho phép prefix nhiều nhóm `_`)
 - `submission_source`: `user` | `guest`; `tracking_code`, `submitter_ip`
 - Sync 1Office: `contact_1office_id`, `contact_1office_code`, `sync_status`, `last_synced_at`, `last_synced_data`
 - `ma_de_xuat_gen` là cột generated từ `custom_data`
@@ -261,8 +262,8 @@ backend/src/
 | `station_proposals` | Đề xuất (+ `reject_reason`, `reviewed_by/at`, `submission_source`, `tracking_code`, sync 1Office) |
 | `proposal_sequences` | Sinh mã tuần tự theo prefix |
 | `field_definitions` | Định nghĩa trường động (13 types + `user`) |
-| `forms` / `form_fields` | Cấu hình form + field (`order_index`, `visible`, `purpose`, `layout_config`) |
-| `views` / `view_fields` | Cấu hình bảng + cột (`width`, `sortable`, `filterable`) |
+| `forms` / `form_fields` | Cấu hình form + field (`order_index`, `visible`, `purpose`, `layout_config`, `is_locked`, `is_default`) |
+| `views` / `view_fields` | Cấu hình bảng + cột (`width`, `sortable`, `filterable`, `usage`, `is_locked`) |
 | `files` | File uploaded (`storage_key`, `uploaded_by`, `submitter_ip`) |
 | `data_lists` / `data_list_rows` | Danh mục dùng chung (`columns_config` / `data` JSON) |
 | `map_configs` | Tile provider, center, zoom, renderer/tile_mode/retina |
@@ -276,7 +277,7 @@ backend/src/
 | `api_queue_logs` | Queue push/pull + audit log |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→75). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn.
+Migrations nằm ở `database/` (01→83). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field).
 
 ## 9. Swagger & Documentation
 
@@ -306,6 +307,7 @@ Migrations nằm ở `database/` (01→75). Một số mốc quan trọng: `14` 
 ### Field Types
 - 13 types chuẩn + `user`. Config riêng theo type: `number_format`, `decimal_places`, `display_format`, `unit`, `date_format`, `file_config`, `formula_config`, `option_style`, `source_config`
 - Lưu ở `field_definitions`; code còn xử lý `password`/`table` (legacy, xem `docs/7/04`)
+- **Table**: `source_config.columns[]` đặt `required: true` cho từng cột → FE (`DynamicForm.validate`) + BE (`dynamicUtils.validateField`) chặn ô rỗng (`"<label>: dòng N thiếu <cột>"`). Chỉ bảng có cột `required` mới bị chặn (hiện: `chi_phi_lk` — migration 84).
 
 ### User Field (type `user`)
 - Lưu `{ id }`; hiển thị chip tên, click xem chi tiết (CTV ẩn)
@@ -314,9 +316,20 @@ Migrations nằm ở `database/` (01→75). Một số mốc quan trọng: `14` 
 
 ### Form/View Builder
 - Tạo Forms/Views tại `/admin/forms`, `/admin/views`
-- **`DynamicForm` resolve form theo `purpose` (ưu tiên)** (`getByEntityAndPurpose`), `formId` chỉ fallback. Lý do: cùng entity có form `all`/`create`/`view`; hardcode `formId` dễ trỏ nhầm
+- **`DynamicForm` resolve form theo `purpose`** (`getByEntityAndPurpose`, `ORDER BY is_default DESC, id ASC`); **`formId` được truyền thì THẮNG `purpose`** (migration 78/83 — dùng cho nút "Tạo nhanh"). `DynamicForm` có form `all`/`create`/`view` nên hardcode `formId` dễ trỏ nhầm → ưu tiên `purpose` khi không có `formId`
+- **Nhiều bản form/view cho 1 entity** (migration 78): `views.usage` = `table` | `excel_full` | `excel_basic`; `views.is_locked` / `forms.is_locked` = 1 → **chặn xóa** (vẫn sửa + đổi `status`); `forms.is_default` = form dùng khi resolve theo `purpose`. UI `/admin/views` + `/admin/forms` liệt kê **tất cả** bản, có badge `usage`/`Mặc định`/`Khóa`, select `usage`, toggle `status`, disable nút Xóa khi `is_locked`
+- **Nút "Tạo nhanh"** (`AdminProposalsPage` + `MyProposalsPage`): mở form `purpose='create'` & `is_default=0` (migration 83, 7 field) và gửi `POST /api/proposals?formId=<id>`; BE whitelist `formId` (đúng entity + `status='active'`, sai → dùng form mặc định, không 500)
 - FormBuilder: drag & drop fields, visibility + colSpan; section có nút ▲▼ di chuyển + điều kiện hiển thị (`section.visibleWhen = { field, value }` trong `layout_config`)
 - ViewBuilder: drag & drop columns, visibility + width + sortable + filterable
+- **Bỏ hardcode `VIEW_ID`**: hook `useDefaultViewId(entity, fallbackId)` tra view `usage='table' & status='active'` (cache module-level + fallback hằng số) cho `AdminProposalsPage`/`AdminStationsPage`/`AdminUsersPage`/`MyProposalsPage`
+
+### Tab lồng trong layout (`layout_config.type:'tabs'`) — migration 76
+- `layout_config.sections[]` có 2 loại phần tử: section thường (`rows`) và **tab-group** (`type:'tabs'`, `tabs[]`, bắt buộc `rows: []`).
+- Mỗi tab con `{id, title, sectionRefs:[sectionId]}` **tham chiếu** section có sẵn (không nhân bản field). Section được ref: **bỏ qua `visibleWhen` riêng** (tab cha là cổng duy nhất).
+- Luật **"visible thắng"**: row hiển thị nếu tồn tại ≥1 nơi chứa nó đang hiển thị (chống bỏ qua `required` — R2). Engine render/validate/desc viết **đệ quy N cấp** (`MAX_TAB_DEPTH=5`, chống vòng bằng `visited/pathSet`).
+- FormBuilder UI chỉ tạo **2 cấp** (chặn tạo tab trong tab con); mọi chỗ duyệt section phải guard `(section.rows || [])`.
+- Render: `DynamicForm.renderTabGroup` (tab thật, `activeTabs` key theo path, render mọi tab + `display:none`), `RecordDetailPopup.renderTabGroup` (tab thật ở popup view/edit, `getLayoutSections` trả `{sections,sectionMap,cellMap}`), `templateService.renderSection` (desc 1Office section cha có `sections[]`).
+- Seed form 13/14: tab-group `tai_chinh_nqlk` (`visibleWhen mo_hinh_dau_tu=NQ_LK`) ref `s6` (NQ) / `s5` (LK); field mới `chinh_sach_nq`/`loai_tru_nq`/`chinh_sach_lk`/`loai_tru_lk`/`dat_coc`/`ghi_chu_dat_coc`/`tong_chi_phi` + 1 field **table** `chi_phi_lk` (cột `loai_chi_phi` chọn từ datalist `dm_chi_phi_lk`, cột `so_tien` tự điền `gia` khi chọn loại) — mỗi field `conditions: mo_hinh_dau_tu = NQ_LK`. 4 field chi phí số cũ (`chi_phi_van_chuyen/tram_bien_ap/ha_tang/thue_vi_tri`) đã chuyển `status='inactive'` (migration 82).
 
 ### Select/Multiselect Data Sources
 - **Manual options**: `[{label, value, color, borderRadius}]`
@@ -348,8 +361,13 @@ Migrations nằm ở `database/` (01→75). Một số mốc quan trọng: `14` 
 - Viewer: zoom ảnh, play video/audio, render PDF/Word/Excel inline
 
 ### Excel Import/Export
-- Hiện tại: cột hardcode cho stations/proposals; **planned**: dùng View Columns + Available Fields
+- **Template/Export/Import theo view** (migration 79): `GET /admin/excel/template` + `/export/{entity}` nhận `viewId` | `viewIds` (phân tách dấu phẩy → **1 file nhiều sheet**) | `usage` (`table`|`excel_full`|`excel_basic`); không truyền → view `usage='table'` (giữ hành vi cũ). `excel_basic` = **chỉ cột trong view**; `table`/`excel_full` = cột view + nối các field còn lại. `viewService.resolveView` nội bộ `excelService`
+- **Tên file** do backend đặt qua `Content-Disposition` (`buildFileName`): Template `template_<entity>_<usage>.xlsx` (nhiều view → `_all`); Export `<YYYYMMDD_HHmmss>_export_<entity>_<usage>.xlsx`; xuất trùng `<stamp>_duplicates_export.xlsx`; Data List `<stamp>_<tên>.xlsx`
+- **FE tải file**: `excelService.downloadBlob` **fetch để kiểm tra** (chặn response non-Excel → báo lỗi rõ thay vì lưu file hỏng) rồi **tải qua URL kèm `?token=`** để browser dùng `Content-Disposition` (tránh blob + `revokeObjectURL` làm mất tên file → Chrome sinh tên UUID không đuôi). POST (xuất trùng) vẫn dùng blob nhưng revoke sau 30s
+- **Nhận diện bộ cột tự động** khi import (`importPreviewDynamic`): Dice `score = 2·matched/(|view|+|file|)`, `confident = coverage ≥ 0.5`, trả `detection` (`detectedViewId/usage/score/candidates/unmatchedFileColumns/omittedFields`); FE cho **override** + cảnh báo vàng "cột bị bỏ qua"/"thiếu trường để trống", đỏ khi không nhận diện được
+- **Import "một số trường"**: `validateHeaders` chỉ đòi `REQUIRED_HEADERS` (`station_proposals: latitude, longitude`; `stations: name, latitude, longitude`; `users: full_name, email`) + phải khớp ≥1 cột; `parseExcelRow` chỉ áp `required` cho **cột có trong file**. Nhánh Data List giữ chế độ chặt (đòi đủ cột)
 - Export ExcelJS → .xlsx; Import: Preview → Validate → Confirm (transaction, all-or-nothing, re-validate lại khi confirm)
+- Nút **Template/Export** ở 3 trang quản trị là **dropdown chọn bộ cột** (`ViewPickerMenu`); modal Import có select "Bộ cột" + banner nhận diện (`ImportViewPanel`)
 
 ## 12. 1Office Integration
 
@@ -463,3 +481,50 @@ docker exec station-mysql mysql -u root -ppassword station_management --default-
 - [ ] Không phá feature cũ
 - [ ] Docker hot reload vẫn chạy
 - [ ] Không console error
+
+## 18. Công cụ hỗ trợ: codebase-memory-mcp (MCP)
+
+Đã cài **toàn cục** cho opencode (mọi dự án) — dùng để tra cứu cấu trúc code bằng knowledge graph (SQLite) thay vì grep/đọc file nhiều lần.
+
+**Cài đặt (không cần làm lại)**
+- Binary: `C:\Users\ADMIN\.local\bin\codebase-memory-mcp.exe` (v0.10.8), đã có trong PATH user
+- Cache: `C:\Users\ADMIN\.cbm-cache` — **bắt buộc** vì mặc định `~/.cache/codebase-memory-mcp` nằm trên junction `→ F:\Moved` (DACL cấp quyền cho `Authenticated Users` → CBM từ chối vì lý do bảo mật)
+- Env user `CBM_CACHE_DIR` đã set; entry MCP khai báo trong `~/.config/opencode/opencode.json` (`mcp.codebase-memory-mcp`, kèm `environment.CBM_CACHE_DIR`)
+- Cài bằng `--skip-config` ⇒ **chỉ có MCP tools**, KHÔNG có skill/agents/plugin của CBM
+- ⚠️ Chạy CLI ở shell không có `CBM_CACHE_DIR` sẽ lỗi `cache-private` → luôn set biến trước
+
+```powershell
+$env:CBM_CACHE_DIR = "C:\Users\ADMIN\.cbm-cache"
+$exe = "$env:USERPROFILE\.local\bin\codebase-memory-mcp.exe"
+& $exe cli index_repository --repo-path "<duong/dan/repo>" --mode moderate   # index lại khi code đổi nhiều
+& $exe cli index_status
+'{"name_pattern":".*AutoUser.*"}' | & $exe cli search_graph
+```
+
+**15 tool**: `index_repository`, `list_projects`, `delete_project`, `index_status`, `check_index_coverage`, `get_architecture`, `search_graph`, `search_code`, `trace_path`, `query_graph`, `get_code_snippet`, `get_graph_schema`, `detect_changes`, `manage_adr`, `ingest_traces`.
+
+**Phạm vi hoạt động trên repo này** (index 15/09/2026: 2.423 nodes / 6.152 edges, ~5s)
+
+| Dùng tốt | Ghi chú |
+|---|---|
+| `get_architecture` | 220 Route, hotspot (`useAuth` fan_in=42), 12 cluster (map renderers, DynamicForm, FormBuilder…) |
+| `HTTP_CALLS` (111 edge) | Liên kết frontend → backend route: `delete` → `/stations/:id`, `/admin/proposals/:id`… |
+| `search_graph` / `trace_path` cho **frontend** | 780 Function node (React component, hook, util) |
+| `search_code` | Grep có gắn graph; **dùng cho backend** |
+| `index_status` / `check_index_coverage` | Coverage + file `parse_partial` |
+| `detect_changes` | Blast radius theo git diff (theo file) |
+
+| Hạn chế (đã đo) | Chi tiết |
+|---|---|
+| **Backend mất ~377 hàm** | Extractor KHÔNG tạo Function node cho `exports.X = async () => {}` / `exports.X = function(){}` — backend dùng CommonJS pattern này gần như 100%. Chỉ còn **172** Function node backend (từ `function X()` / `const X = () =>`) |
+| `search_graph("pushTo1Office")` | → **0 kết quả** (cùng `getMissingPushUserFieldLabels`, `autoPushOnApprove` thì CÓ vì là `async function` khai báo thường) |
+| `trace_path` / `query_graph` cho backend | Không có `CALLS` edge với hàm `exports.X` |
+| `database/*.sql`, `docs/`, `scripts/`, `frontend/public/`, `e2e/`, `tests/` | Không index (by design hoặc skip-list); 52 file `parse_partial` (hầu hết SQL) |
+
+**Quy ước dùng (không sửa mã nguồn chỉ để phục vụ tool)**
+1. Backend: tìm symbol / ai gọi ai → dùng `search_code` (grep) như trước, **đừng** dựa `search_graph`/`trace_path`.
+2. Frontend: ưu tiên `search_graph` + `trace_path` (thay grep nhiều lần).
+3. Câu hỏi kiến trúc / route / liên kết FE↔BE → `get_architecture` + `HTTP_CALLS`.
+4. Trước commit/sửa nhiều file → `detect_changes` để xem blast radius.
+5. Kết luận "không tồn tại code X" phải kiểm `check_index_coverage` trước, và grep lại file trong danh sách `parse_partial`.
+6. Index lại khi code đổi nhiều; bật tự động: `& $exe config set auto_index true`.

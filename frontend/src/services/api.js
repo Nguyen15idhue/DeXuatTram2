@@ -1,5 +1,32 @@
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const fileStamp = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+};
+
+const parseDispositionFilename = (disposition) => {
+  if (!disposition) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (utf8 && utf8[1]) {
+    try { return decodeURIComponent(utf8[1].trim().replace(/^"|"$/g, '')); } catch { /* silent */ }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  return plain && plain[1] ? plain[1].trim() : null;
+};
+
+const triggerDownload = (href, filename) => {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename || '';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { try { a.remove(); } catch { /* silent */ } }, 5000);
+};
+
 const handleUnauthorized = (response) => {
   if (response.status === 401) {
     try {
@@ -112,7 +139,14 @@ export const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     handleUnauthorized(response);
-    if (!response.ok) throw new Error('Download failed');
+    if (!response.ok) {
+      let message = `Tải file thất bại (HTTP ${response.status})`;
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch { /* silent */ }
+      throw new Error(message);
+    }
     return response;
   },
 
@@ -171,8 +205,9 @@ export const proposalService = {
   getById(id) {
     return api.get(`/proposals/${id}`);
   },
-  create(proposal, token) {
-    return api.postWithAuth('/proposals', proposal, token);
+  create(proposal, token, formId) {
+    const q = formId ? `?formId=${formId}` : '';
+    return api.postWithAuth(`/proposals${q}`, proposal, token);
   },
   checkNearby(data, token) {
     return api.postWithAuth('/proposals/check-nearby', data, token);
@@ -221,8 +256,9 @@ export const myProposalService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/my-proposals?${queryString}`, token);
   },
-  create(data, token) {
-    return api.postWithAuth('/proposals', data, token);
+  create(data, token, formId) {
+    const q = formId ? `?formId=${formId}` : '';
+    return api.postWithAuth(`/proposals${q}`, data, token);
   },
   update(id, data, token) {
     return api.putWithAuth(`/my-proposals/${id}`, data, token);
@@ -430,31 +466,55 @@ export const dynamicService = {
 export const excelService = {
   async downloadBlob(url, token, filename) {
     const response = await api.downloadWithAuth(url, token);
-    const blob = await response.blob();
-    const objUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(objUrl);
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const isExcel = contentType.includes('spreadsheetml')
+      || contentType.includes('ms-excel')
+      || contentType.includes('octet-stream');
+
+    if (!isExcel) {
+      let message = `Máy chủ trả về định dạng không phải Excel (${contentType || 'không rõ định dạng'})`;
+      try {
+        const text = await response.text();
+        if (/^\s*</.test(text)) {
+          message = 'Máy chủ trả về trang HTML thay vì file Excel — kiểm tra cấu hình proxy /api (backend có chạy không?).';
+        } else {
+          const err = JSON.parse(text);
+          if (err && err.message) message = err.message;
+        }
+      } catch { /* silent */ }
+      throw new Error(message);
+    }
+
+    const serverName = parseDispositionFilename(response.headers.get('content-disposition')) || filename;
+    try { if (response.body && response.body.cancel) await response.body.cancel(); } catch { /* silent */ }
+
+    const sep = url.includes('?') ? '&' : '?';
+    triggerDownload(`${API_URL}${url}${sep}token=${encodeURIComponent(token)}`, serverName);
+    return serverName;
   },
 
   async exportData(entity, token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
     if (filters.status) params.append('status', filters.status);
+    if (filters.layout) params.append('layout', filters.layout);
+    if (filters.formId) params.append('formId', filters.formId);
+    if (filters.purpose) params.append('purpose', filters.purpose);
+    if (filters.viewId) params.append('viewId', filters.viewId);
+    if (filters.viewIds && filters.viewIds.length) params.append('viewIds', filters.viewIds.join(','));
     const query = params.toString() ? `?${params.toString()}` : '';
-    await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${entity}_export.xlsx`);
+    await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${fileStamp()}_export_${entity}.xlsx`);
   },
 
   async exportMyProposals(token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
     if (filters.status) params.append('status', filters.status);
+    if (filters.layout) params.append('layout', filters.layout);
+    if (filters.formId) params.append('formId', filters.formId);
     const query = params.toString() ? `?${params.toString()}` : '';
-    await this.downloadBlob(`/my-proposals/export${query}`, token, `station_proposals_export.xlsx`);
+    await this.downloadBlob(`/my-proposals/export${query}`, token, `${fileStamp()}_export_station_proposals.xlsx`);
   },
 
   async exportDuplicatesBlob(url, body, token, filename) {
@@ -474,29 +534,38 @@ export const excelService = {
       } catch { /* silent */ }
       throw new Error(message);
     }
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('spreadsheetml') && !contentType.includes('ms-excel') && !contentType.includes('octet-stream')) {
+      throw new Error('Máy chủ trả về định dạng không phải Excel');
+    }
+
+    const serverName = parseDispositionFilename(response.headers.get('content-disposition')) || filename;
     const blob = await response.blob();
     const objUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(objUrl);
+    triggerDownload(objUrl, serverName);
+    setTimeout(() => { try { window.URL.revokeObjectURL(objUrl); } catch { /* silent */ } }, 30000);
+    return serverName;
   },
 
-  async downloadTemplate(entity, token) {
-    await this.downloadBlob(`/admin/excel/template?entity=${entity}`, token, `${entity}_template.xlsx`);
+  async downloadTemplate(entity, token, opts = {}) {
+    const params = new URLSearchParams({ entity });
+    if (opts.viewId) params.append('viewId', opts.viewId);
+    if (opts.viewIds && opts.viewIds.length) params.append('viewIds', opts.viewIds.join(','));
+    if (opts.usage) params.append('usage', opts.usage);
+    await this.downloadBlob(`/admin/excel/template?${params.toString()}`, token, `template_${entity}.xlsx`);
   },
 
-  previewImport(entity, file, token) {
+  previewImport(entity, file, token, opts = {}) {
+    const params = new URLSearchParams({ entity });
+    if (opts.viewId) params.append('viewId', opts.viewId);
+    if (opts.usage) params.append('usage', opts.usage);
     const formData = new FormData();
     formData.append('file', file);
-    return api.uploadWithAuth(`/admin/excel/import/preview?entity=${entity}`, formData, token);
+    return api.uploadWithAuth(`/admin/excel/import/preview?${params.toString()}`, formData, token);
   },
 
-  confirmImport(entity, rows, token) {
-    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows }, token);
+  confirmImport(entity, rows, token, opts = {}) {
+    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows, viewId: opts.viewId || null }, token);
   },
 
   async exportDataList(listId, token) {

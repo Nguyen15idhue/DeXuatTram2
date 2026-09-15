@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { stationService, excelService } from '../../services/api';
+import { stationService, excelService, viewService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
@@ -9,8 +9,12 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
+import ViewPickerMenu from '../../components/admin/ViewPickerMenu';
+import ImportViewPanel from '../../components/admin/ImportViewPanel';
+import { usageLabel } from '../../components/admin/ViewPickerMenu';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { Zap, Download, Upload, Plus, Search, RotateCcw, X, Trash2 } from 'lucide-react';
@@ -22,6 +26,7 @@ const AdminStationsPage = () => {
   const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const stationsViewId = useDefaultViewId('stations', STATIONS_VIEW_ID);
   const { getSelectOptions } = useFieldOptions('stations', ['status', 'mo_hinh_tram']);
   const statusOptions = getSelectOptions('status');
   const moHinhOptions = getSelectOptions('mo_hinh_tram');
@@ -49,6 +54,17 @@ const AdminStationsPage = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
   const [importFailures, setImportFailures] = useState([]);
+  const [excelViews, setExcelViews] = useState([]);
+  const [importViewId, setImportViewId] = useState('');
+
+  useEffect(() => {
+    if (!token || isSales) return;
+    let cancelled = false;
+    viewService.getAll('entity=stations&status=active&limit=50', token)
+      .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token, isSales]);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/stations\/(view|edit)=(\d+)/);
@@ -178,18 +194,27 @@ const AdminStationsPage = () => {
     }
   };
 
-  const handleExportStations = async () => {
+  const handleExportStations = async (viewIds) => {
     try {
-      await excelService.exportData('stations', token, { search, status: filterStatus });
+      await excelService.exportData('stations', token, { search, status: filterStatus, viewIds: viewIds || undefined });
       setToast({ message: 'Export stations thành công', type: 'success' });
     } catch {
       setError('Lỗi export stations');
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleExportStationsByForm = async () => {
     try {
-      await excelService.downloadTemplate('stations', token);
+      await excelService.exportData('stations', token, { search, status: filterStatus, layout: 'form' });
+      setToast({ message: 'Export theo form thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export theo form');
+    }
+  };
+
+  const handleDownloadTemplate = async (viewIds) => {
+    try {
+      await excelService.downloadTemplate('stations', token, { viewIds: viewIds || undefined });
     } catch {
       setError('Lỗi download template');
     }
@@ -200,6 +225,7 @@ const AdminStationsPage = () => {
     setImportFile(null);
     setImportPreview(null);
     setImportStep('upload');
+    setImportViewId('');
     setError('');
   };
 
@@ -212,17 +238,22 @@ const AdminStationsPage = () => {
     }
   };
 
-  const handlePreviewImport = async () => {
+  const handlePreviewImport = async (overrideViewId) => {
     if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    const viewIdToUse = overrideViewId !== undefined ? overrideViewId : importViewId;
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.previewImport('stations', importFile, token);
+      const res = await excelService.previewImport('stations', importFile, token, { viewId: viewIdToUse || undefined });
       if (res.success) {
         setImportFailures([]);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
+        if (res.data && res.data.detection) {
+          setImportPreview({ detection: res.data.detection, rows: [], errors: [], validRows: 0, totalRows: 0, errorRows: 0 });
+          setImportStep('preview');
+        }
         setError(res.message || 'Lỗi đọc file Excel');
       }
     } catch {
@@ -232,12 +263,17 @@ const AdminStationsPage = () => {
     }
   };
 
+  const handleChangeImportView = (value) => {
+    setImportViewId(value);
+    if (importFile) handlePreviewImport(value);
+  };
+
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.confirmImport('stations', importPreview.rows, token);
+      const res = await excelService.confirmImport('stations', importPreview.rows, token, { viewId: importPreview.viewId });
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
         setShowImport(false);
@@ -279,12 +315,8 @@ const AdminStationsPage = () => {
             <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
               <Plus size={14} /> Thêm trạm
             </button>
-            <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
-              <Download size={14} /> Template
-            </button>
-            <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportStations}>
-              <Download size={14} /> Export
-            </button>
+            <ViewPickerMenu label="Template" views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
+            <ViewPickerMenu label="Export" views={excelViews} onPick={handleExportStations} onPickForm={handleExportStationsByForm} title="Chọn bộ cột để export" />
             <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
               <Upload size={14} /> Import
             </button>
@@ -380,9 +412,20 @@ const AdminStationsPage = () => {
                     <span>File: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                 )}
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Bộ cột</span>
+                  </label>
+                  <select className="select select-bordered w-full" value={importViewId} onChange={(e) => setImportViewId(e.target.value)}>
+                    <option value="">Tự nhận diện theo file (khuyến nghị)</option>
+                    {excelViews.map(v => (
+                      <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                  <button className="btn btn-primary" onClick={() => handlePreviewImport()} disabled={!importFile || importLoading}>
                     {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang đọc...' : 'Xem trước'}
                   </button>
@@ -407,6 +450,13 @@ const AdminStationsPage = () => {
                     </div>
                   )}
                 </div>
+                <ImportViewPanel
+                  detection={importPreview.detection}
+                  views={excelViews}
+                  value={importViewId}
+                  onChange={handleChangeImportView}
+                  loading={importLoading}
+                />
                 <ImportErrorList errors={importPreview.errors} failures={importFailures} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
@@ -455,7 +505,7 @@ const AdminStationsPage = () => {
           entity="stations"
           record={popup.record}
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
-          viewId={STATIONS_VIEW_ID}
+          viewId={stationsViewId}
           mode={isSales ? 'view' : popup.mode}
           allowEdit={!isSales}
           onClose={() => {
@@ -473,7 +523,7 @@ const AdminStationsPage = () => {
       <DynamicTable
         ref={tableRef}
         entity="stations"
-        viewId={STATIONS_VIEW_ID}
+        viewId={stationsViewId}
         data={stations}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}

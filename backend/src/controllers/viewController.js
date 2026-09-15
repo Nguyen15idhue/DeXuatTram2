@@ -2,8 +2,8 @@ const viewService = require('../services/viewService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { entity, status, page = 1, limit = 50 } = req.query;
-    const result = await viewService.getAllViews(entity, status, parseInt(page), parseInt(limit));
+    const { entity, status, page = 1, limit = 50, usage } = req.query;
+    const result = await viewService.getAllViews(entity, status, parseInt(page), parseInt(limit), usage);
     res.json({ success: true, data: result.views, pagination: result.pagination });
   } catch (error) {
     console.error('Get views error:', error);
@@ -26,7 +26,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { entity, name, description, status } = req.body;
+    const { entity, name, description, status, usage } = req.body;
 
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
@@ -44,7 +44,8 @@ exports.create = async (req, res) => {
       entity: entity.trim(),
       name: name.trim(),
       description,
-      status
+      status,
+      usage
     });
 
     res.status(201).json({ success: true, data: view, message: 'Tạo view thành công' });
@@ -57,7 +58,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { entity, name, description, status } = req.body;
+    const { entity, name, description, status, usage } = req.body;
 
     const existing = await viewService.getViewById(id);
     if (!existing) {
@@ -80,7 +81,8 @@ exports.update = async (req, res) => {
       entity: entity.trim(),
       name: name.trim(),
       description,
-      status
+      status,
+      usage
     });
 
     res.json({ success: true, data: view, message: 'Cập nhật view thành công' });
@@ -102,6 +104,9 @@ exports.delete = async (req, res) => {
     await viewService.deleteView(id);
     res.json({ success: true, message: 'Xóa view thành công (view_fields tự xóa theo CASCADE)' });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Delete view error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }

@@ -1,6 +1,6 @@
 const pool = require('../utils/db');
 
-exports.getAllViews = async (entity, status, page, limit) => {
+exports.getAllViews = async (entity, status, page, limit, usage) => {
   const offset = (page - 1) * limit;
   let where = [];
   let params = [];
@@ -13,6 +13,11 @@ exports.getAllViews = async (entity, status, page, limit) => {
   if (status) {
     where.push('v.status = ?');
     params.push(status);
+  }
+
+  if (usage) {
+    where.push('v.`usage` = ?');
+    params.push(usage);
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
@@ -56,25 +61,39 @@ exports.getViewById = async (id) => {
 };
 
 exports.createView = async (data) => {
-  const { entity, name, description, status } = data;
+  const { entity, name, description, status, usage } = data;
   const [result] = await pool.query(
-    'INSERT INTO views (entity, name, description, status) VALUES (?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active']
+    'INSERT INTO views (entity, name, description, status, `usage`) VALUES (?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', usage || 'table']
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [result.insertId]);
   return rows[0];
 };
 
 exports.updateView = async (id, data) => {
-  const { entity, name, description, status } = data;
+  const { entity, name, description, status, usage } = data;
+  const [existing] = await pool.query('SELECT `usage` FROM views WHERE id = ?', [id]);
+  const nextUsage = usage || (existing.length > 0 ? existing[0].usage : 'table');
   await pool.query(
-    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, updated_at = NOW() WHERE id = ?',
-    [entity, name, description || null, status || 'active', id]
+    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, updated_at = NOW() WHERE id = ?',
+    [entity, name, description || null, status || 'active', nextUsage, id]
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [id]);
   return rows[0];
 };
 
 exports.deleteView = async (id) => {
+  const [rows] = await pool.query('SELECT is_locked FROM views WHERE id = ?', [id]);
+  if (rows.length > 0 && rows[0].is_locked) {
+    throw Object.assign(new Error('View hệ thống, không thể xóa'), { statusCode: 400 });
+  }
   await pool.query('DELETE FROM views WHERE id = ?', [id]);
+};
+
+exports.getViewIdByUsage = async (entity, usage) => {
+  const [rows] = await pool.query(
+    'SELECT id FROM views WHERE entity = ? AND `usage` = ? AND status = ? ORDER BY id ASC LIMIT 1',
+    [entity, usage, 'active']
+  );
+  return rows.length > 0 ? rows[0].id : null;
 };

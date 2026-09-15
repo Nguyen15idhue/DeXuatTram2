@@ -24,7 +24,7 @@ const VALID_STATUSES = {
   station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED']
 };
 
-const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
+const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 
 const DEFAULT_STATUS = {
   stations: 'ACTIVE',
@@ -59,16 +59,111 @@ const HEADER_STYLE = {
   }
 };
 
-async function buildExportColumns(entity, viewId) {
-  const viewFieldsResult = await pool.query(
-    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type
+const USAGE_LABELS = { table: 'bảng danh sách', excel_full: 'đầy đủ', excel_basic: 'cơ bản' };
+
+const fileStamp = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+};
+
+// Ten phan loai file excel theo bo cot da chon: table | excel_full | excel_basic | all
+const viewSlug = (views) => {
+  if (!views || views.length !== 1) return 'all';
+  const u = views[0].usage || 'table';
+  return u === 'table' ? 'table' : u;
+};
+
+const buildFileName = (entity, kind, views, withStamp = false) => {
+  const parts = [];
+  if (withStamp) parts.push(fileStamp());
+  parts.push(kind);
+  parts.push(entity);
+  parts.push(viewSlug(views));
+  return `${parts.join('_')}.xlsx`;
+};
+
+async function resolveView(entity, viewId, usage) {
+  if (viewId) {
+    const [rows] = await pool.query(
+      'SELECT id, entity, name, `usage`, status FROM views WHERE id = ? AND entity = ? LIMIT 1',
+      [viewId, entity]
+    );
+    if (rows.length > 0) return rows[0];
+  }
+  if (usage) {
+    const [rows] = await pool.query(
+      "SELECT id, entity, name, `usage`, status FROM views WHERE entity = ? AND `usage` = ? AND status = 'active' ORDER BY id LIMIT 1",
+      [entity, usage]
+    );
+    if (rows.length > 0) return rows[0];
+  }
+  const [rows] = await pool.query(
+    "SELECT id, entity, name, `usage`, status FROM views WHERE entity = ? AND `usage` = 'table' AND status = 'active' ORDER BY id LIMIT 1",
+    [entity]
+  );
+  return rows[0] || null;
+}
+
+function safeSheetName(name, used = new Set()) {
+  let base = String(name || 'Sheet')
+    .replace(/[\[\]:*?/\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^'+|'+$/g, '')
+    .trim();
+  if (!base || /^history$/i.test(base)) base = 'Sheet';
+  base = base.slice(0, 31).trim() || 'Sheet';
+  let candidate = base;
+  let i = 2;
+  while (used.has(candidate.toLowerCase())) {
+    const suffix = ` (${i})`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+    i++;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+async function resolveExportViews(entity, query) {
+  const idsRaw = query.viewIds || query.view_ids || '';
+  const ids = String(idsRaw).split(',').map(s => Number(String(s).trim())).filter(Boolean);
+  if (ids.length > 0) {
+    const out = [];
+    for (const id of ids) {
+      const v = await resolveView(entity, id, null);
+      if (v) out.push(v);
+    }
+    if (out.length > 0) return out;
+  }
+  const single = await resolveView(entity, query.viewId ? Number(query.viewId) : null, query.usage || null);
+  return single ? [single] : [];
+}
+
+async function getViewFields(viewId) {
+  const [rows] = await pool.query(
+    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
-     WHERE vf.view_id = ? AND vf.visible = 1 AND fd.status = 'active'
+     WHERE vf.view_id = ? AND vf.visible = 1 AND fd.status = 'active' AND fd.type <> 'password'
      ORDER BY vf.order_index`,
     [viewId]
   );
-  const viewFields = viewFieldsResult[0];
+  return rows;
+}
+
+async function buildExportColumns(entity, view) {
+  const viewFields = await getViewFields(view.id);
+
+  const columns = [
+    { key: '_stt', label: 'STT', type: 'number', source_type: 'system' }
+  ];
+
+  viewFields.forEach(f => {
+    columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type });
+  });
+
+  // View 'cơ bản' = CHỈ các cột trong view (không nối thêm field còn lại)
+  if (view.usage === 'excel_basic') return columns;
 
   const allFieldsResult = await pool.query(
     `SELECT \`key\`, label, type, source_type FROM field_definitions WHERE entity = ? AND status = 'active'`,
@@ -77,22 +172,221 @@ async function buildExportColumns(entity, viewId) {
   const allFields = allFieldsResult[0];
 
   const viewKeys = new Set(viewFields.map(f => f.key));
-  const remainingFields = allFields.filter(f => !viewKeys.has(f.key) && f.type !== 'password');
-
-  const columns = [
-    { key: '_stt', label: 'STT', type: 'number', source_type: 'system' }
-  ];
-
-  viewFields.filter(f => f.type !== 'password').forEach(f => {
-    columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type });
-  });
-
-  remainingFields.forEach(f => {
+  allFields.filter(f => !viewKeys.has(f.key) && f.type !== 'password').forEach(f => {
     columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type });
   });
 
   return columns;
 }
+
+async function resolveExportForm(entity, query) {
+  const rawId = query.formId ? Number(query.formId) : null;
+  if (Number.isFinite(rawId) && rawId > 0) {
+    const [rows] = await pool.query(
+      "SELECT id, entity, name, purpose, status FROM forms WHERE id = ? AND entity = ? AND status = 'active' LIMIT 1",
+      [rawId, entity]
+    );
+    if (rows.length > 0) return rows[0];
+  }
+  const purpose = query.purpose || 'view';
+  const [rows] = await pool.query(
+    'SELECT id, entity, name, purpose, status FROM forms WHERE entity = ? AND status = \'active\' ORDER BY (purpose = ?) DESC, is_default DESC, id ASC LIMIT 1',
+    [entity, purpose]
+  );
+  return rows[0] || null;
+}
+
+async function buildFormColumns(entity, form) {
+  let layout = form.layout_config;
+  if (layout === undefined) {
+    const [r] = await pool.query('SELECT layout_config FROM forms WHERE id = ? LIMIT 1', [form.id]);
+    layout = r[0] ? r[0].layout_config : null;
+  }
+  if (typeof layout === 'string') { try { layout = JSON.parse(layout); } catch { layout = {}; } }
+  const sections = (layout && layout.sections) || [];
+  const sectionMap = {};
+  sections.forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
+
+  const referenced = new Set();
+  sections.forEach((s) => {
+    if (!s) return;
+    const tabs = s.tabs || (s.type === 'tabs' ? [] : null);
+    if (s.type === 'tabs' || Array.isArray(s.tabs)) {
+      (s.tabs || []).forEach((t) => {
+        (t.sectionRefs || []).forEach((ref) => referenced.add(ref));
+      });
+    }
+  });
+
+  const [ffRows] = await pool.query(
+    'SELECT fd.`key` AS fkey, fd.label, fd.type, fd.source_type, ff.config FROM form_fields ff JOIN field_definitions fd ON fd.id = ff.field_id WHERE ff.form_id = ? AND fd.status = \'active\' AND fd.type <> \'password\'',
+    [form.id]
+  );
+  const byRow = new Map();
+  const noRow = [];
+  ffRows.forEach((r) => {
+    let cfg = r.config;
+    if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg); } catch { cfg = {}; } }
+    cfg = cfg || {};
+    const item = {
+      key: r.fkey, label: r.label, type: r.type, source_type: r.source_type,
+      rowId: cfg.rowId || null, colIndex: Number.isFinite(cfg.colIndex) ? cfg.colIndex : 999,
+      order: 0
+    };
+    if (item.rowId) {
+      if (!byRow.has(item.rowId)) byRow.set(item.rowId, []);
+      byRow.get(item.rowId).push(item);
+    } else {
+      noRow.push(r);
+    }
+  });
+  byRow.forEach((arr) => arr.sort((a, b) => a.colIndex - b.colIndex));
+
+  const columns = [{ key: '_stt', label: 'STT', type: 'number', source_type: 'system', sectionTitle: '', tabTitle: '' }];
+  const seen = new Set(['_stt']);
+  const pushField = (f, sectionTitle, tabTitle) => {
+    if (!f || seen.has(f.key)) return;
+    seen.add(f.key);
+    columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type, sectionTitle: sectionTitle || '', tabTitle: tabTitle || '' });
+  };
+  const pushSectionRows = (sec, sectionTitle, tabTitle) => {
+    (sec.rows || []).forEach((row) => {
+      if (!row || !row.id) return;
+      const fields = byRow.get(row.id) || [];
+      fields.forEach((f) => pushField(f, sectionTitle, tabTitle));
+    });
+  };
+
+  sections.forEach((sec) => {
+    if (!sec || !sec.id) return;
+    if (referenced.has(sec.id)) return;
+    if (sec.type === 'tabs' || Array.isArray(sec.tabs)) {
+      const groupTitle = sec.title || '';
+      (sec.tabs || []).forEach((tab) => {
+        const tabTitle = tab.title || '';
+        (tab.sectionRefs || []).forEach((refId) => {
+          const ref = sectionMap[refId];
+          if (ref) pushSectionRows(ref, groupTitle, tabTitle);
+        });
+      });
+      return;
+    }
+    pushSectionRows(sec, sec.title || '', '');
+  });
+
+  if (noRow.length > 0) {
+    const [ordered] = await pool.query(
+      'SELECT fd.`key` AS fkey, fd.label, fd.type, fd.source_type FROM form_fields ff JOIN field_definitions fd ON fd.id = ff.field_id WHERE ff.form_id = ? AND fd.status = \'active\' AND fd.type <> \'password\' ORDER BY ff.order_index',
+      [form.id]
+    );
+    ordered.forEach((r) => {
+      if (seen.has(r.fkey)) return;
+      const hasRow = ffRows.some((x) => x.fkey === r.fkey && x.config);
+      if (hasRow) return;
+      pushField({ key: r.fkey, label: r.label, type: r.type, source_type: r.source_type }, '', '');
+    });
+  }
+
+  return columns;
+}
+
+const FORM_R1_STYLE = {
+  font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0E7490' } },
+  alignment: { horizontal: 'center', vertical: 'middle' },
+  border: { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+};
+
+const FORM_R2_STYLE = {
+  font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 },
+  fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0284C7' } },
+  alignment: { horizontal: 'center', vertical: 'middle' },
+  border: { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+};
+
+function styleFormHeaderRows(sheet, columns) {
+  [1, 2, 3].forEach((n) => { sheet.getRow(n).height = 25; });
+  columns.forEach((col, idx) => {
+    const c = idx + 1;
+    const c1 = sheet.getRow(1).getCell(c);
+    c1.value = col.sectionTitle || null;
+    c1.font = FORM_R1_STYLE.font;
+    c1.fill = FORM_R1_STYLE.fill;
+    c1.alignment = FORM_R1_STYLE.alignment;
+    c1.border = FORM_R1_STYLE.border;
+    const c2 = sheet.getRow(2).getCell(c);
+    c2.value = col.tabTitle || null;
+    c2.font = FORM_R2_STYLE.font;
+    c2.fill = FORM_R2_STYLE.fill;
+    c2.alignment = FORM_R2_STYLE.alignment;
+    c2.border = FORM_R2_STYLE.border;
+    const c3 = sheet.getRow(3).getCell(c);
+    c3.value = col.label;
+    c3.font = HEADER_STYLE.font;
+    c3.fill = HEADER_STYLE.fill;
+    c3.alignment = HEADER_STYLE.alignment;
+    c3.border = HEADER_STYLE.border;
+  });
+
+  let i = 0;
+  while (i < columns.length) {
+    const title = columns[i].sectionTitle || '';
+    let j = i;
+    while (j + 1 < columns.length && (columns[j + 1].sectionTitle || '') === title) j++;
+    if (title && j > i) {
+      sheet.mergeCells(1, i + 1, 1, j + 1);
+    } else if (!title && j === i) {
+      sheet.mergeCells(1, i + 1, 2, i + 1);
+    } else if (!columns[i].tabTitle && j === i) {
+      sheet.mergeCells(1, i + 1, 2, i + 1);
+    }
+    let k = i;
+    while (k <= j) {
+      const tab = columns[k].tabTitle || '';
+      let m = k;
+      while (m + 1 <= j && (columns[m + 1].tabTitle || '') === tab) m++;
+      if (tab && m > k) sheet.mergeCells(2, k + 1, 2, m + 1);
+      k = m + 1;
+    }
+    i = j + 1;
+  }
+  sheet.views = [{ state: 'frozen', ySplit: 3 }];
+  sheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: columns.length } };
+}
+
+function autoWidthColumnsForm(sheet, columns) {
+  columns.forEach((col, idx) => {
+    const colNum = idx + 1;
+    let maxWidth = String(col.label || '').length + 4;
+    const sLen = String(col.sectionTitle || '').length;
+    const tLen = String(col.tabTitle || '').length;
+    if (sLen > maxWidth) maxWidth = sLen;
+    if (tLen > maxWidth) maxWidth = tLen;
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber <= 3) return;
+      const cell = row.getCell(colNum);
+      const val = cell.value != null ? String(cell.value) : '';
+      if (val.length > maxWidth) maxWidth = val.length;
+    });
+    sheet.getColumn(colNum).width = Math.min(maxWidth + 2, 50);
+  });
+}
+
+async function getFieldDefsForView(entity, view) {
+  if (view && view.usage === 'excel_basic') {
+    const rows = await getViewFields(view.id);
+    return rows.map(r => ({
+      key: r.key, label: r.label, type: r.type, source_type: r.source_type,
+      required: r.required, formula_config: r.formula_config
+    }));
+  }
+  const [rows] = await pool.query(
+    'SELECT `key`, label, type, source_type, required, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
+    [entity]
+  );
+  return rows;
+}
+
 
 function buildImportColumns(entity, fieldDefs) {
   const columns = [
@@ -200,21 +494,48 @@ function getSampleValue(col) {
   }
 }
 
-function validateHeaders(headerRow, columns, skipFirst = true) {
+const REQUIRED_HEADERS = {
+  station_proposals: ['latitude', 'longitude'],
+  stations: ['name', 'latitude', 'longitude'],
+  users: ['full_name', 'email']
+};
+
+function validateHeaders(headerRow, columns, entity) {
   const errors = [];
-  const headerLabels = [];
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    headerLabels[colNumber] = String(cell.value || '').trim();
+  const fileLabels = [];
+  headerRow.eachCell({ includeEmpty: false }, (cell) => {
+    const v = String(cell.value == null ? '' : cell.value).trim();
+    if (v) fileLabels.push(v.toLowerCase());
   });
 
-  const startIdx = skipFirst ? 1 : 0;
-  for (let i = startIdx; i < columns.length; i++) {
-    const expected = columns[i].label;
-    const expectedLower = expected.toLowerCase();
-    const found = headerLabels.some((h, idx) => idx > 0 && h && h.toLowerCase() === expectedLower);
-    if (!found) {
-      errors.push(`Thiếu cột: "${expected}"`);
+  const byKey = {};
+  columns.forEach(c => { byKey[c.key] = c; });
+
+  // Khong co entity (vd Data List) -> giu che do chat: doi DU moi cot
+  if (!entity) {
+    columns.forEach((col, i) => {
+      if (i === 0 && col.key === '_stt') return;
+      if (!fileLabels.includes(String(col.label).trim().toLowerCase())) {
+        errors.push(`Thiếu cột: "${col.label}"`);
+      }
+    });
+    return errors;
+  }
+
+  // 1. Chi doi cac cot BAT BUOC cua entity (va chi khi cot do nam trong bo cot dang dung)
+  const requiredKeys = REQUIRED_HEADERS[entity] || [];
+  for (const key of requiredKeys) {
+    const col = byKey[key];
+    if (!col) continue;
+    if (!fileLabels.includes(String(col.label).trim().toLowerCase())) {
+      errors.push(`Thiếu cột bắt buộc: "${col.label}"`);
     }
+  }
+
+  // 2. File phai khop it nhat 1 cot trong bo cot dang dung
+  const matched = columns.some(c => c.key !== '_stt' && fileLabels.includes(String(c.label).trim().toLowerCase()));
+  if (!matched) {
+    errors.push('File không có cột nào thuộc bộ cột đã chọn');
   }
 
   return errors;
@@ -222,11 +543,16 @@ function validateHeaders(headerRow, columns, skipFirst = true) {
 
 function buildHeaderMap(headerRow, columns) {
   const map = {};
+  const usedKeys = new Set();
+  const candidatesFor = (label) => columns.filter(c => c.key !== '_stt' && c.label.toLowerCase() === label);
   headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
     const label = String(cell.value == null ? '' : cell.value).trim().toLowerCase();
     if (!label) return;
-    const matched = columns.find(c => c.key !== '_stt' && c.label.toLowerCase() === label);
-    if (matched) map[colNumber] = matched.key;
+    const candidates = candidatesFor(label);
+    if (candidates.length === 0) return;
+    const matched = candidates.find(c => !usedKeys.has(c.key)) || candidates[0];
+    map[colNumber] = matched.key;
+    usedKeys.add(matched.key);
   });
   return map;
 }
@@ -289,7 +615,8 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
       return;
     }
 
-    if (value === '' && col.required) {
+    const presentInFile = !headerMap || Object.values(headerMap).includes(col.key);
+    if (value === '' && col.required && presentInFile) {
       if (entity === 'station_proposals' && (col.key === 'ma_tinh' || col.key === 'vung_mien') && dynamicData.province) {
         return;
       }
@@ -432,8 +759,17 @@ function exportRowToValues(row, columns, idx, token = '', userMap = null) {
       return JSON.stringify(fileData);
     }
 
-    if (typeof value === 'object' && value.result !== undefined) {
+    if (typeof value === 'object' && value !== null && value.result !== undefined) {
       value = value.result;
+    }
+
+    if (col.type === 'table' || col.type === 'multiselect') {
+      if (value === '') return '';
+      try { return JSON.stringify(value); } catch { return String(value); }
+    }
+
+    if (typeof value === 'object') {
+      try { return JSON.stringify(value); } catch { return String(value); }
     }
 
     return value;
@@ -463,37 +799,78 @@ exports.exportDynamic = async (req, res) => {
   try {
     const { entity, search = '', status = '', scopeUserId, scopeBranchUserIds } = req.query;
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
-    const viewIdMap = { stations: 6, users: 7, station_proposals: 8 };
-    const viewId = viewIdMap[entity];
 
-    if (!viewId) {
+    if (!ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ. Chọn: stations, users, station_proposals' });
     }
 
-    const columns = await buildExportColumns(entity, viewId);
-    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
-    let userMap = null;
-    if (columns.some(c => c.type === 'user')) {
-      try {
-        const m = await getUserLabelMap();
-        userMap = m.byId;
-      } catch { /* silent */ }
+    if (req.query.layout === 'form') {
+      const form = await resolveExportForm(entity, req.query);
+      if (!form) {
+        return res.status(400).json({ success: false, message: 'Chưa có form cho entity này' });
+      }
+      const columns = await buildFormColumns(entity, form);
+      let userMap = null;
+      if (columns.some(c => c.type === 'user')) {
+        try {
+          const m = await getUserLabelMap();
+          userMap = m.byId;
+        } catch { /* silent */ }
+      }
+      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet(entity);
+      sheet.addRow(columns.map(() => null));
+      sheet.addRow(columns.map(() => null));
+      sheet.addRow(columns.map(() => null));
+      styleFormHeaderRows(sheet, columns);
+      rows.forEach((row, idx) => {
+        sheet.addRow(exportRowToValues(row, columns, idx, token, userMap));
+      });
+      autoWidthColumnsForm(sheet, columns);
+      const stamp = fileStamp();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=${stamp}_export_${entity}_form.xlsx`);
+      await workbook.xlsx.write(res);
+      res.end();
+      return;
     }
 
+    const views = await resolveExportViews(entity, req.query);
+    if (views.length === 0) {
+      return res.status(400).json({ success: false, message: 'Chưa có view bảng cho entity này' });
+    }
+
+    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
+
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(entity);
+    const multi = views.length > 1;
+    const usedNames = new Set();
 
-    sheet.addRow(columns.map(c => c.label));
-    styleHeaderRow(sheet);
+    for (const view of views) {
+      const columns = await buildExportColumns(entity, view);
+      let userMap = null;
+      if (columns.some(c => c.type === 'user')) {
+        try {
+          const m = await getUserLabelMap();
+          userMap = m.byId;
+        } catch { /* silent */ }
+      }
 
-    rows.forEach((row, idx) => {
-      sheet.addRow(exportRowToValues(row, columns, idx, token, userMap));
-    });
+      const sheet = workbook.addWorksheet(multi ? safeSheetName(view.name, usedNames) : entity);
 
-    autoWidthColumns(sheet, columns);
+      sheet.addRow(columns.map(c => c.label));
+      styleHeaderRow(sheet);
+
+      rows.forEach((row, idx) => {
+        sheet.addRow(exportRowToValues(row, columns, idx, token, userMap));
+      });
+
+      autoWidthColumns(sheet, columns);
+    }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${entity}_export.xlsx`);
+    res.setHeader('Content-Disposition', `attachment; filename=${buildFileName(entity, 'export', views, true)}`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -506,7 +883,6 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
   try {
     const { min_m = 200, max_m = 2000 } = req.body || {};
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
-    const proximityService = require('./proximityService');
     const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m, ownUserId });
     const { pairs } = result;
 
@@ -556,8 +932,8 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
     const recordsA = await loadRecords(sideA);
     const recordsB = await loadRecords(sideB);
 
-    const proposalColumns = await buildExportColumns('station_proposals', 8);
-    const stationColumns = await buildExportColumns('stations', 6);
+    const proposalColumns = await buildExportColumns('station_proposals', await resolveView('station_proposals', null, 'table'));
+    const stationColumns = await buildExportColumns('stations', await resolveView('stations', null, 'table'));
     const columnsA = mergeExportColumns([proposalColumns, stationColumns].filter((_, i) =>
       (i === 0 && sideA.some(x => x.kind === 'proposal')) || (i === 1 && sideA.some(x => x.kind === 'station'))));
     const columnsB = mergeExportColumns([proposalColumns, stationColumns].filter((_, i) =>
@@ -593,7 +969,7 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
     fillSide('Ben B', sideB, recordsB, columnsB.length > 0 ? columnsB : proposalColumns);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=duplicates_export.xlsx');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileStamp()}_duplicates_export.xlsx`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -601,6 +977,62 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
     res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };
+
+function getFileHeaderLabels(headerRow) {
+  const labels = [];
+  headerRow.eachCell({ includeEmpty: false }, (cell) => {
+    const v = String(cell.value == null ? '' : cell.value).trim();
+    if (v) labels.push(v);
+  });
+  return labels;
+}
+
+async function computeViewStats(entity, view, rawFileLabels) {
+  // Bo cot he thong (STT) khoi viec doi chieu
+  const fileLabels = rawFileLabels.filter(l => String(l).trim().toLowerCase() !== 'stt');
+  const defs = await getFieldDefsForView(entity, view);
+  const viewLabels = defs.map(d => String(d.label || '').trim()).filter(Boolean);
+  const viewLower = viewLabels.map(l => l.toLowerCase());
+  const fileLower = fileLabels.map(l => l.toLowerCase());
+  const matched = viewLower.filter(l => fileLower.includes(l)).length;
+  const missingViewColumns = viewLabels.filter((l, i) => !fileLower.includes(viewLower[i]));
+  const unmatchedFileColumns = fileLabels.filter((l, i) => !viewLower.includes(fileLower[i]));
+  const omittedFields = defs
+    .filter(d => d.key !== '_stt' && !fileLower.includes(String(d.label || '').trim().toLowerCase()))
+    .map(d => ({ key: d.key, label: d.label, required: !!d.required }));
+  const denom = viewLabels.length + fileLabels.length;
+  const score = denom === 0 ? 0 : (2 * matched) / denom;
+  const coverage = viewLabels.length === 0 ? 0 : matched / viewLabels.length;
+  return {
+    viewId: view.id,
+    name: view.name,
+    usage: view.usage,
+    score: Number(score.toFixed(3)),
+    coverage: Number(coverage.toFixed(3)),
+    matched,
+    totalViewColumns: viewLabels.length,
+    totalFileColumns: fileLabels.length,
+    missingViewColumns,
+    unmatchedFileColumns,
+    omittedFields
+  };
+}
+
+async function detectViewForFile(entity, fileLabels) {
+  const [views] = await pool.query(
+    "SELECT id, entity, name, `usage`, status FROM views WHERE entity = ? AND status = 'active' ORDER BY id",
+    [entity]
+  );
+  const excelViews = views.filter(v => v.usage === 'excel_full' || v.usage === 'excel_basic');
+  const candidates = excelViews.length > 0 ? excelViews : views;
+
+  const results = [];
+  for (const v of candidates) {
+    results.push(await computeViewStats(entity, v, fileLabels));
+  }
+  results.sort((a, b) => b.score - a.score || b.coverage - a.coverage || a.viewId - b.viewId);
+  return results;
+}
 
 exports.importPreviewDynamic = async (req, res) => {
   try {
@@ -613,12 +1045,6 @@ exports.importPreviewDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
     }
 
-    const [fieldDefs] = await pool.query(
-      'SELECT `key`, label, type, source_type, required, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
-      [entity]
-    );
-    const columns = buildImportColumns(entity, fieldDefs);
-
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(req.file.buffer);
     const sheet = workbook.worksheets[0];
@@ -627,12 +1053,60 @@ exports.importPreviewDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'File Excel trống hoặc không có dữ liệu' });
     }
 
+    // --- Nhận diện bộ cột + cho phép override bằng viewId/usage ---
+    const fileLabels = getFileHeaderLabels(sheet.getRow(1));
+    const candidates = await detectViewForFile(entity, fileLabels);
+    const best = candidates[0] || null;
+    const confident = !!best && best.coverage >= 0.5;
+
+    let view = null;
+    let detectionSource = 'default';
+    if (req.query.viewId) {
+      view = await resolveView(entity, Number(req.query.viewId), null);
+      detectionSource = 'override';
+    } else if (req.query.usage) {
+      view = await resolveView(entity, null, req.query.usage);
+      detectionSource = 'override';
+    } else if (best) {
+      view = await resolveView(entity, best.viewId, null);
+      detectionSource = 'auto';
+    }
+    if (!view) {
+      view = await resolveView(entity, null, 'table');
+    }
+    if (!view) {
+      return res.status(400).json({ success: false, message: 'Chưa có view nào cho entity này' });
+    }
+
+    const viewStats = await computeViewStats(entity, view, fileLabels);
+
+    const detection = {
+      detectedViewId: view.id,
+      detectedViewName: view.name,
+      detectedUsage: view.usage,
+      source: detectionSource,
+      confident: detectionSource === 'override' ? true : confident,
+      score: viewStats.score,
+      coverage: viewStats.coverage,
+      autoDetectedViewId: best ? best.viewId : null,
+      autoDetectedViewName: best ? best.name : null,
+      candidates,
+      unmatchedFileColumns: viewStats.unmatchedFileColumns,
+      missingViewColumns: viewStats.missingViewColumns,
+      omittedFields: viewStats.omittedFields,
+      totalViewColumns: viewStats.totalViewColumns,
+      totalFileColumns: viewStats.totalFileColumns
+    };
+
+    const fieldDefs = await getFieldDefsForView(entity, view);
+    const columns = buildImportColumns(entity, fieldDefs);
+
     const headerColumns = entity === 'station_proposals'
       ? columns.filter(c => c.key !== 'ma_tinh' && c.key !== 'vung_mien')
       : columns;
-    const headerErrors = validateHeaders(sheet.getRow(1), headerColumns);
+    const headerErrors = validateHeaders(sheet.getRow(1), headerColumns, entity);
     if (headerErrors.length > 0) {
-      return res.status(400).json({ success: false, message: `Lỗi header: ${headerErrors.join('; ')}` });
+      return res.status(400).json({ success: false, message: `Lỗi header: ${headerErrors.join('; ')}`, data: { detection } });
     }
 
     const validRows = [];
@@ -758,6 +1232,10 @@ exports.importPreviewDynamic = async (req, res) => {
     res.json({
       success: true,
       data: {
+        viewId: view.id,
+        viewName: view.name,
+        viewUsage: view.usage,
+        detection,
         columns: columns.map(c => ({ key: c.key, label: c.label, type: c.type })),
         totalRows: validRows.length + errors.length,
         validRows: validRows.length,
@@ -775,7 +1253,7 @@ exports.importPreviewDynamic = async (req, res) => {
 exports.importConfirmDynamic = async (req, res) => {
   const connection = await pool.getConnection();
   try {
-    const { entity, rows } = req.body;
+    const { entity, rows, viewId } = req.body;
 
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
@@ -784,6 +1262,8 @@ exports.importConfirmDynamic = async (req, res) => {
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ success: false, message: 'Không có dữ liệu để import' });
     }
+
+    const confirmView = viewId ? await resolveView(entity, Number(viewId), null) : null;
 
     const table = ENTITY_TABLE_MAP[entity];
     await connection.beginTransaction();
@@ -966,7 +1446,7 @@ exports.importConfirmDynamic = async (req, res) => {
 
     res.json({
       success: true,
-      data: { imported, failed: 0, failDetails: [] },
+      data: { imported, failed: 0, failDetails: [], viewId: confirmView ? confirmView.id : null, viewUsage: confirmView ? confirmView.usage : null },
       message: `Import thành công: ${imported} bản ghi`
     });
   } catch (error) {
@@ -985,32 +1465,39 @@ exports.getTemplateDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
     }
 
-    const [fieldDefs] = await pool.query(
-      'SELECT `key`, label, type, source_type, required, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
-      [entity]
-    );
-    const columns = buildImportColumns(entity, fieldDefs);
+    const views = await resolveExportViews(entity, req.query);
+    if (views.length === 0) {
+      return res.status(400).json({ success: false, message: 'Chưa có view cho entity này' });
+    }
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(entity);
+    const multi = views.length > 1;
+    const usedNames = new Set();
 
-    sheet.addRow(columns.map(c => c.label));
-    styleHeaderRow(sheet);
+    for (const view of views) {
+      const fieldDefs = await getFieldDefsForView(entity, view);
+      const columns = buildImportColumns(entity, fieldDefs);
 
-    const sampleRow = sheet.addRow(columns.map(c => getSampleValue(c)));
-    columns.forEach((c, idx) => {
-      if (c.type === 'formula' && c.computeMode === 'post') {
-        sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự sinh sau khi lưu';
-      }
-      if (entity === 'station_proposals' && (c.key === 'ma_tinh' || c.key === 'vung_mien')) {
-        sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự suy từ Tỉnh thành';
-      }
-    });
+      const sheet = workbook.addWorksheet(multi ? safeSheetName(view.name, usedNames) : entity);
 
-    autoWidthColumns(sheet, columns);
+      sheet.addRow(columns.map(c => c.label));
+      styleHeaderRow(sheet);
+
+      const sampleRow = sheet.addRow(columns.map(c => getSampleValue(c)));
+      columns.forEach((c, idx) => {
+        if (c.type === 'formula' && c.computeMode === 'post') {
+          sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự sinh sau khi lưu';
+        }
+        if (entity === 'station_proposals' && (c.key === 'ma_tinh' || c.key === 'vung_mien')) {
+          sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự suy từ Tỉnh thành';
+        }
+      });
+
+      autoWidthColumns(sheet, columns);
+    }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${entity}_template.xlsx`);
+    res.setHeader('Content-Disposition', `attachment; filename=${buildFileName(entity, 'template', views, false)}`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -1087,7 +1574,7 @@ exports.exportDataList = async (req, res) => {
 
     const safeName = (list.name || 'data_list').replace(/[^a-zA-Z0-9_\-]/g, '_');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${safeName}.xlsx`);
+    res.setHeader('Content-Disposition', `attachment; filename=${fileStamp()}_${safeName}.xlsx`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {

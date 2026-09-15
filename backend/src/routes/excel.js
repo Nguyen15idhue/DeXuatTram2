@@ -11,18 +11,34 @@ const excelService = require('../services/excelService');
  *     summary: Xuất danh sách trạm ra file Excel (dynamic columns)
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *         description: Lọc theo tên hoặc địa chỉ (bỏ trống = tất cả)
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [ACTIVE, DEPLOYING]
- *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *     parameters:
+  *       - in: query
+  *         name: search
+  *         schema:
+  *           type: string
+  *         description: Lọc theo tên hoặc địa chỉ (bỏ trống = tất cả)
+  *       - in: query
+  *         name: status
+  *         schema:
+  *           type: string
+  *           enum: [ACTIVE, DEPLOYING]
+  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: layout
+  *         schema:
+  *           type: string
+  *           enum: [view, form]
+  *         description: Kiểu xuất — `view` (phẳng theo view, mặc định) hoặc `form` (3 hàng header section/tab/field theo layout form, chỉ export)
+  *       - in: query
+  *         name: formId
+  *         schema:
+  *           type: integer
+  *         description: ID form dùng khi layout=form (bỏ trống = form view mặc định)
+  *       - in: query
+  *         name: purpose
+  *         schema:
+  *           type: string
+  *         description: Purpose form khi layout=form (mặc định `view`)
  *     responses:
  *       200:
  *         description: File Excel
@@ -48,12 +64,23 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *         schema:
  *           type: string
  *         description: Lọc theo tên, địa chỉ, người tạo (bỏ trống = tất cả)
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
- *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: status
+  *         schema:
+  *           type: string
+  *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: layout
+  *         schema:
+  *           type: string
+  *           enum: [view, form]
+  *         description: Kiểu xuất — `view` (phẳng theo view, mặc định) hoặc `form` (3 hàng header section/tab/field theo layout form, chỉ export)
+  *       - in: query
+  *         name: formId
+  *         schema:
+  *           type: integer
+  *         description: ID form dùng khi layout=form (bỏ trống = form view mặc định)
  *     responses:
  *       200:
  *         description: File Excel
@@ -78,12 +105,23 @@ router.get('/export/station_proposals', requireAuth, requireUserManager, excelSe
  *         schema:
  *           type: string
  *         description: Lọc theo tên, email, SĐT (bỏ trống = tất cả)
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [ACTIVE, LOCKED]
- *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: status
+  *         schema:
+  *           type: string
+  *           enum: [ACTIVE, LOCKED]
+  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: layout
+  *         schema:
+  *           type: string
+  *           enum: [view, form]
+  *         description: Kiểu xuất — `view` (phẳng theo view, mặc định) hoặc `form` (3 hàng header section/tab/field theo layout form, chỉ export)
+  *       - in: query
+  *         name: formId
+  *         schema:
+  *           type: integer
+  *         description: ID form dùng khi layout=form (bỏ trống = form view mặc định)
  *     responses:
  *       200:
  *         description: File Excel
@@ -100,6 +138,7 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *   get:
  *     tags: [Admin - Excel]
  *     summary: Tải file template import
+ *     description: Chọn bộ cột theo view. `viewId` (1 view) hoặc `viewIds` (nhiều view → 1 file nhiều sheet) hoặc `usage` (table|excel_full|excel_basic). Không truyền → view bảng mặc định.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -110,6 +149,22 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *           type: string
  *           enum: [stations, users, station_proposals]
  *         description: Entity name
+ *       - in: query
+ *         name: viewId
+ *         schema:
+ *           type: integer
+ *         description: ID view (bộ cột) muốn dùng
+ *       - in: query
+ *         name: viewIds
+ *         schema:
+ *           type: string
+ *         description: Danh sách ID view, phân tách dấu phẩy (vd `8,18`) → 1 file nhiều sheet
+ *       - in: query
+ *         name: usage
+ *         schema:
+ *           type: string
+ *           enum: [table, excel_full, excel_basic]
+ *         description: Chọn view theo loại sử dụng
  *     responses:
  *       200:
  *         description: File Excel template
@@ -128,6 +183,7 @@ router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
  *   post:
  *     tags: [Admin - Excel]
  *     summary: Preview import từ file Excel
+ *     description: Tự nhận diện bộ cột theo header file (trả `data.detection`: viewId/usage/score/confident/unmatchedFileColumns/missingViewColumns). Override bằng `viewId` hoặc `usage`.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -138,6 +194,17 @@ router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
  *           type: string
  *           enum: [stations, users, station_proposals]
  *         description: Entity name
+ *       - in: query
+ *         name: viewId
+ *         schema:
+ *           type: integer
+ *         description: Ép dùng bộ cột của view này (bỏ qua tự nhận diện)
+ *       - in: query
+ *         name: usage
+ *         schema:
+ *           type: string
+ *           enum: [table, excel_full, excel_basic]
+ *         description: Ép dùng bộ cột theo loại sử dụng
  *     requestBody:
  *       required: true
  *       content:

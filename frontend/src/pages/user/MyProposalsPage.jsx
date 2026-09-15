@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { myProposalService, excelService, proposalService } from '../../services/api';
+import { myProposalService, excelService, proposalService, formService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import DynamicForm from '../../components/dynamic/DynamicForm';
@@ -13,9 +13,10 @@ import ImportErrorList from '../../components/admin/ImportErrorList';
 import Pagination from '../../components/Pagination';
 import MapCanvas from '../../components/map/MapCanvas';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useMapConfig from '../../hooks/useMapConfig';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X } from 'lucide-react';
+import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_FORM_ID = 13;
@@ -24,6 +25,7 @@ const MyProposalsPage = () => {
   const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
   const { renderer: mapRenderer, vectorStyle: mapVectorStyle, apiKey: mapApiKey, tileUrl, attribution: mapAttribution, subdomains: mapSubdomains } = useMapConfig();
@@ -42,6 +44,8 @@ const MyProposalsPage = () => {
   const [importStep, setImportStep] = useState('upload');
   const [importFailures, setImportFailures] = useState([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createFormId, setCreateFormId] = useState(PROPOSALS_FORM_ID);
+  const [quickFormId, setQuickFormId] = useState(null);
   const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
   const [nearbyWarning, setNearbyWarning] = useState('');
   const [dupMode, setDupMode] = useState(false);
@@ -100,6 +104,19 @@ const MyProposalsPage = () => {
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    formService.getAll('entity=station_proposals&status=active&limit=100', token)
+      .then(res => {
+        if (cancelled || !res || !res.success) return;
+        const quick = (res.data || []).find(f => f.purpose === 'create' && !f.is_default);
+        setQuickFormId(quick ? quick.id : null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
   const handleDeleteClick = (id) => {
     setConfirmDelete({ isOpen: true, id });
   };
@@ -129,6 +146,15 @@ const MyProposalsPage = () => {
     }
   };
 
+  const handleExportByForm = async () => {
+    try {
+      await excelService.exportMyProposals(token, { search, status: filter, layout: 'form' });
+      setToast({ message: 'Export theo form thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export theo form');
+    }
+  };
+
   const handleDownloadTemplate = async () => {
     try {
       await excelService.downloadTemplate('station_proposals', token);
@@ -137,7 +163,8 @@ const MyProposalsPage = () => {
     }
   };
 
-  const openCreate = () => {
+  const openCreate = (formId) => {
+    setCreateFormId(formId || PROPOSALS_FORM_ID);
     setMapCoords({ latitude: '', longitude: '' });
     setShowCreateForm(true);
     setError('');
@@ -203,7 +230,7 @@ const MyProposalsPage = () => {
       const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
       throw new Error(`Vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Vui lòng chọn vị trí khác.`);
     }
-    const res = await myProposalService.create(submitData, token);
+    const res = await myProposalService.create(submitData, token, createFormId);
     if (res.success) {
       setToast({ message: 'Tạo đề xuất thành công', type: 'success' });
       setShowCreateForm(false);
@@ -314,12 +341,23 @@ const MyProposalsPage = () => {
           <ClipboardList size={22} /> Đề xuất của tôi
         </h1>
         <div className="flex flex-wrap gap-2">
-          <button className="btn btn-primary btn-sm gap-1" onClick={openCreate}>
-            <ClipboardList size={14} /> Tạo đề xuất
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => openCreate(PROPOSALS_FORM_ID)}>
+            <MapPin size={14} /> Tạo đề xuất
           </button>
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
-            <Download size={14} /> Export
-          </button>
+          {quickFormId && (
+            <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={() => openCreate(quickFormId)} title="Chỉ nhập tọa độ + thông tin cơ bản">
+              <Zap size={14} /> Tạo nhanh
+            </button>
+          )}
+          <div className="dropdown dropdown-end">
+            <div tabIndex={0} role="button" className="btn btn-ghost btn-sm gap-1">
+              <Download size={14} /> Export
+            </div>
+            <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2">
+              <li><button onClick={handleExport}>Theo bảng (phẳng)</button></li>
+              <li><button onClick={handleExportByForm}>Theo form (section/tab, 3 hàng header)</button></li>
+            </ul>
+          </div>
           <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
             <Upload size={14} /> Import
           </button>
@@ -405,7 +443,7 @@ const MyProposalsPage = () => {
             <DynamicForm
               entity="station_proposals"
               purpose="create"
-              formId={PROPOSALS_FORM_ID}
+              formId={createFormId}
               onSubmit={handleCreateProposal}
               initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
             >
@@ -487,7 +525,7 @@ const MyProposalsPage = () => {
           entity={popup.entity}
           record={popup.record}
           recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
-          viewId={popup.entity === 'stations' ? undefined : PROPOSALS_VIEW_ID}
+          viewId={popup.entity === 'stations' ? undefined : proposalsViewId}
           mode={popup.mode}
           allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED'].includes(popup.record.status))}
           updateService={isAdmin ? undefined : myProposalService}
@@ -508,7 +546,7 @@ const MyProposalsPage = () => {
       <DynamicTable
         ref={tableRef}
         entity="station_proposals"
-        viewId={PROPOSALS_VIEW_ID}
+        viewId={proposalsViewId}
         data={proposals}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}

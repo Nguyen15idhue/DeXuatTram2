@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminProposalService, proposalService, excelService } from '../../services/api';
+import { adminProposalService, proposalService, excelService, viewService, formService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
@@ -9,11 +9,13 @@ import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import ImportErrorList from '../../components/admin/ImportErrorList';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -24,6 +26,7 @@ const AdminProposalsPage = () => {
   const { token, isSales, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const { getSelectOptions, getFieldLabel } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
@@ -49,6 +52,18 @@ const AdminProposalsPage = () => {
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
   const [blockModal, setBlockModal] = useState({ open: false, missing: [] });
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importStep, setImportStep] = useState('upload');
+  const [importFailures, setImportFailures] = useState([]);
+  const [excelViews, setExcelViews] = useState([]);
+  const [createFormId, setCreateFormId] = useState(PROPOSALS_CREATE_FORM_ID);
+  const [quickFormId, setQuickFormId] = useState(null);
+  const [importViewId, setImportViewId] = useState('');
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const dupRef = useRef(null);
   const tableRef = useRef(null);
   const syncPollRef = useRef(null);
@@ -61,6 +76,43 @@ const AdminProposalsPage = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!token || isSales) return;
+    let cancelled = false;
+    viewService.getAll('entity=station_proposals&status=active&limit=50', token)
+      .then(res => {
+        if (cancelled || !res || !res.success) return;
+        setExcelViews(res.data || []);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token, isSales]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    formService.getAll('entity=station_proposals&status=active&limit=100', token)
+      .then(res => {
+        if (cancelled || !res || !res.success) return;
+        const quick = (res.data || []).find(f => f.purpose === 'create' && !f.is_default);
+        setQuickFormId(quick ? quick.id : null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const usageLabel = (usage) => {
+    if (usage === 'excel_basic') return 'Excel cơ bản';
+    if (usage === 'excel_full') return 'Excel đầy đủ';
+    if (usage === 'table') return 'Bảng danh sách';
+    return usage;
+  };
+  const usageBadge = (usage) => {
+    if (usage === 'excel_basic') return 'badge-info';
+    if (usage === 'excel_full') return 'badge-success';
+    return 'badge-primary';
+  };
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/proposals\/(view|edit)=(\d+)/);
@@ -262,12 +314,101 @@ const AdminProposalsPage = () => {
     loadProposals(1, { filter: '', filterUuTien: '', search: '' });
   };
 
-  const handleExportProposals = async () => {
+  const handleExportProposals = async (viewIds) => {
+    setExportMenuOpen(false);
     try {
-      await excelService.exportData('station_proposals', token, { search, status: filter });
+      await excelService.exportData('station_proposals', token, { search, status: filter, viewIds: viewIds || undefined });
       setToast({ message: 'Export proposals thành công', type: 'success' });
     } catch {
       setError('Lỗi export proposals');
+    }
+  };
+
+  const handleExportProposalsByForm = async () => {
+    setExportMenuOpen(false);
+    try {
+      await excelService.exportData('station_proposals', token, { search, status: filter, layout: 'form' });
+      setToast({ message: 'Export theo form thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export theo form');
+    }
+  };
+
+  const handleDownloadTemplate = async (viewIds) => {
+    setTemplateMenuOpen(false);
+    try {
+      await excelService.downloadTemplate('station_proposals', token, { viewIds: viewIds || undefined });
+    } catch {
+      setError('Lỗi download template');
+    }
+  };
+
+  const openImport = () => {
+    setShowImport(true);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportStep('upload');
+    setImportViewId('');
+    setError('');
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImportFile(file);
+      setImportPreview(null);
+      setImportStep('upload');
+    }
+  };
+
+  const handlePreviewImport = async (overrideViewId) => {
+    if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    const viewIdToUse = overrideViewId !== undefined ? overrideViewId : importViewId;
+    try {
+      setImportLoading(true);
+      setError('');
+      const res = await excelService.previewImport('station_proposals', importFile, token, { viewId: viewIdToUse || undefined });
+      if (res.success) {
+        setImportFailures([]);
+        setImportPreview(res.data);
+        setImportStep('preview');
+      } else {
+        if (res.data && res.data.detection) {
+          setImportPreview({ detection: res.data.detection, rows: [], errors: [], validRows: 0, totalRows: 0, errorRows: 0 });
+          setImportStep('preview');
+        }
+        setError(res.message || 'Lỗi đọc file Excel');
+      }
+    } catch {
+      setError('Lỗi đọc file Excel. Vui lòng kiểm tra lại định dạng file.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleChangeImportView = (value) => {
+    setImportViewId(value);
+    if (importFile) handlePreviewImport(value);
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    try {
+      setImportLoading(true);
+      setError('');
+      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId });
+      if (res.success) {
+        setToast({ message: res.message, type: 'success' });
+        setShowImport(false);
+        loadProposals(1);
+      } else {
+        setImportFailures((res.data && res.data.failDetails) || []);
+        setError(res.message || 'Lỗi import');
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+    } finally {
+      setImportLoading(false);
     }
   };
 
@@ -472,7 +613,7 @@ const AdminProposalsPage = () => {
     if (!submitData.owner_name || !submitData.address || !submitData.latitude || !submitData.longitude) {
       throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
     }
-    const res = await proposalService.create(submitData, token);
+    const res = await proposalService.create(submitData, token, createFormId);
     if (res.success) {
       setToast({ message: 'Tạo đề xuất thành công', type: 'success' });
       setShowCreateForm(false);
@@ -480,6 +621,11 @@ const AdminProposalsPage = () => {
     } else {
       throw new Error(res.message || 'Tạo đề xuất thất bại');
     }
+  };
+
+  const openCreateForm = (formId) => {
+    setCreateFormId(formId || PROPOSALS_CREATE_FORM_ID);
+    setShowCreateForm(true);
   };
 
   const renderActions = (row) => (
@@ -531,9 +677,14 @@ const AdminProposalsPage = () => {
           <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowCreateForm(true)}>
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => openCreateForm(PROPOSALS_CREATE_FORM_ID)}>
             <Plus size={14} /> Tạo đề xuất
           </button>
+          {quickFormId && (
+            <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={() => openCreateForm(quickFormId)} title="Chỉ nhập tọa độ + thông tin cơ bản">
+              <Zap size={14} /> Tạo nhanh
+            </button>
+          )}
 
           <div className="relative">
             <button
@@ -569,10 +720,82 @@ const AdminProposalsPage = () => {
             )}
           </div>
 
-          <button className="btn btn-ghost btn-sm gap-1" onClick={handleExportProposals}>
-            <Download size={14} />
-            Export
-          </button>
+          <div className="relative">
+            <button className="btn btn-ghost btn-sm gap-1" onClick={() => { setExportMenuOpen(v => !v); setTemplateMenuOpen(false); }}>
+              <Download size={14} />
+              Export
+              <ChevronDown size={12} />
+            </button>
+            {exportMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+                <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2">
+                  <li className="menu-title text-xs">Chọn bộ cột để export</li>
+                  <li>
+                    <button onClick={handleExportProposalsByForm}>
+                      <span className="badge badge-xs badge-accent">Form</span>
+                      <span>Theo form (section/tab, 3 hàng header)</span>
+                    </button>
+                  </li>
+                  {excelViews.map(v => (
+                    <li key={v.id}>
+                      <button onClick={() => handleExportProposals([v.id])} title={`${v.field_count || 0} cột`}>
+                        <span className={`badge badge-xs ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
+                        <span className="truncate">{v.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {excelViews.length > 1 && (
+                    <li>
+                      <button onClick={() => handleExportProposals(excelViews.map(v => v.id))}>
+                        <span className="badge badge-xs badge-ghost">{excelViews.length} sheet</span>
+                        <span>Tất cả bộ cột (1 file, nhiều sheet)</span>
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              </>
+            )}
+          </div>
+          {!isSales && (
+            <>
+              <div className="relative">
+                <button className="btn btn-ghost btn-sm gap-1" onClick={() => { setTemplateMenuOpen(v => !v); setExportMenuOpen(false); }}>
+                  <Download size={14} />
+                  Template
+                  <ChevronDown size={12} />
+                </button>
+                {templateMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setTemplateMenuOpen(false)} />
+                    <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2">
+                      <li className="menu-title text-xs">Chọn bộ cột cho file mẫu</li>
+                      {excelViews.map(v => (
+                        <li key={v.id}>
+                          <button onClick={() => handleDownloadTemplate([v.id])} title={`${v.field_count || 0} cột`}>
+                            <span className={`badge badge-xs ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
+                            <span className="truncate">{v.name}</span>
+                          </button>
+                        </li>
+                      ))}
+                      {excelViews.length > 1 && (
+                        <li>
+                          <button onClick={() => handleDownloadTemplate(excelViews.map(v => v.id))}>
+                            <span className="badge badge-xs badge-ghost">{excelViews.length} sheet</span>
+                            <span>Tất cả bộ cột (1 file, nhiều sheet)</span>
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+                <Upload size={14} />
+                Import
+              </button>
+            </>
+          )}
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset} title="Đặt lại bộ lọc">
             <RotateCcw size={14} />
             <span className="hidden sm:inline">Đặt lại</span>
@@ -830,7 +1053,7 @@ const AdminProposalsPage = () => {
             <DynamicForm
               entity="station_proposals"
               purpose="create"
-              formId={PROPOSALS_CREATE_FORM_ID}
+              formId={createFormId}
               onSubmit={handleCreateSubmit}
             >
               <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
@@ -847,7 +1070,7 @@ const AdminProposalsPage = () => {
           entity="station_proposals"
           record={popup.record}
           recordId={popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))}
-          viewId={PROPOSALS_VIEW_ID}
+          viewId={proposalsViewId}
           mode={popup.mode}
           allowEdit={isAdmin}
           onClose={() => {
@@ -878,7 +1101,7 @@ const AdminProposalsPage = () => {
       <DynamicTable
         ref={tableRef}
         entity="station_proposals"
-        viewId={PROPOSALS_VIEW_ID}
+        viewId={proposalsViewId}
         data={proposals}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}
@@ -893,6 +1116,133 @@ const AdminProposalsPage = () => {
         onPageChange={loadProposals}
       />
       </>
+      )}
+
+      {showImport && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg mb-4">Import Đề xuất từ Excel</h3>
+            {importStep === 'upload' && (
+              <div className="space-y-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Chọn file Excel (.xlsx)</span>
+                  </label>
+                  <input type="file" accept=".xlsx,.xls" className="file-input file-input-bordered w-full" onChange={handleFileSelect} />
+                </div>
+                {importFile && (
+                  <div className="alert alert-info">
+                    <span>File: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)</span>
+                  </div>
+                )}
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Bộ cột</span>
+                  </label>
+                  <select className="select select-bordered w-full" value={importViewId} onChange={(e) => setImportViewId(e.target.value)}>
+                    <option value="">Tự nhận diện theo file (khuyến nghị)</option>
+                    {excelViews.map(v => (
+                      <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-action">
+                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-primary" onClick={() => handlePreviewImport()} disabled={!importFile || importLoading}>
+                    {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
+                    {importLoading ? 'Đang đọc...' : 'Xem trước'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {importStep === 'preview' && importPreview && (
+              <div className="space-y-4">
+                <div className="stats shadow w-full">
+                  <div className="stat">
+                    <div className="stat-title">Tổng dòng</div>
+                    <div className="stat-value text-lg">{importPreview.totalRows}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title text-success">Hợp lệ</div>
+                    <div className="stat-value text-lg text-success">{importPreview.validRows}</div>
+                  </div>
+                  {importPreview.errorRows > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-error">Lỗi</div>
+                      <div className="stat-value text-lg text-error">{importPreview.errorRows}</div>
+                    </div>
+                  )}
+                </div>
+
+                {importPreview.detection && (
+                  <div className={`alert ${!importPreview.detection.confident ? 'alert-error' : (((importPreview.detection.unmatchedFileColumns || []).length > 0 || (importPreview.detection.omittedFields || []).length > 0) ? 'alert-warning' : 'alert-success')}`}>
+                    <div className="w-full">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {importPreview.detection.confident ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                        <span className="font-medium">
+                          {importPreview.detection.source === 'override' ? 'Bộ cột đã chọn:' : 'Nhận diện tự động:'}
+                        </span>
+                        <span className={`badge badge-sm ${usageBadge(importPreview.detection.detectedUsage)}`}>
+                          {usageLabel(importPreview.detection.detectedUsage)}
+                        </span>
+                        <span>{importPreview.detection.detectedViewName}</span>
+                        <span className="text-xs opacity-70">(khớp {Math.round((importPreview.detection.score || 0) * 100)}%)</span>
+                      </div>
+
+                      {!importPreview.detection.confident && (
+                        <p className="text-sm mt-1">Không nhận diện được bộ cột — chọn thủ công bên dưới.</p>
+                      )}
+                      {importPreview.detection.omittedFields && importPreview.detection.omittedFields.length > 0 && (
+                        <p className="text-sm mt-1">
+                          File thiếu {importPreview.detection.omittedFields.length} trường — sẽ để trống: {importPreview.detection.omittedFields.slice(0, 5).map(f => f.label).join(', ')}
+                          {importPreview.detection.omittedFields.length > 5 ? '…' : ''}
+                          {importPreview.detection.omittedFields.filter(f => f.required).length > 0 && (
+                            <> (<b>{importPreview.detection.omittedFields.filter(f => f.required).length} trường bắt buộc</b>: {importPreview.detection.omittedFields.filter(f => f.required).slice(0, 3).map(f => f.label).join(', ')})</>
+                          )}
+                          . Bổ sung sau bằng cách sửa đề xuất.
+                        </p>
+                      )}
+                      {importPreview.detection.unmatchedFileColumns && importPreview.detection.unmatchedFileColumns.length > 0 && (
+                        <p className="text-sm mt-1">
+                          {importPreview.detection.unmatchedFileColumns.length} cột trong file không thuộc bộ đã chọn — sẽ bị bỏ qua: {importPreview.detection.unmatchedFileColumns.slice(0, 5).join(', ')}
+                          {importPreview.detection.unmatchedFileColumns.length > 5 ? '…' : ''}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs">Đổi bộ cột:</span>
+                        <select
+                          className="select select-bordered select-xs"
+                          value={importViewId}
+                          onChange={(e) => handleChangeImportView(e.target.value)}
+                          disabled={importLoading}
+                        >
+                          <option value="">Tự nhận diện theo file</option>
+                          {excelViews.map(v => (
+                            <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
+                          ))}
+                        </select>
+                        {importLoading && <span className="loading loading-spinner loading-xs"></span>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} />                <div className="modal-action">
+                  <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
+                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                    {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
+                    {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} đề xuất`}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button onClick={() => setShowImport(false)}>close</button>
+          </form>
+        </dialog>
       )}
     </div>
   );

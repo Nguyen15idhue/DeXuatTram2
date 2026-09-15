@@ -61,32 +61,38 @@ exports.getFormById = async (id) => {
 };
 
 exports.createForm = async (data) => {
-  const { entity, name, description, status, layout_config, purpose } = data;
+  const { entity, name, description, status, layout_config, purpose, is_default } = data;
   const [result] = await pool.query(
-    'INSERT INTO forms (entity, name, description, status, layout_config, purpose) VALUES (?, ?, ?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all']
+    'INSERT INTO forms (entity, name, description, status, layout_config, purpose, is_default) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all', is_default ? 1 : 0]
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [result.insertId]);
   return rows[0];
 };
 
 exports.updateForm = async (id, data) => {
-  const { entity, name, description, status, layout_config, purpose } = data;
+  const { entity, name, description, status, layout_config, purpose, is_default } = data;
+  const [existing] = await pool.query('SELECT is_default FROM forms WHERE id = ?', [id]);
+  const nextDefault = is_default === undefined ? (existing.length > 0 ? existing[0].is_default : 0) : (is_default ? 1 : 0);
   await pool.query(
-    'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, layout_config = ?, purpose = ?, updated_at = NOW() WHERE id = ?',
-    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all', id]
+    'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, layout_config = ?, purpose = ?, is_default = ?, updated_at = NOW() WHERE id = ?',
+    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all', nextDefault, id]
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [id]);
   return rows[0];
 };
 
 exports.deleteForm = async (id) => {
+  const [rows] = await pool.query('SELECT is_locked FROM forms WHERE id = ?', [id]);
+  if (rows.length > 0 && rows[0].is_locked) {
+    throw Object.assign(new Error('Form hệ thống, không thể xóa'), { statusCode: 400 });
+  }
   await pool.query('DELETE FROM forms WHERE id = ?', [id]);
 };
 
 exports.getFormByEntityAndPurpose = async (entity, purpose) => {
   const [rows] = await pool.query(
-    'SELECT * FROM forms WHERE entity = ? AND purpose = ? AND status = ? LIMIT 1',
+    'SELECT * FROM forms WHERE entity = ? AND purpose = ? AND status = ? ORDER BY is_default DESC, id ASC LIMIT 1',
     [entity, purpose, 'active']
   );
   return rows[0] || null;

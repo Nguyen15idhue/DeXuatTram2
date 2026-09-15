@@ -26,7 +26,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { entity, name, description, status, layout_config, purpose } = req.body;
+    const { entity, name, description, status, layout_config, purpose, is_default } = req.body;
 
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
@@ -46,7 +46,8 @@ exports.create = async (req, res) => {
       description,
       status,
       layout_config,
-      purpose
+      purpose,
+      is_default
     });
 
     res.status(201).json({ success: true, data: form, message: 'Tạo form thành công' });
@@ -59,7 +60,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { entity, name, description, status, layout_config, purpose } = req.body;
+    const { entity, name, description, status, layout_config, purpose, is_default } = req.body;
 
     const existing = await formService.getFormById(id);
     if (!existing) {
@@ -84,7 +85,8 @@ exports.update = async (req, res) => {
       description,
       status,
       layout_config,
-      purpose
+      purpose,
+      is_default
     });
 
     res.json({ success: true, data: form, message: 'Cập nhật form thành công' });
@@ -106,6 +108,9 @@ exports.delete = async (req, res) => {
     await formService.deleteForm(id);
     res.json({ success: true, message: 'Xóa form thành công (form_fields tự xóa theo CASCADE)' });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Delete form error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }

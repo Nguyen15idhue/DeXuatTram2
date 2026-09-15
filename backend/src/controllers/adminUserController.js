@@ -53,17 +53,17 @@ exports.create = async (req, res) => {
     let { full_name, email, phone, password, role, status, custom_data, external_id } = req.body;
     const creatorRole = req.user.role;
 
-    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
 
     let parentId = null;
     if (creatorRole === 'SALES') {
-      if (role && role !== 'CTV') {
+      if (role && !['CTV', 'NPP'].includes(role)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
-      role = 'CTV';
+      role = role || 'CTV';
       parentId = req.user.id;
     } else if (creatorRole === 'ADMIN') {
       if (role === 'SUPER_ADMIN') {
@@ -200,7 +200,7 @@ exports.delete = async (req, res) => {
 
     if (deleterRole === 'SALES') {
       const full = await adminUserService.findById(targetId);
-      if (!full || full.role !== 'CTV' || full.parent_id !== req.user.id) {
+      if (!full || !['CTV', 'NPP'].includes(full.role) || full.parent_id !== req.user.id) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       await adminUserService.deleteUserWithOrphan(targetId, req.user.id);
@@ -251,7 +251,7 @@ exports.changeRole = async (req, res) => {
     const { id } = req.params;
     const { role } = req.body;
 
-    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
 
@@ -314,7 +314,7 @@ exports.changePassword = async (req, res) => {
     if (req.user.role === 'SALES') {
       const isSelf = targetId === req.user.id;
       const full = await adminUserService.findById(targetId);
-      const isOwnCtv = full && full.role === 'CTV' && full.parent_id === req.user.id;
+      const isOwnCtv = full && ['CTV', 'NPP'].includes(full.role) && full.parent_id === req.user.id;
       if (!isSelf && !isOwnCtv) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }

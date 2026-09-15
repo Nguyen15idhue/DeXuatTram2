@@ -78,7 +78,7 @@ export const AuthProvider = ({ children }) => {
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const isSales = user?.role === 'SALES';
-  const isUser = user?.role === 'CTV';
+  const isUser = user?.role === 'CTV' || user?.role === 'NPP';
   const canAccessPanel = ['SUPER_ADMIN', 'ADMIN', 'SALES'].includes(user?.role);
   const isAuthenticated = !!user;
 

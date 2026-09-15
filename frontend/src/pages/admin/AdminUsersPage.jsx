@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminUserService, excelService } from '../../services/api';
+import { adminUserService, excelService, viewService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Loading from '../../components/Loading';
@@ -10,8 +10,11 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
+import ViewPickerMenu, { usageLabel } from '../../components/admin/ViewPickerMenu';
+import ImportViewPanel from '../../components/admin/ImportViewPanel';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDefaultViewId from '../../hooks/useDefaultViewId';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2 } from 'lucide-react';
 
 const USERS_VIEW_ID = 7;
@@ -24,6 +27,7 @@ const AdminUsersPage = () => {
   const { token, user: currentUser, isSuperAdmin, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const usersViewId = useDefaultViewId('users', USERS_VIEW_ID);
   const { getSelectOptions } = useFieldOptions('users', ['status', 'role']);
   const statusOptions = getSelectOptions('status');
   const roleOptions = getSelectOptions('role');
@@ -46,14 +50,25 @@ const AdminUsersPage = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
   const [importFailures, setImportFailures] = useState([]);
+  const [excelViews, setExcelViews] = useState([]);
+  const [importViewId, setImportViewId] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const createRoleAllowlist = isSales ? ['CTV'] : (!isSuperAdmin ? ['CTV', 'SALES', 'ADMIN'] : null);
+  const createRoleAllowlist = isSales ? ['CTV', 'NPP'] : (!isSuperAdmin ? ['CTV', 'NPP', 'SALES', 'ADMIN'] : null);
   const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
   const [pwOld, setPwOld] = useState('');
   const [pw1, setPw1] = useState('');
   const [pw2, setPw2] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState('');
+
+  useEffect(() => {
+    if (!token || isSales) return;
+    let cancelled = false;
+    viewService.getAll('entity=users&status=active&limit=50', token)
+      .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token, isSales]);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -263,18 +278,27 @@ const AdminUsersPage = () => {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (viewIds) => {
     try {
-      await excelService.exportData('users', token, { search: appliedSearch, status: filterStatus });
+      await excelService.exportData('users', token, { search: appliedSearch, status: filterStatus, viewIds: viewIds || undefined });
       setToast({ message: 'Export users thành công', type: 'success' });
     } catch {
       setError('Lỗi export users');
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleExportByForm = async () => {
     try {
-      await excelService.downloadTemplate('users', token);
+      await excelService.exportData('users', token, { search: appliedSearch, status: filterStatus, layout: 'form' });
+      setToast({ message: 'Export theo form thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export theo form');
+    }
+  };
+
+  const handleDownloadTemplate = async (viewIds) => {
+    try {
+      await excelService.downloadTemplate('users', token, { viewIds: viewIds || undefined });
     } catch {
       setError('Lỗi download template');
     }
@@ -318,6 +342,7 @@ const AdminUsersPage = () => {
     setImportFile(null);
     setImportPreview(null);
     setImportStep('upload');
+    setImportViewId('');
     setError('');
   };
 
@@ -330,16 +355,22 @@ const AdminUsersPage = () => {
     }
   };
 
-  const handlePreviewImport = async () => {
+  const handlePreviewImport = async (overrideViewId) => {
     if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    const viewIdToUse = overrideViewId !== undefined ? overrideViewId : importViewId;
     try {
       setImportLoading(true);
-      const res = await excelService.previewImport('users', importFile, token);
+      setError('');
+      const res = await excelService.previewImport('users', importFile, token, { viewId: viewIdToUse || undefined });
       if (res.success) {
         setImportFailures([]);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
+        if (res.data && res.data.detection) {
+          setImportPreview({ detection: res.data.detection, rows: [], errors: [], validRows: 0, totalRows: 0, errorRows: 0 });
+          setImportStep('preview');
+        }
         setError(res.message || 'Lỗi đọc file Excel');
       }
     } catch {
@@ -349,11 +380,16 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleChangeImportView = (value) => {
+    setImportViewId(value);
+    if (importFile) handlePreviewImport(value);
+  };
+
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
     try {
       setImportLoading(true);
-      const res = await excelService.confirmImport('users', importPreview.rows, token);
+      const res = await excelService.confirmImport('users', importPreview.rows, token, { viewId: importPreview.viewId });
       if (res.success) {
         setShowImport(false);
         setToast({ message: res.message, type: 'success' });
@@ -408,16 +444,10 @@ const AdminUsersPage = () => {
             Tạo user
           </button>
           {!isSales && (
-            <button className="btn btn-ghost btn-sm gap-1" onClick={handleDownloadTemplate}>
-              <FileSpreadsheet size={14} />
-              Template
-            </button>
+            <ViewPickerMenu label="Template" icon={FileSpreadsheet} views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
           )}
           {!isSales && (
-            <button className="btn btn-ghost btn-sm gap-1" onClick={handleExport}>
-              <Download size={14} />
-              Export
-            </button>
+            <ViewPickerMenu label="Export" views={excelViews} onPick={handleExport} onPickForm={handleExportByForm} title="Chọn bộ cột để export" />
           )}
           {!isSales && (
             <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
@@ -508,9 +538,20 @@ const AdminUsersPage = () => {
                     <span>File: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                 )}
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Bộ cột</span>
+                  </label>
+                  <select className="select select-bordered w-full" value={importViewId} onChange={(e) => setImportViewId(e.target.value)}>
+                    <option value="">Tự nhận diện theo file (khuyến nghị)</option>
+                    {excelViews.map(v => (
+                      <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                  <button className="btn btn-primary" onClick={() => handlePreviewImport()} disabled={!importFile || importLoading}>
                     {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang đọc...' : 'Xem trước'}
                   </button>
@@ -535,6 +576,13 @@ const AdminUsersPage = () => {
                     </div>
                   )}
                 </div>
+                <ImportViewPanel
+                  detection={importPreview.detection}
+                  views={excelViews}
+                  value={importViewId}
+                  onChange={handleChangeImportView}
+                  loading={importLoading}
+                />
                 <ImportErrorList errors={importPreview.errors} failures={importFailures} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
@@ -618,7 +666,7 @@ const AdminUsersPage = () => {
         <RecordDetailPopup          entity="users"
           record={popup.record}
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
-          viewId={USERS_VIEW_ID}
+          viewId={usersViewId}
           mode={popup.mode}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view' });
@@ -638,7 +686,7 @@ const AdminUsersPage = () => {
         <>
           <DynamicTable
             entity="users"
-            viewId={USERS_VIEW_ID}
+            viewId={usersViewId}
             data={pagedRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
             actions={renderActions}
             startIndex={(page - 1) * USERS_PAGE_SIZE}
