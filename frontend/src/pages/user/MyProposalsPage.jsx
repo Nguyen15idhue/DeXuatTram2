@@ -11,12 +11,11 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
 import Pagination from '../../components/Pagination';
-import MapCanvas from '../../components/map/MapCanvas';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
-import useMapConfig from '../../hooks/useMapConfig';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap } from 'lucide-react';
+import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
+import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap, Link2 } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_FORM_ID = 13;
@@ -28,7 +27,6 @@ const MyProposalsPage = () => {
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
-  const { renderer: mapRenderer, vectorStyle: mapVectorStyle, apiKey: mapApiKey, tileUrl, attribution: mapAttribution, subdomains: mapSubdomains } = useMapConfig();
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -47,6 +45,9 @@ const MyProposalsPage = () => {
   const [createFormId, setCreateFormId] = useState(PROPOSALS_FORM_ID);
   const [quickFormId, setQuickFormId] = useState(null);
   const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
+  const [mapLink, setMapLink] = useState('');
+  const [resolvingLink, setResolvingLink] = useState(false);
+  const [linkError, setLinkError] = useState('');
   const [nearbyWarning, setNearbyWarning] = useState('');
   const [dupMode, setDupMode] = useState(false);
   const dupRef = useRef(null);
@@ -166,12 +167,33 @@ const MyProposalsPage = () => {
   const openCreate = (formId) => {
     setCreateFormId(formId || PROPOSALS_FORM_ID);
     setMapCoords({ latitude: '', longitude: '' });
+    setMapLink('');
+    setLinkError('');
     setShowCreateForm(true);
     setError('');
   };
 
-  const handleMapClick = (lat, lng) => {
-    setMapCoords({ latitude: Number(lat).toFixed(6), longitude: Number(lng).toFixed(6) });
+  const handleGoogleMapLink = async () => {
+    const url = mapLink.trim();
+    if (!url) return;
+    setLinkError('');
+    setResolvingLink(true);
+    try {
+      let coords = parseGoogleMapsLink(url);
+      if (coords && coords.needResolve) {
+        coords = await resolveGoogleMapsShortUrl(coords.url);
+      }
+      if (coords && coords.lat != null && coords.lng != null) {
+        setMapCoords({ latitude: Number(coords.lat).toFixed(6), longitude: Number(coords.lng).toFixed(6) });
+        setMapLink('');
+      } else {
+        setLinkError('Không đọc được tọa độ từ link Google Maps');
+      }
+    } catch {
+      setLinkError('Không đọc được tọa độ từ link Google Maps');
+    } finally {
+      setResolvingLink(false);
+    }
   };
 
   useEffect(() => {
@@ -218,7 +240,7 @@ const MyProposalsPage = () => {
       ...dynamicRest
     };
     if (!submitData.latitude || !submitData.longitude || !submitData.owner_name || !submitData.owner_phone || !submitData.address) {
-      throw new Error('Vui lòng chọn vị trí trên bản đồ và nhập đầy đủ thông tin bắt buộc');
+      throw new Error('Vui lòng dán link Google Maps để lấy tọa độ và nhập đầy đủ thông tin bắt buộc');
     }
     const nearby = await proposalService.checkNearby({
       latitude: submitData.latitude,
@@ -410,28 +432,27 @@ const MyProposalsPage = () => {
               </button>
             </div>
             <div className="border border-base-300 rounded-lg p-3 mb-4">
-              <label className="text-sm font-medium block mb-2">Chọn vị trí trên bản đồ (click để chọn)</label>
-              <div style={{ height: '200px', width: '100%' }}>
-                <MapCanvas
-                  renderer={mapRenderer}
-                  center={[10.762622, 106.660172]}
-                  zoom={13}
-                  tile={{ url: tileUrl, attribution: mapAttribution, subdomains: mapSubdomains }}
-                  vectorStyle={mapVectorStyle}
-                  apiKey={mapApiKey}
-                  stations={[]}
-                  proposals={[]}
-                  showCluster={false}
-                  showStationLabels={false}
-                  showProvinceLabels={false}
-                  showBoundaries={false}
-                  provincePoints={[]}
-                  selectingLocation
-                  onMapSelectClick={handleMapClick}
-                  selectedPosition={mapCoords.latitude && mapCoords.longitude ? [parseFloat(mapCoords.latitude), parseFloat(mapCoords.longitude)] : null}
-                  locationPoint
+              <label className="text-sm font-medium block mb-2">Lấy tọa độ từ link Google Maps</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Dán link Google Maps vào đây..."
+                  className="input input-bordered input-sm flex-1"
+                  value={mapLink}
+                  onChange={(e) => { setMapLink(e.target.value); if (linkError) setLinkError(''); }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleGoogleMapLink()}
                 />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm gap-1"
+                  onClick={handleGoogleMapLink}
+                  disabled={resolvingLink || !mapLink.trim()}
+                >
+                  <Link2 size={14} />
+                  {resolvingLink ? '...' : 'Lấy tọa độ'}
+                </button>
               </div>
+              {linkError && <div className="alert alert-error text-sm mt-2">{linkError}</div>}
               {mapCoords.latitude && mapCoords.longitude && (
                 <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
                   <MapPin size={14} />
