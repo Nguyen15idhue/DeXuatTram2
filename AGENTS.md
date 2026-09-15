@@ -72,6 +72,7 @@ Swagger UI:  http://localhost:3000/api-docs
 ### 4.2. Proposal Lifecycle & Notification
 - Từ chối đề xuất: **bắt buộc** `reject_reason`; lưu `reviewed_by`, `reviewed_at` (`adminProposalService.updateStatus`)
 - Duyệt (`APPROVED`, lần đầu) → **tự tạo lệnh đẩy 1Office** (queue push, config contact active mặc định; duyệt lại khi đã APPROVED không tạo lệnh mới). FE hiện popup xác nhận "không thể hoàn tác" + toast lệnh chờ; đẩy thủ công vẫn giữ nguyên. Được duyệt **chưa thành trạm thật**.
+- **Chặn đẩy 1Office khi thiếu `nguoi_phu_trach`/`nguoi_giao_phu_trach`** (`syncService.getMissingPushUserFieldLabels`, dùng `label` từ `field_definitions`): duyệt bị chặn 400 + popup cảnh báo FE; push thủ công trả lỗi từng đề xuất. Cả 2 nút (Đẩy sang 1Office + Duyệt) đều có popup xác nhận
 - Đổi status → tạo `notifications` cho chủ đề xuất (luôn tạo). **5 loại** + màu: `REJECTED` đỏ, `APPROVED` xanh lá, `PENDING` vàng, `REVIEWING` xanh lam, `RESUBMITTED` vàng
 - CTV sửa được khi `PENDING`/`REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` cho người đã từ chối (cả `myProposalService` và `adminProposalService.updateProposal`)
 - CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API

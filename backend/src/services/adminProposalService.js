@@ -106,12 +106,23 @@ exports.updateStatus = async (id, status, opts = {}) => {
     throw Object.assign(new Error('Vui lòng nhập lý do từ chối'), { statusCode: 400 });
   }
 
-  const [rows] = await pool.query('SELECT id, user_id, status, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
+  const [rows] = await pool.query('SELECT id, user_id, status, contact_1office_code, custom_data FROM station_proposals WHERE id = ?', [id]);
   if (rows.length === 0) {
     throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
   }
   const proposal = rows[0];
   const prevStatus = proposal.status;
+
+  if (status === 'APPROVED' && prevStatus !== 'APPROVED') {
+    const syncService = require('./syncService');
+    const missing = await syncService.getMissingPushUserFieldLabels(proposal);
+    if (missing.length > 0) {
+      throw Object.assign(
+        new Error(`Không thể duyệt: đề xuất thiếu ${missing.map(l => `"${l}"`).join(', ')}. Vui lòng cập nhật trước khi duyệt.`),
+        { statusCode: 400 }
+      );
+    }
+  }
 
   await pool.query(
     `UPDATE station_proposals

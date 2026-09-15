@@ -27,6 +27,32 @@ const refreshId1Office = async (proposalId) => {
   }
 };
 
+const PUSH_REQUIRED_USER_FIELDS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
+
+const parseCustomData = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return {}; }
+};
+
+exports.PUSH_REQUIRED_USER_FIELDS = PUSH_REQUIRED_USER_FIELDS;
+
+exports.getMissingPushUserFieldLabels = async (proposal, fieldDefs) => {
+  const defs = fieldDefs || await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const labelOf = (key) => {
+    const f = (defs || []).find(d => d.key === key);
+    return (f && f.label) || key;
+  };
+  const custom = parseCustomData(proposal && proposal.custom_data);
+  const missing = [];
+  for (const key of PUSH_REQUIRED_USER_FIELDS) {
+    const direct = proposal ? proposal[key] : null;
+    const value = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+    if (fieldMapper.resolveUserId(value) === null) missing.push(labelOf(key));
+  }
+  return missing;
+};
+
 exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
   const config = await apiConfigService.getById(apiConfigId);
   if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
@@ -34,12 +60,19 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
   const mappings = await fieldMappingService.getAllByConfig(apiConfigId);
   const pushMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'push' || m.direction === 'both') && !fieldMapper.isSpecialTarget(m.target_field));
   const system = (config && config.system_key) || '1office';
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
 
   const results = [];
   for (const proposalId of proposalIds) {
     const proposal = await proposalService.getProposalFullById(proposalId);
     if (!proposal) {
       results.push({ proposalId, success: false, error: 'Không tìm thấy đề xuất' });
+      continue;
+    }
+
+    const missingUserFields = await exports.getMissingPushUserFieldLabels(proposal, fieldDefs);
+    if (missingUserFields.length > 0) {
+      results.push({ proposalId, success: false, error: `Thiếu ${missingUserFields.map(l => `"${l}"`).join(', ')}` });
       continue;
     }
 

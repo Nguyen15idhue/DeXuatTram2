@@ -24,7 +24,7 @@ const AdminProposalsPage = () => {
   const { token, isSales, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
+  const { getSelectOptions, getFieldLabel } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +46,8 @@ const AdminProposalsPage = () => {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false });
+  const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
+  const [blockModal, setBlockModal] = useState({ open: false, missing: [] });
   const dupRef = useRef(null);
   const tableRef = useRef(null);
   const syncPollRef = useRef(null);
@@ -112,12 +114,30 @@ const AdminProposalsPage = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showMoreMenu]);
 
+  const missingUserFieldLabels = (row) => {
+    const custom = (row && row.custom_data) || {};
+    const labels = [];
+    for (const key of ['nguoi_phu_trach', 'nguoi_giao_phu_trach']) {
+      const direct = row ? row[key] : null;
+      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+      const idVal = v && typeof v === 'object' ? (v.id ?? v.user_id) : v;
+      if (!idVal) labels.push(getFieldLabel(key));
+    }
+    return labels;
+  };
+
   const handleStatusChange = async (id, newStatus) => {
     if (newStatus === 'REJECTED') {
       setRejectModal({ open: true, id, reason: '', saving: false });
       return;
     }
     if (newStatus === 'APPROVED') {
+      const row = proposals.find(p => p.id === id);
+      const missing = missingUserFieldLabels(row);
+      if (missing.length > 0) {
+        setBlockModal({ open: true, missing });
+        return;
+      }
       setApproveModal({ open: true, id, saving: false });
       return;
     }
@@ -271,7 +291,17 @@ const AdminProposalsPage = () => {
     syncPollRef.current = timer;
   };
 
+  const openPushConfirm = () => {
+    const blocked = selectedIds
+      .map(id => proposals.find(p => p.id === id))
+      .filter(Boolean)
+      .map(row => ({ id: row.id, missing: missingUserFieldLabels(row) }))
+      .filter(x => x.missing.length > 0);
+    setPushConfirm({ open: true, blocked });
+  };
+
   const handleBatchPush = async () => {
+    setPushConfirm({ open: false, blocked: [] });
     if (selectedIds.length === 0) return;
     setBatchLoading(true);
     try {
@@ -501,7 +531,7 @@ const AdminProposalsPage = () => {
                 <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52">
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
-                    onClick={() => { setShowMoreMenu(false); handleBatchPush(); }}
+                    onClick={() => { setShowMoreMenu(false); openPushConfirm(); }}
                     disabled={selectedIds.length === 0 || batchLoading}
                   >
                     <Upload size={14} className="text-success" />
@@ -625,6 +655,62 @@ const AdminProposalsPage = () => {
         confirmText="Xóa"
         type="danger"
       />
+
+      {pushConfirm.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Đẩy sang 1Office</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setPushConfirm({ open: false, blocked: [] })}>
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-base-content/80">Đề xuất gửi sang 1Office <b>không thể hoàn tác</b>. Hãy xác nhận chắc chắn muốn gửi đề xuất này rồi mới thực hiện.</p>
+            <p className="text-sm text-base-content/60 mt-2">Số đề xuất đã chọn: <b>{selectedIds.length}</b></p>
+            {pushConfirm.blocked.length > 0 && (
+              <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
+                <div>
+                  <p className="font-bold mb-1">{pushConfirm.blocked.length} đề xuất sẽ bị chặn (thiếu thông tin):</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {pushConfirm.blocked.map(b => (
+                      <li key={b.id}>#{b.id}: thiếu {b.missing.map(m => `"${m}"`).join(', ')}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setPushConfirm({ open: false, blocked: [] })}>Hủy</button>
+              <button className="btn btn-success btn-sm" disabled={batchLoading} onClick={handleBatchPush}>
+                {batchLoading ? 'Đang gửi...' : 'Xác nhận gửi 1Office'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setPushConfirm({ open: false, blocked: [] })} />
+        </dialog>
+      )}
+
+      {blockModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Chưa thể duyệt</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setBlockModal({ open: false, missing: [] })}>
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-base-content/80">Đề xuất thiếu thông tin bắt buộc để gửi sang 1Office:</p>
+            <ul className="list-disc pl-6 mt-2 text-sm font-semibold text-error">
+              {blockModal.missing.map((m, i) => <li key={i}>{m}</li>)}
+            </ul>
+            <p className="text-sm text-base-content/70 mt-3">Vui lòng cập nhật các trường trên trước khi duyệt đề xuất.</p>
+            <div className="modal-action">
+              <button className="btn btn-primary btn-sm" onClick={() => setBlockModal({ open: false, missing: [] })}>Đã hiểu</button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setBlockModal({ open: false, missing: [] })} />
+        </dialog>
+      )}
 
       {approveModal.open && (
         <dialog className="modal modal-open">
