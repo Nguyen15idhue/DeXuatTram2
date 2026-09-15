@@ -1,5 +1,9 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+const LARGE_DATASET = 2000;
+const WARD_MIN_ZOOM = 12;
+const WARD_MAX_LABELS = 400;
+
 let maplibrePromise = null;
 let pmtilesRegistered = false;
 
@@ -122,7 +126,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   const sourceIds = new Set();
 
   function removeManagedSource(id) {
-    if (!map.getSource(id)) return;
+    if (!map.getSource(id)) { sourceIds.delete(id); return; }
     const layers = (map.getStyle()?.layers || []).filter((l) => l.source === id);
     layers.forEach((l) => { try { map.removeLayer(l.id); } catch { /* noop */ } });
     try { map.removeSource(id); } catch { /* noop */ } finally { sourceIds.delete(id); }
@@ -135,8 +139,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     }
   }
 
-  function clearOverlays() {
-    [...sourceIds].forEach(removeManagedSource);
+  function removeDomOverlays() {
     removeMarkers(stationDomMarkers);
     removeMarkers(provinceMarkers);
     removeMarkers(pointMarkers);
@@ -178,11 +181,49 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     map.on('mouseleave', 'app-clusters', () => { map.getCanvas().style.cursor = ''; });
   }
 
+  function applyPixelRatio(count) {
+    if (typeof map.setPixelRatio !== 'function') return;
+    try {
+      map.setPixelRatio(count > LARGE_DATASET ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+    } catch { /* noop */ }
+  }
+
+  function addMarkerLabelLayer() {
+    if (map.getLayer('app-marker-labels')) return;
+    try {
+      map.addLayer({
+        id: 'app-marker-labels',
+        type: 'symbol',
+        source: 'app-markers',
+        minzoom: 14,
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'text-field': ['get', '_label'],
+          'text-size': 11,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-font': ['Noto Sans Regular'],
+        },
+        paint: { 'text-color': '#1f2937', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+      });
+      overlayOrderDirty = true;
+    } catch { /* style lacks glyphs */ }
+  }
+
+  function syncMarkerLabels(show) {
+    if (show) addMarkerLabelLayer();
+    else if (map.getLayer('app-marker-labels')) {
+      try { map.removeLayer('app-marker-labels'); } catch { /* noop */ }
+    }
+  }
+
   function applyMarkers() {
     const { items, options } = markersState || {};
     if (!items) return;
     const { cluster = true, showLabels = false, onMarkerClick, renderPopup } = options || {};
+    applyPixelRatio(items.length);
     if (!cluster) {
+      removeManagedSource('app-markers');
       removeMarkers(stationDomMarkers);
       items.forEach((item) => {
         const lng = parseFloat(item.longitude);
@@ -207,6 +248,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       return;
     }
 
+    removeMarkers(stationDomMarkers);
+
     const geojson = {
       type: 'FeatureCollection',
       features: items
@@ -227,9 +270,10 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       map.addSource('app-markers', {
         type: 'geojson',
         data: geojson,
+        maxzoom: 20,
         cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50,
+        clusterMaxZoom: 18,
+        clusterRadius: 70,
       });
       sourceIds.add('app-markers');
       map.addLayer({
@@ -264,27 +308,11 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           'circle-stroke-color': '#ffffff',
         },
       });
-      if (showLabels) {
-        try {
-          map.addLayer({
-            id: 'app-marker-labels',
-            type: 'symbol',
-            source: 'app-markers',
-            filter: ['!', ['has', 'point_count']],
-            layout: {
-              'text-field': ['get', '_label'],
-              'text-size': 11,
-              'text-offset': [0, 1.2],
-              'text-anchor': 'top',
-              'text-font': ['Noto Sans Regular'],
-            },
-            paint: { 'text-color': '#1f2937', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
-          });
-        } catch { /* style lacks glyphs */ }
-      }
+      overlayOrderDirty = true;
     } else {
       map.getSource('app-markers').setData(geojson);
     }
+    syncMarkerLabels(showLabels);
   }
 
   function applyPolylines() {
@@ -335,6 +363,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       });
       map.on('mouseenter', 'app-polylines-line', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'app-polylines-line', () => { map.getCanvas().style.cursor = ''; });
+      overlayOrderDirty = true;
     } else {
       map.getSource('app-polylines').setData(data);
     }
@@ -365,9 +394,42 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         source: 'app-boundaries',
         paint: { 'line-color': '#1565C0', 'line-width': 2, 'line-opacity': 0.7, 'line-dasharray': [4, 2] },
       });
+      overlayOrderDirty = true;
     } else {
       map.getSource('app-boundaries').setData(geojson);
     }
+  }
+
+  function wardVisibleFeatures() {
+    const { points } = wardState || {};
+    if (!points || points.length === 0) return [];
+    const b = map.getBounds();
+    const padLng = (b.getEast() - b.getWest()) * 0.15;
+    const padLat = (b.getNorth() - b.getSouth()) * 0.15;
+    const west = b.getWest() - padLng;
+    const east = b.getEast() + padLng;
+    const south = b.getSouth() - padLat;
+    const north = b.getNorth() + padLat;
+    const out = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const p = points[i];
+      if (p.lng < west || p.lng > east || p.lat < south || p.lat > north) continue;
+      out.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+        properties: { name: p.name, province: p.province || '' },
+      });
+      if (out.length >= WARD_MAX_LABELS) break;
+    }
+    return out;
+  }
+
+  function refreshWardData() {
+    const SRC = 'app-ward-labels';
+    const src = map.getSource(SRC);
+    if (!src || typeof src.setData !== 'function') return;
+    const features = map.getZoom() < WARD_MIN_ZOOM ? [] : wardVisibleFeatures();
+    src.setData({ type: 'FeatureCollection', features });
   }
 
   function applyWardLabels() {
@@ -380,25 +442,17 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     if (!map.getStyle().glyphs) {
       try { map.setGlyphs('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'); } catch { /* noop */ }
     }
-    const data = {
-      type: 'FeatureCollection',
-      features: points.map((p) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-        properties: { name: p.name, province: p.province || '' },
-      })),
-    };
-    map.addSource(SRC, { type: 'geojson', data });
+    map.addSource(SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     sourceIds.add(SRC);
     map.addLayer({
       id: LAYER,
       type: 'symbol',
       source: SRC,
-      minzoom: 11,
+      minzoom: WARD_MIN_ZOOM,
       layout: {
         'text-field': ['get', 'name'],
         'text-font': ['Noto Sans Regular'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 11, 9, 14, 12, 17, 14],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 12, 9, 14, 12, 17, 14],
         'text-allow-overlap': false,
         'text-optional': true,
         'text-padding': 4,
@@ -409,6 +463,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         'text-halo-width': 1.4,
       },
     });
+    refreshWardData();
     bringOverlaysToTop();
   }
 
@@ -485,6 +540,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     });
   }
 
+  let overlayOrderDirty = false;
+
   const overlayTopOrder = [
     'app-polylines-line',
     'app-polylines-label',
@@ -496,6 +553,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   ];
 
   function bringOverlaysToTop() {
+    if (!overlayOrderDirty) return;
+    overlayOrderDirty = false;
     overlayTopOrder.forEach((id) => {
       if (map.getLayer(id)) {
         try { map.moveLayer(id); } catch { /* noop */ }
@@ -593,7 +652,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
   function applyAll() {
     if (!loaded) return;
-    clearOverlays();
+    [...sourceIds].forEach((id) => { if (!map.getSource(id)) sourceIds.delete(id); });
+    removeDomOverlays();
     applyPolylines();
     applyBoundaries();
     applyCircle();
@@ -602,6 +662,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     applyPoints();
     applyWardLabels();
     apply3D();
+    bringOverlaysToTop();
   }
 
   let navAdded = false;
@@ -616,8 +677,9 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     }
   };
   map.on('load', onStyleReady);
-  map.on('style.load', onStyleReady);
   bindMarkerInteractions();
+  map.on('zoomend', refreshWardData);
+  map.on('moveend', refreshWardData);
 
   const runtime = {
     id: 'maplibre',
@@ -669,6 +731,14 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     setMarkers(items, options) {
       markersState = { items, options };
       if (loaded) applyMarkers();
+    },
+
+    setMarkerLabels(show) {
+      if (markersState && markersState.options) markersState.options.showLabels = !!show;
+      if (!loaded) return;
+      if (!map.getSource('app-markers')) return;
+      syncMarkerLabels(!!show);
+      bringOverlaysToTop();
     },
 
     setPolylines(pairs, options) {

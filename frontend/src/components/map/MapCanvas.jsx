@@ -42,6 +42,7 @@ export default function MapCanvas({
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const clickRef = useRef({ selectingLocation, onMapSelectClick });
   const markerClickRef = useRef(onMarkerClick);
+  const markersSigRef = useRef({ runtime: null, stations: null, proposals: null, cluster: null });
   const argsRef = useRef({ center, zoom, tile, vectorStyle, apiKey });
   clickRef.current = { selectingLocation, onMapSelectClick };
   markerClickRef.current = onMarkerClick;
@@ -101,6 +102,18 @@ export default function MapCanvas({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    const sig = markersSigRef.current;
+    const sameData = sig.runtime === runtime && sig.stations === stations && sig.proposals === proposals && sig.cluster === showCluster;
+    if (sameData) {
+      if (sig.labels === showStationLabels) return;
+      markersSigRef.current = { ...sig, labels: showStationLabels };
+      if (typeof runtime.setMarkerLabels === 'function') {
+        runtime.setMarkerLabels(showStationLabels);
+        return;
+      }
+    } else {
+      markersSigRef.current = { runtime, stations, proposals, cluster: showCluster, labels: showStationLabels };
+    }
     const items = [
       ...stations.map((s) => ({ ...s, _type: 'station', _color: s._color, _label: s.name || `Trạm #${s.id}` })),
       ...proposals.map((p) => ({ ...p, _type: 'proposal', _color: p._color, _label: `Đề xuất #${p.id}` })),
