@@ -46,6 +46,7 @@ const AdminProposalsPage = () => {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false });
+  const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
   const [blockModal, setBlockModal] = useState({ open: false, missing: [] });
   const dupRef = useRef(null);
@@ -114,10 +115,27 @@ const AdminProposalsPage = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showMoreMenu]);
 
+  const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
+
+  const pushUserValue = (row, key) => {
+    const custom = (row && row.custom_data) || {};
+    const direct = row ? row[key] : null;
+    const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+    if (!v) return null;
+    if (typeof v === 'object') return v.label || (v.id ? `User #${v.id}` : null);
+    return String(v);
+  };
+
+  const pushUserRows = (row) => PUSH_USER_KEYS.map(key => ({
+    key,
+    label: getFieldLabel(key),
+    value: pushUserValue(row, key),
+  }));
+
   const missingUserFieldLabels = (row) => {
     const custom = (row && row.custom_data) || {};
     const labels = [];
-    for (const key of ['nguoi_phu_trach', 'nguoi_giao_phu_trach']) {
+    for (const key of PUSH_USER_KEYS) {
       const direct = row ? row[key] : null;
       const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
       const idVal = v && typeof v === 'object' ? (v.id ?? v.user_id) : v;
@@ -667,6 +685,24 @@ const AdminProposalsPage = () => {
             </div>
             <p className="text-sm text-base-content/80">Đề xuất gửi sang 1Office <b>không thể hoàn tác</b>. Hãy xác nhận chắc chắn muốn gửi đề xuất này rồi mới thực hiện.</p>
             <p className="text-sm text-base-content/60 mt-2">Số đề xuất đã chọn: <b>{selectedIds.length}</b></p>
+            <div className="mt-3 border border-base-300 rounded-lg p-3 max-h-56 overflow-y-auto">
+              <p className="text-xs font-bold uppercase text-base-content/50 mb-2">Thông tin gửi sang 1Office</p>
+              {selectedIds.map(id => {
+                const row = proposals.find(p => p.id === id);
+                if (!row) return null;
+                return (
+                  <div key={id} className="mb-2 last:mb-0">
+                    <p className="text-sm font-semibold">#{row.id}{row.ma_de_xuat ? ` · ${row.ma_de_xuat}` : ''}</p>
+                    {pushUserRows(row).map(r => (
+                      <div key={r.key} className="flex justify-between gap-2 text-sm py-0.5">
+                        <span className="text-base-content/70">{r.label}</span>
+                        <span className={`font-medium ${r.value ? '' : 'text-error'}`}>{r.value || 'Thiếu'}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
             {pushConfirm.blocked.length > 0 && (
               <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
                 <div>
@@ -722,6 +758,17 @@ const AdminProposalsPage = () => {
               </button>
             </div>
             <p className="text-sm text-base-content/80">Đề xuất gửi sang 1Office <b>không thể hoàn tác</b>. Hãy xác nhận chắc chắn muốn gửi đề xuất này rồi mới thực hiện.</p>
+            {approveRow && (
+              <div className="mt-3 border border-base-300 rounded-lg p-3">
+                <p className="text-xs font-bold uppercase text-base-content/50 mb-2">Thông tin gửi sang 1Office</p>
+                {pushUserRows(approveRow).map(r => (
+                  <div key={r.key} className="flex justify-between gap-2 text-sm py-0.5">
+                    <span className="text-base-content/70">{r.label}</span>
+                    <span className={`font-medium ${r.value ? '' : 'text-error'}`}>{r.value || 'Thiếu'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="modal-action">
               <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false })}>Hủy</button>
               <button
