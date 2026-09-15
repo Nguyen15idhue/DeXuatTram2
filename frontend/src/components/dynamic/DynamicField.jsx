@@ -49,7 +49,10 @@ const TABLE_HEADER_STYLE = { padding: '6px 8px', border: '1px solid #e2e8f0', fo
 const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {} }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [focusedCell, setFocusedCell] = useState(null);
+  const [selectSearch, setSelectSearch] = useState('');
+  const [highlightIndex, setHighlightIndex] = useState(0);
   const dropdownRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -60,6 +63,16 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen]);
+
+  useEffect(() => {
+    if (!dropdownOpen) {
+      setSelectSearch('');
+      setHighlightIndex(0);
+      return;
+    }
+    const t = setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
   }, [dropdownOpen]);
 
   const parsedOptions = (() => {
@@ -109,6 +122,13 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       color: '#fff', backgroundColor: color, borderRadius: radiusMap[radius] || '8px', cursor: 'pointer'
     };
   };
+
+  const normalizeForSearch = (s) =>
+    String(s ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd');
 
   const handleChange = (e) => {
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
@@ -434,7 +454,15 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       );
 
     case 'select': {
-      const selectedOpt = parsedOptions.find(o => (o.value || o) === value);
+      const selectedOpt = parsedOptions.find(o => (o.value !== undefined ? o.value : o) === value);
+      const searchTerm = normalizeForSearch(selectSearch.trim());
+      const filteredOptions = searchTerm
+        ? parsedOptions.filter((opt) => {
+            const optVal = opt.value !== undefined ? opt.value : opt;
+            const optLabel = opt.label !== undefined ? opt.label : optVal;
+            return normalizeForSearch(optLabel).includes(searchTerm) || normalizeForSearch(optVal).includes(searchTerm);
+          })
+        : parsedOptions;
       return (
         <div className="dynamic-field-select relative" ref={dropdownRef}>
           <div
@@ -450,30 +478,62 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             <span className="ml-auto text-[10px]">▼</span>
           </div>
           {dropdownOpen && (
-            <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[200px] overflow-auto p-1">
+            <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[240px] overflow-auto p-1">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={selectSearch}
+                onChange={(e) => { setSelectSearch(e.target.value); setHighlightIndex(0); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setDropdownOpen(false);
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setHighlightIndex(i => Math.min(i + 1, filteredOptions.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setHighlightIndex(i => Math.max(i - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const opt = filteredOptions[highlightIndex];
+                    if (opt) {
+                      onChange(opt.value !== undefined ? opt.value : opt);
+                      setDropdownOpen(false);
+                    }
+                  }
+                }}
+                placeholder="Tìm kiếm..."
+                className="sticky top-0 z-10 w-full px-2 py-1.5 mb-1 text-[13px] bg-white border border-gray-200 rounded outline-none focus:border-blue-400"
+              />
               <div
                 className="px-2.5 py-1.5 cursor-pointer text-[13px] text-gray-400"
                 onClick={() => { onChange(''); setDropdownOpen(false); }}
               >
                 -- Chọn --
               </div>
-              {parsedOptions.map((opt, idx) => {
-                const optVal = opt.value || opt;
-                const optLabel = opt.label || opt;
-                const isSelected = value === optVal;
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      padding: '6px 10px', cursor: 'pointer', fontSize: 13,
-                      background: isSelected ? '#f0f0f0' : 'transparent'
-                    }}
-                    onClick={() => { onChange(optVal); setDropdownOpen(false); }}
-                  >
-                    <span style={getBadgeStyle(opt)}>{optLabel}</span>
-                  </div>
-                );
-              })}
+              {filteredOptions.length === 0 ? (
+                <div className="px-2.5 py-2 text-[13px] text-gray-400">Không có kết quả</div>
+              ) : (
+                filteredOptions.map((opt, idx) => {
+                  const optVal = opt.value !== undefined ? opt.value : opt;
+                  const optLabel = opt.label !== undefined ? opt.label : optVal;
+                  const isSelected = value === optVal;
+                  const isHighlighted = idx === highlightIndex;
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '6px 10px', cursor: 'pointer', fontSize: 13,
+                        background: isSelected ? '#e5e7eb' : (isHighlighted ? '#f3f4f6' : 'transparent')
+                      }}
+                      onMouseEnter={() => setHighlightIndex(idx)}
+                      onClick={() => { onChange(optVal); setDropdownOpen(false); }}
+                    >
+                      <span style={getBadgeStyle(opt)}>{optLabel}</span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
