@@ -451,10 +451,16 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
+const PRIOR_RENDER_MARKERS = [
+  'Trạng tháiPENDING', 'Trạng tháiREVIEWING', 'Trạng tháiAPPROVED', 'Trạng tháiREJECTED',
+  'Tổng cộng chi phí', 'Thông tin đề xuất',
+];
+
 function sanitizePriorDesc(desc) {
   if (!desc || typeof desc !== 'string') return desc || '';
   if (/<(table|div|details|tr|td)[\s>]/i.test(desc)) {
     return desc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   }
+  if (PRIOR_RENDER_MARKERS.some((k) => desc.includes(k))) return '';
   return desc;
 }
