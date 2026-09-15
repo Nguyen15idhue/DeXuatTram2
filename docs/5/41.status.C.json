@@ -1,0 +1,70 @@
+{
+  "lane": "C",
+  "imageDir": "admin-config",
+  "at": "2026-09-14T17:07:37.792Z",
+  "total": 12,
+  "ok": 12,
+  "failed": [],
+  "results": [
+    {
+      "id": "C01",
+      "title": "Field Definitions",
+      "ok": true
+    },
+    {
+      "id": "C02",
+      "title": "Forms Manager",
+      "ok": true
+    },
+    {
+      "id": "C03",
+      "title": "Form Builder",
+      "ok": true
+    },
+    {
+      "id": "C04",
+      "title": "Views Manager",
+      "ok": true
+    },
+    {
+      "id": "C05",
+      "title": "View Builder",
+      "ok": true
+    },
+    {
+      "id": "C06",
+      "title": "Data Lists",
+      "ok": true
+    },
+    {
+      "id": "C07",
+      "title": "Map Config",
+      "ok": true
+    },
+    {
+      "id": "C08",
+      "title": "Geocode Config",
+      "ok": true
+    },
+    {
+      "id": "C09",
+      "title": "Phân quyền",
+      "ok": true
+    },
+    {
+      "id": "C10",
+      "title": "API Configs",
+      "ok": true
+    },
+    {
+      "id": "C11",
+      "title": "Field Mapping",
+      "ok": true
+    },
+    {
+      "id": "C12",
+      "title": "Swagger API Docs",
+      "ok": true
+    }
+  ]
+}

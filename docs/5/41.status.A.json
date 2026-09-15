@@ -1,0 +1,80 @@
+{
+  "lane": "A",
+  "imageDir": "user",
+  "at": "2026-09-14T17:14:00.513Z",
+  "total": 14,
+  "ok": 14,
+  "failed": [],
+  "results": [
+    {
+      "id": "A01",
+      "title": "Đăng nhập",
+      "ok": true
+    },
+    {
+      "id": "A02",
+      "title": "Đăng ký",
+      "ok": true
+    },
+    {
+      "id": "A13",
+      "title": "Guest đề xuất",
+      "ok": true
+    },
+    {
+      "id": "A03",
+      "title": "Hồ sơ cá nhân",
+      "ok": true
+    },
+    {
+      "id": "A04",
+      "title": "Bản đồ marker & chú thích",
+      "ok": true
+    },
+    {
+      "id": "A05",
+      "title": "Bộ lọc bản đồ",
+      "ok": true
+    },
+    {
+      "id": "A06",
+      "title": "Chuyển nền bản đồ",
+      "ok": true
+    },
+    {
+      "id": "A07",
+      "title": "Nhãn hành chính mới/cũ",
+      "ok": true
+    },
+    {
+      "id": "A08",
+      "title": "Bật/tắt 3D",
+      "ok": true
+    },
+    {
+      "id": "A09",
+      "title": "Menu tạo đề xuất",
+      "ok": true
+    },
+    {
+      "id": "A10",
+      "title": "Form đề xuất",
+      "ok": true
+    },
+    {
+      "id": "A11",
+      "title": "Tạo trạm nhanh",
+      "ok": true
+    },
+    {
+      "id": "A12",
+      "title": "Đề xuất của tôi",
+      "ok": true
+    },
+    {
+      "id": "A14",
+      "title": "Thông báo",
+      "ok": true
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+export const startGuide = {
+  id: 'bat-dau',
+  title: 'Bắt đầu tại đây',
+  icon: 'Book',
+  steps: [
+    {
+      id: 'S01',
+      title: 'Hệ thống này để làm gì',
+      purpose: 'Giúp bạn hiểu toàn cảnh trước khi thao tác: đề xuất vị trí trạm sạc mới đi qua các bước nào.',
+      audience: 'Tất cả người dùng mới, đọc đầu tiên.',
+      substeps: [
+        'Bạn (hoặc khách) tạo Đề xuất vị trí đặt trạm mới trên bản đồ.',
+        'SALES / ADMIN xem xét, đổi trạng thái: đang xem xét, duyệt hoặc từ chối (kèm lý do).',
+        'Đề xuất bị từ chối có thể sửa và gửi lại.',
+        'Đề xuất được duyệt sẽ tự gửi sang hệ thống 1Office. Lưu ý: được duyệt chưa thành Trạm thật — trạm được tạo riêng ở trang Quản lý Trạm.',
+        'Dữ liệu đề xuất có thể đẩy sang hệ thống 1Office để quản lý tập trung.',
+      ],
+      expected: 'Bạn hình dung được việc của mình nằm ở đâu trong chuỗi trên.',
+      related: ['S02', 'S04'],
+    },
+    {
+      id: 'S02',
+      title: 'Bạn là ai trong hệ thống',
+      purpose: 'Biết vai trò của mình để hiểu mình được làm gì, thấy gì.',
+      substeps: [
+        'CTV (cộng tác viên): tạo và quản lý đề xuất của chính mình; thuộc một bạn SALES quản lý.',
+        'SALES: như CTV, cộng thêm xem đề xuất của CTV thuộc nhánh mình và duyệt đề xuất.',
+        'ADMIN: quản lý toàn bộ đề xuất, trạm, người dùng.',
+        'SUPER_ADMIN: toàn quyền, gồm cả cấu hình hệ thống (mục I.6 và III).',
+      ],
+      expected: 'Bạn biết menu nào mình thấy là đúng, menu nào bị ẩn là do phân quyền.',
+      related: ['S01', 'S03'],
+    },
+    {
+      id: 'S03',
+      title: 'Thuật ngữ cần biết',
+      purpose: 'Tra cứu nhanh các từ dùng khắp hệ thống.',
+      substeps: [
+        'Đề xuất: một vị trí được gợi ý đặt trạm, chưa phải trạm thật; có mã tracking để tra cứu.',
+        'Trạm: điểm đã có thật / đã duyệt triển khai, hiển thị trên bản đồ.',
+        'Mã tracking: mã nhận được sau khi gửi đề xuất, dùng để tra cứu tiến độ.',
+        'Loại ưu tiên Cấp 1 / Cấp 2: Cấp 1 là mô hình TDT, còn lại (LK/NQ...) là Cấp 2.',
+        'Màu marker đề xuất: cam = chờ duyệt, xanh dương = đang xem xét, xanh lá = đã duyệt, đỏ = bị từ chối.',
+        'Màu marker trạm: tím = quy hoạch, xanh lá = hoạt động, vàng = đang triển khai, đỏ sẫm = từ chối/hủy.',
+      ],
+      related: ['S04', 'G06'],
+    },
+    {
+      id: 'S04',
+      title: 'Vòng đời một đề xuất',
+      purpose: 'Hiểu các trạng thái và chuyện gì xảy ra ở mỗi trạng thái.',
+      substeps: [
+        'Mới gửi: trạng thái chờ duyệt (màu cam).',
+        'Người duyệt mở xem: chuyển đang xem xét (màu xanh dương).',
+        'Duyệt: chuyển đã duyệt (màu xanh lá) — hệ thống tự tạo lệnh gửi sang 1Office (xem trong Audit Log). Được duyệt chưa thành trạm thật.',
+        'Từ chối: chuyển bị từ chối (màu đỏ), bắt buộc có lý do; bạn sửa rồi bấm Gửi lại để về chờ duyệt.',
+        'Mỗi lần đổi trạng thái, bạn nhận thông báo ở chuông trên header.',
+      ],
+      expected: 'Bạn đọc trạng thái đề xuất của mình và biết bước tiếp theo là gì.',
+      related: ['G14', 'G16'],
+    },
+  ],
+};
