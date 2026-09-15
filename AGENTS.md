@@ -46,6 +46,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - `submission_source`: `user` | `guest`; `tracking_code`, `submitter_ip`
 - Sync 1Office: `contact_1office_id`, `contact_1office_code`, `sync_status`, `last_synced_at`, `last_synced_data`
 - `ma_de_xuat_gen` là cột generated từ `custom_data`
+- `land_type` (Loại đất) là field `fixed` type `select`, 6 lựa chọn (Đất thương mại dịch vụ / khu công nghiệp / giao thông-Bến bãi-Điểm dừng nghỉ / ở / nông nghiệp / khác-chưa xác định) — migration `75`
 
 ### Dynamic config entities
 - **Field Definition**: 13 types chuẩn (`text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`) + type `user`. `source` = `fixed` (cột DB) hoặc `json` (trong `custom_data`)
@@ -275,7 +276,7 @@ backend/src/
 | `api_queue_logs` | Queue push/pull + audit log |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→73). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt.
+Migrations nằm ở `database/` (01→75). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn.
 
 ## 9. Swagger & Documentation
 
