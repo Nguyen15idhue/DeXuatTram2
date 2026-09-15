@@ -70,16 +70,21 @@ async function getTileTarget(entity, styleOverride) {
 }
 
 function sendFallback(res) {
-  if (res.headersSent) return;
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('X-Tile-Proxy-Status', 'fallback');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.status(502).end(FALLBACK_PNG);
+  if (res.headersSent || res.writableEnded) return;
+  try {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('X-Tile-Proxy-Status', 'fallback');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(502).end(FALLBACK_PNG);
+  } catch { /* response da ket thuc */ }
 }
 
-function fetchTile(tileUrl, res, redirectCount, retries = 1) {
+function fetchTile(tileUrl, res, redirectCount, retries = 1, committed = { done: false }) {
+  if (committed.done || res.headersSent || res.writableEnded) return;
+
   if (redirectCount > 3) {
+    committed.done = true;
     return sendFallback(res);
   }
 
@@ -87,66 +92,88 @@ function fetchTile(tileUrl, res, redirectCount, retries = 1) {
   try {
     parsed = new URL(tileUrl);
   } catch {
+    committed.done = true;
     return sendFallback(res);
   }
 
   if (!ALLOWED_TILE_HOSTS.includes(parsed.hostname)) {
+    committed.done = true;
     return sendFallback(res);
   }
 
   const client = parsed.protocol === 'https:' ? https : http;
+  let finished = false;
+  let proxyReq;
 
-  const retry = () => {
-    if (retries > 0 && !res.headersSent) {
-      fetchTile(tileUrl, res, redirectCount, retries - 1);
-      return true;
+  const fail = (retryable) => {
+    if (finished || committed.done) return;
+    finished = true;
+    if (res.headersSent || res.writableEnded) { committed.done = true; return; }
+    if (retryable && retries > 0) {
+      fetchTile(tileUrl, res, redirectCount, retries - 1, committed);
+      return;
     }
-    return false;
+    committed.done = true;
+    sendFallback(res);
   };
 
-  const proxyReq = client.get(tileUrl, {
+  proxyReq = client.get(tileUrl, {
     headers: {
       'User-Agent': USER_AGENT,
       'Accept': 'image/png,image/jpeg,image/webp,*/*',
     },
     timeout: 10000,
   }, (proxyRes) => {
+    if (finished || committed.done || res.headersSent || res.writableEnded) {
+      proxyRes.resume();
+      return;
+    }
+
     if ((proxyRes.statusCode === 301 || proxyRes.statusCode === 302) && proxyRes.headers.location) {
+      let next;
       try {
-        const next = new URL(proxyRes.headers.location, tileUrl).toString();
-        return fetchTile(next, res, redirectCount + 1);
+        next = new URL(proxyRes.headers.location, tileUrl).toString();
       } catch {
+        proxyRes.resume();
+        finished = true;
+        committed.done = true;
         return sendFallback(res);
       }
+      proxyRes.resume();
+      finished = true;
+      return fetchTile(next, res, redirectCount + 1, retries, committed);
     }
 
     if (proxyRes.statusCode !== 200) {
       proxyRes.resume();
-      return sendFallback(res);
+      return fail(false);
     }
 
     const contentType = proxyRes.headers['content-type'] || 'image/png';
     if (!contentType.startsWith('image/')) {
       proxyRes.resume();
-      return sendFallback(res);
+      return fail(false);
     }
 
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', `public, max-age=${TILE_CACHE_MAX_AGE}`);
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    finished = true;
+    committed.done = true;
+    try {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', `public, max-age=${TILE_CACHE_MAX_AGE}`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } catch { /* headers da gui */ }
     proxyRes.pipe(res);
   });
 
   proxyReq.on('error', (err) => {
-    if (retry()) return;
-    console.error('[TileProxy] error:', err.message);
-    sendFallback(res);
+    if (retries <= 0) console.error('[TileProxy] error:', err.message);
+    try { proxyReq.destroy(); } catch { /* noop */ }
+    fail(true);
   });
 
   proxyReq.on('timeout', () => {
-    proxyReq.destroy();
-    if (retry()) return;
-    sendFallback(res);
+    try { proxyReq.destroy(); } catch { /* noop */ }
+    fail(true);
   });
 }
 
