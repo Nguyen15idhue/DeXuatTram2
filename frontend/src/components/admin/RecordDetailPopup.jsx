@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { dynamicService, formService, stationService, adminUserService, adminProposalService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import FieldRenderer from '../dynamic/FieldRenderer';
@@ -38,6 +38,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [formConfig, setFormConfig] = useState(null);
   const [showMap, setShowMap] = useState(false);
   const [activeTabs, setActiveTabs] = useState({});
+  const modalRef = useRef(null);
   const dataListIds = (() => {
     const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
     [...viewFields, ...allFields].forEach(f => {
@@ -52,6 +53,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     return [...ids];
   })();
   const dataListOptions = useDataListMap(dataListIds);
+
+  useEffect(() => {
+    if (!error || !modalRef.current) return;
+    const body = modalRef.current.querySelector('.popup-body');
+    (body || modalRef.current).scrollTo({ top: 0, behavior: 'smooth' });
+  }, [error]);
 
   useEffect(() => {
     if (modeProp) setMode(allowEdit ? modeProp : 'view');
@@ -452,7 +459,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   return (
     <div className="modal-overlay" onClick={handleClose}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
-      <div className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
+      <div ref={modalRef} className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
         <div className="popup-header">
           <h2>{ENTITY_LABELS[entity] || entity} #{record.id} {mode === 'edit' && '(chỉnh sửa)'}</h2>
           <div className="flex items-center gap-2">

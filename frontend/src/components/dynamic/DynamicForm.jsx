@@ -156,6 +156,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const [resolvedFormId, setResolvedFormId] = useState(null);
   const [activeTabs, setActiveTabs] = useState({});
   const [geocoding, setGeocoding] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const formRef = useRef(null);
   const geocodeTimerRef = useRef(null);
   const geocodeSeqRef = useRef(0);
 
@@ -188,6 +190,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       const res = await dynamicService.getFormConfig(entity, resolvedFormId);
       if (res.success) {
         setFormConfig(res.data.form);
+        setSubmitAttempted(false);
+        setErrors({});
         const fieldList = (res.data.fields || []).map(f => {
           const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
           const sc = parseSourceConfig(f.source_config);
@@ -577,28 +581,76 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       }
     });
     setErrors(newErrors);
-    const errorKeys = Object.keys(newErrors);
+    const errorKeys = getOrderedErrorKeys(newErrors);
     if (errorKeys.length > 0) {
-      const firstField = fields.find(f => f.key === errorKeys[0]);
-      const rowId = firstField?.config?.rowId;
-      if (rowId) {
-        const loc = findTabForRow(layoutForValidate, rowId);
-        if (loc) setActiveTabs(prev => ({ ...prev, [loc.path]: loc.tabId }));
-      }
+      activateTabForField(errorKeys[0], layoutForValidate);
     }
-    return errorKeys.length === 0;
+    return errorKeys;
+  };
+
+  const getOrderedErrorKeys = (errObj) => {
+    const order = {};
+    fields.forEach((f, i) => { order[f.key] = i; });
+    return Object.keys(errObj || {}).sort((a, b) => (order[a] ?? 9999) - (order[b] ?? 9999));
+  };
+
+  const activateTabForField = (key, layout) => {
+    const target = fields.find(f => f.key === key);
+    const rowId = target?.config?.rowId;
+    if (!rowId) return;
+    const lc = layout || (formConfig?.layout_config
+      ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+      : null);
+    const loc = findTabForRow(lc, rowId);
+    if (loc) setActiveTabs(prev => (prev[loc.path] === loc.tabId ? prev : { ...prev, [loc.path]: loc.tabId }));
+  };
+
+  const scrollToField = (key) => {
+    setTimeout(() => {
+      const root = formRef.current || document;
+      const el = root.querySelector(`[data-field-key="${CSS.escape(key)}"]`);
+      const visible = el && el.offsetParent !== null;
+      const target = visible ? el : root.querySelector('[data-error-summary]');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (visible) {
+          const input = el.querySelector('input, select, textarea');
+          if (input) input.focus({ preventScroll: true });
+        }
+      }
+    }, 80);
+  };
+
+  const focusFirstError = (keys) => {
+    if (!keys || keys.length === 0) return;
+    activateTabForField(keys[0]);
+    scrollToField(keys[0]);
+  };
+
+  const scrollToBanner = () => {
+    setTimeout(() => {
+      const banner = (formRef.current || document).querySelector('[data-error-summary],[data-error-banner]');
+      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!validate()) return;
+    setSubmitAttempted(true);
+    const errorKeys = validate();
+    if (errorKeys.length > 0) {
+      scrollToBanner();
+      return;
+    }
     try {
       if (onSubmit) {
         await onSubmit(formData);
       }
+      setSubmitAttempted(false);
     } catch (err) {
       setError(err.message || 'Lỗi lưu dữ liệu');
+      scrollToBanner();
     }
   };
 
@@ -696,7 +748,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             }
             return (
               <div key={colIdx} className="form-cell-content">
-                <div className="dynamic-form-field">
+                <div className="dynamic-form-field" data-field-key={cellField.key}>
                   <label>
                     {cellField.labelOverride || cellField.label}
                     {cellField.required && <span className="text-red-600"> *</span>}
@@ -805,7 +857,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).map(field => {
               const colSpan = field.config?.colSpan || 1;
               return (
-                <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+                <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
                   <label>
                     {field.labelOverride || field.label}
                     {field.required && <span className="text-red-600"> *</span>}
@@ -855,8 +907,20 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   };
 
   return (
-    <form className="dynamic-form" onSubmit={handleSubmit}>
-      {error && <div className="error-message">{error}</div>}
+    <form ref={formRef} className="dynamic-form" onSubmit={handleSubmit}>
+      {error && <div className="error-message" data-error-banner>{error}</div>}
+      {submitAttempted && getOrderedErrorKeys(errors).length > 0 && (
+        <div className="form-error-summary" data-error-summary>
+          <div className="form-error-summary-title">Vui lòng kiểm tra {getOrderedErrorKeys(errors).length} lỗi sau:</div>
+          <ul>
+            {getOrderedErrorKeys(errors).map(k => (
+              <li key={k}>
+                <button type="button" onClick={() => focusFirstError([k])}>{errors[k]}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {geocoding && <div className="text-xs text-info mb-2">Đang tìm địa chỉ từ tọa độ...</div>}
       {hasLayout ? renderLayoutForm() : renderNoLayoutMessage()}
       {hasLayout && (
