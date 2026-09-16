@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { stationService, proposalService, api } from '../services/api';
 import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
+import { getMarkerIcon } from '../utils/mapMarkerIcons';
+import MarkerIcon from './MarkerIcon';
+import useMarkerIcons from '../hooks/useMarkerIcons';
 import { STATION_STATUSES, PROPOSAL_STATUSES } from '../utils/mapStatuses';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
@@ -260,6 +263,7 @@ const MapView = ({
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
+  const markerIconsVersion = useMarkerIcons();
   const [loading, setLoading] = useState(true);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [createTarget, setCreateTarget] = useState('proposal');
@@ -585,12 +589,12 @@ const MapView = ({
   }, [visibleProposals, highlightIds]);
 
   const canvasStations = useMemo(
-    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station') })),
-    [layerStations]
+    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station') })),
+    [layerStations, markerIconsVersion]
   );
   const canvasProposals = useMemo(
-    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal') })),
-    [layerProposals]
+    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal') })),
+    [layerProposals, markerIconsVersion]
   );
 
   const renderStationPopup = useCallback((item) => createStationPopupContent(item, user), [user]);
@@ -807,7 +811,9 @@ const MapView = ({
               <div className="map-legend-col-title">Trạm</div>
               {MAP_LEGEND.stations.map((item) => (
                 <div key={`s-${item.value}`} className="map-legend-item">
-                  <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'station') }} />
+                  {getMarkerIcon(item.value, 'station')
+                    ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'station') }}><MarkerIcon id={getMarkerIcon(item.value, 'station')} size={13} /></span>
+                    : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'station') }} />}
                   <span className="map-legend-label">{item.label}</span>
                 </div>
               ))}
@@ -816,7 +822,9 @@ const MapView = ({
               <div className="map-legend-col-title">Đề xuất</div>
               {MAP_LEGEND.proposals.map((item) => (
                 <div key={`p-${item.value}`} className="map-legend-item">
-                  <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />
+                  {getMarkerIcon(item.value, 'proposal')
+                    ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
+                    : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
                   <span className="map-legend-label">{item.label}</span>
                 </div>
               ))}

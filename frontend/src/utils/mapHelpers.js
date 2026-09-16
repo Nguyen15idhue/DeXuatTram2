@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import { mapService } from '../services/api';
 import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP } from './mapStatuses';
+import { iconSvgMarkup } from './mapMarkerIcons';
 
 export const MARKER_COLORS = {
   PLANNING: '#a855f7',
@@ -20,20 +21,35 @@ export const getMarkerColor = (status, entity) => {
   return MARKER_COLORS[status] || '#6b7280';
 };
 
-export const createCustomIcon = (color) => {
+export const createCustomIcon = (color, icon) => {
+  const hasIcon = !!icon;
+  const size = hasIcon ? 30 : 24;
+  const inner = hasIcon
+    ? `<div style="
+        width: ${size}px;
+        height: ${size}px;
+        background-color: #ffffff;
+        border: 3px solid ${color};
+        border-radius: 50%;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">${iconSvgMarkup(icon, { size: 17 })}</div>`
+    : `<div style="
+        width: ${size}px;
+        height: ${size}px;
+        background-color: ${color};
+        border: 3px solid white;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      "></div>`;
   return L.divIcon({
     className: 'custom-marker',
-    html: `<div style="
-      width: 24px;
-      height: 24px;
-      background-color: ${color};
-      border: 3px solid white;
-      border-radius: 50%;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    "></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12]
+    html: inner,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   });
 };
 

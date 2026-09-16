@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Zap } from 'lucide-react';
+import { Zap, Star } from 'lucide-react';
 import { fieldDefinitionService, dataListService } from '../../services/api';
 import Loading from '../Loading';
 import Toast from '../Toast';
@@ -9,6 +9,8 @@ import EmptyState from '../EmptyState';
 import ErrorMessage from '../ErrorMessage';
 import Pagination from '../Pagination';
 import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
+import { MARKER_ICON_GROUPS, isValidMarkerIcon, notifyMarkerIconsChanged } from '../../utils/mapMarkerIcons';
+import MarkerIcon from '../MarkerIcon';
 import FormulaEditor from '../dynamic/FormulaEditor';
 import { formatNumber } from '../../utils/formatNumber';
 
@@ -53,6 +55,42 @@ const NumberFormatPicker = ({ value, onChange, disabled }) => (
         </button>
       );
     })}
+  </div>
+);
+
+const OptionIconPicker = ({ value, onChange }) => (
+  <div className="icon-select" title="Icon hiển thị trên bản đồ">
+    <div className="icon-selected">
+      {isValidMarkerIcon(value)
+        ? <MarkerIcon id={value} size={18} />
+        : value === 'none'
+          ? <span className="icon-none-dot" />
+          : <span className="icon-selected-empty">—</span>}
+    </div>
+    <div className="icon-dropdown">
+      <button type="button" className={`icon-option icon-option-special ${!value || value === 'default' ? 'active' : ''}`} title="Icon mặc định theo trạng thái" onClick={() => onChange('default')}>
+        <Star size={14} style={{ opacity: 0.6 }} />
+      </button>
+      <button type="button" className={`icon-option icon-option-special ${value === 'none' ? 'active' : ''}`} title="Không dùng icon (chấm tròn)" onClick={() => onChange('none')}>
+        <span className="icon-none-dot" />
+      </button>
+      {MARKER_ICON_GROUPS.map(group => (
+        <Fragment key={group.title}>
+          <div className="icon-group-title">{group.title}</div>
+          {group.icons.map(ic => (
+            <button
+              key={ic.id}
+              type="button"
+              className={`icon-option ${value === ic.id ? 'active' : ''}`}
+              title={ic.label}
+              onClick={() => onChange(ic.id)}
+            >
+              <MarkerIcon id={ic.id} size={18} />
+            </button>
+          ))}
+        </Fragment>
+      ))}
+    </div>
   </div>
 );
 
@@ -331,6 +369,7 @@ const FieldManager = () => {
         setToast({ message: editingId ? 'Cập nhật field thành công' : 'Tạo field thành công', type: 'success' });
         setShowForm(false);
         clearFieldOptionsCache(form.entity);
+        notifyMarkerIconsChanged();
         loadFields(pagination.page);
       } else {
         setError(res.message || 'Thao tác thất bại');
@@ -544,6 +583,29 @@ const FieldManager = () => {
                   </div>
                 )}
 
+                {editingIsLocked && (form.type === 'select' || form.type === 'multiselect') && !form.data_list_id && (() => {
+                  const isMapStatus = form.key === 'status' && (form.entity === 'stations' || form.entity === 'station_proposals');
+                  if (!isMapStatus) return null;
+                  return (
+                    <div className="form-group-section">
+                      <h4>Options — Icon bản đồ</h4>
+                      <div className="options-editor">
+                        {form.options.map((opt, idx) => (
+                          <div key={idx} className="option-row">
+                            <input type="text" placeholder="Label" value={opt.label} disabled />
+                            <input type="text" placeholder="Value" value={opt.value} disabled />
+                            <div className="color-selected" style={{ backgroundColor: opt.color || '#666666', flex: '0 0 auto' }} title="Màu badge" />
+                            <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>
+                        Field đang khóa nên chỉ chọn được icon cho marker bản đồ. Muốn sửa label/value/màu hoặc đổi hẳn icon sang style khác, mở khóa (🔓) rồi sửa.
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 {!editingIsLocked && (form.type === 'select' || form.type === 'multiselect') && (
                   <div className="form-group-section">
                     <h4>Nguồn dữ liệu</h4>
@@ -644,6 +706,9 @@ const FieldManager = () => {
                                   ))}
                                 </div>
                               </div>
+                              {(form.key === 'status' && (form.entity === 'stations' || form.entity === 'station_proposals')) && (
+                                <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                              )}
                               <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
                                 {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                               </select>

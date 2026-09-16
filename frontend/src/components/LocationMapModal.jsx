@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { MapPinned } from 'lucide-react';
 import { stationService, proposalService } from '../services/api';
 import { getMarkerColor } from '../utils/mapHelpers';
+import { getMarkerIcon } from '../utils/mapMarkerIcons';
+import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapConfig from '../hooks/useMapConfig';
 import MapCanvas from './map/MapCanvas';
 
@@ -57,6 +59,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const { renderer, vectorStyle, apiKey, tileUrl, attribution, subdomains } = useMapConfig();
+  useMarkerIcons();
   const position = useMemo(() => [parseFloat(lat), parseFloat(lng)], [lat, lng]);
 
   const valid = open && !Number.isNaN(position[0]) && !Number.isNaN(position[1]);
@@ -95,8 +98,8 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   if (!valid) return null;
 
   const total = nearby.stations.length + nearby.proposals.length;
-  const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station') }));
-  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal') }));
+  const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station') }));
+  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal') }));
   const renderStationPopup = (item) => createNearbyPopup(item.name || `Trạm #${item.id}`, item, item.status, 'station');
   const renderProposalPopup = (item) => createNearbyPopup(`Đề xuất #${item.id}`, item, item.status, 'proposal');
 

@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { getMarkerColor } from '../utils/mapHelpers';
+import { getMarkerIcon } from '../utils/mapMarkerIcons';
+import useMarkerIcons from '../hooks/useMarkerIcons';
+import MarkerIcon from './MarkerIcon';
 import { STATION_STATUSES, PROPOSAL_STATUSES, PRIORITY_OPTIONS } from '../utils/mapStatuses';
 
 export const EMPTY_MAP_FILTERS = {
@@ -17,6 +20,8 @@ const toggleValue = (list, value) =>
 
 const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
   const [open, setOpen] = useState(false);
+  const markerIconsVersion = useMarkerIcons();
+  void markerIconsVersion;
   const set = (patch) => onChange({ ...filters, ...patch });
 
   const activeCount = [
@@ -39,7 +44,13 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
             className={`map-filter-chip ${active ? 'active' : ''}`}
             onClick={() => set({ [key]: toggleValue(list, s.value) })}
           >
-            <span className="map-filter-dot" style={{ background: getMarkerColor(s.value, entity) }} />
+            {getMarkerIcon(s.value, entity) ? (
+              <span className="map-filter-badge" style={{ borderColor: getMarkerColor(s.value, entity) }}>
+                <MarkerIcon id={getMarkerIcon(s.value, entity)} size={11} />
+              </span>
+            ) : (
+              <span className="map-filter-dot" style={{ background: getMarkerColor(s.value, entity) }} />
+            )}
             {s.label}
           </button>
         );

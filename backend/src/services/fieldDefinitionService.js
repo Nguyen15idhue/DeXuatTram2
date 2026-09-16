@@ -114,6 +114,28 @@ exports.updateFieldDefinition = async (id, data) => {
       }
     : data;
 
+  // Field bị khóa: options chỉ được cập nhật duy nhất key `icon` theo value đã khớp,
+  // mọi thứ khác (label/value/color/...) giữ nguyên bản đang lưu.
+  const parseJsonArr = (v) => {
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : null; } catch { return null; } }
+    return null;
+  };
+  let lockedIconOptions = existing.options;
+  if (existing.is_locked && data.options !== undefined) {
+    const incoming = parseJsonArr(data.options);
+    const current = parseJsonArr(existing.options);
+    if (incoming && current) {
+      const next = current.map((opt) => {
+        const match = incoming.find((o) => o && opt && String(o.value) === String(opt.value));
+        if (!match) return opt;
+        const icon = typeof match.icon === 'string' ? match.icon : null;
+        return { ...opt, icon: icon || undefined };
+      });
+      lockedIconOptions = JSON.stringify(next);
+    }
+  }
+
   const merged = {
     entity: effectiveData.entity !== undefined ? effectiveData.entity : existing.entity,
     key: effectiveData.key !== undefined ? effectiveData.key : existing.key,
@@ -122,7 +144,7 @@ exports.updateFieldDefinition = async (id, data) => {
     source_type: effectiveData.source_type !== undefined ? effectiveData.source_type : existing.source_type,
     required: effectiveData.required !== undefined ? effectiveData.required : existing.required,
     validation: effectiveData.validation !== undefined ? effectiveData.validation : existing.validation,
-    options: effectiveData.options !== undefined ? effectiveData.options : existing.options,
+    options: existing.is_locked ? lockedIconOptions : (effectiveData.options !== undefined ? effectiveData.options : existing.options),
     formula: effectiveData.formula !== undefined ? effectiveData.formula : existing.formula,
     placeholder: effectiveData.placeholder !== undefined ? effectiveData.placeholder : existing.placeholder,
     help_text: effectiveData.help_text !== undefined ? effectiveData.help_text : existing.help_text,
