@@ -24,7 +24,35 @@ const VALID_STATUSES = {
   station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED']
 };
 
+const STATUS_LABEL_MAP = {
+  stations: {
+    'QUY HOẠCH': 'PLANNING',
+    'HOẠT ĐỘNG': 'ACTIVE',
+    'TRIỂN KHAI': 'DEPLOYING',
+    'TỪ CHỐI/HỦY': 'REJECTED'
+  }
+};
+
 const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
+
+const importJobs = new Map();
+const IMPORT_JOB_TTL_MS = 30 * 60 * 1000;
+function registerImportJob(jobId, total) {
+  if (!jobId) return null;
+  const now = Date.now();
+  for (const [id, job] of importJobs) {
+    if (now - job.ts > IMPORT_JOB_TTL_MS) importJobs.delete(id);
+  }
+  const job = { total, done: 0, status: 'running', ts: now };
+  importJobs.set(String(jobId), job);
+  return job;
+}
+
+exports.getImportProgress = async (req, res) => {
+  const job = importJobs.get(String(req.params.jobId));
+  if (!job) return res.json({ success: true, data: { status: 'not_found', total: 0, done: 0 } });
+  res.json({ success: true, data: { status: job.status, total: job.total, done: job.done } });
+};
 
 const DEFAULT_STATUS = {
   stations: 'ACTIVE',
@@ -572,6 +600,17 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
     });
   }
 
+  if (entity === 'stations' || entity === 'station_proposals') {
+    const rawLat = Number(valueByKey.latitude);
+    const rawLng = Number(valueByKey.longitude);
+    if (valueByKey.latitude !== '' && valueByKey.longitude !== '' && !isNaN(rawLat) && !isNaN(rawLng)
+      && (rawLat < -90 || rawLat > 90) && rawLng >= -90 && rawLng <= 90 && Math.abs(rawLat) <= 180) {
+      const t = valueByKey.latitude;
+      valueByKey.latitude = valueByKey.longitude;
+      valueByKey.longitude = t;
+    }
+  }
+
   columns.forEach(col => {
     if (col.key === '_stt') return;
     if (col.type === 'file') return;
@@ -650,7 +689,8 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
       } else if (col.type === 'boolean') {
         fixedData[col.key] = value === 'true' || value === '1' || value === 'TRUE' ? 1 : 0;
       } else if (col.type === 'select' && entity && VALID_STATUSES[entity] && col.key === 'status') {
-        const upper = String(value).toUpperCase();
+        let upper = String(value).toUpperCase();
+        if (STATUS_LABEL_MAP[entity] && STATUS_LABEL_MAP[entity][upper]) upper = STATUS_LABEL_MAP[entity][upper];
         if (value !== '' && !VALID_STATUSES[entity].includes(upper)) {
           errors.push(`${col.label}: trạng thái không hợp lệ "${value}". Chấp nhận: ${VALID_STATUSES[entity].join(', ')}`);
         } else {
@@ -1138,21 +1178,30 @@ exports.importPreviewDynamic = async (req, res) => {
       }
     });
 
-    if (entity === 'station_proposals') {
+    if (entity === 'station_proposals' || entity === 'stations') {
       const kept = [];
+      const acceptedCoords = [];
       for (const vr of validRows) {
         const lat = parseFloat(vr.fixedData.latitude);
         const lng = parseFloat(vr.fixedData.longitude);
-        if (!isNaN(lat) && !isNaN(lng)) {
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
           try {
-            const nearby = await proximityService.checkNearby(lat, lng, 200);
+            const opts = entity === 'stations' ? { kinds: ['station'] } : {};
+            const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
             if (nearby.is_duplicate) {
               const n = nearby.nearest;
               const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-              errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m), không cho import`] });
+              const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
+              errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`] });
               continue;
             }
           } catch { /* silent */ }
+          const dupInFile = acceptedCoords.find(c => proximityService.haversineM(lat, lng, c.lat, c.lng) < 200);
+          if (dupInFile) {
+            errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với dòng ${dupInFile.row} trong cùng file (< 200m), không cho import`] });
+            continue;
+          }
+          acceptedCoords.push({ lat, lng, row: vr.rowNumber });
         }
         kept.push(vr);
       }
@@ -1253,7 +1302,9 @@ exports.importPreviewDynamic = async (req, res) => {
 exports.importConfirmDynamic = async (req, res) => {
   const connection = await pool.getConnection();
   try {
-    const { entity, rows, viewId } = req.body;
+    const { entity, rows, viewId, jobId } = req.body;
+    const skipGeocode = req.body.geocode === false || String(req.body.geocode).toLowerCase() === 'false' || String(req.body.geocode) === '0';
+    const job = registerImportJob(jobId, Array.isArray(rows) ? rows.length : 0);
 
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
@@ -1282,7 +1333,7 @@ exports.importConfirmDynamic = async (req, res) => {
         } catch { return false; }
       }).map(f => f.key)
     );
-    const keepProvidedPost = entity === 'stations' ? new Set(['ma_tram']) : new Set();
+    const keepProvidedPost = entity === 'stations' ? new Set(['ma_tram', 'loai_uu_tien']) : new Set();
 
     let imported = 0;
     let failed = 0;
@@ -1308,27 +1359,33 @@ exports.importConfirmDynamic = async (req, res) => {
           }
           delete dynamicData[k];
         });
+        if (entity === 'stations' && keptPost.loai_uu_tien !== undefined) {
+          const n = Number(keptPost.loai_uu_tien);
+          if (n !== 1 && n !== 2) throw new Error(`Loại ưu tiên không hợp lệ "${keptPost.loai_uu_tien}" (chấp nhận 1 hoặc 2)`);
+          keptPost.loai_uu_tien = n;
+        }
 
         if (entity === 'stations' || entity === 'station_proposals') {
           const coordErr = validateLatitude(fixedData.latitude) || validateLongitude(fixedData.longitude);
           if (coordErr) throw new Error(coordErr);
         }
-        if (entity === 'station_proposals') {
-          // required theo field_definitions (cot col.required da enforce o tren); chi giu invariant toa do
+        if (entity === 'station_proposals' || entity === 'stations') {
           const lat = parseFloat(fixedData.latitude);
           const lng = parseFloat(fixedData.longitude);
-          const nearby = await proximityService.checkNearby(lat, lng, 200);
+          const opts = entity === 'stations' ? { kinds: ['station'] } : {};
+          const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
           if (nearby.is_duplicate) {
             const n = nearby.nearest;
             const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-            throw new Error(`Vị trí trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m), không cho import`);
+            const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
+            throw new Error(`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`);
           }
           for (const c of insertedCoords) {
             if (proximityService.haversineM(lat, lng, c.lat, c.lng) < 200) {
-              throw new Error('Vị trí trùng với dòng khác trong cùng file import (< 200m), không cho import');
+              throw new Error(`Vị trí trùng với dòng ${c.row} trong cùng file import (< 200m), không cho import`);
             }
           }
-          insertedCoords.push({ lat, lng });
+          insertedCoords.push({ lat, lng, row: row.rowNumber });
         }
         if (entity === 'stations') {
           const code = dynamicData.ma_tram;
@@ -1347,7 +1404,7 @@ exports.importConfirmDynamic = async (req, res) => {
         }
 
         if (entity === 'station_proposals' || entity === 'stations') {
-          if (process.env.GEOCODE_ON_IMPORT !== 'false') {
+          if (!skipGeocode && process.env.GEOCODE_ON_IMPORT !== 'false') {
             await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
           }
           if (dynamicData.province && String(dynamicData.province).trim() !== '') {
@@ -1412,10 +1469,12 @@ exports.importConfirmDynamic = async (req, res) => {
         failed++;
         failDetails.push({ row: row.rowNumber || '?', error: err.message });
       }
+      if (job) { job.done++; job.ts = Date.now(); }
     }
 
     if (failed > 0) {
       await connection.rollback();
+      if (job) { job.status = 'failed'; job.ts = Date.now(); }
       return res.status(400).json({
         success: false,
         message: `Import thất bại: ${failed} dòng lỗi. Tất cả đã được hoàn tác.`,
@@ -1443,6 +1502,7 @@ exports.importConfirmDynamic = async (req, res) => {
     }
 
     await connection.commit();
+    if (job) { job.status = 'done'; job.ts = Date.now(); }
 
     res.json({
       success: true,

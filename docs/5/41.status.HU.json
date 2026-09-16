@@ -1,0 +1,20 @@
+{
+  "lane": "HU",
+  "imageDir": "user",
+  "at": "2026-09-16T08:22:53.022Z",
+  "total": 2,
+  "ok": 2,
+  "failed": [],
+  "results": [
+    {
+      "id": "G13",
+      "title": "Xem chi tiet de xuat",
+      "ok": true
+    },
+    {
+      "id": "G39",
+      "title": "Form NQ_LK tab long",
+      "ok": true
+    }
+  ]
+}

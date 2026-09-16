@@ -183,7 +183,7 @@ router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
  *   post:
  *     tags: [Admin - Excel]
  *     summary: Preview import từ file Excel
- *     description: Tự nhận diện bộ cột theo header file (trả `data.detection`: viewId/usage/score/confident/unmatchedFileColumns/missingViewColumns). Override bằng `viewId` hoặc `usage`.
+ *     description: "Tự nhận diện bộ cột theo header file (trả `data.detection`: viewId/usage/score/confident/unmatchedFileColumns/missingViewColumns). Override bằng `viewId` hoặc `usage`."
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -249,6 +249,16 @@ router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMid
  *                 enum: [stations, users, station_proposals]
  *               rows:
  *                 type: array
+ *               viewId:
+ *                 type: integer
+ *                 description: ID bộ cột (view) dùng để import
+ *               jobId:
+ *                 type: string
+ *                 description: Mã phiên do client sinh (UUID) để poll tiến độ qua `/import/progress/:jobId`
+ *               geocode:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Stations/proposals — `false` = bỏ qua reverse geocode tự suy Địa chỉ/Xã phường từ tọa độ (import nhanh hơn nhiều)
  *     responses:
  *       200:
  *         description: Import thành công
@@ -260,6 +270,30 @@ router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMid
  *         description: Không có quyền Admin
  */
 router.post('/import/confirm', requireAuth, requireAdmin, excelService.importConfirm);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/progress/{jobId}:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Tiến độ import (poll theo jobId do client gửi lên /import/confirm)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: '{ status: running|done|failed|not_found, total, done }'
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
+router.get('/import/progress/:jobId', requireAuth, requireAdmin, excelService.getImportProgress);
 
 /**
  * @swagger

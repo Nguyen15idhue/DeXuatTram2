@@ -1,17 +1,9 @@
-import { userGuide } from './guideData.user';
-import { adminDataGuide } from './guideData.adminData';
-import { adminConfigGuide } from './guideData.adminConfig';
 import { groupsGuide } from './guideData.groups';
 import { flowsGuide } from './guideData.flows';
 import { integrationsGuide } from './guideData.integrations';
 import { startGuide } from './guideData.start';
 
 export const GUIDE = {
-  user: userGuide,
-  admin: {
-    title: 'Hướng dẫn cho Super Admin',
-    sections: [...adminDataGuide.sections, ...adminConfigGuide.sections],
-  },
   groups: { ...groupsGuide, sections: [startGuide, ...groupsGuide.sections] },
   flows: flowsGuide,
   integrations: integrationsGuide,

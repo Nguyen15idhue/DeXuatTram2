@@ -51,7 +51,7 @@ function inRange(distanceM, minM, maxM) {
   return distanceM >= minM && distanceM <= maxM;
 }
 
-exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposalId = null) => {
+exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposalId = null, opts = {}) => {
   const lat = Number(latitude);
   const lng = Number(longitude);
   const radius = Number(radiusM) || 200;
@@ -60,7 +60,8 @@ exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposal
   if (radius <= 0 || radius > MAX_RADIUS_M) throw new Error(`Bán kính phải từ 1 đến ${MAX_RADIUS_M}m`);
 
   const { stations, proposals } = await loadPoints();
-  const points = [...stations, ...proposals].filter(p =>
+  const kinds = Array.isArray(opts.kinds) && opts.kinds.length ? new Set(opts.kinds) : null;
+  const points = [...stations, ...proposals].filter(p => !kinds || kinds.has(p.kind)).filter(p =>
     !(p.kind === 'proposal' && excludeProposalId && p.id === Number(excludeProposalId))
   );
 

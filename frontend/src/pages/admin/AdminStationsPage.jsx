@@ -56,6 +56,9 @@ const AdminStationsPage = () => {
   const [importFailures, setImportFailures] = useState([]);
   const [excelViews, setExcelViews] = useState([]);
   const [importViewId, setImportViewId] = useState('');
+  const [importGeocode, setImportGeocode] = useState(true);
+  const [importProgress, setImportProgress] = useState(null);
+  const importPollRef = useRef(null);
 
   useEffect(() => {
     if (!token || isSales) return;
@@ -270,10 +273,21 @@ const AdminStationsPage = () => {
 
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setImportProgress({ done: 0, total: importPreview.rows.length });
+    if (importPollRef.current) clearInterval(importPollRef.current);
+    importPollRef.current = setInterval(async () => {
+      try {
+        const p = await excelService.getImportProgress(jobId, token);
+        if (p && p.success && p.data && p.data.status !== 'not_found') {
+          setImportProgress({ done: p.data.done, total: p.data.total, status: p.data.status });
+        }
+      } catch { /* poll lỗi thì bỏ qua, vòng sau thử lại */ }
+    }, 1500);
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.confirmImport('stations', importPreview.rows, token, { viewId: importPreview.viewId });
+      const res = await excelService.confirmImport('stations', importPreview.rows, token, { viewId: importPreview.viewId, jobId, geocode: importGeocode });
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
         setShowImport(false);
@@ -285,6 +299,8 @@ const AdminStationsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
     } finally {
+      if (importPollRef.current) { clearInterval(importPollRef.current); importPollRef.current = null; }
+      setImportProgress(null);
       setImportLoading(false);
     }
   };
@@ -458,6 +474,32 @@ const AdminStationsPage = () => {
                   loading={importLoading}
                 />
                 <ImportErrorList errors={importPreview.errors} failures={importFailures} />
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary toggle-sm"
+                    checked={importGeocode}
+                    onChange={(e) => setImportGeocode(e.target.checked)}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Tự suy Địa chỉ / Xã phường từ tọa độ (reverse geocode)
+                    <span className="block text-xs opacity-70">Tắt sẽ import nhanh hơn nhiều (bỏ ~1 giây/dòng)</span>
+                  </span>
+                </label>
+                {importLoading && importProgress && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Đang import...</span>
+                      <span>{importProgress.done}/{importProgress.total} dòng</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={importProgress.done}
+                      max={Math.max(importProgress.total, 1)}
+                    ></progress>
+                  </div>
+                )}
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>

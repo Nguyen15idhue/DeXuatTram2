@@ -565,7 +565,11 @@ export const excelService = {
   },
 
   confirmImport(entity, rows, token, opts = {}) {
-    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows, viewId: opts.viewId || null }, token);
+    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows, viewId: opts.viewId || null, jobId: opts.jobId || null, geocode: opts.geocode !== false }, token);
+  },
+
+  getImportProgress(jobId, token) {
+    return api.getWithAuth(`/admin/excel/import/progress/${encodeURIComponent(jobId)}`, token);
   },
 
   async exportDataList(listId, token) {

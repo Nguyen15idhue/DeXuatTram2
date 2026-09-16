@@ -3,13 +3,13 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   BookOpen, Search, X, ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
   ExternalLink, Link2, LayoutGrid, Route as RouteIcon, Plug, Flag,
-  BarChart3, Users, Zap, FileText, File, List, ShieldCheck,
+  BarChart3, Users, Zap, FileText, File, List, ShieldCheck, HelpCircle,
   User, Map as MapIcon, ClipboardList, Send, Database, Settings,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { GUIDE, resolveFlowStep } from '../help/guideData';
 
-const SECTION_ICONS = { User, Map: MapIcon, ClipboardList, Send, Database, Settings, Book: BookOpen, Flag, Chart: BarChart3, Users, Zap, FileText, File, LayoutGrid, List, Shield: ShieldCheck };
+const SECTION_ICONS = { User, Map: MapIcon, ClipboardList, Send, Database, Settings, Book: BookOpen, Flag, Chart: BarChart3, Users, Zap, FileText, File, LayoutGrid, List, Shield: ShieldCheck, Help: HelpCircle };
 
 const PANEL_SECTIONS = ['dash', 'users', 'stations', 'proposals'];
 const SUPER_SECTIONS = ['fields', 'forms', 'views', 'data-lists', 'mapcfg', 'roles-api'];
@@ -18,6 +18,7 @@ const TOC_GROUPS = [
   { label: null, ids: ['bat-dau', 'tai-khoan', 'ban-do', 'de-xuat-cua-toi', 'khach'] },
   { label: 'Quản lý hệ thống', ids: PANEL_SECTIONS },
   { label: 'Quản lý cấu hình', ids: SUPER_SECTIONS },
+  { label: 'Hỗ trợ', ids: ['faq'] },
 ];
 const PANE_CLASS = 'lg:h-full lg:overflow-y-auto lg:pr-2 lg:pb-4 min-h-0';
 const TOC_CLASS = 'hidden lg:block w-60 shrink-0 lg:h-full lg:overflow-y-auto lg:pb-2 min-h-0';
@@ -231,10 +232,14 @@ const HelpPage = () => {
   }, [visibleSections]);
 
   const tocGroups = useMemo(() => {
-    return TOC_GROUPS
+    const listed = new Set(TOC_GROUPS.flatMap((g) => g.ids));
+    const extra = visibleSections.filter((s) => !listed.has(s.id));
+    const groups = TOC_GROUPS
       .map((g) => ({ label: g.label, items: g.ids.map((id) => visibleById[id]).filter(Boolean) }))
       .filter((g) => g.items.length > 0);
-  }, [visibleById]);
+    if (extra.length > 0) groups.push({ label: null, items: extra });
+    return groups;
+  }, [visibleById, visibleSections]);
 
   const tocItem = (s) => {
     const Icon = SECTION_ICONS[s.icon];
@@ -285,7 +290,7 @@ const HelpPage = () => {
       setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
     }
   };
-  const showIntegrations = isSuperAdmin;
+  const showIntegrations = canAccessPanel;
 
   return (
     <div className={`max-w-6xl mx-auto p-4 pb-4 lg:pb-4 lg:flex lg:flex-col lg:overflow-hidden ${rootHeightClass}`}>
@@ -427,7 +432,7 @@ const HelpPage = () => {
                 ))}
               </select>
             </div>
-            {tab === 'integrations' && <p className="text-sm text-base-content/60">{GUIDE.integrations.title} — chỉ SUPER_ADMIN</p>}
+            {tab === 'integrations' && <p className="text-sm text-base-content/60">{GUIDE.integrations.title}</p>}
             {activeFlow && (
               <section key={activeFlow.id}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
