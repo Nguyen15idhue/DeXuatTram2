@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { adminProposalService, proposalService, excelService, viewService, formService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
+import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
@@ -15,7 +16,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -61,6 +62,9 @@ const AdminProposalsPage = () => {
   const [excelViews, setExcelViews] = useState([]);
   const [createFormId, setCreateFormId] = useState(PROPOSALS_CREATE_FORM_ID);
   const [quickFormId, setQuickFormId] = useState(null);
+  const [formCoords, setFormCoords] = useState({ latitude: '', longitude: '' });
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [importViewId, setImportViewId] = useState('');
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
@@ -625,7 +629,35 @@ const AdminProposalsPage = () => {
 
   const openCreateForm = (formId) => {
     setCreateFormId(formId || PROPOSALS_CREATE_FORM_ID);
+    setFormCoords({ latitude: '', longitude: '' });
+    setShowPreview(false);
+    setPreviewSnapshot(null);
     setShowCreateForm(true);
+  };
+
+  const closeCreateForm = () => {
+    setShowCreateForm(false);
+    setShowPreview(false);
+    setPreviewSnapshot(null);
+  };
+
+  const parsePreviewCoords = (c) => {
+    const lat = parseFloat(c.latitude);
+    const lng = parseFloat(c.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { latitude: lat, longitude: lng };
+  };
+
+  const validPreviewCoords = parsePreviewCoords({
+    latitude: formCoords.latitude ?? '',
+    longitude: formCoords.longitude ?? ''
+  });
+
+  const openPreview = () => {
+    if (!validPreviewCoords) return;
+    setPreviewSnapshot(validPreviewCoords);
+    setShowPreview(true);
   };
 
   const renderActions = (row) => (
@@ -1042,27 +1074,54 @@ const AdminProposalsPage = () => {
       )}
 
       {showCreateForm && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Tạo đề xuất mới</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
-                <X size={18} />
-              </button>
+        <div className="modal-overlay" onClick={closeCreateForm}>
+          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+            <div className="popup-header">
+              <h2>Tạo đề xuất mới</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-primary gap-1"
+                  onClick={openPreview}
+                  disabled={!validPreviewCoords}
+                  title={validPreviewCoords ? 'Xem trạm lân cận' : 'Nhập tọa độ hợp lệ để xem trước'}
+                >
+                  <MapPinned size={14} />
+                  Preview lân cận
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={closeCreateForm} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
-            <DynamicForm
-              entity="station_proposals"
-              purpose="create"
-              formId={createFormId}
-              onSubmit={handleCreateSubmit}
-            >
-              <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
-            </DynamicForm>
+            <div className="popup-body">
+              <DynamicForm
+                entity="station_proposals"
+                purpose="create"
+                formId={createFormId}
+                onSubmit={handleCreateSubmit}
+                onValuesChange={setFormCoords}
+                hideActions
+                htmlId="admin-proposal-create-form"
+              />
+            </div>
+            <div className="popup-footer">
+              <button type="button" className="btn btn-ghost" onClick={closeCreateForm}>Hủy</button>
+              <button type="submit" form="admin-proposal-create-form" className="btn btn-primary">Lưu</button>
+            </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowCreateForm(false)}>close</button>
-          </form>
-        </dialog>
+        </div>
+      )}
+
+      {showPreview && previewSnapshot && (
+        <LocationMapModal
+          open
+          lat={previewSnapshot.latitude}
+          lng={previewSnapshot.longitude}
+          title="Preview vị trí đề xuất"
+          statusFilter={PREVIEW_STATUS_FILTER}
+          onClose={() => { setShowPreview(false); setPreviewSnapshot(null); }}
+        />
       )}
 
       {popup.open && (

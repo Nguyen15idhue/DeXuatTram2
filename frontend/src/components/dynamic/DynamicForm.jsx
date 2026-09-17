@@ -143,7 +143,7 @@ const findTabForRow = (layoutConfig, rowId) => {
   return null;
 };
 
-const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {} }) => {
+const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null }) => {
   const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -313,6 +313,18 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     setFormData(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: '' }));
   }, []);
+
+  const onValuesChangeRef = useRef(null);
+  onValuesChangeRef.current = onValuesChange;
+  const lastCoordsRef = useRef({ latitude: undefined, longitude: undefined });
+  useEffect(() => {
+    if (!onValuesChangeRef.current) return;
+    const lat = formData.latitude ?? '';
+    const lng = formData.longitude ?? '';
+    if (lastCoordsRef.current.latitude === lat && lastCoordsRef.current.longitude === lng) return;
+    lastCoordsRef.current = { latitude: lat, longitude: lng };
+    onValuesChangeRef.current({ latitude: lat, longitude: lng });
+  });
 
   useEffect(() => {
     if (entity !== 'station_proposals' && entity !== 'stations') return;
@@ -907,7 +919,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   };
 
   return (
-    <form ref={formRef} className="dynamic-form" onSubmit={handleSubmit}>
+    <form ref={formRef} id={htmlId || undefined} className="dynamic-form" onSubmit={handleSubmit}>
       {error && <div className="error-message" data-error-banner>{error}</div>}
       {submitAttempted && getOrderedErrorKeys(errors).length > 0 && (
         <div className="form-error-summary" data-error-summary>
@@ -923,7 +935,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       )}
       {geocoding && <div className="text-xs text-info mb-2">Đang tìm địa chỉ từ tọa độ...</div>}
       {hasLayout ? renderLayoutForm() : renderNoLayoutMessage()}
-      {hasLayout && (
+      {hasLayout && !hideActions && (
         children ? (
           <div className="form-actions">
             {children}

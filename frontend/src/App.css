@@ -3362,8 +3362,23 @@ fieldset.form-section,
   border-bottom: 1px solid #eef1f4;
 }
 .location-map-body {
+  position: relative;
   height: min(60vh, 460px);
   width: 100%;
+}
+.location-map-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.location-map-body .map-legend {
+  top: 12px;
+  right: 56px;
+  z-index: 500;
 }
 .location-point-icon {
   background: transparent;

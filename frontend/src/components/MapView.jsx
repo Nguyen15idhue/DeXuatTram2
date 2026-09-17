@@ -4,7 +4,8 @@ import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '
 import { getMarkerIcon } from '../utils/mapMarkerIcons';
 import MarkerIcon from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
-import { STATION_STATUSES, PROPOSAL_STATUSES } from '../utils/mapStatuses';
+import useMapStatuses from '../hooks/useMapStatuses';
+import { getStatusLabel } from '../utils/mapStatuses';
 import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
@@ -56,11 +57,6 @@ function createPositionPopupContent(title, position) {
   div.appendChild(lng);
   return div;
 }
-
-const MAP_LEGEND = {
-  stations: STATION_STATUSES,
-  proposals: PROPOSAL_STATUSES
-};
 
 const ADMIN_LABEL_OPTIONS = [
   { id: 'new', label: 'Nhãn mới' },
@@ -199,7 +195,7 @@ function createStationPopupContent(item, user) {
   statusP.appendChild(statusStrong);
   const statusSpan = document.createElement('span');
   statusSpan.style.color = getMarkerColor(item.status, 'station');
-  statusSpan.textContent = item.status;
+  statusSpan.textContent = getStatusLabel(item.status, 'station');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
 
@@ -235,7 +231,7 @@ function createProposalPopupContent(item, user) {
   statusP.appendChild(statusStrong);
   const statusSpan = document.createElement('span');
   statusSpan.style.color = getMarkerColor(item.status, 'proposal');
-  statusSpan.textContent = item.status;
+  statusSpan.textContent = getStatusLabel(item.status, 'proposal');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
 
@@ -264,6 +260,9 @@ const MapView = ({
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const markerIconsVersion = useMarkerIcons();
+  const { stationStatuses, proposalStatuses } = useMapStatuses();
+  void markerIconsVersion;
+  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalStatuses };
   const [loading, setLoading] = useState(true);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [createTarget, setCreateTarget] = useState('proposal');

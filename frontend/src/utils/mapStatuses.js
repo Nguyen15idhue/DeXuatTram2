@@ -1,3 +1,5 @@
+import { getStatusOptions } from './mapMarkerIcons';
+
 export const STATION_STATUSES = [
   { value: 'PLANNING', label: 'Quy hoạch', color: '#a855f7' },
   { value: 'ACTIVE', label: 'Hoạt động', color: '#22c55e' },
@@ -19,3 +21,28 @@ export const PRIORITY_OPTIONS = [
 
 export const STATION_STATUS_MAP = STATION_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
 export const PROPOSAL_STATUS_MAP = PROPOSAL_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
+
+const withDynamicFallback = (entity, defaults) => {
+  const opts = getStatusOptions(entity);
+  if (!Array.isArray(opts) || opts.length === 0) return defaults;
+  const fallbackByValue = {};
+  defaults.forEach((d) => { fallbackByValue[d.value] = d; });
+  return opts.map((o) => ({
+    value: o.value,
+    label: o.label || fallbackByValue[o.value]?.label || o.value,
+    color: o.color || fallbackByValue[o.value]?.color || '#6b7280'
+  }));
+};
+
+export const getStationStatuses = () => withDynamicFallback('station', STATION_STATUSES);
+export const getProposalStatuses = () => withDynamicFallback('proposal', PROPOSAL_STATUSES);
+
+export const getStatusLabel = (value, entity) => {
+  const list = entity === 'station' ? getStationStatuses() : getProposalStatuses();
+  return list.find((s) => s.value === value)?.label || value;
+};
+
+export const getStatusColor = (value, entity) => {
+  const list = entity === 'station' ? getStationStatuses() : getProposalStatuses();
+  return list.find((s) => s.value === value)?.color || '';
+};

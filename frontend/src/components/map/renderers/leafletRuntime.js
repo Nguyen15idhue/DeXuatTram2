@@ -194,10 +194,11 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         const bLat = parseFloat(pr.b?.latitude);
         const bLng = parseFloat(pr.b?.longitude);
         if ([aLat, aLng, bLat, bLng].some((v) => isNaN(v))) return;
-        const color = pr.distance_m < 500 ? '#ef4444' : '#f97316';
+        const distanceM = Number(pr.distance_m) || 0;
+        const color = distanceM < 500 ? '#ef4444' : distanceM < 2000 ? '#f97316' : '#16a34a';
         const line = L.polyline([[aLat, aLng], [bLat, bLng]], { color, weight: 3, opacity: 0.85 });
         if (showLabels) {
-          line.bindTooltip(`${Number(pr.distance_m) || 0}m`, { permanent: true, direction: 'center', className: 'dup-distance-label' });
+          line.bindTooltip(`${Math.round(Number(pr.distance_m) || 0)}m`, { permanent: true, direction: 'center', className: 'dup-distance-label' });
         }
         if (renderPopup) line.bindPopup(() => renderPopup(pr));
         group.addLayer(line);

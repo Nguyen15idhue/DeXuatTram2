@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import MapView from '../../components/MapView';
 import MapFilterPanel, { EMPTY_MAP_FILTERS } from '../../components/MapFilterPanel';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalService, stationService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
+import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import Toast from '../../components/Toast';
-import { MapPin, X } from 'lucide-react';
+import { MapPin, MapPinned, X } from 'lucide-react';
 
 const MapPage = () => {
   const { token, user } = useAuth();
@@ -18,6 +19,9 @@ const MapPage = () => {
   const [selectingLocation, setSelectingLocation] = useState(false);
   const [highlightPosition, setHighlightPosition] = useState(null);
   const [pendingTarget, setPendingTarget] = useState('proposal');
+  const [formCoords, setFormCoords] = useState({ latitude: '', longitude: '' });
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [nearbyWarning, setNearbyWarning] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_MAP_FILTERS });
@@ -41,9 +45,51 @@ const MapPage = () => {
     setHighlightPosition([lat, lng]);
     setError('');
     setNearbyWarning('');
+    setFormCoords({ latitude: '', longitude: '' });
+    setShowPreview(false);
+    setPreviewSnapshot(null);
     setShowForm(true);
     setSelectingLocation(false);
   }, []);
+
+  const closeProposalForm = useCallback(() => {
+    setShowForm(false);
+    setSelectingLocation(false);
+    setShowPreview(false);
+    setPreviewSnapshot(null);
+  }, []);
+
+  const proposalInitialData = useMemo(() => ({
+    latitude: coords.lat,
+    longitude: coords.lng
+  }), [coords.lat, coords.lng]);
+  const stationInitialData = useMemo(() => ({
+    latitude: coords.lat,
+    longitude: coords.lng
+  }), [coords.lat, coords.lng]);
+
+  const effProposalCoords = (formCoords.latitude !== '' && formCoords.latitude != null)
+    ? formCoords
+    : { latitude: coords.lat, longitude: coords.lng };
+
+  const parsePreviewCoords = (c) => {
+    const lat = parseFloat(c.latitude);
+    const lng = parseFloat(c.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { latitude: lat, longitude: lng };
+  };
+
+  const validPreviewCoords = parsePreviewCoords({
+    latitude: effProposalCoords.latitude ?? '',
+    longitude: effProposalCoords.longitude ?? ''
+  });
+
+  const openPreview = () => {
+    if (!validPreviewCoords) return;
+    setPreviewSnapshot(validPreviewCoords);
+    setShowPreview(true);
+  };
 
   const openStationForm = useCallback((lat, lng) => {
     setCoords({ lat, lng });
@@ -182,39 +228,63 @@ const MapPage = () => {
       )}
 
       {showForm && (
-        <dialog className="modal modal-open map-form-modal">
-          <div className="modal-box max-w-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Đề xuất trạm mới</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>
-                <X size={18} />
-              </button>
+        <div className="modal-overlay" onClick={closeProposalForm}>
+          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+            <div className="popup-header">
+              <h2>Đề xuất trạm mới</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-primary gap-1"
+                  onClick={openPreview}
+                  disabled={!validPreviewCoords}
+                  title={validPreviewCoords ? 'Xem trạm lân cận' : 'Nhập tọa độ hợp lệ để xem trước'}
+                >
+                  <MapPinned size={14} />
+                  Preview lân cận
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={closeProposalForm} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+            <div className="popup-body">
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80 mb-4">
                 <MapPin size={14} />
                 Tọa độ: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
               </div>
 
-              {error && <div className="alert alert-error text-sm">{error}</div>}
+              {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
 
-              {nearbyWarning && <div className="alert alert-warning text-sm">{nearbyWarning}</div>}
+              {nearbyWarning && <div className="alert alert-warning text-sm mb-4">{nearbyWarning}</div>}
 
               <DynamicForm
                 entity="station_proposals"
                 purpose="create"
                 onSubmit={handleSubmit}
-                initialData={{ latitude: coords.lat, longitude: coords.lng }}
-              >
-                <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setSelectingLocation(false); }}>Hủy</button>
-              </DynamicForm>
+                initialData={proposalInitialData}
+                onValuesChange={setFormCoords}
+                hideActions
+                htmlId="map-proposal-create-form"
+              />
+            </div>
+            <div className="popup-footer">
+              <button type="button" className="btn btn-ghost" onClick={closeProposalForm}>Hủy</button>
+              <button type="submit" form="map-proposal-create-form" className="btn btn-primary">Lưu</button>
             </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => { setShowForm(false); setSelectingLocation(false); }}>close</button>
-          </form>
-        </dialog>
+        </div>
+      )}
+
+      {showPreview && previewSnapshot && (
+        <LocationMapModal
+          open
+          lat={previewSnapshot.latitude}
+          lng={previewSnapshot.longitude}
+          title="Preview vị trí đề xuất"
+          statusFilter={PREVIEW_STATUS_FILTER}
+          onClose={() => { setShowPreview(false); setPreviewSnapshot(null); }}
+        />
       )}
 
       {showStationForm && (
@@ -231,7 +301,7 @@ const MapPage = () => {
               entity="stations"
               purpose="create"
               onSubmit={handleStationSubmit}
-              initialData={{ latitude: coords.lat, longitude: coords.lng }}
+              initialData={stationInitialData}
             >
               <button type="button" className="btn btn-ghost" onClick={() => setShowStationForm(false)}>Hủy</button>
             </DynamicForm>

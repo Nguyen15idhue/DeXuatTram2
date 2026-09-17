@@ -415,6 +415,7 @@ const ENTITY_TO_MAP = { stations: 'station', station_proposals: 'proposal' };
 
 let configCache = null;
 let loadPromise = null;
+let statusOptionsCache = { station: null, proposal: null };
 
 const parseOptions = (raw) => {
   if (!raw) return [];
@@ -438,6 +439,22 @@ const extractOverrides = (defs) => {
   return out;
 };
 
+const extractStatusOptions = (defs) => {
+  const out = { station: [], proposal: [] };
+  (defs || []).forEach((fd) => {
+    if (!fd || fd.key !== 'status' || !ENTITY_TO_MAP[fd.entity]) return;
+    parseOptions(fd.options).forEach((opt) => {
+      if (!opt || typeof opt !== 'object' || opt.value == null) return;
+      out[ENTITY_TO_MAP[fd.entity]].push({
+        value: opt.value,
+        label: opt.label || opt.value,
+        color: opt.color || ''
+      });
+    });
+  });
+  return out;
+};
+
 export const loadMarkerIconConfig = (force = false) => {
   if (!force && configCache) return Promise.resolve(configCache);
   if (loadPromise) return loadPromise;
@@ -446,13 +463,19 @@ export const loadMarkerIconConfig = (force = false) => {
     fieldDefinitionService.getByEntity('station_proposals'),
   ]).then((resList) => {
     const overrides = { station: {}, proposal: {} };
+    const statusOpts = { station: [], proposal: [] };
     resList.forEach((res) => {
       if (res && res.success) {
         const part = extractOverrides(res.data);
         Object.assign(overrides.station, part.station || {});
         Object.assign(overrides.proposal, part.proposal || {});
+        const sopts = extractStatusOptions(res.data);
+        if (sopts.station.length > 0) statusOpts.station = sopts.station;
+        if (sopts.proposal.length > 0) statusOpts.proposal = sopts.proposal;
       }
     });
+    if (statusOpts.station.length > 0) statusOptionsCache.station = statusOpts.station;
+    if (statusOpts.proposal.length > 0) statusOptionsCache.proposal = statusOpts.proposal;
     configCache = {
       station: { ...STATUS_ICON_DEFAULTS.station, ...overrides.station },
       proposal: { ...STATUS_ICON_DEFAULTS.proposal, ...overrides.proposal },
@@ -469,10 +492,16 @@ export const getMarkerIcon = (status, entity) => {
   return defaults[status] || '';
 };
 
+export const getStatusOptions = (entity) => {
+  const key = entity === 'station' ? 'station' : 'proposal';
+  return statusOptionsCache[key] || null;
+};
+
 export const MARKER_ICONS_REFRESH_EVENT = 'markericons:refresh';
 
 export const notifyMarkerIconsChanged = () => {
   configCache = null;
   loadPromise = null;
+  statusOptionsCache = { station: null, proposal: null };
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(MARKER_ICONS_REFRESH_EVENT));
 };

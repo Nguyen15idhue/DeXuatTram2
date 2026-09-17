@@ -364,10 +364,12 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         const bLat = parseFloat(pr.b?.latitude);
         const bLng = parseFloat(pr.b?.longitude);
         if ([aLat, aLng, bLat, bLng].some((v) => isNaN(v))) return null;
+        const distanceM = Number(pr.distance_m) || 0;
+        const lineColor = distanceM < 500 ? '#ef4444' : distanceM < 2000 ? '#f97316' : '#16a34a';
         return {
           type: 'Feature',
           geometry: { type: 'LineString', coordinates: [[aLng, aLat], [bLng, bLat]] },
-          properties: { _color: pr.distance_m < 500 ? '#ef4444' : '#f97316', _distance: Number(pr.distance_m) || 0 },
+          properties: { _color: lineColor, _distance: Math.round(distanceM) },
         };
       })
       .filter(Boolean);

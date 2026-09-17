@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { myProposalService, excelService, proposalService, formService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import DynamicForm from '../../components/dynamic/DynamicForm';
+import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -15,7 +16,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap, Link2 } from 'lucide-react';
+import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap, Link2, MapPinned } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_FORM_ID = 13;
@@ -45,6 +46,9 @@ const MyProposalsPage = () => {
   const [createFormId, setCreateFormId] = useState(PROPOSALS_FORM_ID);
   const [quickFormId, setQuickFormId] = useState(null);
   const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
+  const [formCoords, setFormCoords] = useState({ latitude: '', longitude: '' });
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [mapLink, setMapLink] = useState('');
   const [resolvingLink, setResolvingLink] = useState(false);
   const [linkError, setLinkError] = useState('');
@@ -167,10 +171,45 @@ const MyProposalsPage = () => {
   const openCreate = (formId) => {
     setCreateFormId(formId || PROPOSALS_FORM_ID);
     setMapCoords({ latitude: '', longitude: '' });
+    setFormCoords({ latitude: '', longitude: '' });
+    setShowPreview(false);
+    setPreviewSnapshot(null);
     setMapLink('');
     setLinkError('');
     setShowCreateForm(true);
     setError('');
+  };
+
+  const closeCreate = () => {
+    setShowCreateForm(false);
+    setShowPreview(false);
+    setPreviewSnapshot(null);
+  };
+
+  const parsePreviewCoords = (c) => {
+    const lat = parseFloat(c.latitude);
+    const lng = parseFloat(c.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { latitude: lat, longitude: lng };
+  };
+
+  const effCreateCoords = (formCoords.latitude !== '' && formCoords.latitude != null)
+    ? formCoords
+    : mapCoords;
+  const createInitialData = useMemo(() => ({
+    latitude: mapCoords.latitude,
+    longitude: mapCoords.longitude
+  }), [mapCoords.latitude, mapCoords.longitude]);
+  const validPreviewCoords = parsePreviewCoords({
+    latitude: effCreateCoords.latitude ?? '',
+    longitude: effCreateCoords.longitude ?? ''
+  });
+
+  const openPreview = () => {
+    if (!validPreviewCoords) return;
+    setPreviewSnapshot(validPreviewCoords);
+    setShowPreview(true);
   };
 
   const handleGoogleMapLink = async () => {
@@ -423,58 +462,85 @@ const MyProposalsPage = () => {
       />
 
       {showCreateForm && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Tạo đề xuất mới</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="border border-base-300 rounded-lg p-3 mb-4">
-              <label className="text-sm font-medium block mb-2">Lấy tọa độ từ link Google Maps</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Dán link Google Maps vào đây..."
-                  className="input input-bordered input-sm flex-1"
-                  value={mapLink}
-                  onChange={(e) => { setMapLink(e.target.value); if (linkError) setLinkError(''); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleGoogleMapLink()}
-                />
+        <div className="modal-overlay" onClick={closeCreate}>
+          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+            <div className="popup-header">
+              <h2>Tạo đề xuất mới</h2>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm gap-1"
-                  onClick={handleGoogleMapLink}
-                  disabled={resolvingLink || !mapLink.trim()}
+                  className="btn btn-sm btn-outline btn-primary gap-1"
+                  onClick={openPreview}
+                  disabled={!validPreviewCoords}
+                  title={validPreviewCoords ? 'Xem trạm lân cận' : 'Nhập tọa độ hợp lệ để xem trước'}
                 >
-                  <Link2 size={14} />
-                  {resolvingLink ? '...' : 'Lấy tọa độ'}
+                  <MapPinned size={14} />
+                  Preview lân cận
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={closeCreate} aria-label="Close">
+                  <X size={18} />
                 </button>
               </div>
-              {linkError && <div className="alert alert-error text-sm mt-2">{linkError}</div>}
-              {mapCoords.latitude && mapCoords.longitude && (
-                <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
-                  <MapPin size={14} />
-                  Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
-                </div>
-              )}
-              {nearbyWarning && <div className="alert alert-warning text-sm mt-2">{nearbyWarning}</div>}
             </div>
-            <DynamicForm
-              entity="station_proposals"
-              purpose="create"
-              formId={createFormId}
-              onSubmit={handleCreateProposal}
-              initialData={{ latitude: mapCoords.latitude, longitude: mapCoords.longitude }}
-            >
-              <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
-            </DynamicForm>
+            <div className="popup-body">
+              <div className="border border-base-300 rounded-lg p-3 mb-4">
+                <label className="text-sm font-medium block mb-2">Lấy tọa độ từ link Google Maps</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Dán link Google Maps vào đây..."
+                    className="input input-bordered input-sm flex-1"
+                    value={mapLink}
+                    onChange={(e) => { setMapLink(e.target.value); if (linkError) setLinkError(''); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleGoogleMapLink()}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm gap-1"
+                    onClick={handleGoogleMapLink}
+                    disabled={resolvingLink || !mapLink.trim()}
+                  >
+                    <Link2 size={14} />
+                    {resolvingLink ? '...' : 'Lấy tọa độ'}
+                  </button>
+                </div>
+                {linkError && <div className="alert alert-error text-sm mt-2">{linkError}</div>}
+                {mapCoords.latitude && mapCoords.longitude && (
+                  <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+                    <MapPin size={14} />
+                    Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
+                  </div>
+                )}
+                {nearbyWarning && <div className="alert alert-warning text-sm mt-2">{nearbyWarning}</div>}
+              </div>
+              <DynamicForm
+                entity="station_proposals"
+                purpose="create"
+                formId={createFormId}
+                onSubmit={handleCreateProposal}
+                initialData={createInitialData}
+                onValuesChange={setFormCoords}
+                hideActions
+                htmlId="my-proposal-create-form"
+              />
+            </div>
+            <div className="popup-footer">
+              <button type="button" className="btn btn-ghost" onClick={closeCreate}>Hủy</button>
+              <button type="submit" form="my-proposal-create-form" className="btn btn-primary">Lưu</button>
+            </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowCreateForm(false)}>close</button>
-          </form>
-        </dialog>
+        </div>
+      )}
+
+      {showPreview && previewSnapshot && (
+        <LocationMapModal
+          open
+          lat={previewSnapshot.latitude}
+          lng={previewSnapshot.longitude}
+          title="Preview vị trí đề xuất"
+          statusFilter={PREVIEW_STATUS_FILTER}
+          onClose={() => { setShowPreview(false); setPreviewSnapshot(null); }}
+        />
       )}
 
       {showImport && (

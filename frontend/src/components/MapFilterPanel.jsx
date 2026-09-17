@@ -3,8 +3,9 @@ import { SlidersHorizontal, X } from 'lucide-react';
 import { getMarkerColor } from '../utils/mapHelpers';
 import { getMarkerIcon } from '../utils/mapMarkerIcons';
 import useMarkerIcons from '../hooks/useMarkerIcons';
+import useMapStatuses from '../hooks/useMapStatuses';
 import MarkerIcon from './MarkerIcon';
-import { STATION_STATUSES, PROPOSAL_STATUSES, PRIORITY_OPTIONS } from '../utils/mapStatuses';
+import { PRIORITY_OPTIONS } from '../utils/mapStatuses';
 
 export const EMPTY_MAP_FILTERS = {
   scope: 'all',
@@ -22,6 +23,7 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
   const [open, setOpen] = useState(false);
   const markerIconsVersion = useMarkerIcons();
   void markerIconsVersion;
+  const { stationStatuses: STATION_STATUSES, proposalStatuses: PROPOSAL_STATUSES } = useMapStatuses();
   const set = (patch) => onChange({ ...filters, ...patch });
 
   const activeCount = [

@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MapPinned } from 'lucide-react';
+import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService } from '../services/api';
 import { getMarkerColor } from '../utils/mapHelpers';
+import { getStatusLabel, getStationStatuses, getProposalStatuses } from '../utils/mapStatuses';
 import { getMarkerIcon } from '../utils/mapMarkerIcons';
+import MarkerIcon from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
+import useMapStatuses from '../hooks/useMapStatuses';
 import useMapConfig from '../hooks/useMapConfig';
 import MapCanvas from './map/MapCanvas';
 
 const RADIUS_OPTIONS = [5, 10, 20, 50];
+
+export const PREVIEW_STATUS_FILTER = {
+  stations: ['ACTIVE', 'DEPLOYING'],
+  proposals: ['PENDING']
+};
 
 const zoomForRadius = (radius) => {
   if (radius <= 5) return 12;
@@ -46,7 +54,7 @@ function createNearbyPopup(title, item, status, entity) {
   statusP.appendChild(statusStrong);
   const span = document.createElement('span');
   span.style.color = getMarkerColor(status, entity);
-  span.textContent = status;
+  span.textContent = getStatusLabel(status, entity);
   statusP.appendChild(span);
   div.appendChild(statusP);
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
@@ -54,12 +62,15 @@ function createNearbyPopup(title, item, status, entity) {
   return div;
 }
 
-const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose }) => {
+const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose, statusFilter = null }) => {
   const [radius, setRadius] = useState(radiusKm);
+  const [showLegend, setShowLegend] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
+  const [showDistance, setShowDistance] = useState(false);
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const { renderer, vectorStyle, apiKey, tileUrl, attribution, subdomains } = useMapConfig();
   useMarkerIcons();
+  useMapStatuses();
   const position = useMemo(() => [parseFloat(lat), parseFloat(lng)], [lat, lng]);
 
   const valid = open && !Number.isNaN(position[0]) && !Number.isNaN(position[1]);
@@ -87,16 +98,41 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
       const d = haversineKm(clat, clng, ilat, ilng);
       return d <= radius ? { ...item, _distanceKm: d } : null;
     };
-    const nearStations = stations.map(within).filter(Boolean);
-    const nearProposals = proposals.map(within).filter(Boolean);
+    let nearStations = stations.map(within).filter(Boolean);
+    let nearProposals = proposals.map(within).filter(Boolean);
+    if (statusFilter && Array.isArray(statusFilter.stations) && statusFilter.stations.length > 0) {
+      nearStations = nearStations.filter((s) => statusFilter.stations.includes(s.status));
+    }
+    if (statusFilter && Array.isArray(statusFilter.proposals) && statusFilter.proposals.length > 0) {
+      nearProposals = nearProposals.filter((p) => statusFilter.proposals.includes(p.status));
+    }
     return { stations: nearStations, proposals: nearProposals };
-  }, [position, radius, stations, proposals]);
+  }, [position, radius, stations, proposals, statusFilter]);
+
+  const pairs = useMemo(() => {
+    if (!showDistance) return [];
+    const toPair = (item) => ({
+      a: { latitude: position[0], longitude: position[1] },
+      b: { latitude: item.latitude, longitude: item.longitude },
+      distance_m: item._distanceKm * 1000
+    });
+    return [...nearby.stations.map(toPair), ...nearby.proposals.map(toPair)];
+  }, [showDistance, nearby, position]);
 
   const fitView = useMemo(() => ({ center: position, zoom: zoomForRadius(radius) }), [position, radius]);
   const circle = useMemo(() => ({ center: position, radiusM: radius * 1000 }), [position, radius]);
 
   if (!valid) return null;
 
+  const allStationStatuses = getStationStatuses();
+  const allProposalStatuses = getProposalStatuses();
+  const legendStations = statusFilter && Array.isArray(statusFilter.stations) && statusFilter.stations.length > 0
+    ? allStationStatuses.filter((s) => statusFilter.stations.includes(s.value))
+    : allStationStatuses;
+  const legendProposals = statusFilter && Array.isArray(statusFilter.proposals) && statusFilter.proposals.length > 0
+    ? allProposalStatuses.filter((s) => statusFilter.proposals.includes(s.value))
+    : allProposalStatuses;
+  const filterNote = statusFilter ? ` (lọc ${[...(statusFilter.stations || []), ...(statusFilter.proposals || [])].join('/')})` : '';
   const total = nearby.stations.length + nearby.proposals.length;
   const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station') }));
   const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal') }));
@@ -127,7 +163,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
             </button>
           ))}
           <span className="ml-auto text-xs text-base-content/50">
-            {total} điểm lân cận
+            {total} điểm lân cận{filterNote}
           </span>
         </div>
 
@@ -150,9 +186,57 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
             locationPoint
             circle={circle}
             fitView={fitView}
+            pairs={pairs}
             renderStationPopup={renderStationPopup}
             renderProposalPopup={renderProposalPopup}
           />
+          <div className="location-map-controls">
+            <button
+              type="button"
+              className={`map-control-btn ${showLegend ? 'map-control-btn-active' : ''}`}
+              title="Chú thích"
+              onClick={() => setShowLegend((v) => !v)}
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              type="button"
+              className={`map-control-btn ${showDistance ? 'map-control-btn-active' : ''}`}
+              title="Đường khoảng cách"
+              onClick={() => setShowDistance((v) => !v)}
+            >
+              <Ruler size={16} />
+            </button>
+          </div>
+          {showLegend && (
+            <div className="map-legend">
+              <div className="map-legend-title">Chú thích</div>
+              <div className="map-legend-columns">
+                <div className="map-legend-col">
+                  <div className="map-legend-col-title">Trạm</div>
+                  {legendStations.map((item) => (
+                    <div key={`s-${item.value}`} className="map-legend-item">
+                      {getMarkerIcon(item.value, 'station')
+                        ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'station') }}><MarkerIcon id={getMarkerIcon(item.value, 'station')} size={13} /></span>
+                        : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'station') }} />}
+                      <span className="map-legend-label">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="map-legend-col">
+                  <div className="map-legend-col-title">Đề xuất</div>
+                  {legendProposals.map((item) => (
+                    <div key={`p-${item.value}`} className="map-legend-item">
+                      {getMarkerIcon(item.value, 'proposal')
+                        ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
+                        : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
+                      <span className="map-legend-label">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>,
