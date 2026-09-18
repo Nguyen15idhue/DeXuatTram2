@@ -43,6 +43,7 @@ const AdminStationsPage = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterUuTien, setFilterUuTien] = useState('');
   const [filterMoHinh, setFilterMoHinh] = useState('');
+  const [columnFilters, setColumnFilters] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
@@ -99,10 +100,15 @@ const AdminStationsPage = () => {
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const mh = overrides.filterMoHinh !== undefined ? overrides.filterMoHinh : filterMoHinh;
+      const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (s) params.append('search', s);
       if (st) params.append('status', st);
       if (ut) params.append('uu_tien', ut);
       if (mh) params.append('mo_hinh_tram', mh);
+      if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
+        const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
+        params.append('filters', JSON.stringify(active));
+      }
       const res = await stationService.getAllWithParams(params.toString());
       if (res.success) {
         setStations(res.data);
@@ -113,7 +119,11 @@ const AdminStationsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh]);
+  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh, columnFilters]);
+
+  const handleColumnFiltersChange = useCallback((next) => {
+    setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
+  }, []);
 
   useEffect(() => { loadStations(1); }, [loadStations]);
 
@@ -124,9 +134,10 @@ const AdminStationsPage = () => {
     setFilterStatus('');
     setFilterUuTien('');
     setFilterMoHinh('');
+    setColumnFilters({});
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadStations(1, { search: '', filterStatus: '', filterUuTien: '', filterMoHinh: '' });
+    loadStations(1, { search: '', filterStatus: '', filterUuTien: '', filterMoHinh: '', columnFilters: {} });
   };
 
   const openCreate = () => {
@@ -571,6 +582,7 @@ const AdminStationsPage = () => {
         startIndex={(pagination.page - 1) * pagination.limit}
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
+        onColumnFiltersChange={handleColumnFiltersChange}
       />
 
       <Pagination

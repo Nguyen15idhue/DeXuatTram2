@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRuntime } from './renderers';
+import { clusterSig } from '../../utils/mapCluster';
 
 export default function MapCanvas({
   renderer,
@@ -12,6 +13,7 @@ export default function MapCanvas({
   proposals = [],
   pairs = [],
   showCluster = true,
+  clusterOptions = null,
   showStationLabels = true,
   showProvinceLabels = true,
   showBoundaries = true,
@@ -103,7 +105,8 @@ export default function MapCanvas({
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const sig = markersSigRef.current;
-    const sameData = sig.runtime === runtime && sig.stations === stations && sig.proposals === proposals && sig.cluster === showCluster;
+    const clusterKey = `${showCluster ? 'on' : 'off'}:${clusterSig(clusterOptions)}`;
+    const sameData = sig.runtime === runtime && sig.stations === stations && sig.proposals === proposals && sig.cluster === clusterKey;
     if (sameData) {
       if (sig.labels === showStationLabels) return;
       markersSigRef.current = { ...sig, labels: showStationLabels };
@@ -112,7 +115,7 @@ export default function MapCanvas({
         return;
       }
     } else {
-      markersSigRef.current = { runtime, stations, proposals, cluster: showCluster, labels: showStationLabels };
+      markersSigRef.current = { runtime, stations, proposals, cluster: clusterKey, labels: showStationLabels };
     }
     const items = [
       ...stations.map((s) => ({ ...s, _type: 'station', _color: s._color, _label: s.name || `Trạm #${s.id}` })),
@@ -120,11 +123,12 @@ export default function MapCanvas({
     ];
     runtime.setMarkers(items, {
       cluster: showCluster,
+      clusterOptions,
       showLabels: showStationLabels,
       onMarkerClick: (...args) => markerClickRef.current && markerClickRef.current(...args),
       renderPopup: (item) => (item._type === 'station' ? renderStationPopup(item) : renderProposalPopup(item)),
     });
-  }, [runtimeVersion, stations, proposals, showCluster, showStationLabels, renderStationPopup, renderProposalPopup]);
+  }, [runtimeVersion, stations, proposals, showCluster, clusterOptions && `${clusterOptions.radius}/${clusterOptions.maxZoom}`, showStationLabels, renderStationPopup, renderProposalPopup]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

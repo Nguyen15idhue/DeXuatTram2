@@ -35,8 +35,13 @@ const stationController = require('../controllers/stationController');
  *           type: string
  *           enum: [TDT, LK, NQ]
  *         description: Lọc theo mô hình trạm
- *       - in: query
- *         name: page
+  *       - in: query
+  *         name: filters
+  *         schema:
+  *           type: string
+  *         description: Lọc theo cột dạng JSON (VD {"name":"abc","province":"Hà Nội"}) — tìm trên toàn bộ database, không chỉ trang hiện tại
+  *       - in: query
+  *         name: page
  *         schema:
  *           type: integer
  *           default: 1

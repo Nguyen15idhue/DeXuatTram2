@@ -41,9 +41,15 @@ const ALLOWED_UPDATE_FIELDS = new Set([
   'tile_provider', 'tile_provider_id', 'tile_url', 'tile_attribution', 'tile_subdomains',
   'api_key', 'map_id', 'auth_type',
   'style_url', 'renderer', 'tile_mode', 'retina', 'default_mode', 'layers_config', 'enable_3d',
-  'show_boundaries', 'show_cluster', 'show_province_labels',
+  'show_boundaries', 'show_cluster', 'cluster_radius', 'cluster_max_zoom', 'show_province_labels',
   'center_lat', 'center_lng', 'default_zoom', 'max_zoom', 'max_native_zoom',
 ]);
+
+const clampInt = (v, min, max) => {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return undefined;
+  return Math.min(max, Math.max(min, n));
+};
 
 exports.getTileProviders = () => TILE_PROVIDERS;
 
@@ -60,11 +66,11 @@ exports.getConfig = async (entity, opts = {}) => {
 };
 
 exports.createConfig = async (data) => {
-  const { name, entity, label_field, tile_provider, tile_url, tile_attribution, tile_subdomains, show_boundaries, show_cluster, show_province_labels, center_lat, center_lng, default_zoom } = data;
+  const { name, entity, label_field, tile_provider, tile_url, tile_attribution, tile_subdomains, show_boundaries, show_cluster, cluster_radius, cluster_max_zoom, show_province_labels, center_lat, center_lng, default_zoom } = data;
   const [result] = await pool.query(
-    `INSERT INTO map_configs (name, entity, label_field, tile_provider, tile_url, tile_attribution, tile_subdomains, show_boundaries, show_cluster, show_province_labels, center_lat, center_lng, default_zoom)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name || 'default', entity, label_field || 'name', tile_provider || 'osm', tile_url, tile_attribution, tile_subdomains, show_boundaries ?? 1, show_cluster ?? 1, show_province_labels ?? 1, center_lat || 14.0583, center_lng || 108.2772, default_zoom || 6]
+    `INSERT INTO map_configs (name, entity, label_field, tile_provider, tile_url, tile_attribution, tile_subdomains, show_boundaries, show_cluster, cluster_radius, cluster_max_zoom, show_province_labels, center_lat, center_lng, default_zoom)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name || 'default', entity, label_field || 'name', tile_provider || 'osm', tile_url, tile_attribution, tile_subdomains, show_boundaries ?? 1, show_cluster ?? 1, cluster_radius ?? 70, cluster_max_zoom ?? 18, show_province_labels ?? 1, center_lat || 14.0583, center_lng || 108.2772, default_zoom || 6]
   );
   return { id: result.insertId, ...data };
 };
@@ -79,8 +85,17 @@ exports.updateConfig = async (id, data) => {
       continue;
     }
     if (value !== undefined && key !== 'id') {
+      let v = value;
+      if (key === 'cluster_radius') {
+        v = clampInt(value, 20, 150);
+        if (v === undefined) continue;
+      }
+      if (key === 'cluster_max_zoom') {
+        v = clampInt(value, 8, 20);
+        if (v === undefined) continue;
+      }
       fields.push(`${key} = ?`);
-      params.push(key === 'layers_config' && value !== null && typeof value === 'object' ? JSON.stringify(value) : value);
+      params.push(key === 'layers_config' && v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
     }
   }
   if (ignored.length > 0) console.warn('[MapConfig] ignored unknown fields:', ignored.join(', '));

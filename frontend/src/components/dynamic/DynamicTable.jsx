@@ -48,6 +48,10 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
 
   useEffect(() => {
     if (viewId) loadViewConfig();
+    else {
+      setColumns([]);
+      setLoading(false);
+    }
   }, [entity, viewId, configVersion]);
 
   const loadViewConfig = async () => {

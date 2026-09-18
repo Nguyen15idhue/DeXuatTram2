@@ -1,6 +1,7 @@
 import { useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import MapView from './MapView';
 import { excelService } from '../services/api';
+import { formatDistanceM } from '../utils/formatDistance';
 import { MapPinned, Map as MapIcon, X, Download } from 'lucide-react';
 
 const DuplicateCheckPanel = forwardRef(({
@@ -170,7 +171,7 @@ const DuplicateCheckPanel = forwardRef(({
                     <td className="text-center">{idx + 1}</td>
                     <td>{labelOf(pair.a)} <span className="badge badge-ghost badge-xs ml-1">{pair.a.status}</span></td>
                     <td>{labelOf(pair.b)} <span className="badge badge-ghost badge-xs ml-1">{pair.b.status}</span></td>
-                    <td className="font-medium">{pair.distance_m}m</td>
+                    <td className="font-medium">{formatDistanceM(pair.distance_m)}</td>
                     <td className="text-center">
                       <div className="flex gap-1 justify-center">
                         {renderViewButton(pair.a, 'A')}

@@ -4,6 +4,8 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
 import { createCustomIcon } from '../../../utils/mapHelpers';
+import { formatDistanceM } from '../../../utils/formatDistance';
+import { normalizeClusterOptions } from '../../../utils/mapCluster';
 
 const ZOOM_SHOW_DUP_LABEL = 12;
 const WARD_MIN_ZOOM = 12;
@@ -142,14 +144,16 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
       });
     },
 
-    setMarkers(items, { cluster = true, showLabels = false, onMarkerClick, renderPopup } = {}) {
+    setMarkers(items, { cluster = true, clusterOptions, showLabels = false, onMarkerClick, renderPopup } = {}) {
       if (markerLayer) {
         map.removeLayer(markerLayer);
         markerLayer = null;
       }
+      const clusterOpts = normalizeClusterOptions(clusterOptions);
       const group = cluster
         ? L.markerClusterGroup({
-            maxClusterRadius: 50,
+            maxClusterRadius: clusterOpts.radius,
+            disableClusteringAtZoom: clusterOpts.maxZoom + 1,
             spiderfyOnMaxZoom: true,
             showCoverageOnHover: false,
             zoomToBoundsOnClick: true,
@@ -198,7 +202,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         const color = distanceM < 500 ? '#ef4444' : distanceM < 2000 ? '#f97316' : '#16a34a';
         const line = L.polyline([[aLat, aLng], [bLat, bLng]], { color, weight: 3, opacity: 0.85 });
         if (showLabels) {
-          line.bindTooltip(`${Math.round(Number(pr.distance_m) || 0)}m`, { permanent: true, direction: 'center', className: 'dup-distance-label' });
+          line.bindTooltip(formatDistanceM(pr.distance_m), { permanent: true, direction: 'center', className: 'dup-distance-label' });
         }
         if (renderPopup) line.bindPopup(() => renderPopup(pr));
         group.addLayer(line);

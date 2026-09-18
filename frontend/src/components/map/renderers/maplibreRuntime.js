@@ -1,5 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { iconSvgMarkup, isValidMarkerIcon } from '../../../utils/mapMarkerIcons';
+import { formatDistanceM } from '../../../utils/formatDistance';
+import { normalizeClusterOptions, clusterSig } from '../../../utils/mapCluster';
 
 const LARGE_DATASET = 2000;
 const WARD_MIN_ZOOM = 12;
@@ -132,6 +134,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
   let loaded = false;
   let markersState = null;
+  let lastClusterSig = null;
   let polylinesState = null;
   let provinceState = null;
   let boundaryState = null;
@@ -241,7 +244,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   function applyMarkers() {
     const { items, options } = markersState || {};
     if (!items) return;
-    const { cluster = true, showLabels = false, onMarkerClick, renderPopup } = options || {};
+    const { cluster = true, clusterOptions, showLabels = false, onMarkerClick, renderPopup } = options || {};
+    const clusterOpts = normalizeClusterOptions(clusterOptions);
     applyPixelRatio(items.length);
     if (!cluster) {
       removeManagedSource('app-markers');
@@ -293,15 +297,20 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
     ensureGlyphImages(map, [...new Set(items.map((i) => i._icon).filter(Boolean))]);
 
+    const sig = clusterSig(clusterOpts);
+    if (map.getSource('app-markers') && lastClusterSig !== sig) {
+      removeManagedSource('app-markers');
+    }
     if (!map.getSource('app-markers')) {
       map.addSource('app-markers', {
         type: 'geojson',
         data: geojson,
         maxzoom: 20,
         cluster: true,
-        clusterMaxZoom: 18,
-        clusterRadius: 70,
+        clusterMaxZoom: clusterOpts.maxZoom,
+        clusterRadius: clusterOpts.radius,
       });
+      lastClusterSig = clusterSig(clusterOpts);
       sourceIds.add('app-markers');
       map.addLayer({
         id: 'app-clusters',
@@ -369,7 +378,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         return {
           type: 'Feature',
           geometry: { type: 'LineString', coordinates: [[aLng, aLat], [bLng, bLat]] },
-          properties: { _color: lineColor, _distance: Math.round(distanceM) },
+          properties: { _color: lineColor, _label: formatDistanceM(distanceM) },
         };
       })
       .filter(Boolean);
@@ -391,7 +400,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           minzoom: 12,
           layout: {
             'symbol-placement': 'line-center',
-            'text-field': ['concat', ['to-string', ['get', '_distance']], 'm'],
+            'text-field': ['get', '_label'],
             'text-size': 11,
             'text-font': ['Noto Sans Regular'],
           },

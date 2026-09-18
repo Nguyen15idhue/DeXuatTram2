@@ -10,8 +10,8 @@ exports.getFormConfig = async (entity, formId) => {
   if (cached !== undefined) return cached;
 
   const [forms] = await pool.query(
-    'SELECT * FROM forms WHERE id = ? AND entity = ?',
-    [formId, entity]
+    'SELECT * FROM forms WHERE id = ? AND entity = ? AND status = ?',
+    [formId, entity, 'active']
   );
   if (forms.length === 0) {
     ttlCache.set(cacheKey, null, 30000);
@@ -30,9 +30,9 @@ exports.getFormConfig = async (entity, formId) => {
             fd.formula, fd.placeholder, fd.help_text,
             fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.relation_key
      FROM form_fields ff
-     JOIN field_definitions fd ON ff.field_id = fd.id
-     WHERE ff.form_id = ?
-     ORDER BY ff.order_index`,
+      JOIN field_definitions fd ON ff.field_id = fd.id
+      WHERE ff.form_id = ? AND fd.status = 'active'
+      ORDER BY ff.order_index`,
     [formId]
   );
 
@@ -87,8 +87,8 @@ exports.getViewConfig = async (entity, viewId) => {
   if (cached !== undefined) return cached;
 
   const [views] = await pool.query(
-    'SELECT * FROM views WHERE id = ? AND entity = ?',
-    [viewId, entity]
+    'SELECT * FROM views WHERE id = ? AND entity = ? AND status = ?',
+    [viewId, entity, 'active']
   );
   if (views.length === 0) {
     ttlCache.set(cacheKey, null, 30000);
@@ -106,9 +106,9 @@ exports.getViewConfig = async (entity, viewId) => {
             fd.file_config, fd.formula_config,
             fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.relation_key
      FROM view_fields vf
-     JOIN field_definitions fd ON vf.field_id = fd.id
-     WHERE vf.view_id = ?
-     ORDER BY vf.order_index`,
+      JOIN field_definitions fd ON vf.field_id = fd.id
+      WHERE vf.view_id = ? AND fd.status = 'active'
+      ORDER BY vf.order_index`,
     [viewId]
   );
 

@@ -71,12 +71,28 @@ exports.createForm = async (data) => {
 };
 
 exports.updateForm = async (id, data) => {
-  const { entity, name, description, status, layout_config, purpose, is_default } = data;
-  const [existing] = await pool.query('SELECT is_default FROM forms WHERE id = ?', [id]);
-  const nextDefault = is_default === undefined ? (existing.length > 0 ? existing[0].is_default : 0) : (is_default ? 1 : 0);
+  const [existing] = await pool.query('SELECT * FROM forms WHERE id = ?', [id]);
+  if (existing.length === 0) {
+    throw Object.assign(new Error('Không tìm thấy form'), { statusCode: 404 });
+  }
+  const prev = existing[0];
+  const toJsonOrKeep = (incoming, current) => {
+    if (incoming === undefined) return typeof current === 'string' ? current : JSON.stringify(current);
+    if (incoming === null) return null;
+    return typeof incoming === 'string' ? incoming : JSON.stringify(incoming);
+  };
+  const next = {
+    entity: data.entity !== undefined ? data.entity : prev.entity,
+    name: data.name !== undefined ? data.name : prev.name,
+    description: data.description !== undefined ? data.description : prev.description,
+    status: data.status !== undefined ? data.status : prev.status,
+    layout_config: toJsonOrKeep(data.layout_config, prev.layout_config),
+    purpose: data.purpose !== undefined ? data.purpose : prev.purpose,
+    is_default: data.is_default === undefined ? prev.is_default : (data.is_default ? 1 : 0)
+  };
   await pool.query(
     'UPDATE forms SET entity = ?, name = ?, description = ?, status = ?, layout_config = ?, purpose = ?, is_default = ?, updated_at = NOW() WHERE id = ?',
-    [entity, name, description || null, status || 'active', layout_config ? JSON.stringify(layout_config) : null, purpose || 'all', nextDefault, id]
+    [next.entity, next.name, next.description, next.status, next.layout_config, next.purpose, next.is_default, id]
   );
   const [rows] = await pool.query('SELECT * FROM forms WHERE id = ?', [id]);
   return rows[0];

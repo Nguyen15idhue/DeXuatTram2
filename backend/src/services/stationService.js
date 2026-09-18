@@ -145,16 +145,25 @@ exports.updateStation = async (id, data) => {
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
 
-  const [existing] = await pool.query('SELECT custom_data FROM stations WHERE id = ?', [id]);
-  const current = existing.length > 0 && existing[0].custom_data
-    ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
+  const [existing] = await pool.query('SELECT name, latitude, longitude, address, status, description, custom_data FROM stations WHERE id = ?', [id]);
+  const prev = existing.length > 0 ? existing[0] : {};
+  const current = prev.custom_data
+    ? (typeof prev.custom_data === 'string' ? JSON.parse(prev.custom_data) : prev.custom_data)
     : {};
   const mergedDynamic = { ...current, ...dynamicData };
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
+  const next = {
+    name: fixedData.name !== undefined ? fixedData.name : prev.name,
+    latitude: fixedData.latitude !== undefined ? fixedData.latitude : prev.latitude,
+    longitude: fixedData.longitude !== undefined ? fixedData.longitude : prev.longitude,
+    address: fixedData.address !== undefined ? fixedData.address : prev.address,
+    status: fixedData.status !== undefined ? fixedData.status : prev.status,
+    description: fixedData.description !== undefined ? fixedData.description : prev.description
+  };
 
   await pool.query(
     'UPDATE stations SET name = ?, latitude = ?, longitude = ?, address = ?, status = ?, description = ?, custom_data = ?, updated_at = NOW() WHERE id = ?',
-    [fixedData.name, fixedData.latitude, fixedData.longitude, fixedData.address || '', fixedData.status || 'ACTIVE', fixedData.description || '', customData, id]
+    [next.name, next.latitude, next.longitude, next.address || '', next.status || 'ACTIVE', next.description || '', customData, id]
   );
 
   const postResults = await dynamicEngineService.computePostFormulas('stations', id, mergedDynamic, null, null);

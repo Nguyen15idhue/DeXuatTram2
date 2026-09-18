@@ -6,6 +6,7 @@ import { MAP_MODES, DEFAULT_MODE } from '../../utils/mapModes';
 import { buildMapStyle } from '../../utils/mapStyles';
 import { listRenderers } from '../../components/map/renderers';
 import MapCanvas from '../../components/map/MapCanvas';
+import { CLUSTER_DEFAULTS, CLUSTER_LIMITS, normalizeClusterOptions } from '../../utils/mapCluster';
 import { useAuth } from '../../contexts/AuthContext';
 import Toast from '../../components/Toast';
 import GeocodeConfigPanel from '../../components/admin/GeocodeConfigPanel';
@@ -37,6 +38,8 @@ const AdminMapConfigPage = () => {
   const [retina, setRetina] = useState(false);
   const [renderer, setRenderer] = useState('leaflet');
   const [defaultMode, setDefaultMode] = useState(DEFAULT_MODE);
+  const [clusterRadius, setClusterRadius] = useState(CLUSTER_DEFAULTS.radius);
+  const [clusterMaxZoom, setClusterMaxZoom] = useState(CLUSTER_DEFAULTS.maxZoom);
   const [enable3d, setEnable3d] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [testStatus, setTestStatus] = useState(null);
@@ -103,6 +106,8 @@ const AdminMapConfigPage = () => {
         setRetina(!!Number(c.retina));
         setRenderer(c.renderer || 'leaflet');
         setDefaultMode(c.default_mode || DEFAULT_MODE);
+        setClusterRadius(c.cluster_radius ?? CLUSTER_DEFAULTS.radius);
+        setClusterMaxZoom(c.cluster_max_zoom ?? CLUSTER_DEFAULTS.maxZoom);
         setEnable3d(!!Number(c.enable_3d));
       }
     } catch (e) {
@@ -323,6 +328,8 @@ const AdminMapConfigPage = () => {
       enable_3d: enable3d ? 1 : 0,
       show_boundaries: config.show_boundaries,
       show_cluster: config.show_cluster,
+      cluster_radius: parseInt(clusterRadius, 10) || CLUSTER_DEFAULTS.radius,
+      cluster_max_zoom: parseInt(clusterMaxZoom, 10) || CLUSTER_DEFAULTS.maxZoom,
       show_province_labels: config.show_province_labels,
       center_lat: config.center_lat,
       center_lng: config.center_lng,
@@ -379,6 +386,22 @@ const AdminMapConfigPage = () => {
     : '';
   const canPreview = renderer === 'maplibre' ? !!(previewVectorStyle || tile.url) : !!safeTileUrl;
   const previewStyleLabel = typeof previewVectorStyle === 'string' ? previewVectorStyle : (renderer === 'maplibre' ? `style: ${defaultMode}` : '');
+  const previewCluster = normalizeClusterOptions({ radius: clusterRadius, maxZoom: clusterMaxZoom });
+  const previewStations = (() => {
+    const pts = [];
+    for (let i = 0; i < 14; i += 1) {
+      const a = (i / 14) * Math.PI * 2;
+      const r = 0.02 + (i % 3) * 0.015;
+      pts.push({
+        id: `demo-${i}`,
+        name: `Điểm demo ${i + 1}`,
+        latitude: center[0] + Math.sin(a) * r,
+        longitude: center[1] + Math.cos(a) * r,
+        _color: i % 2 ? '#22c55e' : '#3b82f6',
+      });
+    }
+    return pts;
+  })();
 
   return (
     <div className="p-4 md:p-6">
@@ -587,6 +610,34 @@ const AdminMapConfigPage = () => {
                   <span className="text-sm">{item.label}</span>
                 </label>
               ))}
+              {!!config.show_cluster && (
+                <div className="mt-2 ml-6 flex flex-col gap-2 border-l-2 border-primary/30 pl-3">
+                  <div>
+                    <div className="flex justify-between items-center">
+                      <label className="text-sm font-medium">Bán kính gộp</label>
+                      <span className="text-sm font-semibold text-primary">{clusterRadius}px</span>
+                    </div>
+                    <input
+                      type="range" className="range range-primary range-xs w-full"
+                      min={CLUSTER_LIMITS.radiusMin} max={CLUSTER_LIMITS.radiusMax} step={5}
+                      value={clusterRadius} onChange={e => setClusterRadius(parseInt(e.target.value, 10))}
+                    />
+                    <div className="text-[11px] text-base-content/50">Nhỏ → ít gộp hơn; lớn → gộp xa hơn</div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-center">
+                      <label className="text-sm font-medium">Zoom tách cluster</label>
+                      <span className="text-sm font-semibold text-primary">{clusterMaxZoom}</span>
+                    </div>
+                    <input
+                      type="range" className="range range-primary range-xs w-full"
+                      min={CLUSTER_LIMITS.maxZoomMin} max={CLUSTER_LIMITS.maxZoomMax} step={1}
+                      value={clusterMaxZoom} onChange={e => setClusterMaxZoom(parseInt(e.target.value, 10))}
+                    />
+                    <div className="text-[11px] text-base-content/50">Từ zoom này trở lên marker tách riêng, không gộp nữa</div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Center + Zoom */}
@@ -637,9 +688,10 @@ const AdminMapConfigPage = () => {
                   tile={{ url: tile.url, attribution: tile.attribution, subdomains: tile.subdomains }}
                   vectorStyle={previewVectorStyle}
                   apiKey={apiKey}
-                  stations={[]}
+                  stations={previewStations}
                   proposals={[]}
-                  showCluster={false}
+                  showCluster={!!config.show_cluster}
+                  clusterOptions={previewCluster}
                   showStationLabels={false}
                   showProvinceLabels={false}
                   showBoundaries={false}

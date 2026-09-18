@@ -71,12 +71,21 @@ exports.createView = async (data) => {
 };
 
 exports.updateView = async (id, data) => {
-  const { entity, name, description, status, usage } = data;
-  const [existing] = await pool.query('SELECT `usage` FROM views WHERE id = ?', [id]);
-  const nextUsage = usage || (existing.length > 0 ? existing[0].usage : 'table');
+  const [existing] = await pool.query('SELECT * FROM views WHERE id = ?', [id]);
+  if (existing.length === 0) {
+    throw Object.assign(new Error('Không tìm thấy view'), { statusCode: 404 });
+  }
+  const prev = existing[0];
+  const next = {
+    entity: data.entity !== undefined ? data.entity : prev.entity,
+    name: data.name !== undefined ? data.name : prev.name,
+    description: data.description !== undefined ? data.description : prev.description,
+    status: data.status !== undefined ? data.status : prev.status,
+    usage: data.usage !== undefined && data.usage ? data.usage : prev.usage
+  };
   await pool.query(
     'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, updated_at = NOW() WHERE id = ?',
-    [entity, name, description || null, status || 'active', nextUsage, id]
+    [next.entity, next.name, next.description, next.status, next.usage, id]
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [id]);
   return rows[0];

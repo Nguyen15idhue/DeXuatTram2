@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService, excelService, viewService } from '../../services/api';
@@ -41,6 +41,8 @@ const AdminUsersPage = () => {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [columnFilters, setColumnFilters] = useState({});
+  const tableRef = useRef(null);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(1);
@@ -113,11 +115,38 @@ const AdminUsersPage = () => {
 
   const handleSearch = () => { setAppliedSearch(search); };
 
+  const getUserFieldValue = (u, key) => {
+    if (u[key] !== undefined && u[key] !== null) return u[key];
+    if (u.custom_data) {
+      try {
+        const cd = typeof u.custom_data === 'string' ? JSON.parse(u.custom_data) : u.custom_data;
+        return cd[key];
+      } catch { return null; }
+    }
+    return null;
+  };
+
+  const displayUserValue = (val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val) && typeof val.label === 'string') return val.label;
+    return val;
+  };
+
+  const handleColumnFiltersChange = useCallback((next) => {
+    setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
+  }, []);
+
   const treeRows = useMemo(() => {
     const q = appliedSearch.trim().toLowerCase();
+    const colEntries = Object.entries(columnFilters).filter(([, v]) => String(v ?? '').trim());
     let list = users;
-    if (q) {
-      const match = (u) => [u.full_name, u.email, u.phone, u.external_id].some(v => (v || '').toLowerCase().includes(q));
+    if (q || colEntries.length > 0) {
+      const matchSearch = (u) => !q || [u.full_name, u.email, u.phone, u.external_id].some(v => (v || '').toLowerCase().includes(q));
+      const matchColumns = (u) => colEntries.every(([k, fv]) => {
+        const val = displayUserValue(getUserFieldValue(u, k));
+        if (val === null || val === undefined) return false;
+        return String(val).toLowerCase().includes(String(fv).toLowerCase());
+      });
+      const match = (u) => matchSearch(u) && matchColumns(u);
       const byId = {};
       users.forEach(u => { byId[u.id] = u; });
       const keep = new Set();
@@ -152,13 +181,13 @@ const AdminUsersPage = () => {
     };
     walk(roots, 0);
     return rows;
-  }, [users, appliedSearch]);
+  }, [users, appliedSearch, columnFilters]);
 
   const totalPages = Math.max(1, Math.ceil(treeRows.length / USERS_PAGE_SIZE));
 
   useEffect(() => {
     setPage(1);
-  }, [appliedSearch, filterStatus]);
+  }, [appliedSearch, filterStatus, columnFilters]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -173,6 +202,8 @@ const AdminUsersPage = () => {
     setSearch('');
     setFilterStatus('');
     setAppliedSearch('');
+    setColumnFilters({});
+    if (tableRef.current) tableRef.current.clearFilters();
     setError('');
     loadUsers({ filterStatus: '' });
   };
@@ -685,6 +716,7 @@ const AdminUsersPage = () => {
       ) : (
         <>
           <DynamicTable
+            ref={tableRef}
             entity="users"
             viewId={usersViewId}
             data={pagedRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
@@ -693,6 +725,7 @@ const AdminUsersPage = () => {
             rowDepth={(row) => row._depth || 0}
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
+            onColumnFiltersChange={handleColumnFiltersChange}
           />
           <Pagination
             page={page}

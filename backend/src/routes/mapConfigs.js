@@ -78,8 +78,8 @@ router.post('/', requireAuth, requireSuperAdmin, mapConfigController.createConfi
  * /api/map-configs/{id}:
  *   put:
  *     tags: [Map Config]
- *     summary: Cập nhật cấu hình bản đồ
- *     description: Chỉ nhận các cột trong allow-list (name, tile_provider_id, style_url, renderer, tile_mode, retina, default_mode, layers_config...). Cột lạ bị bỏ qua. `layers_config` là JSON mảng layer.
+  *     summary: Cập nhật cấu hình bản đồ
+  *     description: Chỉ nhận các cột trong allow-list (name, tile_provider_id, style_url, renderer, tile_mode, retina, default_mode, layers_config, show_cluster, cluster_radius 20-150, cluster_max_zoom 8-20...). Cột lạ bị bỏ qua. `layers_config` là JSON mảng layer.
  *     security:
  *       - bearerAuth: []
  *     parameters:

@@ -31,6 +31,7 @@ const MyProposalsPage = () => {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [columnFilters, setColumnFilters] = useState({});
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
@@ -93,8 +94,13 @@ const MyProposalsPage = () => {
       const params = new URLSearchParams({ page, limit: 10 });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
+      const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (f) params.append('status', f);
       if (s) params.append('search', s);
+      if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
+        const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
+        params.append('filters', JSON.stringify(active));
+      }
       const res = await myProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
@@ -105,7 +111,11 @@ const MyProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedSearch, token]);
+  }, [filter, debouncedSearch, columnFilters, token]);
+
+  const handleColumnFiltersChange = useCallback((next) => {
+    setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
+  }, []);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
@@ -376,11 +386,12 @@ const MyProposalsPage = () => {
   const handleReset = () => {
     setSearch('');
     setFilter('');
+    setColumnFilters({});
     if (dupRef.current) dupRef.current.reset();
     setDupMode(false);
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadProposals(1, { filter: '', search: '' });
+    loadProposals(1, { filter: '', search: '', columnFilters: {} });
   };
 
   return (
@@ -637,6 +648,7 @@ const MyProposalsPage = () => {
         data={proposals}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}
+        onColumnFiltersChange={handleColumnFiltersChange}
       />
 
       <Pagination

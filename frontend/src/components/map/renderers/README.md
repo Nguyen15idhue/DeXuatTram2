@@ -21,7 +21,7 @@ Runtime trả về các hàm/thuộc tính:
 | `flyTo(position, zoom)` | Bay tới vị trí |
 | `getCenter()`, `getZoom()` | Đọc trạng thái |
 | `setTileLayer({ url, attribution, subdomains, maxZoom, onTileError })` | Tile base; đếm lỗi → gọi `onTileError` sau 6 lần |
-| `setMarkers(items, { cluster, showLabels, onMarkerClick, renderPopup })` | Marker + cluster + tooltip + popup |
+| `setMarkers(items, { cluster, clusterOptions, showLabels, onMarkerClick, renderPopup })` | Marker + cluster + tooltip + popup (`clusterOptions = { radius: 20-150px, maxZoom: 8-20 }` từ `map_configs`) |
 | `setPolylines(pairs, { renderPopup, showLabels })` | Đường trùng lặp + nhãn khoảng cách + popup |
 | `setProvinceLabels(points, show)` | Nhãn tỉnh (divIcon) |
 | `setBoundaries(geojson, show)` | Ranh giới tỉnh (GeoJSON) |
