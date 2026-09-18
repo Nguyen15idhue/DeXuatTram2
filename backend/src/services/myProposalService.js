@@ -4,8 +4,11 @@ const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
+const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-exports.getUserProposals = async (userId, status, search, page, limit) => {
+const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
+
+exports.getUserProposals = async (userId, status, search, page, limit, columnFilters) => {
   const offset = (page - 1) * limit;
   let where = ['p.user_id = ?'];
   let params = [userId];
@@ -26,6 +29,18 @@ exports.getUserProposals = async (userId, status, search, page, limit) => {
     }
     where.push('(' + ors.join(' OR ') + ')');
     params.push(...orsParams);
+  }
+
+  if (columnFilters) {
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+    const { clauses, params: filterParams } = buildColumnFilterWhere({
+      filters: columnFilters,
+      fieldDefs,
+      fixedColumns: MY_PROPOSAL_FIXED_COLUMNS,
+      alias: 'p'
+    });
+    where.push(...clauses);
+    params.push(...filterParams);
   }
 
   const whereClause = 'WHERE ' + where.join(' AND ');
@@ -71,7 +86,11 @@ exports.getProposalByIdAndUser = async (id, userId) => {
   return existing.length > 0 ? existing[0] : null;
 };
 
-exports.updateProposal = async (id, userId, data) => {
+exports.updateProposal = async (id, userId, data, opts = {}) => {
+  const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  if (st.length === 0 || (st[0].status !== 'PENDING' && st[0].status !== 'REJECTED')) {
+    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING hoặc REJECTED'), { statusCode: 400 });
+  }
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -89,7 +108,7 @@ exports.updateProposal = async (id, userId, data) => {
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
 
-  const [existing] = await pool.query('SELECT custom_data, contact_1office_code, status, reviewed_by FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -118,6 +137,38 @@ exports.updateProposal = async (id, userId, data) => {
       createdBy: userId
     });
   }
+
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    const oldFlat = { ...(existing[0] || {}), ...current };
+    const newFlat = {
+      ...(existing[0] || {}),
+      owner_name: fixedData.owner_name !== undefined ? fixedData.owner_name : existing[0].owner_name,
+      owner_phone: fixedData.owner_phone !== undefined ? fixedData.owner_phone : existing[0].owner_phone,
+      address: fixedData.address !== undefined ? fixedData.address : existing[0].address,
+      area: fixedData.area !== undefined ? fixedData.area : existing[0].area,
+      land_type: fixedData.land_type !== undefined ? fixedData.land_type : existing[0].land_type,
+      description: fixedData.description !== undefined ? fixedData.description : existing[0].description,
+      ...mergedDynamic
+    };
+    const diff = proposalLifecycle.buildDiff(oldFlat, newFlat, fieldDefs);
+    if (Object.keys(diff).length > 0) {
+      await proposalLifecycle.logActivity({
+        proposalId: id, action: 'updated', changedFields: diff,
+        fromStatus: existing[0].status, toStatus: nextStatus,
+        actorId: userId, actorRole: opts.actorRole || null,
+        source: 'user', manualOverride: false, ip: opts.ip || null
+      });
+    }
+    if (wasRejected) {
+      await proposalLifecycle.logActivity({
+        proposalId: id, action: 'status_change',
+        fromStatus: 'REJECTED', toStatus: 'PENDING',
+        actorId: userId, actorRole: opts.actorRole || null,
+        source: 'user', manualOverride: false, ip: opts.ip || null
+      });
+    }
+  } catch { /* silent: khong chan luu vi log */ }
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));

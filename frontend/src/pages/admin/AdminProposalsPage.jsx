@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminProposalService, proposalService, excelService, viewService, formService } from '../../services/api';
@@ -7,6 +8,8 @@ import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
+import ProposalActivityPopup from '../../components/admin/ProposalActivityPopup';
+import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -16,7 +19,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, Ban, Lock, FileSignature, History, GitBranch } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -24,7 +27,7 @@ const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
 
 const AdminProposalsPage = () => {
-  const { token, isSales, isAdmin } = useAuth();
+  const { token, isSales, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
@@ -34,6 +37,7 @@ const AdminProposalsPage = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [filterUuTien, setFilterUuTien] = useState('');
+  const [columnFilters, setColumnFilters] = useState({});
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [error, setError] = useState('');
@@ -41,6 +45,11 @@ const AdminProposalsPage = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null });
+  const [logProposalId, setLogProposalId] = useState(null);
+  const [rowMenu, setRowMenu] = useState(null);
+  const [flowInfoOpen, setFlowInfoOpen] = useState(false);
+  const [stationModal, setStationModal] = useState({ open: false, id: null, name: '', saving: false });
+  const stationRow = stationModal.id ? proposals.find(p => p.id === stationModal.id) : null;
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [dupMode, setDupMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -49,6 +58,9 @@ const AdminProposalsPage = () => {
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
+  const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
+  const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
+  const [transitionModal, setTransitionModal] = useState({ open: false, id: null, to: null, saving: false });
   const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false });
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
@@ -147,9 +159,14 @@ const AdminProposalsPage = () => {
       const f = overrides.filter !== undefined ? overrides.filter : filter;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
+      const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (f) params.append('status', f);
       if (ut) params.append('uu_tien', ut);
       if (s) params.append('search', s);
+      if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
+        const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
+        params.append('filters', JSON.stringify(active));
+      }
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
@@ -160,7 +177,11 @@ const AdminProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, filterUuTien, debouncedSearch, token]);
+  }, [filter, filterUuTien, debouncedSearch, columnFilters, token]);
+
+  const handleColumnFiltersChange = useCallback((next) => {
+    setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
+  }, []);
 
   useEffect(() => { loadProposals(1); }, [loadProposals]);
 
@@ -200,12 +221,18 @@ const AdminProposalsPage = () => {
     return labels;
   };
 
+  const statusLabel = (v) => (statusOptions.find(o => o.value === v) || {}).label || v;
+
   const handleStatusChange = async (id, newStatus) => {
     if (newStatus === 'REJECTED') {
       setRejectModal({ open: true, id, reason: '', saving: false });
       return;
     }
-    if (newStatus === 'APPROVED') {
+    if (newStatus === 'CANCELLED') {
+      setCancelModal({ open: true, id, reason: '', saving: false });
+      return;
+    }
+    if (newStatus === 'REVIEWING') {
       const row = proposals.find(p => p.id === id);
       const missing = missingUserFieldLabels(row);
       if (missing.length > 0) {
@@ -213,6 +240,10 @@ const AdminProposalsPage = () => {
         return;
       }
       setApproveModal({ open: true, id, saving: false });
+      return;
+    }
+    if (['APPROVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
+      setTransitionModal({ open: true, id, to: newStatus, saving: false });
       return;
     }
     try {
@@ -253,10 +284,10 @@ const AdminProposalsPage = () => {
     const { id } = approveModal;
     setApproveModal(prev => ({ ...prev, saving: true }));
     try {
-      const res = await adminProposalService.updateStatus(id, 'APPROVED', token);
+      const res = await adminProposalService.updateStatus(id, 'REVIEWING', token);
       if (res.success) {
         const auto = res.autoPush;
-        let msg = 'Đã duyệt đề xuất';
+        let msg = 'Đã duyệt — đề xuất chuyển sang Đang xem xét';
         if (auto && auto.queued) {
           msg += ' — đã tạo lệnh đẩy sang 1Office, theo dõi trong Audit Log';
         } else if (auto && !auto.queued) {
@@ -287,6 +318,153 @@ const AdminProposalsPage = () => {
     }
   };
 
+  const handleConfirmCancel = async () => {
+    if (!cancelModal.reason.trim()) return;
+    setCancelModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(cancelModal.id, 'CANCELLED', token, cancelModal.reason.trim());
+      if (res.success) {
+        setToast({ message: 'Đã hủy đề xuất — trạng thái cuối, không thể mở lại', type: 'warning' });
+        setCancelModal({ open: false, id: null, reason: '', saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Hủy thất bại');
+        setCancelModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setCancelModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmReopen = async () => {
+    if (!reopenModal.reason.trim()) return;
+    setReopenModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(reopenModal.id, 'PENDING', token, reopenModal.reason.trim());
+      if (res.success) {
+        setToast({ message: 'Đã mở lại đề xuất (ghi log khẩn cấp)', type: 'warning' });
+        setReopenModal({ open: false, id: null, reason: '', saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Mở lại thất bại');
+        setReopenModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setReopenModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  const transitionTitle = (to) => {
+    if (to === 'APPROVED') return 'Đã duyệt BCĐX (demo)';
+    if (to === 'CONTRACT_SIGNED') return 'Ký thành công (demo)';
+    if (to === 'CONTRACT_FAILED') return 'Ký thất bại (demo)';
+    return statusLabel(to);
+  };
+
+  const handleConfirmTransition = async () => {
+    const { id, to } = transitionModal;
+    setTransitionModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(id, to, token);
+      if (res.success) {
+        setToast({ message: `Đã chuyển sang ${statusLabel(to)}`, type: 'success' });
+        setTransitionModal({ open: false, id: null, to: null, saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Cập nhật thất bại');
+        setTransitionModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setTransitionModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleBatchApprove = async () => {
+    setShowMoreMenu(false);
+    const pendings = selectedIds
+      .map(id => proposals.find(p => p.id === id))
+      .filter(r => r && r.status === 'PENDING');
+    if (pendings.length === 0) {
+      setError('Không có đề xuất Đang đề xuất nào được chọn');
+      return;
+    }
+    setBatchLoading(true);
+    const ok = [];
+    const blocked = [];
+    const failed = [];
+    for (const row of pendings) {
+      const missing = missingUserFieldLabels(row);
+      if (missing.length > 0) {
+        blocked.push(`#${row.id}: thiếu ${missing.join(', ')}`);
+        continue;
+      }
+      try {
+        const res = await adminProposalService.updateStatus(row.id, 'REVIEWING', token);
+        if (res.success) ok.push(row.id);
+        else failed.push(`#${row.id}: ${res.message || 'thất bại'}`);
+      } catch {
+        failed.push(`#${row.id}: lỗi kết nối`);
+      }
+    }
+    const parts = [];
+    if (ok.length > 0) parts.push(`Đã duyệt & đẩy ${ok.length} đề xuất (sang Đang xem xét)`);
+    if (blocked.length > 0) parts.push(`${blocked.length} bị chặn: ${blocked.join('; ')}`);
+    if (failed.length > 0) parts.push(`${failed.length} lỗi: ${failed.join('; ')}`);
+    if (ok.length > 0) {
+      setToast({ message: `${parts.join(' — ')} — theo dõi lệnh đẩy trong Audit Log`, type: blocked.length + failed.length > 0 ? 'warning' : 'success' });
+    } else {
+      setError(parts.join(' — '));
+    }
+    notifyBellRefresh();
+    setSelectedIds([]);
+    loadProposals(pagination.page);
+    setBatchLoading(false);
+  };
+
+  const openStationModal = (row) => {
+    const code = row.ma_de_xuat || row.tracking_code || `#${row.id}`;
+    setStationModal({ open: true, id: row.id, name: `Trạm ${code}`, saving: false });
+  };
+
+  const stationPreviewRows = (row) => {
+    if (!row) return [];
+    const custom = row.custom_data || {};
+    return [
+      { label: 'Vĩ độ / Kinh độ', value: `${row.latitude}, ${row.longitude}` },
+      { label: 'Địa chỉ', value: row.address || '(tự fill khi tạo)' },
+      { label: 'Tỉnh / Vùng miền', value: [custom.province, custom.vung_mien].filter(Boolean).join(' — ') || '(tự fill khi tạo)' },
+      { label: 'Mô hình trạm', value: custom.mo_hinh_dau_tu || '—' },
+      { label: 'Trạng thái trạm', value: 'Triển khai' }
+    ];
+  };
+
+  const handleConfirmStation = async () => {
+    if (!stationModal.name.trim()) return;
+    setStationModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.convertToStation(stationModal.id, { name: stationModal.name.trim() }, token);
+      if (res.success) {
+        const st = res.data || {};
+        setToast({ message: res.created ? `Đã tạo trạm #${st.id} "${st.name}" ở trạng thái Triển khai` : `Đề xuất đã có trạm #${st.id}`, type: 'success' });
+        setStationModal({ open: false, id: null, name: '', saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Tạo trạm thất bại');
+        setStationModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setStationModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
   const handleDeleteClick = (id) => {
     setConfirmDelete({ isOpen: true, id });
   };
@@ -311,11 +489,12 @@ const AdminProposalsPage = () => {
     setSearch('');
     setFilter('');
     setFilterUuTien('');
+    setColumnFilters({});
     if (dupRef.current) dupRef.current.reset();
     setDupMode(false);
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadProposals(1, { filter: '', filterUuTien: '', search: '' });
+    loadProposals(1, { filter: '', filterUuTien: '', search: '', columnFilters: {} });
   };
 
   const handleExportProposals = async (viewIds) => {
@@ -660,42 +839,146 @@ const AdminProposalsPage = () => {
     setShowPreview(true);
   };
 
-  const renderActions = (row) => (
-    <div className="flex flex-wrap gap-1 items-center">
-      <button className="btn btn-primary btn-xs gap-1" onClick={() => navigate(`/admin/proposals/view=${row.id}`)}>
-        <Eye size={12} />
-        Xem
-      </button>
-      {isAdmin && (
-      <button className="btn btn-warning btn-xs gap-1" onClick={() => navigate(`/admin/proposals/edit=${row.id}`)}>
-        <Pencil size={12} />
-        Sửa
-      </button>
-      )}
-      <select
-        value={row.status}
-        onChange={(e) => handleStatusChange(row.id, e.target.value)}
-        className="select select-bordered select-xs"
+  const renderPrimaryAction = (row) => {
+    const go = (s) => handleStatusChange(row.id, s);
+    switch (row.status) {
+      case 'PENDING':
+        return (
+          <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('REVIEWING')} title="Duyệt và đẩy sang 1Office (sang Đang xem xét)">
+            <CheckCircle2 size={12} />
+            Duyệt & đẩy
+          </button>
+        );
+      case 'REVIEWING':
+        return (
+          <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="Demo nội bộ: 1Office báo đã duyệt (sau này do webhook)">
+            <FileSignature size={12} />
+            Đã duyệt BCĐX
+            <span className="badge badge-warning badge-xs">demo</span>
+          </button>
+        );
+      case 'APPROVED':
+        return (
+          <button className="btn btn-success btn-outline btn-xs gap-1 shrink-0" onClick={() => go('CONTRACT_SIGNED')} title="Demo nội bộ: ký hợp đồng thành công (sau này do webhook)">
+            <CheckCircle2 size={12} />
+            Ký thành công
+            <span className="badge badge-warning badge-xs">demo</span>
+          </button>
+        );
+      case 'CONTRACT_SIGNED':
+        if (row.station_id) {
+          return (
+            <button className="btn btn-info btn-outline btn-xs gap-1 shrink-0" onClick={() => navigate(`/admin/stations/view=${row.station_id}`)} title={`Đề xuất đã thành trạm #${row.station_id}`}>
+              <Eye size={12} />
+              Xem trạm #{row.station_id}
+            </button>
+          );
+        }
+        if (isAdmin) {
+          return (
+            <button className="btn btn-primary btn-xs gap-1 shrink-0" onClick={() => openStationModal(row)} title="Tạo trạm từ đề xuất (tự sinh thông tin)">
+              <MapPinned size={12} />
+              Tạo trạm
+            </button>
+          );
+        }
+        return null;
+      default:
+        return null;
+    }
+  };
+
+  const renderRowMenuItems = (row) => {
+    const go = (s) => handleStatusChange(row.id, s);
+    const items = [];
+    const item = (key, icon, label, onClick, danger) => (
+      <button
+        key={key}
+        className={`w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 ${danger ? 'text-error' : ''}`}
+        onClick={() => { setRowMenu(null); onClick(); }}
       >
-        {statusOptions.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-      <button className="btn btn-error btn-outline btn-xs gap-1" onClick={() => handleDeleteClick(row.id)}>
-        <Trash2 size={12} />
-        Xóa
+        {icon}
+        {label}
       </button>
-      {isAdmin && (row.contact_1office_code ? (
-        <button className="btn btn-ghost btn-xs gap-1" onClick={() => handleUnlink(row.id)} disabled={batchLoading} title={`Đã liên kết: ${row.contact_1office_code}`}>
-          <Unlink size={12} />
-          Hủy link
-        </button>
-      ) : (
-        <button className="btn btn-accent btn-outline btn-xs gap-1" onClick={() => setLinkModal({ open: true, proposalId: row.id, code: '' })}>
-          <Link size={12} />
-          Link
-        </button>
-      ))}
+    );
+    items.push(item('view', <Eye size={14} />, 'Xem chi tiết', () => navigate(`/admin/proposals/view=${row.id}`)));
+    if (isAdmin) {
+      items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
+    }
+    items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
+    if (row.status === 'CANCELLED' && isSuperAdmin) {
+      items.push(item('reopen', <RotateCcw size={14} />, 'Mở lại (khẩn cấp)', () => setReopenModal({ open: true, id: row.id, reason: '', saving: false })));
+    }
+    const dangerItems = [];
+    if (row.status === 'PENDING') {
+      dangerItems.push(item('reject', <X size={14} />, 'Từ chối', () => go('REJECTED'), true));
+    }
+    if (row.status === 'APPROVED') {
+      dangerItems.push(item('signfail', <X size={14} />, 'Ký thất bại (demo)', () => go('CONTRACT_FAILED'), true));
+    }
+    if (['PENDING', 'REVIEWING', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(row.status)) {
+      dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
+    }
+    dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));
+    if (isAdmin) {
+      if (row.contact_1office_code) {
+        dangerItems.push(item('unlink', <Unlink size={14} />, `Hủy link (${row.contact_1office_code})`, () => handleUnlink(row.id)));
+      } else {
+        dangerItems.push(item('link', <Link size={14} />, 'Link 1Office', () => setLinkModal({ open: true, proposalId: row.id, code: '' })));
+      }
+    }
+    return (
+      <>
+        {items}
+        {dangerItems.length > 0 && <div className="border-t border-base-200 my-1" />}
+        {dangerItems}
+      </>
+    );
+  };
+
+  const openRowMenu = (e, id) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const w = 224;
+    let left = Math.min(rect.right - w, window.innerWidth - w - 8);
+    left = Math.max(8, left);
+    let top = rect.bottom + 4;
+    if (top + 320 > window.innerHeight) top = Math.max(8, rect.top - 320);
+    setRowMenu({ id, top, left });
+  };
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const onKey = (e) => { if (e.key === 'Escape') setRowMenu(null); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [rowMenu]);
+
+  const renderStatusActions = (row) => {
+    const go = (s) => handleStatusChange(row.id, s);
+    switch (row.status) {
+      case 'REJECTED':
+        return <span className="text-xs text-base-content/60 shrink-0">Chờ gửi lại</span>;
+      case 'CANCELLED':
+        return <span className="badge badge-ghost badge-sm gap-1 shrink-0"><Lock size={12} />Đã hủy</span>;
+      default:
+        return null;
+    }
+  };
+
+  const menuRow = rowMenu ? proposals.find(p => p.id === rowMenu.id) : null;
+
+  const renderActions = (row) => (
+    <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
+      {renderPrimaryAction(row)}
+      {renderStatusActions(row)}
+      <button className="btn btn-primary btn-xs btn-square shrink-0" onClick={() => navigate(`/admin/proposals/view=${row.id}`)} title="Xem chi tiết">
+        <Eye size={14} />
+      </button>
+      <button className="btn btn-ghost btn-xs btn-square shrink-0" onClick={(e) => openRowMenu(e, row.id)} title="Thao tác khác">
+        <MoreVertical size={14} />
+      </button>
     </div>
   );
 
@@ -732,6 +1015,15 @@ const AdminProposalsPage = () => {
                 <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52">
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
+                    onClick={handleBatchApprove}
+                    disabled={selectedIds.length === 0 || batchLoading}
+                  >
+                    <CheckCircle2 size={14} className="text-success" />
+                    Duyệt và đẩy
+                    {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
+                  </button>
+                  <button
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
                     onClick={() => { setShowMoreMenu(false); openPushConfirm(); }}
                     disabled={selectedIds.length === 0 || batchLoading}
                   >
@@ -746,6 +1038,14 @@ const AdminProposalsPage = () => {
                   >
                     <ArrowDownToLine size={14} className="text-info" />
                     Lấy về từ 1Office
+                  </button>
+                  <div className="border-t border-base-200 my-1" />
+                  <button
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
+                    onClick={() => { setShowMoreMenu(false); setFlowInfoOpen(true); }}
+                  >
+                    <GitBranch size={14} className="text-primary" />
+                    Mô tả luồng
                   </button>
                 </div>
               </>
@@ -1007,12 +1307,12 @@ const AdminProposalsPage = () => {
         <dialog className="modal modal-open">
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Duyệt đề xuất</h3>
+              <h3 className="font-bold text-lg">Duyệt và đẩy sang 1Office</h3>
               <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false })}>
                 <X size={18} />
               </button>
             </div>
-            <p className="text-sm text-base-content/80">Đề xuất gửi sang 1Office <b>không thể hoàn tác</b>. Hãy xác nhận chắc chắn muốn gửi đề xuất này rồi mới thực hiện.</p>
+            <p className="text-sm text-base-content/80">Đề xuất sẽ chuyển sang <b>Đang xem xét</b> và tạo lệnh đẩy sang 1Office (<b>không thể hoàn tác</b>). Hãy xác nhận chắc chắn rồi mới thực hiện.</p>
             {approveRow && (
               <div className="mt-3 border border-base-300 rounded-lg p-3">
                 <p className="text-xs font-bold uppercase text-base-content/50 mb-2">Thông tin gửi sang 1Office</p>
@@ -1031,11 +1331,78 @@ const AdminProposalsPage = () => {
                 disabled={approveModal.saving}
                 onClick={handleConfirmApprove}
               >
-                {approveModal.saving ? 'Đang duyệt...' : 'Duyệt & gửi 1Office'}
+                {approveModal.saving ? 'Đang duyệt...' : 'Duyệt & đẩy 1Office'}
               </button>
             </div>
           </div>
           <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false })} />
+        </dialog>
+      )}
+
+      {cancelModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-error">Hủy đề xuất</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setCancelModal({ open: false, id: null, reason: '', saving: false })}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-error py-2 px-3 text-xs mb-3">
+              <Ban size={14} />
+              <span>Đã hủy là <b>trạng thái cuối — không thể mở lại</b>, kể cả admin. Hãy chắc chắn trước khi xác nhận.</span>
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Lý do hủy *</span></label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={4}
+                value={cancelModal.reason}
+                onChange={(e) => setCancelModal(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Nhập lý do hủy đề xuất..."
+              />
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setCancelModal({ open: false, id: null, reason: '', saving: false })}>Hủy bỏ</button>
+              <button
+                className="btn btn-error btn-sm"
+                disabled={!cancelModal.reason.trim() || cancelModal.saving}
+                onClick={handleConfirmCancel}
+              >
+                {cancelModal.saving ? 'Đang hủy...' : 'Xác nhận hủy'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setCancelModal({ open: false, id: null, reason: '', saving: false })} />
+        </dialog>
+      )}
+
+      {transitionModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">{transitionTitle(transitionModal.to)}</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-warning py-2 px-3 text-xs mb-3">
+              <AlertTriangle size={14} />
+              <span>Thao tác <b>demo nội bộ</b> — sau này do webhook 1Office gọi sang. Tạm thời cho chỉnh tay.</span>
+            </div>
+            <p className="text-sm text-base-content/80">Xác nhận chuyển đề xuất #{transitionModal.id} sang <b>{statusLabel(transitionModal.to)}</b>?</p>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })}>Hủy bỏ</button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={transitionModal.saving}
+                onClick={handleConfirmTransition}
+              >
+                {transitionModal.saving ? 'Đang chuyển...' : 'Xác nhận'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })} />
         </dialog>
       )}
 
@@ -1144,11 +1511,116 @@ const AdminProposalsPage = () => {
         />
       )}
 
+      {logProposalId && (
+        <ProposalActivityPopup proposalId={logProposalId} onClose={() => setLogProposalId(null)} />
+      )}
+
+      {flowInfoOpen && (
+        <ProposalFlowInfo onClose={() => setFlowInfoOpen(false)} />
+      )}
+
+      {reopenModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-warning">Mở lại đề xuất đã hủy</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setReopenModal({ open: false, id: null, reason: '', saving: false })}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-warning py-2 px-3 text-xs mb-3">
+              <AlertTriangle size={14} />
+              <span>Chỉ <b>SUPER_ADMIN</b> dùng trong trường hợp <b>khẩn cấp</b>. Hành động được <b>ghi log</b> (nguồn admin_override).</span>
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Lý do mở lại *</span></label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={4}
+                value={reopenModal.reason}
+                onChange={(e) => setReopenModal(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Nhập lý do mở lại đề xuất..."
+              />
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setReopenModal({ open: false, id: null, reason: '', saving: false })}>Hủy bỏ</button>
+              <button
+                className="btn btn-warning btn-sm"
+                disabled={!reopenModal.reason.trim() || reopenModal.saving}
+                onClick={handleConfirmReopen}
+              >
+                {reopenModal.saving ? 'Đang mở...' : 'Xác nhận mở lại'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setReopenModal({ open: false, id: null, reason: '', saving: false })} />
+        </dialog>
+      )}
+
+      {rowMenu && menuRow && createPortal(
+        <>
+          <div data-testid="rowmenu-backdrop" className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} />
+          <div
+            className="fixed z-[61] bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-56 max-h-80 overflow-y-auto"
+            style={{ top: rowMenu.top, left: rowMenu.left }}
+          >
+            <div className="px-3 py-1.5 text-xs font-bold text-base-content/50 uppercase">Đề xuất #{menuRow.id}</div>
+            {renderRowMenuItems(menuRow)}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {stationModal.open && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Tạo trạm từ đề xuất #{stationModal.id}</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setStationModal({ open: false, id: null, name: '', saving: false })}>
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-base-content/70 mb-3">Thông tin tự sinh từ đề xuất (chỉ tên trạm được sửa):</p>
+            <div className="form-control mb-3">
+              <label className="label"><span className="label-text">Tên trạm *</span></label>
+              <input
+                type="text"
+                className="input input-bordered input-sm"
+                value={stationModal.name}
+                onChange={(e) => setStationModal(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div className="border border-base-300 rounded-lg p-3">
+              {stationPreviewRows(stationRow).map(r => (
+                <div key={r.label} className="flex justify-between gap-2 text-sm py-0.5">
+                  <span className="text-base-content/70">{r.label}</span>
+                  <span className="font-medium text-right">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setStationModal({ open: false, id: null, name: '', saving: false })}>Hủy bỏ</button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!stationModal.name.trim() || stationModal.saving}
+                onClick={handleConfirmStation}
+              >
+                {stationModal.saving ? 'Đang tạo...' : 'Xác nhận tạo trạm'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" onClick={() => setStationModal({ open: false, id: null, name: '', saving: false })} />
+        </dialog>
+      )}
+
       {!dupMode && (
       <>
       {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
           <span className="text-sm font-medium">Đã chọn: {selectedIds.length} đề xuất</span>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => setLogProposalId(selectedIds[0])} title="Xem lịch sử hoạt động">
+            <History size={14} /> Xem log
+          </button>
           <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={batchLoading}>
             <Trash2 size={14} /> Xóa ({selectedIds.length})
           </button>
@@ -1166,6 +1638,7 @@ const AdminProposalsPage = () => {
         startIndex={(pagination.page - 1) * pagination.limit}
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
+        onColumnFiltersChange={handleColumnFiltersChange}
       />
 
       <Pagination

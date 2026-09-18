@@ -5,7 +5,8 @@ import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
 import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
-import { MapPinned } from 'lucide-react';
+import ProposalActivityPopup from './ProposalActivityPopup';
+import { MapPinned, History } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import useDataListMap from '../../hooks/useDataListMap';
 import Toast from '../Toast';
@@ -37,6 +38,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [formData, setFormData] = useState({});
   const [formConfig, setFormConfig] = useState(null);
   const [showMap, setShowMap] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const [activeTabs, setActiveTabs] = useState({});
   const modalRef = useRef(null);
   const dataListIds = (() => {
@@ -230,8 +232,19 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       fixedKeys.forEach(k => { delete payload[k]; });
       const res = await service.update(record.id, payload, token);
       if (res.success) {
-        setToast({ message: 'Cập nhật thành công', type: 'success' });
-        setRecord({ ...record, ...formData, ...res.data });
+        let saved = res.data;
+        let msg = entity === 'station_proposals' && record?.status === 'REJECTED' ? 'Đã gửi lại đề xuất' : 'Cập nhật thành công';
+        if (entity === 'station_proposals' && record?.status === 'REJECTED' && !updateService) {
+          try {
+            const st = await adminProposalService.updateStatus(record.id, 'PENDING', token);
+            if (st.success && st.data) saved = st.data;
+            else msg = 'Đã lưu nội dung nhưng gửi lại thất bại — hãy thử lại';
+          } catch {
+            msg = 'Đã lưu nội dung nhưng gửi lại thất bại — hãy thử lại';
+          }
+        }
+        setToast({ message: msg, type: 'success' });
+        setRecord({ ...record, ...formData, ...saved });
         setMode('view');
         notifyBellRefresh();
         if (onSaved) onSaved();
@@ -469,6 +482,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                 Xem bản đồ
               </button>
             )}
+            {entity === 'station_proposals' && record?.id && (
+              <button className="btn btn-sm btn-outline gap-1" onClick={() => setShowLog(true)} title="Xem lịch sử hoạt động của đề xuất">
+                <History size={14} />
+                Xem log
+              </button>
+            )}
             <button className="btn-close" onClick={handleClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6b7280', padding: '4px 8px' }}>✕</button>
           </div>
         </div>
@@ -519,6 +538,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           title={`${ENTITY_LABELS[entity] || entity} #${record.id}`}
           onClose={() => setShowMap(false)}
         />
+      )}
+      {showLog && entity === 'station_proposals' && record?.id && (
+        <ProposalActivityPopup proposalId={record.id} onClose={() => setShowLog(false)} />
       )}
     </div>
   );

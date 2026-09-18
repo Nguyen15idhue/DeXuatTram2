@@ -173,6 +173,13 @@ exports.getAll = async (filters = {}, page = 1, limit = 50) => {
   const offset = (page - 1) * limit;
   const where = [];
   const params = [];
+  const joins = `LEFT JOIN users u ON q.created_by = u.id
+    LEFT JOIN station_proposals sp ON q.entity_type = 'station_proposals' AND q.entity_id = sp.id`;
+
+  if (filters.id) {
+    where.push('q.id = ?');
+    params.push(filters.id);
+  }
 
   if (filters.status) {
     where.push('q.status = ?');
@@ -209,6 +216,16 @@ exports.getAll = async (filters = {}, page = 1, limit = 50) => {
     params.push(filters.created_by);
   }
 
+  if (filters.code) {
+    where.push(`(sp.custom_data->>'$.ma_de_xuat' LIKE ? OR sp.tracking_code LIKE ?)`);
+    params.push(`%${filters.code}%`, `%${filters.code}%`);
+  }
+
+  if (filters.actor) {
+    where.push('u.full_name LIKE ?');
+    params.push(`%${filters.actor}%`);
+  }
+
   if (filters.date_from) {
     where.push('q.created_at >= ?');
     params.push(filters.date_from);
@@ -221,15 +238,14 @@ exports.getAll = async (filters = {}, page = 1, limit = 50) => {
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
-  const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM api_queue_logs q ${whereClause}`, params);
+  const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM api_queue_logs q ${joins} ${whereClause}`, params);
   const total = countResult[0].total;
 
   const [rows] = await pool.query(
     `SELECT q.*, u.full_name,
             sp.custom_data->>'$.ma_de_xuat' AS ma_de_xuat
      FROM api_queue_logs q
-     LEFT JOIN users u ON q.created_by = u.id
-     LEFT JOIN station_proposals sp ON q.entity_type = 'station_proposals' AND q.entity_id = sp.id
+     ${joins}
      ${whereClause}
      ORDER BY q.created_at DESC
      LIMIT ? OFFSET ?`,

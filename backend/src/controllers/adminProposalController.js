@@ -28,9 +28,9 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, search, page = 1, limit = 10, uu_tien } = req.query;
+    const { status, search, page = 1, limit = 10, uu_tien, filters } = req.query;
     const scope = await scopeFor(req);
-    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien);
+    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters);
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);
@@ -76,12 +76,15 @@ exports.delete = async (req, res) => {
 exports.updateStatus = async (req, res) => {
   try {
     const { status, reason } = req.body;
-    const validStatuses = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED'];
+    const validStatuses = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ' });
     }
     if (status === 'REJECTED' && !String(reason || '').trim()) {
       return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do từ chối' });
+    }
+    if (status === 'CANCELLED' && !String(reason || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do hủy' });
     }
 
     const existing = await adminProposalService.getProposalById(req.params.id);
@@ -92,7 +95,11 @@ exports.updateStatus = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
-    const result = await adminProposalService.updateStatus(req.params.id, status, { reason, reviewerId: req.user.id });
+    const result = await adminProposalService.updateStatus(req.params.id, status, {
+      reason,
+      reviewerId: req.user.id,
+      isSuperAdmin: req.user.role === 'SUPER_ADMIN'
+    });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
     res.json({ success: true, data: proposal, autoPush: result.autoPush || null, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
@@ -116,7 +123,11 @@ exports.update = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
-    await adminProposalService.updateProposal(id, req.body);
+    await adminProposalService.updateProposal(id, req.body, {
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      ip: req.ip || null
+    });
     const proposal = await adminProposalService.getProposalWithUser(id);
     res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
@@ -124,6 +135,35 @@ exports.update = async (req, res) => {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.convertToStation = async (req, res) => {
+  try {
+    const stationService = require('../services/stationService');
+    const existing = await adminProposalService.getProposalById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const result = await stationService.convertProposalToStation(req.params.id, {
+      name: req.body && req.body.name,
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      source: 'user',
+      ip: req.ip || null
+    });
+    res.json({
+      success: true,
+      data: result.station,
+      created: result.created,
+      message: result.created ? 'Đã tạo trạm từ đề xuất' : 'Đề xuất đã có trạm liên kết'
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Admin convert to station error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

@@ -408,7 +408,7 @@ export const iconSvgMarkup = (id, { size = 16 } = {}) => {
 
 export const STATUS_ICON_DEFAULTS = {
   station: { PLANNING: 'flag', ACTIVE: 'evStation', DEPLOYING: 'wrench', REJECTED: 'ban' },
-  proposal: { PENDING: 'clock', REVIEWING: 'search', APPROVED: 'check', REJECTED: 'cross' },
+  proposal: { PENDING: 'clock', REVIEWING: 'search', APPROVED: 'check', REJECTED: 'cross', CANCELLED: 'ban', CONTRACT_SIGNED: 'document', CONTRACT_FAILED: 'alert' },
 };
 
 const ENTITY_TO_MAP = { stations: 'station', station_proposals: 'proposal' };
@@ -448,7 +448,9 @@ const extractStatusOptions = (defs) => {
       out[ENTITY_TO_MAP[fd.entity]].push({
         value: opt.value,
         label: opt.label || opt.value,
-        color: opt.color || ''
+        color: opt.color || '',
+        show_in_legend: opt.show_in_legend === 0 || opt.show_in_legend === false ? false : true,
+        sort_order: Number(opt.sort_order) || 999
       });
     });
   });

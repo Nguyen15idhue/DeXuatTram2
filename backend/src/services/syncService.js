@@ -70,6 +70,11 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       continue;
     }
 
+    if (!['PENDING', 'REVIEWING'].includes(proposal.status)) {
+      results.push({ proposalId, success: false, error: `Chỉ đẩy được đề xuất ở trạng thái Đang đề xuất hoặc Đang xem xét (hiện tại: ${proposal.status})` });
+      continue;
+    }
+
     const missingUserFields = await exports.getMissingPushUserFieldLabels(proposal, fieldDefs);
     if (missingUserFields.length > 0) {
       results.push({ proposalId, success: false, error: `Thiếu ${missingUserFields.map(l => `"${l}"`).join(', ')}` });

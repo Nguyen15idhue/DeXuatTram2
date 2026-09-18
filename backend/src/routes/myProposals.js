@@ -18,9 +18,14 @@ const excelService = require('../services/excelService');
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
- *       - in: query
- *         name: page
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
+  *       - in: query
+  *         name: filters
+  *         schema:
+  *           type: string
+  *         description: Lọc theo cột dạng JSON (VD {"owner_name":"abc"}) — tìm trên toàn bộ database, không chỉ trang hiện tại
+  *       - in: query
+  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
@@ -206,7 +211,7 @@ router.delete('/:id', requireAuth, myProposalController.delete);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
  *     responses:
  *       200:

@@ -15,6 +15,11 @@ const queueWorker = require('../workers/queueWorker');
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
+ *         name: id
+ *         schema:
+ *           type: integer
+ *         description: Tìm theo ID dòng log
+ *       - in: query
  *         name: status
  *         schema:
  *           type: string
@@ -44,6 +49,16 @@ const queueWorker = require('../workers/queueWorker');
  *         name: created_by
  *         schema:
  *           type: integer
+ *       - in: query
+ *         name: code
+ *         schema:
+ *           type: string
+ *         description: Tìm theo mã đề xuất
+ *       - in: query
+ *         name: actor
+ *         schema:
+ *           type: string
+ *         description: Tìm theo tên người thực hiện
  *       - in: query
  *         name: date_from
  *         schema:
@@ -75,6 +90,7 @@ const queueWorker = require('../workers/queueWorker');
 router.get('/', requireAuth, requireUserManager, async (req, res) => {
   try {
     const filters = {
+      id: req.query.id ? parseInt(req.query.id) : undefined,
       status: req.query.status,
       direction: req.query.direction,
       action: req.query.action,
@@ -82,6 +98,8 @@ router.get('/', requireAuth, requireUserManager, async (req, res) => {
       entity_type: req.query.entity_type,
       entity_id: req.query.entity_id ? parseInt(req.query.entity_id) : undefined,
       created_by: req.query.created_by ? parseInt(req.query.created_by) : undefined,
+      code: req.query.code || undefined,
+      actor: req.query.actor || undefined,
       date_from: req.query.date_from,
       date_to: req.query.date_to
     };

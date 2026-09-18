@@ -8,7 +8,10 @@ const STATUS_TITLES = {
   REVIEWING: 'Đề xuất đang được xem xét',
   APPROVED: 'Đề xuất đã được duyệt',
   REJECTED: 'Đề xuất bị từ chối',
-  RESUBMITTED: 'Đề xuất được gửi lại'
+  RESUBMITTED: 'Đề xuất được gửi lại',
+  CANCELLED: 'Đề xuất đã bị hủy',
+  CONTRACT_SIGNED: 'Đề xuất ký hợp đồng thành công',
+  CONTRACT_FAILED: 'Đề xuất ký hợp đồng thất bại'
 };
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';

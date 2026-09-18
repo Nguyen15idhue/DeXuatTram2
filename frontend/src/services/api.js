@@ -237,6 +237,9 @@ export const adminProposalService = {
   updateStatus(id, status, token, reason) {
     return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason }, token);
   },
+  convertToStation(id, data, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token);
+  },
   update(id, data, token) {
     return api.putWithAuth(`/admin/proposals/${id}`, data, token);
   },
@@ -768,5 +771,18 @@ export const queueLogService = {
   },
   cancel(id, token) {
     return api.postWithAuth(`/admin/queue-logs/${id}/cancel`, {}, token);
+  }
+};
+
+export const proposalLogService = {
+  getAll(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/proposal-logs?${params.toString()}`, token);
+  },
+  timeline(proposalId, token) {
+    return api.getWithAuth(`/admin/proposal-logs/${proposalId}/timeline`, token);
   }
 };

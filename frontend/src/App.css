@@ -3341,6 +3341,42 @@ fieldset.form-section,
 .bell-item.read {
   opacity: 0.75;
 }
+.bell-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid #eef1f4;
+}
+.bell-count {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.bell-more-btn {
+  background: none;
+  border: none;
+  color: #4a6cf7;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bell-more-btn:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+.bell-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  border-bottom: 1px solid #eef1f4;
+}
 
 /* Location map modal (view/edit popup) */
 .location-map-modal {
@@ -3555,6 +3591,15 @@ fieldset.form-section,
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.map-filter-offmap {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #94a3b8;
+  white-space: nowrap;
 }
 .map-filter-mobile .map-filter-sheet-backdrop {
   position: fixed;

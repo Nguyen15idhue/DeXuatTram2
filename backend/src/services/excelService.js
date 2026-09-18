@@ -21,7 +21,7 @@ const ENTITY_TABLE_MAP = {
 const VALID_STATUSES = {
   stations: ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'],
   users: ['ACTIVE', 'LOCKED'],
-  station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED']
+  station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED']
 };
 
 const STATUS_LABEL_MAP = {

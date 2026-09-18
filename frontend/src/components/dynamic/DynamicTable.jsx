@@ -1,10 +1,18 @@
-import { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dynamicService } from '../../services/api';
 import FieldRenderer from './FieldRenderer';
 import useDataListMap from '../../hooks/useDataListMap';
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange }, ref) => {
+const SERVER_FILTER_DEBOUNCE_MS = 500;
+
+const colWidthStyle = (col) => {
+  const w = Number(col.width);
+  if (!w || w <= 0) return undefined;
+  return { width: w, minWidth: w };
+};
+
+const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -13,13 +21,30 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
   const [filters, setFilters] = useState({});
   const [configVersion, setConfigVersion] = useState(0);
   const dataListOptions = useDataListMap(columns.map(c => c.data_list_id));
+  const serverMode = typeof onColumnFiltersChange === 'function';
+  const onColumnFiltersChangeRef = useRef(onColumnFiltersChange);
+  onColumnFiltersChangeRef.current = onColumnFiltersChange;
+  const lastPushedRef = useRef('{}');
 
   useImperativeHandle(ref, () => ({
     clearFilters() {
       setFilters({});
       setSortConfig({ key: null, direction: null });
+      lastPushedRef.current = '{}';
+      if (onColumnFiltersChangeRef.current) onColumnFiltersChangeRef.current({});
     }
   }));
+
+  useEffect(() => {
+    if (!serverMode) return undefined;
+    const t = setTimeout(() => {
+      const sig = JSON.stringify(filters);
+      if (sig === lastPushedRef.current) return;
+      lastPushedRef.current = sig;
+      if (onColumnFiltersChangeRef.current) onColumnFiltersChangeRef.current(filters);
+    }, SERVER_FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [filters, serverMode]);
 
   useEffect(() => {
     if (viewId) loadViewConfig();
@@ -57,6 +82,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
 
   const filteredData = useMemo(() => {
     if (!data) return [];
+    if (serverMode) return data;
     const activeFilters = Object.entries(filters).filter(([, v]) => v.trim());
     if (activeFilters.length === 0) return data;
 
@@ -67,7 +93,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
         return String(val).toLowerCase().includes(filterVal.toLowerCase());
       });
     });
-  }, [data, filters]);
+  }, [serverMode, data, filters]);
 
   const sortedData = useMemo(() => {
     if (!filteredData) return [];
@@ -166,13 +192,14 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
                     key={key}
                     onClick={() => sortable && handleSort(key)}
                     className={sortable ? 'cursor-pointer select-none' : ''}
+                    style={colWidthStyle(col)}
                   >
                     {col.label}
                     {sortable && <span className="ml-1 text-xs">{getSortIcon(key)}</span>}
                   </th>
                 );
               })}
-              <th className="text-center min-w-[200px]">Thao tác</th>
+              <th className="text-center min-w-[230px] whitespace-nowrap">Thao tác</th>
             </tr>
             {hasFilters && (
               <tr className="bg-base-200">
@@ -181,12 +208,13 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
                 {visibleColumns.map(col => {
                   const key = col.field_key || col.key;
                   return (
-                    <th key={key}>
+                    <th key={key} style={colWidthStyle(col)}>
                       {col.filterable ? (
                         <input
                           type="text"
                           className="input input-bordered input-xs w-full"
-                          placeholder="Lọc..."
+                          placeholder={serverMode ? 'Lọc toàn bộ...' : 'Lọc...'}
+                          title={serverMode ? 'Lọc trên toàn bộ dữ liệu' : 'Lọc trong trang hiện tại'}
                           value={filters[key] || ''}
                           onClick={e => e.stopPropagation()}
                           onChange={(e) => handleFilterChange(key, e.target.value)}
@@ -227,7 +255,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
                     />
                   );
                   return (
-                    <td key={key}>
+                    <td key={key} style={colWidthStyle(col)}>
                       {colIdx === 0 && depth > 0 ? <div style={{ paddingLeft: depth * 24 }}>{cell}</div> : cell}
                     </td>
                   );

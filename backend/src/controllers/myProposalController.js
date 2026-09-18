@@ -13,8 +13,8 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, search, page = 1, limit = 10 } = req.query;
-    const result = await myProposalService.getUserProposals(req.user.id, status, search, parseInt(page), parseInt(limit));
+    const { status, search, page = 1, limit = 10, filters } = req.query;
+    const result = await myProposalService.getUserProposals(req.user.id, status, search, parseInt(page), parseInt(limit), filters);
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Get my proposals error:', error);
@@ -40,7 +40,10 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING hoặc REJECTED' });
     }
 
-    await myProposalService.updateProposal(id, req.user.id, req.body);
+    await myProposalService.updateProposal(id, req.user.id, req.body, {
+      actorRole: req.user.role || null,
+      ip: req.ip || null
+    });
     const proposal = await myProposalService.getProposalById(id);
     res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {

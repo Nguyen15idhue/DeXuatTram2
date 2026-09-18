@@ -4,13 +4,16 @@ const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
+const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
+
+const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
 
 exports.getBranchUserIds = async (salesId) => {
   const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [salesId, salesId]);
   return rows.map(r => r.id);
 };
 
-exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien) => {
+exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien, columnFilters) => {
   const offset = (page - 1) * limit;
   const where = [];
   const params = [];
@@ -46,6 +49,18 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     params.push(...orsParams);
   }
 
+  if (columnFilters) {
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+    const { clauses, params: filterParams } = buildColumnFilterWhere({
+      filters: columnFilters,
+      fieldDefs,
+      fixedColumns: PROPOSAL_FIXED_COLUMNS,
+      alias: 'p'
+    });
+    where.push(...clauses);
+    params.push(...filterParams);
+  }
+
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
   const [countResult] = await pool.query(
@@ -58,7 +73,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
-            p.contact_1office_code, p.sync_status,
+            p.contact_1office_code, p.sync_status, p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at,
             u.full_name as user_name, u.email as user_email
     FROM station_proposals p
@@ -101,76 +116,18 @@ exports.deleteProposal = async (id) => {
 };
 
 exports.updateStatus = async (id, status, opts = {}) => {
-  const reason = status === 'REJECTED' ? String(opts.reason || '').trim() : null;
-  if (status === 'REJECTED' && !reason) {
-    throw Object.assign(new Error('Vui lòng nhập lý do từ chối'), { statusCode: 400 });
-  }
+  const proposalLifecycle = require('./proposalLifecycle');
+  return proposalLifecycle.transition(id, status, {
+    reason: opts.reason,
+    actorId: opts.reviewerId || null,
+    source: 'user',
+    manualOverride: false,
+    ip: opts.ip || null,
+    isSuperAdmin: opts.isSuperAdmin === true
+  });
+};
 
-  const [rows] = await pool.query('SELECT id, user_id, status, contact_1office_code, custom_data FROM station_proposals WHERE id = ?', [id]);
-  if (rows.length === 0) {
-    throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
-  }
-  const proposal = rows[0];
-  const prevStatus = proposal.status;
-
-  if (status === 'APPROVED' && prevStatus !== 'APPROVED') {
-    const syncService = require('./syncService');
-    const missing = await syncService.getMissingPushUserFieldLabels(proposal);
-    if (missing.length > 0) {
-      throw Object.assign(
-        new Error(`Không thể duyệt: đề xuất thiếu ${missing.map(l => `"${l}"`).join(', ')}. Vui lòng cập nhật trước khi duyệt.`),
-        { statusCode: 400 }
-      );
-    }
-  }
-
-  await pool.query(
-    `UPDATE station_proposals
-     SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW()
-     WHERE id = ?`,
-    [status, reason, opts.reviewerId || null, id]
-  );
-
-  if (proposal.user_id) {
-    await notificationService.create({
-      userId: proposal.user_id,
-      type: status,
-      title: notificationService.statusTitle(status),
-      message: status === 'REJECTED' ? reason : null,
-      entityType: 'station_proposals',
-      entityId: id,
-      createdBy: opts.reviewerId || null
-    });
-  }
-
-  let autoPush = null;
-  if (status === 'APPROVED' && prevStatus !== 'APPROVED') {
-    autoPush = await autoPushOnApprove(id, opts.reviewerId || null);
-  }
-
-  return { id, status, autoPush };
-}
-
-async function autoPushOnApprove(id, reviewerId) {
-  try {
-    const apiConfigService = require('./apiConfigService');
-    const syncService = require('./syncService');
-    const config = await apiConfigService.getDefaultPushConfig();
-    if (!config) {
-      return { queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
-    }
-    const results = await syncService.pushTo1Office([id], config.id, reviewerId);
-    const first = results && results[0];
-    if (!first || !first.success) {
-      return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đẩy' };
-    }
-    return { queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id };
-  } catch (e) {
-    return { queued: false, reason: e.message || 'Lỗi tạo lệnh đẩy' };
-  }
-}
-
-exports.updateProposal = async (id, data) => {
+exports.updateProposal = async (id, data, opts = {}) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -196,6 +153,9 @@ exports.updateProposal = async (id, data) => {
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
   const prev = existing.length > 0 ? existing[0] : {};
+  if (fixedData.status !== undefined && existing.length > 0 && fixedData.status !== prev.status) {
+    throw Object.assign(new Error('Đổi trạng thái phải dùng PUT /admin/proposals/:id/status'), { statusCode: 400 });
+  }
   const next = {
     owner_name: fixedData.owner_name !== undefined ? fixedData.owner_name : prev.owner_name,
     owner_phone: fixedData.owner_phone !== undefined ? fixedData.owner_phone : prev.owner_phone,
@@ -203,43 +163,28 @@ exports.updateProposal = async (id, data) => {
     area: fixedData.area !== undefined ? fixedData.area : prev.area,
     land_type: fixedData.land_type !== undefined ? fixedData.land_type : prev.land_type,
     description: fixedData.description !== undefined ? fixedData.description : prev.description,
-    status: fixedData.status !== undefined ? fixedData.status : prev.status
+    status: prev.status
   };
-
-  const resubmitted = prev.status === 'REJECTED' && next.status === 'REJECTED';
-  if (resubmitted) next.status = 'PENDING';
 
   await pool.query(
     `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
     [next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
   );
 
-  if (resubmitted) {
-    if (prev.user_id) {
-      await notificationService.create({
-        userId: prev.user_id,
-        type: 'RESUBMITTED',
-        title: notificationService.statusTitle('RESUBMITTED'),
-        message: fixedData.owner_name ? `Đề xuất "${fixedData.owner_name}" đã được chỉnh sửa và gửi lại` : 'Đề xuất đã được chỉnh sửa và gửi lại',
-        entityType: 'station_proposals',
-        entityId: id,
-        createdBy: null
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    const oldFlat = { ...prev, ...current };
+    const newFlat = { ...next, ...mergedDynamic };
+    const diff = proposalLifecycle.buildDiff(oldFlat, newFlat, fieldDefs);
+    if (Object.keys(diff).length > 0) {
+      await proposalLifecycle.logActivity({
+        proposalId: id, action: 'updated', changedFields: diff,
+        fromStatus: prev.status || null, toStatus: next.status || null,
+        actorId: opts.actorId || null, actorRole: opts.actorRole || null,
+        source: 'user', manualOverride: false, ip: opts.ip || null
       });
     }
-  } else if (next.status === 'REJECTED' && prev.status !== 'REJECTED') {
-    await pool.query('UPDATE station_proposals SET reviewed_at = NOW() WHERE id = ? AND reviewed_at IS NULL', [id]);
-    if (prev.user_id) {
-      await notificationService.create({
-        userId: prev.user_id,
-        type: 'REJECTED',
-        title: notificationService.statusTitle('REJECTED'),
-        message: 'Đề xuất đã bị từ chối, vui lòng kiểm tra và chỉnh sửa.',
-        entityType: 'station_proposals',
-        entityId: id,
-        createdBy: null
-      });
-    }
-  }
+  } catch { /* silent: khong chan luu vi log */ }
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));

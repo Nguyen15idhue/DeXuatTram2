@@ -10,7 +10,10 @@ export const MARKER_COLORS = {
   PENDING: '#f97316',
   REVIEWING: '#3b82f6',
   APPROVED: '#22c55e',
-  REJECTED: '#ef4444'
+  REJECTED: '#ef4444',
+  CANCELLED: '#6b7280',
+  CONTRACT_SIGNED: '#0d9488',
+  CONTRACT_FAILED: '#f59e0b'
 };
 
 export const getMarkerColor = (status, entity) => {

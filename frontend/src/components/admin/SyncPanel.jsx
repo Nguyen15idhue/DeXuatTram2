@@ -44,7 +44,7 @@ const SyncPanel = ({ configId, onClose }) => {
     try {
       const res = await adminProposalService.getAll('', token);
       if (res.success) {
-        const list = (res.data || []).filter(p => !p.contact_1office_code);
+        const list = (res.data || []).filter(p => !p.contact_1office_code && ['PENDING', 'REVIEWING'].includes(p.status));
         setPushState(prev => ({ ...prev, proposals: list, loadingProposals: false }));
       }
     } catch {

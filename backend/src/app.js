@@ -37,8 +37,11 @@ const notificationsRoutes = require('./routes/notifications');
 const oneOfficeSyncRoutes = require('./routes/oneOfficeSync');
 const geocodeRoutes = require('./routes/geocode');
 const adminGeocodeConfigRoutes = require('./routes/adminGeocodeConfig');
+const webhooksRoutes = require('./routes/webhooks');
+const proposalActivityRoutes = require('./routes/proposalActivity');
 const queueWorker = require('./workers/queueWorker');
 const personnelSyncWorker = require('./workers/personnelSyncWorker');
+const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -125,6 +128,8 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/admin/1office', adminLimiter, oneOfficeSyncRoutes);
 app.use('/api/geocode', geocodeRoutes);
 app.use('/api/admin/geocode-config', adminLimiter, adminGeocodeConfigRoutes);
+app.use('/api/webhooks', webhooksRoutes);
+app.use('/api/admin/proposal-logs', adminLimiter, proposalActivityRoutes);
 app.use('/tiles', tilesRoutes);
 
 // Health check
@@ -141,6 +146,9 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   personnelSyncWorker.start().catch((err) => {
     console.error('[PersonnelSync] start error:', err.message);
+  });
+  proposalLifecycleWorker.start().catch((err) => {
+    console.error('[LifecycleWorker] start error:', err.message);
   });
 });
 

@@ -48,7 +48,7 @@ exports.getProposalFullById = async (id) => {
   return dynamicUtils.enrichUserFields(merged, fieldDefs);
 };
 
-exports.createProposal = async (userId, data) => {
+exports.createProposal = async (userId, data, opts = {}) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -99,6 +99,15 @@ exports.createProposal = async (userId, data) => {
   if (Object.keys(postResults).length > 0) {
     Object.assign(finalData, postResults);
   }
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    await proposalLifecycle.logActivity({
+      proposalId: recordId, action: 'created',
+      fromStatus: null, toStatus: 'PENDING',
+      actorId: userId || null, actorRole: opts.actorRole || null,
+      source: 'user', manualOverride: false, ip: opts.ip || null
+    });
+  } catch { /* silent: khong chan tao de xuat vi log */ }
   return finalData;
 };
 
@@ -182,7 +191,7 @@ exports.createGuestProposal = async (data, ip) => {
 
   if (phone) {
     const [samePhone] = await pool.query(
-      "SELECT id, latitude, longitude FROM station_proposals WHERE owner_phone = ? AND status != 'REJECTED'",
+      "SELECT id, latitude, longitude FROM station_proposals WHERE owner_phone = ? AND status NOT IN ('REJECTED', 'CANCELLED')",
       [phone]
     );
     for (const row of samePhone) {
@@ -290,6 +299,15 @@ exports.createGuestProposal = async (data, ip) => {
   const [proposal] = await pool.query('SELECT * FROM station_proposals WHERE id = ?', [recordId]);
   const finalData = dynamicUtils.mergeData(proposal[0], fieldDefs);
   Object.assign(finalData, postResults);
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    await proposalLifecycle.logActivity({
+      proposalId: recordId, action: 'created',
+      fromStatus: null, toStatus: 'PENDING',
+      actorId: null, actorRole: null,
+      source: 'user', manualOverride: false, ip: ip || null
+    });
+  } catch { /* silent: khong chan tao de xuat vi log */ }
   return finalData;
 };
 

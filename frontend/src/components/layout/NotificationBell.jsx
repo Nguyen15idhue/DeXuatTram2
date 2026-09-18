@@ -10,7 +10,10 @@ const TYPE_COLORS = {
   APPROVED: { bg: '#dcfce7', border: '#22c55e', text: '#166534' },
   PENDING: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
   RESUBMITTED: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
-  REVIEWING: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' }
+  REVIEWING: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
+  CANCELLED: { bg: '#f3f4f6', border: '#6b7280', text: '#374151' },
+  CONTRACT_SIGNED: { bg: '#ccfbf1', border: '#0d9488', text: '#0f766e' },
+  CONTRACT_FAILED: { bg: '#ffedd5', border: '#f59e0b', text: '#9a3412' }
 };
 
 export const notifyBellRefresh = () => window.dispatchEvent(new Event('notifications:refresh'));
@@ -25,6 +28,9 @@ const NotificationBell = ({ mode = 'user' }) => {
   const [blink, setBlink] = useState(false);
   const [tab, setTab] = useState('mine');
   const [pos, setPos] = useState({ top: 0, left: 0, width: 340 });
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const prevCount = useRef(0);
   const btnRef = useRef(null);
   const ddRef = useRef(null);
@@ -47,16 +53,22 @@ const NotificationBell = ({ mode = 'user' }) => {
     } catch { /* silent */ }
   }, [token]);
 
-  const loadList = useCallback(async (which = tab) => {
+  const loadList = useCallback(async (which = tab, pageNum = 1, append = false) => {
     if (!token) return;
-    setLoading(true);
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
       const res = which === 'all'
-        ? await notificationService.getAllAdmin(1, 30, token)
-        : await notificationService.getAll(1, 20, token);
-      if (res.success) setItems(res.data || []);
+        ? await notificationService.getAllAdmin(pageNum, 20, token)
+        : await notificationService.getAll(pageNum, 20, token);
+      if (res.success) {
+        setItems(prev => (append ? [...prev, ...(res.data || [])] : (res.data || [])));
+        setTotal((res.pagination && res.pagination.total) || 0);
+        setPage(pageNum);
+      }
     } catch { /* silent */ } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [token, tab]);
 
@@ -112,13 +124,13 @@ const NotificationBell = ({ mode = 'user' }) => {
     if (next) {
       updatePos();
       setTab('mine');
-      await loadList('mine');
+      await loadList('mine', 1, false);
     }
   };
 
   const switchTab = async (which) => {
     setTab(which);
-    await loadList(which);
+    await loadList(which, 1, false);
   };
 
   const handleItem = async (n) => {
@@ -140,6 +152,36 @@ const NotificationBell = ({ mode = 'user' }) => {
     setCount(0);
     prevCount.current = 0;
   };
+
+  const dayKey = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  };
+
+  const dayLabel = (t) => {
+    const d = new Date(t);
+    const now = new Date();
+    const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (sameDay(d, now)) return 'Hôm nay';
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    if (sameDay(d, y)) return 'Hôm qua';
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  const groupedItems = (() => {
+    const groups = [];
+    const byKey = {};
+    (items || []).forEach(n => {
+      const k = dayKey(n.created_at);
+      if (!byKey[k]) {
+        byKey[k] = { key: k, label: dayLabel(n.created_at), items: [] };
+        groups.push(byKey[k]);
+      }
+      byKey[k].items.push(n);
+    });
+    return groups;
+  })();
 
   const dropdown = open ? createPortal(
     <div
@@ -166,25 +208,38 @@ const NotificationBell = ({ mode = 'user' }) => {
         ) : items.length === 0 ? (
           <div className="bell-empty">{tab === 'all' ? 'Không có thông báo' : 'Không có thông báo'}</div>
         ) : (
-          items.map(n => {
-            const c = TYPE_COLORS[n.type] || TYPE_COLORS.PENDING;
-            return (
-              <button
-                key={n.id}
-                type="button"
-                className={`bell-item ${tab === 'all' ? '' : (n.is_read ? 'read' : 'unread')}`}
-                style={{ borderLeftColor: c.border, background: (tab === 'all' || n.is_read) ? '#fff' : c.bg }}
-                onClick={() => handleItem(n)}
-              >
-                <div className="bell-item-title" style={{ color: c.text }}>
-                  {n.title}
-                  {tab === 'all' && n.user_name ? <span className="bell-item-who"> → {n.user_name}</span> : null}
-                </div>
-                {n.message && <div className="bell-item-msg">{n.message}</div>}
-                <div className="bell-item-time">{new Date(n.created_at).toLocaleString('vi-VN')}</div>
-              </button>
-            );
-          })
+          groupedItems.map(g => (
+            <div key={g.key}>
+              <div className="bell-day">{g.label}</div>
+              {g.items.map(n => {
+                const c = TYPE_COLORS[n.type] || TYPE_COLORS.PENDING;
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    className={`bell-item ${tab === 'all' ? '' : (n.is_read ? 'read' : 'unread')}`}
+                    style={{ borderLeftColor: c.border, background: (tab === 'all' || n.is_read) ? '#fff' : c.bg }}
+                    onClick={() => handleItem(n)}
+                  >
+                    <div className="bell-item-title" style={{ color: c.text }}>
+                      {n.title}
+                      {tab === 'all' && n.user_name ? <span className="bell-item-who"> → {n.user_name}</span> : null}
+                    </div>
+                    {n.message && <div className="bell-item-msg">{n.message}</div>}
+                    <div className="bell-item-time">{new Date(n.created_at).toLocaleString('vi-VN')}</div>
+                  </button>
+                );
+              })}
+            </div>
+          ))
+        )}
+        {!loading && total > items.length && (
+          <div className="bell-more">
+            <span className="bell-count">Hiển thị {items.length}/{total}</span>
+            <button type="button" className="bell-more-btn" disabled={loadingMore} onClick={() => loadList(tab, page + 1, true)}>
+              {loadingMore ? 'Đang tải...' : 'Xem thêm'}
+            </button>
+          </div>
         )}
       </div>
     </div>,

@@ -17,31 +17,36 @@ const adminProposalController = require('../controllers/adminProposalController'
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
  *       - in: query
  *         name: uu_tien
  *         schema:
  *           type: string
  *           enum: ['1', '2']
  *         description: Lọc theo loại ưu tiên (1 = Cấp 1/TDT, 2 = Cấp 2/LK/NQ)
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *     responses:
- *       200:
- *         description: Thành công
- *       401:
- *         description: Chưa xác thực
- *       403:
- *         description: Không có quyền Admin
- */
+  *       - in: query
+  *         name: filters
+  *         schema:
+  *           type: string
+  *         description: Lọc theo cột dạng JSON (VD {"owner_name":"abc"}) — tìm trên toàn bộ database, không chỉ trang hiện tại
+  *       - in: query
+  *         name: page
+  *         schema:
+  *           type: integer
+  *           default: 1
+  *       - in: query
+  *         name: limit
+  *         schema:
+  *           type: integer
+  *           default: 10
+  *     responses:
+  *       200:
+  *         description: Thành công
+  *       401:
+  *         description: Chưa xác thực
+  *       403:
+  *         description: Không có quyền Admin
+  */
 router.get('/', requireAuth, requireUserManager, adminProposalController.getAll);
 
 /**
@@ -165,7 +170,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  *                 type: string
  *               status:
  *                 type: string
- *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -183,7 +188,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateProposal, adminPropo
  * /api/admin/proposals/{id}/status:
  *   put:
  *     tags: [Admin - Proposals]
-  *     summary: Admin cập nhật trạng thái đề xuất (duyệt APPROVED tự tạo lệnh đẩy 1Office)
+  *     summary: Cập nhật trạng thái đề xuất theo ma trận (Duyệt REVIEWING tự tạo lệnh đẩy 1Office)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -202,7 +207,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateProposal, adminPropo
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED]
+ *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -216,5 +221,42 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateProposal, adminPropo
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id/status', requireAuth, requireUserManager, adminProposalController.updateStatus);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/convert-to-station:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Tạo trạm từ đề xuất Ký thành công (chỉ ADMIN/SUPER_ADMIN, nút tay)
+ *     description: Tự sinh tên `Trạm {mã đề xuất}` (cho phép ghi đè qua body.name), địa chỉ/vùng miền/tỉnh tự fill, trạng thái Triển khai, mô hình 1:1. Đã có station_id thì trả trạm hiện có.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Không đúng trạng thái Ký thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin (SALES/CTV bị chặn)
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/convert-to-station', requireAuth, requireAdmin, adminProposalController.convertToStation);
 
 module.exports = router;

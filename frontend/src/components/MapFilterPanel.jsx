@@ -54,6 +54,9 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
               <span className="map-filter-dot" style={{ background: getMarkerColor(s.value, entity) }} />
             )}
             {s.label}
+            {s.show_in_legend === false && (
+              <span className="map-filter-offmap" title="Trạng thái này không hiện marker trên bản đồ">không hiện bản đồ</span>
+            )}
           </button>
         );
       })}

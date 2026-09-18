@@ -27,7 +27,7 @@ async function loadPoints() {
     'SELECT id, name, latitude, longitude, status, custom_data FROM stations'
   );
   const [proposals] = await pool.query(
-    "SELECT id, owner_name, latitude, longitude, status, user_id, custom_data FROM station_proposals WHERE status != 'REJECTED'"
+    "SELECT id, owner_name, latitude, longitude, status, user_id, custom_data FROM station_proposals WHERE status NOT IN ('REJECTED', 'CANCELLED')"
   );
   return {
     stations: stations.map(s => ({

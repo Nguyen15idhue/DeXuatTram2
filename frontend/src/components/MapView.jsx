@@ -14,8 +14,12 @@ import { MAP_MODES, DEFAULT_MODE } from '../utils/mapModes';
 import { resolveRenderer } from './map/renderers';
 import MapCanvas from './map/MapCanvas';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { formatDistanceM } from '../utils/formatDistance';
+import { normalizeClusterOptions } from '../utils/mapCluster';
 
 const EMPTY_PAIRS = [];
+
+const isConfigOn = (v) => v !== 0 && v !== '0' && v !== false;
 
 const dupLabelOf = (p) => {
   if (p.code) return p.code;
@@ -32,7 +36,7 @@ export function createDuplicatePopupContent(pair) {
   const strong = document.createElement('strong');
   strong.textContent = 'Khoảng cách: ';
   p.appendChild(strong);
-  p.appendChild(document.createTextNode(`${Number(pair.distance_m) || 0}m`));
+  p.appendChild(document.createTextNode(formatDistanceM(pair.distance_m)));
   div.appendChild(p);
   return div;
 }
@@ -260,9 +264,9 @@ const MapView = ({
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const markerIconsVersion = useMarkerIcons();
-  const { stationStatuses, proposalStatuses } = useMapStatuses();
+  const { stationStatuses, proposalStatuses, proposalLegendStatuses } = useMapStatuses();
   void markerIconsVersion;
-  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalStatuses };
+  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalLegendStatuses || proposalStatuses };
   const [loading, setLoading] = useState(true);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [createTarget, setCreateTarget] = useState('proposal');
@@ -279,6 +283,7 @@ const MapView = ({
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [showLegend, setShowLegend] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
   const [showCluster, setShowCluster] = useState(true);
+  const [clusterOptions, setClusterOptions] = useState({ radius: 70, maxZoom: 18 });
   const [activeLayerIdx, setActiveLayerIdx] = useState(0);
   const [resolvedTileUrl, setResolvedTileUrl] = useState(PROXY_TILE);
   const [resolvedAttribution, setResolvedAttribution] = useState(OSM_ATTRIBUTION);
@@ -481,9 +486,10 @@ const MapView = ({
             center_lng: parseFloat(d.center_lng) || prev.center_lng,
             default_zoom: parseInt(d.default_zoom) || prev.default_zoom,
           }));
-          setAdminLabelVersion(d.show_province_labels === false ? 'off' : 'new');
-          setShowBoundaries(d.show_boundaries !== false);
-          setShowCluster(d.show_cluster !== false);
+          setAdminLabelVersion(isConfigOn(d.show_province_labels) ? 'new' : 'off');
+          setShowBoundaries(isConfigOn(d.show_boundaries));
+          setShowCluster(isConfigOn(d.show_cluster));
+          setClusterOptions(normalizeClusterOptions(d));
           setActiveLayerIdx(providerStyles.length ? savedStyleIdx : 0);
         }
       } catch (e) {
@@ -560,6 +566,10 @@ const MapView = ({
     if (!filters) return proposals;
     if (filters.hideProposals) return [];
     let list = proposals;
+    const mapSet = new Set((proposalLegendStatuses || []).map(s => s.value));
+    if (mapSet.size > 0) {
+      list = list.filter(p => mapSet.has(p.status));
+    }
     if (filters.scope === 'mine' && user) {
       const uid = Number(user.id);
       list = list.filter(p => Number(p.user_id) === uid);
@@ -573,7 +583,7 @@ const MapView = ({
       list = list.filter(p => priorities.includes(String(p.loai_uu_tien)));
     }
     return list;
-  }, [proposals, filters, user]);
+  }, [proposals, filters, user, proposalLegendStatuses]);
 
   const layerStations = useMemo(() => {
     if (!highlightIds) return visibleStations;
@@ -733,6 +743,7 @@ const MapView = ({
         proposals={canvasProposals}
         pairs={pairs}
         showCluster={showCluster}
+        clusterOptions={clusterOptions}
         showStationLabels={showStationLabels}
         showProvinceLabels={showAdminLabels}
         showBoundaries={showBoundaries}

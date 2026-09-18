@@ -3,6 +3,9 @@ const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
+const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
+
+const STATION_FIXED_COLUMNS = ['name', 'latitude', 'longitude', 'address', 'status', 'description'];
 
 exports.getAllStations = async (search, status, page, limit, mapMode = false, extra = {}) => {
   const offset = (page - 1) * limit;
@@ -28,6 +31,18 @@ exports.getAllStations = async (search, status, page, limit, mapMode = false, ex
   if (extra.uuTien) {
     where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien')) = ?");
     params.push(String(extra.uuTien));
+  }
+
+  if (extra.columnFilters) {
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
+    const { clauses, params: filterParams } = buildColumnFilterWhere({
+      filters: extra.columnFilters,
+      fieldDefs,
+      fixedColumns: STATION_FIXED_COLUMNS,
+      alias: 's'
+    });
+    where.push(...clauses);
+    params.push(...filterParams);
   }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
@@ -151,4 +166,98 @@ exports.updateStation = async (id, data) => {
 
 exports.deleteStation = async (id) => {
   await pool.query('DELETE FROM stations WHERE id = ?', [id]);
+};
+
+const parseJson = (v) => {
+  if (!v) return {};
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return {}; }
+};
+
+exports.convertProposalToStation = async (proposalId, opts = {}) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  const notificationService = require('./notificationService');
+  const geocodeService = require('./geocodeService');
+
+  const [rows] = await pool.query('SELECT * FROM station_proposals WHERE id = ?', [proposalId]);
+  if (rows.length === 0) {
+    throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
+  }
+  const p = rows[0];
+  if (p.status !== 'CONTRACT_SIGNED') {
+    throw Object.assign(new Error('Chỉ tạo trạm từ đề xuất ở trạng thái Ký thành công'), { statusCode: 400 });
+  }
+  if (p.station_id) {
+    const existing = await exports.getStationById(p.station_id);
+    return { station: existing, created: false };
+  }
+
+  const cd = parseJson(p.custom_data);
+  const maDeXuat = cd.ma_de_xuat || p.ma_de_xuat_gen || p.tracking_code || `#${p.id}`;
+  const name = String(opts.name || '').trim() || `Trạm ${maDeXuat}`;
+
+  let address = p.address || '';
+  let province = cd.province || null;
+  let maTinh = cd.ma_tinh || null;
+  let vungMien = cd.vung_mien || null;
+  let xaPhuong = cd.xa_phuong || null;
+  if (!address || !province) {
+    try {
+      const geo = await geocodeService.reverse(p.latitude, p.longitude);
+      if (geo && geo.found) {
+        if (!address && geo.address) address = geo.address;
+        if (geo.admin) {
+          if (!province && geo.admin.province) province = geo.admin.province;
+          if (!maTinh && geo.admin.ma_tinh) maTinh = geo.admin.ma_tinh;
+          if (!vungMien && geo.admin.vung_mien) vungMien = geo.admin.vung_mien;
+          if (!xaPhuong && geo.admin.xa_phuong) xaPhuong = geo.admin.xa_phuong;
+        }
+      }
+    } catch { /* silent: dung du lieu de xuat */ }
+  }
+  if (!province) {
+    throw Object.assign(new Error('Không xác định được Tỉnh/Thành phố của đề xuất, vui lòng bổ sung trước khi tạo trạm'), { statusCode: 400 });
+  }
+
+  const station = await exports.createStation({
+    name,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    address,
+    status: 'DEPLOYING',
+    description: `Tạo tự động từ đề xuất ${maDeXuat} (proposal #${p.id})`,
+    province,
+    ma_tinh: maTinh,
+    vung_mien: vungMien,
+    xa_phuong: xaPhuong,
+    mo_hinh_tram: cd.mo_hinh_dau_tu || null
+  });
+
+  await pool.query('UPDATE station_proposals SET station_id = ?, updated_at = NOW() WHERE id = ?', [station.id, p.id]);
+
+  try {
+    await proposalLifecycle.logActivity({
+      proposalId: p.id, action: 'station_created',
+      fromStatus: 'CONTRACT_SIGNED', toStatus: 'CONTRACT_SIGNED',
+      changedFields: { station_id: { label: 'Trạm', old: '', new: String(station.id) }, station_name: { label: 'Tên trạm', old: '', new: station.name } },
+      actorId: opts.actorId || null, actorRole: opts.actorRole || null,
+      source: opts.source || 'user', manualOverride: false, ip: opts.ip || null
+    });
+  } catch { /* silent */ }
+
+  if (p.user_id) {
+    try {
+      await notificationService.create({
+        userId: p.user_id,
+        type: 'CONTRACT_SIGNED',
+        title: notificationService.statusTitle('CONTRACT_SIGNED'),
+        message: `Đề xuất ${maDeXuat} đã trở thành trạm "${station.name}" (#${station.id})`,
+        entityType: 'stations',
+        entityId: station.id,
+        createdBy: opts.actorId || null
+      });
+    } catch { /* silent */ }
+  }
+
+  return { station, created: true };
 };
