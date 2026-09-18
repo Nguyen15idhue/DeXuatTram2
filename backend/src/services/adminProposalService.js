@@ -9,8 +9,8 @@ const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
 
 exports.getBranchUserIds = async (salesId) => {
-  const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [salesId, salesId]);
-  return rows.map(r => r.id);
+  const adminUserService = require('./adminUserService');
+  return adminUserService.getBranchIds(salesId);
 };
 
 exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien, columnFilters) => {

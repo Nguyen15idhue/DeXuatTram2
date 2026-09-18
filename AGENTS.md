@@ -31,7 +31,9 @@ Swagger UI:  http://localhost:3000/api-docs
 
 ### User
 - Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV`, `NPP` (file 25, thay `USER`/`ADMIN` cũ; `NPP` thêm ở migration `77` — **hoạt động y hệt `CTV`**, không có RBAC riêng)
-- `CTV`/`NPP.parent_id` trỏ `SALES` quản lý; `external_id` map hệ ngoài (unique)
+- Cây 2 tầng: `CTV`/`NPP.parent_id` → `SALES` (GĐKV) → `SALES` (GĐTT cùng Trung tâm) — migration 90–92 + script `seed-sales-tree.js`. Scope nhánh **đệ quy** (`adminUserService.getBranchIds`): GĐTT thấy mình + GĐKV + CTV dưới quyền; GĐKV thấy mình + CTV trực tiếp
+- `external_id` map hệ ngoài (unique, = Mã NV 1Office)
+- Field `department` (Phòng ban) + `chuc_vu` (Chức vụ): select options thủ công từ Excel nhân sự (10 PB / 16 CD); `chuc_vu` dùng phân biệt GĐTT/GĐKV trong hiển thị
 - `token_version` tăng khi đổi mật khẩu → revoke JWT cũ
 - Status: `ACTIVE`, `LOCKED`
 
@@ -64,7 +66,7 @@ Swagger UI:  http://localhost:3000/api-docs
 
 ### 4.1. Permissions & Roles
 1. CTV chỉ xem/sửa/xóa proposal của chính mình (theo `user_id`)
-2. SUPER_ADMIN/ADMIN quản lý tất cả proposals và stations
+2. SUPER_ADMIN quản lý tất cả; ADMIN quản lý tất cả **trừ tài khoản `SUPER_ADMIN`** (list/get/update/delete/lock đều chặn ở API + ẩn ở UI)
 3. CTV KHÔNG truy cập admin API (`/admin/*`); SALES chỉ vào 4 trang `/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`
 4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs` + tạo super admin
 5. SALES chỉ xem trạm (không nút Sửa) dùng `allowEdit={!isSales}` trong `RecordDetailPopup`
@@ -151,7 +153,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - Select/Multiselect 2 nguồn: manual options hoặc Data List
 - Cascading select: child field có `parent_field` + `relation_key`
 - Formula: pre-compute (trong form) / post-compute (sau tạo record)
-- Type `user` lưu `{ id }`; `source_config.auto_user`: `current_user` | `parent_sales` | `owner_or_manager` → tự điền + khóa readonly
+- Type `user` lưu `{ id }`; `source_config.auto_user`: `current_user` | `parent_sales` | `owner_or_manager` | `area_director` (GĐKV: CTV→parent, GĐKV→mình, còn lại trống) | `center_director` (GĐTT cùng `department` với người phụ trách, còn lại trống) → **chỉ điền khi ô trống** (giữ giá trị sửa tay); FE khóa readonly với CTV/NPP, mở với SALES/ADMIN/SUPER
 
 ### 4.11. Data List
 - Data List name unique
@@ -192,7 +194,8 @@ frontend/src/
 │   │               FileViewer, FileListPopup, DynamicFilter, FormulaEditor, UserChip, UserField
 │   ├── admin/      FieldManager, FormBuilder, ViewBuilder, DragDropList, DataListManager,
 │   │               DataListEditor, RecordDetailPopup, FieldMappingPanel, TemplateEditor,
-│   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel
+│   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel,
+│   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo
 │   ├── layout/     AdminHeader, AdminSidebar, UserHeader, UserSidebar, NotificationBell
 │   ├── map/        MapCanvas + renderers/ (index registry, leafletRuntime, maplibreRuntime,
 │   │               leafletRenderer, maplibreRenderer, README)
@@ -284,7 +287,7 @@ backend/src/
 | `proposal_lifecycle_configs` | Config auto vòng đời (90/30 ngày, max retries, cron) |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→88). Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound.
+Migrations nằm ở `database/` (01→92). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14.
 
 ## 9. Swagger & Documentation
 
@@ -297,8 +300,7 @@ Migrations nằm ở `database/` (01→88). Một số mốc quan trọng: `14` 
   - `docs/3/` — Bug fixes
   - `docs/4/` — Thiết kế tính năng (Formula Pre/Post, Excel theo View, Cascading Select, Dynamic Form/View)
    - `docs/5/` — Kế hoạch & triển khai các mốc lớn (tìm kiếm, stress test, guest form, RBAC, 1Office, bản đồ, reverse geocode, MapLibre 35–36, self-host PMTiles 37)
-   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời)
-  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
+   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời) + Kế hoạch 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban)  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
   - `docs/7/` — Review toàn mã nguồn (P0/P1/P2 + chuẩn hóa UIUX + kế hoạch test frontend). Nguồn chính xác nhất về bug đã/chưa fix.
 
 ## 10. Docker & Deploy

@@ -258,43 +258,98 @@ const parseSourceConfig = (val) => {
 
 exports.parseSourceConfig = parseSourceConfig;
 
+const AUTO_USER_MODES = ['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'];
+const CHUC_VU_GDTT = 'Giám đốc Trung tâm Kinh doanh';
+const CHUC_VU_GDKV = 'Giám đốc Khu vực';
+
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+const hasUserValue = (v) => {
+  if (v === undefined || v === null || v === '') return false;
+  if (typeof v === 'object') {
+    const id = v.id ?? v.user_id ?? v.value;
+    return id !== undefined && id !== null && String(id).trim() !== '';
+  }
+  return String(v).trim() !== '';
+};
+
+const getUserWorkInfo = async (db, userId) => {
+  const info = { id: userId, role: '', parentId: null, phongBan: '', chucVu: '' };
+  if (!userId) return info;
+  try {
+    const [rows] = await db.query('SELECT role, parent_id, custom_data FROM users WHERE id = ?', [userId]);
+    if (rows.length === 0) return info;
+    info.role = rows[0].role || '';
+    if (rows[0].parent_id) info.parentId = Number(rows[0].parent_id);
+    const cd = parseCustomData(rows[0].custom_data);
+    info.phongBan = cd.department ? String(cd.department) : '';
+    info.chucVu = cd.chuc_vu ? String(cd.chuc_vu) : '';
+  } catch { /* silent */ }
+  return info;
+};
+
+const findCenterDirectorId = async (db, phongBan) => {
+  if (!phongBan) return null;
+  try {
+    const [rows] = await db.query(
+      `SELECT id FROM users WHERE role = 'SALES' AND status = 'ACTIVE'
+       AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?
+       AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) = ?
+       ORDER BY id ASC LIMIT 1`,
+      [phongBan, CHUC_VU_GDTT]
+    );
+    return rows.length > 0 ? rows[0].id : null;
+  } catch { return null; }
+};
+
 exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection = null) => {
   if (!dynamicData || !fieldDefs || fieldDefs.length === 0) return dynamicData;
   const autoFields = fieldDefs.filter(f => {
     if (f.type !== 'user') return false;
     const sc = parseSourceConfig(f.source_config);
-    return sc.auto_user === 'current_user' || sc.auto_user === 'parent_sales' || sc.auto_user === 'owner_or_manager';
+    return AUTO_USER_MODES.includes(sc.auto_user);
   });
   if (autoFields.length === 0) return dynamicData;
 
   const db = connection || pool;
   const currentId = Number(userId) > 0 ? Number(userId) : null;
-  let parentId = null;
-  let currentRole = '';
-  if (currentId) {
-    try {
-      const [rows] = await db.query('SELECT role, parent_id FROM users WHERE id = ?', [currentId]);
-      if (rows.length > 0) {
-        currentRole = rows[0].role || '';
-        if (rows[0].parent_id) parentId = Number(rows[0].parent_id);
-      }
-    } catch { /* silent */ }
-  }
+  const me = await getUserWorkInfo(db, currentId);
 
-  autoFields.forEach(f => {
+  for (const f of autoFields) {
+    if (hasUserValue(dynamicData[f.key])) continue;
     const sc = parseSourceConfig(f.source_config);
     if (!currentId) {
       dynamicData[f.key] = '';
-      return;
+      continue;
     }
-    let id = currentId;
+    let id = null;
     if (sc.auto_user === 'parent_sales') {
-      id = parentId || currentId;
+      id = me.parentId || currentId;
     } else if (sc.auto_user === 'owner_or_manager') {
-      id = ['CTV', 'NPP'].includes(currentRole) ? (parentId || currentId) : currentId;
+      id = ['CTV', 'NPP'].includes(me.role) ? (me.parentId || currentId) : currentId;
+    } else if (sc.auto_user === 'area_director') {
+      if (['CTV', 'NPP'].includes(me.role)) id = me.parentId || currentId;
+      else if (me.role === 'SALES' && me.chucVu !== CHUC_VU_GDTT) id = currentId;
+      else id = null;
+    } else if (sc.auto_user === 'center_director') {
+      let picId = null;
+      if (['CTV', 'NPP'].includes(me.role)) picId = me.parentId || currentId;
+      else if (me.role === 'SALES' && me.chucVu !== CHUC_VU_GDTT) picId = currentId;
+      if (picId) {
+        const pic = await getUserWorkInfo(db, picId);
+        id = await findCenterDirectorId(db, pic.phongBan);
+      } else {
+        id = null;
+      }
+    } else {
+      id = currentId;
     }
-    dynamicData[f.key] = { id };
-  });
+    dynamicData[f.key] = id ? { id } : '';
+  }
 
   return dynamicData;
 };

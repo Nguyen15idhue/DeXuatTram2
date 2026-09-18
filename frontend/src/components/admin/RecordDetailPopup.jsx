@@ -26,7 +26,7 @@ const ENTITY_SERVICES = {
 const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8 };
 
 const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null }) => {
-  const { token } = useAuth();
+  const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -354,6 +354,16 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const renderFieldInput = (field) => {
     const key = field.field_key || field.key;
     const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
+    let userLocked = false;
+    if (mode === 'edit' && field.type === 'user') {
+      let autoMode = null;
+      const sc = field.source_config;
+      if (sc && typeof sc === 'object') autoMode = sc.auto_user;
+      else if (typeof sc === 'string') { try { autoMode = JSON.parse(sc).auto_user; } catch { autoMode = null; } }
+      if (['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'].includes(autoMode)) {
+        userLocked = ['CTV', 'NPP'].includes(authUser && authUser.role);
+      }
+    }
     return mode === 'edit' ? (
       <DynamicField
         field={{ ...field, options: resolveFieldOptions(field) }}
@@ -363,6 +373,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         entityType={entity}
         allFields={allFields}
         dataListOptions={dataListOptions}
+        disabled={userLocked}
       />
     ) : (
       <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />

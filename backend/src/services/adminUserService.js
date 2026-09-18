@@ -3,13 +3,38 @@ const dynamicUtils = require('./dynamicUtils');
 
 const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at FROM users';
 
+exports.getBranchIds = async (userId) => {
+  const ids = [];
+  const seen = new Set();
+  let frontier = [Number(userId)];
+  while (frontier.length > 0) {
+    const id = frontier.shift();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    try {
+      const [rows] = await pool.query('SELECT id FROM users WHERE parent_id = ?', [id]);
+      rows.forEach(r => { if (!seen.has(r.id)) frontier.push(r.id); });
+    } catch { /* silent */ }
+  }
+  return ids;
+};
+
 exports.getAllUsers = async (search, page, limit, scope = {}) => {
   const where = [];
   const params = [];
 
   if (scope.role === 'SALES' && scope.userId) {
-    where.push('(id = ? OR parent_id = ?)');
-    params.push(scope.userId, scope.userId);
+    const branchIds = await exports.getBranchIds(scope.userId);
+    if (branchIds.length === 0) {
+      return { users: [], pagination: { page, limit, total: 0, totalPages: 0 } };
+    }
+    where.push(`(id IN (${branchIds.map(() => '?').join(',')}))`);
+    params.push(...branchIds);
+  }
+
+  if (scope.role && scope.role !== 'SUPER_ADMIN') {
+    where.push(`role <> 'SUPER_ADMIN'`);
   }
 
   if (search) {
@@ -80,8 +105,28 @@ exports.findById = async (id) => {
   return users.length > 0 ? users[0] : null;
 };
 
-exports.getUserOptions = async () => {
-  const [rows] = await pool.query("SELECT id, full_name, role FROM users WHERE status = 'ACTIVE' ORDER BY full_name");
+exports.getUserOptions = async (scope = {}) => {
+  const where = [`status = 'ACTIVE'`];
+  const params = [];
+  if (scope.role === 'SALES' && scope.userId) {
+    const branchIds = await exports.getBranchIds(scope.userId);
+    if (branchIds.length === 0) return [];
+    where.push(`(id IN (${branchIds.map(() => '?').join(',')}))`);
+    params.push(...branchIds);
+  } else if (scope.role && ['CTV', 'NPP'].includes(scope.role) && scope.userId) {
+    const [me] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [scope.userId]);
+    const ids = [Number(scope.userId)];
+    if (me.length > 0 && me[0].parent_id) ids.push(Number(me[0].parent_id));
+    where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
+    params.push(...ids);
+  }
+  if (scope.role && scope.role !== 'SUPER_ADMIN') {
+    where.push(`role <> 'SUPER_ADMIN'`);
+  }
+  const [rows] = await pool.query(
+    `SELECT id, full_name, role FROM users WHERE ${where.join(' AND ')} ORDER BY full_name`,
+    params
+  );
   return rows;
 };
 

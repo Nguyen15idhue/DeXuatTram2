@@ -15,7 +15,7 @@ exports.getAll = async (req, res) => {
 
 exports.getOptions = async (req, res) => {
   try {
-    const options = await adminUserService.getUserOptions();
+    const options = await adminUserService.getUserOptions({ role: req.user.role, userId: req.user.id });
     res.json({ success: true, data: options });
   } catch (error) {
     console.error('Get user options error:', error);
@@ -31,9 +31,8 @@ exports.getById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
     if (req.user.role === 'SALES') {
-      const isSelf = targetId === req.user.id;
-      const isOwnCtv = user.parent_id === req.user.id;
-      if (!isSelf && !isOwnCtv) {
+      const branchIds = await adminUserService.getBranchIds(req.user.id);
+      if (!branchIds.includes(targetId)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
     } else if (req.user.role === 'ADMIN') {
@@ -109,9 +108,8 @@ exports.update = async (req, res) => {
     }
 
     if (editorRole === 'SALES') {
-      const isSelf = targetId === req.user.id;
-      const isOwnCtv = existing.parent_id === req.user.id;
-      if (!isSelf && !isOwnCtv) {
+      const branchIds = await adminUserService.getBranchIds(req.user.id);
+      if (!branchIds.includes(targetId)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       role = existing.role;
@@ -312,10 +310,8 @@ exports.changePassword = async (req, res) => {
     }
 
     if (req.user.role === 'SALES') {
-      const isSelf = targetId === req.user.id;
-      const full = await adminUserService.findById(targetId);
-      const isOwnCtv = full && ['CTV', 'NPP'].includes(full.role) && full.parent_id === req.user.id;
-      if (!isSelf && !isOwnCtv) {
+      const branchIds = await adminUserService.getBranchIds(req.user.id);
+      if (!branchIds.includes(targetId)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
     }

@@ -14,8 +14,9 @@ export default function useDefaultViewId(entity, fallbackId) {
     viewService
       .getAll(`entity=${entity}&usage=table&status=active&limit=1`, token)
       .then((res) => {
-        const first = res && res.success && Array.isArray(res.data) ? res.data[0] : null;
         if (cancelled) return;
+        if (!res || !res.success) return;
+        const first = Array.isArray(res.data) ? res.data[0] : null;
         if (first && first.id) {
           cache[entity] = first.id;
           setViewId(first.id);

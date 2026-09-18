@@ -49,15 +49,29 @@ const parseSourceConfig = (val) => {
   try { return JSON.parse(val); } catch { return {}; }
 };
 
+const AUTO_USER_MODES = ['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'];
+const LOCKED_ROLES = ['CTV', 'NPP'];
+
 const resolveAutoUserId = (sc, authUser) => {
   const mode = sc && sc.auto_user;
-  if (mode !== 'current_user' && mode !== 'parent_sales' && mode !== 'owner_or_manager') return null;
+  if (!AUTO_USER_MODES.includes(mode)) return null;
   if (!authUser || !authUser.id) return null;
   if (mode === 'parent_sales') return authUser.parent_id || authUser.id;
   if (mode === 'owner_or_manager') {
     return ['CTV', 'NPP'].includes(authUser.role) ? (authUser.parent_id || authUser.id) : authUser.id;
   }
+  if (mode === 'area_director') {
+    if (['CTV', 'NPP'].includes(authUser.role)) return authUser.parent_id || authUser.id;
+    return null;
+  }
+  if (mode === 'center_director') return null;
   return authUser.id;
+};
+
+const isAutoUserLocked = (sc, authUser) => {
+  const mode = sc && sc.auto_user;
+  if (!AUTO_USER_MODES.includes(mode)) return false;
+  return LOCKED_ROLES.includes(authUser && authUser.role);
 };
 
 const MAX_TAB_DEPTH = 5;
@@ -196,6 +210,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
           const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
           const sc = parseSourceConfig(f.source_config);
           const autoUserId = f.type === 'user' ? resolveAutoUserId(sc, authUser) : null;
+          const autoLocked = f.type === 'user' ? isAutoUserLocked(sc, authUser) : false;
           return {
             ...f,
             config: cfg,
@@ -205,7 +220,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             labelOverride: cfg.labelOverride || '',
             placeholderOverride: cfg.placeholderOverride || '',
             autoUser: sc.auto_user || 'none',
-            autoUserId
+            autoUserId,
+            autoLocked
           };
         });
         setFields(fieldList);
@@ -681,7 +697,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || !!field.autoUserId
+      readonly: field.readonly || !!field.autoLocked
     };
 
     if (field.type === 'formula') {

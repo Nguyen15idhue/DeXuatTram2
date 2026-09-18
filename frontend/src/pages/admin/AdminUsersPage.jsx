@@ -15,7 +15,8 @@ import ImportViewPanel from '../../components/admin/ImportViewPanel';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
-import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2 } from 'lucide-react';
+import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2, List, Network } from 'lucide-react';
+import UserTreeView from '../../components/admin/UserTreeView';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 15;
@@ -39,8 +40,9 @@ const AdminUsersPage = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+const [search, setSearch] = useState('');
+const [filterStatus, setFilterStatus] = useState('');
+const [viewMode, setViewMode] = useState('table');
   const [columnFilters, setColumnFilters] = useState({});
   const tableRef = useRef(null);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
@@ -536,6 +538,24 @@ const AdminUsersPage = () => {
             <RotateCcw size={14} />
             Reset
           </button>
+          <div className="join flex-1 sm:flex-none">
+            <button
+              type="button"
+              className={`join-item btn btn-sm gap-1 ${viewMode === 'table' ? 'btn-active' : 'btn-ghost'}`}
+              onClick={() => setViewMode('table')}
+              title="Hiển thị dạng bảng"
+            >
+              <List size={14} /> Bảng
+            </button>
+            <button
+              type="button"
+              className={`join-item btn btn-sm gap-1 ${viewMode === 'tree' ? 'btn-active' : 'btn-ghost'}`}
+              onClick={() => setViewMode('tree')}
+              title="Hiển thị dạng cây phòng ban"
+            >
+              <Network size={14} /> Cây
+            </button>
+          </div>
         </div>
       </div>
 
@@ -713,6 +733,14 @@ const AdminUsersPage = () => {
 
       {loading ? (
         <Loading />
+      ) : viewMode === 'tree' ? (
+        <div className="bg-base-100 rounded-lg border border-base-300 p-4">
+          <UserTreeView
+            users={users}
+            search={appliedSearch}
+            onSelect={(id) => navigate(`/admin/users/view=${id}`)}
+          />
+        </div>
       ) : (
         <>
           <DynamicTable

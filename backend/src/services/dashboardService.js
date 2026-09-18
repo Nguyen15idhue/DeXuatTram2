@@ -4,8 +4,8 @@ exports.getDashboardStats = async (scope = {}) => {
   const isSales = scope.role === 'SALES' && scope.userId;
   let branchIds = null;
   if (isSales) {
-    const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [scope.userId, scope.userId]);
-    branchIds = rows.map(r => r.id);
+    const adminUserService = require('./adminUserService');
+    branchIds = await adminUserService.getBranchIds(scope.userId);
   }
   const inBranch = (col) => branchIds ? ` AND ${col} IN (${branchIds.map(() => '?').join(',')})` : '';
   const branchParams = () => branchIds ? [...branchIds] : [];
