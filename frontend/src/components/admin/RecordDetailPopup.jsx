@@ -36,7 +36,7 @@ const ENTITY_SERVICES = {
 
 const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8 };
 
-const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null }) => {
+const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null, beforeActions = null }) => {
   const { token, user: authUser } = useAuth();
   const navigate = useNavigate();
   const { getFieldLabel } = useFieldOptions('station_proposals', PUSH_USER_KEYS);
@@ -697,6 +697,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
             </>
           )}
           {entity === 'users' && record?.id && <UserExternalPanel userId={record.id} />}
+          {typeof beforeActions === 'function' ? beforeActions({ formData, setFormData, mode, record }) : beforeActions}
         </div>
 
         <div className="popup-footer">

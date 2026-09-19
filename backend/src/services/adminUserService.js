@@ -150,23 +150,23 @@ exports.createUser = async (fullName, email, phone, hashedPassword, role, status
   return user[0];
 };
 
-exports.updateUser = async (id, fullName, email, phone, role, status, customData, externalId) => {
+exports.updateUser = async (id, fullName, email, phone, role, status, customData, externalId, parentId) => {
   const cd = (customData !== undefined && customData !== null)
     ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
     : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, custom_data = ?, external_id = ?, updated_at = NOW() WHERE id = ?',
-    [fullName, email, phone || '', role, status, cd, externalId === undefined ? null : externalId, id]
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, role = ?, status = ?, custom_data = ?, external_id = ?, parent_id = ?, updated_at = NOW() WHERE id = ?',
+    [fullName, email, phone || '', role, status, cd, externalId === undefined ? null : externalId, parentId !== undefined ? parentId : null, id]
   );
 };
 
-exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPassword, role, status, customData, externalId) => {
+exports.updateUserWithPassword = async (id, fullName, email, phone, hashedPassword, role, status, customData, externalId, parentId) => {
   const cd = (customData !== undefined && customData !== null)
     ? (typeof customData === 'object' ? JSON.stringify(customData) : customData)
     : null;
   await pool.query(
-    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, external_id = ?, token_version = token_version + 1, updated_at = NOW() WHERE id = ?',
-    [fullName, email, phone || '', hashedPassword, role, status, cd, externalId === undefined ? null : externalId, id]
+    'UPDATE users SET full_name = ?, email = ?, phone = ?, password = ?, role = ?, status = ?, custom_data = ?, external_id = ?, parent_id = ?, token_version = token_version + 1, updated_at = NOW() WHERE id = ?',
+    [fullName, email, phone || '', hashedPassword, role, status, cd, externalId === undefined ? null : externalId, parentId !== undefined ? parentId : null, id]
   );
 };
 

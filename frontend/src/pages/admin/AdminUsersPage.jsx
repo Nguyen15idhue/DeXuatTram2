@@ -376,9 +376,11 @@ const [viewMode, setViewMode] = useState('table');
     setBulkLoading(true);
     const deletable = [];
     const skipped = [];
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
+    const myRank = RANK[currentUser.role] ?? 99;
     selectedIds.forEach((id) => {
       const u = users.find(x => x.id === id);
-      if (!u || ['ADMIN', 'SUPER_ADMIN'].includes(u.role) || u.id === currentUser.id) {
+      if (!u || u.id === currentUser.id || myRank >= (RANK[u.role] ?? 99)) {
         skipped.push(`#${id}${u ? ` (${u.full_name || u.email || ''})` : ''}`);
       } else {
         deletable.push(id);
@@ -555,8 +557,11 @@ const [viewMode, setViewMode] = useState('table');
   };
 
   const renderActions = (row) => {
-    const isSuperRow = row.role === 'SUPER_ADMIN';
-    const canManage = isSuperAdmin || !isSuperRow;
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
+    const myRank = RANK[currentUser.role] ?? 99;
+    const rowRank = RANK[row.role] ?? 99;
+    const canManage = isSuperAdmin || (row.id !== currentUser.id && (myRank < RANK.SALES || (row.role !== 'ADMIN' && row.role !== 'SUPER_ADMIN')));
+    const canDelete = row.id !== currentUser.id && myRank < rowRank;
     return (
       <div className="flex flex-wrap gap-1">
         <button className="btn btn-primary btn-xs" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
@@ -571,7 +576,7 @@ const [viewMode, setViewMode] = useState('table');
             {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
           </button>
         )}
-        {!['ADMIN', 'SUPER_ADMIN'].includes(row.role) && row.id !== currentUser.id && (
+        {canDelete && (
           <button className="btn btn-error btn-outline btn-xs" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
         )}
       </div>
@@ -833,6 +838,47 @@ const [viewMode, setViewMode] = useState('table');
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/admin/users/${newMode}=${id}`, { replace: true });
+          }}
+          beforeActions={({ formData: fd, setFormData: setFd, mode: popupMode, record: rec }) => {
+            const targetRole = popupMode === 'edit' ? (fd.role || rec?.role) : rec?.role;
+            if (!['CTV', 'NPP'].includes(targetRole)) return null;
+            const gdkv = salesList.filter(s => {
+              const cd = parseCustomData(s.custom_data);
+              return cd.chuc_vu === 'Giám đốc Khu vực';
+            });
+            const currentParentId = popupMode === 'edit' ? (fd.parent_id ?? rec?.parent_id) : rec?.parent_id;
+            const currentParent = salesList.find(s => s.id === Number(currentParentId));
+            return (
+              <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Network size={16} className="text-indigo-500" />
+                  <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
+                </div>
+                {popupMode === 'edit' ? (
+                  <div className="form-control">
+                    <label className="label"><span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span></label>
+                    <select
+                      className="select select-bordered select-sm w-full"
+                      value={currentParentId || ''}
+                      onChange={(e) => setFd(prev => ({ ...prev, parent_id: e.target.value ? Number(e.target.value) : null }))}
+                    >
+                      <option value="">— Chọn GĐKV —</option>
+                      {gdkv.map(s => {
+                        const cd = parseCustomData(s.custom_data);
+                        return (
+                          <option key={s.id} value={s.id}>{s.full_name} — {cd.department || 'Chưa có phòng ban'}</option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="text-sm">
+                    <span className="opacity-70">Giám đốc Khu vực: </span>
+                    {currentParent ? <strong>{currentParent.full_name}</strong> : <span className="opacity-50">Chưa phân nhánh</span>}
+                  </div>
+                )}
+              </div>
+            );
           }}
         />
       )}

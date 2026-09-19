@@ -109,7 +109,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    let { full_name, email, phone, password, role, status, custom_data, external_id } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
     const { id } = req.params;
     const editorRole = req.user.role;
     const targetId = parseInt(id);
@@ -126,6 +126,7 @@ exports.update = async (req, res) => {
       }
       role = existing.role;
       status = existing.status;
+      parent_id = existing.parent_id;
     } else if (editorRole === 'ADMIN') {
       if (existing.role === 'SUPER_ADMIN') {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
@@ -170,15 +171,29 @@ exports.update = async (req, res) => {
     const ext = external_id === undefined ? existing.external_id : (external_id || null);
     const finalStatus = status !== undefined ? status : existing.status;
 
+    let parentId = undefined;
+    if (parent_id !== undefined) {
+      if (parent_id === null || parent_id === '' || parent_id === 0) {
+        parentId = null;
+      } else {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        if (parentUser && parentUser.role === 'SALES') {
+          parentId = parentUser.id;
+        } else {
+          return res.status(400).json({ success: false, message: 'Phụ trách phải là tài khoản SALES' });
+        }
+      }
+    }
+
     if (password) {
       if (password.length < 6) {
         return res.status(400).json({ success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' });
       }
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
-      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, finalStatus, cd, ext);
+      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, finalStatus, cd, ext, parentId);
     } else {
-      await adminUserService.updateUser(targetId, full_name, email, phone, role, finalStatus, cd, ext);
+      await adminUserService.updateUser(targetId, full_name, email, phone, role, finalStatus, cd, ext, parentId);
     }
 
     const user = await adminUserService.findById(targetId);
@@ -200,12 +215,16 @@ exports.delete = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    if (existing.role === 'SUPER_ADMIN' || existing.role === 'ADMIN') {
-      return res.status(400).json({ success: false, message: 'Không thể xóa admin' });
-    }
-
     if (targetId === req.user.id) {
       return res.status(400).json({ success: false, message: 'Không thể xóa chính mình' });
+    }
+
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
+    const deleterRank = RANK[deleterRole] ?? 99;
+    const targetRank = RANK[existing.role] ?? 99;
+
+    if (deleterRank >= targetRank) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xóa tài khoản này' });
     }
 
     if (deleterRole === 'SALES') {
