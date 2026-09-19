@@ -78,6 +78,8 @@ const AdminProposalsPage = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [importViewId, setImportViewId] = useState('');
+  const [importCheckDuplicate, setImportCheckDuplicate] = useState(true);
+  const [importCheckIntraFile, setImportCheckIntraFile] = useState(true);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const dupRef = useRef(null);
@@ -552,7 +554,7 @@ const AdminProposalsPage = () => {
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.previewImport('station_proposals', importFile, token, { viewId: viewIdToUse || undefined });
+      const res = await excelService.previewImport('station_proposals', importFile, token, { viewId: viewIdToUse || undefined, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
       if (res.success) {
         setImportFailures([]);
         setImportPreview(res.data);
@@ -576,12 +578,18 @@ const AdminProposalsPage = () => {
     if (importFile) handlePreviewImport(value);
   };
 
+  useEffect(() => {
+    if (importStep === 'preview' && importFile && importPreview && !importLoading) {
+      handlePreviewImport();
+    }
+  }, [importCheckDuplicate, importCheckIntraFile]);
+
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId });
+      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
         setShowImport(false);
@@ -1793,7 +1801,35 @@ const AdminProposalsPage = () => {
                   </div>
                 )}
 
-                <ImportErrorList errors={importPreview.errors} failures={importFailures} />                <div className="modal-action">
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
+                <div className="divider text-xs opacity-60 my-1">Tùy chọn kiểm tra</div>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckDuplicate}
+                    onChange={(e) => { setImportCheckDuplicate(e.target.checked); }}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ với hệ thống
+                    <span className="block text-xs opacity-70">So sánh với trạm/đề xuất đã có trên hệ thống (bán kính 200m)</span>
+                  </span>
+                </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckIntraFile}
+                    onChange={(e) => { setImportCheckIntraFile(e.target.checked); }}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ nội bộ file Excel
+                    <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m)</span>
+                  </span>
+                </label>
+                <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
                   <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
