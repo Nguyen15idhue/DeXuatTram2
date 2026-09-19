@@ -26,32 +26,36 @@ const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
 
 const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
   const [detectedRole, setDetectedRole] = useState(createRole);
+  const modalRef = useRef(null);
 
   useEffect(() => {
-    if (!isSales) return;
-    setDetectedRole('CTV');
-    return;
-  }, [isSales]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const roleSelect = document.querySelector('.modal-open select[name="role"], .modal-open [data-field-key="role"] select');
-      if (roleSelect && roleSelect.value) {
-        const val = roleSelect.value;
-        if (val !== detectedRole) {
-          setDetectedRole(val);
-          setCreateRole(val);
-          if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
-        }
+    const root = modalRef.current;
+    if (!root) return;
+    const findRoleSelect = () => root.querySelector('[data-field-key="role"] select');
+    const sync = () => {
+      const el = findRoleSelect();
+      if (el) {
+        const val = el.value || 'CTV';
+        setDetectedRole(prev => {
+          if (prev !== val) {
+            setCreateRole(val);
+            if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
+            return val;
+          }
+          return prev;
+        });
       }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [detectedRole, setCreateRole, setCreateParentId]);
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { childList: true, subtree: true, attributes: true });
+    return () => observer.disconnect();
+  }, []);
 
   const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
 
   return (
-    <dialog className="modal modal-open">
+    <dialog className="modal modal-open" ref={modalRef}>
       <div className="modal-box max-w-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">Tạo user mới</h3>
