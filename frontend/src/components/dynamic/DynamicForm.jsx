@@ -329,6 +329,9 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const handleChange = useCallback((key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: '' }));
+    if (onValuesChangeRef.current) {
+      onValuesChangeRef.current({ [key]: value });
+    }
   }, []);
 
   const onValuesChangeRef = useRef(null);

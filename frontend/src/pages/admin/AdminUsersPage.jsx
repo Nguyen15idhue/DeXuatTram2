@@ -34,31 +34,14 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   const [detectedRole, setDetectedRole] = useState(createRole);
   const modalRef = useRef(null);
 
-  useEffect(() => {
-    const root = modalRef.current;
-    if (!root) return;
-    let targetEl = null;
-    const handleChange = (e) => {
-      const val = e.target.value || 'CTV';
+  const handleValuesChange = (vals) => {
+    if (vals.role !== undefined) {
+      const val = vals.role || 'CTV';
       setDetectedRole(val);
       setCreateRole(val);
       if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
-    };
-    const attachTo = (el) => {
-      if (targetEl === el) return;
-      if (targetEl) targetEl.removeEventListener('change', handleChange);
-      targetEl = el;
-      targetEl.addEventListener('change', handleChange);
-    };
-    const findAndAttach = () => {
-      const el = root.querySelector('[data-field-key="role"] select');
-      if (el) { attachTo(el); }
-    };
-    findAndAttach();
-    const obs = new MutationObserver(() => { findAndAttach(); });
-    obs.observe(root, { childList: true, subtree: true });
-    return () => { obs.disconnect(); if (targetEl) targetEl.removeEventListener('change', handleChange); };
-  }, []);
+    }
+  };
 
   const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
 
@@ -129,7 +112,8 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
           purpose="create"
           formId={15}
           onSubmit={onSubmit}
-          initialData={{ role: 'CTV', status: 'ACTIVE' }}
+          onValuesChange={handleValuesChange}
+          initialData={{ role: createRole || 'CTV', status: 'ACTIVE' }}
           optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
         >
           <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
