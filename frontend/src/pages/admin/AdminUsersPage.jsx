@@ -60,8 +60,19 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
             <X size={18} />
           </button>
         </div>
+        <DynamicForm
+          entity="users"
+          purpose="create"
+          formId={15}
+          onSubmit={onSubmit}
+          onValuesChange={handleValuesChange}
+          initialData={{ role: createRole || 'CTV', status: 'ACTIVE' }}
+          optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
+        >
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
+        </DynamicForm>
         {isCtvOrNpp && (
-          <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
+          <div className="mt-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
             <div className="flex items-center gap-2 mb-3">
               <Network size={16} className="text-indigo-500" />
               <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
@@ -107,17 +118,6 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
             </div>
           </div>
         )}
-        <DynamicForm
-          entity="users"
-          purpose="create"
-          formId={15}
-          onSubmit={onSubmit}
-          onValuesChange={handleValuesChange}
-          initialData={{ role: createRole || 'CTV', status: 'ACTIVE' }}
-          optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
-        >
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
-        </DynamicForm>
       </div>
       <form method="dialog" className="modal-backdrop">
         <button onClick={onClose}>close</button>
