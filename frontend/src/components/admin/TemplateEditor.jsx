@@ -264,26 +264,46 @@ const TemplateEditor = ({ configId, onClose }) => {
   };
 
   const loadFromForm = () => {
-    const sections = formSections.map(fs => {
+    const sectionMap = {};
+    formSections.forEach(fs => { sectionMap[fs.id] = fs; });
+
+    const flatSections = [];
+    const seen = new Set();
+    const resolveSection = (fs, inheritedCondition) => {
+      if (!fs || seen.has(fs.id)) return;
+      seen.add(fs.id);
+      const isTabGroup = fs.type === 'tabs' || (Array.isArray(fs.tabs) && fs.tabs.length > 0);
+      if (isTabGroup) {
+        const groupCondition = fs.visibleWhen || inheritedCondition;
+        (fs.tabs || []).forEach(tab => {
+          (tab.sectionRefs || []).forEach(refId => {
+            const ref = sectionMap[refId];
+            if (ref) resolveSection(ref, groupCondition);
+          });
+        });
+        return;
+      }
       const sectionFields = formFields
         .filter(f => fs.rows?.some(r => r.id === f.rowId))
         .sort((a, b) => (a.rowIndex || 0) - (b.rowIndex || 0) || (a.colIndex || 0) - (b.colIndex || 0))
         .map(f => f.key);
-
-      return {
+      const visibleWhen = fs.visibleWhen || inheritedCondition;
+      flatSections.push({
         id: fs.id,
         title: fs.title,
         emoji: fs.id.includes('tdt') ? '💰' : fs.id.includes('lk') ? '🤝' : fs.id.includes('nq') ? '🏪' : '📋',
-        color: fs.visibleWhen?.value === 'TDT' ? '#f39c12' : fs.visibleWhen?.value === 'LK' ? '#9b59b6' : fs.visibleWhen?.value === 'NQ' ? '#3498db' : '#27ae60',
+        color: visibleWhen?.value === 'TDT' ? '#f39c12' : visibleWhen?.value === 'LK' ? '#9b59b6' : visibleWhen?.value === 'NQ' ? '#3498db' : '#27ae60',
         layout: sectionFields.length > 4 ? '2col' : '1col',
-        always_show: !fs.visibleWhen,
+        always_show: !visibleWhen,
         collapsible: false,
-        condition: fs.visibleWhen ? { field: fs.visibleWhen.field, operator: '=', value: fs.visibleWhen.value } : null,
+        condition: visibleWhen ? { field: visibleWhen.field, operator: '=', value: visibleWhen.value } : null,
         fields: sectionFields
-      };
-    });
-    setTemplate({ sections });
-    setToast({ message: `Đã tải ${sections.length} sections từ form proposals`, type: 'success' });
+      });
+    };
+    formSections.forEach(fs => resolveSection(fs, null));
+
+    setTemplate({ sections: flatSections });
+    setToast({ message: `Đã tải ${flatSections.length} sections từ form proposals`, type: 'success' });
   };
 
   if (loading) {
