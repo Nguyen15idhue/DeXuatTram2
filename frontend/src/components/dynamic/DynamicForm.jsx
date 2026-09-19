@@ -157,7 +157,7 @@ const findTabForRow = (layoutConfig, rowId) => {
   return null;
 };
 
-const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null }) => {
+const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null, beforeActions = null }) => {
   const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -959,6 +959,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       )}
       {geocoding && <div className="text-xs text-info mb-2">Đang tìm địa chỉ từ tọa độ...</div>}
       {hasLayout ? renderLayoutForm() : renderNoLayoutMessage()}
+      {beforeActions}
       {hasLayout && !hideActions && (
         children ? (
           <div className="form-actions">

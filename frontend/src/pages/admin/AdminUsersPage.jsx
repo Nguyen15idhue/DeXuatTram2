@@ -68,56 +68,56 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
           onValuesChange={handleValuesChange}
           initialData={{ role: createRole || 'CTV', status: 'ACTIVE' }}
           optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
+          beforeActions={isCtvOrNpp ? (
+            <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Network size={16} className="text-indigo-500" />
+                <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
+                <span className="text-xs opacity-60">(Áp dụng cho {detectedRole})</span>
+              </div>
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={createParentId}
+                  onChange={(e) => setCreateParentId(e.target.value)}
+                >
+                  <option value="">— Chọn GĐKV —</option>
+                  {gdkvList.map(s => {
+                    const cd = parseCustomData(s.custom_data);
+                    const dept = cd.department || '';
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name} — {dept || 'Chưa có phòng ban'}
+                      </option>
+                    );
+                  })}
+                </select>
+                {createParentId && (() => {
+                  const parent = salesList.find(s => s.id === Number(createParentId));
+                  if (!parent) return null;
+                  const parentCd = parseCustomData(parent.custom_data);
+                  const parentDept = parentCd.department || '';
+                  const gdtt = salesList.find(s => {
+                    const scd = parseCustomData(s.custom_data);
+                    return scd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && scd.department === parentDept;
+                  });
+                  if (!gdtt) return null;
+                  return (
+                    <div className="mt-2 p-2 rounded text-xs" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                      Giám đốc Trung tâm (tự match): <strong>{gdtt.full_name}</strong>
+                      <span className="ml-1 opacity-70">— {parentDept}</span>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : null}
         >
           <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
         </DynamicForm>
-        {isCtvOrNpp && (
-          <div className="mt-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
-            <div className="flex items-center gap-2 mb-3">
-              <Network size={16} className="text-indigo-500" />
-              <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
-              <span className="text-xs opacity-60">(Áp dụng cho {detectedRole})</span>
-            </div>
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span>
-              </label>
-              <select
-                className="select select-bordered select-sm w-full"
-                value={createParentId}
-                onChange={(e) => setCreateParentId(e.target.value)}
-              >
-                <option value="">— Chọn GĐKV —</option>
-                {gdkvList.map(s => {
-                  const cd = parseCustomData(s.custom_data);
-                  const dept = cd.department || '';
-                  return (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name} — {dept || 'Chưa có phòng ban'}
-                    </option>
-                  );
-                })}
-              </select>
-              {createParentId && (() => {
-                const parent = salesList.find(s => s.id === Number(createParentId));
-                if (!parent) return null;
-                const parentCd = parseCustomData(parent.custom_data);
-                const parentDept = parentCd.department || '';
-                const gdtt = salesList.find(s => {
-                  const scd = parseCustomData(s.custom_data);
-                  return scd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && scd.department === parentDept;
-                });
-                if (!gdtt) return null;
-                return (
-                  <div className="mt-2 p-2 rounded text-xs" style={{ background: '#e0f2fe', color: '#0369a1' }}>
-                    Giám đốc Trung tâm (tự match): <strong>{gdtt.full_name}</strong>
-                    <span className="ml-1 opacity-70">— {parentDept}</span>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        )}
       </div>
       <form method="dialog" className="modal-backdrop">
         <button onClick={onClose}>close</button>
