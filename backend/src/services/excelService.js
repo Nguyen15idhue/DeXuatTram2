@@ -1082,6 +1082,8 @@ exports.importPreviewDynamic = async (req, res) => {
     }
 
     const { entity } = req.query;
+    const checkDuplicate = req.query.checkDuplicate !== 'false';
+    const checkIntraFile = req.query.checkIntraFile !== 'false';
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
     }
@@ -1186,21 +1188,25 @@ exports.importPreviewDynamic = async (req, res) => {
         const lat = parseFloat(vr.fixedData.latitude);
         const lng = parseFloat(vr.fixedData.longitude);
         if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          try {
-            const opts = entity === 'stations' ? { kinds: ['station'] } : {};
-            const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
-            if (nearby.is_duplicate) {
-              const n = nearby.nearest;
-              const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-              const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
-              errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`] });
+          if (checkDuplicate) {
+            try {
+              const opts = entity === 'stations' ? { kinds: ['station'] } : {};
+              const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
+              if (nearby.is_duplicate) {
+                const n = nearby.nearest;
+                const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
+                const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
+                errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`] });
+                continue;
+              }
+            } catch { /* silent */ }
+          }
+          if (checkIntraFile) {
+            const dupInFile = acceptedCoords.find(c => proximityService.haversineM(lat, lng, c.lat, c.lng) < 200);
+            if (dupInFile) {
+              errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với dòng ${dupInFile.row} trong cùng file (< 200m), không cho import`] });
               continue;
             }
-          } catch { /* silent */ }
-          const dupInFile = acceptedCoords.find(c => proximityService.haversineM(lat, lng, c.lat, c.lng) < 200);
-          if (dupInFile) {
-            errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với dòng ${dupInFile.row} trong cùng file (< 200m), không cho import`] });
-            continue;
           }
           acceptedCoords.push({ lat, lng, row: vr.rowNumber });
         }
@@ -1305,6 +1311,8 @@ exports.importConfirmDynamic = async (req, res) => {
   try {
     const { entity, rows, viewId, jobId } = req.body;
     const skipGeocode = req.body.geocode === false || String(req.body.geocode).toLowerCase() === 'false' || String(req.body.geocode) === '0';
+    const checkDuplicate = req.body.checkDuplicate !== false;
+    const checkIntraFile = req.body.checkIntraFile !== false;
     const job = registerImportJob(jobId, Array.isArray(rows) ? rows.length : 0);
 
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
@@ -1373,17 +1381,21 @@ exports.importConfirmDynamic = async (req, res) => {
         if (entity === 'station_proposals' || entity === 'stations') {
           const lat = parseFloat(fixedData.latitude);
           const lng = parseFloat(fixedData.longitude);
-          const opts = entity === 'stations' ? { kinds: ['station'] } : {};
-          const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
-          if (nearby.is_duplicate) {
-            const n = nearby.nearest;
-            const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-            const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
-            throw new Error(`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`);
+          if (checkDuplicate) {
+            const opts = entity === 'stations' ? { kinds: ['station'] } : {};
+            const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
+            if (nearby.is_duplicate) {
+              const n = nearby.nearest;
+              const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
+              const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
+              throw new Error(`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`);
+            }
           }
-          for (const c of insertedCoords) {
-            if (proximityService.haversineM(lat, lng, c.lat, c.lng) < 200) {
-              throw new Error(`Vị trí trùng với dòng ${c.row} trong cùng file import (< 200m), không cho import`);
+          if (checkIntraFile) {
+            for (const c of insertedCoords) {
+              if (proximityService.haversineM(lat, lng, c.lat, c.lng) < 200) {
+                throw new Error(`Vị trí trùng với dòng ${c.row} trong cùng file import (< 200m), không cho import`);
+              }
             }
           }
           insertedCoords.push({ lat, lng, row: row.rowNumber });

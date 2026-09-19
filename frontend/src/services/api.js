@@ -562,13 +562,20 @@ export const excelService = {
     const params = new URLSearchParams({ entity });
     if (opts.viewId) params.append('viewId', opts.viewId);
     if (opts.usage) params.append('usage', opts.usage);
+    if (opts.checkDuplicate === false) params.append('checkDuplicate', 'false');
+    if (opts.checkIntraFile === false) params.append('checkIntraFile', 'false');
     const formData = new FormData();
     formData.append('file', file);
     return api.uploadWithAuth(`/admin/excel/import/preview?${params.toString()}`, formData, token);
   },
 
   confirmImport(entity, rows, token, opts = {}) {
-    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows, viewId: opts.viewId || null, jobId: opts.jobId || null, geocode: opts.geocode !== false }, token);
+    return api.postWithAuth('/admin/excel/import/confirm', {
+      entity, rows, viewId: opts.viewId || null, jobId: opts.jobId || null,
+      geocode: opts.geocode !== false,
+      checkDuplicate: opts.checkDuplicate !== false,
+      checkIntraFile: opts.checkIntraFile !== false
+    }, token);
   },
 
   getImportProgress(jobId, token) {
