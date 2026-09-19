@@ -91,6 +91,17 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     }
   }, [entity, recordId, recordProp]);
 
+  useEffect(() => {
+    if (!submitAttempted || getOrderedErrorKeys(formErrors).length === 0) return;
+    const timer = setTimeout(() => {
+      const body = modalRef.current?.querySelector('.popup-body');
+      const banner = body?.querySelector('[data-error-summary]');
+      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (body) body.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [submitAttempted, formErrors]);
+
   const loadRecord = async () => {
     try {
       setLoading(true);
@@ -262,8 +273,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       const errs = validate();
       setFormErrors(errs);
       if (getOrderedErrorKeys(errs).length > 0) {
-        const banner = (modalRef.current || document).querySelector('[data-error-summary]');
-        if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
       setSaving(true);
