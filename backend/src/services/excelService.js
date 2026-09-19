@@ -170,7 +170,7 @@ async function resolveExportViews(entity, query) {
 
 async function getViewFields(viewId) {
   const [rows] = await pool.query(
-    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config
+    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config, fd.\`options\`
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
      WHERE vf.view_id = ? AND vf.visible = 1 AND fd.status = 'active' AND fd.type <> 'password'
@@ -406,11 +406,11 @@ async function getFieldDefsForView(entity, view) {
     const rows = await getViewFields(view.id);
     return rows.map(r => ({
       key: r.key, label: r.label, type: r.type, source_type: r.source_type,
-      required: r.required, formula_config: r.formula_config
+      required: r.required, formula_config: r.formula_config, options: r.options || null
     }));
   }
   const [rows] = await pool.query(
-    'SELECT `key`, label, type, source_type, required, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
+    'SELECT `key`, label, type, source_type, required, formula_config, `options` FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
     [entity]
   );
   return rows;
@@ -434,7 +434,8 @@ function buildImportColumns(entity, fieldDefs) {
       type: f.type,
       source_type: f.source_type,
       required: !!f.required,
-      computeMode: formulaConfig ? (formulaConfig.compute_mode || 'pre') : null
+      computeMode: formulaConfig ? (formulaConfig.compute_mode || 'pre') : null,
+      options: f.options || null
     });
   });
 
@@ -586,6 +587,30 @@ function buildHeaderMap(headerRow, columns) {
   return map;
 }
 
+function resolveSelectValue(cellValue, optionsJson, isMultiselect) {
+  if (!cellValue || cellValue === '') return cellValue;
+  const opts = dynamicUtils.parseOptions(optionsJson);
+  if (!opts || opts.length === 0) return cellValue;
+
+  const resolveOne = (str) => {
+    for (const o of opts) {
+      if (typeof o !== 'object' || !o) continue;
+      if (String(o.value) === str) return o.value;
+    }
+    const lower = str.toLowerCase();
+    for (const o of opts) {
+      if (typeof o !== 'object' || !o) continue;
+      if (o.label && String(o.label).toLowerCase() === lower) return o.value ?? o.label;
+    }
+    return str;
+  };
+
+  if (isMultiselect) {
+    return String(cellValue).split(',').map(s => resolveOne(s.trim())).join(',');
+  }
+  return resolveOne(String(cellValue).trim());
+}
+
 function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
   const fixedData = {};
   const dynamicData = {};
@@ -705,7 +730,8 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
           fixedData[col.key] = upper || 'CTV';
         }
       } else {
-        fixedData[col.key] = value;
+        fixedData[col.key] = (col.type === 'select' || col.type === 'multiselect') && col.options
+          ? resolveSelectValue(value, col.options, col.type === 'multiselect') : value;
       }
     } else {
       if (col.type === 'number' && value !== '') {
@@ -738,7 +764,8 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
           }
         }
       } else {
-        dynamicData[col.key] = value;
+        dynamicData[col.key] = (col.type === 'select' || col.type === 'multiselect') && col.options
+          ? resolveSelectValue(value, col.options, col.type === 'multiselect') : value;
       }
     }
   });
