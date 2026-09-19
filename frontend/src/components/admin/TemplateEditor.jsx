@@ -185,8 +185,8 @@ const TemplateEditor = ({ configId, onClose }) => {
     setTemplate(prev => ({
       ...prev,
       sections: prev.sections.map(s =>
-        s.id === sectionId && !s.fields.includes(fieldKey)
-          ? { ...s, fields: [...s.fields, fieldKey] } : s
+        s.id === sectionId && !(s.fields || []).includes(fieldKey)
+          ? { ...s, fields: [...(s.fields || []), fieldKey] } : s
       )
     }));
   };
@@ -195,7 +195,7 @@ const TemplateEditor = ({ configId, onClose }) => {
     setTemplate(prev => ({
       ...prev,
       sections: prev.sections.map(s =>
-        s.id === sectionId ? { ...s, fields: s.fields.filter(f => f !== fieldKey) } : s
+        s.id === sectionId ? { ...s, fields: (s.fields || []).filter(f => f !== fieldKey) } : s
       )
     }));
   };
@@ -205,11 +205,12 @@ const TemplateEditor = ({ configId, onClose }) => {
       ...prev,
       sections: prev.sections.map(s => {
         if (s.id !== sectionId) return s;
-        if (toIdx < 0 || toIdx >= s.fields.length) return s;
-        const fields = [...s.fields];
-        const [moved] = fields.splice(fromIdx, 1);
-        fields.splice(toIdx, 0, moved);
-        return { ...s, fields };
+        const fields = s.fields || [];
+        if (toIdx < 0 || toIdx >= fields.length) return s;
+        const newFields = [...fields];
+        const [moved] = newFields.splice(fromIdx, 1);
+        newFields.splice(toIdx, 0, moved);
+        return { ...s, fields: newFields };
       })
     }));
   };
@@ -305,7 +306,7 @@ const TemplateEditor = ({ configId, onClose }) => {
   const getSectionFieldDetails = (sectionId) => {
     const section = template.sections.find(s => s.id === sectionId);
     if (!section) return [];
-    return section.fields.map(fk => {
+    return (section.fields || []).map(fk => {
       const ff = findField(fk);
       return ff || { key: fk, label: fk, type: 'text' };
     });
@@ -536,7 +537,7 @@ const TemplateEditor = ({ configId, onClose }) => {
 
                   {/* Fields in section */}
                   <div className="p-2" style={{ minHeight: 40 }}>
-                    {section.fields.length === 0 ? (
+                    {(section.fields || []).length === 0 ? (
                       <div
                         style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
                       >
@@ -544,7 +545,7 @@ const TemplateEditor = ({ configId, onClose }) => {
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
-                        {section.fields.map((fieldKey, fieldIdx) => {
+                        {(section.fields || []).map((fieldKey, fieldIdx) => {
                           const ff = findField(fieldKey);
                           return (
                             <div
@@ -573,7 +574,7 @@ const TemplateEditor = ({ configId, onClose }) => {
                               <button
                                 className="btn btn-ghost btn-xs p-0"
                                 onClick={() => moveFieldInSection(section.id, fieldIdx, fieldIdx + 1)}
-                                disabled={fieldIdx === section.fields.length - 1}
+                                disabled={fieldIdx === (section.fields || []).length - 1}
                                 style={{ padding: 0, minWidth: 'auto' }}
                               >
                                 <ChevronDown size={10} />

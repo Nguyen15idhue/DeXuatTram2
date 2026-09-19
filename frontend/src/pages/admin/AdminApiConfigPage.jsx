@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiConfigService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code } from 'lucide-react';
+import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code, Webhook } from 'lucide-react';
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
 import SyncPanel from '../../components/admin/SyncPanel';
 import WebhookManager from '../../components/admin/WebhookManager';
@@ -42,6 +42,7 @@ const AdminApiConfigPage = () => {
   const [syncConfig, setSyncConfig] = useState(null);
   const [templateConfig, setTemplateConfig] = useState(null);
   const [personnelConfig, setPersonnelConfig] = useState(null);
+  const [activeTab, setActiveTab] = useState('api');
 
   const [form, setForm] = useState({
     name: '',
@@ -315,14 +316,27 @@ const AdminApiConfigPage = () => {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Settings size={24} className="text-primary" />
-          <h1 className="text-2xl font-bold">API Configurations</h1>
+          <h1 className="text-2xl font-bold">API & Webhook Configurations</h1>
         </div>
-        {isSuperAdmin && (
-          <button className="btn btn-primary btn-sm gap-1" onClick={openCreateModal}>
-            <Plus size={16} />
-            Thêm API
-          </button>
-        )}
+      </div>
+
+      <div role="tablist" className="tabs tabs-bordered mb-6">
+        <button
+          role="tab"
+          className={`tab ${activeTab === 'api' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('api')}
+        >
+          <Settings size={14} className="inline mr-1" />
+          API Configs
+        </button>
+        <button
+          role="tab"
+          className={`tab ${activeTab === 'webhook' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('webhook')}
+        >
+          <Webhook size={14} className="inline mr-1" />
+          Webhook Configs
+        </button>
       </div>
 
       {error && (
@@ -332,20 +346,28 @@ const AdminApiConfigPage = () => {
         </div>
       )}
 
-      <WebhookManager />
-      <WebhookListener />
+      {activeTab === 'api' ? (
+        <>
+          <div className="flex items-center justify-end mb-4">
+            {isSuperAdmin && (
+              <button className="btn btn-primary btn-sm gap-1" onClick={openCreateModal}>
+                <Plus size={16} />
+                Thêm API
+              </button>
+            )}
+          </div>
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <span className="loading loading-spinner loading-lg"></span>
-        </div>
-      ) : configs.length === 0 ? (
-        <div className="text-center py-12 text-base-content/50">
-          <Settings size={48} className="mx-auto mb-3 opacity-30" />
-          <p className="text-lg font-medium">Chưa có cấu hình API nào</p>
-          <p className="text-sm mt-1">Nhấn "Thêm API" để bắt đầu</p>
-        </div>
-      ) : (
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <span className="loading loading-spinner loading-lg"></span>
+            </div>
+          ) : configs.length === 0 ? (
+            <div className="text-center py-12 text-base-content/50">
+              <Settings size={48} className="mx-auto mb-3 opacity-30" />
+              <p className="text-lg font-medium">Chưa có cấu hình API nào</p>
+              <p className="text-sm mt-1">Nhấn "Thêm API" để bắt đầu</p>
+            </div>
+          ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {configs.map((config) => (
             <div key={config.id} className="card bg-base-100 shadow-sm border border-base-300">
@@ -481,6 +503,13 @@ const AdminApiConfigPage = () => {
             onUpdated={loadConfigs}
           />
         </div>
+      )}
+        </>
+      ) : (
+        <>
+          <WebhookManager />
+          <WebhookListener />
+        </>
       )}
     </div>
   );
