@@ -24,6 +24,12 @@ const USERS_PAGE_SIZE = 10;
 
 const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
 
+const parseCustomData = (cd) => {
+  if (!cd) return {};
+  if (typeof cd === 'object') return cd;
+  try { return JSON.parse(cd); } catch { return {}; }
+};
+
 const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
   const [detectedRole, setDetectedRole] = useState(createRole);
   const modalRef = useRef(null);
@@ -31,7 +37,6 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   useEffect(() => {
     const root = modalRef.current;
     if (!root) return;
-    let listener = null;
     let targetEl = null;
     const handleChange = (e) => {
       const val = e.target.value || 'CTV';
@@ -47,10 +52,9 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
     };
     const findAndAttach = () => {
       const el = root.querySelector('[data-field-key="role"] select');
-      if (el) { attachTo(el); return true; }
-      return false;
+      if (el) { attachTo(el); }
     };
-    if (findAndAttach()) return () => { if (targetEl) targetEl.removeEventListener('change', handleChange); };
+    findAndAttach();
     const obs = new MutationObserver(() => { findAndAttach(); });
     obs.observe(root, { childList: true, subtree: true });
     return () => { obs.disconnect(); if (targetEl) targetEl.removeEventListener('change', handleChange); };
@@ -60,7 +64,8 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
 
   const gdkvList = salesList.filter(s => {
     if (s.role !== 'SALES' || s.status !== 'ACTIVE') return false;
-    try { const cd = JSON.parse(s.custom_data || '{}'); return cd.chuc_vu === 'Giám đốc Khu vực'; } catch { return false; }
+    const cd = parseCustomData(s.custom_data);
+    return cd.chuc_vu === 'Giám đốc Khu vực';
   });
 
   return (
@@ -90,8 +95,8 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
               >
                 <option value="">— Chọn GĐKV —</option>
                 {gdkvList.map(s => {
-                  let dept = '';
-                  try { const cd = JSON.parse(s.custom_data || '{}'); dept = cd.department || ''; } catch {}
+                  const cd = parseCustomData(s.custom_data);
+                  const dept = cd.department || '';
                   return (
                     <option key={s.id} value={s.id}>
                       {s.full_name} — {dept || 'Chưa có phòng ban'}
@@ -102,13 +107,11 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
               {createParentId && (() => {
                 const parent = salesList.find(s => s.id === Number(createParentId));
                 if (!parent) return null;
-                let parentDept = '';
-                try { const cd = JSON.parse(parent.custom_data || '{}'); parentDept = cd.department || ''; } catch {}
+                const parentCd = parseCustomData(parent.custom_data);
+                const parentDept = parentCd.department || '';
                 const gdtt = salesList.find(s => {
-                  try {
-                    const cd = JSON.parse(s.custom_data || '{}');
-                    return cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && cd.department === parentDept;
-                  } catch { return false; }
+                  const scd = parseCustomData(s.custom_data);
+                  return scd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && scd.department === parentDept;
                 });
                 if (!gdtt) return null;
                 return (
