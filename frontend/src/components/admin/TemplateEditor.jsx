@@ -169,50 +169,53 @@ const TemplateEditor = ({ configId, onClose }) => {
   };
 
   const removeSection = (sectionId) => {
-    setTemplate(prev => ({ ...prev, sections: prev.sections.filter(s => s.id !== sectionId) }));
+    const remove = (secs) => secs.filter(s => s.id !== sectionId).map(s => s.sections ? { ...s, sections: remove(s.sections) } : s);
+    setTemplate(prev => ({ ...prev, sections: remove(prev.sections) }));
     if (selectedSection === sectionId) setSelectedSection(null);
   };
 
   const updateSection = (sectionId, updates) => {
-    setTemplate(prev => ({
-      ...prev,
-      sections: prev.sections.map(s => s.id === sectionId ? { ...s, ...updates } : s)
-    }));
+    const patch = (secs) => secs.map(s => {
+      if (s.id === sectionId) return { ...s, ...updates };
+      if (s.sections) return { ...s, sections: patch(s.sections) };
+      return s;
+    });
+    setTemplate(prev => ({ ...prev, sections: patch(prev.sections) }));
   };
 
   const addFieldToSection = (sectionId, fieldKey) => {
     if (!fieldKey) return;
-    setTemplate(prev => ({
-      ...prev,
-      sections: prev.sections.map(s =>
-        s.id === sectionId && !(s.fields || []).includes(fieldKey)
-          ? { ...s, fields: [...(s.fields || []), fieldKey] } : s
-      )
-    }));
+    const add = (secs) => secs.map(s => {
+      if (s.id === sectionId && !(s.fields || []).includes(fieldKey)) return { ...s, fields: [...(s.fields || []), fieldKey] };
+      if (s.sections) return { ...s, sections: add(s.sections) };
+      return s;
+    });
+    setTemplate(prev => ({ ...prev, sections: add(prev.sections) }));
   };
 
   const removeFieldFromSection = (sectionId, fieldKey) => {
-    setTemplate(prev => ({
-      ...prev,
-      sections: prev.sections.map(s =>
-        s.id === sectionId ? { ...s, fields: (s.fields || []).filter(f => f !== fieldKey) } : s
-      )
-    }));
+    const rm = (secs) => secs.map(s => {
+      if (s.id === sectionId) return { ...s, fields: (s.fields || []).filter(f => f !== fieldKey) };
+      if (s.sections) return { ...s, sections: rm(s.sections) };
+      return s;
+    });
+    setTemplate(prev => ({ ...prev, sections: rm(prev.sections) }));
   };
 
   const moveFieldInSection = (sectionId, fromIdx, toIdx) => {
-    setTemplate(prev => ({
-      ...prev,
-      sections: prev.sections.map(s => {
-        if (s.id !== sectionId) return s;
+    const mv = (secs) => secs.map(s => {
+      if (s.id === sectionId) {
         const fields = s.fields || [];
         if (toIdx < 0 || toIdx >= fields.length) return s;
         const newFields = [...fields];
         const [moved] = newFields.splice(fromIdx, 1);
         newFields.splice(toIdx, 0, moved);
         return { ...s, fields: newFields };
-      })
-    }));
+      }
+      if (s.sections) return { ...s, sections: mv(s.sections) };
+      return s;
+    });
+    setTemplate(prev => ({ ...prev, sections: mv(prev.sections) }));
   };
 
   const moveSection = (fromIndex, toIndex) => {
@@ -259,7 +262,13 @@ const TemplateEditor = ({ configId, onClose }) => {
 
   const getUsedFieldKeys = () => {
     const used = new Set();
-    template?.sections?.forEach(s => s.fields?.forEach(f => used.add(f)));
+    const walk = (secs) => {
+      (secs || []).forEach(s => {
+        (s.fields || []).forEach(f => used.add(f));
+        if (s.sections) walk(s.sections);
+      });
+    };
+    walk(template?.sections);
     return used;
   };
 
@@ -268,28 +277,34 @@ const TemplateEditor = ({ configId, onClose }) => {
     const sectionMap = {};
     formSections.forEach(fs => { sectionMap[fs.id] = fs; });
 
-    const flatSections = [];
-    const seen = new Set();
-    const resolveSection = (fs, inheritedCondition) => {
-      if (!fs || seen.has(fs.id)) return;
-      seen.add(fs.id);
+    const buildSection = (fs, inheritedCondition) => {
+      const visibleWhen = fs.visibleWhen || inheritedCondition;
       const isTabGroup = fs.type === 'tabs' || (Array.isArray(fs.tabs) && fs.tabs.length > 0);
       if (isTabGroup) {
-        const groupCondition = fs.visibleWhen || inheritedCondition;
+        const childSections = [];
         (fs.tabs || []).forEach(tab => {
           (tab.sectionRefs || []).forEach(refId => {
             const ref = sectionMap[refId];
-            if (ref) resolveSection(ref, groupCondition);
+            if (ref) childSections.push(buildSection(ref, visibleWhen));
           });
         });
-        return;
+        return {
+          id: fs.id,
+          title: fs.title,
+          emoji: '📋',
+          color: '#27ae60',
+          layout: '1col',
+          always_show: !visibleWhen,
+          collapsible: false,
+          condition: visibleWhen ? { field: visibleWhen.field, operator: '=', value: visibleWhen.value } : null,
+          sections: childSections
+        };
       }
       const sectionFields = formFields
         .filter(f => fs.rows?.some(r => r.id === f.rowId))
         .sort((a, b) => (a.rowIndex || 0) - (b.rowIndex || 0) || (a.colIndex || 0) - (b.colIndex || 0))
         .map(f => f.key);
-      const visibleWhen = fs.visibleWhen || inheritedCondition;
-      flatSections.push({
+      return {
         id: fs.id,
         title: fs.title,
         emoji: fs.id.includes('tdt') ? '💰' : fs.id.includes('lk') ? '🤝' : fs.id.includes('nq') ? '🏪' : '📋',
@@ -299,12 +314,12 @@ const TemplateEditor = ({ configId, onClose }) => {
         collapsible: false,
         condition: visibleWhen ? { field: visibleWhen.field, operator: '=', value: visibleWhen.value } : null,
         fields: sectionFields
-      });
+      };
     };
-    formSections.forEach(fs => resolveSection(fs, null));
 
-    setTemplate({ sections: flatSections });
-    setToast({ message: `Đã tải ${flatSections.length} sections từ form proposals`, type: 'success' });
+    const sections = formSections.map(fs => buildSection(fs, null));
+    setTemplate({ sections });
+    setToast({ message: `Đã tải ${sections.length} sections từ form proposals`, type: 'success' });
   };
 
   if (loading) {
@@ -325,7 +340,17 @@ const TemplateEditor = ({ configId, onClose }) => {
   const findField = (key) => allFields.find(f => f.key === key) || formFields.find(f => f.key === key);
 
   const getSectionFieldDetails = (sectionId) => {
-    const section = template.sections.find(s => s.id === sectionId);
+    const find = (secs) => {
+      for (const s of secs) {
+        if (s.id === sectionId) return s;
+        if (s.sections) {
+          const found = find(s.sections);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    const section = find(template.sections || []);
     if (!section) return [];
     return (section.fields || []).map(fk => {
       const ff = findField(fk);
@@ -387,15 +412,15 @@ const TemplateEditor = ({ configId, onClose }) => {
             )}
 
             {template.sections.map((section, secIdx) => {
-              const fieldDetails = getSectionFieldDetails(section.id);
+              const isTabGroup = Array.isArray(section.sections) && section.sections.length > 0;
               const hasCondition = !section.always_show && section.condition;
               return (
                 <div
                   key={section.id}
                   className={`section-block ${dragOverSection === section.id ? 'drag-over' : ''}`}
                   style={{
-                    border: selectedSection === section.id ? '2px solid #4a6cf7' : '1px solid #d1d5db',
-                    borderRadius: 8, marginBottom: 12, background: '#fafbfc'
+                    border: selectedSection === section.id ? '2px solid #4a6cf7' : isTabGroup ? '2px dashed #9b59b6' : '1px solid #d1d5db',
+                    borderRadius: 8, marginBottom: 12, background: isTabGroup ? '#f5f0ff' : '#fafbfc'
                   }}
                   onDragOver={(e) => handleDragOver(e, section.id)}
                   onDragLeave={handleDragLeave}
@@ -405,7 +430,7 @@ const TemplateEditor = ({ configId, onClose }) => {
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '6px 10px',
-                    borderBottom: '1px solid #e5e7eb',
+                    borderBottom: isTabGroup ? '1px dashed #c4b5fd' : '1px solid #e5e7eb',
                     background: section.color ? `${section.color}15` : '#f3f4f6',
                     borderRadius: '8px 8px 0 0',
                     borderLeft: `4px solid ${section.color || '#e74c3c'}`
@@ -432,10 +457,10 @@ const TemplateEditor = ({ configId, onClose }) => {
                         title="Double-click để sửa tên"
                       >
                         {section.emoji} {section.title}
+                        {isTabGroup && <span style={{ fontSize: 11, color: '#7c3aed', marginLeft: 6 }}>({section.sections.length} section con)</span>}
                       </span>
                     )}
 
-                    {/* Condition badge */}
                     {hasCondition && (
                       <span style={{
                         fontSize: 11, padding: '2px 8px', borderRadius: 4,
@@ -482,41 +507,49 @@ const TemplateEditor = ({ configId, onClose }) => {
                             {COLORS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                           </select>
                         </label>
-                        <label className="flex items-center gap-1">
-                          <span className="text-gray-500">Layout:</span>
-                          <select
-                            className="select select-bordered select-xs"
-                            value={section.layout || '2col'}
-                            onChange={(e) => updateSection(section.id, { layout: e.target.value })}
-                          >
-                            {LAYOUTS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                          </select>
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-xs checkbox-primary"
-                            checked={section.always_show}
-                            onChange={(e) => updateSection(section.id, {
-                              always_show: e.target.checked,
-                              condition: e.target.checked ? null : section.condition
-                            })}
-                          />
-                          <span>Luôn hiển thị</span>
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-xs"
-                            checked={section.collapsible}
-                            onChange={(e) => updateSection(section.id, { collapsible: e.target.checked })}
-                          />
-                          <span>Thu gọn</span>
-                        </label>
+                        {!isTabGroup && (
+                          <>
+                            <label className="flex items-center gap-1">
+                              <span className="text-gray-500">Layout:</span>
+                              <select
+                                className="select select-bordered select-xs"
+                                value={section.layout || '2col'}
+                                onChange={(e) => updateSection(section.id, { layout: e.target.value })}
+                              >
+                                {LAYOUTS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                className="checkbox checkbox-xs checkbox-primary"
+                                checked={section.always_show}
+                                onChange={(e) => updateSection(section.id, {
+                                  always_show: e.target.checked,
+                                  condition: e.target.checked ? null : section.condition
+                                })}
+                              />
+                              <span>Luôn hiển thị</span>
+                            </label>
+                            <label className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                className="checkbox checkbox-xs"
+                                checked={section.collapsible}
+                                onChange={(e) => updateSection(section.id, { collapsible: e.target.checked })}
+                              />
+                              <span>Thu gọn</span>
+                            </label>
+                          </>
+                        )}
+                        {isTabGroup && (
+                          <span style={{ fontSize: 11, color: '#7c3aed', padding: '2px 8px', background: '#ede9fe', borderRadius: 4 }}>
+                            Tab group — section con quản lý field
+                          </span>
+                        )}
                       </div>
 
-                      {/* Condition editor */}
-                      {!section.always_show && (
+                      {!section.always_show && !isTabGroup && (
                         <div className="flex items-center gap-2 mt-2" style={{ fontSize: 12 }}>
                           <span className="text-gray-500">Hiện khi:</span>
                           <select
@@ -556,63 +589,150 @@ const TemplateEditor = ({ configId, onClose }) => {
                     </div>
                   )}
 
-                  {/* Fields in section */}
-                  <div className="p-2" style={{ minHeight: 40 }}>
-                    {(section.fields || []).length === 0 ? (
-                      <div
-                        style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
-                      >
-                        Kéo field từ danh sách bên phải vào đây
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {(section.fields || []).map((fieldKey, fieldIdx) => {
-                          const ff = findField(fieldKey);
-                          return (
-                            <div
-                              key={fieldKey}
-                              className="field-chip"
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, fieldKey)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 4,
-                                padding: '4px 8px', borderRadius: 6, fontSize: 12,
-                                background: '#e8f4f8', border: '1px solid #b8d8e8',
-                                cursor: 'grab'
-                              }}
-                            >
-                              <GripVertical size={10} className="opacity-40" />
-                              <span style={{ fontWeight: 500 }}>{ff?.label || fieldKey}</span>
-                              <span className="text-xs text-gray-400">· {ff?.type || 'text'}</span>
-                              <button
-                                className="btn btn-ghost btn-xs p-0"
-                                onClick={() => moveFieldInSection(section.id, fieldIdx, fieldIdx - 1)}
-                                disabled={fieldIdx === 0}
-                                style={{ padding: 0, minWidth: 'auto' }}
-                              >
-                                <ChevronUp size={10} />
-                              </button>
-                              <button
-                                className="btn btn-ghost btn-xs p-0"
-                                onClick={() => moveFieldInSection(section.id, fieldIdx, fieldIdx + 1)}
-                                disabled={fieldIdx === (section.fields || []).length - 1}
-                                style={{ padding: 0, minWidth: 'auto' }}
-                              >
-                                <ChevronDown size={10} />
-                              </button>
-                              <button
-                                className="btn btn-ghost btn-xs p-0 text-error"
-                                onClick={() => removeFieldFromSection(section.id, fieldKey)}
-                                style={{ padding: 0, minWidth: 'auto' }}
-                              >
-                                <X size={10} />
+                  {isTabGroup ? (
+                    <div className="p-2">
+                      {section.sections.map((child) => {
+                        const childFieldDetails = getSectionFieldDetails(child.id);
+                        const childHasCondition = !child.always_show && child.condition;
+                        return (
+                          <div
+                            key={child.id}
+                            className={`section-block mb-2 ${dragOverSection === child.id ? 'drag-over' : ''}`}
+                            style={{
+                              border: selectedSection === child.id ? '2px solid #4a6cf7' : '1px solid #e2e8f0',
+                              borderRadius: 6, background: '#fff'
+                            }}
+                            onDragOver={(e) => { e.stopPropagation(); handleDragOver(e, child.id); }}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => { e.stopPropagation(); handleDrop(e, child.id); }}
+                          >
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              padding: '4px 8px',
+                              borderBottom: '1px solid #f1f5f9',
+                              background: child.color ? `${child.color}10` : '#f8fafc',
+                              borderRadius: '6px 6px 0 0',
+                              borderLeft: `3px solid ${child.color || '#64748b'}`
+                            }}>
+                              <GripVertical size={12} className="text-gray-400 cursor-grab" />
+                              {editingSectionId === child.id ? (
+                                <div className="flex items-center gap-1 flex-1">
+                                  <input
+                                    value={editingSectionTitle}
+                                    onChange={(e) => setEditingSectionTitle(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') saveEditSectionTitle(); if (e.key === 'Escape') setEditingSectionId(null); }}
+                                    autoFocus
+                                    className="input input-bordered input-xs flex-1"
+                                    style={{ fontSize: 12 }}
+                                  />
+                                  <button className="btn btn-xs btn-ghost" onClick={saveEditSectionTitle}><Check size={11} /></button>
+                                  <button className="btn btn-xs btn-ghost" onClick={() => setEditingSectionId(null)}><X size={11} /></button>
+                                </div>
+                              ) : (
+                                <span
+                                  style={{ fontWeight: 600, fontSize: 12, flex: 1, cursor: 'text' }}
+                                  onDoubleClick={() => startEditSectionTitle(child)}
+                                >
+                                  {child.emoji} {child.title}
+                                </span>
+                              )}
+                              {childHasCondition && (
+                                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: '#fff3cd', color: '#856404', border: '1px solid #ffc107' }}>
+                                  {child.condition.field} {child.condition.operator} {child.condition.value}
+                                </span>
+                              )}
+                              <button className="btn btn-ghost btn-xs p-0" onClick={() => setSelectedSection(selectedSection === child.id ? null : child.id)} title="Cấu hình">
+                                <Pencil size={11} />
                               </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                            <div className="p-2" style={{ minHeight: 32 }}>
+                              {childFieldDetails.length === 0 ? (
+                                <div style={{ border: '1px dashed #d1d5db', borderRadius: 4, padding: '8px 6px', textAlign: 'center', fontSize: 11, color: '#9ca3af' }}>
+                                  Kéo field vào đây
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {childFieldDetails.map((ff, fi) => (
+                                    <div key={ff.key} style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, fontSize: 11, background: '#e8f4f8', border: '1px solid #b8d8e8' }}>
+                                      <GripVertical size={8} className="opacity-40" />
+                                      <span style={{ fontWeight: 500 }}>{ff.label || ff.key}</span>
+                                      <span className="text-xs text-gray-400">· {ff.type || 'text'}</span>
+                                      <button className="btn btn-ghost btn-xs p-0" onClick={() => moveFieldInSection(child.id, fi, fi - 1)} disabled={fi === 0} style={{ padding: 0, minWidth: 'auto' }}>
+                                        <ChevronUp size={9} />
+                                      </button>
+                                      <button className="btn btn-ghost btn-xs p-0" onClick={() => moveFieldInSection(child.id, fi, fi + 1)} disabled={fi === childFieldDetails.length - 1} style={{ padding: 0, minWidth: 'auto' }}>
+                                        <ChevronDown size={9} />
+                                      </button>
+                                      <button className="btn btn-ghost btn-xs p-0 text-error" onClick={() => removeFieldFromSection(child.id, ff.key)} style={{ padding: 0, minWidth: 'auto' }}>
+                                        <X size={9} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-2" style={{ minHeight: 40 }}>
+                      {(section.fields || []).length === 0 ? (
+                        <div
+                          style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
+                        >
+                          Kéo field từ danh sách bên phải vào đây
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {(section.fields || []).map((fieldKey, fieldIdx) => {
+                            const ff = findField(fieldKey);
+                            return (
+                              <div
+                                key={fieldKey}
+                                className="field-chip"
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, fieldKey)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 4,
+                                  padding: '4px 8px', borderRadius: 6, fontSize: 12,
+                                  background: '#e8f4f8', border: '1px solid #b8d8e8',
+                                  cursor: 'grab'
+                                }}
+                              >
+                                <GripVertical size={10} className="opacity-40" />
+                                <span style={{ fontWeight: 500 }}>{ff?.label || fieldKey}</span>
+                                <span className="text-xs text-gray-400">· {ff?.type || 'text'}</span>
+                                <button
+                                  className="btn btn-ghost btn-xs p-0"
+                                  onClick={() => moveFieldInSection(section.id, fieldIdx, fieldIdx - 1)}
+                                  disabled={fieldIdx === 0}
+                                  style={{ padding: 0, minWidth: 'auto' }}
+                                >
+                                  <ChevronUp size={10} />
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-xs p-0"
+                                  onClick={() => moveFieldInSection(section.id, fieldIdx, fieldIdx + 1)}
+                                  disabled={fieldIdx === (section.fields || []).length - 1}
+                                  style={{ padding: 0, minWidth: 'auto' }}
+                                >
+                                  <ChevronDown size={10} />
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-xs p-0 text-error"
+                                  onClick={() => removeFieldFromSection(section.id, fieldKey)}
+                                  style={{ padding: 0, minWidth: 'auto' }}
+                                >
+                                  <X size={10} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
