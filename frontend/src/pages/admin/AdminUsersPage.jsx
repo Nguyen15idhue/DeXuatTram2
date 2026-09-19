@@ -32,27 +32,24 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
     const root = modalRef.current;
     if (!root) return;
     const findRoleSelect = () => root.querySelector('[data-field-key="role"] select');
-    const sync = () => {
-      const el = findRoleSelect();
-      if (el) {
-        const val = el.value || 'CTV';
-        setDetectedRole(prev => {
-          if (prev !== val) {
-            setCreateRole(val);
-            if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
-            return val;
-          }
-          return prev;
-        });
-      }
+    const el = findRoleSelect();
+    if (!el) return;
+    const handleChange = () => {
+      const val = el.value || 'CTV';
+      setDetectedRole(val);
+      setCreateRole(val);
+      if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
     };
-    sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(root, { childList: true, subtree: true, attributes: true });
-    return () => observer.disconnect();
+    el.addEventListener('change', handleChange);
+    return () => el.removeEventListener('change', handleChange);
   }, []);
 
   const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
+
+  const gdkvList = salesList.filter(s => {
+    if (s.role !== 'SALES' || s.status !== 'ACTIVE') return false;
+    try { const cd = JSON.parse(s.custom_data || '{}'); return cd.chuc_vu === 'Giám đốc Khu vực'; } catch { return false; }
+  });
 
   return (
     <dialog className="modal modal-open" ref={modalRef}>
@@ -80,28 +77,24 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
                 onChange={(e) => setCreateParentId(e.target.value)}
               >
                 <option value="">— Chọn GĐKV —</option>
-                {salesList
-                  .filter(s => s.custom_data && (() => {
-                    try { const cd = JSON.parse(s.custom_data); return cd.chuc_vu === 'Giám đốc Khu vực'; } catch { return false; }
-                  })())
-                  .map(s => {
-                    let dept = '';
-                    try { const cd = JSON.parse(s.custom_data); dept = cd.department || ''; } catch {}
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {s.full_name} — {dept || 'Chưa có phòng ban'}
-                      </option>
-                    );
-                  })}
+                {gdkvList.map(s => {
+                  let dept = '';
+                  try { const cd = JSON.parse(s.custom_data || '{}'); dept = cd.department || ''; } catch {}
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name} — {dept || 'Chưa có phòng ban'}
+                    </option>
+                  );
+                })}
               </select>
               {createParentId && (() => {
                 const parent = salesList.find(s => s.id === Number(createParentId));
                 if (!parent) return null;
                 let parentDept = '';
-                try { const cd = JSON.parse(parent.custom_data); parentDept = cd.department || ''; } catch {}
+                try { const cd = JSON.parse(parent.custom_data || '{}'); parentDept = cd.department || ''; } catch {}
                 const gdtt = salesList.find(s => {
                   try {
-                    const cd = JSON.parse(s.custom_data);
+                    const cd = JSON.parse(s.custom_data || '{}');
                     return cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && cd.department === parentDept;
                   } catch { return false; }
                 });
@@ -180,8 +173,8 @@ const [viewMode, setViewMode] = useState('table');
 
   useEffect(() => {
     if (!showCreateForm || !token) return;
-    adminUserService.getAllWithParams('role=SALES&status=ACTIVE', token)
-      .then(res => { if (res && res.success) setSalesList(res.data || []); })
+    adminUserService.getAllWithParams('all=1', token)
+      .then(res => { if (res && res.success) setSalesList((res.data || []).filter(u => u.role === 'SALES' && u.status === 'ACTIVE')); })
       .catch(() => {});
   }, [showCreateForm, token]);
 
