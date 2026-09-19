@@ -24,13 +24,11 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://backend:3000',
-        changeOrigin: true,
-        configure: (proxy) => { proxy.setTimeout(300000); }
+        changeOrigin: true
       },
       '/tiles': {
         target: 'http://backend:3000',
-        changeOrigin: true,
-        configure: (proxy) => { proxy.setTimeout(30000); }
+        changeOrigin: true
       }
     }
   },
