@@ -48,8 +48,8 @@ const TemplateEditor = ({ configId, onClose }) => {
   const [selectedSection, setSelectedSection] = useState(null);
   const [editingSectionId, setEditingSectionId] = useState(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
-  const [dragOverSection, setDragOverSection] = useState(null);
-  const [draggedFieldKey, setDraggedFieldKey] = useState(null);
+  const [dragOverTarget, setDragOverTarget] = useState(null);
+  const [dragState, setDragState] = useState(null);
 
   const loadForm = useCallback(async () => {
     const api = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -238,26 +238,155 @@ const TemplateEditor = ({ configId, onClose }) => {
     setEditingSectionId(null);
   };
 
-  const handleDragStart = (e, fieldKey) => {
-    e.dataTransfer.setData('fieldKey', fieldKey);
+  const moveFieldToSection = (fieldKey, targetSectionId, targetIdx) => {
+    if (!fieldKey) return;
+    const result = { moved: null };
+    const remove = (secs) => secs.map(s => {
+      if (s.fields && s.fields.includes(fieldKey)) {
+        result.moved = fieldKey;
+        return { ...s, fields: s.fields.filter(f => f !== fieldKey) };
+      }
+      if (s.sections) return { ...s, sections: remove(s.sections) };
+      return s;
+    });
+    let updated = remove(template.sections);
+    const insert = (secs) => secs.map(s => {
+      if (s.id === targetSectionId) {
+        const fields = [...(s.fields || [])];
+        const idx = Math.min(targetIdx, fields.length);
+        fields.splice(idx, 0, fieldKey);
+        return { ...s, fields };
+      }
+      if (s.sections) return { ...s, sections: insert(s.sections) };
+      return s;
+    });
+    updated = insert(updated);
+    setTemplate(prev => ({ ...prev, sections: updated }));
+  };
+
+  const moveSectionToPosition = (sectionId, targetIdx) => {
+    const moveDeep = (secs) => {
+      const idx = secs.findIndex(s => s.id === sectionId);
+      if (idx !== -1) {
+        const newSecs = [...secs];
+        const [moved] = newSecs.splice(idx, 1);
+        const insIdx = Math.min(targetIdx, newSecs.length);
+        newSecs.splice(insIdx, 0, moved);
+        return newSecs;
+      }
+      return secs.map(s => s.sections ? { ...s, sections: moveDeep(s.sections) } : s);
+    };
+    setTemplate(prev => ({ ...prev, sections: moveDeep(prev.sections) }));
+  };
+
+  const startDragField = (e, fieldKey, sourceSectionId, fieldIdx) => {
+    e.dataTransfer.setData('text/plain', fieldKey);
     e.dataTransfer.effectAllowed = 'move';
-    setDraggedFieldKey(fieldKey);
+    setDragState({ type: 'field', fieldKey, sourceSectionId, fieldIdx });
   };
 
-  const handleDragOver = (e, sectionId) => {
+  const startDragSection = (e, sectionId) => {
+    e.dataTransfer.setData('text/plain', sectionId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDragState({ type: 'section', sectionId });
+  };
+
+  const handleDragOverField = (e, targetSectionId, targetIdx) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    setDragOverSection(sectionId);
+    setDragOverTarget({ type: 'field', sectionId: targetSectionId, idx: targetIdx });
   };
 
-  const handleDragLeave = () => setDragOverSection(null);
-
-  const handleDrop = (e, sectionId) => {
+  const handleDragOverSectionBody = (e, sectionId) => {
     e.preventDefault();
-    setDragOverSection(null);
-    setDraggedFieldKey(null);
-    const fieldKey = e.dataTransfer.getData('fieldKey');
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTarget({ type: 'section-body', sectionId });
+  };
+
+  const handleDragOverSectionHeader = (e, sectionId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTarget({ type: 'section-header', sectionId });
+  };
+
+  const handleDragLeave = () => setDragOverTarget(null);
+
+  const handleDropOnField = (e, targetSectionId, targetIdx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!dragState) return;
+    if (dragState.type === 'field') {
+      if (dragState.sourceSectionId === targetSectionId && dragState.fieldIdx === targetIdx) return;
+      moveFieldToSection(dragState.fieldKey, targetSectionId, targetIdx);
+    }
+    setDragState(null);
+  };
+
+  const handleDropOnSectionBody = (e, sectionId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!dragState) return;
+    if (dragState.type === 'field') {
+      if (dragState.sourceSectionId === sectionId) return;
+      const sec = findSectionById(template.sections, sectionId);
+      const targetIdx = sec ? (sec.fields || []).length : 0;
+      moveFieldToSection(dragState.fieldKey, sectionId, targetIdx);
+    }
+    setDragState(null);
+  };
+
+  const handleDropOnSectionHeader = (e, sectionId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!dragState) return;
+    if (dragState.type === 'section') {
+      if (dragState.sectionId === sectionId) return;
+      const targetIdx = findSectionIndex(template.sections, sectionId);
+      if (targetIdx !== -1) moveSectionToPosition(dragState.sectionId, targetIdx);
+    } else if (dragState.type === 'field') {
+      const sec = findSectionById(template.sections, sectionId);
+      if (sec && sec.fields && !sec.fields.includes(dragState.fieldKey)) {
+        moveFieldToSection(dragState.fieldKey, sectionId, sec.fields.length);
+      }
+    }
+    setDragState(null);
+  };
+
+  const handleDropFromPanel = (e, sectionId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    const fieldKey = e.dataTransfer.getData('text/plain');
     if (fieldKey) addFieldToSection(sectionId, fieldKey);
+  };
+
+  const findSectionById = (secs, id) => {
+    for (const s of secs) {
+      if (s.id === id) return s;
+      if (s.sections) {
+        const found = findSectionById(s.sections, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const findSectionIndex = (secs, id) => {
+    const idx = secs.findIndex(s => s.id === id);
+    if (idx !== -1) return idx;
+    for (let i = 0; i < secs.length; i++) {
+      if (secs[i].sections) {
+        const childIdx = secs[i].sections.findIndex(s => s.id === id);
+        if (childIdx !== -1) return childIdx;
+      }
+    }
+    return -1;
   };
 
   const getUsedFieldKeys = () => {
@@ -417,17 +546,20 @@ const TemplateEditor = ({ configId, onClose }) => {
               return (
                 <div
                   key={section.id}
-                  className={`section-block ${dragOverSection === section.id ? 'drag-over' : ''}`}
+                  className={`section-block ${dragOverTarget?.sectionId === section.id ? 'drag-over' : ''}`}
                   style={{
                     border: selectedSection === section.id ? '2px solid #4a6cf7' : isTabGroup ? '2px dashed #9b59b6' : '1px solid #d1d5db',
                     borderRadius: 8, marginBottom: 12, background: isTabGroup ? '#f5f0ff' : '#fafbfc'
                   }}
-                  onDragOver={(e) => handleDragOver(e, section.id)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, section.id)}
                 >
-                  {/* Section header */}
-                  <div style={{
+                  {/* Section header - draggable + drop target */}
+                  <div
+                    draggable
+                    onDragStart={(e) => startDragSection(e, section.id)}
+                    onDragOver={(e) => handleDragOverSectionHeader(e, section.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDropOnSectionHeader(e, section.id)}
+                    style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '6px 10px',
                     borderBottom: isTabGroup ? '1px dashed #c4b5fd' : '1px solid #e5e7eb',
@@ -597,16 +729,19 @@ const TemplateEditor = ({ configId, onClose }) => {
                         return (
                           <div
                             key={child.id}
-                            className={`section-block mb-2 ${dragOverSection === child.id ? 'drag-over' : ''}`}
+                            className={`section-block mb-2 ${dragOverTarget?.sectionId === child.id ? 'drag-over' : ''}`}
                             style={{
                               border: selectedSection === child.id ? '2px solid #4a6cf7' : '1px solid #e2e8f0',
                               borderRadius: 6, background: '#fff'
                             }}
-                            onDragOver={(e) => { e.stopPropagation(); handleDragOver(e, child.id); }}
-                            onDragLeave={handleDragLeave}
-                            onDrop={(e) => { e.stopPropagation(); handleDrop(e, child.id); }}
                           >
-                            <div style={{
+                            <div
+                              draggable
+                              onDragStart={(e) => startDragSection(e, child.id)}
+                              onDragOver={(e) => handleDragOverSectionHeader(e, child.id)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDropOnSectionHeader(e, child.id)}
+                              style={{
                               display: 'flex', alignItems: 'center', gap: 6,
                               padding: '4px 8px',
                               borderBottom: '1px solid #f1f5f9',
@@ -645,29 +780,42 @@ const TemplateEditor = ({ configId, onClose }) => {
                                 <Pencil size={11} />
                               </button>
                             </div>
-                            <div className="p-2" style={{ minHeight: 32 }}>
+                            <div className="p-2" style={{ minHeight: 32 }}
+                              onDragOver={(e) => handleDragOverSectionBody(e, child.id)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDropOnSectionBody(e, child.id)}
+                            >
                               {childFieldDetails.length === 0 ? (
-                                <div style={{ border: '1px dashed #d1d5db', borderRadius: 4, padding: '8px 6px', textAlign: 'center', fontSize: 11, color: '#9ca3af' }}>
+                                <div style={{ border: dragOverTarget?.sectionId === child.id ? '2px dashed #4a6cf7' : '1px dashed #d1d5db', borderRadius: 4, padding: '8px 6px', textAlign: 'center', fontSize: 11, color: '#9ca3af' }}>
                                   Kéo field vào đây
                                 </div>
                               ) : (
                                 <div className="flex flex-wrap gap-1">
-                                  {childFieldDetails.map((ff, fi) => (
-                                    <div key={ff.key} style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, fontSize: 11, background: '#e8f4f8', border: '1px solid #b8d8e8' }}>
-                                      <GripVertical size={8} className="opacity-40" />
-                                      <span style={{ fontWeight: 500 }}>{ff.label || ff.key}</span>
-                                      <span className="text-xs text-gray-400">· {ff.type || 'text'}</span>
-                                      <button className="btn btn-ghost btn-xs p-0" onClick={() => moveFieldInSection(child.id, fi, fi - 1)} disabled={fi === 0} style={{ padding: 0, minWidth: 'auto' }}>
-                                        <ChevronUp size={9} />
-                                      </button>
-                                      <button className="btn btn-ghost btn-xs p-0" onClick={() => moveFieldInSection(child.id, fi, fi + 1)} disabled={fi === childFieldDetails.length - 1} style={{ padding: 0, minWidth: 'auto' }}>
-                                        <ChevronDown size={9} />
-                                      </button>
-                                      <button className="btn btn-ghost btn-xs p-0 text-error" onClick={() => removeFieldFromSection(child.id, ff.key)} style={{ padding: 0, minWidth: 'auto' }}>
-                                        <X size={9} />
-                                      </button>
-                                    </div>
-                                  ))}
+                                  {childFieldDetails.map((ff, fi) => {
+                                    const isDragOver = dragOverTarget?.type === 'field' && dragOverTarget?.sectionId === child.id && dragOverTarget?.idx === fi;
+                                    return (
+                                      <div key={ff.key}
+                                        draggable
+                                        onDragStart={(e) => startDragField(e, ff.key, child.id, fi)}
+                                        onDragOver={(e) => handleDragOverField(e, child.id, fi)}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={(e) => handleDropOnField(e, child.id, fi)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 4, fontSize: 11, background: isDragOver ? '#c8e6ff' : '#e8f4f8', border: isDragOver ? '2px solid #4a6cf7' : '1px solid #b8d8e8', cursor: 'grab', transition: 'background 0.15s, border 0.15s' }}>
+                                        <GripVertical size={8} className="opacity-40" />
+                                        <span style={{ fontWeight: 500 }}>{ff.label || ff.key}</span>
+                                        <span className="text-xs text-gray-400">· {ff.type || 'text'}</span>
+                                        <button className="btn btn-ghost btn-xs p-0" onClick={() => moveFieldInSection(child.id, fi, fi - 1)} disabled={fi === 0} style={{ padding: 0, minWidth: 'auto' }}>
+                                          <ChevronUp size={9} />
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs p-0" onClick={() => moveFieldInSection(child.id, fi, fi + 1)} disabled={fi === childFieldDetails.length - 1} style={{ padding: 0, minWidth: 'auto' }}>
+                                          <ChevronDown size={9} />
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs p-0 text-error" onClick={() => removeFieldFromSection(child.id, ff.key)} style={{ padding: 0, minWidth: 'auto' }}>
+                                          <X size={9} />
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -676,10 +824,14 @@ const TemplateEditor = ({ configId, onClose }) => {
                       })}
                     </div>
                   ) : (
-                    <div className="p-2" style={{ minHeight: 40 }}>
+                    <div className="p-2" style={{ minHeight: 40 }}
+                      onDragOver={(e) => handleDragOverSectionBody(e, section.id)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDropOnSectionBody(e, section.id)}
+                    >
                       {(section.fields || []).length === 0 ? (
                         <div
-                          style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
+                          style={{ border: dragOverTarget?.sectionId === section.id ? '2px dashed #4a6cf7' : '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
                         >
                           Kéo field từ danh sách bên phải vào đây
                         </div>
@@ -687,17 +839,23 @@ const TemplateEditor = ({ configId, onClose }) => {
                         <div className="flex flex-wrap gap-1.5">
                           {(section.fields || []).map((fieldKey, fieldIdx) => {
                             const ff = findField(fieldKey);
+                            const isDragOver = dragOverTarget?.type === 'field' && dragOverTarget?.sectionId === section.id && dragOverTarget?.idx === fieldIdx;
                             return (
                               <div
                                 key={fieldKey}
                                 className="field-chip"
                                 draggable
-                                onDragStart={(e) => handleDragStart(e, fieldKey)}
+                                onDragStart={(e) => startDragField(e, fieldKey, section.id, fieldIdx)}
+                                onDragOver={(e) => handleDragOverField(e, section.id, fieldIdx)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDropOnField(e, section.id, fieldIdx)}
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: 4,
                                   padding: '4px 8px', borderRadius: 6, fontSize: 12,
-                                  background: '#e8f4f8', border: '1px solid #b8d8e8',
-                                  cursor: 'grab'
+                                  background: isDragOver ? '#c8e6ff' : '#e8f4f8',
+                                  border: isDragOver ? '2px solid #4a6cf7' : '1px solid #b8d8e8',
+                                  cursor: 'grab',
+                                  transition: 'background 0.15s, border 0.15s'
                                 }}
                               >
                                 <GripVertical size={10} className="opacity-40" />
@@ -766,8 +924,9 @@ const TemplateEditor = ({ configId, onClose }) => {
                   className="builder-available-item"
                   draggable
                   onDragStart={(e) => {
-                    e.dataTransfer.setData('fieldKey', field.key);
+                    e.dataTransfer.setData('text/plain', field.key);
                     e.dataTransfer.effectAllowed = 'move';
+                    setDragState({ type: 'field', fieldKey: field.key, sourceSectionId: null, fieldIdx: -1 });
                   }}
                   onClick={() => {
                     if (template.sections.length > 0) {
