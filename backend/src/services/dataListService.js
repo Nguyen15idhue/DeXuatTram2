@@ -238,3 +238,24 @@ exports.getDiaGioiByTenTinh = async (tenTinh) => {
   }
   return null;
 };
+
+exports.findProvinceInAddress = async (address) => {
+  if (!address) return null;
+  try {
+    const { dmTinh } = await loadAdminLists();
+    const norm = exports.normalizeAdminName;
+    const normAddr = norm(address);
+    if (!normAddr) return null;
+    const sorted = dmTinh.slice().sort((a, b) => (b.ten_tinh || '').length - (a.ten_tinh || '').length);
+    for (const t of sorted) {
+      if (!t.ten_tinh) continue;
+      const normTinh = norm(t.ten_tinh);
+      if (normTinh && normAddr.includes(normTinh)) {
+        return { province: t.ten_tinh, ma_tinh: t.ma_tinh, vung_mien: t.vung_mien || '' };
+      }
+    }
+  } catch (err) {
+    console.warn('[DataList] findProvinceInAddress error:', err.message);
+  }
+  return null;
+};

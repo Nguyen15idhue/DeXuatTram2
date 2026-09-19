@@ -284,6 +284,12 @@ const AdminStationsPage = () => {
     if (importFile) handlePreviewImport(value);
   };
 
+  useEffect(() => {
+    if (importStep === 'preview' && importFile && importPreview && !importLoading) {
+      handlePreviewImport();
+    }
+  }, [importCheckDuplicate, importCheckIntraFile]);
+
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
     const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -512,6 +518,33 @@ const AdminStationsPage = () => {
                   loading={importLoading}
                 />
                 <ImportErrorList errors={importPreview.errors} failures={importFailures} />
+                <div className="divider text-xs opacity-60 my-1">Tùy chọn kiểm tra</div>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckDuplicate}
+                    onChange={(e) => { setImportCheckDuplicate(e.target.checked); }}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ với hệ thống
+                    <span className="block text-xs opacity-70">So sánh với trạm/đề xuất đã có trên hệ thống (bán kính 200m)</span>
+                  </span>
+                </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckIntraFile}
+                    onChange={(e) => { setImportCheckIntraFile(e.target.checked); }}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ nội bộ file Excel
+                    <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m)</span>
+                  </span>
+                </label>
                 <label className="label cursor-pointer justify-start gap-3">
                   <input
                     type="checkbox"

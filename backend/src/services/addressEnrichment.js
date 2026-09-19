@@ -50,3 +50,21 @@ exports.enrichDynamicData = async ({ dynamicData, fixedData, overwrite = false }
 
   return true;
 };
+
+exports.extractProvinceFromAddress = async ({ dynamicData, fixedData } = {}) => {
+  if (!dynamicData || !fixedData) return false;
+  const provinceVal = dynamicData.province;
+  if (!isEmpty(provinceVal)) return false;
+  const address = fixedData.address || '';
+  if (!address) return false;
+  try {
+    const match = await dataListService.findProvinceInAddress(address);
+    if (!match) return false;
+    dynamicData.province = match.province;
+    dynamicData.ma_tinh = match.ma_tinh;
+    dynamicData.vung_mien = match.vung_mien;
+    return true;
+  } catch {
+    return false;
+  }
+};

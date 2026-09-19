@@ -1420,10 +1420,14 @@ exports.importConfirmDynamic = async (req, res) => {
           if (!skipGeocode && process.env.GEOCODE_ON_IMPORT !== 'false') {
             await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
           }
+          const provinceEmpty = !dynamicData.province || String(dynamicData.province).trim() === '';
+          if (provinceEmpty && !dynamicData.ma_tinh) {
+            await addressEnrichment.extractProvinceFromAddress({ dynamicData, fixedData }).catch(() => {});
+          }
           if (dynamicData.province && String(dynamicData.province).trim() !== '') {
             await dataListService.applyDiaGioi(dynamicData);
           } else if (!dynamicData.ma_tinh) {
-            throw new Error('Vui lòng chọn Tỉnh/Thành phố');
+            console.warn(`[Import] Dòng ${row.rowNumber}: Không xác định được tỉnh/thành từ toạ độ và địa chỉ. Import bỏ qua.`);
           }
         }
 
