@@ -31,17 +31,29 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   useEffect(() => {
     const root = modalRef.current;
     if (!root) return;
-    const findRoleSelect = () => root.querySelector('[data-field-key="role"] select');
-    const el = findRoleSelect();
-    if (!el) return;
-    const handleChange = () => {
-      const val = el.value || 'CTV';
+    let listener = null;
+    let targetEl = null;
+    const handleChange = (e) => {
+      const val = e.target.value || 'CTV';
       setDetectedRole(val);
       setCreateRole(val);
       if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
     };
-    el.addEventListener('change', handleChange);
-    return () => el.removeEventListener('change', handleChange);
+    const attachTo = (el) => {
+      if (targetEl === el) return;
+      if (targetEl) targetEl.removeEventListener('change', handleChange);
+      targetEl = el;
+      targetEl.addEventListener('change', handleChange);
+    };
+    const findAndAttach = () => {
+      const el = root.querySelector('[data-field-key="role"] select');
+      if (el) { attachTo(el); return true; }
+      return false;
+    };
+    if (findAndAttach()) return () => { if (targetEl) targetEl.removeEventListener('change', handleChange); };
+    const obs = new MutationObserver(() => { findAndAttach(); });
+    obs.observe(root, { childList: true, subtree: true });
+    return () => { obs.disconnect(); if (targetEl) targetEl.removeEventListener('change', handleChange); };
   }, []);
 
   const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
