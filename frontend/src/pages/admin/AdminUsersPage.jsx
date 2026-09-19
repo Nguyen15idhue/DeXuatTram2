@@ -24,6 +24,112 @@ const USERS_PAGE_SIZE = 10;
 
 const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
 
+const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
+  const [detectedRole, setDetectedRole] = useState(createRole);
+
+  useEffect(() => {
+    if (!isSales) return;
+    setDetectedRole('CTV');
+    return;
+  }, [isSales]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const roleSelect = document.querySelector('.modal-open select[name="role"], .modal-open [data-field-key="role"] select');
+      if (roleSelect && roleSelect.value) {
+        const val = roleSelect.value;
+        if (val !== detectedRole) {
+          setDetectedRole(val);
+          setCreateRole(val);
+          if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
+        }
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [detectedRole, setCreateRole, setCreateParentId]);
+
+  const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
+
+  return (
+    <dialog className="modal modal-open">
+      <div className="modal-box max-w-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">Tạo user mới</h3>
+          <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        {isCtvOrNpp && (
+          <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Network size={16} className="text-indigo-500" />
+              <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
+              <span className="text-xs opacity-60">(Áp dụng cho {detectedRole})</span>
+            </div>
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span>
+              </label>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={createParentId}
+                onChange={(e) => setCreateParentId(e.target.value)}
+              >
+                <option value="">— Chọn GĐKV —</option>
+                {salesList
+                  .filter(s => s.custom_data && (() => {
+                    try { const cd = JSON.parse(s.custom_data); return cd.chuc_vu === 'Giám đốc Khu vực'; } catch { return false; }
+                  })())
+                  .map(s => {
+                    let dept = '';
+                    try { const cd = JSON.parse(s.custom_data); dept = cd.department || ''; } catch {}
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name} — {dept || 'Chưa có phòng ban'}
+                      </option>
+                    );
+                  })}
+              </select>
+              {createParentId && (() => {
+                const parent = salesList.find(s => s.id === Number(createParentId));
+                if (!parent) return null;
+                let parentDept = '';
+                try { const cd = JSON.parse(parent.custom_data); parentDept = cd.department || ''; } catch {}
+                const gdtt = salesList.find(s => {
+                  try {
+                    const cd = JSON.parse(s.custom_data);
+                    return cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && cd.department === parentDept;
+                  } catch { return false; }
+                });
+                if (!gdtt) return null;
+                return (
+                  <div className="mt-2 p-2 rounded text-xs" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                    Giám đốc Trung tâm (tự match): <strong>{gdtt.full_name}</strong>
+                    <span className="ml-1 opacity-70">— {parentDept}</span>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+        <DynamicForm
+          entity="users"
+          purpose="create"
+          formId={15}
+          onSubmit={onSubmit}
+          initialData={{ role: 'CTV', status: 'ACTIVE' }}
+          optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
+        >
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
+        </DynamicForm>
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button onClick={onClose}>close</button>
+      </form>
+    </dialog>
+  );
+};
+
 const AdminUsersPage = () => {
   const { token, user: currentUser, isSuperAdmin, isSales } = useAuth();
   const navigate = useNavigate();
@@ -57,6 +163,9 @@ const [viewMode, setViewMode] = useState('table');
   const [excelViews, setExcelViews] = useState([]);
   const [importViewId, setImportViewId] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createRole, setCreateRole] = useState('CTV');
+  const [createParentId, setCreateParentId] = useState('');
+  const [salesList, setSalesList] = useState([]);
   const createRoleAllowlist = isSales ? ['CTV', 'NPP'] : (!isSuperAdmin ? ['CTV', 'NPP', 'SALES', 'ADMIN'] : null);
   const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
   const [pwOld, setPwOld] = useState('');
@@ -64,6 +173,13 @@ const [viewMode, setViewMode] = useState('table');
   const [pw2, setPw2] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState('');
+
+  useEffect(() => {
+    if (!showCreateForm || !token) return;
+    adminUserService.getAllWithParams('role=SALES&status=ACTIVE', token)
+      .then(res => { if (res && res.success) setSalesList(res.data || []); })
+      .catch(() => {});
+  }, [showCreateForm, token]);
 
   useEffect(() => {
     if (!token || isSales) return;
@@ -343,7 +459,7 @@ const [viewMode, setViewMode] = useState('table');
       email: formData.email || '',
       phone: formData.phone || '',
       password: formData.password || '123456',
-      role: formData.role === 'USER' ? 'CTV' : (formData.role || 'CTV'),
+      role: formData.role === 'USER' ? 'CTV' : (formData.role || createRole || 'CTV'),
       status: formData.status || 'ACTIVE',
       external_id: formData.external_id || null
     };
@@ -357,6 +473,9 @@ const [viewMode, setViewMode] = useState('table');
     if (Object.keys(customData).length > 0) {
       payload.custom_data = customData;
     }
+    if (['CTV', 'NPP'].includes(payload.role) && createParentId) {
+      payload.parent_id = Number(createParentId);
+    }
     if (!payload.full_name || !payload.email) {
       throw new Error('Vui lòng nhập đầy đủ họ tên và email');
     }
@@ -364,6 +483,7 @@ const [viewMode, setViewMode] = useState('table');
     if (res.success) {
       setToast({ message: 'Tạo user thành công', type: 'success' });
       setShowCreateForm(false);
+      setCreateParentId('');
       loadUsers();
     } else {
       throw new Error(res.message || 'Tạo user thất bại');
@@ -654,29 +774,19 @@ const [viewMode, setViewMode] = useState('table');
 
       {/* Create User Modal */}
       {showCreateForm && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Tạo user mới</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateForm(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <DynamicForm
-              entity="users"
-              purpose="create"
-              formId={USERS_FORM_ID}
-              onSubmit={handleCreateUser}
-              initialData={{ role: 'CTV', status: 'ACTIVE' }}
-              optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
-            >
-              <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
-            </DynamicForm>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowCreateForm(false)}>close</button>
-          </form>
-        </dialog>
+        <CreateUserModal
+          token={token}
+          isSuperAdmin={isSuperAdmin}
+          isSales={isSales}
+          createRoleAllowlist={createRoleAllowlist}
+          salesList={salesList}
+          onClose={() => { setShowCreateForm(false); setCreateParentId(''); setCreateRole('CTV'); }}
+          onSubmit={handleCreateUser}
+          createRole={createRole}
+          setCreateRole={setCreateRole}
+          createParentId={createParentId}
+          setCreateParentId={setCreateParentId}
+        />
       )}
 
       {pwModal.open && (

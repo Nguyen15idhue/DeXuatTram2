@@ -49,7 +49,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    let { full_name, email, phone, password, role, status, custom_data, external_id } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
     const creatorRole = req.user.role;
 
     const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
@@ -69,8 +69,20 @@ exports.create = async (req, res) => {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       role = role || 'CTV';
+      if (['CTV', 'NPP'].includes(role) && parent_id) {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        if (parentUser && parentUser.role === 'SALES') {
+          parentId = parentUser.id;
+        }
+      }
     } else {
       role = role || 'CTV';
+      if (['CTV', 'NPP'].includes(role) && parent_id) {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        if (parentUser && parentUser.role === 'SALES') {
+          parentId = parentUser.id;
+        }
+      }
     }
 
     const existing = await adminUserService.findByEmail(email);
