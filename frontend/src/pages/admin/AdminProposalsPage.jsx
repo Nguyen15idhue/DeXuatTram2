@@ -1719,6 +1719,31 @@ const AdminProposalsPage = () => {
                     ))}
                   </select>
                 </div>
+                <div className="divider text-xs opacity-60 my-1">Tùy chọn kiểm tra</div>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckDuplicate}
+                    onChange={(e) => setImportCheckDuplicate(e.target.checked)}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ với hệ thống
+                    <span className="block text-xs opacity-70">So sánh với trạm/đề xuất đã có trên hệ thống (bán kính 200m)</span>
+                  </span>
+                </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm checkbox-primary"
+                    checked={importCheckIntraFile}
+                    onChange={(e) => setImportCheckIntraFile(e.target.checked)}
+                  />
+                  <span className="label-text">
+                    Check trùng tọa độ nội bộ file Excel
+                    <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m)</span>
+                  </span>
+                </label>
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
                   <button className="btn btn-primary" onClick={() => handlePreviewImport()} disabled={!importFile || importLoading}>
