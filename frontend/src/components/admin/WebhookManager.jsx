@@ -14,6 +14,13 @@ const webhookApi = {
   }
 };
 
+const WEBHOOK_PATH = '/api/webhooks/oneoffice/proposal-status';
+
+const getWebhookUrl = () => {
+  const base = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
+  return `${base}${WEBHOOK_PATH}`;
+};
+
 const WebhookManager = ({ onChanged }) => {
   const { token } = useAuth();
   const [rows, setRows] = useState([]);
@@ -23,6 +30,7 @@ const WebhookManager = ({ onChanged }) => {
   const [form, setForm] = useState({ name: '', note: '' });
   const [fresh, setFresh] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const [working, setWorking] = useState(false);
 
   const load = useCallback(async () => {
@@ -51,6 +59,22 @@ const WebhookManager = ({ onChanged }) => {
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyUrl = async () => {
+    const url = getWebhookUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
   };
 
   const handleCreate = async () => {
@@ -128,14 +152,29 @@ const WebhookManager = ({ onChanged }) => {
           </button>
         </div>
 
+        <div className="flex items-center gap-2 mb-3 p-2 bg-base-200 rounded text-xs">
+          <span className="font-medium shrink-0">Callback URL:</span>
+          <code className="flex-1 break-all text-primary">{getWebhookUrl()}</code>
+          <button className="btn btn-ghost btn-xs gap-1 shrink-0" onClick={copyUrl}>
+            {copiedUrl ? <><Check size={12} /> Đã copy</> : <><Copy size={12} /> Copy</>}
+          </button>
+        </div>
+
         {fresh && (
           <div className="alert alert-warning py-2 px-3 text-xs mb-3">
             <div className="w-full">
               <p className="font-bold mb-1">Secret mới cho webhook #{fresh.id} (chỉ hiện 1 lần duy nhất):</p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-2">
                 <code className="flex-1 break-all bg-base-100 rounded px-2 py-1">{fresh.secret}</code>
                 <button className="btn btn-sm gap-1" onClick={() => copyText(fresh.secret)}>
                   {copied ? <Check size={14} /> : <Copy size={14} />} Copy
+                </button>
+              </div>
+              <p className="font-medium mb-1">Callback URL:</p>
+              <div className="flex gap-2">
+                <code className="flex-1 break-all bg-base-100 rounded px-2 py-1">{getWebhookUrl()}</code>
+                <button className="btn btn-sm gap-1" onClick={copyUrl}>
+                  {copiedUrl ? <Check size={14} /> : <Copy size={14} />} Copy
                 </button>
               </div>
             </div>
@@ -153,6 +192,7 @@ const WebhookManager = ({ onChanged }) => {
                 <tr className="bg-base-200">
                   <th className="w-12">ID</th>
                   <th>Tên</th>
+                  <th>Callback URL</th>
                   <th>Secret</th>
                   <th>Trạng thái</th>
                   <th className="w-40">Thao tác</th>
@@ -165,6 +205,14 @@ const WebhookManager = ({ onChanged }) => {
                     <td>
                       <div className="font-medium text-sm">{r.name}</div>
                       {r.note && <div className="text-xs text-base-content/50">{r.note}</div>}
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        <code className="text-xs break-all max-w-[280px]">{getWebhookUrl()}</code>
+                        <button className="btn btn-ghost btn-xs p-0 shrink-0" onClick={copyUrl} title="Copy URL">
+                          {copiedUrl ? <Check size={11} /> : <Copy size={11} />}
+                        </button>
+                      </div>
                     </td>
                     <td>
                       {r.secret_set
