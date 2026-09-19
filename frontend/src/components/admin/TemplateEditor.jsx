@@ -264,6 +264,7 @@ const TemplateEditor = ({ configId, onClose }) => {
   };
 
   const loadFromForm = () => {
+    if (template.sections.length > 0 && !window.confirm('Tải lại sẽ thay thế toàn bộ template hiện tại. Tiếp tục?')) return;
     const sectionMap = {};
     formSections.forEach(fs => { sectionMap[fs.id] = fs; });
 
@@ -618,7 +619,7 @@ const TemplateEditor = ({ configId, onClose }) => {
 
             {/* Add section buttons */}
             <div style={{ textAlign: 'center', margin: '8px 0', display: 'flex', gap: 8, justifyContent: 'center' }}>
-              {formSections.length > 0 && template.sections.length === 0 && (
+              {formSections.length > 0 && (
                 <button className="btn btn-primary btn-sm gap-1" onClick={loadFromForm}>
                   Tải từ Form Proposals
                 </button>
