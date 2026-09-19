@@ -13,7 +13,8 @@ const TYPE_COLORS = {
   REVIEWING: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
   CANCELLED: { bg: '#f3f4f6', border: '#6b7280', text: '#374151' },
   CONTRACT_SIGNED: { bg: '#ccfbf1', border: '#0d9488', text: '#0f766e' },
-  CONTRACT_FAILED: { bg: '#ffedd5', border: '#f59e0b', text: '#9a3412' }
+  CONTRACT_FAILED: { bg: '#ffedd5', border: '#f59e0b', text: '#9a3412' },
+  ARCHIVED: { bg: '#ede9fe', border: '#8b5cf6', text: '#5b21b6' }
 };
 
 export const notifyBellRefresh = () => window.dispatchEvent(new Event('notifications:refresh'));

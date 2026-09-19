@@ -18,7 +18,7 @@ const excelService = require('../services/excelService');
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
   *       - in: query
   *         name: filters
   *         schema:
@@ -211,7 +211,7 @@ router.delete('/:id', requireAuth, myProposalController.delete);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
  *     responses:
  *       200:

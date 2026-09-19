@@ -76,7 +76,7 @@ exports.delete = async (req, res) => {
 exports.updateStatus = async (req, res) => {
   try {
     const { status, reason } = req.body;
-    const validStatuses = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
+    const validStatuses = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ' });
     }

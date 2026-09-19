@@ -12,7 +12,8 @@ const STATUS_DOT = {
   REJECTED: '#dc2626',
   CANCELLED: '#6b7280',
   CONTRACT_SIGNED: '#0d9488',
-  CONTRACT_FAILED: '#f59e0b'
+  CONTRACT_FAILED: '#f59e0b',
+  ARCHIVED: '#8b5cf6'
 };
 
 const ACTION_LABEL = {

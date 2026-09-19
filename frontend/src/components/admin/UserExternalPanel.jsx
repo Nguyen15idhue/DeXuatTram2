@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { externalUserService } from '../../services/api';
+import SearchableSelect from '../ui/SearchableSelect';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -136,16 +137,18 @@ const UserExternalPanel = ({ userId }) => {
             </div>
             <div className="flex-1">
               <label className="text-xs">Nhân sự (Mã NS - Tên)</label>
-              <select
-                className="select select-bordered select-sm w-full"
+              <SearchableSelect
+                options={extUsers.map(u => ({
+                  value: String(u.external_id),
+                  label: extLabel(u),
+                  disabled: !u.contact_id,
+                  title: !u.contact_id ? 'Chưa có tài khoản 1Office – không giao việc được' : ''
+                }))}
                 value={externalId}
-                onChange={e => setExternalId(e.target.value)}
-              >
-                <option value="">-- Chọn nhân sự --</option>
-                {extUsers.map(u => (
-                  <option key={u.id} value={String(u.external_id)} disabled={!u.contact_id} title={!u.contact_id ? 'Chưa có tài khoản 1Office – không giao việc được' : ''}>{extLabel(u)}</option>
-                ))}
-              </select>
+                onChange={(v) => setExternalId(v)}
+                placeholder="-- Chọn nhân sự --"
+                size="sm"
+              />
             </div>
             <button type="button" className="btn btn-primary btn-sm" disabled={saving || !externalId} onClick={handleSave}>
               {saving ? 'Đang lưu...' : 'Lưu'}

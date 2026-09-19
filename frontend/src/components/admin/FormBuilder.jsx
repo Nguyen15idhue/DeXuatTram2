@@ -3,7 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { fieldDefinitionService, formService, formFieldService } from '../../services/api';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
-import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownIcon, Layers, Pencil, Check, X, Zap } from 'lucide-react';
+import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownIcon, Layers, Pencil, Check, X, Zap, Search } from 'lucide-react';
+import { filterFieldsBySearch } from '../../utils/searchText';
 
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const PURPOSE_OPTIONS = [
@@ -37,10 +38,32 @@ const FormBuilder = ({ formId, onSaved }) => {
   const [dragOverCell, setDragOverCell] = useState(null);
   const [dragOverRow, setDragOverRow] = useState(null);
   const [draggedRowId, setDraggedRowId] = useState(null);
+  const [availableSearch, setAvailableSearch] = useState('');
+  const [previewSearch, setPreviewSearch] = useState('');
+  const [previewMatchIdx, setPreviewMatchIdx] = useState(0);
 
   useEffect(() => {
     if (formId) loadFormConfig();
   }, [formId]);
+
+  useEffect(() => { setPreviewMatchIdx(0); }, [previewSearch]);
+
+  const previewMatches = filterFieldsBySearch(
+    assignedFields.filter(f => f.config?.rowId),
+    previewSearch,
+    (f) => [f.label, f.key, f.type]
+  ).map(f => f.fieldId);
+  const previewCurrentId = previewMatches.length > 0
+    ? previewMatches[Math.min(previewMatchIdx, previewMatches.length - 1)]
+    : null;
+
+  useEffect(() => {
+    if (!previewCurrentId) return;
+    const el = document.querySelector(`[data-field-cell="${previewCurrentId}"]`);
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [previewCurrentId, previewMatchIdx, previewSearch]);
 
   const loadFormConfig = async () => {
     try {
@@ -117,6 +140,7 @@ const FormBuilder = ({ formId, onSaved }) => {
     setAssignedFields([]);
     setLayoutConfig({ sections: [], rows: [] });
     setSelectedField(null);
+    setAvailableSearch('');
     loadAvailableFields(newEntity);
   };
 
@@ -227,14 +251,10 @@ const FormBuilder = ({ formId, onSaved }) => {
   };
 
   const removeFieldFromCell = (rowId, colIndex) => {
-    setAssignedFields(prev => prev.map(f => {
-      if (f.config?.rowId === rowId && f.config?.colIndex === colIndex) {
-        const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
-        return { ...f, config: rest };
-      }
-      return f;
-    }));
-    if (selectedField?.config?.rowId === rowId && selectedField?.config?.colIndex === colIndex) {
+    const target = assignedFields.find(f => f.config?.rowId === rowId && f.config?.colIndex === colIndex);
+    if (!target) return;
+    setAssignedFields(prev => prev.filter(f => f.fieldId !== target.fieldId));
+    if (selectedField?.fieldId === target.fieldId) {
       setSelectedField(null);
     }
   };
@@ -638,7 +658,10 @@ const FormBuilder = ({ formId, onSaved }) => {
 
   if (loading) return <div className="loading">Đang tải cấu hình...</div>;
 
-  const filteredAvailable = availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id));
+  const filteredAvailable = filterFieldsBySearch(
+    availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id)),
+    availableSearch
+  );
   const unassignedFields = assignedFields.filter(f => !f.config?.rowId);
   const conditionFields = assignedFields.filter(f => ['select', 'text', 'boolean'].includes(f.type));
   const regularSections = (layoutConfig.sections || []).filter(s => !isTabGroup(s));
@@ -853,8 +876,45 @@ const FormBuilder = ({ formId, onSaved }) => {
       <div className="builder-layout">
         {/* Left: Preview with inline layout controls */}
         <div className="builder-panel flex-[2]">
-          <div className="builder-panel-header">
+          <div className="builder-panel-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Form Preview</span>
+            <div style={{ position: 'relative', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={previewSearch}
+                onChange={(e) => setPreviewSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && previewMatches.length > 0) {
+                    setPreviewMatchIdx(i => (i + 1) % previewMatches.length);
+                  }
+                }}
+                placeholder="Tìm field trong preview..."
+                className="input input-bordered input-xs"
+                style={{ paddingLeft: 28, width: 200 }}
+              />
+              {previewSearch.trim() !== '' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    disabled={previewMatches.length === 0}
+                    onClick={() => setPreviewMatchIdx(i => (i - 1 + previewMatches.length) % previewMatches.length)}
+                    title="Kết quả trước"
+                  >
+                    ‹
+                  </button>
+                  <span>{previewMatches.length === 0 ? '0' : `${Math.min(previewMatchIdx, previewMatches.length - 1) + 1}/${previewMatches.length}`}</span>
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    disabled={previewMatches.length === 0}
+                    onClick={() => setPreviewMatchIdx(i => (i + 1) % previewMatches.length)}
+                    title="Kết quả tiếp"
+                  >
+                    ›
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
           <div className="builder-panel-body">
             <div
@@ -1167,7 +1227,13 @@ const FormBuilder = ({ formId, onSaved }) => {
                                 return (
                                   <div
                                     key={colIdx}
+                                    data-field-cell={cellField ? cellField.fieldId : undefined}
                                     className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''}`}
+                                    style={cellField && previewSearch.trim() && previewMatches.includes(cellField.fieldId) ? {
+                                      outline: cellField.fieldId === previewCurrentId ? '2px solid #6366f1' : '1px dashed #a5b4fc',
+                                      outlineOffset: -2,
+                                      background: cellField.fieldId === previewCurrentId ? '#eef2ff' : undefined
+                                    } : undefined}
                                     onDragOver={(e) => handleDragOver(e, row.id, colIdx)}
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, row.id, colIdx)}
@@ -1184,7 +1250,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                                           <span className="field-assigned-label">{cellField.label}</span>
                                           <span className="field-assigned-type">{cellField.type}</span>
                                         </div>
-                                        <button className="btn btn-xs btn-ghost text-error" onClick={(e) => { e.stopPropagation(); removeFieldFromCell(row.id, colIdx); }}>
+                                        <button className="btn btn-xs btn-ghost text-error" title="Xóa field khỏi form (về Available Fields)" onClick={(e) => { e.stopPropagation(); removeFieldFromCell(row.id, colIdx); }}>
                                           <Trash2 size={12} />
                                         </button>
                                       </div>
@@ -1297,8 +1363,19 @@ const FormBuilder = ({ formId, onSaved }) => {
         <div className="builder-panel flex-1">
           <div className="builder-panel-header">Available Fields ({filteredAvailable.length})</div>
           <div className="builder-panel-body">
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={availableSearch}
+                onChange={(e) => setAvailableSearch(e.target.value)}
+                placeholder="Tìm field (tên/key/loại)..."
+                className="input input-bordered input-sm w-full"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
             {filteredAvailable.length === 0 ? (
-              <div className="builder-empty">Không có field nào khả dụng</div>
+              <div className="builder-empty">{availableSearch.trim() ? `Không tìm thấy field nào cho "${availableSearch.trim()}"` : 'Không có field nào khả dụng'}</div>
             ) : filteredAvailable.map(field => (
               <div key={field.id} className="builder-available-item"
                 draggable

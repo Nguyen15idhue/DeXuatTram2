@@ -13,9 +13,22 @@ const safeEqual = (a, b) => {
   }
 };
 
+const splitSecrets = (val) => {
+  if (!val) return [];
+  return String(val).split(',').map(s => s.trim()).filter(Boolean);
+};
+
 const resolveSecrets = async () => {
-  const secrets = [];
-  if (process.env.ONEOFFICE_WEBHOOK_SECRET) secrets.push(process.env.ONEOFFICE_WEBHOOK_SECRET);
+  const secrets = [
+    ...splitSecrets(process.env.ONEOFFICE_WEBHOOK_SECRET),
+    ...splitSecrets(process.env.ONEOFFICE_WEBHOOK_SECRET_PREV),
+    ...splitSecrets(process.env.ONEOFFICE_WEBHOOK_SECRET_STAGING)
+  ];
+  try {
+    const webhookConfigService = require('../services/webhookConfigService');
+    const tableSecrets = await webhookConfigService.getActiveSecrets();
+    secrets.push(...tableSecrets);
+  } catch { /* silent */ }
   try {
     const r = await apiConfigService.getAll();
     const configs = (r && r.configs) || [];
@@ -25,14 +38,29 @@ const resolveSecrets = async () => {
       if (typeof auth === 'string') {
         try { auth = JSON.parse(auth); } catch { auth = null; }
       }
-      if (auth && auth.webhook_secret) secrets.push(auth.webhook_secret);
+      if (auth && auth.webhook_secret) secrets.push(String(auth.webhook_secret));
+      if (auth && auth.webhook_secret_prev) secrets.push(String(auth.webhook_secret_prev));
     }
   } catch { /* silent: chi dung env secret */ }
-  return secrets;
+  return [...new Set(secrets)];
+};
+
+const bearerOf = (req) => {
+  const h = req.headers.authorization || '';
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1].trim() : '';
 };
 
 const verifyWebhookSecret = async (req, res, next) => {
-  const provided = req.headers['x-webhook-secret'] || req.query.secret;
+  const allowedIps = String(process.env.ONEOFFICE_WEBHOOK_IPS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (allowedIps.length > 0) {
+    const ip = req.ip || '';
+    const ok = allowedIps.some(a => a === ip || (a.endsWith('*') && ip.startsWith(a.slice(0, -1))));
+    if (!ok) {
+      return res.status(403).json({ success: false, message: 'IP không được phép gọi webhook' });
+    }
+  }
+  const provided = bearerOf(req) || req.headers['x-webhook-secret'] || req.query.secret;
   const secrets = await resolveSecrets();
   if (secrets.length === 0) {
     return res.status(503).json({ success: false, message: 'Webhook chưa cấu hình secret (ONEOFFICE_WEBHOOK_SECRET)' });

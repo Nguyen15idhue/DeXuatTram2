@@ -17,7 +17,7 @@ const adminProposalController = require('../controllers/adminProposalController'
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
+ *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
  *       - in: query
  *         name: uu_tien
  *         schema:
@@ -170,7 +170,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  *                 type: string
  *               status:
  *                 type: string
- *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
+ *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -207,7 +207,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateProposal, adminPropo
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED]
+ *                 enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
  *     responses:
  *       200:
  *         description: Cập nhật thành công

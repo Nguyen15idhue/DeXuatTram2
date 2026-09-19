@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import SearchableSelect from '../ui/SearchableSelect';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -37,22 +38,13 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
 
   return (
     <div className="dynamic-field-user">
-      <select
-        className="select select-bordered w-full"
+      <SearchableSelect
+        options={options.map(u => ({ value: String(u.id), label: `${u.full_name} (${u.role})` }))}
         value={selectedId === '' ? '' : String(selectedId)}
+        onChange={(v) => onChange(v === '' ? '' : { id: Number(v) })}
+        placeholder={loading ? 'Đang tải...' : '-- Chọn người dùng --'}
         disabled={disabled || loading}
-        onChange={(e) => {
-          const v = e.target.value;
-          onChange(v === '' ? '' : { id: Number(v) });
-        }}
-      >
-        <option value="">{loading ? 'Đang tải...' : '-- Chọn người dùng --'}</option>
-        {options.map(u => (
-          <option key={u.id} value={String(u.id)}>
-            {u.full_name} ({u.role})
-          </option>
-        ))}
-      </select>
+      />
       {selectedUser && (
         <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
           {selectedUser.full_name} — {selectedUser.role}

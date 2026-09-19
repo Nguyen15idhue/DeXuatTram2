@@ -7,7 +7,8 @@ exports.getAll = async (req, res) => {
     const { search, is_active, page = 1, limit = 50 } = req.query;
     const isActive = is_active !== undefined ? is_active === 'true' || is_active === '1' : null;
     const result = await apiConfigService.getAll(search, isActive, parseInt(page), parseInt(limit));
-    res.json({ success: true, data: result.configs, pagination: result.pagination });
+    const masked = (result.configs || []).map(c => ({ ...c, auth_config: apiConfigService.maskAuthConfig(c.auth_config) }));
+    res.json({ success: true, data: masked, pagination: result.pagination });
   } catch (error) {
     console.error('Get api configs error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -20,7 +21,7 @@ exports.getById = async (req, res) => {
     if (!config) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy cấu hình API' });
     }
-    res.json({ success: true, data: config });
+    res.json({ success: true, data: { ...config, auth_config: apiConfigService.maskAuthConfig(config.auth_config) } });
   } catch (error) {
     console.error('Get api config error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -122,7 +123,7 @@ exports.update = async (req, res) => {
       name, base_url, auth_type, auth_config, description, is_active, api_type, sync_enabled, sync_cron
     });
 
-    res.json({ success: true, data: config, message: 'Cập nhật cấu hình API thành công' });
+    res.json({ success: true, data: { ...config, auth_config: apiConfigService.maskAuthConfig(config.auth_config) }, message: 'Cập nhật cấu hình API thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -161,6 +162,44 @@ exports.testConnection = async (req, res) => {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('Test connection error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.rotateWebhookSecret = async (req, res) => {
+  try {
+    const result = await apiConfigService.rotateWebhookSecret(req.params.id);
+    res.json({ success: true, data: result, message: 'Đã tạo secret mới (secret cũ vẫn dùng được trong grace period)' });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Rotate webhook secret error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.testWebhook = async (req, res) => {
+  try {
+    const externalEventService = require('../services/externalEventService');
+    const { event, proposal_code, contact_code, note } = req.body || {};
+    const result = await externalEventService.applyExternalEvent({
+      eventId: `manual-test-${Date.now()}`,
+      event,
+      proposalCode: proposal_code,
+      contactCode: contact_code,
+      note: note || 'Bắn thử từ trang API configs',
+      eventTime: new Date().toISOString(),
+      actor: 'api-config-test',
+      source: 'script',
+      ip: req.ip || null
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Test webhook error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

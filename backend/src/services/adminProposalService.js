@@ -145,10 +145,10 @@ exports.updateProposal = async (id, data, opts = {}) => {
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
 
   const [existing] = await pool.query('SELECT user_id, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
-  await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, existing.length > 0 ? existing[0].user_id : null);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
+  await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, existing.length > 0 ? existing[0].user_id : null, null, current);
   const mergedDynamic = { ...current, ...dynamicData };
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 

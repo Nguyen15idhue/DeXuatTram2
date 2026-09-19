@@ -268,4 +268,71 @@ router.post('/:id/sync-personnel', requireAuth, requireSuperAdmin, apiConfigCont
  */
 router.post('/:id/test', requireAuth, requireSuperAdmin, apiConfigController.testConnection);
 
+/**
+ * @swagger
+ * /api/admin/api-configs/{id}/webhook-secret/rotate:
+ *   post:
+ *     tags: [API Configs]
+ *     summary: Xoay webhook secret (secret cũ giữ lại grace period)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Secret mới (trả plaintext 1 lần duy nhất)
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền SUPER_ADMIN
+ *       404:
+ *         description: Không tìm thấy cấu hình
+ */
+router.post('/:id/webhook-secret/rotate', requireAuth, requireSuperAdmin, apiConfigController.rotateWebhookSecret);
+
+/**
+ * @swagger
+ * /api/admin/api-configs/{id}/webhook-test:
+ *   post:
+ *     tags: [API Configs]
+ *     summary: Bắn thử event webhook (demo nội bộ, source script)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [event]
+ *             properties:
+ *               event:
+ *                 type: string
+                 *                 enum: [APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
+ *               proposal_code:
+ *                 type: string
+ *               contact_code:
+ *                 type: string
+ *               note:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Kết quả xử lý event
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền SUPER_ADMIN
+ */
+router.post('/:id/webhook-test', requireAuth, requireSuperAdmin, apiConfigController.testWebhook);
+
 module.exports = router;

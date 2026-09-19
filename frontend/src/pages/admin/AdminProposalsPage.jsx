@@ -19,7 +19,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, Ban, Lock, FileSignature, History, GitBranch } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, Ban, Lock, FileSignature, History, GitBranch, Archive } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -61,10 +61,10 @@ const AdminProposalsPage = () => {
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [transitionModal, setTransitionModal] = useState({ open: false, id: null, to: null, saving: false });
-  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false });
+  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [] });
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
-  const [blockModal, setBlockModal] = useState({ open: false, missing: [] });
+  const [blockModal, setBlockModal] = useState({ open: false, missing: [], id: null });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -221,6 +221,18 @@ const AdminProposalsPage = () => {
     return labels;
   };
 
+  const unlinkedUserLabels = (row) => {
+    const custom = (row && row.custom_data) || {};
+    const labels = [];
+    for (const key of PUSH_USER_KEYS) {
+      const direct = row ? row[key] : null;
+      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+      const idVal = v && typeof v === 'object' ? (v.id ?? v.user_id) : v;
+      if (idVal) labels.push(getFieldLabel(key));
+    }
+    return labels;
+  };
+
   const statusLabel = (v) => (statusOptions.find(o => o.value === v) || {}).label || v;
 
   const handleStatusChange = async (id, newStatus) => {
@@ -234,15 +246,11 @@ const AdminProposalsPage = () => {
     }
     if (newStatus === 'REVIEWING') {
       const row = proposals.find(p => p.id === id);
-      const missing = missingUserFieldLabels(row);
-      if (missing.length > 0) {
-        setBlockModal({ open: true, missing });
-        return;
-      }
-      setApproveModal({ open: true, id, saving: false });
+      const unlinked = unlinkedUserLabels(row);
+      setApproveModal({ open: true, id, saving: false, warnings: unlinked });
       return;
     }
-    if (['APPROVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
+    if (['APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
       setTransitionModal({ open: true, id, to: newStatus, saving: false });
       return;
     }
@@ -294,7 +302,7 @@ const AdminProposalsPage = () => {
           msg += ` — chưa đẩy được sang 1Office (${auto.reason || 'thiếu cấu hình'}), hãy đẩy thủ công`;
         }
         setToast({ message: msg, type: auto && auto.queued === false ? 'warning' : 'success' });
-        setApproveModal({ open: false, id: null, saving: false });
+        setApproveModal({ open: false, id: null, saving: false, warnings: [] });
         notifyBellRefresh();
         loadProposals(pagination.page);
         if (auto && auto.queued && auto.jobId) {
@@ -359,9 +367,6 @@ const AdminProposalsPage = () => {
   };
 
   const transitionTitle = (to) => {
-    if (to === 'APPROVED') return 'Đã duyệt BCĐX (demo)';
-    if (to === 'CONTRACT_SIGNED') return 'Ký thành công (demo)';
-    if (to === 'CONTRACT_FAILED') return 'Ký thất bại (demo)';
     return statusLabel(to);
   };
 
@@ -396,14 +401,11 @@ const AdminProposalsPage = () => {
     }
     setBatchLoading(true);
     const ok = [];
-    const blocked = [];
+    const unlinked = [];
     const failed = [];
     for (const row of pendings) {
-      const missing = missingUserFieldLabels(row);
-      if (missing.length > 0) {
-        blocked.push(`#${row.id}: thiếu ${missing.join(', ')}`);
-        continue;
-      }
+      const labels = unlinkedUserLabels(row);
+      if (labels.length > 0) unlinked.push(`#${row.id}: ${labels.join(', ')}`);
       try {
         const res = await adminProposalService.updateStatus(row.id, 'REVIEWING', token);
         if (res.success) ok.push(row.id);
@@ -414,10 +416,10 @@ const AdminProposalsPage = () => {
     }
     const parts = [];
     if (ok.length > 0) parts.push(`Đã duyệt & đẩy ${ok.length} đề xuất (sang Đang xem xét)`);
-    if (blocked.length > 0) parts.push(`${blocked.length} bị chặn: ${blocked.join('; ')}`);
+    if (unlinked.length > 0) parts.push(`${unlinked.length} có người chưa liên kết 1Office: ${unlinked.join('; ')}`);
     if (failed.length > 0) parts.push(`${failed.length} lỗi: ${failed.join('; ')}`);
     if (ok.length > 0) {
-      setToast({ message: `${parts.join(' — ')} — theo dõi lệnh đẩy trong Audit Log`, type: blocked.length + failed.length > 0 ? 'warning' : 'success' });
+      setToast({ message: `${parts.join(' — ')} — theo dõi lệnh đẩy trong Audit Log`, type: unlinked.length + failed.length > 0 ? 'warning' : 'success' });
     } else {
       setError(parts.join(' — '));
     }
@@ -851,18 +853,29 @@ const AdminProposalsPage = () => {
         );
       case 'REVIEWING':
         return (
-          <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="Demo nội bộ: 1Office báo đã duyệt (sau này do webhook)">
-            <FileSignature size={12} />
-            Đã duyệt BCĐX
-            <span className="badge badge-warning badge-xs">demo</span>
-          </button>
+          <>
+            <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="1Office báo đã duyệt (webhook)">
+              <FileSignature size={12} />
+              Đã duyệt BCĐX
+            </button>
+            <button className="btn btn-neutral btn-outline btn-xs gap-1 shrink-0" onClick={() => go('ARCHIVED')} title="Lưu trữ do ưu tiên thấp (webhook)">
+              <Archive size={12} />
+              Lưu trữ
+            </button>
+          </>
         );
       case 'APPROVED':
         return (
-          <button className="btn btn-success btn-outline btn-xs gap-1 shrink-0" onClick={() => go('CONTRACT_SIGNED')} title="Demo nội bộ: ký hợp đồng thành công (sau này do webhook)">
+          <button className="btn btn-success btn-outline btn-xs gap-1 shrink-0" onClick={() => go('CONTRACT_SIGNED')} title="Ký hợp đồng thành công (webhook)">
             <CheckCircle2 size={12} />
             Ký thành công
-            <span className="badge badge-warning badge-xs">demo</span>
+          </button>
+        );
+      case 'ARCHIVED':
+        return (
+          <button className="btn btn-success btn-outline btn-xs gap-1 shrink-0" onClick={() => go('CONTRACT_SIGNED')} title="Kích hoạt từ kho lưu trữ, ký hợp đồng thành công (webhook)">
+            <CheckCircle2 size={12} />
+            Ký thành công
           </button>
         );
       case 'CONTRACT_SIGNED':
@@ -906,6 +919,9 @@ const AdminProposalsPage = () => {
       items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
     }
     items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
+    if (row.status === 'REVIEWING') {
+      items.push(item('archive', <Archive size={14} />, 'Lưu trữ', () => go('ARCHIVED')));
+    }
     if (row.status === 'CANCELLED' && isSuperAdmin) {
       items.push(item('reopen', <RotateCcw size={14} />, 'Mở lại (khẩn cấp)', () => setReopenModal({ open: true, id: row.id, reason: '', saving: false })));
     }
@@ -914,9 +930,9 @@ const AdminProposalsPage = () => {
       dangerItems.push(item('reject', <X size={14} />, 'Từ chối', () => go('REJECTED'), true));
     }
     if (row.status === 'APPROVED') {
-      dangerItems.push(item('signfail', <X size={14} />, 'Ký thất bại (demo)', () => go('CONTRACT_FAILED'), true));
+      dangerItems.push(item('signfail', <X size={14} />, 'Ký thất bại', () => go('CONTRACT_FAILED'), true));
     }
-    if (['PENDING', 'REVIEWING', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(row.status)) {
+    if (['PENDING', 'REVIEWING', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(row.status)) {
       dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
     }
     dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));
@@ -1286,7 +1302,7 @@ const AdminProposalsPage = () => {
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Chưa thể duyệt</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setBlockModal({ open: false, missing: [] })}>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setBlockModal({ open: false, missing: [], id: null })}>
                 <X size={18} />
               </button>
             </div>
@@ -1296,10 +1312,18 @@ const AdminProposalsPage = () => {
             </ul>
             <p className="text-sm text-base-content/70 mt-3">Vui lòng cập nhật các trường trên trước khi duyệt đề xuất.</p>
             <div className="modal-action">
-              <button className="btn btn-primary btn-sm" onClick={() => setBlockModal({ open: false, missing: [] })}>Đã hiểu</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setBlockModal({ open: false, missing: [], id: null })}>Đã hiểu</button>
+              {blockModal.id && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => { const editId = blockModal.id; setBlockModal({ open: false, missing: [], id: null }); navigate(`/admin/proposals/edit=${editId}`); }}
+                >
+                  Sửa ngay
+                </button>
+              )}
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setBlockModal({ open: false, missing: [] })} />
+          <div className="modal-backdrop bg-black/50" onClick={() => setBlockModal({ open: false, missing: [], id: null })} />
         </dialog>
       )}
 
@@ -1308,7 +1332,7 @@ const AdminProposalsPage = () => {
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Duyệt và đẩy sang 1Office</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false })}>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [] })}>
                 <X size={18} />
               </button>
             </div>
@@ -1319,13 +1343,25 @@ const AdminProposalsPage = () => {
                 {pushUserRows(approveRow).map(r => (
                   <div key={r.key} className="flex justify-between gap-2 text-sm py-0.5">
                     <span className="text-base-content/70">{r.label}</span>
-                    <span className={`font-medium ${r.value ? '' : 'text-error'}`}>{r.value || 'Thiếu'}</span>
+                    <span className={`font-medium ${r.value ? '' : 'text-error'}`}>{r.value || 'Chưa gán'}</span>
                   </div>
                 ))}
               </div>
             )}
+            {approveModal.warnings && approveModal.warnings.length > 0 && (
+              <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
+                <div>
+                  <p className="font-bold mb-1">Cảnh báo:</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {approveModal.warnings.map((w, i) => (
+                      <li key={i}>{w} chưa liên kết với 1Office — sẽ bị bỏ qua khi đẩy</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
             <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false })}>Hủy</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [] })}>Hủy</button>
               <button
                 className="btn btn-success btn-sm"
                 disabled={approveModal.saving}
@@ -1386,10 +1422,7 @@ const AdminProposalsPage = () => {
                 <X size={18} />
               </button>
             </div>
-            <div className="alert alert-warning py-2 px-3 text-xs mb-3">
-              <AlertTriangle size={14} />
-              <span>Thao tác <b>demo nội bộ</b> — sau này do webhook 1Office gọi sang. Tạm thời cho chỉnh tay.</span>
-            </div>
+
             <p className="text-sm text-base-content/80">Xác nhận chuyển đề xuất #{transitionModal.id} sang <b>{statusLabel(transitionModal.to)}</b>?</p>
             <div className="modal-action">
               <button className="btn btn-ghost btn-sm" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })}>Hủy bỏ</button>

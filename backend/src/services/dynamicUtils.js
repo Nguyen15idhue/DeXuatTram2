@@ -306,7 +306,7 @@ const findCenterDirectorId = async (db, phongBan) => {
   } catch { return null; }
 };
 
-exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection = null) => {
+exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection = null, existingData = null) => {
   if (!dynamicData || !fieldDefs || fieldDefs.length === 0) return dynamicData;
   const autoFields = fieldDefs.filter(f => {
     if (f.type !== 'user') return false;
@@ -321,6 +321,7 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
 
   for (const f of autoFields) {
     if (hasUserValue(dynamicData[f.key])) continue;
+    if (existingData && hasUserValue(existingData[f.key])) continue;
     const sc = parseSourceConfig(f.source_config);
     if (!currentId) {
       dynamicData[f.key] = '';

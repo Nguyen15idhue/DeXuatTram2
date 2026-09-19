@@ -11,7 +11,8 @@ const STATUS_TITLES = {
   RESUBMITTED: 'Đề xuất được gửi lại',
   CANCELLED: 'Đề xuất đã bị hủy',
   CONTRACT_SIGNED: 'Đề xuất ký hợp đồng thành công',
-  CONTRACT_FAILED: 'Đề xuất ký hợp đồng thất bại'
+  CONTRACT_FAILED: 'Đề xuất ký hợp đồng thất bại',
+  ARCHIVED: 'Đề xuất đã được lưu trữ'
 };
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';

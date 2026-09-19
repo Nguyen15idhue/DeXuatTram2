@@ -656,6 +656,40 @@ export const apiConfigService = {
   },
   syncPersonnel(id, token) {
     return api.postWithAuth(`/admin/api-configs/${id}/sync-personnel`, {}, token);
+  },
+  rotateWebhookSecret(id, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/webhook-secret/rotate`, {}, token);
+  },
+  testWebhook(id, data, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/webhook-test`, data, token);
+  }
+};
+
+export const webhookConfigService = {
+  list(token) {
+    return api.getWithAuth('/admin/webhook-configs', token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/webhook-configs', data, token);
+  },
+  rotate(id, token) {
+    return api.postWithAuth(`/admin/webhook-configs/${id}/rotate`, {}, token);
+  },
+  setActive(id, isActive, token) {
+    return api.putWithAuth(`/admin/webhook-configs/${id}/active`, { is_active: isActive }, token);
+  },
+  remove(id, token) {
+    return api.deleteWithAuth(`/admin/webhook-configs/${id}`, token);
+  },
+  testSend(data, token) {
+    return api.postWithAuth('/admin/webhook-configs/test-send', data, token);
+  },
+  inboundLogs(params, token) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    });
+    return api.getWithAuth(`/admin/webhook-configs/inbound-logs?${qs.toString()}`, token);
   }
 };
 

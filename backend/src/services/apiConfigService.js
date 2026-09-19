@@ -36,6 +36,35 @@ exports.getById = async (id) => {
   return rows.length > 0 ? rows[0] : null;
 };
 
+const parseAuthConfig = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+exports.maskAuthConfig = (authConfig) => {
+  const auth = parseAuthConfig(authConfig);
+  const out = { ...auth };
+  const masked = {};
+  if (out.webhook_secret) { masked.webhook_secret_set = true; delete out.webhook_secret; }
+  if (out.webhook_secret_prev) { masked.webhook_secret_prev_set = true; delete out.webhook_secret_prev; }
+  return { ...out, ...masked };
+};
+
+exports.rotateWebhookSecret = async (id) => {
+  const crypto = require('crypto');
+  const existing = await exports.getById(id);
+  if (!existing) {
+    throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
+  }
+  const auth = parseAuthConfig(existing.auth_config);
+  const fresh = crypto.randomBytes(32).toString('hex');
+  const next = { ...auth, webhook_secret_prev: auth.webhook_secret || null, webhook_secret: fresh };
+  if (!next.webhook_secret_prev) delete next.webhook_secret_prev;
+  await pool.query('UPDATE api_configs SET auth_config = ?, updated_at = NOW() WHERE id = ?', [JSON.stringify(next), id]);
+  return { webhook_secret: fresh, rotated_at: new Date().toISOString() };
+};
+
 exports.getDefaultPushConfig = async () => {
   const [rows] = await pool.query(
     "SELECT * FROM api_configs WHERE system_key = '1office' AND api_type = 'contact' AND is_active = 1 ORDER BY id ASC LIMIT 1"
@@ -99,6 +128,18 @@ exports.update = async (id, data) => {
     sync_enabled: data.sync_enabled !== undefined ? (data.sync_enabled ? 1 : 0) : existing.sync_enabled,
     sync_cron: data.sync_cron !== undefined ? (data.sync_cron || null) : existing.sync_cron
   };
+
+  if (data.auth_config !== undefined) {
+    try {
+      const incoming = parseAuthConfig(merged.auth_config);
+      const current = parseAuthConfig(existing.auth_config);
+      let changed = false;
+      for (const k of ['webhook_secret', 'webhook_secret_prev']) {
+        if (!(k in incoming) && current[k]) { incoming[k] = current[k]; changed = true; }
+      }
+      if (changed) merged.auth_config = JSON.stringify(incoming);
+    } catch { /* silent: giu nguyen */ }
+  }
 
   await pool.query(
     `UPDATE api_configs SET

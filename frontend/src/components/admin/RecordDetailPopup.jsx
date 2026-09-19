@@ -1,15 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { dynamicService, formService, stationService, adminUserService, adminProposalService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
 import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
-import { MapPinned, History } from 'lucide-react';
+import { MapPinned, History, AlertTriangle } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import useDataListMap from '../../hooks/useDataListMap';
+import useFieldOptions from '../../hooks/useFieldOptions';
 import Toast from '../Toast';
+
+const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
+
+const resolveUserId = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = (typeof value === 'object' && value !== null) ? (value.id ?? value.user_id ?? value.value) : value;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
 
 const ENTITY_LABELS = {
   stations: 'Trạm',
@@ -27,6 +38,8 @@ const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8 };
 
 const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null }) => {
   const { token, user: authUser } = useAuth();
+  const navigate = useNavigate();
+  const { getFieldLabel } = useFieldOptions('station_proposals', PUSH_USER_KEYS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -40,6 +53,8 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [showMap, setShowMap] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [activeTabs, setActiveTabs] = useState({});
+  const [formErrors, setFormErrors] = useState({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const modalRef = useRef(null);
   const dataListIds = (() => {
     const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
@@ -161,6 +176,36 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     return null;
   };
 
+  const missingPushUserLabels = (rec) => {
+    if (!rec || entity !== 'station_proposals') return [];
+    const status = rec.status;
+    if (status !== 'PENDING' && status !== 'REVIEWING') return [];
+    const custom = (rec && rec.custom_data) || {};
+    const labels = [];
+    for (const key of PUSH_USER_KEYS) {
+      const direct = rec ? rec[key] : null;
+      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+      const idVal = resolveUserId(v);
+      if (!idVal) labels.push(getFieldLabel(key));
+    }
+    return labels;
+  };
+
+  const pushUserWarnings = (rec) => {
+    if (!rec || entity !== 'station_proposals') return [];
+    const custom = (rec && rec.custom_data) || {};
+    const warnings = [];
+    for (const key of PUSH_USER_KEYS) {
+      const direct = rec ? rec[key] : null;
+      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+      const idVal = resolveUserId(v);
+      if (idVal) {
+        warnings.push({ key, label: getFieldLabel(key), id: idVal, warning: `chưa liên kết 1Office` });
+      }
+    }
+    return warnings;
+  };
+
   const handleFieldChange = (key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
@@ -212,8 +257,16 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const handleSave = async () => {
     try {
-      setSaving(true);
       setError('');
+      setSubmitAttempted(true);
+      const errs = validate();
+      setFormErrors(errs);
+      if (getOrderedErrorKeys(errs).length > 0) {
+        const banner = (modalRef.current || document).querySelector('[data-error-summary]');
+        if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      setSaving(true);
       const service = updateService || ENTITY_SERVICES[entity];
       if (!service) {
         setError('Entity không hỗ trợ cập nhật');
@@ -264,6 +317,8 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const handleSwitchMode = (newMode) => {
     setMode(newMode);
+    setFormErrors({});
+    setSubmitAttempted(false);
     if (newMode === 'edit') initFormData([...viewFields, ...otherFields], record);
     if (onSwitchMode) onSwitchMode(newMode);
   };
@@ -292,6 +347,83 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       }
     });
     return config.conditionLogic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+  };
+
+  const isFieldVisible = (field) => {
+    if (!field.conditions || field.conditions.length === 0) return true;
+    const results = field.conditions.map(cond => {
+      if (!cond.field || cond.field === '') return true;
+      const val = formData[cond.field];
+      const checkVal = cond.value || '';
+      switch (cond.operator) {
+        case '=': return String(val ?? '') === checkVal;
+        case '!=': return String(val ?? '') !== checkVal;
+        case 'contains': return String(val ?? '').toLowerCase().includes(checkVal.toLowerCase());
+        case '>': return Number(val) > Number(checkVal);
+        case '<': return Number(val) < Number(checkVal);
+        case 'empty': return val === '' || val === null || val === undefined;
+        case 'not_empty': return val !== '' && val !== null && val !== undefined;
+        default: return true;
+      }
+    });
+    return field.conditionLogic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+  };
+
+  const validate = () => {
+    const newErrors = {};
+    const layout = getLayoutSections();
+    const visibleFieldKeys = new Set();
+    if (layout) {
+      layout.sections.forEach(sec => {
+        (sec.rows || []).forEach(row => {
+          const cols = parseInt((row.columns || '1:1').split(':')[1]);
+          for (let ci = 0; ci < cols; ci++) {
+            const field = layout.cellMap[`${row.id}-${ci}`];
+            if (field) visibleFieldKeys.add(field.field_key || field.key);
+          }
+        });
+      });
+    }
+    const fieldsToCheck = visibleFieldKeys.size > 0
+      ? allFields.filter(f => visibleFieldKeys.has(f.key))
+      : allFields;
+    fieldsToCheck.forEach(f => {
+      if (!f.required) return;
+      const val = formData[f.key];
+      const label = f.field_label || f.label || f.key;
+      if (f.type === 'multiselect' && Array.isArray(val) && val.length === 0) {
+        newErrors[f.key] = `${label} là bắt buộc`;
+      } else if (f.type === 'table' && Array.isArray(val) && val.length === 0) {
+        newErrors[f.key] = `${label} phải có ít nhất 1 dòng`;
+      } else if (val === '' || val === null || val === undefined) {
+        newErrors[f.key] = `${label} là bắt buộc`;
+      }
+      if (f.type === 'table' && Array.isArray(val) && val.length > 0) {
+        const tc = (() => {
+          if (!f.source_config) return {};
+          if (typeof f.source_config === 'object') return f.source_config;
+          try { return JSON.parse(f.source_config); } catch { return {}; }
+        })();
+        const reqCols = (tc.columns || []).filter(c => c && c.required);
+        if (reqCols.length > 0 && !newErrors[f.key]) {
+          for (let i = 0; i < val.length; i++) {
+            const row = val[i] || {};
+            const missing = reqCols.filter(c => row[c.key] === '' || row[c.key] === null || row[c.key] === undefined);
+            if (missing.length > 0) {
+              newErrors[f.key] = `${label}: dòng ${i + 1} thiếu ${missing.map(c => c.label || c.key).join(', ')}`;
+              break;
+            }
+          }
+        }
+      }
+    });
+    return newErrors;
+  };
+
+  const getOrderedErrorKeys = (errObj) => {
+    const order = {};
+    allFields.forEach((f, i) => { order[f.key] = i; });
+    return Object.keys(errObj || {}).sort((a, b) => (order[a] ?? 9999) - (order[b] ?? 9999));
   };
 
   const getLayoutSections = () => {
@@ -505,13 +637,48 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
         {error && <div className="error-message">{error}</div>}
 
-        {entity === 'station_proposals' && record?.status === 'REJECTED' && record?.reject_reason && (
-          <div className="alert alert-error mb-3">
-            <span className="text-sm"><strong>Đề xuất bị từ chối:</strong> {record.reject_reason}</span>
-          </div>
-        )}
-
         <div className="popup-body">
+          {entity === 'station_proposals' && record?.status === 'REJECTED' && record?.reject_reason && (
+            <div className="alert alert-error" style={{ marginBottom: 12 }}>
+              <span className="text-sm"><strong>Đề xuất bị từ chối:</strong> {record.reject_reason}</span>
+            </div>
+          )}
+
+          {entity === 'station_proposals' && mode === 'view' && missingPushUserLabels(record).length > 0 && (
+            <div className="form-error-summary" style={{ marginBottom: 12 }}>
+              <div className="form-error-summary-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={16} />
+                <span>Cần cập nhật trước khi duyệt — thiếu {missingPushUserLabels(record).length} trường:</span>
+              </div>
+              <ul>
+                {missingPushUserLabels(record).map((label, i) => (
+                  <li key={i}>
+                    <button type="button" onClick={() => { if (allowEdit) handleSwitchMode('edit'); }}>{label} — chưa được gán</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {submitAttempted && getOrderedErrorKeys(formErrors).length > 0 && (
+            <div className="form-error-summary" data-error-summary style={{ marginBottom: 12 }}>
+              <div className="form-error-summary-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={16} />
+                <span>Vui lòng sửa {getOrderedErrorKeys(formErrors).length} lỗi trước khi lưu:</span>
+              </div>
+              <ul>
+                {getOrderedErrorKeys(formErrors).map(k => (
+                  <li key={k}>
+                    <button type="button" onClick={() => {
+                      const el = (modalRef.current || document).querySelector(`[data-field-key="${CSS.escape(k)}"]`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}>{formErrors[k]}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {sections && sections.length > 0 ? (
             sections.map(sec => renderSectionNode(sec))
           ) : (

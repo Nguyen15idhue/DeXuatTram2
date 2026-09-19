@@ -53,6 +53,32 @@ exports.getMissingPushUserFieldLabels = async (proposal, fieldDefs) => {
   return missing;
 };
 
+exports.getUnlinkedPushUserWarnings = async (proposal, fieldDefs) => {
+  const defs = fieldDefs || await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const system = '1office';
+  const labelOf = (key) => {
+    const f = (defs || []).find(d => d.key === key);
+    return (f && f.label) || key;
+  };
+  const custom = parseCustomData(proposal && proposal.custom_data);
+  const warnings = [];
+  for (const key of PUSH_REQUIRED_USER_FIELDS) {
+    const direct = proposal ? proposal[key] : null;
+    const value = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+    const userId = fieldMapper.resolveUserId(value);
+    if (userId === null) continue;
+    try {
+      const ext = await adminUserService.findExternalByUser(userId, system);
+      if (!ext) {
+        const [uRows] = await pool.query('SELECT full_name FROM users WHERE id = ?', [userId]);
+        const name = uRows.length > 0 ? uRows[0].full_name : `User #${userId}`;
+        warnings.push({ key, label: labelOf(key), userId, userName: name });
+      }
+    } catch { continue; }
+  }
+  return warnings;
+};
+
 exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
   const config = await apiConfigService.getById(apiConfigId);
   if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
@@ -81,10 +107,11 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       continue;
     }
 
+    const unlinkedWarnings = await exports.getUnlinkedPushUserWarnings(proposal, fieldDefs);
     const isLinked = !!proposal.contact_1office_code;
 
     const contactData = {};
-    const warnings = [];
+    const warnings = unlinkedWarnings.map(w => `${w.label} (${w.userName}) chưa liên kết 1Office`);
     const userMapInfo = await fieldMapper.getUserMapInfo(system);
     for (const mapping of pushMappings) {
       const value = proposal[mapping.source_field] || (proposal.custom_data && proposal.custom_data[mapping.source_field]);

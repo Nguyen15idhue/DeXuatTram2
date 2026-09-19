@@ -1,12 +1,13 @@
 const pool = require('../utils/db');
 const notificationService = require('./notificationService');
 
-const ALL_STATUSES = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
+const ALL_STATUSES = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
 
 const ALLOWED_TRANSITIONS = {
   PENDING: ['REVIEWING', 'REJECTED', 'CANCELLED'],
-  REVIEWING: ['APPROVED', 'CANCELLED'],
+  REVIEWING: ['APPROVED', 'CANCELLED', 'ARCHIVED'],
   APPROVED: ['CONTRACT_SIGNED', 'CONTRACT_FAILED'],
+  ARCHIVED: ['CONTRACT_SIGNED', 'CANCELLED'],
   CONTRACT_SIGNED: ['CANCELLED'],
   CONTRACT_FAILED: ['CANCELLED'],
   REJECTED: ['PENDING'],
@@ -102,16 +103,6 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Mở lại khẩn cấp cần nhập lý do', 400);
   }
   const auditReason = cleanReason || (isEmergencyReopen ? String(reason || '').trim() : null);
-  if (to === 'REVIEWING' && from !== 'REVIEWING') {
-    const syncService = require('./syncService');
-    const missing = await syncService.getMissingPushUserFieldLabels(proposal);
-    if (missing.length > 0) {
-      throw err(
-        `Không thể duyệt: đề xuất thiếu ${missing.map(l => `"${l}"`).join(', ')}. Vui lòng cập nhật trước khi duyệt.`,
-        400
-      );
-    }
-  }
 
   await pool.query(
     `UPDATE station_proposals

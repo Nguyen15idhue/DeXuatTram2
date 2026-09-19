@@ -6,6 +6,8 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code } from 'lucide-react';
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
 import SyncPanel from '../../components/admin/SyncPanel';
+import WebhookManager from '../../components/admin/WebhookManager';
+import WebhookListener from '../../components/admin/WebhookListener';
 import TemplateEditor from '../../components/admin/TemplateEditor';
 import PersonnelSyncPanel from '../../components/admin/PersonnelSyncPanel';
 
@@ -329,6 +331,9 @@ const AdminApiConfigPage = () => {
           <button className="btn btn-ghost btn-xs" onClick={() => { setError(''); loadConfigs(); }}>Thử lại</button>
         </div>
       )}
+
+      <WebhookManager />
+      <WebhookListener />
 
       {loading ? (
         <div className="flex justify-center py-12">

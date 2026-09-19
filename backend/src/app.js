@@ -39,6 +39,7 @@ const geocodeRoutes = require('./routes/geocode');
 const adminGeocodeConfigRoutes = require('./routes/adminGeocodeConfig');
 const webhooksRoutes = require('./routes/webhooks');
 const proposalActivityRoutes = require('./routes/proposalActivity');
+const webhookConfigsRoutes = require('./routes/webhookConfigs');
 const queueWorker = require('./workers/queueWorker');
 const personnelSyncWorker = require('./workers/personnelSyncWorker');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
@@ -130,6 +131,7 @@ app.use('/api/geocode', geocodeRoutes);
 app.use('/api/admin/geocode-config', adminLimiter, adminGeocodeConfigRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/admin/proposal-logs', adminLimiter, proposalActivityRoutes);
+app.use('/api/admin/webhook-configs', adminLimiter, webhookConfigsRoutes);
 app.use('/tiles', tilesRoutes);
 
 // Health check

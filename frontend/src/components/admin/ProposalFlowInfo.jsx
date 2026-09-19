@@ -9,7 +9,7 @@ const STEPS = [
   {
     color: '#3b82f6', title: '2. Đang xem xét',
     desc: 'Đề xuất đã được đẩy sang 1Office, chờ phản hồi.',
-    next: ['1Office duyệt (webhook/demo) → Đã duyệt BCĐX', 'Hủy → kết thúc']
+    next: ['1Office duyệt (webhook/demo) → Đã duyệt BCĐX', 'Lưu trữ → ưu tiên thấp, cất kho', 'Hủy → kết thúc']
   },
   {
     color: '#16a34a', title: '3. Đã duyệt BCĐX',
@@ -27,12 +27,17 @@ const STEPS = [
     next: ['Có thể Hủy thủ công']
   },
   {
-    color: '#dc2626', title: '6. Từ chối',
+    color: '#8b5cf6', title: '6. Đã lưu trữ',
+    desc: 'Duyệt nhưng ưu tiên thấp, cất kho. Vào từ Đang xem xét.',
+    next: ['Ký thành công (kích hoạt lại)', 'Hủy → kết thúc']
+  },
+  {
+    color: '#dc2626', title: '7. Từ chối',
     desc: 'Cần chỉnh sửa. CTV sửa xong bấm "Gửi lại" → quay về Đang đề xuất.',
     next: []
   },
   {
-    color: '#6b7280', title: '7. Đã hủy',
+    color: '#6b7280', title: '8. Đã hủy',
     desc: 'Trạng thái cuối cùng — không thể mở lại, kể cả admin.',
     next: []
   }

@@ -12,6 +12,7 @@ export const PROPOSAL_STATUSES = [
   { value: 'REVIEWING', label: 'Đang xem xét', color: '#3b82f6', show_in_legend: true, sort_order: 2 },
   { value: 'APPROVED', label: 'Đã duyệt BCĐX', color: '#22c55e', show_in_legend: true, sort_order: 3 },
   { value: 'CANCELLED', label: 'Đã hủy', color: '#6b7280', show_in_legend: true, sort_order: 4 },
+  { value: 'ARCHIVED', label: 'Đã lưu trữ', color: '#8b5cf6', show_in_legend: true, sort_order: 5 },
   { value: 'REJECTED', label: 'Từ chối', color: '#ef4444', show_in_legend: false, sort_order: 5 },
   { value: 'CONTRACT_SIGNED', label: 'Ký thành công', color: '#0d9488', show_in_legend: false, sort_order: 6 },
   { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 7 }

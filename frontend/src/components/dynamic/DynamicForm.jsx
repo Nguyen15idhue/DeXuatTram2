@@ -171,6 +171,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const [activeTabs, setActiveTabs] = useState({});
   const [geocoding, setGeocoding] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const formRef = useRef(null);
   const geocodeTimerRef = useRef(null);
   const geocodeSeqRef = useRef(0);
@@ -664,6 +665,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setError('');
     setSubmitAttempted(true);
     const errorKeys = validate();
@@ -671,6 +673,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       scrollToBanner();
       return;
     }
+    setSubmitting(true);
     try {
       if (onSubmit) {
         await onSubmit(formData);
@@ -679,6 +682,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     } catch (err) {
       setError(err.message || 'Lỗi lưu dữ liệu');
       scrollToBanner();
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -955,11 +960,11 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         children ? (
           <div className="form-actions">
             {children}
-            <button type="submit" className="btn btn-primary">Lưu</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         ) : (
           <div className="form-actions">
-            <button type="submit" className="btn btn-primary">Lưu</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         )
       )}

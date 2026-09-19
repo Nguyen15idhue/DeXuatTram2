@@ -42,7 +42,7 @@ exports.getDashboardStats = async (scope = {}) => {
     `SELECT COUNT(*) as rejectedProposals FROM station_proposals WHERE status = 'REJECTED'${inBranch('user_id')}`,
     branchParams()
   );
-  const extraStatuses = ['REVIEWING', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
+  const extraStatuses = ['REVIEWING', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
   const extraCounts = {};
   for (const st of extraStatuses) {
     const [[row]] = await pool.query(
@@ -81,6 +81,7 @@ exports.getDashboardStats = async (scope = {}) => {
       rejected: rejectedProposals, new7d: newProposals7d,
       reviewing: extraCounts.reviewing, cancelled: extraCounts.cancelled,
       contract_signed: extraCounts.contract_signed, contract_failed: extraCounts.contract_failed,
+      archived: extraCounts.archived,
       approvalRate: totalProposals > 0 ? Math.round((approvedProposals / totalProposals) * 100) : 0
     }
   };

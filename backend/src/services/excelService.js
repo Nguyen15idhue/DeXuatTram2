@@ -3,6 +3,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const pool = require('../utils/db');
 const fieldDefinitionService = require('./fieldDefinitionService');
+const dynamicUtils = require('./dynamicUtils');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const proximityService = require('./proximityService');
@@ -21,7 +22,7 @@ const ENTITY_TABLE_MAP = {
 const VALID_STATUSES = {
   stations: ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'],
   users: ['ACTIVE', 'LOCKED'],
-  station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED']
+  station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED']
 };
 
 const STATUS_LABEL_MAP = {
@@ -1416,6 +1417,8 @@ exports.importConfirmDynamic = async (req, res) => {
 
         if (entity === 'station_proposals' && req.user && req.user.id) {
           fixedData.user_id = req.user.id;
+          const proposalFieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+          await dynamicUtils.applyAutoUserFields(dynamicData, proposalFieldDefs, req.user.id, connection);
         }
 
         if (entity === 'users') {

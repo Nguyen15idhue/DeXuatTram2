@@ -4,6 +4,8 @@ import { fieldDefinitionService, viewService, viewFieldService } from '../../ser
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
 import DragDropList from './DragDropList';
+import { Search } from 'lucide-react';
+import { filterFieldsBySearch } from '../../utils/searchText';
 
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 
@@ -18,6 +20,8 @@ const ViewBuilder = ({ viewId, onSaved }) => {
   const [viewDesc, setViewDesc] = useState('');
   const [availableFields, setAvailableFields] = useState([]);
   const [assignedFields, setAssignedFields] = useState([]);
+  const [availableSearch, setAvailableSearch] = useState('');
+  const [columnSearch, setColumnSearch] = useState('');
 
   useEffect(() => {
     if (viewId) loadViewConfig();
@@ -70,6 +74,8 @@ const ViewBuilder = ({ viewId, onSaved }) => {
   const handleEntityChange = (newEntity) => {
     setEntity(newEntity);
     setAssignedFields([]);
+    setAvailableSearch('');
+    setColumnSearch('');
     loadAvailableFields(newEntity);
   };
 
@@ -166,7 +172,12 @@ const ViewBuilder = ({ viewId, onSaved }) => {
 
   if (loading) return <div className="loading">Đang tải cấu hình...</div>;
 
-  const filteredAvailable = availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id));
+  const filteredAvailable = filterFieldsBySearch(
+    availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id)),
+    availableSearch
+  );
+  const searchingColumns = columnSearch.trim() !== '';
+  const visibleColumns = filterFieldsBySearch(assignedFields, columnSearch);
 
   return (
     <div className="view-builder">
@@ -196,8 +207,19 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         <div className="builder-panel">
           <div className="builder-panel-header">Available Fields ({filteredAvailable.length})</div>
           <div className="builder-panel-body">
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={availableSearch}
+                onChange={(e) => setAvailableSearch(e.target.value)}
+                placeholder="Tìm field (tên/key/loại)..."
+                className="input input-bordered input-sm w-full"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
             {filteredAvailable.length === 0 ? (
-              <div className="builder-empty">Không có field nào khả dụng</div>
+              <div className="builder-empty">{availableSearch.trim() ? `Không tìm thấy field nào cho "${availableSearch.trim()}"` : 'Không có field nào khả dụng'}</div>
             ) : filteredAvailable.map(field => (
               <div key={field.id} className="builder-available-item" onClick={() => handleAddField(field)}>
                 <div>
@@ -213,12 +235,27 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         <div className="builder-panel">
           <div className="builder-panel-header">Table Columns ({assignedFields.length})</div>
           <div className="builder-panel-body">
-            {assignedFields.length === 0 ? (
-              <div className="builder-empty">Kéo fields từ panel bên trái vào đây</div>
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={columnSearch}
+                onChange={(e) => setColumnSearch(e.target.value)}
+                placeholder="Tìm cột (tên/key/loại)..."
+                className="input input-bordered input-sm w-full"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
+            {searchingColumns && (
+              <div className="text-xs text-gray-500 mb-1">Đang lọc — xóa từ khóa để kéo-thả sắp xếp lại.</div>
+            )}
+            {visibleColumns.length === 0 ? (
+              <div className="builder-empty">{assignedFields.length === 0 ? 'Kéo fields từ panel bên trái vào đây' : `Không tìm thấy cột nào cho "${columnSearch.trim()}"`}</div>
             ) : (
               <DragDropList
-                items={assignedFields}
-                onReorder={handleReorder}
+                items={visibleColumns}
+                onReorder={searchingColumns ? undefined : handleReorder}
+                disableDrag={searchingColumns}
                 onRemove={handleRemoveField}
                 renderItem={(item) => (
                   <div className="builder-assigned-item">
