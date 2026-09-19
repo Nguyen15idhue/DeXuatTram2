@@ -80,6 +80,8 @@ const AdminProposalsPage = () => {
   const [importViewId, setImportViewId] = useState('');
   const [importCheckDuplicate, setImportCheckDuplicate] = useState(true);
   const [importCheckIntraFile, setImportCheckIntraFile] = useState(true);
+  const [importProgress, setImportProgress] = useState(null);
+  const importPollRef = useRef(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const dupRef = useRef(null);
@@ -586,10 +588,21 @@ const AdminProposalsPage = () => {
 
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setImportProgress({ done: 0, total: importPreview.rows.length });
+    if (importPollRef.current) clearInterval(importPollRef.current);
+    importPollRef.current = setInterval(async () => {
+      try {
+        const p = await excelService.getImportProgress(jobId, token);
+        if (p && p.success && p.data && p.data.status !== 'not_found') {
+          setImportProgress({ done: p.data.done, total: p.data.total, status: p.data.status });
+        }
+      } catch { }
+    }, 1500);
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
+      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId, jobId, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
         setShowImport(false);
@@ -601,6 +614,8 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
     } finally {
+      if (importPollRef.current) { clearInterval(importPollRef.current); importPollRef.current = null; }
+      setImportProgress(null);
       setImportLoading(false);
     }
   };
@@ -1854,6 +1869,19 @@ const AdminProposalsPage = () => {
                     <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m)</span>
                   </span>
                 </label>
+                {importLoading && importProgress && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Đang import...</span>
+                      <span>{importProgress.done}/{importProgress.total} dòng</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={importProgress.done}
+                      max={Math.max(importProgress.total, 1)}
+                    ></progress>
+                  </div>
+                )}
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
