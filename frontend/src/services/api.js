@@ -27,14 +27,22 @@ const triggerDownload = (href, filename) => {
   setTimeout(() => { try { a.remove(); } catch { /* silent */ } }, 5000);
 };
 
+let authExpiredNotified = false;
+
+export const resetAuthExpiredFlag = () => { authExpiredNotified = false; };
+
 const handleUnauthorized = (response) => {
   if (response.status === 401) {
+    let hadToken = false;
     try {
+      hadToken = !!localStorage.getItem('token');
       localStorage.removeItem('token');
-      if (typeof window !== 'undefined' && window.location && !window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
-      }
     } catch { /* silent */ }
+    if (typeof window !== 'undefined' && hadToken && !authExpiredNotified) {
+      authExpiredNotified = true;
+      window.dispatchEvent(new Event('auth:expired'));
+      setTimeout(() => { authExpiredNotified = false; }, 5000);
+    }
   }
 };
 

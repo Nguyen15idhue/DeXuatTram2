@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { authService } from '../services/api';
+import { authService, resetAuthExpiredFlag } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -24,6 +24,12 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token]);
 
+  useEffect(() => {
+    const onExpired = () => logout();
+    window.addEventListener('auth:expired', onExpired);
+    return () => window.removeEventListener('auth:expired', onExpired);
+  }, []);
+
   const fetchUser = async () => {
     try {
       const data = await authService.fetchUser(token);
@@ -46,6 +52,7 @@ export const AuthProvider = ({ children }) => {
     
     if (data.success) {
       localStorage.setItem('token', data.data.token);
+      resetAuthExpiredFlag();
       setToken(data.data.token);
       setUser(data.data.user);
       return { success: true };
@@ -58,6 +65,7 @@ export const AuthProvider = ({ children }) => {
     
     if (data.success) {
       localStorage.setItem('token', data.data.token);
+      resetAuthExpiredFlag();
       setToken(data.data.token);
       setUser(data.data.user);
       return { success: true };

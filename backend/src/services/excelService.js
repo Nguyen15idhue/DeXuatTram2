@@ -1486,6 +1486,17 @@ exports.importConfirmDynamic = async (req, res) => {
           }
         }
 
+        // Cột NOT NULL không default: template/view excel_basic có thể thiếu cột
+        // (preview vẫn hợp lệ vì chỉ required cột có trong file) → INSERT thiếu cột
+        // sẽ lỗi MySQL 1364 "doesn't have a default value". Default '' như proposalService.
+        if (entity === 'station_proposals') {
+          if (fixedData.owner_name == null) fixedData.owner_name = '';
+          if (fixedData.owner_phone == null) fixedData.owner_phone = '';
+        }
+        if (entity === 'stations') {
+          if (fixedData.name == null) fixedData.name = '';
+        }
+
         const fixedCols = Object.keys(fixedData);
         const fixedValues = Object.values(fixedData);
 
