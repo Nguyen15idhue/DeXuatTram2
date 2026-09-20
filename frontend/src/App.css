@@ -2095,6 +2095,19 @@ fieldset.form-section,
 .popup-body .form-row {
   max-width: 100%;
 }
+.form-section > legend.form-section-title,
+.popup-body fieldset > legend.form-section-title {
+  font-weight: 700;
+  font-size: 17px;
+  padding: 0 8px;
+  color: #1d4ed8;
+  letter-spacing: 0.2px;
+}
+.dynamic-form-field.is-filled input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.dynamic-form-field.is-filled select,
+.dynamic-form-field.is-filled textarea {
+  background-color: #f0f9ff;
+}
 .form-row-stacked {
   flex-direction: column;
   gap: 0;
@@ -2374,9 +2387,9 @@ fieldset.form-section,
   margin-bottom: 20px;
 }
 .popup-section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #4a6cf7;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1d4ed8;
   margin: 0 0 12px;
   padding-bottom: 6px;
   border-bottom: 1px solid #eef1ff;
@@ -2460,9 +2473,9 @@ fieldset.form-section,
   margin-bottom: 20px;
 }
 .popup-section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #4a6cf7;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1d4ed8;
   margin: 0 0 10px 0;
   padding-bottom: 6px;
   border-bottom: 1px solid #e8e8e8;

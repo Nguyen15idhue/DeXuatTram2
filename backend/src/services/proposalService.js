@@ -54,9 +54,16 @@ exports.createProposal = async (userId, data, opts = {}) => {
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
+  await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, fieldDefs).catch(() => {});
 
   const customDataObj = { ...dynamicData };
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
+
+  let supplementDays = 7;
+  try {
+    const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
+    supplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+  } catch { /* silent */ }
 
   const conn = await pool.getConnection();
   let recordId;
@@ -65,9 +72,9 @@ exports.createProposal = async (userId, data, opts = {}) => {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data)
-       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData]
+      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
+      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, supplementDays]
     );
 
     recordId = result.insertId;
@@ -174,6 +181,7 @@ exports.createGuestProposal = async (data, ip) => {
     err.statusCode = 400;
     throw err;
   }
+  const warnings = [];
   let nearby;
   try {
     nearby = await proximityService.checkNearby(lat, lng, 200);
@@ -184,9 +192,7 @@ exports.createGuestProposal = async (data, ip) => {
   if (nearby.is_duplicate) {
     const n = nearby.nearest;
     const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-    const err = new Error(`Vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Vui lòng chọn vị trí khác.`);
-    err.statusCode = 400;
-    throw err;
+    warnings.push(`Vị trí này gần với ${who} #${n.id} (cách ${n.distance_m}m < 200m)`);
   }
 
   if (phone) {
@@ -197,15 +203,15 @@ exports.createGuestProposal = async (data, ip) => {
     for (const row of samePhone) {
       const d = proximityService.haversineM(lat, lng, Number(row.latitude), Number(row.longitude));
       if (d < 1000) {
-        const err = new Error('Số điện thoại này đã gửi đề xuất gần vị trí này (trong 1000m)');
-        err.statusCode = 400;
-        throw err;
+        warnings.push('Số điện thoại này đã gửi đề xuất gần vị trí này (trong 1000m)');
+        break;
       }
     }
   }
 
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
+  await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, fieldDefs).catch(() => {});
 
   const fileKeys = fieldDefs.filter(f => f.type === 'file' && f.source_type === 'json').map(f => f.key);
   const fileIds = [];
@@ -267,6 +273,12 @@ exports.createGuestProposal = async (data, ip) => {
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
+  let guestSupplementDays = 7;
+  try {
+    const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
+    guestSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+  } catch { /* silent */ }
+
   const conn = await pool.getConnection();
   let recordId;
   let postResults = {};
@@ -274,9 +286,9 @@ exports.createGuestProposal = async (data, ip) => {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip)
-       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?)`,
-      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null]
+      `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip, supplement_deadline_at)
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
+      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, guestSupplementDays]
     );
 
     recordId = result.insertId;
@@ -308,7 +320,7 @@ exports.createGuestProposal = async (data, ip) => {
       source: 'user', manualOverride: false, ip: ip || null
     });
   } catch { /* silent: khong chan tao de xuat vi log */ }
-  return finalData;
+  return { proposal: finalData, warnings };
 };
 
 exports.trackByCode = async (code) => {

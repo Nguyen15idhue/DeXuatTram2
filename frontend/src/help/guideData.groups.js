@@ -119,9 +119,9 @@ export const groupsGuide = {
           id: 'G12B', title: 'Kiểm tra trùng lặp',
           purpose: 'Phát hiện các đề xuất/trạm nằm quá gần nhau trước khi gửi mới hoặc trước khi duyệt.',
           audience: 'Người dùng ở trang Đề xuất của tôi; ADMIN cũng có panel tương tự ở trang quản trị.',
-          substeps: ['Ngay dưới ô tìm kiếm, nhập khoảng cách X (mét, từ trên 200 đến 5000).', 'Bấm nút Check trùng (màu vàng).', 'Xem danh sách các cặp/nhóm điểm gần nhau trong khoảng 200m–X; bấm xem để mở chi tiết hoặc xem trên bản đồ.', 'Bấm "Export trùng" để tải toàn bộ danh sách cặp trùng ra Excel.'],
+          substeps: ['Ngay dưới ô tìm kiếm, nhập khoảng cách X (mét, từ 0 đến 5000).', 'Bấm nút Check trùng (màu vàng).', 'Xem danh sách các cặp/nhóm điểm gần nhau trong khoảng đã nhập; bấm xem để mở chi tiết hoặc xem trên bản đồ.', 'Bấm "Export trùng" để tải toàn bộ danh sách cặp trùng ra Excel.'],
           expected: 'Biết vị trí nào đã có điểm gần đó để tránh gửi trùng; ADMIN dùng kết quả này khi xét duyệt.',
-          errors: ['X phải lớn hơn 200 và tối đa 5000 — nhập ngoài khoảng sẽ báo lỗi.', 'Không ra kết quả: thử tăng X lên.'],
+          errors: ['X tối đa 5000 — nhập ngoài khoảng sẽ báo lỗi.', 'Không ra kết quả: thử tăng X lên.'],
           image: '/help/user/g12b_check-trung.jpg', route: '/my-proposals', tags: ['trùng', 'check', 'khoảng cách'], related: ['G12'],
         },
         {

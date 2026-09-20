@@ -29,7 +29,7 @@ const { webhookLimiter } = require('../middlewares/rateLimits');
  *                 description: Idempotency key (BPA retry cùng id không đẻ log kép)
  *               event:
  *                 type: string
-                 *                 enum: [APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
+                 *                 enum: [PRINCIPLE_APPROVED, APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
  *               proposal_code:
  *                 type: string
  *                 description: tracking_code | ma_de_xuat_gen | custom_data.ma_de_xuat

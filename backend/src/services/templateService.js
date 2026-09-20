@@ -484,7 +484,7 @@ function escapeHtml(str) {
 }
 
 const PRIOR_RENDER_MARKERS = [
-  'Trạng tháiPENDING', 'Trạng tháiREVIEWING', 'Trạng tháiAPPROVED', 'Trạng tháiREJECTED',
+  'Trạng tháiPENDING', 'Trạng tháiREVIEWING', 'Trạng tháiPRINCIPLE_APPROVED', 'Trạng tháiAPPROVED', 'Trạng tháiREJECTED',
   'Trạng tháiCANCELLED', 'Trạng tháiCONTRACT_SIGNED', 'Trạng tháiCONTRACT_FAILED', 'Trạng tháiARCHIVED',
   'Tổng cộng chi phí', 'Thông tin đề xuất',
 ];

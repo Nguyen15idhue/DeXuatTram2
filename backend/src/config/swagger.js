@@ -66,7 +66,7 @@ const options = {
             area: { type: 'string', example: '100m2' },
             land_type: { type: 'string', example: 'Dân cư' },
             description: { type: 'string', example: 'Vị trí đẹp' },
-            status: { type: 'string', enum: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'], example: 'PENDING' },
+            status: { type: 'string', enum: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'], example: 'PENDING' },
             created_at: { type: 'string', format: 'date-time' },
             user_name: { type: 'string', example: 'Nguyen Van A' }
           }

@@ -11,10 +11,13 @@ const TYPE_COLORS = {
   PENDING: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
   RESUBMITTED: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
   REVIEWING: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
+  PRINCIPLE_APPROVED: { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' },
   CANCELLED: { bg: '#f3f4f6', border: '#6b7280', text: '#374151' },
   CONTRACT_SIGNED: { bg: '#ccfbf1', border: '#0d9488', text: '#0f766e' },
   CONTRACT_FAILED: { bg: '#ffedd5', border: '#f59e0b', text: '#9a3412' },
-  ARCHIVED: { bg: '#ede9fe', border: '#8b5cf6', text: '#5b21b6' }
+  ARCHIVED: { bg: '#ede9fe', border: '#8b5cf6', text: '#5b21b6' },
+  SUPPLEMENT_EXPIRING: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
+  SUPPLEMENT_OVERDUE: { bg: '#fee2e2', border: '#ef4444', text: '#b91c1c' }
 };
 
 export const notifyBellRefresh = () => window.dispatchEvent(new Event('notifications:refresh'));

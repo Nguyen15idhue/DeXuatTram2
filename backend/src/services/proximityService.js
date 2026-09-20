@@ -80,7 +80,7 @@ exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposal
 exports.findDuplicates = async ({ minM = 200, maxM = 2000, ownUserId = null, branchUserIds = null }) => {
   const min = Number(minM);
   const max = Number(maxM);
-  if (isNaN(min) || isNaN(max) || min <= 0 || max <= 0) throw new Error('Khoảng cách phải lớn hơn 0');
+  if (isNaN(min) || isNaN(max) || min < 0 || max <= 0) throw new Error('Khoảng cách phải từ 0 trở lên');
   if (min >= max) throw new Error('min_m phải nhỏ hơn max_m');
   if (max > MAX_RADIUS_M) throw new Error(`max_m tối đa ${MAX_RADIUS_M}m`);
 

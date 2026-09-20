@@ -22,7 +22,7 @@ const ENTITY_TABLE_MAP = {
 const VALID_STATUSES = {
   stations: ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'],
   users: ['ACTIVE', 'LOCKED'],
-  station_proposals: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED']
+  station_proposals: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED']
 };
 
 const STATUS_LABEL_MAP = {
@@ -1181,6 +1181,7 @@ exports.importPreviewDynamic = async (req, res) => {
 
     const validRows = [];
     const errors = [];
+    const previewWarnings = [];
     const headerMap = buildHeaderMap(sheet.getRow(1), columns);
     let importUserMap = null;
     if (columns.some(c => c.type === 'user')) {
@@ -1211,6 +1212,7 @@ exports.importPreviewDynamic = async (req, res) => {
     if (entity === 'station_proposals' || entity === 'stations') {
       const kept = [];
       const acceptedCoords = [];
+      const warnings = [];
       for (const vr of validRows) {
         const lat = parseFloat(vr.fixedData.latitude);
         const lng = parseFloat(vr.fixedData.longitude);
@@ -1223,16 +1225,18 @@ exports.importPreviewDynamic = async (req, res) => {
                 const n = nearby.nearest;
                 const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
                 const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
-                errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`] });
-                continue;
+                const msg = `Vị trí gần với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m)`;
+                vr.warnings = [...(vr.warnings || []), msg];
+                warnings.push({ row: vr.rowNumber, warnings: [msg] });
               }
             } catch { /* silent */ }
           }
           if (checkIntraFile) {
             const dupInFile = acceptedCoords.find(c => proximityService.haversineM(lat, lng, c.lat, c.lng) < 200);
             if (dupInFile) {
-              errors.push({ row: vr.rowNumber, errors: [`Vị trí trùng với dòng ${dupInFile.row} trong cùng file (< 200m), không cho import`] });
-              continue;
+              const msg = `Vị trí gần với dòng ${dupInFile.row} trong cùng file (< 200m)`;
+              vr.warnings = [...(vr.warnings || []), msg];
+              warnings.push({ row: vr.rowNumber, warnings: [msg] });
             }
           }
           acceptedCoords.push({ lat, lng, row: vr.rowNumber });
@@ -1241,6 +1245,7 @@ exports.importPreviewDynamic = async (req, res) => {
       }
       validRows.length = 0;
       validRows.push(...kept);
+      previewWarnings.push(...warnings);
     }
 
     if (entity === 'stations') {
@@ -1323,8 +1328,10 @@ exports.importPreviewDynamic = async (req, res) => {
         totalRows: validRows.length + errors.length,
         validRows: validRows.length,
         errorRows: errors.length,
+        warningRows: previewWarnings.length,
         rows: validRows,
-        errors
+        errors,
+        warnings: previewWarnings
       }
     });
   } catch (error) {
@@ -1355,11 +1362,27 @@ exports.importConfirmDynamic = async (req, res) => {
     const table = ENTITY_TABLE_MAP[entity];
     await connection.beginTransaction();
 
+    let importSupplementDays = 7;
+    if (entity === 'station_proposals') {
+      try {
+        const [cfgRows] = await connection.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
+        importSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+      } catch { /* silent */ }
+    }
+
     const dynamicEngineService = require('./dynamicEngineService');
     const [allDefs] = await connection.query(
       'SELECT `key`, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\'',
       [entity]
     );
+    let confirmTableDefs = [];
+    try {
+      const [tDefs] = await connection.query(
+        "SELECT `key`, label, source_config FROM field_definitions WHERE entity = ? AND type = 'table' AND source_type = 'json' AND status = 'active'",
+        [entity]
+      );
+      confirmTableDefs = (tDefs || []).map(r => ({ key: r.key, label: r.label, type: 'table', source_type: 'json', source_config: r.source_config }));
+    } catch { /* silent */ }
     const postFormulaKeys = new Set(
       allDefs.filter(f => {
         if (!f.formula_config) return false;
@@ -1374,6 +1397,7 @@ exports.importConfirmDynamic = async (req, res) => {
     let imported = 0;
     let failed = 0;
     const failDetails = [];
+    const confirmWarnDetails = [];
     let defaultUserPasswordHash = null;
     const insertedCoords = [];
     const usedCodes = new Set();
@@ -1388,6 +1412,10 @@ exports.importConfirmDynamic = async (req, res) => {
       try {
         const fixedData = row.fixedData || {};
         const dynamicData = row.dynamicData || {};
+        try {
+          const priceFlags = await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, confirmTableDefs);
+          if (priceFlags.length > 0) confirmWarnDetails.push({ row: row.rowNumber || '?', warnings: priceFlags });
+        } catch { /* silent */ }
         const keptPost = {};
         postFormulaKeys.forEach(k => {
           if (keepProvidedPost.has(k) && dynamicData[k] !== undefined && dynamicData[k] !== null && dynamicData[k] !== '') {
@@ -1408,6 +1436,7 @@ exports.importConfirmDynamic = async (req, res) => {
         if (entity === 'station_proposals' || entity === 'stations') {
           const lat = parseFloat(fixedData.latitude);
           const lng = parseFloat(fixedData.longitude);
+          const rowWarns = [];
           if (checkDuplicate) {
             const opts = entity === 'stations' ? { kinds: ['station'] } : {};
             const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
@@ -1415,16 +1444,18 @@ exports.importConfirmDynamic = async (req, res) => {
               const n = nearby.nearest;
               const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
               const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
-              throw new Error(`Vị trí trùng với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m), không cho import`);
+              rowWarns.push(`Vị trí gần với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m)`);
             }
           }
           if (checkIntraFile) {
             for (const c of insertedCoords) {
               if (proximityService.haversineM(lat, lng, c.lat, c.lng) < 200) {
-                throw new Error(`Vị trí trùng với dòng ${c.row} trong cùng file import (< 200m), không cho import`);
+                rowWarns.push(`Vị trí gần với dòng ${c.row} trong cùng file import (< 200m)`);
+                break;
               }
             }
           }
+          if (rowWarns.length > 0) confirmWarnDetails.push({ row: row.rowNumber || '?', warnings: rowWarns });
           insertedCoords.push({ lat, lng, row: row.rowNumber });
         }
         if (entity === 'stations') {
@@ -1511,6 +1542,12 @@ exports.importConfirmDynamic = async (req, res) => {
           `INSERT INTO ${table} (${fixedCols.join(', ')}) VALUES (${placeholders})`,
           fixedValues
         );
+        if (entity === 'station_proposals') {
+          await connection.query(
+            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
+            [importSupplementDays, result.insertId]
+          );
+        }
 
         const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, req.user ? req.user.id : null, null, { connection, excludeKeys: Object.keys(keptPost) });
         const mergedDynamic = { ...dynamicData, ...postResults, ...keptPost };
@@ -1563,7 +1600,7 @@ exports.importConfirmDynamic = async (req, res) => {
 
     res.json({
       success: true,
-      data: { imported, failed: 0, failDetails: [], viewId: confirmView ? confirmView.id : null, viewUsage: confirmView ? confirmView.usage : null },
+      data: { imported, failed: 0, failDetails: [], warnDetails: confirmWarnDetails, viewId: confirmView ? confirmView.id : null, viewUsage: confirmView ? confirmView.usage : null },
       message: `Import thành công: ${imported} bản ghi`
     });
   } catch (error) {

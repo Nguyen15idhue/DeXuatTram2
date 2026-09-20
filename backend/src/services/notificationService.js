@@ -12,7 +12,10 @@ const STATUS_TITLES = {
   CANCELLED: 'Đề xuất đã bị hủy',
   CONTRACT_SIGNED: 'Đề xuất ký hợp đồng thành công',
   CONTRACT_FAILED: 'Đề xuất ký hợp đồng thất bại',
-  ARCHIVED: 'Đề xuất đã được lưu trữ'
+  ARCHIVED: 'Đề xuất đã được lưu trữ',
+  PRINCIPLE_APPROVED: 'Đề xuất đã được duyệt chủ trương',
+  SUPPLEMENT_EXPIRING: 'Đề xuất sắp hết hạn bổ sung thông tin',
+  SUPPLEMENT_OVERDUE: 'Đề xuất đã quá hạn bổ sung thông tin'
 };
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';
@@ -77,6 +80,29 @@ exports.markAllRead = async (userId) => {
     'UPDATE notifications SET is_read = 1, read_at = NOW() WHERE user_id = ? AND is_read = 0',
     [userId]
   );
+};
+
+exports.notifyExternal = async (event, payload) => {
+  try {
+    const [rows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'supplement_webhook_url' LIMIT 1");
+    const url = String((rows[0] || {}).value || '').trim();
+    if (!url) return { sent: false, reason: 'empty webhook_url' };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, ...(payload || {}), at: new Date().toISOString() }),
+        signal: ctrl.signal
+      });
+      return { sent: true, status: res.status };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    return { sent: false, reason: e.message || 'webhook error' };
+  }
 };
 
 exports.removeByEntity = async (entityType, entityId) => {

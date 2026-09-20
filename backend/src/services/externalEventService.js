@@ -3,6 +3,7 @@ const proposalLifecycle = require('./proposalLifecycle');
 
 const EVENT_TO_STATUS = {
   APPROVED: 'APPROVED',
+  PRINCIPLE_APPROVED: 'PRINCIPLE_APPROVED',
   ARCHIVED: 'ARCHIVED',
   CONTRACT_SIGNED: 'CONTRACT_SIGNED',
   CONTRACT_FAILED: 'CONTRACT_FAILED',
@@ -73,7 +74,7 @@ exports.applyExternalEvent = async ({ eventId, event, proposalCode, contactCode,
   }
   const toStatus = EVENT_TO_STATUS[event];
   if (!toStatus) {
-    throw err('event không hợp lệ (APPROVED | ARCHIVED | CONTRACT_SIGNED | CONTRACT_FAILED | CANCELLED)', 400);
+    throw err('event không hợp lệ (PRINCIPLE_APPROVED | APPROVED | ARCHIVED | CONTRACT_SIGNED | CONTRACT_FAILED | CANCELLED)', 400);
   }
   if (!proposalCode && !contactCode) {
     throw err('Cần proposal_code hoặc contact_code', 400);

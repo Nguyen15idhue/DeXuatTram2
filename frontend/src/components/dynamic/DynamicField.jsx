@@ -46,7 +46,80 @@ const computeFormula = (expression, rowData) => {
 const TABLE_CELL_STYLE = { padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 13 };
 const TABLE_HEADER_STYLE = { padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, background: '#f8fafc', textAlign: 'left' };
 
-const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {} }) => {
+const parseTableConfig = (sc) => {
+  if (!sc) return { columns: [], min_rows: 0, max_rows: 10 };
+  if (typeof sc === 'object') return sc;
+  try { return JSON.parse(sc); } catch { return { columns: [], min_rows: 0, max_rows: 10 }; }
+};
+
+const getTablePriceRule = (col) => {
+  if (!col || !col.price_rules || !col.price_rules.when_field || !col.autofill_from) return null;
+  return col.price_rules;
+};
+
+const resolveTableCellRef = (col, allFields) => {
+  const base = (() => {
+    if (col.field_id) {
+      const found = (allFields || []).find(f => f.id === col.field_id || f.field_id === col.field_id);
+      if (found) return found;
+    }
+    return {
+      type: col.column_type || 'text',
+      key: col.key,
+      options: (col.options || []).map(o => typeof o === 'object' ? o : { label: o, value: o })
+    };
+  })();
+  return {
+    ...base,
+    type: col.column_type || base.type,
+    data_list_id: col.data_list_id ?? base.data_list_id ?? null,
+    data_list_column: col.data_list_column ?? base.data_list_column ?? null,
+    data_list_label_column: col.data_list_label_column ?? base.data_list_label_column ?? null,
+    parent_column: col.parent_column || null
+  };
+};
+
+const collectTablePriceOptions = ({ columns, col, row, formValues, dataListOptions, resolveCellField }) => {
+  const rule = getTablePriceRule(col);
+  if (!rule) return null;
+  const condVal = (formValues || {})[rule.when_field];
+  const priceCol = (rule.map && Object.prototype.hasOwnProperty.call(rule.map, condVal)) ? rule.map[condVal] : col.autofill_column;
+  if (!priceCol) return null;
+  const srcCol = (columns || []).find((c) => c && c.key === col.autofill_from);
+  if (!srcCol) return null;
+  const srcVal = row ? row[col.autofill_from] : '';
+  if (srcVal === '' || srcVal === null || srcVal === undefined) return [];
+  const ref = resolveCellField(srcCol);
+  if (!ref || !ref.data_list_id || !ref.data_list_column) return null;
+  const map = dataListOptions ? dataListOptions[ref.data_list_id] : null;
+  if (!map || !map.tree || !map.tree[ref.data_list_column]) return null;
+  const bucket = map.tree[ref.data_list_column][srcVal] || [];
+  const seen = new Set();
+  const opts = [];
+  bucket.forEach((r2) => {
+    const v = r2 && r2._raw ? r2._raw[priceCol] : undefined;
+    if (v === null || v === undefined || v === '') return;
+    const k = String(v);
+    if (!seen.has(k)) { seen.add(k); opts.push(v); }
+  });
+  return opts;
+};
+
+const applyTablePriceRulesToRow = ({ columns, row, formValues, dataListOptions, resolveCellField }) => {
+  let next = null;
+  (columns || []).forEach((col) => {
+    if (!getTablePriceRule(col)) return;
+    const opts = collectTablePriceOptions({ columns, col, row: next || row, formValues, dataListOptions, resolveCellField });
+    if (opts === null) return;
+    const cur = (next || row)[col.key];
+    if (!opts.some((v) => String(v) === String(cur))) {
+      next = { ...(next || row), [col.key]: opts.length === 1 ? opts[0] : '' };
+    }
+  });
+  return next;
+};
+
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {}, formValues = {} }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [focusedCell, setFocusedCell] = useState(null);
   const [selectSearch, setSelectSearch] = useState('');
@@ -74,6 +147,27 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     const t = setTimeout(() => searchInputRef.current?.focus(), 0);
     return () => clearTimeout(t);
   }, [dropdownOpen]);
+
+  const tablePriceCondSig = (() => {
+    if (field.type !== 'table') return '';
+    const tc = parseTableConfig(field.source_config);
+    return (tc.columns || []).filter((c) => getTablePriceRule(c)).map((c) => `${c.key}=${String((formValues || {})[getTablePriceRule(c).when_field] ?? '')}`).join('|');
+  })();
+
+  useEffect(() => {
+    if (field.type !== 'table' || disabled || !tablePriceCondSig) return;
+    const tc = parseTableConfig(field.source_config);
+    const cols = tc.columns || [];
+    const rows = Array.isArray(value) ? value : [];
+    const refOf = (c) => resolveTableCellRef(c, allFields);
+    let changed = false;
+    const next = rows.map((row) => {
+      const nr = applyTablePriceRulesToRow({ columns: cols, row, formValues, dataListOptions, resolveCellField: refOf });
+      if (nr) { changed = true; return nr; }
+      return row;
+    });
+    if (changed) onChange(next);
+  }, [tablePriceCondSig, dataListOptions]);
 
   const parsedOptions = (() => {
     let opts = [];
@@ -623,11 +717,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     }
 
     case 'table': {
-      const tc = (() => {
-        if (!field.source_config) return { columns: [], min_rows: 0, max_rows: 10 };
-        if (typeof field.source_config === 'object') return field.source_config;
-        try { return JSON.parse(field.source_config); } catch { return { columns: [], min_rows: 0, max_rows: 10 }; }
-      })();
+      const tc = parseTableConfig(field.source_config);
       const rows = Array.isArray(value) ? value : [];
       const columns = tc.columns || [];
       const minRows = tc.min_rows || 0;
@@ -652,27 +742,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         onChange(next);
       };
 
-      const resolveCellField = (col) => {
-        const base = (() => {
-          if (col.field_id) {
-            const found = allFields.find(f => f.id === col.field_id || f.field_id === col.field_id);
-            if (found) return found;
-          }
-          return {
-            type: col.column_type || 'text',
-            key: col.key,
-            options: (col.options || []).map(o => typeof o === 'object' ? o : { label: o, value: o })
-          };
-        })();
-        return {
-          ...base,
-          type: col.column_type || base.type,
-          data_list_id: col.data_list_id ?? base.data_list_id ?? null,
-          data_list_column: col.data_list_column ?? base.data_list_column ?? null,
-          data_list_label_column: col.data_list_label_column ?? base.data_list_label_column ?? null,
-          parent_column: col.parent_column || null
-        };
-      };
+      const resolveCellField = (col) => resolveTableCellRef(col, allFields);
 
       const getCellOptions = (col, row) => {
         const ref = resolveCellField(col);
@@ -708,7 +778,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
 
       const updateCell = (rowIdx, colKey, val) => {
         if (disabled) return;
-        const updatedRow = { ...rows[rowIdx], [colKey]: val };
+        let updatedRow = { ...rows[rowIdx], [colKey]: val };
 
         columns.forEach(col => {
           if (col.parent_column === colKey) updatedRow[col.key] = '';
@@ -717,13 +787,15 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         const changedCol = columns.find(c => c.key === colKey);
         if (changedCol) {
           columns.forEach(col => {
-            if (col.autofill_from === colKey && col.autofill_column) {
+            if (col.autofill_from === colKey && col.autofill_column && !getTablePriceRule(col)) {
               const raw = findDataListRaw(changedCol, val);
               if (raw && raw[col.autofill_column] !== undefined && raw[col.autofill_column] !== null) {
                 updatedRow[col.key] = raw[col.autofill_column];
               }
             }
           });
+          const priced = applyTablePriceRulesToRow({ columns, row: updatedRow, formValues, dataListOptions, resolveCellField });
+          if (priced) updatedRow = priced;
         }
 
         const recomputedRow = columns.reduce((r, col) => {
@@ -773,9 +845,30 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                     const refField = resolveCellField(col);
                     const cellOptions = getCellOptions(col, row);
                     const cellDisabled = disabled || hasFormula;
+                    const priceOpts = getTablePriceRule(col)
+                      ? collectTablePriceOptions({ columns, col, row, formValues, dataListOptions, resolveCellField })
+                      : null;
+                    const priceValid = priceOpts !== null && priceOpts.some((v) => String(v) === String(cellVal));
                     return (
                       <td key={col.key} style={{ ...TABLE_CELL_STYLE, background: hasFormula ? '#f0fdf4' : undefined }}>
-                        {renderTableCell(refField, cellVal, (val) => updateCell(rowIdx, col.key, val), cellDisabled, cellOptions, `${rowIdx}:${col.key}`, col)}
+                        {priceOpts !== null ? (
+                          <select
+                            className="form-control"
+                            value={priceValid ? cellVal : ''}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              updateCell(rowIdx, col.key, raw === '' ? '' : (raw !== '' && !isNaN(Number(raw)) ? Number(raw) : raw));
+                            }}
+                            disabled={cellDisabled || priceOpts.length <= 1}
+                            title={priceOpts.length <= 1 ? 'Tự động theo điều kiện giá' : 'Chọn giá'}
+                            style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
+                          >
+                            <option value="">--</option>
+                            {priceOpts.map((v, i) => (
+                              <option key={i} value={v}>{typeof v === 'number' ? v.toLocaleString() : v}</option>
+                            ))}
+                          </select>
+                        ) : renderTableCell(refField, cellVal, (val) => updateCell(rowIdx, col.key, val), cellDisabled, cellOptions, `${rowIdx}:${col.key}`, col)}
                         {hasFormula && <input type="hidden" value={cellVal} />}
                       </td>
                     );

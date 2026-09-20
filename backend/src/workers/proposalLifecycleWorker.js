@@ -124,6 +124,95 @@ const processFailed = async (cfg) => {
   return acted;
 };
 
+const deadlineNotified = async (proposalId, action, deadlineIso) => {
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS n FROM proposal_activity_logs
+      WHERE proposal_id = ? AND action = ?
+        AND JSON_UNQUOTE(JSON_EXTRACT(changed_fields, '$.deadline')) = ?`,
+    [proposalId, action, deadlineIso]
+  );
+  return rows[0].n > 0;
+};
+
+const notifyChain = async (proposal, type, title, message) => {
+  const userIds = new Set();
+  if (proposal.user_id) userIds.add(Number(proposal.user_id));
+  try {
+    let pid = null;
+    const [owner] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [proposal.user_id]);
+    pid = owner.length > 0 ? owner[0].parent_id : null;
+    let guard = 0;
+    while (pid && guard < 10) {
+      guard++;
+      userIds.add(Number(pid));
+      const [up] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [pid]);
+      pid = up.length > 0 ? up[0].parent_id : null;
+    }
+  } catch { /* silent */ }
+  try {
+    const [admins] = await pool.query(`SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'`);
+    admins.forEach(a => userIds.add(Number(a.id)));
+  } catch { /* silent */ }
+  for (const uid of userIds) {
+    if (!uid) continue;
+    try {
+      await notificationService.create({
+        userId: uid, type, title, message,
+        entityType: 'station_proposals', entityId: proposal.id, createdBy: null
+      });
+    } catch { /* silent */ }
+  }
+  try {
+    await notificationService.notifyExternal(type, {
+      proposal_id: proposal.id, status: proposal.status,
+      deadline: proposal.supplement_deadline_at, title, message
+    });
+  } catch { /* silent */ }
+};
+
+const processDeadlines = async () => {
+  const [rows] = await pool.query(
+    `SELECT id, user_id, status, supplement_deadline_at FROM station_proposals
+      WHERE status IN ('PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED')
+        AND supplement_deadline_at IS NOT NULL`
+  );
+  let acted = 0;
+  const now = Date.now();
+  for (const p of rows) {
+    try {
+      const deadline = new Date(p.supplement_deadline_at).getTime();
+      if (Number.isNaN(deadline)) continue;
+      const iso = new Date(deadline).toISOString();
+      const diff = deadline - now;
+      if (diff > 0 && diff <= 24 * 3600 * 1000) {
+        if (await deadlineNotified(p.id, 'deadline_expiring', iso)) continue;
+        const left = Math.ceil(diff / 3600000);
+        await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
+          `Đề xuất #${p.id} (${p.status}) còn khoảng ${left} giờ để bổ sung thông tin`);
+        await proposalLifecycle.logActivity({
+          proposalId: p.id, action: 'deadline_expiring',
+          fromStatus: p.status, toStatus: p.status,
+          changedFields: { deadline: iso }, source: 'system_auto'
+        });
+        acted++;
+      } else if (diff <= 0) {
+        if (await deadlineNotified(p.id, 'deadline_overdue', iso)) continue;
+        await notifyChain(p, 'SUPPLEMENT_OVERDUE', notificationService.statusTitle('SUPPLEMENT_OVERDUE'),
+          `Đề xuất #${p.id} (${p.status}) đã quá hạn bổ sung thông tin`);
+        await proposalLifecycle.logActivity({
+          proposalId: p.id, action: 'deadline_overdue',
+          fromStatus: p.status, toStatus: p.status,
+          changedFields: { deadline: iso }, source: 'system_auto'
+        });
+        acted++;
+      }
+    } catch (err) {
+      console.error(`[LifecycleWorker] deadline #${p.id} loi: ${err.message}`);
+    }
+  }
+  return acted;
+};
+
 const processSigned = async (cfg) => {
   const [rows] = await pool.query(
     `SELECT id, user_id FROM station_proposals
@@ -167,8 +256,9 @@ const tick = async () => {
     lastRunMinute = key;
     const failed = await processFailed(cfg);
     const signed = await processSigned(cfg);
-    if (failed > 0 || signed > 0) {
-      console.log(`[LifecycleWorker] tick: ${failed} cancel, ${signed} station`);
+    const deadlines = await processDeadlines();
+    if (failed > 0 || signed > 0 || deadlines > 0) {
+      console.log(`[LifecycleWorker] tick: ${failed} cancel, ${signed} station, ${deadlines} deadline`);
     }
   } catch (err) {
     console.error('[LifecycleWorker] tick error:', err.message);
@@ -185,3 +275,4 @@ exports.start = async () => {
 exports.tick = tick;
 exports.processFailed = processFailed;
 exports.processSigned = processSigned;
+exports.processDeadlines = processDeadlines;

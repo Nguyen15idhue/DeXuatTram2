@@ -11,6 +11,7 @@ import { MapPinned, History, AlertTriangle } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import useDataListMap from '../../hooks/useDataListMap';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import DeadlineCountdown from '../DeadlineCountdown';
 import Toast from '../Toast';
 
 const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
@@ -515,6 +516,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         allFields={allFields}
         dataListOptions={dataListOptions}
         disabled={userLocked}
+        formValues={formData}
       />
     ) : (
       <FieldRenderer field={field} value={value} entity={entity} entityId={record.id} dataListOptions={dataListOptions} expandTable />
@@ -530,8 +532,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           const label = field.field_label || field.label;
           return (
             <div key={key} className="popup-field-row">
-              <span className="popup-field-label">{label}</span>
-              <span className="popup-field-value">{renderFieldInput(field)}</span>
+              <span className="popup-field-label">{label}{field.required && <span style={{ color: '#dc2626' }}> *</span>}</span>
+              {mode === 'view' ? (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>{renderFieldInput(field)}</div>
+              ) : (
+                <span className="popup-field-value">{renderFieldInput(field)}</span>
+              )}
             </div>
           );
         })}
@@ -550,8 +556,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           return (
             <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
               <div className="dynamic-form-field">
-                <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}</label>
-                {renderFieldInput(field)}
+                <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}{field.required && <span style={{ color: '#dc2626' }}> *</span>}</label>
+                {mode === 'view' ? (
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>{renderFieldInput(field)}</div>
+                ) : (
+                  renderFieldInput(field)
+                )}
               </div>
             </div>
           );
@@ -567,7 +577,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     const activeId = activeTabs[path] || tabs[0].id;
     return (
       <fieldset key={node.id || path} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
-        {node.title && <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>{node.title}</legend>}
+        {node.title && <legend className="form-section-title">{node.title}</legend>}
         <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e2e8f0', marginBottom: 12, overflowX: 'auto' }}>
           {tabs.map(tab => {
             const isActive = tab.id === activeId;
@@ -615,7 +625,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     }
     return (
       <fieldset key={sec.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
-        {sec.title && <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>{sec.title}</legend>}
+        {sec.title && <legend className="form-section-title">{sec.title}</legend>}
         {renderSectionRows(sec)}
       </fieldset>
     );
@@ -645,6 +655,8 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         </div>
 
         {error && <div className="error-message">{error}</div>}
+
+        <DeadlineCountdown deadline={record.supplement_deadline_at} status={record.status} />
 
         <div className="popup-body">
           {entity === 'station_proposals' && record?.status === 'REJECTED' && record?.reject_reason && (

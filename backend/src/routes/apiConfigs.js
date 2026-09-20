@@ -318,7 +318,7 @@ router.post('/:id/webhook-secret/rotate', requireAuth, requireSuperAdmin, apiCon
  *             properties:
  *               event:
  *                 type: string
-                 *                 enum: [APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
+                 *                 enum: [PRINCIPLE_APPROVED, APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
  *               proposal_code:
  *                 type: string
  *               contact_code:

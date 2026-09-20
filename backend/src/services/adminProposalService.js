@@ -74,7 +74,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status, p.station_id,
-            p.reject_reason, p.reviewed_by, p.reviewed_at,
+            p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at,
             u.full_name as user_name, u.email as user_email
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
@@ -149,6 +149,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, existing.length > 0 ? existing[0].user_id : null, null, current);
+  await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, fieldDefs).catch(() => {});
   const mergedDynamic = { ...current, ...dynamicData };
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 

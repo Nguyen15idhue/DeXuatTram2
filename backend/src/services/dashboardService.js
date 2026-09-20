@@ -42,7 +42,7 @@ exports.getDashboardStats = async (scope = {}) => {
     `SELECT COUNT(*) as rejectedProposals FROM station_proposals WHERE status = 'REJECTED'${inBranch('user_id')}`,
     branchParams()
   );
-  const extraStatuses = ['REVIEWING', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
+  const extraStatuses = ['REVIEWING', 'PRINCIPLE_APPROVED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
   const extraCounts = {};
   for (const st of extraStatuses) {
     const [[row]] = await pool.query(

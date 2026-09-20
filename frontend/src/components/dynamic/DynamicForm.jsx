@@ -741,6 +741,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         allowedOptions={optionAllowlist[field.key] || null}
         allFields={allEntityFields.length > 0 ? allEntityFields : fields}
         dataListOptions={dataListOptions}
+        formValues={formData}
       />
     );
   };
@@ -767,6 +768,15 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     return fieldInCell[`${rowId}-${colIndex}`] || null;
   };
 
+  const isFieldFilled = (key) => {
+    if (purpose !== 'create') return false;
+    const v = formData[key];
+    if (v === undefined || v === null || v === '') return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'object') return Object.keys(v).length > 0;
+    return true;
+  };
+
   const renderLayoutForm = () => {
     const rowsToRender = hasSections ? null : layoutConfig.rows;
     const sectionMap = buildSectionMap(layoutConfig);
@@ -784,7 +794,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             }
             return (
               <div key={colIdx} className="form-cell-content">
-                <div className="dynamic-form-field" data-field-key={cellField.key}>
+                <div className={`dynamic-form-field${isFieldFilled(cellField.key) ? ' is-filled' : ''}`} data-field-key={cellField.key}>
                   <label>
                     {cellField.labelOverride || cellField.label}
                     {cellField.required && <span className="text-red-600"> *</span>}
@@ -805,7 +815,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     const renderSectionBlock = (section) => (
       <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
         {section.title && (
-          <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
+          <legend className="form-section-title">
             {section.title}
           </legend>
         )}
@@ -828,11 +838,11 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       const activeId = activeTabs[path] || tabs[0].id;
       return (
         <fieldset key={node.id || path} className="form-section form-tabs" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
-          {node.title && (
-            <legend style={{ fontWeight: 600, fontSize: 14, padding: '0 8px', color: '#374151' }}>
-              {node.title}
-            </legend>
-          )}
+        {node.title && (
+          <legend className="form-section-title">
+            {node.title}
+          </legend>
+        )}
           <div className="form-tabs-bar" role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e2e8f0', marginBottom: 12, overflowX: 'auto' }}>
             {tabs.map((tab) => {
               const isActive = tab.id === activeId;
@@ -893,7 +903,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).map(field => {
               const colSpan = field.config?.colSpan || 1;
               return (
-                <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+                <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
                   <label>
                     {field.labelOverride || field.label}
                     {field.required && <span className="text-red-600"> *</span>}
@@ -916,7 +926,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         {fields.filter(f => isFieldVisible(f)).map(field => {
           const colSpan = field.config?.colSpan || 1;
           return (
-            <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+            <div key={field.id || field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
               <label>
                 {field.labelOverride || field.label}
                 {field.required && <span className="text-red-600"> *</span>}

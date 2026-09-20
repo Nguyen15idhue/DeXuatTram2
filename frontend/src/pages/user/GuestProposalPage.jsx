@@ -25,7 +25,6 @@ const GuestProposalPage = () => {
   const [locating, setLocating] = useState(false);
   const [mapLink, setMapLink] = useState('');
   const [resolvingLink, setResolvingLink] = useState(false);
-  const [nearbyWarning, setNearbyWarning] = useState('');
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -76,32 +75,6 @@ const GuestProposalPage = () => {
       }
     } catch { /* silent */ }
   };
-
-  useEffect(() => {
-    const lat = Number(mapCoords.latitude);
-    const lng = Number(mapCoords.longitude);
-    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-      setNearbyWarning('');
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const nearby = await proposalService.checkNearbyPublic({ latitude: lat, longitude: lng, radius_m: 200 });
-        if (cancelled) return;
-        if (nearby.success && nearby.data && nearby.data.is_duplicate) {
-          const n = nearby.data.nearest;
-          const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-          setNearbyWarning(`Cảnh báo: vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Bạn vẫn có thể nhập form nhưng sẽ không lưu được.`);
-        } else {
-          setNearbyWarning('');
-        }
-      } catch {
-        if (!cancelled) setNearbyWarning('');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [mapCoords.latitude, mapCoords.longitude]);
 
   const handleMyLocation = () => {
     if (!navigator.geolocation) {
@@ -193,7 +166,13 @@ const GuestProposalPage = () => {
       if (res.success) {
         setResult(res.data);
         saveCode(res.data);
-        setToast({ message: 'Gửi đề xuất thành công! Hãy lưu lại mã tra cứu.', type: 'success' });
+        const warns = res.warnings || [];
+        setToast({
+          message: warns.length > 0
+            ? `Gửi đề xuất thành công! Hãy lưu lại mã tra cứu. Lưu ý: ${warns.join('; ')}`
+            : 'Gửi đề xuất thành công! Hãy lưu lại mã tra cứu.',
+          type: warns.length > 0 ? 'warning' : 'success'
+        });
         resetCaptcha();
       } else {
         throw new Error(res.message || 'Gửi đề xuất thất bại');
@@ -298,7 +277,6 @@ const GuestProposalPage = () => {
                 Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
               </div>
             )}
-            {nearbyWarning && <div className="alert alert-warning text-sm mt-2">{nearbyWarning}</div>}
           </div>
           <div>
             <label className="text-sm font-medium block mb-2">2. Nhập thông tin</label>

@@ -54,8 +54,8 @@ exports.checkNearby = async (req, res) => {
 exports.createGuest = async (req, res) => {
   try {
     const ip = req.ip || req.connection?.remoteAddress || null;
-    const proposal = await proposalService.createGuestProposal(req.body, ip);
-    res.status(201).json({ success: true, data: proposal, message: 'Gửi đề xuất thành công' });
+    const { proposal, warnings } = await proposalService.createGuestProposal(req.body, ip);
+    res.status(201).json({ success: true, data: proposal, warnings: warnings || [], message: 'Gửi đề xuất thành công' });
   } catch (error) {
     console.error('Create guest proposal error:', error);
     if (error.statusCode) {

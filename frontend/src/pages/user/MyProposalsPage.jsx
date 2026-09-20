@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { myProposalService, excelService, proposalService, formService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
+import DeadlineCountdown from '../../components/DeadlineCountdown';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
@@ -53,7 +54,6 @@ const MyProposalsPage = () => {
   const [mapLink, setMapLink] = useState('');
   const [resolvingLink, setResolvingLink] = useState(false);
   const [linkError, setLinkError] = useState('');
-  const [nearbyWarning, setNearbyWarning] = useState('');
   const [dupMode, setDupMode] = useState(false);
   const dupRef = useRef(null);
   const tableRef = useRef(null);
@@ -245,36 +245,6 @@ const MyProposalsPage = () => {
     }
   };
 
-  useEffect(() => {
-    if (!showCreateForm) {
-      setNearbyWarning('');
-      return;
-    }
-    const lat = Number(mapCoords.latitude);
-    const lng = Number(mapCoords.longitude);
-    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-      setNearbyWarning('');
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const nearby = await proposalService.checkNearby({ latitude: lat, longitude: lng, radius_m: 200 }, token);
-        if (cancelled) return;
-        if (nearby.success && nearby.data && nearby.data.is_duplicate) {
-          const n = nearby.data.nearest;
-          const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-          setNearbyWarning(`Cảnh báo: vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Bạn vẫn có thể nhập form nhưng sẽ không lưu được.`);
-        } else {
-          setNearbyWarning('');
-        }
-      } catch {
-        if (!cancelled) setNearbyWarning('');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [showCreateForm, mapCoords.latitude, mapCoords.longitude, token]);
-
   const handleCreateProposal = async (formData) => {
     const { latitude: fLat, longitude: fLng, owner_name, full_name, owner_phone, phone, address, area, land_type, description, ...dynamicRest } = formData || {};
     const submitData = {
@@ -353,8 +323,12 @@ const MyProposalsPage = () => {
       setImportLoading(true);
       const res = await excelService.confirmImport('station_proposals', importPreview.rows, token);
       if (res.success) {
+        const warns = (res.data && res.data.warnDetails) || [];
         setShowImport(false);
-        setToast({ message: res.message, type: 'success' });
+        setToast({
+          message: warns.length > 0 ? `${res.message} (có ${warns.length} dòng cảnh báo trùng vị trí)` : res.message,
+          type: warns.length > 0 ? 'warning' : 'success'
+        });
         loadProposals(1);
       } else {
         setImportFailures((res.data && res.data.failDetails) || []);
@@ -370,7 +344,7 @@ const MyProposalsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
-      {(row.status === 'PENDING' || row.status === 'REJECTED') && (
+      {(row.status === 'PENDING' || row.status === 'REJECTED' || row.status === 'PRINCIPLE_APPROVED') && (
         <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
       )}
       {row.status === 'PENDING' && (
@@ -519,11 +493,10 @@ const MyProposalsPage = () => {
                 {mapCoords.latitude && mapCoords.longitude && (
                   <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
                     <MapPin size={14} />
-                    Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
-                  </div>
-                )}
-                {nearbyWarning && <div className="alert alert-warning text-sm mt-2">{nearbyWarning}</div>}
-              </div>
+                     Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
+                   </div>
+                 )}
+               </div>
               <DynamicForm
                 entity="station_proposals"
                 purpose="create"
@@ -597,8 +570,14 @@ const MyProposalsPage = () => {
                       <div className="stat-value text-lg text-error">{importPreview.errorRows}</div>
                     </div>
                   )}
+                  {(importPreview.warningRows || 0) > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-warning">Cảnh báo trùng</div>
+                      <div className="stat-value text-lg text-warning">{importPreview.warningRows}</div>
+                    </div>
+                  )}
                 </div>
-                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} warnings={importPreview.warnings} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
@@ -625,7 +604,7 @@ const MyProposalsPage = () => {
           recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
           viewId={popup.entity === 'stations' ? undefined : proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED'].includes(popup.record.status))}
+          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED', 'PRINCIPLE_APPROVED'].includes(popup.record.status))}
           updateService={isAdmin ? undefined : myProposalService}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
@@ -649,6 +628,7 @@ const MyProposalsPage = () => {
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}
         onColumnFiltersChange={handleColumnFiltersChange}
+        cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} status={row.status} compact /> : null)}
       />
 
       <Pagination

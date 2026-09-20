@@ -7,6 +7,7 @@ import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
+import DeadlineCountdown from '../../components/DeadlineCountdown';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import ProposalActivityPopup from '../../components/admin/ProposalActivityPopup';
 import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
@@ -254,7 +255,7 @@ const AdminProposalsPage = () => {
       setApproveModal({ open: true, id, saving: false, warnings: unlinked });
       return;
     }
-    if (['APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
+    if (['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
       setTransitionModal({ open: true, id, to: newStatus, saving: false });
       return;
     }
@@ -604,7 +605,11 @@ const AdminProposalsPage = () => {
       setError('');
       const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId, jobId, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
       if (res.success) {
-        setToast({ message: res.message, type: 'success' });
+        const warns = (res.data && res.data.warnDetails) || [];
+        setToast({
+          message: warns.length > 0 ? `${res.message} (có ${warns.length} dòng cảnh báo trùng vị trí)` : res.message,
+          type: warns.length > 0 ? 'warning' : 'success'
+        });
         setShowImport(false);
         loadProposals(1);
       } else {
@@ -877,6 +882,10 @@ const AdminProposalsPage = () => {
       case 'REVIEWING':
         return (
           <>
+            <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('PRINCIPLE_APPROVED')} title="Duyệt chủ trương (sang Duyệt chủ trương)">
+              <CheckCircle2 size={12} />
+              Duyệt chủ trương
+            </button>
             <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="1Office báo đã duyệt (webhook)">
               <FileSignature size={12} />
               Đã duyệt BCĐX
@@ -886,6 +895,13 @@ const AdminProposalsPage = () => {
               Lưu trữ
             </button>
           </>
+        );
+      case 'PRINCIPLE_APPROVED':
+        return (
+          <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="1Office báo đã duyệt (webhook)">
+            <FileSignature size={12} />
+            Đã duyệt BCĐX
+          </button>
         );
       case 'APPROVED':
         return (
@@ -937,7 +953,6 @@ const AdminProposalsPage = () => {
         {label}
       </button>
     );
-    items.push(item('view', <Eye size={14} />, 'Xem chi tiết', () => navigate(`/admin/proposals/view=${row.id}`)));
     if (isAdmin) {
       items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
     }
@@ -955,7 +970,7 @@ const AdminProposalsPage = () => {
     if (row.status === 'APPROVED') {
       dangerItems.push(item('signfail', <X size={14} />, 'Ký thất bại', () => go('CONTRACT_FAILED'), true));
     }
-    if (['PENDING', 'REVIEWING', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(row.status)) {
+    if (['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(row.status)) {
       dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
     }
     dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));
@@ -1010,11 +1025,12 @@ const AdminProposalsPage = () => {
 
   const renderActions = (row) => (
     <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
+      <button className="btn btn-primary btn-xs gap-1 shrink-0" onClick={() => navigate(`/admin/proposals/view=${row.id}`)} title="Xem chi tiết">
+        <Eye size={12} />
+        Xem
+      </button>
       {renderPrimaryAction(row)}
       {renderStatusActions(row)}
-      <button className="btn btn-primary btn-xs btn-square shrink-0" onClick={() => navigate(`/admin/proposals/view=${row.id}`)} title="Xem chi tiết">
-        <Eye size={14} />
-      </button>
       <button className="btn btn-ghost btn-xs btn-square shrink-0" onClick={(e) => openRowMenu(e, row.id)} title="Thao tác khác">
         <MoreVertical size={14} />
       </button>
@@ -1695,6 +1711,7 @@ const AdminProposalsPage = () => {
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
         onColumnFiltersChange={handleColumnFiltersChange}
+        cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} status={row.status} compact /> : null)}
       />
 
       <Pagination
@@ -1785,6 +1802,12 @@ const AdminProposalsPage = () => {
                       <div className="stat-value text-lg text-error">{importPreview.errorRows}</div>
                     </div>
                   )}
+                  {(importPreview.warningRows || 0) > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-warning">Cảnh báo trùng</div>
+                      <div className="stat-value text-lg text-warning">{importPreview.warningRows}</div>
+                    </div>
+                  )}
                 </div>
 
                 {importPreview.detection && (
@@ -1841,7 +1864,7 @@ const AdminProposalsPage = () => {
                   </div>
                 )}
 
-                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} warnings={importPreview.warnings} />
                 <div className="divider text-xs opacity-60 my-1">Tùy chọn kiểm tra</div>
                 <label className="label cursor-pointer justify-start gap-3">
                   <input
@@ -1853,7 +1876,7 @@ const AdminProposalsPage = () => {
                   />
                   <span className="label-text">
                     Check trùng tọa độ với hệ thống
-                    <span className="block text-xs opacity-70">So sánh với trạm/đề xuất đã có trên hệ thống (bán kính 200m)</span>
+                    <span className="block text-xs opacity-70">So sánh với trạm/đề xuất đã có trên hệ thống (bán kính 200m) — chỉ cảnh báo, vẫn cho import</span>
                   </span>
                 </label>
                 <label className="label cursor-pointer justify-start gap-3">
@@ -1866,7 +1889,7 @@ const AdminProposalsPage = () => {
                   />
                   <span className="label-text">
                     Check trùng tọa độ nội bộ file Excel
-                    <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m)</span>
+                    <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m) — chỉ cảnh báo, vẫn cho import</span>
                   </span>
                 </label>
                 {importLoading && importProgress && (

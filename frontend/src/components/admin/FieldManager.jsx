@@ -138,8 +138,10 @@ const FieldManager = () => {
   const [filterType, setFilterType] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [dataLists, setDataLists] = useState([]);
+
   const [entityFields, setEntityFields] = useState([]);
 
+  const [expandedTblCols, setExpandedTblCols] = useState({});
   const defaultForm = {
     entity: 'stations', key: '', label: '', type: 'text', source_type: 'json',
     required: false, placeholder: '', help_text: '',
@@ -818,9 +820,25 @@ const FieldManager = () => {
                       </div>
                     </div>
                     <h4 style={{ marginTop: 12, marginBottom: 8 }}>Cấu hình cột</h4>
-                    {(form.table_config.columns || []).map((col, idx) => (
+                    {(form.table_config.columns || []).map((col, idx) => {
+                      const expanded = !!expandedTblCols[idx];
+                      const tblCols = form.table_config.columns || [];
+                      const srcCol = tblCols.find(c => c.key === col.autofill_from);
+                      const srcHasDl = !!(srcCol && srcCol.data_list_id);
+                      const badges = [];
+                      if (col.data_list_id) badges.push(['DL', '#e0e7ff', '#3730a3']);
+                      if (!col.data_list_id && (col.data_list_column || col.parent_column)) badges.push(['DL ẩn', '#fef3c7', '#92400e']);
+                      if (col.parent_column) badges.push(['Cascade', '#dcfce7', '#166534']);
+                      if (col.autofill_from) badges.push(['Auto', '#ffedd5', '#9a3412']);
+                      if (col.formula) badges.push(['Fx', '#f3e8ff', '#6b21a8']);
+                      if (col.price_rules && col.price_rules.when_field) badges.push(['Giá ĐK', '#e0f2fe', '#075985']);
+                      if (col.footer_formula) badges.push([col.footer_formula, '#f1f5f9', '#334155']);
+                      return (
                       <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <button type="button" className="btn btn-sm btn-ghost" style={{ minWidth: 28, padding: '0 6px' }} onClick={() => setExpandedTblCols(prev => ({ ...prev, [idx]: !prev[idx] }))} title={expanded ? 'Thu gọn' : 'Mở rộng'}>
+                            {expanded ? '▾' : '▸'}
+                          </button>
                           <span style={{ fontSize: 12, fontWeight: 600, minWidth: 30 }}>#{idx + 1}</span>
                           <select value={col.field_id || ''} onChange={(e) => {
                             const refField = entityFields.find(f => f.id === parseInt(e.target.value));
@@ -857,7 +875,13 @@ const FieldManager = () => {
                             const newCols = (form.table_config.columns || []).filter((_, i) => i !== idx);
                             updateForm('table_config', { ...form.table_config, columns: newCols });
                           }} title="Xóa cột">✕</button>
+                          <span style={{ fontSize: 12, fontWeight: 600 }}>{col.label || col.key || '(chưa đặt tên)'}</span>
+                          {badges.map(([t, bg, fg], i) => (
+                            <span key={i} style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: bg, color: fg }}>{t}</span>
+                          ))}
                         </div>
+                        {expanded && (
+                        <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                           <input type="text" className="form-control" placeholder="Key (VD: so_luong)" value={col.key || ''}
                             onChange={(e) => {
@@ -900,7 +924,7 @@ const FieldManager = () => {
                             />
                           </div>
                         )}
-                        {!col.field_id && (col.column_type === 'select') && (
+                        {!col.field_id && (col.column_type === 'select') && !col.data_list_id && (
                           <div style={{ marginTop: 4, fontSize: 12 }}>
                             <label>Options (cách nhau bởi dấu phẩy):</label>
                             <input type="text" className="form-control" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
@@ -910,6 +934,11 @@ const FieldManager = () => {
                                 newCols[idx] = { ...newCols[idx], options: opts };
                                 updateForm('table_config', { ...form.table_config, columns: newCols });
                               }} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }} />
+                          </div>
+                        )}
+                        {!col.field_id && (col.column_type === 'select') && !!col.data_list_id && (
+                          <div style={{ marginTop: 4, fontSize: 11, color: '#888' }}>
+                            Đang lấy options từ DataList — ô nhập tay đã ẩn.
                           </div>
                         )}
                         <div style={{ marginTop: 4, fontSize: 12 }}>
@@ -971,7 +1000,7 @@ const FieldManager = () => {
                                 }} style={INPUT_STYLE} />
                               </div>
                             )}
-                            {(form.table_config.columns || []).length > 1 && (
+                            {!!col.data_list_id && (form.table_config.columns || []).length > 1 && (
                               <div className="form-group" style={FIELD_GROUP_STYLE}>
                                 <label>Cột cha (cascade)</label>
                                 <select value={col.parent_column || ''} onChange={(e) => {
@@ -984,7 +1013,7 @@ const FieldManager = () => {
                                 </select>
                               </div>
                             )}
-                            {(form.table_config.columns || []).length > 1 && (
+                            {(form.table_config.columns || []).length > 1 && !col.formula && (
                               <div className="form-group" style={FIELD_GROUP_STYLE}>
                                 <label>Tự điền từ cột</label>
                                 <select value={col.autofill_from || ''} onChange={(e) => {
@@ -997,14 +1026,73 @@ const FieldManager = () => {
                                 </select>
                               </div>
                             )}
-                            {!!col.autofill_from && (
+                            {!!col.autofill_from && srcHasDl && (
                               <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                <label>Lấy cột DataList</label>
+                                <label>Lấy cột từ DataList của cột nguồn</label>
                                 <input type="text" placeholder="VD: gia" value={col.autofill_column || ''} onChange={(e) => {
                                   const newCols = [...(form.table_config.columns || [])];
                                   newCols[idx] = { ...newCols[idx], autofill_column: e.target.value };
                                   updateForm('table_config', { ...form.table_config, columns: newCols });
                                 }} style={INPUT_STYLE} />
+                              </div>
+                            )}
+                            {!!col.autofill_from && !srcHasDl && (
+                              <div className="form-group" style={FIELD_GROUP_STYLE}>
+                                <span style={{ fontSize: 11, color: '#b45309' }}>Cột nguồn chưa gắn DataList nên tự điền không chạy.</span>
+                              </div>
+                            )}
+                            {!!col.autofill_from && (
+                              <div className="form-group" style={{ ...FIELD_GROUP_STYLE, gridColumn: '1 / -1' }}>
+                                <label>Giá theo điều kiện (để trống = luôn lấy cột trên)</label>
+                                <input type="text" placeholder="Key field điều kiện ngoài table, VD: che_do_gia" value={(col.price_rules && col.price_rules.when_field) || ''} onChange={(e) => {
+                                  const newCols = [...(form.table_config.columns || [])];
+                                  const wf = e.target.value.trim();
+                                  const prev = newCols[idx].price_rules || {};
+                                  newCols[idx] = { ...newCols[idx], price_rules: wf ? { when_field: wf, map: prev.map || {} } : null };
+                                  updateForm('table_config', { ...form.table_config, columns: newCols });
+                                }} style={INPUT_STYLE} />
+                                {!!(col.price_rules && col.price_rules.when_field) && (
+                                  <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {Object.entries((col.price_rules && col.price_rules.map) || {}).map(([whenVal, priceCol]) => (
+                                      <div key={whenVal} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                        <input type="text" placeholder="Giá trị ĐK, VD: a" value={whenVal} disabled style={{ ...INPUT_STYLE, flex: 1 }} />
+                                        <span style={{ fontSize: 11, color: '#888' }}>→</span>
+                                        <input type="text" placeholder="Cột DataList, VD: gia_km" value={priceCol || ''} onChange={(e) => {
+                                          const newCols = [...(form.table_config.columns || [])];
+                                          const map = { ...((newCols[idx].price_rules && newCols[idx].price_rules.map) || {}) };
+                                          map[whenVal] = e.target.value.trim();
+                                          newCols[idx] = { ...newCols[idx], price_rules: { ...newCols[idx].price_rules, map } };
+                                          updateForm('table_config', { ...form.table_config, columns: newCols });
+                                        }} style={{ ...INPUT_STYLE, flex: 1 }} />
+                                        <button type="button" className="btn btn-sm btn-delete" onClick={() => {
+                                          const newCols = [...(form.table_config.columns || [])];
+                                          const map = { ...((newCols[idx].price_rules && newCols[idx].price_rules.map) || {}) };
+                                          delete map[whenVal];
+                                          newCols[idx] = { ...newCols[idx], price_rules: { ...newCols[idx].price_rules, map } };
+                                          updateForm('table_config', { ...form.table_config, columns: newCols });
+                                        }} title="Xóa rule">✕</button>
+                                      </div>
+                                    ))}
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                      <input type="text" id={`price-rule-newval-${idx}`} placeholder="Thêm giá trị ĐK, VD: b" style={{ ...INPUT_STYLE, flex: 1 }} />
+                                      <span style={{ fontSize: 11, color: '#888' }}>→</span>
+                                      <input type="text" id={`price-rule-newcol-${idx}`} placeholder="Cột DataList, VD: gia_niem_yet" style={{ ...INPUT_STYLE, flex: 1 }} />
+                                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => {
+                                        const vEl = document.getElementById(`price-rule-newval-${idx}`);
+                                        const cEl = document.getElementById(`price-rule-newcol-${idx}`);
+                                        const v = (vEl && vEl.value.trim()) || '';
+                                        const c = (cEl && cEl.value.trim()) || '';
+                                        if (!v || !c) return;
+                                        const newCols = [...(form.table_config.columns || [])];
+                                        const map = { ...((newCols[idx].price_rules && newCols[idx].price_rules.map) || {}) };
+                                        map[v] = c;
+                                        newCols[idx] = { ...newCols[idx], price_rules: { ...newCols[idx].price_rules, map } };
+                                        updateForm('table_config', { ...form.table_config, columns: newCols });
+                                      }}>+ Thêm</button>
+                                    </div>
+                                    <span style={{ fontSize: 11, color: '#888' }}>Ô giá thành select: 1 giá trị → tự chọn, nhiều giá trị → chọn tay. Giá trị điều kiện khác → dùng cột "Lấy cột từ DataList của cột nguồn".</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1015,11 +1103,15 @@ const FieldManager = () => {
                             : `Tạo thủ công — type: ${col.column_type || 'text'}, key: ${col.key || '(chưa có)'}`
                           }
                         </div>
+                        </>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => {
                       const newCols = [...(form.table_config.columns || []), { field_id: null, key: '', label: '', column_type: 'text', width: 120, required: false, options: [] }];
                       updateForm('table_config', { ...form.table_config, columns: newCols });
+                      setExpandedTblCols(prev => ({ ...prev, [newCols.length - 1]: true }));
                     }}>+ Thêm cột</button>
                   </div>
                 )}

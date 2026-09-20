@@ -258,6 +258,74 @@ const parseSourceConfig = (val) => {
 
 exports.parseSourceConfig = parseSourceConfig;
 
+exports.resolveTablePrices = async (formValues, dynamicData, fieldDefs) => {
+  const flags = [];
+  const tables = (fieldDefs || []).filter(f => f && f.type === 'table' && f.source_type === 'json');
+  if (tables.length === 0) return flags;
+  const dataListService = require('./dataListService');
+  const dlCache = {};
+  const getDlRows = async (dlId) => {
+    if (!dlId) return [];
+    if (!dlCache[dlId]) {
+      try {
+        const dl = await dataListService.getById(Number(dlId));
+        dlCache[dlId] = (dl && dl.rows ? dl.rows : []).map(r => (r.data && typeof r.data === 'object' ? r.data : {}));
+      } catch { dlCache[dlId] = []; }
+    }
+    return dlCache[dlId];
+  };
+  for (const f of tables) {
+    const tc = parseSourceConfig(f.source_config);
+    const priceCols = (tc.columns || []).filter(c => c && c.price_rules && c.price_rules.when_field && c.autofill_from);
+    if (priceCols.length === 0) continue;
+    const rows = dynamicData[f.key];
+    if (!Array.isArray(rows)) continue;
+    const fv = { ...(formValues || {}), ...(dynamicData || {}) };
+    for (const pc of priceCols) {
+      const srcCol = (tc.columns || []).find(c => c && c.key === pc.autofill_from);
+      if (!srcCol) continue;
+      let refDlId = srcCol.data_list_id;
+      let refDlCol = srcCol.data_list_column;
+      if (!refDlId || !refDlCol) {
+        try {
+          const fieldDefs2 = fieldDefs;
+          const refDef = (fieldDefs2 || []).find(d => d && d.key === pc.autofill_from);
+          const sc2 = parseSourceConfig(refDef && refDef.source_config);
+          refDlId = refDlId || sc2.data_list_id;
+          refDlCol = refDlCol || sc2.data_list_column;
+        } catch { /* silent */ }
+      }
+      const condVal = fv[pc.price_rules.when_field];
+      const priceCol = (pc.price_rules.map && pc.price_rules.map[condVal]) || pc.autofill_column;
+      const dlRows = await getDlRows(refDlId);
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] || {};
+        const srcVal = row[pc.autofill_from];
+        if (srcVal === '' || srcVal === null || srcVal === undefined) continue;
+        const allowed = [];
+        const seen = new Set();
+        dlRows.forEach(r => {
+          if (String(r[refDlCol] ?? '') !== String(srcVal)) return;
+          const v = r[priceCol];
+          if (v === null || v === undefined || v === '') return;
+          const k = String(v);
+          if (!seen.has(k)) { seen.add(k); allowed.push(v); }
+        });
+        const cur = row[pc.key];
+        const inSet = allowed.some(v => String(v) === String(cur));
+        if (!inSet) {
+          if (allowed.length === 1) {
+            rows[i] = { ...row, [pc.key]: allowed[0] };
+          } else if (cur !== '' && cur !== null && cur !== undefined) {
+            flags.push(`${f.label || f.key}: dòng ${i + 1} giá "${cur}" không thuộc bảng giá theo điều kiện hiện tại`);
+          }
+        }
+      }
+    }
+  }
+  return flags;
+};
+
 const AUTO_USER_MODES = ['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'];
 const CHUC_VU_GDTT = 'Giám đốc Trung tâm Kinh doanh';
 const CHUC_VU_GDKV = 'Giám đốc Khu vực';

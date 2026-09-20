@@ -22,7 +22,6 @@ const MapPage = () => {
   const [formCoords, setFormCoords] = useState({ latitude: '', longitude: '' });
   const [showPreview, setShowPreview] = useState(false);
   const [previewSnapshot, setPreviewSnapshot] = useState(null);
-  const [nearbyWarning, setNearbyWarning] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_MAP_FILTERS });
 
@@ -44,7 +43,6 @@ const MapPage = () => {
     setCoords({ lat, lng });
     setHighlightPosition([lat, lng]);
     setError('');
-    setNearbyWarning('');
     setFormCoords({ latitude: '', longitude: '' });
     setShowPreview(false);
     setPreviewSnapshot(null);
@@ -99,31 +97,8 @@ const MapPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!showForm) {
-      setNearbyWarning('');
-      return;
-    }
-    const lat = Number(coords.lat);
-    const lng = Number(coords.lng);
-    if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const nearby = await proposalService.checkNearby({ latitude: lat, longitude: lng, radius_m: 200 }, token);
-        if (cancelled) return;
-        if (nearby.success && nearby.data && nearby.data.is_duplicate) {
-          const n = nearby.data.nearest;
-          const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-          setNearbyWarning(`Cảnh báo: vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Bạn vẫn có thể nhập form nhưng sẽ không lưu được.`);
-        } else {
-          setNearbyWarning('');
-        }
-      } catch {
-        if (!cancelled) setNearbyWarning('');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [showForm, coords.lat, coords.lng, token]);
+    if (!showForm) return;
+  }, [showForm]);
 
   const handleLocationSelected = useCallback((lat, lng, mode, target) => {
     if (mode === 'select') {
@@ -151,17 +126,6 @@ const MapPage = () => {
   const handleSubmit = async (formData) => {
     setError('');
     try {
-      const nearby = await proposalService.checkNearby({
-        latitude: coords.lat,
-        longitude: coords.lng,
-        radius_m: 200
-      }, token);
-      if (nearby.success && nearby.data && nearby.data.is_duplicate) {
-        const n = nearby.data.nearest;
-        const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-        setError(`Vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Vui lòng chọn vị trí khác.`);
-        return;
-      }
       const res = await proposalService.create({
         latitude: coords.lat,
         longitude: coords.lng,
@@ -256,7 +220,6 @@ const MapPage = () => {
 
               {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
 
-              {nearbyWarning && <div className="alert alert-warning text-sm mb-4">{nearbyWarning}</div>}
 
               <DynamicForm
                 entity="station_proposals"

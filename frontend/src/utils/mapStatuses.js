@@ -10,12 +10,13 @@ export const STATION_STATUSES = [
 export const PROPOSAL_STATUSES = [
   { value: 'PENDING', label: 'Đang đề xuất', color: '#f97316', show_in_legend: true, sort_order: 1 },
   { value: 'REVIEWING', label: 'Đang xem xét', color: '#3b82f6', show_in_legend: true, sort_order: 2 },
-  { value: 'APPROVED', label: 'Đã duyệt BCĐX', color: '#22c55e', show_in_legend: true, sort_order: 3 },
-  { value: 'CANCELLED', label: 'Đã hủy', color: '#6b7280', show_in_legend: true, sort_order: 4 },
-  { value: 'ARCHIVED', label: 'Đã lưu trữ', color: '#8b5cf6', show_in_legend: true, sort_order: 5 },
-  { value: 'REJECTED', label: 'Từ chối', color: '#ef4444', show_in_legend: false, sort_order: 5 },
-  { value: 'CONTRACT_SIGNED', label: 'Ký thành công', color: '#0d9488', show_in_legend: false, sort_order: 6 },
-  { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 7 }
+  { value: 'PRINCIPLE_APPROVED', label: 'Duyệt chủ trương', color: '#6366f1', show_in_legend: true, sort_order: 3 },
+  { value: 'APPROVED', label: 'Đã duyệt BCĐX', color: '#22c55e', show_in_legend: true, sort_order: 4 },
+  { value: 'CANCELLED', label: 'Đã hủy', color: '#6b7280', show_in_legend: true, sort_order: 5 },
+  { value: 'ARCHIVED', label: 'Đã lưu trữ', color: '#8b5cf6', show_in_legend: true, sort_order: 6 },
+  { value: 'REJECTED', label: 'Từ chối', color: '#ef4444', show_in_legend: false, sort_order: 7 },
+  { value: 'CONTRACT_SIGNED', label: 'Ký thành công', color: '#0d9488', show_in_legend: false, sort_order: 8 },
+  { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 9 }
 ];
 
 export const PRIORITY_OPTIONS = [

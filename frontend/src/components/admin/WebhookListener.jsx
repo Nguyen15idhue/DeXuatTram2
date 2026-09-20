@@ -4,7 +4,7 @@ import { webhookConfigService } from '../../services/api';
 import Toast from '../Toast';
 import { X, Pause, Play, Trash2, ChevronDown, Radio, Send } from 'lucide-react';
 
-const EVENTS = ['APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED'];
+const EVENTS = ['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED'];
 const POLL_MS = 3000;
 
 const fmtTime = (t) => {

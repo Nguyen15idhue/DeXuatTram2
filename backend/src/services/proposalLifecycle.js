@@ -1,11 +1,12 @@
 const pool = require('../utils/db');
 const notificationService = require('./notificationService');
 
-const ALL_STATUSES = ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
+const ALL_STATUSES = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
 
 const ALLOWED_TRANSITIONS = {
   PENDING: ['REVIEWING', 'REJECTED', 'CANCELLED'],
-  REVIEWING: ['APPROVED', 'CANCELLED', 'ARCHIVED'],
+  REVIEWING: ['PRINCIPLE_APPROVED', 'APPROVED', 'CANCELLED', 'ARCHIVED'],
+  PRINCIPLE_APPROVED: ['APPROVED', 'CANCELLED'],
   APPROVED: ['CONTRACT_SIGNED', 'CONTRACT_FAILED'],
   ARCHIVED: ['CONTRACT_SIGNED', 'CANCELLED'],
   CONTRACT_SIGNED: ['CANCELLED'],
@@ -110,6 +111,21 @@ exports.transition = async (id, to, opts = {}) => {
      WHERE id = ?`,
     [to, cleanReason, actorId || null, id]
   );
+
+  if (to === 'REVIEWING' || to === 'PRINCIPLE_APPROVED') {
+    try {
+      const cfgKey = to === 'REVIEWING' ? 'review_supplement_days' : 'principle_supplement_days';
+      const [cfgRows] = await pool.query(
+        'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
+        [cfgKey]
+      );
+      const days = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+      await pool.query(
+        'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
+        [days, id]
+      );
+    } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
+  }
 
   if (proposal.user_id) {
     await notificationService.create({

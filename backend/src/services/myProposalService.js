@@ -51,7 +51,7 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.reject_reason, p.custom_data, p.created_at
+            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -88,8 +88,8 @@ exports.getProposalByIdAndUser = async (id, userId) => {
 
 exports.updateProposal = async (id, userId, data, opts = {}) => {
   const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
-  if (st.length === 0 || (st[0].status !== 'PENDING' && st[0].status !== 'REJECTED')) {
-    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING hoặc REJECTED'), { statusCode: 400 });
+  if (st.length === 0 || (st[0].status !== 'PENDING' && st[0].status !== 'REJECTED' && st[0].status !== 'PRINCIPLE_APPROVED')) {
+    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED hoặc Duyệt chủ trương'), { statusCode: 400 });
   }
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
@@ -111,6 +111,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId, null, current);
+  await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, fieldDefs).catch(() => {});
   const mergedDynamic = { ...current, ...dynamicData };
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 

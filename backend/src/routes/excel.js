@@ -68,7 +68,7 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
   *         name: status
   *         schema:
   *           type: string
-  *           enum: [PENDING, REVIEWING, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
+  *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
   *         description: Lọc theo trạng thái (bỏ trống = tất cả)
   *       - in: query
   *         name: layout

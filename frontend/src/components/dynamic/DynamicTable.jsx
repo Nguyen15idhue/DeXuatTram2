@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -261,6 +261,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
                   return (
                     <td key={key} style={colWidthStyle(col)}>
                       {colIdx === 0 && depth > 0 ? <div style={{ paddingLeft: depth * 24 }}>{cell}</div> : cell}
+                      {typeof cellFooter === 'function' ? cellFooter(row, key) : null}
                     </td>
                   );
                 })}
