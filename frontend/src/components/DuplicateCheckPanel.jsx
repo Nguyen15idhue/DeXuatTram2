@@ -110,7 +110,7 @@ const DuplicateCheckPanel = forwardRef(({
     <div className="mb-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
-          <span className="text-sm text-base-content/70">200m –</span>
+          <span className="text-sm text-base-content/70">0m –</span>
           <input
             type="number"
             min={201}

@@ -261,19 +261,15 @@ const MyProposalsPage = () => {
     if (!submitData.latitude || !submitData.longitude || !submitData.owner_name || !submitData.owner_phone || !submitData.address) {
       throw new Error('Vui lòng dán link Google Maps để lấy tọa độ và nhập đầy đủ thông tin bắt buộc');
     }
-    const nearby = await proposalService.checkNearby({
-      latitude: submitData.latitude,
-      longitude: submitData.longitude,
-      radius_m: 200
-    }, token);
-    if (nearby.success && nearby.data && nearby.data.is_duplicate) {
-      const n = nearby.data.nearest;
-      const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-      throw new Error(`Vị trí này trùng với ${who} #${n.id} (cách ${n.distance_m}m < 200m). Vui lòng chọn vị trí khác.`);
-    }
     const res = await myProposalService.create(submitData, token, createFormId);
     if (res.success) {
-      setToast({ message: 'Tạo đề xuất thành công', type: 'success' });
+      const warns = res.warnings || [];
+      setToast({
+        message: warns.length > 0
+          ? `Tạo đề xuất thành công! Lưu ý: ${warns.join('; ')}`
+          : 'Tạo đề xuất thành công',
+        type: warns.length > 0 ? 'warning' : 'success'
+      });
       setShowCreateForm(false);
       loadProposals(1);
     } else {

@@ -47,11 +47,16 @@ async function registerPmtiles(maplibregl) {
   pmtilesRegistered = true;
 }
 
+let _webglCache = null;
 export function hasWebGL() {
+  if (_webglCache !== null) return _webglCache;
   try {
     const canvas = document.createElement('canvas');
-    return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+    const hasCtx = window.WebGLRenderingContext && (canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+    _webglCache = !!hasCtx;
+    return _webglCache;
   } catch {
+    _webglCache = false;
     return false;
   }
 }
@@ -98,7 +103,16 @@ function rasterStyleFromTile(tile) {
 }
 
 export async function createMaplibreRuntime({ container, center, zoom, style, tile, apiKey }) {
-  if (!hasWebGL()) return null;
+  if (typeof window === 'undefined') return null;
+  let webglOk = hasWebGL();
+  if (!webglOk) {
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      _webglCache = null;
+      if (hasWebGL()) { webglOk = true; break; }
+    }
+    if (!webglOk) { return null; }
+  }
   const maplibregl = await loadMaplibre();
   if (!maplibregl || !maplibregl.Map) return null;
   await registerPmtiles(maplibregl);
@@ -205,10 +219,14 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     map.on('mouseleave', 'app-clusters', () => { map.getCanvas().style.cursor = ''; });
   }
 
+  let _lastPixelRatio = null;
   function applyPixelRatio(count) {
     if (typeof map.setPixelRatio !== 'function') return;
+    const next = count > LARGE_DATASET ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+    if (next === _lastPixelRatio) return;
+    _lastPixelRatio = next;
     try {
-      map.setPixelRatio(count > LARGE_DATASET ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+      map.setPixelRatio(next);
     } catch { /* noop */ }
   }
 
@@ -247,35 +265,6 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     const { cluster = true, clusterOptions, showLabels = false, onMarkerClick, renderPopup } = options || {};
     const clusterOpts = normalizeClusterOptions(clusterOptions);
     applyPixelRatio(items.length);
-    if (!cluster) {
-      removeManagedSource('app-markers');
-      removeMarkers(stationDomMarkers);
-      items.forEach((item) => {
-        const lng = parseFloat(item.longitude);
-        const lat = parseFloat(item.latitude);
-        if (isNaN(lat) || isNaN(lng)) return;
-        const el = document.createElement('div');
-        el.className = 'maplibre-marker';
-        const hasGlyph = isValidMarkerIcon(item._icon);
-        el.style.cssText = hasGlyph
-          ? `width:28px;height:28px;background:#fff;border:3px solid ${item._color || '#6b7280'};border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer;display:flex;align-items:center;justify-content:center`
-          : `width:22px;height:22px;background:${item._color || '#6b7280'};border:3px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer`;
-        if (hasGlyph) el.innerHTML = iconSvgMarkup(item._icon, { size: 16 });
-        el.title = item._label || '';
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([lng, lat])
-          .addTo(map);
-        if (renderPopup) {
-          el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openPopup({ ...item, renderPopup }, [lng, lat]);
-          });
-        }
-        if (onMarkerClick) el.addEventListener('click', () => onMarkerClick(item, item._type));
-        stationDomMarkers.push(marker);
-      });
-      return;
-    }
 
     removeMarkers(stationDomMarkers);
 
@@ -297,7 +286,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
     ensureGlyphImages(map, [...new Set(items.map((i) => i._icon).filter(Boolean))]);
 
-    const sig = clusterSig(clusterOpts);
+    const sig = clusterSig(clusterOpts, cluster);
     if (map.getSource('app-markers') && lastClusterSig !== sig) {
       removeManagedSource('app-markers');
     }
@@ -306,32 +295,34 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         type: 'geojson',
         data: geojson,
         maxzoom: 20,
-        cluster: true,
-        clusterMaxZoom: clusterOpts.maxZoom,
-        clusterRadius: clusterOpts.radius,
+        cluster: !!cluster,
+        clusterMaxZoom: cluster ? clusterOpts.maxZoom : undefined,
+        clusterRadius: cluster ? clusterOpts.radius : undefined,
       });
-      lastClusterSig = clusterSig(clusterOpts);
+      lastClusterSig = sig;
       sourceIds.add('app-markers');
-      map.addLayer({
-        id: 'app-clusters',
-        type: 'circle',
-        source: 'app-markers',
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-color': '#2563eb',
-          'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 50, 26],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#ffffff',
-        },
-      });
-      map.addLayer({
-        id: 'app-cluster-count',
-        type: 'symbol',
-        source: 'app-markers',
-        filter: ['has', 'point_count'],
-        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12, 'text-font': ['Noto Sans Regular'] },
-        paint: { 'text-color': '#ffffff' },
-      });
+      if (cluster) {
+        map.addLayer({
+          id: 'app-clusters',
+          type: 'circle',
+          source: 'app-markers',
+          filter: ['has', 'point_count'],
+          paint: {
+            'circle-color': '#2563eb',
+            'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 50, 26],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ffffff',
+          },
+        });
+        map.addLayer({
+          id: 'app-cluster-count',
+          type: 'symbol',
+          source: 'app-markers',
+          filter: ['has', 'point_count'],
+          layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12, 'text-font': ['Noto Sans Regular'] },
+          paint: { 'text-color': '#ffffff' },
+        });
+      }
       map.addLayer({
         id: 'app-unclustered',
         type: 'circle',
@@ -637,8 +628,11 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     map.on('pitchend', syncTerrain);
   }
 
+  let _3dApplied = false;
   function apply3D() {
     if (!loaded) return;
+    if (enabled3d === _3dApplied) return;
+    _3dApplied = enabled3d;
     const { flat, extrude } = findBuildingLayers();
 
     if (enabled3d) {
@@ -767,7 +761,10 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       } catch (err) {
         console.error('[MapLibre] setStyle error:', err.message);
       }
-      map.once('style.load', () => { applyAll(); });
+      map.once('style.load', () => {
+        _3dApplied = false;
+        applyAll();
+      });
     },
 
     setTileLayer(nextTile) {
@@ -825,7 +822,9 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     },
 
     set3D(value) {
-      enabled3d = !!value;
+      const v = !!value;
+      if (v === enabled3d) return;
+      enabled3d = v;
       apply3D();
     },
 

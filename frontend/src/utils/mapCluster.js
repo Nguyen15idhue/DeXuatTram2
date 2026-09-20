@@ -21,9 +21,9 @@ export function normalizeClusterOptions(input) {
   };
 }
 
-export function clusterSig(opts) {
+export function clusterSig(opts, cluster = true) {
   const n = normalizeClusterOptions(opts);
-  return `${n.radius}/${n.maxZoom}`;
+  return `${cluster ? 'on' : 'off'}:${n.radius}/${n.maxZoom}`;
 }
 
 export default normalizeClusterOptions;
