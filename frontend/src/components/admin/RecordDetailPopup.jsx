@@ -13,6 +13,7 @@ import useDataListMap from '../../hooks/useDataListMap';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import DeadlineCountdown from '../DeadlineCountdown';
 import Toast from '../Toast';
+import { computeFormulaValue } from '../../utils/formulaEngine';
 
 const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
 
@@ -92,6 +93,23 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     }
   }, [entity, recordId, recordProp]);
 
+  useEffect(() => {
+    if (mode !== 'edit' || allFields.length === 0) return;
+    setFormData(prev => {
+      let changed = false;
+      const next = { ...prev };
+      allFields.forEach(f => {
+        if (f.type !== 'formula') return;
+        const val = computeFormulaValue(f, allFields, next);
+        if (val !== '' && next[f.key] !== val) {
+          next[f.key] = val;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [mode, allFields, formData]);
+
   const loadRecord = async () => {
     try {
       setLoading(true);
@@ -157,11 +175,13 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     const data = {};
     (fields || []).forEach(f => {
       const key = f.key;
-      if (rec) {
-        data[key] = getFieldValue(rec, { key });
-      } else {
-        data[key] = '';
+      let val = rec ? getFieldValue(rec, { key }) : '';
+      if (val === undefined || val === null) {
+        if (f.type === 'table' || f.type === 'multiselect') val = [];
+        else if (f.type === 'boolean') val = false;
+        else val = '';
       }
+      data[key] = val;
     });
     setFormData(data);
   };
@@ -400,6 +420,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       : allFields;
     fieldsToCheck.forEach(f => {
       if (!f.required) return;
+      if (f.type === 'formula') return;
       const val = formData[f.key];
       const label = f.field_label || f.label || f.key;
       if (f.type === 'multiselect' && Array.isArray(val) && val.length === 0) {
@@ -496,7 +517,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const renderFieldInput = (field) => {
     const key = field.field_key || field.key;
-    const value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
+    let value = mode === 'edit' ? formData[key] : getFieldValue(record, { key });
+    if (field.type === 'formula' && (value === null || value === undefined || value === '')) {
+      const def = allFields.find(f => f.key === key) || field;
+      const computed = computeFormulaValue(def, allFields, formData);
+      if (computed !== '') value = computed;
+    }
     let userLocked = false;
     if (mode === 'edit' && field.type === 'user') {
       let autoMode = null;
@@ -535,7 +561,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           const fieldError = mode === 'edit' ? formErrors[key] : null;
           return (
             <div key={key} data-field-key={key} className={`popup-field-row${fieldError ? ' has-error' : ''}`}>
-              <span className="popup-field-label">{label}{field.required && <span style={{ color: '#dc2626' }}> *</span>}</span>
+              <span className="popup-field-label">{label}{field.required && field.type !== 'formula' && <span style={{ color: '#dc2626' }}> *</span>}</span>
               {mode === 'view' ? (
                 <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>{renderFieldInput(field)}</div>
               ) : (
@@ -561,7 +587,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           return (
             <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
               <div className={`dynamic-form-field${fieldError ? ' has-error' : ''}`} data-field-key={key}>
-                <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}{field.required && <span style={{ color: '#dc2626' }}> *</span>}</label>
+                <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}{field.required && field.type !== 'formula' && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 {mode === 'view' ? (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>{renderFieldInput(field)}</div>
                 ) : (
