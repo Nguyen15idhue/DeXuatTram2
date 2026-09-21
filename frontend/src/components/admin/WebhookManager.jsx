@@ -17,8 +17,11 @@ const webhookApi = {
 const WEBHOOK_PATH = '/api/webhooks/oneoffice/proposal-status';
 
 const getWebhookUrl = () => {
-  const base = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/api\/?$/, '');
-  return `${base}${WEBHOOK_PATH}`;
+  const raw = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  const base = raw.replace(/\/api\/?$/, '');
+  if (base) return `${base}${WEBHOOK_PATH}`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}${WEBHOOK_PATH}`;
 };
 
 const WebhookManager = ({ onChanged }) => {
