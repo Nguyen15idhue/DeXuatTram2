@@ -242,12 +242,15 @@ ERROR 1054 (42S22): Unknown column 'supplement_deadline_at' in 'field list'
 
 Nguyên nhân: các migration **phụ thuộc nhau** (97 tạo cột `supplement_deadline_at`, 101 mới dùng cột đó). Nếu 96–100 đã bị `mark` (đánh dấu "đã chạy") mà **không thực thi** — thường do tự `mark`/`mark-all` schema lên một mốc nào đó — thì migration sau sẽ thiếu cột/bảng.
 
+Nếu log cho thấy `run` **nhảy thẳng tới `100-…`/`101-…`** mà bỏ qua `96-…`/`97-…`, đó là lỗi cũ của `migrate.sh`: `list_files` dùng `sort` chuỗi nên `100-*`/`101-*` đứng **trước** `95-*`…`99-*`, gặp lỗi là `break` luôn. Bản vá (`LC_ALL=C sort -V`) đã có trong repo — **`git pull` trước** rồi mới chạy lại.
+
 Xử lý (mọi migration 96+ đều idempotent, có guard `information_schema` nên chạy lại an toàn):
 
 ```bash
 cd ~/DeXuatTram2
+git pull origin ui-redesign          # lấy bản vá migrate.sh (sort -V)
 
-# Gỡ đánh dấu 96→101 rồi áp thật
+# Gỡ đánh dấu 96→101 rồi áp thật (đúng thứ tự số)
 for f in database/9[6-9]*.sql database/10[0-1]*.sql; do
   [ -e "$f" ] && bash scripts/migrate.sh unmark "$(basename "$f")"
 done
