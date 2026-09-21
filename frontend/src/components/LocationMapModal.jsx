@@ -15,8 +15,8 @@ import MapCanvas from './map/MapCanvas';
 const RADIUS_OPTIONS = [5, 10, 20, 50];
 
 export const PREVIEW_STATUS_FILTER = {
-  stations: ['ACTIVE', 'DEPLOYING'],
-  proposals: ['PENDING']
+  stations: ['PLANNING', 'ACTIVE', 'DEPLOYING'],
+  proposals: ['PENDING', 'APPROVED']
 };
 
 const zoomForRadius = (radius) => {
@@ -133,7 +133,12 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   const legendProposals = statusFilter && Array.isArray(statusFilter.proposals) && statusFilter.proposals.length > 0
     ? allProposalStatuses.filter((s) => statusFilter.proposals.includes(s.value))
     : allProposalStatuses;
-  const filterNote = statusFilter ? ` (lọc ${[...(statusFilter.stations || []), ...(statusFilter.proposals || [])].join('/')})` : '';
+  const filterNote = statusFilter
+    ? ` (lọc ${[
+        ...(statusFilter.stations || []).map((v) => getStatusLabel(v, 'station')),
+        ...(statusFilter.proposals || []).map((v) => getStatusLabel(v, 'proposal'))
+      ].join('/')})`
+    : '';
   const total = nearby.stations.length + nearby.proposals.length;
   const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station') }));
   const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal') }));
