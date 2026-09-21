@@ -1366,7 +1366,7 @@ exports.importConfirmDynamic = async (req, res) => {
     if (entity === 'station_proposals') {
       try {
         const [cfgRows] = await connection.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
-        importSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+        importSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
       } catch { /* silent */ }
     }
 

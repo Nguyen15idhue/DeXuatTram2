@@ -112,14 +112,19 @@ exports.transition = async (id, to, opts = {}) => {
     [to, cleanReason, actorId || null, id]
   );
 
-  if (to === 'REVIEWING' || to === 'PRINCIPLE_APPROVED') {
+  const DEADLINE_CONFIG = {
+    PENDING: { key: 'review_supplement_days', fallback: 3 },
+    REVIEWING: { key: 'review_supplement_days', fallback: 3 },
+    PRINCIPLE_APPROVED: { key: 'principle_supplement_days', fallback: 15 }
+  };
+  if (DEADLINE_CONFIG[to]) {
     try {
-      const cfgKey = to === 'REVIEWING' ? 'review_supplement_days' : 'principle_supplement_days';
+      const { key, fallback } = DEADLINE_CONFIG[to];
       const [cfgRows] = await pool.query(
         'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
-        [cfgKey]
+        [key]
       );
-      const days = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+      const days = Math.max(1, Number((cfgRows[0] || {}).value) || fallback);
       await pool.query(
         'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
         [days, id]

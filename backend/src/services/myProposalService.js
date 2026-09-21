@@ -119,11 +119,22 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const nextStatus = wasRejected ? 'PENDING' : (existing.length > 0 ? existing[0].status : 'PENDING');
   const reviewerId = existing.length > 0 ? existing[0].reviewed_by : null;
 
+  let resetDeadlineDays = null;
+  if (wasRejected) {
+    try {
+      const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
+      resetDeadlineDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
+    } catch { resetDeadlineDays = 3; }
+  }
+
   await pool.query(
     `UPDATE station_proposals
      SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
+     ${resetDeadlineDays ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? DAY)' : ''}
      WHERE id = ? AND user_id = ?`,
-    [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
+    resetDeadlineDays
+      ? [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineDays, id, userId]
+      : [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
   );
 
   if (wasRejected && reviewerId) {

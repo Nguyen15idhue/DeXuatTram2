@@ -62,7 +62,7 @@ exports.createProposal = async (userId, data, opts = {}) => {
   let supplementDays = 7;
   try {
     const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
-    supplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+    supplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
   } catch { /* silent */ }
 
   const conn = await pool.getConnection();
@@ -276,7 +276,7 @@ exports.createGuestProposal = async (data, ip) => {
   let guestSupplementDays = 7;
   try {
     const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
-    guestSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 7);
+    guestSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
   } catch { /* silent */ }
 
   const conn = await pool.getConnection();
