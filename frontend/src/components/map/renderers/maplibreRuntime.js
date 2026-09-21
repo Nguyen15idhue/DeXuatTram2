@@ -2,6 +2,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { iconSvgMarkup, isValidMarkerIcon } from '../../../utils/mapMarkerIcons';
 import { formatDistanceM } from '../../../utils/formatDistance';
 import { normalizeClusterOptions, clusterSig } from '../../../utils/mapCluster';
+import { ISLAND_MIN_ZOOM } from '../../../utils/provinceData';
 
 const LARGE_DATASET = 2000;
 const WARD_MIN_ZOOM = 12;
@@ -151,6 +152,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let lastClusterSig = null;
   let polylinesState = null;
   let provinceState = null;
+  let islandState = null;
   let boundaryState = null;
   let wardState = null;
   let pointsState = null;
@@ -160,6 +162,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let popup = null;
   const stationDomMarkers = [];
   const provinceMarkers = [];
+  const islandMarkers = [];
   const pointMarkers = [];
   const sourceIds = new Set();
 
@@ -180,6 +183,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   function removeDomOverlays() {
     removeMarkers(stationDomMarkers);
     removeMarkers(provinceMarkers);
+    removeMarkers(islandMarkers);
     removeMarkers(pointMarkers);
     if (popup) { try { popup.remove(); } catch { /* noop */ } popup = null; }
   }
@@ -420,6 +424,22 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       el.textContent = province.name;
       const marker = new maplibregl.Marker({ element: el }).setLngLat([province.lng, province.lat]).addTo(map);
       provinceMarkers.push(marker);
+    });
+  }
+
+  function applyIslandLabels() {
+    removeMarkers(islandMarkers);
+    const { points } = islandState || {};
+    if (!points || points.length === 0) return;
+    try {
+      if (map.getZoom() < ISLAND_MIN_ZOOM) return;
+    } catch { /* noop */ }
+    points.forEach((island) => {
+      const el = document.createElement('div');
+      el.className = 'island-label';
+      el.textContent = island.name;
+      const marker = new maplibregl.Marker({ element: el }).setLngLat([island.lng, island.lat]).addTo(map);
+      islandMarkers.push(marker);
     });
   }
 
@@ -704,6 +724,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     applyCircle();
     applyMarkers();
     applyProvinceLabels();
+    applyIslandLabels();
     applyPoints();
     applyWardLabels();
     apply3D();
@@ -725,6 +746,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   bindMarkerInteractions();
   map.on('zoomend', refreshWardData);
   map.on('moveend', refreshWardData);
+  map.on('zoomend', () => { if (loaded) applyIslandLabels(); });
 
   const runtime = {
     id: 'maplibre',
@@ -798,6 +820,12 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       provinceState = { points, show };
       if (!loaded) return;
       applyProvinceLabels();
+    },
+
+    setIslandLabels(points) {
+      islandState = { points };
+      if (!loaded) return;
+      applyIslandLabels();
     },
 
     setWardLabels(points, show) {

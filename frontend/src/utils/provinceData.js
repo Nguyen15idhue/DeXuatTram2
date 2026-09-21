@@ -46,6 +46,13 @@ export const PROVINCES = [
   { name: 'Ca Mau', lat: 9.1800, lng: 105.1500, region: 'mekong' }
 ];
 
+export const ISLAND_POINTS = [
+  { name: 'Hoàng Sa', lat: 16.5333, lng: 111.6333 },
+  { name: 'Trường Sa', lat: 8.6333, lng: 111.9167 }
+];
+
+export const ISLAND_MIN_ZOOM = 5;
+
 export const PROVINCE_REGIONS = [
   { id: 'north', label: 'Trung du va mien nui phia Bac', color: '#2196F3' },
   { id: 'north-central', label: 'Bac Trung Bo', color: '#FF9800' },

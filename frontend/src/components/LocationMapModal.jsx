@@ -9,6 +9,7 @@ import MarkerIcon from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
 import useMapConfig from '../hooks/useMapConfig';
+import { ISLAND_POINTS } from '../utils/provinceData';
 import MapCanvas from './map/MapCanvas';
 
 const RADIUS_OPTIONS = [5, 10, 20, 50];
@@ -177,6 +178,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
             apiKey={apiKey}
             stations={canvasStations}
             proposals={canvasProposals}
+            islandPoints={ISLAND_POINTS}
             showCluster={false}
             showStationLabels={false}
             showProvinceLabels={false}
@@ -223,16 +225,22 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
                     </div>
                   ))}
                 </div>
-                <div className="map-legend-col">
-                  <div className="map-legend-col-title">Đề xuất</div>
-                  {legendProposals.map((item) => (
-                    <div key={`p-${item.value}`} className="map-legend-item">
-                      {getMarkerIcon(item.value, 'proposal')
-                        ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
-                        : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
-                      <span className="map-legend-label">{item.label}</span>
-                    </div>
-                  ))}
+                <div className="map-legend-col map-legend-col-wide">
+                  <div className="map-legend-col-title text-center">Đề xuất</div>
+                  <div className="map-legend-subcols">
+                    {[0, 1].map((chunk) => legendProposals.slice(chunk * 5, chunk * 5 + 5)).filter((g) => g.length > 0).map((group, gi) => (
+                      <div key={gi} className="map-legend-subcol">
+                        {group.map((item) => (
+                          <div key={`p-${item.value}`} className="map-legend-item">
+                            {getMarkerIcon(item.value, 'proposal')
+                              ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
+                              : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
+                            <span className="map-legend-label">{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

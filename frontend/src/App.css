@@ -312,16 +312,22 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   z-index: 900;
   font-size: 11px;
-  max-width: 240px;
+  max-width: 360px;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 .map-legend-columns {
   display: flex;
   gap: 16px;
+  flex-wrap: nowrap;
 }
 
 .map-legend-col {
-  min-width: 84px;
+  min-width: 100px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .map-legend-col-title {
@@ -331,6 +337,18 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+  text-align: center;
+  flex-shrink: 0;
+}
+.map-legend-subcols {
+  display: flex;
+  gap: 12px;
+}
+.map-legend-subcol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
 }
 
 /* Modal form tao de xuat tren trang map - luon nam tren cung */
@@ -2189,6 +2207,34 @@ fieldset.form-section,
 .form-control.is-invalid {
   border-color: #dc2626;
 }
+.dynamic-form-field.has-error .form-control,
+.popup-field-row.has-error .form-control,
+.popup-field-value.has-error .form-control {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+.dynamic-form-field.has-error .form-control:focus,
+.popup-field-row.has-error .form-control:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25);
+  outline: none;
+}
+.file-upload-dropzone.is-invalid,
+.file-upload.has-error .file-upload-dropzone {
+  border-color: #dc2626 !important;
+  background: #fef2f2;
+}
+.dynamic-field-user.has-error .select,
+.dynamic-field-select .form-control.is-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+.dynamic-field-table.has-error {
+  border-color: #dc2626 !important;
+}
+.popup-field-row.has-error .popup-field-label {
+  color: #b91c1c;
+}
 
 /* File Upload */
 .file-upload {
@@ -3096,6 +3142,21 @@ fieldset.form-section,
   pointer-events: none;
   text-align: center;
   line-height: 1.2;
+}
+.island-label-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.island-label {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #1565c0;
+  text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 600;
 }
 .admin-ward-label {
   background: transparent !important;

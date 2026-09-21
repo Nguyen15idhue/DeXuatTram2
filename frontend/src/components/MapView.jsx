@@ -6,7 +6,7 @@ import MarkerIcon from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
 import { getStatusLabel } from '../utils/mapStatuses';
-import { PROVINCES, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
+import { PROVINCES, ISLAND_POINTS, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
 import { buildMapStyle, loadPmtilesStyle, loadLibertyBaseStyle, loadProvinceLabels, loadProvinceLabelsOld, loadWardLabels } from '../utils/mapStyles';
@@ -266,7 +266,17 @@ const MapView = ({
   const markerIconsVersion = useMarkerIcons();
   const { stationStatuses, proposalStatuses, proposalLegendStatuses } = useMapStatuses();
   void markerIconsVersion;
-  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalLegendStatuses || proposalStatuses };
+  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalStatuses };
+  const proposalChunks = [];
+  for (let i = 0; i < MAP_LEGEND.proposals.length; i += 5) proposalChunks.push(MAP_LEGEND.proposals.slice(i, i + 5));
+  const renderProposalLegendItem = (item) => (
+    <div key={`p-${item.value}`} className="map-legend-item">
+      {getMarkerIcon(item.value, 'proposal')
+        ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
+        : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
+      <span className="map-legend-label">{item.label}</span>
+    </div>
+  );
   const [loading, setLoading] = useState(true);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [createTarget, setCreateTarget] = useState('proposal');
@@ -549,15 +559,33 @@ const MapView = ({
 
   const visibleStations = useMemo(() => {
     if (!filters) return stations;
-    if (filters.hideStations) return [];
+    // If both hidden, return empty
+    if (filters.hideStations && filters.hideStationPlans) return [];
     let list = stations;
+    // Filter PLANNING by priority (only applies when showing PLANNING)
+    const planPriorities = filters.planningPriorities || [];
+    const showPlans = !filters.hideStationPlans;
+    const showOtherStations = !filters.hideStations;
+    if (showPlans && !showOtherStations) {
+      // Only showing PLANNING stations
+      if (planPriorities.length > 0) {
+        list = list.filter(s => s.status === 'PLANNING' && planPriorities.includes(String(s.loai_uu_tien)));
+      } else {
+        list = list.filter(s => s.status === 'PLANNING');
+      }
+    } else if (showPlans && showOtherStations) {
+      // Showing all stations - apply priority filter to PLANNING if set
+      if (planPriorities.length > 0) {
+        list = list.filter(s => s.status !== 'PLANNING' || planPriorities.includes(String(s.loai_uu_tien)));
+      }
+    } else if (!showPlans && showOtherStations) {
+      // Showing non-PLANNING only
+      list = list.filter(s => s.status !== 'PLANNING');
+    }
+    // Filter other statuses
     const statuses = filters.stationStatuses || [];
     if (statuses.length > 0) {
       list = list.filter(s => statuses.includes(s.status));
-    }
-    const priorities = filters.priorities || [];
-    if (priorities.length > 0) {
-      list = list.filter(s => priorities.includes(String(s.loai_uu_tien)));
     }
     return list;
   }, [stations, filters]);
@@ -577,10 +605,6 @@ const MapView = ({
     const statuses = filters.proposalStatuses || [];
     if (statuses.length > 0) {
       list = list.filter(p => statuses.includes(p.status));
-    }
-    const priorities = filters.priorities || [];
-    if (priorities.length > 0) {
-      list = list.filter(p => priorities.includes(String(p.loai_uu_tien)));
     }
     return list;
   }, [proposals, filters, user, proposalLegendStatuses]);
@@ -749,6 +773,7 @@ const MapView = ({
         showBoundaries={showBoundaries}
         boundariesGeojson={boundaries}
         provincePoints={activeProvincePoints}
+        islandPoints={ISLAND_POINTS}
         wardPoints={activeWardPoints}
         showWardLabels={showWardLabels}
         selectedPosition={selectedPosition}
@@ -828,16 +853,15 @@ const MapView = ({
                 </div>
               ))}
             </div>
-            <div className="map-legend-col">
-              <div className="map-legend-col-title">Đề xuất</div>
-              {MAP_LEGEND.proposals.map((item) => (
-                <div key={`p-${item.value}`} className="map-legend-item">
-                  {getMarkerIcon(item.value, 'proposal')
-                    ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
-                    : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
-                  <span className="map-legend-label">{item.label}</span>
-                </div>
-              ))}
+            <div className="map-legend-col map-legend-col-wide">
+              <div className="map-legend-col-title text-center">Đề xuất</div>
+              <div className="map-legend-subcols">
+                {proposalChunks.map((group, gi) => (
+                  <div key={gi} className="map-legend-subcol">
+                    {group.map(renderProposalLegendItem)}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

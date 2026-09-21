@@ -10,9 +10,10 @@ import { PRIORITY_OPTIONS } from '../utils/mapStatuses';
 export const EMPTY_MAP_FILTERS = {
   scope: 'all',
   stationStatuses: [],
+  planningPriorities: [],
   proposalStatuses: [],
-  priorities: [],
   hideStations: false,
+  hideStationPlans: true,
   hideProposals: false,
 };
 
@@ -29,9 +30,9 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
   const activeCount = [
     filters.scope === 'mine' ? 1 : 0,
     filters.stationStatuses.length ? 1 : 0,
+    filters.planningPriorities.length ? 1 : 0,
     filters.proposalStatuses.length ? 1 : 0,
-    filters.priorities.length ? 1 : 0,
-    filters.hideStations || filters.hideProposals ? 1 : 0,
+    filters.hideStations || filters.hideStationPlans || filters.hideProposals ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
   const renderStatusChips = (options, key, entity) => (
@@ -66,14 +67,14 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
   const renderPriorityChips = () => (
     <div className="map-filter-chips">
       {PRIORITY_OPTIONS.map((s) => {
-        const list = filters.priorities || [];
+        const list = filters.planningPriorities || [];
         const active = list.includes(s.value);
         return (
           <button
             key={s.value}
             type="button"
             className={`map-filter-chip ${active ? 'active' : ''}`}
-            onClick={() => set({ priorities: toggleValue(list, s.value) })}
+            onClick={() => set({ planningPriorities: toggleValue(list, s.value) })}
           >
             {s.label}
           </button>
@@ -100,6 +101,10 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
             Trạm
           </label>
           <label className="map-filter-check">
+            <input type="checkbox" checked={!filters.hideStationPlans} onChange={(e) => set({ hideStationPlans: !e.target.checked })} />
+            Quy hoạch
+          </label>
+          <label className="map-filter-check">
             <input type="checkbox" checked={!filters.hideProposals} onChange={(e) => set({ hideProposals: !e.target.checked })} />
             Đề xuất
           </label>
@@ -108,17 +113,17 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
 
       <div className="map-filter-group">
         <span className="map-filter-label">Trạng thái trạm</span>
-        {renderStatusChips(STATION_STATUSES, 'stationStatuses', 'station')}
+        {renderStatusChips(STATION_STATUSES.filter(s => s.value !== 'PLANNING'), 'stationStatuses', 'station')}
+      </div>
+
+      <div className="map-filter-group">
+        <span className="map-filter-label">Trạng thái quy hoạch</span>
+        {renderPriorityChips()}
       </div>
 
       <div className="map-filter-group">
         <span className="map-filter-label">Trạng thái đề xuất</span>
         {renderStatusChips(PROPOSAL_STATUSES, 'proposalStatuses', 'proposal')}
-      </div>
-
-      <div className="map-filter-group">
-        <span className="map-filter-label">Loại ưu tiên (trạm &amp; đề xuất)</span>
-        {renderPriorityChips()}
       </div>
 
       <button type="button" className="btn btn-ghost btn-xs w-full" onClick={() => onChange({ ...EMPTY_MAP_FILTERS })}>

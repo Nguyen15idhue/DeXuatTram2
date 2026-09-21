@@ -4,6 +4,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
 import { createCustomIcon } from '../../../utils/mapHelpers';
+import { ISLAND_MIN_ZOOM } from '../../../utils/provinceData';
 import { formatDistanceM } from '../../../utils/formatDistance';
 import { normalizeClusterOptions } from '../../../utils/mapCluster';
 
@@ -36,6 +37,30 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
   let polylineLayer = null;
   let boundaryLayer = null;
   let provinceLabelLayer = null;
+  let islandLabelLayer = null;
+  let islandState = { points: [] };
+
+  function renderIslandLabels() {
+    if (islandLabelLayer) {
+      map.removeLayer(islandLabelLayer);
+      islandLabelLayer = null;
+    }
+    const { points } = islandState;
+    if (!points || points.length === 0) return;
+    if (map.getZoom() < ISLAND_MIN_ZOOM) return;
+    islandLabelLayer = L.layerGroup(
+      points.map((island) => {
+        const icon = L.divIcon({
+          className: 'island-label-icon',
+          html: `<div class="island-label">${island.name}</div>`,
+          iconSize: [140, 24],
+          iconAnchor: [70, 12],
+        });
+        return L.marker([island.lat, island.lng], { icon, interactive: false, zIndexOffset: 500 });
+      })
+    );
+    islandLabelLayer.addTo(map);
+  }
   let wardLabelLayer = null;
   let wardState = { points: [], show: false };
   let pointLayer = null;
@@ -75,6 +100,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
   }
 
   map.on('zoomend moveend', renderWardLabels);
+  map.on('zoomend', renderIslandLabels);
 
   const runtime = {
     id: 'leaflet',
@@ -242,6 +268,11 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
     setWardLabels(points, show) {
       wardState = { points: points || [], show: !!show };
       renderWardLabels();
+    },
+
+    setIslandLabels(points) {
+      islandState = { points: points || [] };
+      renderIslandLabels();
     },
 
     setBoundaries(geojson, show) {
