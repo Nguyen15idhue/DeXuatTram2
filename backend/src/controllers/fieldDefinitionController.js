@@ -73,6 +73,9 @@ exports.create = async (req, res) => {
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ success: false, message: `Field với entity="${req.body.entity}" và key="${req.body.key}" đã tồn tại` });
     }
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Create field definition error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
@@ -131,6 +134,9 @@ exports.update = async (req, res) => {
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ success: false, message: `Field với entity="${req.body.entity}" và key="${req.body.key}" đã tồn tại` });
+    }
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('Update field definition error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

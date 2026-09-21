@@ -88,8 +88,8 @@ exports.getProposalByIdAndUser = async (id, userId) => {
 
 exports.updateProposal = async (id, userId, data, opts = {}) => {
   const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
-  if (st.length === 0 || (st[0].status !== 'PENDING' && st[0].status !== 'REJECTED' && st[0].status !== 'PRINCIPLE_APPROVED')) {
-    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED hoặc Duyệt chủ trương'), { statusCode: 400 });
+  if (st.length === 0 || (st[0].status !== 'PENDING' && st[0].status !== 'REJECTED' && st[0].status !== 'REVIEWING' && st[0].status !== 'PRINCIPLE_APPROVED')) {
+    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING hoặc Duyệt chủ trương'), { statusCode: 400 });
   }
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);

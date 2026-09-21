@@ -258,6 +258,82 @@ const parseSourceConfig = (val) => {
 
 exports.parseSourceConfig = parseSourceConfig;
 
+const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'not_empty'];
+
+const normalizeTableLink = (col) => {
+  if (!col) return null;
+  if (col.data_link && col.data_link.enabled) {
+    return {
+      trigger: col.data_link.trigger_column || null,
+      fallbackColumn: col.data_link.default_column || null,
+      datalistId: col.data_link.datalist_id || col.data_list_id || null,
+      conditions: Array.isArray(col.data_link.conditions) ? col.data_link.conditions : []
+    };
+  }
+  if (col.autofill_from && (col.autofill_column || (col.price_rules && col.price_rules.when_field))) {
+    const pr = col.price_rules || {};
+    const conditions = pr.when_field
+      ? Object.entries(pr.map || {}).map(([value, column]) => ({ field: pr.when_field, op: '=', value, column }))
+      : [];
+    return {
+      trigger: col.autofill_from,
+      fallbackColumn: col.autofill_column || null,
+      datalistId: col.data_list_id || null,
+      conditions
+    };
+  }
+  return null;
+};
+
+const resolveCondFieldLabel = (fieldKey, rawVal, fieldDefs, dlRowsById) => {
+  const def = (fieldDefs || []).find(d => d && (d.key === fieldKey || d.field_key === fieldKey));
+  if (!def) return null;
+  const opts = Array.isArray(def.options) ? def.options : parseJsonField(def.options, []);
+  const m = (opts || []).find(o => String(o && o.value !== undefined ? o.value : (o && o.label)) === String(rawVal));
+  if (m) return (m.label !== undefined && m.label !== null) ? String(m.label) : null;
+  if (def.data_list_id && def.data_list_column && dlRowsById) {
+    const rows = dlRowsById[def.data_list_id] || [];
+    const hit = rows.find(r => String(r[def.data_list_column] ?? '') === String(rawVal));
+    if (hit) {
+      const lc = def.data_list_label_column || def.data_list_column;
+      if (hit[lc] !== undefined && hit[lc] !== null && hit[lc] !== '') return String(hit[lc]);
+    }
+  }
+  return null;
+};
+
+const testTableCondition = (cond, formValues, labelOf) => {
+  if (!cond || !cond.field) return false;
+  const raw = (formValues || {})[cond.field];
+  const s = (v) => String(v === undefined || v === null ? '' : v);
+  const cands = [s(raw)];
+  try {
+    const lb = labelOf(cond.field, raw);
+    if (lb !== null && lb !== undefined && s(lb) !== s(raw)) cands.push(s(lb));
+  } catch { /* silent */ }
+  const t = s(cond.value);
+  const tl = t.toLowerCase();
+  switch (cond.op) {
+    case '=': return cands.includes(t);
+    case '!=': return !cands.includes(t);
+    case 'contains': return tl !== '' && cands.some(c => c.toLowerCase().includes(tl));
+    case 'not_contains': return tl === '' || !cands.some(c => c.toLowerCase().includes(tl));
+    case 'in': {
+      const set = t.split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+      return set.length > 0 && cands.some(c => set.includes(c.toLowerCase()));
+    }
+    case 'empty': return raw === '' || raw === null || raw === undefined || (Array.isArray(raw) && raw.length === 0);
+    case 'not_empty': return !(raw === '' || raw === null || raw === undefined || (Array.isArray(raw) && raw.length === 0));
+    default: return false;
+  }
+};
+
+const parseJsonField = (v, fallback) => {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') { try { const p = JSON.parse(v); return p === undefined ? fallback : p; } catch { return fallback; } }
+  return fallback;
+};
+
 exports.resolveTablePrices = async (formValues, dynamicData, fieldDefs) => {
   const flags = [];
   const tables = (fieldDefs || []).filter(f => f && f.type === 'table' && f.source_type === 'json');
@@ -276,31 +352,35 @@ exports.resolveTablePrices = async (formValues, dynamicData, fieldDefs) => {
   };
   for (const f of tables) {
     const tc = parseSourceConfig(f.source_config);
-    const priceCols = (tc.columns || []).filter(c => c && c.price_rules && c.price_rules.when_field && c.autofill_from);
+    const priceCols = (tc.columns || []).filter(c => normalizeTableLink(c));
     if (priceCols.length === 0) continue;
     const rows = dynamicData[f.key];
     if (!Array.isArray(rows)) continue;
     const fv = { ...(formValues || {}), ...(dynamicData || {}) };
+    const labelOf = (fk, rv) => resolveCondFieldLabel(fk, rv, fieldDefs, dlCache);
     for (const pc of priceCols) {
-      const srcCol = (tc.columns || []).find(c => c && c.key === pc.autofill_from);
+      const link = normalizeTableLink(pc);
+      const srcCol = (tc.columns || []).find(c => c && c.key === link.trigger);
       if (!srcCol) continue;
       let refDlId = srcCol.data_list_id;
       let refDlCol = srcCol.data_list_column;
       if (!refDlId || !refDlCol) {
         try {
-          const fieldDefs2 = fieldDefs;
-          const refDef = (fieldDefs2 || []).find(d => d && d.key === pc.autofill_from);
+          const refDef = (fieldDefs || []).find(d => d && d.key === link.trigger);
           const sc2 = parseSourceConfig(refDef && refDef.source_config);
           refDlId = refDlId || sc2.data_list_id;
           refDlCol = refDlCol || sc2.data_list_column;
         } catch { /* silent */ }
       }
-      const condVal = fv[pc.price_rules.when_field];
-      const priceCol = (pc.price_rules.map && pc.price_rules.map[condVal]) || pc.autofill_column;
+      if (!refDlId) refDlId = link.datalistId;
+      let priceCol = link.fallbackColumn;
+      for (const cond of (link.conditions || [])) {
+        if (testTableCondition(cond, fv, labelOf)) { priceCol = cond.column; break; }
+      }
       const dlRows = await getDlRows(refDlId);
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i] || {};
-        const srcVal = row[pc.autofill_from];
+        const srcVal = row[link.trigger];
         if (srcVal === '' || srcVal === null || srcVal === undefined) continue;
         const allowed = [];
         const seen = new Set();

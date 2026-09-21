@@ -1398,6 +1398,7 @@ exports.importConfirmDynamic = async (req, res) => {
     let failed = 0;
     const failDetails = [];
     const confirmWarnDetails = [];
+    const createdProposalIds = [];
     let defaultUserPasswordHash = null;
     const insertedCoords = [];
     const usedCodes = new Set();
@@ -1558,6 +1559,10 @@ exports.importConfirmDynamic = async (req, res) => {
           );
         }
 
+        if (entity === 'station_proposals') {
+          createdProposalIds.push(result.insertId);
+        }
+
         imported++;
       } catch (err) {
         failed++;
@@ -1597,6 +1602,20 @@ exports.importConfirmDynamic = async (req, res) => {
 
     await connection.commit();
     if (job) { job.status = 'done'; job.ts = Date.now(); }
+
+    if (entity === 'station_proposals' && createdProposalIds.length > 0) {
+      const proposalLifecycle = require('./proposalLifecycle');
+      for (const pid of createdProposalIds) {
+        try {
+          await proposalLifecycle.logActivity({
+            proposalId: pid, action: 'created', fromStatus: null, toStatus: 'PENDING',
+            actorId: req.user ? req.user.id : null,
+            actorRole: req.user ? req.user.role : null,
+            source: 'import', ip: req.ip || null
+          });
+        } catch { /* silent */ }
+      }
+    }
 
     res.json({
       success: true,

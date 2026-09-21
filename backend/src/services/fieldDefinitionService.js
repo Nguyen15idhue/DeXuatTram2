@@ -1,4 +1,63 @@
 const pool = require('../utils/db');
+const dataListService = require('./dataListService');
+
+const LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'not_empty'];
+
+const badRequest = (message) => Object.assign(new Error(message), { statusCode: 400 });
+
+exports.validateTableLink = async (entity, tableConfig) => {
+  const columns = (tableConfig && tableConfig.columns) || [];
+  if (columns.length === 0) return;
+  const [fieldRows] = await pool.query(
+    "SELECT `key` FROM field_definitions WHERE entity = ? AND status = 'active'",
+    [entity]
+  );
+  const fieldKeys = new Set(fieldRows.map((r) => r.key));
+  const dlColsCache = {};
+  const dlColumns = async (dlId) => {
+    if (!dlId) return [];
+    if (!dlColsCache[dlId]) {
+      const dl = await dataListService.getById(Number(dlId));
+      const cfg = dl && dl.columns_config ? dl.columns_config : [];
+      dlColsCache[dlId] = cfg.map((c) => c.key);
+    }
+    return dlColsCache[dlId];
+  };
+  for (const col of columns) {
+    if (!col) continue;
+    if (col.data_list_id && col.data_list_column) {
+      const keys = await dlColumns(col.data_list_id);
+      if (keys.length > 0 && !keys.includes(col.data_list_column)) {
+        throw badRequest(`Cột "${col.label || col.key}": Cột giá trị "${col.data_list_column}" không có trong DataList đã chọn`);
+      }
+    }
+    const link = col.data_link;
+    if (!link || !link.enabled) continue;
+    if (!link.datalist_id) throw badRequest(`Cột "${col.label || col.key}": chưa chọn Danh mục dữ liệu`);
+    const bKeys = await dlColumns(link.datalist_id);
+    if (bKeys.length === 0) throw badRequest(`Cột "${col.label || col.key}": DataList đã chọn không có cột nào`);
+    if (!link.trigger_column) throw badRequest(`Cột "${col.label || col.key}": chưa chọn cột kích hoạt tự động điền`);
+    if (!columns.some((c) => c && c.key === link.trigger_column)) {
+      throw badRequest(`Cột "${col.label || col.key}": cột kích hoạt "${link.trigger_column}" không có trong table`);
+    }
+    if (!link.default_column) throw badRequest(`Cột "${col.label || col.key}": chưa chọn Cột mặc định`);
+    if (!bKeys.includes(link.default_column)) {
+      throw badRequest(`Cột "${col.label || col.key}": Cột mặc định "${link.default_column}" không có trong DataList`);
+    }
+    for (const [i, cond] of ((link.conditions || [])).entries()) {
+      const n = i + 1;
+      if (!cond.field || !fieldKeys.has(cond.field)) {
+        throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} dùng field "${cond.field || '(trống)'}" không tồn tại trong entity`);
+      }
+      if (!LINK_OPS.includes(cond.op)) {
+        throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} có toán tử không hợp lệ`);
+      }
+      if (!cond.column || !bKeys.includes(cond.column)) {
+        throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} lấy cột "${cond.column || '(trống)'}" không có trong DataList`);
+      }
+    }
+  }
+};
 
 exports.getAllFieldDefinitions = async (entity, status, search, type, page, limit) => {
   const offset = (page - 1) * limit;
@@ -61,6 +120,11 @@ exports.createFieldDefinition = async (data) => {
     source_config, parent_field, option_style, file_config, formula_config, data_list_id, data_list_column, data_list_label_column, relation_key,
     table_config
   } = data;
+  if (type === 'table') {
+    const cfg = table_config !== undefined ? table_config : source_config;
+    const parsed = Array.isArray(cfg) ? { columns: cfg } : (typeof cfg === 'string' ? (() => { try { return JSON.parse(cfg); } catch { return null; } })() : cfg);
+    await exports.validateTableLink(entity, parsed);
+  }
   const [result] = await pool.query(
     `INSERT INTO field_definitions (
       entity, \`key\`, label, type, number_format, decimal_places, display_format, unit, date_format, timezone,
@@ -175,6 +239,12 @@ exports.updateFieldDefinition = async (id, data) => {
   const sourceConfigToSave = (type === 'table' && merged.table_config)
     ? JSON.stringify(merged.table_config)
     : (merged.source_config ? JSON.stringify(merged.source_config) : null);
+
+  if (type === 'table' && !existing.is_locked && (data.table_config !== undefined || data.source_config !== undefined)) {
+    const incoming = data.table_config !== undefined ? data.table_config : data.source_config;
+    const parsed = typeof incoming === 'string' ? (() => { try { return JSON.parse(incoming); } catch { return null; } })() : incoming;
+    await exports.validateTableLink(entity, parsed);
+  }
 
   await pool.query(
     `UPDATE field_definitions SET
