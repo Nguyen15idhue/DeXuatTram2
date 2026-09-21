@@ -230,6 +230,48 @@ bash scripts/migrate.sh run
 
 Kiểm tra lại bằng truy vấn ở mục 3.4 (kỳ vọng `tracked=65`, `tables=22`).
 
+### 7.2 `update.sh` dừng ở migration với lỗi `Unknown column` (mark mà không chạy)
+
+Hiện tượng: `git pull && ./update.sh` chạy tới bước migration thì dừng, log kiểu:
+
+```
+[migrate] Chay 101-supplement-deadline-days.sql ...
+ERROR 1054 (42S22): Unknown column 'supplement_deadline_at' in 'field list'
+[migrate] LOI: Dung lai do loi. Sua script roi chay lai.
+```
+
+Nguyên nhân: các migration **phụ thuộc nhau** (97 tạo cột `supplement_deadline_at`, 101 mới dùng cột đó). Nếu 96–100 đã bị `mark` (đánh dấu "đã chạy") mà **không thực thi** — thường do tự `mark`/`mark-all` schema lên một mốc nào đó — thì migration sau sẽ thiếu cột/bảng.
+
+Xử lý (mọi migration 96+ đều idempotent, có guard `information_schema` nên chạy lại an toàn):
+
+```bash
+cd ~/DeXuatTram2
+
+# Gỡ đánh dấu 96→101 rồi áp thật
+for f in database/9[6-9]*.sql database/10[0-1]*.sql; do
+  [ -e "$f" ] && bash scripts/migrate.sh unmark "$(basename "$f")"
+done
+bash scripts/migrate.sh run
+```
+
+> Quy tắc chung: khi `update.sh` báo lỗi migration, **đừng** `mark` file đang lỗi nếu chưa xác minh schema — hãy `unmark` **toàn bộ nhóm phụ thuộc** rồi `run` lại. Lần `update.sh` lỗi sẽ
+> **dừng trước bước build**, nên sau khi sửa migration **phải chạy lại `./update.sh`** để build + `up -d` (nếu không, web vẫn chạy image cũ).
+
+Kiểm tra nhanh sau khi vá:
+
+```bash
+docker exec -i station-mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' <<'SQL'
+SELECT COUNT(*) AS has_deadline_col FROM information_schema.columns
+  WHERE table_schema='station_management' AND table_name='station_proposals' AND column_name='supplement_deadline_at';
+SELECT COLUMN_TYPE AS status_enum FROM information_schema.columns
+  WHERE table_schema='station_management' AND table_name='station_proposals' AND column_name='status';
+SELECT `key`,`value` FROM proposal_lifecycle_configs WHERE `key` LIKE '%supplement%';
+SELECT COUNT(*) AS tracked FROM schema_migrations;
+SQL
+```
+
+Kỳ vọng: `has_deadline_col=1`; `status_enum` chứa `PRINCIPLE_APPROVED`; config `review_supplement_days=3`, `principle_supplement_days=15`, `supplement_webhook_url` (rỗng = tắt).
+
 ---
 
 ## 8. Cloudflare & HTTPS (không dùng Caddy)
@@ -360,6 +402,7 @@ docker run --rm -v dexuattram2_uploads_data:/data -v /root/backups:/backup busyb
 | Import kẹt `Waiting for schema metadata lock` | Dừng backend trước khi import: `docker kill station-backend`. |
 | Log MySQL `mbind: Operation not permitted` | Vô hại, bỏ qua. |
 | Đã deploy bản cũ, thiếu bảng (`notifications`, `geocode_configs`...) | Xem **mục 7.1** (unmark 45→67 rồi `migrate.sh run`). |
+| `update.sh` dừng ở migration: `Unknown column ... in 'field list'` | Migration phụ thuộc bị mark mà chưa chạy → xem **mục 7.2** (unmark 96→101 rồi `run`, sau đó **chạy lại `./update.sh`** để build). |
 | `migrate.sh run` báo "DB da co du lieu nhung chua co tracking" | Chỉ khi schema đã đúng: `scripts/migrate.sh mark-all --yes` rồi `run`. Nếu DB còn thiếu bảng thì làm theo mục 7.1. |
 
 Kiểm tra nhanh:
