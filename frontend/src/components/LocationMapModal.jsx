@@ -15,7 +15,7 @@ import MapCanvas from './map/MapCanvas';
 const RADIUS_OPTIONS = [5, 10, 20, 50];
 
 export const PREVIEW_STATUS_FILTER = {
-  stations: ['PLANNING', 'ACTIVE', 'DEPLOYING'],
+  stations: ['ACTIVE', 'DEPLOYING'],
   proposals: ['PENDING', 'APPROVED']
 };
 
