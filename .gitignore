@@ -17,3 +17,4 @@ playwright-report/
 .playwright-mcp/
 backups/
 frontend/test-*-results.json
+.kilo/
