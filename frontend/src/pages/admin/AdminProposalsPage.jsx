@@ -881,20 +881,10 @@ const AdminProposalsPage = () => {
         );
       case 'REVIEWING':
         return (
-          <>
-            <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('PRINCIPLE_APPROVED')} title="Duyệt chủ trương (sang Duyệt chủ trương)">
-              <CheckCircle2 size={12} />
-              Duyệt chủ trương
-            </button>
-            <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="1Office báo đã duyệt (webhook)">
-              <FileSignature size={12} />
-              Đã duyệt BCĐX
-            </button>
-            <button className="btn btn-neutral btn-outline btn-xs gap-1 shrink-0" onClick={() => go('ARCHIVED')} title="Lưu trữ do ưu tiên thấp (webhook)">
-              <Archive size={12} />
-              Lưu trữ
-            </button>
-          </>
+          <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('PRINCIPLE_APPROVED')} title="Duyệt chủ trương (sang Duyệt chủ trương)">
+            <CheckCircle2 size={12} />
+            Duyệt chủ trương
+          </button>
         );
       case 'PRINCIPLE_APPROVED':
         return (
@@ -958,6 +948,7 @@ const AdminProposalsPage = () => {
     }
     items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
     if (row.status === 'REVIEWING') {
+      items.push(item('approve', <FileSignature size={14} />, 'Đã duyệt BCĐX', () => go('APPROVED')));
       items.push(item('archive', <Archive size={14} />, 'Lưu trữ', () => go('ARCHIVED')));
     }
     if (row.status === 'CANCELLED' && isSuperAdmin) {
