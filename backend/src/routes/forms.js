@@ -80,6 +80,77 @@ router.get('/by-entity-purpose', formController.getByEntityAndPurpose);
 
 /**
  * @swagger
+ * /api/forms/{id}/sync-preview:
+ *   get:
+ *     tags: [Forms]
+ *     summary: Xem trước đồng bộ form Xem/sửa từ form Nhập liệu
+ *     description: >
+ *       Trả về diff khi đồng bộ cấu hình: field lấy từ form Nhập liệu, field riêng của form Xem/sửa
+ *       (hoặc field không có vị trí trong form Nhập liệu) sẽ được gom vào section riêng
+ *       "Trường riêng form xem/sửa", kèm mẫu mô tả 1Office sinh ra tương ứng.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID form Xem/sửa (purpose = view)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Form không phải Xem/sửa hoặc không có form Nhập liệu
+ *       404:
+ *         description: Không tìm thấy form
+ */
+router.get('/:id/sync-preview', requireAuth, requireSuperAdmin, formController.syncPreview);
+
+/**
+ * @swagger
+ * /api/forms/{id}/sync-from-create:
+ *   post:
+ *     tags: [Forms]
+ *     summary: Đồng bộ cấu hình form Xem/sửa theo form Nhập liệu
+ *     description: >
+ *       Ghi đè layout + field của form Xem/sửa bằng form Nhập liệu mặc định cùng entity.
+ *       Field chỉ có ở form Xem/sửa (hoặc không có vị trí trong form Nhập liệu) được đưa vào
+ *       section riêng. Khi syncDesc = true, mẫu mô tả 1Office cũng được sinh lại theo form Nhập liệu.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               syncDesc:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Đồng bộ luôn mẫu mô tả đẩy sang 1Office
+ *     responses:
+ *       200:
+ *         description: Đồng bộ thành công
+ *       400:
+ *         description: Form không hợp lệ hoặc mẫu mô tả sinh ra không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy form
+ */
+router.post('/:id/sync-from-create', requireAuth, requireSuperAdmin, formController.syncFromCreate);
+
+/**
+ * @swagger
  * /api/forms/{id}:
  *   get:
  *     tags: [Forms]

@@ -1,4 +1,5 @@
 const formService = require('../services/formService');
+const formSyncService = require('../services/formSyncService');
 
 exports.getAll = async (req, res) => {
   try {
@@ -129,6 +130,33 @@ exports.getByEntityAndPurpose = async (req, res) => {
     res.json({ success: true, data: form });
   } catch (error) {
     console.error('Get form by entity+purpose error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncPreview = async (req, res) => {
+  try {
+    const data = await formSyncService.syncPreview(req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Sync preview error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncFromCreate = async (req, res) => {
+  try {
+    const { syncDesc } = req.body || {};
+    const data = await formSyncService.syncFromCreate(req.params.id, { syncDesc });
+    res.json({ success: true, data, message: 'Đồng bộ cấu hình từ form Nhập liệu thành công' });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Sync form from create error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

@@ -5,7 +5,8 @@ import { formService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
-import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, FileText, PenLine, Eye, Lock, Unlock, Star } from 'lucide-react';
+import Dialog from '../../components/ui/Dialog';
+import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, FileText, PenLine, Eye, Lock, Unlock, Star, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const ENTITIES = [
   { key: 'stations', label: 'Stations', icon: Zap, desc: 'Quản lý trạm sạc' },
@@ -26,6 +27,47 @@ const AdminFormsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
+  const [syncModal, setSyncModal] = useState({ isOpen: false, form: null, plan: null, loading: false, error: '', syncDesc: true, submitting: false });
+
+  const closeSyncModal = () => setSyncModal({ isOpen: false, form: null, plan: null, loading: false, error: '', syncDesc: true, submitting: false });
+
+  const openSyncModal = async (form) => {
+    setError('');
+    setSyncModal({ isOpen: true, form, plan: null, loading: true, error: '', syncDesc: true, submitting: false });
+    try {
+      const res = await formService.syncPreview(form.id, token);
+      if (res.success) {
+        setSyncModal(prev => ({ ...prev, plan: res.data, loading: false, syncDesc: !!res.data.descConfig }));
+      } else {
+        setSyncModal(prev => ({ ...prev, loading: false, error: res.message || 'Không xem trước được cấu hình' }));
+      }
+    } catch {
+      setSyncModal(prev => ({ ...prev, loading: false, error: 'Lỗi kết nối server' }));
+    }
+  };
+
+  const handleConfirmSync = async () => {
+    const { form, syncDesc } = syncModal;
+    if (!form) return;
+    setSyncModal(prev => ({ ...prev, submitting: true }));
+    try {
+      const res = await formService.syncFromCreate(form.id, { syncDesc }, token);
+      if (res.success) {
+        const s = res.data.summary || {};
+        const extra = (s.parkedFromSource || 0) + (s.extraOnly || 0);
+        setToast({
+          message: `Đã đồng bộ ${s.newFieldCount || 0} trường từ form Nhập liệu${extra ? `, ${extra} trường vào section riêng` : ''}${res.data.descConfig ? ', cập nhật mô tả 1Office' : ''}`,
+          type: 'success'
+        });
+        closeSyncModal();
+        loadForms();
+      } else {
+        setSyncModal(prev => ({ ...prev, submitting: false, error: res.message || 'Đồng bộ thất bại' }));
+      }
+    } catch {
+      setSyncModal(prev => ({ ...prev, submitting: false, error: 'Lỗi kết nối server' }));
+    }
+  };
 
   const loadForms = async () => {
     try {
@@ -131,6 +173,121 @@ const AdminFormsPage = () => {
         type="danger"
       />
 
+      <Dialog isOpen={syncModal.isOpen} onClose={closeSyncModal} title="Đồng bộ cấu hình từ form Nhập liệu" size="xl">
+        {syncModal.loading && (
+          <div className="flex justify-center py-10">
+            <span className="loading loading-spinner loading-lg"></span>
+          </div>
+        )}
+
+        {!syncModal.loading && syncModal.error && (
+          <div className="alert alert-error text-sm mb-4">
+            <AlertTriangle size={16} />
+            <span>{syncModal.error}</span>
+          </div>
+        )}
+
+        {!syncModal.loading && syncModal.plan && (
+          <div className="space-y-4">
+            <div className="alert alert-warning text-xs items-start">
+              <AlertTriangle size={16} />
+              <span>
+                Form <b>{syncModal.plan.targetForm.name}</b> sẽ bị <b>ghi đè</b> toàn bộ layout + danh sách trường theo form{' '}
+                <b>{syncModal.plan.sourceForm.name}</b>. Trường không có trong form Nhập liệu (hoặc không được xếp vị trí) sẽ được gom vào
+                section riêng <b>“{syncModal.plan.extraSectionTitle}”</b> ở cuối form.
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="bg-base-200 rounded-lg p-3">
+                <div className="text-xs text-base-content/60">Trường sau đồng bộ</div>
+                <div className="text-xl font-semibold">{syncModal.plan.summary.newFieldCount}</div>
+              </div>
+              <div className="bg-base-200 rounded-lg p-3">
+                <div className="text-xs text-base-content/60">Lấy từ Nhập liệu</div>
+                <div className="text-xl font-semibold">{syncModal.plan.summary.keptCount}</div>
+              </div>
+              <div className="bg-base-200 rounded-lg p-3">
+                <div className="text-xs text-base-content/60">Vào section riêng</div>
+                <div className="text-xl font-semibold">
+                  {(syncModal.plan.summary.parkedFromSource || 0) + (syncModal.plan.summary.extraOnly || 0)}
+                </div>
+              </div>
+              <div className="bg-base-200 rounded-lg p-3">
+                <div className="text-xs text-base-content/60">Ghi đè cấu hình</div>
+                <div className="text-xl font-semibold">{syncModal.plan.summary.replaced}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <h4 className="font-semibold text-sm mb-2">Section sau đồng bộ ({syncModal.plan.sections.length})</h4>
+                <div className="border border-base-300 rounded-lg divide-y divide-base-200 max-h-64 overflow-y-auto">
+                  {syncModal.plan.sections.map(sec => (
+                    <div key={sec.id} className="p-2 flex items-center gap-2">
+                      <span className={`text-sm truncate ${sec.id === 'sync_extra_section' ? 'text-info font-medium' : ''}`}>
+                        {sec.title}
+                      </span>
+                      {sec.type === 'tabs' && <span className="badge badge-ghost badge-xs">tabs</span>}
+                      {sec.condition && (
+                        <span className="badge badge-outline badge-xs">{sec.condition.field} = {sec.condition.value}</span>
+                      )}
+                      <span className="ml-auto text-xs text-base-content/60">{sec.fields.length} trường</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-sm mb-2">
+                  Trường vào section riêng ({(syncModal.plan.summary.parkedFromSource || 0) + (syncModal.plan.summary.extraOnly || 0)})
+                </h4>
+                {syncModal.plan.parked.length === 0 ? (
+                  <p className="text-xs text-base-content/60 flex items-center gap-1">
+                    <CheckCircle2 size={14} className="text-success" />
+                    Form Nhập liệu và form Xem/sửa đã giống nhau.
+                  </p>
+                ) : (
+                  <div className="border border-base-300 rounded-lg divide-y divide-base-200 max-h-64 overflow-y-auto">
+                    {syncModal.plan.parked.map(item => (
+                      <div key={item.key} className="p-2 flex items-center gap-2">
+                        <span className="text-sm truncate">{item.label}</span>
+                        <span className="badge badge-ghost badge-xs">{item.reason === 'no_row' ? 'chưa xếp vị trí' : 'chỉ có ở form xem/sửa'}</span>
+                        <span className="ml-auto text-xs text-base-content/50 font-mono">{item.key}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {syncModal.plan.descConfig && (
+              <label className="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg p-3">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm checkbox-primary"
+                  checked={syncModal.syncDesc}
+                  onChange={(e) => setSyncModal(prev => ({ ...prev, syncDesc: e.target.checked }))}
+                />
+                <span className="text-sm">
+                  Cập nhật luôn mẫu <b>Mô tả đẩy sang 1Office</b> ({syncModal.plan.descConfig.name} — {syncModal.plan.descConfig.sectionCount} section)
+                </span>
+              </label>
+            )}
+
+            {syncModal.error && <div className="text-error text-xs">{syncModal.error}</div>}
+
+            <div className="modal-action">
+              <button className="btn btn-ghost" onClick={closeSyncModal} disabled={syncModal.submitting}>Hủy</button>
+              <button className="btn btn-info gap-2" onClick={handleConfirmSync} disabled={syncModal.submitting}>
+                {syncModal.submitting ? <span className="loading loading-spinner loading-xs"></span> : <RefreshCw size={14} />}
+                Đồng bộ
+              </button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
       {loading ? (
         <div className="flex justify-center py-12">
           <span className="loading loading-spinner loading-lg"></span>
@@ -199,6 +356,16 @@ const AdminFormsPage = () => {
                                 />
                               </label>
                               <div className="ml-auto flex items-center gap-1">
+                                {f.purpose === 'view' && (
+                                  <button
+                                    className="btn btn-outline btn-info btn-xs gap-1"
+                                    title="Đồng bộ layout/trường từ form Nhập liệu"
+                                    onClick={() => openSyncModal(f)}
+                                  >
+                                    <RefreshCw size={12} />
+                                    Đồng bộ
+                                  </button>
+                                )}
                                 <button className="btn btn-primary btn-xs gap-1" onClick={() => navigate(`/admin/forms/${f.id}/edit`)}>
                                   <Pencil size={12} />
                                   Sửa

@@ -404,6 +404,12 @@ export const formService = {
   },
   delete(id, token) {
     return api.deleteWithAuth(`/forms/${id}`, token);
+  },
+  syncPreview(id, token) {
+    return api.getWithAuth(`/forms/${id}/sync-preview`, token);
+  },
+  syncFromCreate(id, data, token) {
+    return api.postWithAuth(`/forms/${id}/sync-from-create`, data, token);
   }
 };
 
