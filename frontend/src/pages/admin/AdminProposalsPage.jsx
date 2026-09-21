@@ -961,7 +961,7 @@ const AdminProposalsPage = () => {
     if (row.status === 'APPROVED') {
       dangerItems.push(item('signfail', <X size={14} />, 'Ký thất bại', () => go('CONTRACT_FAILED'), true));
     }
-    if (['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(row.status)) {
+    if (row.status !== 'CANCELLED') {
       dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
     }
     dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));

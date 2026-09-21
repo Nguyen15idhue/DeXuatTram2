@@ -19,7 +19,7 @@ const STEPS = [
   {
     color: '#16a34a', title: '4. Đã duyệt BCĐX',
     desc: '1Office đã duyệt. Ký hợp đồng để đi tiếp.',
-    next: ['Ký thành công', 'Ký thất bại']
+    next: ['Ký thành công', 'Ký thất bại', 'Hủy → kết thúc']
   },
   {
     color: '#0d9488', title: '5. Ký thành công',
@@ -39,7 +39,7 @@ const STEPS = [
   {
     color: '#dc2626', title: '8. Từ chối',
     desc: 'Cần chỉnh sửa. CTV sửa xong bấm "Gửi lại" → quay về Đang đề xuất.',
-    next: []
+    next: ['Có thể Hủy thủ công → kết thúc']
   },
   {
     color: '#6b7280', title: '9. Đã hủy',
