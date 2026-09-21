@@ -78,7 +78,7 @@ list_files() {
   for f in "$DB_DIR"/*.sql; do
     [ -e "$f" ] || continue
     basename "$f"
-  done | sort
+  done | LC_ALL=C sort -V
 }
 
 file_checksum() {
