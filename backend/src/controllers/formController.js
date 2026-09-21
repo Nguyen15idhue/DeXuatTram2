@@ -134,6 +134,20 @@ exports.getByEntityAndPurpose = async (req, res) => {
   }
 };
 
+exports.getQuickCreate = async (req, res) => {
+  try {
+    const { entity } = req.query;
+    if (!entity) {
+      return res.status(400).json({ success: false, message: 'entity là bắt buộc' });
+    }
+    const form = await formService.getQuickCreateForm(entity);
+    res.json({ success: true, data: form });
+  } catch (error) {
+    console.error('Get quick create form error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.syncPreview = async (req, res) => {
   try {
     const data = await formSyncService.syncPreview(req.params.id);

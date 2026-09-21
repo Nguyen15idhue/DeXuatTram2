@@ -396,6 +396,9 @@ export const formService = {
   getByEntityAndPurpose(entity, purpose) {
     return dedupGet(`/forms/by-entity-purpose?entity=${entity}&purpose=${purpose}`);
   },
+  getQuickCreate(entity, token) {
+    return api.getWithAuth(`/forms/quick-create?entity=${entity}`, token);
+  },
   create(data, token) {
     return api.postWithAuth('/forms', data, token);
   },

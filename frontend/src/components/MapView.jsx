@@ -871,7 +871,9 @@ const MapView = ({
       <div className="map-fab-group">
         {showCreateMenu && (
           <div className="map-create-menu">
-            <div className="map-create-title">{createTarget === 'station' ? 'Tạo trạm mới' : 'Tạo đề xuất mới'}</div>
+            <div className="map-create-title">
+              {createTarget === 'station' ? 'Tạo trạm mới' : (createTarget === 'proposal_quick' ? 'Tạo đề xuất nhanh' : 'Tạo đề xuất mới')}
+            </div>
             <button type="button" className="map-create-option" onClick={() => handleMyLocation(true)} disabled={locationLoading}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
@@ -950,6 +952,17 @@ const MapView = ({
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          className={`map-fab map-fab-quick ${showCreateMenu && createTarget === 'proposal_quick' ? 'map-fab-active' : ''}`}
+          onClick={() => openCreateMenu('proposal_quick')}
+          title="Tạo đề xuất nhanh"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12z"/>
           </svg>
         </button>
       </div>

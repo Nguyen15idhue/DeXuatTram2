@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import MapView from '../../components/MapView';
 import MapFilterPanel, { EMPTY_MAP_FILTERS } from '../../components/MapFilterPanel';
 import { useAuth } from '../../contexts/AuthContext';
-import { proposalService, stationService } from '../../services/api';
+import { proposalService, stationService, formService } from '../../services/api';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import Toast from '../../components/Toast';
@@ -24,6 +24,20 @@ const MapPage = () => {
   const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_MAP_FILTERS });
+  const [quickFormId, setQuickFormId] = useState(null);
+  const [quickMode, setQuickMode] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    formService.getQuickCreate('station_proposals', token)
+      .then(res => {
+        if (cancelled || !res || !res.success) return;
+        setQuickFormId(res.data ? res.data.id : null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
 
   useEffect(() => {
     setIsMobile(window.innerWidth < 768);
@@ -39,13 +53,14 @@ const MapPage = () => {
     }
   }, [toast.message]);
 
-  const openProposalForm = useCallback((lat, lng) => {
+  const openProposalForm = useCallback((lat, lng, quick = false) => {
     setCoords({ lat, lng });
     setHighlightPosition([lat, lng]);
     setError('');
     setFormCoords({ latitude: '', longitude: '' });
     setShowPreview(false);
     setPreviewSnapshot(null);
+    setQuickMode(quick);
     setShowForm(true);
     setSelectingLocation(false);
   }, []);
@@ -102,14 +117,14 @@ const MapPage = () => {
 
   const handleLocationSelected = useCallback((lat, lng, mode, target) => {
     if (mode === 'select') {
-      setPendingTarget(target === 'station' ? 'station' : 'proposal');
+      setPendingTarget(target === 'station' ? 'station' : (target === 'proposal_quick' ? 'proposal_quick' : 'proposal'));
       setSelectingLocation(true);
       setToast({ message: isMobile ? 'Kéo marker đến vị trí cần chọn, sau đó ấn Xác nhận' : 'Click trên bản đồ để chọn vị trí', type: 'info' });
       return;
     }
     if (lat !== null && lng !== null) {
       if (target === 'station') openStationForm(lat, lng);
-      else openProposalForm(lat, lng);
+      else openProposalForm(lat, lng, target === 'proposal_quick');
     }
   }, [isMobile, openProposalForm, openStationForm]);
 
@@ -120,7 +135,7 @@ const MapPage = () => {
   const handleConfirmPosition = useCallback(() => {
     if (!highlightPosition) return;
     if (pendingTarget === 'station') openStationForm(highlightPosition[0], highlightPosition[1]);
-    else openProposalForm(highlightPosition[0], highlightPosition[1]);
+    else openProposalForm(highlightPosition[0], highlightPosition[1], pendingTarget === 'proposal_quick');
   }, [highlightPosition, pendingTarget, openProposalForm, openStationForm]);
 
   const handleSubmit = async (formData) => {
@@ -130,7 +145,7 @@ const MapPage = () => {
         latitude: coords.lat,
         longitude: coords.lng,
         ...formData
-      }, token);
+      }, token, quickMode && quickFormId ? quickFormId : undefined);
 
       if (res.success) {
         setShowForm(false);
@@ -195,7 +210,7 @@ const MapPage = () => {
         <div className="modal-overlay" onClick={closeProposalForm}>
           <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
             <div className="popup-header">
-              <h2>Đề xuất trạm mới</h2>
+              <h2>{quickMode ? 'Đề xuất trạm mới (tạo nhanh)' : 'Đề xuất trạm mới'}</h2>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -224,6 +239,7 @@ const MapPage = () => {
               <DynamicForm
                 entity="station_proposals"
                 purpose="create"
+                formId={quickMode && quickFormId ? quickFormId : undefined}
                 onSubmit={handleSubmit}
                 initialData={proposalInitialData}
                 onValuesChange={setFormCoords}

@@ -490,6 +490,14 @@ body {
   stroke: white;
 }
 
+.map-fab-quick {
+  color: #7c3aed;
+}
+
+.map-fab-quick:hover {
+  background: #f3ecff;
+}
+
 /* Create Menu */
 .map-create-menu {
   background: white;

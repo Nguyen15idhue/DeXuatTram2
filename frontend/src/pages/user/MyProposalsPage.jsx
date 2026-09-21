@@ -122,11 +122,10 @@ const MyProposalsPage = () => {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    formService.getAll('entity=station_proposals&status=active&limit=100', token)
+    formService.getQuickCreate('station_proposals', token)
       .then(res => {
         if (cancelled || !res || !res.success) return;
-        const quick = (res.data || []).find(f => f.purpose === 'create' && !f.is_default);
-        setQuickFormId(quick ? quick.id : null);
+        setQuickFormId(res.data ? res.data.id : null);
       })
       .catch(() => {});
     return () => { cancelled = true; };

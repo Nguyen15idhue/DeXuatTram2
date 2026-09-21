@@ -80,6 +80,30 @@ router.get('/by-entity-purpose', formController.getByEntityAndPurpose);
 
 /**
  * @swagger
+ * /api/forms/quick-create:
+ *   get:
+ *     tags: [Forms]
+ *     summary: Lấy form "Tạo nhanh" (purpose=create, không phải form mặc định)
+ *     description: Dùng cho nút "Tạo nhanh" ở trang đề xuất và trên bản đồ. Mọi vai trò đã đăng nhập đều gọi được.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, station_proposals, users]
+ *     responses:
+ *       200:
+ *         description: Thành công (data = null nếu chưa cấu hình form tạo nhanh)
+ *       400:
+ *         description: Thiếu entity
+ */
+router.get('/quick-create', requireAuth, formController.getQuickCreate);
+
+/**
+ * @swagger
  * /api/forms/{id}/sync-preview:
  *   get:
  *     tags: [Forms]

@@ -113,3 +113,14 @@ exports.getFormByEntityAndPurpose = async (entity, purpose) => {
   );
   return rows[0] || null;
 };
+
+exports.getQuickCreateForm = async (entity) => {
+  const [rows] = await pool.query(
+    `SELECT id, name, entity, purpose
+     FROM forms
+     WHERE entity = ? AND purpose = 'create' AND is_default = 0 AND status = 'active'
+     ORDER BY id ASC LIMIT 1`,
+    [entity]
+  );
+  return rows[0] || null;
+};
