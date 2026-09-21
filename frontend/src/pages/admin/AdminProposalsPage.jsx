@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -20,7 +20,8 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, Ban, Lock, FileSignature, History, GitBranch, Archive } from 'lucide-react';
+import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, FileSignature, History, GitBranch, Archive } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -76,6 +77,10 @@ const AdminProposalsPage = () => {
   const [createFormId, setCreateFormId] = useState(PROPOSALS_CREATE_FORM_ID);
   const [quickFormId, setQuickFormId] = useState(null);
   const [formCoords, setFormCoords] = useState({ latitude: '', longitude: '' });
+  const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
+  const [mapLink, setMapLink] = useState('');
+  const [linkError, setLinkError] = useState('');
+  const [resolvingLink, setResolvingLink] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [importViewId, setImportViewId] = useState('');
@@ -822,6 +827,8 @@ const AdminProposalsPage = () => {
 
   const handleCreateSubmit = async (formData) => {
     const submitData = { ...formData };
+    if (!submitData.latitude && mapCoords.latitude) submitData.latitude = mapCoords.latitude;
+    if (!submitData.longitude && mapCoords.longitude) submitData.longitude = mapCoords.longitude;
     if (!submitData.owner_name || !submitData.address || !submitData.latitude || !submitData.longitude) {
       throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
     }
@@ -838,6 +845,9 @@ const AdminProposalsPage = () => {
   const openCreateForm = (formId) => {
     setCreateFormId(formId || PROPOSALS_CREATE_FORM_ID);
     setFormCoords({ latitude: '', longitude: '' });
+    setMapCoords({ latitude: '', longitude: '' });
+    setMapLink('');
+    setLinkError('');
     setShowPreview(false);
     setPreviewSnapshot(null);
     setShowCreateForm(true);
@@ -847,7 +857,37 @@ const AdminProposalsPage = () => {
     setShowCreateForm(false);
     setShowPreview(false);
     setPreviewSnapshot(null);
+    setMapLink('');
+    setLinkError('');
   };
+
+  const handleGoogleMapLink = async () => {
+    const url = mapLink.trim();
+    if (!url) return;
+    setLinkError('');
+    setResolvingLink(true);
+    try {
+      let coords = parseGoogleMapsLink(url);
+      if (coords && coords.needResolve) {
+        coords = await resolveGoogleMapsShortUrl(coords.url);
+      }
+      if (coords && coords.lat != null && coords.lng != null) {
+        setMapCoords({ latitude: Number(coords.lat).toFixed(6), longitude: Number(coords.lng).toFixed(6) });
+        setMapLink('');
+      } else {
+        setLinkError('Không đọc được tọa độ từ link Google Maps');
+      }
+    } catch {
+      setLinkError('Không đọc được tọa độ từ link Google Maps');
+    } finally {
+      setResolvingLink(false);
+    }
+  };
+
+  const createInitialData = useMemo(() => ({
+    latitude: mapCoords.latitude,
+    longitude: mapCoords.longitude
+  }), [mapCoords.latitude, mapCoords.longitude]);
 
   const parsePreviewCoords = (c) => {
     const lat = parseFloat(c.latitude);
@@ -857,9 +897,13 @@ const AdminProposalsPage = () => {
     return { latitude: lat, longitude: lng };
   };
 
+  const effCreateCoords = (formCoords.latitude !== '' && formCoords.latitude != null)
+    ? formCoords
+    : mapCoords;
+
   const validPreviewCoords = parsePreviewCoords({
-    latitude: formCoords.latitude ?? '',
-    longitude: formCoords.longitude ?? ''
+    latitude: effCreateCoords.latitude ?? '',
+    longitude: effCreateCoords.longitude ?? ''
   });
 
   const openPreview = () => {
@@ -1524,11 +1568,41 @@ const AdminProposalsPage = () => {
               </div>
             </div>
             <div className="popup-body">
+              <div className="border border-base-300 rounded-lg p-3 mb-4">
+                <label className="text-sm font-medium block mb-2">Lấy tọa độ từ link Google Maps</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Dán link Google Maps vào đây..."
+                    className="input input-bordered input-sm flex-1"
+                    value={mapLink}
+                    onChange={(e) => { setMapLink(e.target.value); if (linkError) setLinkError(''); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleGoogleMapLink()}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm gap-1"
+                    onClick={handleGoogleMapLink}
+                    disabled={resolvingLink || !mapLink.trim()}
+                  >
+                    <Link2 size={14} />
+                    {resolvingLink ? '...' : 'Lấy tọa độ'}
+                  </button>
+                </div>
+                {linkError && <div className="alert alert-error text-sm mt-2">{linkError}</div>}
+                {mapCoords.latitude && mapCoords.longitude && (
+                  <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+                    <MapPin size={14} />
+                    Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
+                  </div>
+                )}
+              </div>
               <DynamicForm
                 entity="station_proposals"
                 purpose="create"
                 formId={createFormId}
                 onSubmit={handleCreateSubmit}
+                initialData={createInitialData}
                 onValuesChange={setFormCoords}
                 hideActions
                 htmlId="admin-proposal-create-form"
