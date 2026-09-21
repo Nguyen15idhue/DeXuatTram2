@@ -52,9 +52,84 @@ const parseTableConfig = (sc) => {
   try { return JSON.parse(sc); } catch { return { columns: [], min_rows: 0, max_rows: 10 }; }
 };
 
-const getTablePriceRule = (col) => {
-  if (!col || !col.price_rules || !col.price_rules.when_field || !col.autofill_from) return null;
-  return col.price_rules;
+const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'not_empty'];
+
+const normalizeTableLink = (col) => {
+  if (!col) return null;
+  if (col.data_link && col.data_link.enabled) {
+    return {
+      trigger: col.data_link.trigger_column || null,
+      fallbackColumn: col.data_link.default_column || null,
+      datalistId: col.data_link.datalist_id || col.data_list_id || null,
+      conditions: Array.isArray(col.data_link.conditions) ? col.data_link.conditions : []
+    };
+  }
+  if (col.autofill_from && (col.autofill_column || (col.price_rules && col.price_rules.when_field))) {
+    const pr = col.price_rules || {};
+    const conditions = pr.when_field
+      ? Object.entries(pr.map || {}).map(([value, column]) => ({ field: pr.when_field, op: '=', value, column }))
+      : [];
+    return {
+      trigger: col.autofill_from,
+      fallbackColumn: col.autofill_column || null,
+      datalistId: col.data_list_id || null,
+      conditions
+    };
+  }
+  return null;
+};
+
+const getTablePriceRule = (col) => normalizeTableLink(col);
+
+const parseManualOptions = (options) => {
+  if (Array.isArray(options)) return options;
+  if (typeof options === 'string') {
+    try { const p = JSON.parse(options); return Array.isArray(p) ? p : []; } catch { return []; }
+  }
+  return [];
+};
+
+const resolveCondFieldLabel = (fieldKey, rawVal, allFields, dataListOptions) => {
+  const def = (allFields || []).find((f) => f && (f.key === fieldKey || f.field_key === fieldKey));
+  if (!def) return null;
+  const m = parseManualOptions(def.options).find((o) => String(o && o.value !== undefined ? o.value : (o && o.label)) === String(rawVal));
+  if (m) return (m.label !== undefined && m.label !== null) ? String(m.label) : null;
+  if (def.data_list_id && def.data_list_column && dataListOptions) {
+    const map = dataListOptions[def.data_list_id];
+    const bucket = map && map.tree && map.tree[def.data_list_column] ? map.tree[def.data_list_column][rawVal] : null;
+    const r0 = bucket && bucket[0] ? bucket[0]._raw : null;
+    if (r0) {
+      const lc = def.data_list_label_column || def.data_list_column;
+      if (r0[lc] !== undefined && r0[lc] !== null && r0[lc] !== '') return String(r0[lc]);
+    }
+  }
+  return null;
+};
+
+const testTableCondition = (cond, formValues, labelOf) => {
+  if (!cond || !cond.field || !TABLE_LINK_OPS.includes(cond.op)) return false;
+  const raw = (formValues || {})[cond.field];
+  const s = (v) => String(v === undefined || v === null ? '' : v);
+  const cands = [s(raw)];
+  try {
+    const lb = labelOf(cond.field, raw);
+    if (lb !== null && lb !== undefined && s(lb) !== s(raw)) cands.push(s(lb));
+  } catch { /* silent */ }
+  const t = s(cond.value);
+  const tl = t.toLowerCase();
+  switch (cond.op) {
+    case '=': return cands.includes(t);
+    case '!=': return !cands.includes(t);
+    case 'contains': return tl !== '' && cands.some((c) => c.toLowerCase().includes(tl));
+    case 'not_contains': return tl === '' || !cands.some((c) => c.toLowerCase().includes(tl));
+    case 'in': {
+      const set = t.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+      return set.length > 0 && cands.some((c) => set.includes(c.toLowerCase()));
+    }
+    case 'empty': return raw === '' || raw === null || raw === undefined || (Array.isArray(raw) && raw.length === 0);
+    case 'not_empty': return !(raw === '' || raw === null || raw === undefined || (Array.isArray(raw) && raw.length === 0));
+    default: return false;
+  }
 };
 
 const resolveTableCellRef = (col, allFields) => {
@@ -79,15 +154,18 @@ const resolveTableCellRef = (col, allFields) => {
   };
 };
 
-const collectTablePriceOptions = ({ columns, col, row, formValues, dataListOptions, resolveCellField }) => {
-  const rule = getTablePriceRule(col);
-  if (!rule) return null;
-  const condVal = (formValues || {})[rule.when_field];
-  const priceCol = (rule.map && Object.prototype.hasOwnProperty.call(rule.map, condVal)) ? rule.map[condVal] : col.autofill_column;
+const collectTablePriceOptions = ({ columns, col, row, formValues, dataListOptions, resolveCellField, allFields }) => {
+  const link = normalizeTableLink(col);
+  if (!link || !link.trigger) return null;
+  const labelOf = (fk, rv) => resolveCondFieldLabel(fk, rv, allFields, dataListOptions);
+  let priceCol = link.fallbackColumn;
+  for (const cond of (link.conditions || [])) {
+    if (testTableCondition(cond, formValues, labelOf)) { priceCol = cond.column; break; }
+  }
   if (!priceCol) return null;
-  const srcCol = (columns || []).find((c) => c && c.key === col.autofill_from);
+  const srcCol = (columns || []).find((c) => c && c.key === link.trigger);
   if (!srcCol) return null;
-  const srcVal = row ? row[col.autofill_from] : '';
+  const srcVal = row ? row[link.trigger] : '';
   if (srcVal === '' || srcVal === null || srcVal === undefined) return [];
   const ref = resolveCellField(srcCol);
   if (!ref || !ref.data_list_id || !ref.data_list_column) return null;
@@ -105,11 +183,11 @@ const collectTablePriceOptions = ({ columns, col, row, formValues, dataListOptio
   return opts;
 };
 
-const applyTablePriceRulesToRow = ({ columns, row, formValues, dataListOptions, resolveCellField }) => {
+const applyTablePriceRulesToRow = ({ columns, row, formValues, dataListOptions, resolveCellField, allFields }) => {
   let next = null;
   (columns || []).forEach((col) => {
-    if (!getTablePriceRule(col)) return;
-    const opts = collectTablePriceOptions({ columns, col, row: next || row, formValues, dataListOptions, resolveCellField });
+    if (!normalizeTableLink(col)) return;
+    const opts = collectTablePriceOptions({ columns, col, row: next || row, formValues, dataListOptions, resolveCellField, allFields });
     if (opts === null) return;
     const cur = (next || row)[col.key];
     if (!opts.some((v) => String(v) === String(cur))) {
@@ -151,7 +229,11 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
   const tablePriceCondSig = (() => {
     if (field.type !== 'table') return '';
     const tc = parseTableConfig(field.source_config);
-    return (tc.columns || []).filter((c) => getTablePriceRule(c)).map((c) => `${c.key}=${String((formValues || {})[getTablePriceRule(c).when_field] ?? '')}`).join('|');
+    return (tc.columns || []).filter((c) => normalizeTableLink(c)).map((c) => {
+      const link = normalizeTableLink(c);
+      const keys = [link.trigger, ...(link.conditions || []).map((x) => x.field)];
+      return `${c.key}=${keys.map((k) => String((formValues || {})[k] ?? '')).join(',')}`;
+    }).join('|');
   })();
 
   useEffect(() => {
@@ -162,7 +244,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     const refOf = (c) => resolveTableCellRef(c, allFields);
     let changed = false;
     const next = rows.map((row) => {
-      const nr = applyTablePriceRulesToRow({ columns: cols, row, formValues, dataListOptions, resolveCellField: refOf });
+      const nr = applyTablePriceRulesToRow({ columns: cols, row, formValues, dataListOptions, resolveCellField: refOf, allFields });
       if (nr) { changed = true; return nr; }
       return row;
     });
@@ -687,6 +769,8 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           disabled={disabled}
           fileConfig={fileConfig}
           uploadUrl={uploadUrl}
+          invalid={!!error}
+          validationError={error}
         />
       );
 
@@ -794,7 +878,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
               }
             }
           });
-          const priced = applyTablePriceRulesToRow({ columns, row: updatedRow, formValues, dataListOptions, resolveCellField });
+          const priced = applyTablePriceRulesToRow({ columns, row: updatedRow, formValues, dataListOptions, resolveCellField, allFields });
           if (priced) updatedRow = priced;
         }
 
@@ -809,7 +893,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       };
 
       return (
-        <div className="dynamic-field-table" style={{ overflowX: 'auto' }}>
+        <div className={`dynamic-field-table${error ? ' has-error' : ''}`} style={{ overflowX: 'auto', border: error ? '1px solid #dc2626' : undefined, borderRadius: error ? 6 : undefined, padding: error ? 4 : undefined }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
@@ -846,7 +930,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                     const cellOptions = getCellOptions(col, row);
                     const cellDisabled = disabled || hasFormula;
                     const priceOpts = getTablePriceRule(col)
-                      ? collectTablePriceOptions({ columns, col, row, formValues, dataListOptions, resolveCellField })
+                      ? collectTablePriceOptions({ columns, col, row, formValues, dataListOptions, resolveCellField, allFields })
                       : null;
                     const priceValid = priceOpts !== null && priceOpts.some((v) => String(v) === String(cellVal));
                     return (

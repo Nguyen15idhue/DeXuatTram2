@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {}, uploadUrl = '/files/upload' }) => {
+const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {}, uploadUrl = '/files/upload', invalid = false, validationError = '' }) => {
   const { token } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -85,9 +85,9 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
   };
 
   return (
-    <div className="file-upload">
+    <div className={`file-upload${invalid ? ' has-error' : ''}`}>
       <div
-        className={`file-upload-dropzone ${dragOver ? 'drag-over' : ''}`}
+        className={`file-upload-dropzone ${dragOver ? 'drag-over' : ''}${invalid ? ' is-invalid' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
@@ -110,6 +110,7 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
       </div>
 
       {error && <div className="file-upload-error">{error}</div>}
+      {validationError && <div className="file-upload-error">{validationError}</div>}
 
       {files.length > 0 && (
         <div className="file-upload-list">

@@ -794,7 +794,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             }
             return (
               <div key={colIdx} className="form-cell-content">
-                <div className={`dynamic-form-field${isFieldFilled(cellField.key) ? ' is-filled' : ''}`} data-field-key={cellField.key}>
+                <div className={`dynamic-form-field${isFieldFilled(cellField.key) ? ' is-filled' : ''}${errors[cellField.key] ? ' has-error' : ''}`} data-field-key={cellField.key}>
                   <label>
                     {cellField.labelOverride || cellField.label}
                     {cellField.required && <span className="text-red-600"> *</span>}
@@ -903,7 +903,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).map(field => {
               const colSpan = field.config?.colSpan || 1;
               return (
-                <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+                <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''}${errors[field.key] ? ' has-error' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
                   <label>
                     {field.labelOverride || field.label}
                     {field.required && <span className="text-red-600"> *</span>}
@@ -926,7 +926,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         {fields.filter(f => isFieldVisible(f)).map(field => {
           const colSpan = field.config?.colSpan || 1;
           return (
-            <div key={field.id || field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+            <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''}${errors[field.key] ? ' has-error' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
               <label>
                 {field.labelOverride || field.label}
                 {field.required && <span className="text-red-600"> *</span>}

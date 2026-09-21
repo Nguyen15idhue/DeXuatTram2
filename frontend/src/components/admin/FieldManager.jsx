@@ -25,6 +25,17 @@ const SECTION_TITLE_STYLE = { margin: '0 0 12px', fontSize: 13, fontWeight: 700,
 const GRID2_STYLE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 };
 const INPUT_STYLE = { width: '100%' };
 const FIELD_GROUP_STYLE = { marginBottom: 0 };
+const TABLE_HEADER_STYLE_FM = { padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, background: '#f8fafc', textAlign: 'left' };
+const TABLE_CELL_STYLE_FM = { padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 13 };
+const LINK_OPS_FM = [
+  { value: '=', label: '=' },
+  { value: '!=', label: 'khác' },
+  { value: 'contains', label: 'chứa' },
+  { value: 'not_contains', label: 'không chứa' },
+  { value: 'in', label: 'thuộc (phẩy)' },
+  { value: 'empty', label: 'trống' },
+  { value: 'not_empty', label: 'không trống' }
+];
 const NUMBER_FORMAT_OPTIONS = [
   { value: 'plain', sample: '1000' },
   { value: 'dot', sample: '1.000' },
@@ -316,6 +327,32 @@ const FieldManager = () => {
       ...prev,
       options: prev.options.filter((_, i) => i !== index)
     }));
+  };
+
+  const moveOption = (index, dir) => {
+    setForm(prev => {
+      const next = [...prev.options];
+      const j = index + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[index], next[j]] = [next[j], next[index]];
+      return { ...prev, options: next };
+    });
+  };
+
+  const [dragOptionIdx, setDragOptionIdx] = useState(null);
+
+  const dropOption = (index) => {
+    if (dragOptionIdx === null || dragOptionIdx === index) {
+      setDragOptionIdx(null);
+      return;
+    }
+    setForm(prev => {
+      const next = [...prev.options];
+      const [moved] = next.splice(dragOptionIdx, 1);
+      next.splice(index, 0, moved);
+      return { ...prev, options: next };
+    });
+    setDragOptionIdx(null);
   };
 
   const handleSubmit = async (e) => {
@@ -679,7 +716,19 @@ const FieldManager = () => {
                         <h4>Options</h4>
                         <div className="options-editor">
                           {form.options.map((opt, idx) => (
-                            <div key={idx} className="option-row">
+                            <div
+                              key={idx}
+                              className="option-row"
+                              draggable
+                              onDragStart={() => setDragOptionIdx(idx)}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={() => dropOption(idx)}
+                              style={dragOptionIdx === idx ? { opacity: 0.4 } : undefined}
+                              title="Kéo để đổi thứ tự"
+                            >
+                              <span style={{ cursor: 'grab', color: '#9ca3af', fontSize: 12 }} title="Kéo để đổi thứ tự">⠿</span>
+                              <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '0 4px' }} disabled={idx === 0} onClick={() => moveOption(idx, -1)} title="Lên">▲</button>
+                              <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '0 4px' }} disabled={idx === form.options.length - 1} onClick={() => moveOption(idx, 1)} title="Xuống">▼</button>
                               <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
                               <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
                               <select value={opt.optionType || 'text'} onChange={(e) => updateOption(idx, 'optionType', e.target.value)} title="Loại dữ liệu">
@@ -823,15 +872,13 @@ const FieldManager = () => {
                     {(form.table_config.columns || []).map((col, idx) => {
                       const expanded = !!expandedTblCols[idx];
                       const tblCols = form.table_config.columns || [];
-                      const srcCol = tblCols.find(c => c.key === col.autofill_from);
-                      const srcHasDl = !!(srcCol && srcCol.data_list_id);
                       const badges = [];
                       if (col.data_list_id) badges.push(['DL', '#e0e7ff', '#3730a3']);
                       if (!col.data_list_id && (col.data_list_column || col.parent_column)) badges.push(['DL ẩn', '#fef3c7', '#92400e']);
                       if (col.parent_column) badges.push(['Cascade', '#dcfce7', '#166534']);
-                      if (col.autofill_from) badges.push(['Auto', '#ffedd5', '#9a3412']);
+                      if (col.data_link && col.data_link.enabled) badges.push(['DL-Link', '#e0f2fe', '#075985']);
+                      else if (col.autofill_from) badges.push(['Auto', '#ffedd5', '#9a3412']);
                       if (col.formula) badges.push(['Fx', '#f3e8ff', '#6b21a8']);
-                      if (col.price_rules && col.price_rules.when_field) badges.push(['Giá ĐK', '#e0f2fe', '#075985']);
                       if (col.footer_formula) badges.push([col.footer_formula, '#f1f5f9', '#334155']);
                       return (
                       <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
@@ -978,7 +1025,19 @@ const FieldManager = () => {
                         )}
                         <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e2e8f0' }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Liên kết dữ liệu</div>
+                          {(() => {
+                            const linkOn = !!(col.data_link && typeof col.data_link === 'object' && col.data_link.enabled);
+                            return linkOn ? (
+                              <div style={{ fontSize: 11, color: '#075985', marginBottom: 6 }}>
+                                Đang dùng khối "Lấy dữ liệu từ DataList" bên dưới — các ô nguồn options riêng đã ẩn.
+                              </div>
+                            ) : null;
+                          })()}
                           <div style={GRID2_STYLE}>
+                            {(() => {
+                              const linkOn = !!(col.data_link && typeof col.data_link === 'object' && col.data_link.enabled);
+                              if (linkOn) return null;
+                              return (<>
                             <div className="form-group" style={FIELD_GROUP_STYLE}>
                               <label>DataList</label>
                               <select value={col.data_list_id || ''} onChange={(e) => {
@@ -990,16 +1049,24 @@ const FieldManager = () => {
                                 {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
                               </select>
                             </div>
-                            {!!col.data_list_id && (
-                              <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                <label>Cột giá trị</label>
-                                <input type="text" placeholder="VD: ten" value={col.data_list_column || ''} onChange={(e) => {
-                                  const newCols = [...(form.table_config.columns || [])];
-                                  newCols[idx] = { ...newCols[idx], data_list_column: e.target.value };
-                                  updateForm('table_config', { ...form.table_config, columns: newCols });
-                                }} style={INPUT_STYLE} />
-                              </div>
-                            )}
+                            {!!col.data_list_id && (() => {
+                              const dl = dataLists.find(d => d.id === Number(col.data_list_id));
+                              const cfg = dl && dl.columns_config ? dl.columns_config : [];
+                              const cols = Array.isArray(cfg) ? cfg : [];
+                              return (
+                                <div className="form-group" style={FIELD_GROUP_STYLE}>
+                                  <label>Cột giá trị</label>
+                                  <select value={col.data_list_column || ''} onChange={(e) => {
+                                    const newCols = [...(form.table_config.columns || [])];
+                                    newCols[idx] = { ...newCols[idx], data_list_column: e.target.value || null };
+                                    updateForm('table_config', { ...form.table_config, columns: newCols });
+                                  }} style={INPUT_STYLE}>
+                                    <option value="">-- Chọn cột --</option>
+                                    {cols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                  </select>
+                                </div>
+                              );
+                            })()}
                             {!!col.data_list_id && (form.table_config.columns || []).length > 1 && (
                               <div className="form-group" style={FIELD_GROUP_STYLE}>
                                 <label>Cột cha (cascade)</label>
@@ -1013,88 +1080,137 @@ const FieldManager = () => {
                                 </select>
                               </div>
                             )}
-                            {(form.table_config.columns || []).length > 1 && !col.formula && (
-                              <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                <label>Tự điền từ cột</label>
-                                <select value={col.autofill_from || ''} onChange={(e) => {
-                                  const newCols = [...(form.table_config.columns || [])];
-                                  newCols[idx] = { ...newCols[idx], autofill_from: e.target.value || null };
-                                  updateForm('table_config', { ...form.table_config, columns: newCols });
-                                }} style={INPUT_STYLE}>
-                                  <option value="">-- Không --</option>
-                                  {(form.table_config.columns || []).filter((_, i) => i !== idx).map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
-                                </select>
-                              </div>
-                            )}
-                            {!!col.autofill_from && srcHasDl && (
-                              <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                <label>Lấy cột từ DataList của cột nguồn</label>
-                                <input type="text" placeholder="VD: gia" value={col.autofill_column || ''} onChange={(e) => {
-                                  const newCols = [...(form.table_config.columns || [])];
-                                  newCols[idx] = { ...newCols[idx], autofill_column: e.target.value };
-                                  updateForm('table_config', { ...form.table_config, columns: newCols });
-                                }} style={INPUT_STYLE} />
-                              </div>
-                            )}
-                            {!!col.autofill_from && !srcHasDl && (
-                              <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                <span style={{ fontSize: 11, color: '#b45309' }}>Cột nguồn chưa gắn DataList nên tự điền không chạy.</span>
-                              </div>
-                            )}
-                            {!!col.autofill_from && (
-                              <div className="form-group" style={{ ...FIELD_GROUP_STYLE, gridColumn: '1 / -1' }}>
-                                <label>Giá theo điều kiện (để trống = luôn lấy cột trên)</label>
-                                <input type="text" placeholder="Key field điều kiện ngoài table, VD: che_do_gia" value={(col.price_rules && col.price_rules.when_field) || ''} onChange={(e) => {
-                                  const newCols = [...(form.table_config.columns || [])];
-                                  const wf = e.target.value.trim();
-                                  const prev = newCols[idx].price_rules || {};
-                                  newCols[idx] = { ...newCols[idx], price_rules: wf ? { when_field: wf, map: prev.map || {} } : null };
-                                  updateForm('table_config', { ...form.table_config, columns: newCols });
-                                }} style={INPUT_STYLE} />
-                                {!!(col.price_rules && col.price_rules.when_field) && (
-                                  <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    {Object.entries((col.price_rules && col.price_rules.map) || {}).map(([whenVal, priceCol]) => (
-                                      <div key={whenVal} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                        <input type="text" placeholder="Giá trị ĐK, VD: a" value={whenVal} disabled style={{ ...INPUT_STYLE, flex: 1 }} />
-                                        <span style={{ fontSize: 11, color: '#888' }}>→</span>
-                                        <input type="text" placeholder="Cột DataList, VD: gia_km" value={priceCol || ''} onChange={(e) => {
-                                          const newCols = [...(form.table_config.columns || [])];
-                                          const map = { ...((newCols[idx].price_rules && newCols[idx].price_rules.map) || {}) };
-                                          map[whenVal] = e.target.value.trim();
-                                          newCols[idx] = { ...newCols[idx], price_rules: { ...newCols[idx].price_rules, map } };
-                                          updateForm('table_config', { ...form.table_config, columns: newCols });
-                                        }} style={{ ...INPUT_STYLE, flex: 1 }} />
-                                        <button type="button" className="btn btn-sm btn-delete" onClick={() => {
-                                          const newCols = [...(form.table_config.columns || [])];
-                                          const map = { ...((newCols[idx].price_rules && newCols[idx].price_rules.map) || {}) };
-                                          delete map[whenVal];
-                                          newCols[idx] = { ...newCols[idx], price_rules: { ...newCols[idx].price_rules, map } };
-                                          updateForm('table_config', { ...form.table_config, columns: newCols });
-                                        }} title="Xóa rule">✕</button>
-                                      </div>
-                                    ))}
-                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                      <input type="text" id={`price-rule-newval-${idx}`} placeholder="Thêm giá trị ĐK, VD: b" style={{ ...INPUT_STYLE, flex: 1 }} />
-                                      <span style={{ fontSize: 11, color: '#888' }}>→</span>
-                                      <input type="text" id={`price-rule-newcol-${idx}`} placeholder="Cột DataList, VD: gia_niem_yet" style={{ ...INPUT_STYLE, flex: 1 }} />
-                                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => {
-                                        const vEl = document.getElementById(`price-rule-newval-${idx}`);
-                                        const cEl = document.getElementById(`price-rule-newcol-${idx}`);
-                                        const v = (vEl && vEl.value.trim()) || '';
-                                        const c = (cEl && cEl.value.trim()) || '';
-                                        if (!v || !c) return;
+                            </>);})()}
+                            {(form.table_config.columns || []).length > 1 && !col.formula && (() => {
+                              const link = col.data_link && typeof col.data_link === 'object' ? col.data_link : null;
+                              const enabled = !!(link && link.enabled);
+                              const setLink = (patch) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
+                                newCols[idx] = { ...newCols[idx], data_link: { ...prev, ...patch } };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              };
+                              const dlCols = (() => {
+                                const dl = dataLists.find(d => d.id === Number(link && link.datalist_id));
+                                const cfg = dl && dl.columns_config ? dl.columns_config : [];
+                                return Array.isArray(cfg) ? cfg : [];
+                              })();
+                              const siblings = (form.table_config.columns || []).filter((_, i) => i !== idx);
+                              const conds = Array.isArray(link && link.conditions) ? link.conditions : [];
+                              const setConds = (next) => setLink({ conditions: next });
+                              const moveCond = (ci, dir) => {
+                                const next = [...conds];
+                                const j = ci + dir;
+                                if (j < 0 || j >= next.length) return;
+                                [next[ci], next[j]] = [next[j], next[ci]];
+                                setConds(next);
+                              };
+                              const legacy = !link && col.autofill_from ? { from: col.autofill_from, col: col.autofill_column || null } : null;
+                              return (
+                                <div className="form-group" style={{ ...FIELD_GROUP_STYLE, gridColumn: '1 / -1' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
+                                  <input type="checkbox" checked={enabled} onChange={(e) => {
+                                      const newCols = [...(form.table_config.columns || [])];
+                                      if (e.target.checked) {
+                                        const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
+                                        newCols[idx] = { ...newCols[idx], data_link: { enabled: true, datalist_id: prev.datalist_id || null, trigger_column: prev.trigger_column || null, default_column: prev.default_column || null, conditions: Array.isArray(prev.conditions) ? prev.conditions : [] } };
+                                      } else {
+                                        newCols[idx] = { ...newCols[idx], data_link: { ...((newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {}), enabled: false } };
+                                      }
+                                      updateForm('table_config', { ...form.table_config, columns: newCols });
+                                    }} />
+                                    Lấy dữ liệu từ DataList
+                                  </label>
+                                  {legacy && (
+                                    <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>
+                                      Đang dùng cấu hình cũ (từ cột {legacy.from}{legacy.col ? `, lấy cột ${legacy.col}` : ''}).
+                                      <button type="button" className="btn btn-xs btn-secondary" style={{ marginLeft: 6 }} onClick={() => {
                                         const newCols = [...(form.table_config.columns || [])];
-                                        const map = { ...((newCols[idx].price_rules && newCols[idx].price_rules.map) || {}) };
-                                        map[v] = c;
-                                        newCols[idx] = { ...newCols[idx], price_rules: { ...newCols[idx].price_rules, map } };
+                                        const src = siblings.find(c => c.key === col.autofill_from);
+                                        newCols[idx] = { ...newCols[idx], data_link: { enabled: true, datalist_id: (src && src.data_list_id) || null, trigger_column: col.autofill_from, default_column: col.autofill_column || null, conditions: [] } };
                                         updateForm('table_config', { ...form.table_config, columns: newCols });
-                                      }}>+ Thêm</button>
+                                      }}>Chuyển sang model mới</button>
                                     </div>
-                                    <span style={{ fontSize: 11, color: '#888' }}>Ô giá thành select: 1 giá trị → tự chọn, nhiều giá trị → chọn tay. Giá trị điều kiện khác → dùng cột "Lấy cột từ DataList của cột nguồn".</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                  )}
+                                  {enabled && (
+                                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        <label style={{ flex: 1, minWidth: 140 }}>Danh mục dữ liệu
+                                          <select value={(link && link.datalist_id) || ''} onChange={(e) => setLink({ datalist_id: e.target.value ? parseInt(e.target.value) : null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                            <option value="">-- Chọn --</option>
+                                            {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
+                                          </select>
+                                        </label>
+                                        <label style={{ flex: 1, minWidth: 140 }}>Tự động điền khi cột có giá trị
+                                          <select value={(link && link.trigger_column) || ''} onChange={(e) => setLink({ trigger_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                            <option value="">-- Chọn cột --</option>
+                                            {siblings.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                          </select>
+                                        </label>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Điều kiện (dòng đầu khớp thắng)</div>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                          <thead>
+                                            <tr>
+                                              <th style={{ ...TABLE_HEADER_STYLE_FM, width: 34 }}>STT</th>
+                                              <th style={TABLE_HEADER_STYLE_FM}>Cột A (field form)</th>
+                                              <th style={{ ...TABLE_HEADER_STYLE_FM, width: 110 }}>Toán tử</th>
+                                              <th style={TABLE_HEADER_STYLE_FM}>Giá trị</th>
+                                              <th style={TABLE_HEADER_STYLE_FM}>Cột B (datalist)</th>
+                                              <th style={{ ...TABLE_HEADER_STYLE_FM, width: 76 }}></th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {conds.length === 0 && (
+                                              <tr><td colSpan={6} style={{ ...TABLE_CELL_STYLE_FM, textAlign: 'center', color: '#999' }}>Chưa có điều kiện — dùng Cột mặc định bên dưới.</td></tr>
+                                            )}
+                                            {conds.map((cd, ci) => (
+                                              <tr key={ci}>
+                                                <td style={TABLE_CELL_STYLE_FM}>{ci + 1}</td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <select value={cd.field || ''} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], field: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                                    <option value="">-- Chọn --</option>
+                                                    {entityFields.filter(f => f.status !== 'inactive').map(f => <option key={f.key} value={f.key}>{f.label || f.key} ({f.key})</option>)}
+                                                  </select>
+                                                </td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <select value={cd.op || '='} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], op: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                                    {LINK_OPS_FM.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                  </select>
+                                                </td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <input type="text" placeholder="Giá trị" value={cd.value || ''} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], value: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }} />
+                                                </td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <select value={cd.column || ''} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], column: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                                    <option value="">-- Chọn --</option>
+                                                    {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                                  </select>
+                                                </td>
+                                                <td style={{ ...TABLE_CELL_STYLE_FM, whiteSpace: 'nowrap' }}>
+                                                  <button type="button" className="btn btn-xs btn-ghost" disabled={ci === 0} onClick={() => moveCond(ci, -1)} title="Lên">▲</button>
+                                                  <button type="button" className="btn btn-xs btn-ghost" disabled={ci === conds.length - 1} onClick={() => moveCond(ci, 1)} title="Xuống">▼</button>
+                                                  <button type="button" className="btn btn-xs btn-delete" onClick={() => setConds(conds.filter((_, i) => i !== ci))} title="Xóa">✕</button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                        <button type="button" className="btn btn-xs btn-secondary mt-1" onClick={() => setConds([...conds, { field: '', op: '=', value: '', column: '' }])}>+ Thêm dòng</button>
+                                      </div>
+                                      <label>Cột mặc định (lấy khi không khớp điều kiện nào)
+                                        <select value={(link && link.default_column) || ''} onChange={(e) => setLink({ default_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                          <option value="">-- Chọn --</option>
+                                          {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                        </select>
+                                      </label>
+                                      <span style={{ fontSize: 11, color: '#888' }}>Ô trong table thành select: 1 giá trị → tự chọn (khóa), nhiều → chọn tay.</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                         <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>

@@ -92,17 +92,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     }
   }, [entity, recordId, recordProp]);
 
-  useEffect(() => {
-    if (!submitAttempted || getOrderedErrorKeys(formErrors).length === 0) return;
-    const timer = setTimeout(() => {
-      const body = modalRef.current?.querySelector('.popup-body');
-      const banner = body?.querySelector('[data-error-summary]');
-      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      else if (body) body.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 80);
-    return () => clearTimeout(timer);
-  }, [submitAttempted, formErrors]);
-
   const loadRecord = async () => {
     try {
       setLoading(true);
@@ -220,6 +209,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const handleFieldChange = (key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+    setFormErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   const getParentValue = (parentCol) => {
@@ -274,6 +269,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       const errs = validate();
       setFormErrors(errs);
       if (getOrderedErrorKeys(errs).length > 0) {
+        setTimeout(() => {
+          const body = modalRef.current?.querySelector('.popup-body');
+          const banner = body?.querySelector('[data-error-summary]');
+          if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          else if (body) body.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 80);
         return;
       }
       setSaving(true);
@@ -511,6 +512,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         field={{ ...field, options: resolveFieldOptions(field) }}
         value={value}
         onChange={(val) => handleFieldChange(key, val)}
+        error={formErrors[key]}
         entityId={record.id}
         entityType={entity}
         allFields={allFields}
@@ -530,13 +532,14 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         {fields.map(field => {
           const key = field.field_key || field.key;
           const label = field.field_label || field.label;
+          const fieldError = mode === 'edit' ? formErrors[key] : null;
           return (
-            <div key={key} className="popup-field-row">
+            <div key={key} data-field-key={key} className={`popup-field-row${fieldError ? ' has-error' : ''}`}>
               <span className="popup-field-label">{label}{field.required && <span style={{ color: '#dc2626' }}> *</span>}</span>
               {mode === 'view' ? (
                 <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>{renderFieldInput(field)}</div>
               ) : (
-                <span className="popup-field-value">{renderFieldInput(field)}</span>
+                <span className="popup-field-value">{renderFieldInput(field)}{fieldError && <div className="field-error">{fieldError}</div>}</span>
               )}
             </div>
           );
@@ -553,14 +556,16 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           const field = layout ? (layout.cellMap[`${row.id}-${ci}`] || null) : null;
           if (!field) return <div key={ci} className="form-cell-empty" />;
           const label = field.field_label || field.label;
+          const key = field.field_key || field.key;
+          const fieldError = mode === 'edit' ? formErrors[key] : null;
           return (
             <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
-              <div className="dynamic-form-field">
+              <div className={`dynamic-form-field${fieldError ? ' has-error' : ''}`} data-field-key={key}>
                 <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}{field.required && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 {mode === 'view' ? (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>{renderFieldInput(field)}</div>
                 ) : (
-                  renderFieldInput(field)
+                  <>{renderFieldInput(field)}{fieldError && <div className="field-error">{fieldError}</div>}</>
                 )}
               </div>
             </div>

@@ -340,7 +340,7 @@ const MyProposalsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
-      {(row.status === 'PENDING' || row.status === 'REJECTED' || row.status === 'PRINCIPLE_APPROVED') && (
+      {(row.status === 'PENDING' || row.status === 'REJECTED' || row.status === 'REVIEWING' || row.status === 'PRINCIPLE_APPROVED') && (
         <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
       )}
       {row.status === 'PENDING' && (
@@ -600,7 +600,7 @@ const MyProposalsPage = () => {
           recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
           viewId={popup.entity === 'stations' ? undefined : proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED', 'PRINCIPLE_APPROVED'].includes(popup.record.status))}
+          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED'].includes(popup.record.status))}
           updateService={isAdmin ? undefined : myProposalService}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });

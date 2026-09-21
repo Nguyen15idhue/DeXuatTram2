@@ -13,7 +13,8 @@ const STATUS_DOT = {
   CANCELLED: '#6b7280',
   CONTRACT_SIGNED: '#0d9488',
   CONTRACT_FAILED: '#f59e0b',
-  ARCHIVED: '#8b5cf6'
+  ARCHIVED: '#8b5cf6',
+  PRINCIPLE_APPROVED: '#6366f1'
 };
 
 const ACTION_LABEL = {
@@ -30,7 +31,8 @@ const SOURCE_LABEL = {
   webhook: 'Webhook 1Office',
   script: 'Script demo',
   system_auto: 'Tự động',
-  admin_override: 'Admin ghi đè'
+  admin_override: 'Admin ghi đè',
+  import: 'Nhập Excel'
 };
 
 const fmtTime = (t) => {

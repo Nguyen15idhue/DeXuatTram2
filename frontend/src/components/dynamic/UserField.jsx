@@ -37,13 +37,14 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
   }, []);
 
   return (
-    <div className="dynamic-field-user">
+    <div className={`dynamic-field-user${error ? ' has-error' : ''}`}>
       <SearchableSelect
         options={options.map(u => ({ value: String(u.id), label: `${u.full_name} (${u.role})` }))}
         value={selectedId === '' ? '' : String(selectedId)}
         onChange={(v) => onChange(v === '' ? '' : { id: Number(v) })}
         placeholder={loading ? 'Đang tải...' : '-- Chọn người dùng --'}
         disabled={disabled || loading}
+        className={error ? 'is-invalid' : ''}
       />
       {selectedUser && (
         <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>

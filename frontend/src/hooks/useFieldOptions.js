@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fieldDefinitionService, dataListService } from '../services/api';
 import { fetchDataList } from '../utils/dataListCache';
+import { sortByOrder } from '../utils/optionOrder';
 
 const cache = {};
 
@@ -84,11 +85,11 @@ const useFieldOptions = (entity, keys) => {
   const getSelectOptions = (key) => {
     const field = fields.find(f => f.key === key);
     if (!field) return [];
-    if (Array.isArray(field.options) && field.options.length > 0) return field.options;
+    if (Array.isArray(field.options) && field.options.length > 0) return sortByOrder(field.options);
     if (typeof field.options === 'string') {
       try {
         const parsed = JSON.parse(field.options);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sortByOrder(parsed);
       } catch { /* silent */ }
     }
     if (field.data_list_id && field.data_list_column) {

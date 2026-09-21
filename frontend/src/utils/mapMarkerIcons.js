@@ -335,13 +335,205 @@ const ICONS = {
       ['path', { d: 'M6.6 3.6c.8 0 1.4.4 1.7 1.1l1 2.3c.3.7.1 1.5-.5 2l-1.2 1c.9 2 2.5 3.6 4.5 4.5l1-1.2c.5-.6 1.3-.8 2-.5l2.3 1c.7.3 1.1 1 1.1 1.7v1.6c0 1.2-1 2.2-2.2 2.1C9.9 18.6 5.4 14 4.5 5.8 4.4 4.6 5.4 3.6 6.6 3.6z', fill: 'url(#g-ph)' }],
     ],
   },
+
+  // ===== Bổ sung: quy trình & phê duyệt =====
+  stamp: {
+    defs: '<linearGradient id="g-stamp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#818cf8"/><stop offset="1" stop-color="#4338ca"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M10 3.4h4v4.2c1.9.7 3.2 2.3 3.2 4.4v2.6H6.8V12c0-2.1 1.3-3.7 3.2-4.4z', fill: 'url(#g-stamp)' }],
+      ['rect', { x: '4.4', y: '14.6', width: '15.2', height: '3', rx: '1.4', fill: '#312e81' }],
+      ['rect', { x: '3', y: '18.6', width: '18', height: '2.4', rx: '1.2', fill: '#6366f1' }],
+    ],
+  },
+  handshake: {
+    nodes: [
+      ['path', { d: 'm2.8 9.4 5-4.2c.6-.5 1.5-.5 2.1 0l2.1 1.9 2.1-1.9c.6-.5 1.5-.5 2.1 0l5 4.2c1 1 1 2.6 0 3.6l-7.4 7c-.7.7-1.9.7-2.6 0l-7.4-7c-1-1-1-2.6 0-3.6z', fill: '#f59e0b', stroke: '#92400e', 'stroke-width': '1', 'stroke-linejoin': 'round' }],
+      ['path', { d: 'm8.6 12.4 2 2 4-4.6', stroke: '#ffffff', 'stroke-width': '2', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+    ],
+  },
+  scale: {
+    nodes: [
+      ['rect', { x: '11', y: '2.6', width: '2', height: '15', fill: '#475569' }],
+      ['path', { d: 'M4 5.4h16', stroke: '#475569', 'stroke-width': '2', 'stroke-linecap': 'round' }],
+      ['path', { d: 'M5 5.4 3 12.4h4z', fill: '#38bdf8' }],
+      ['path', { d: 'M19 5.4l2 7H17z', fill: '#38bdf8' }],
+      ['rect', { x: '7.4', y: '18.4', width: '9.2', height: '2.4', rx: '1.2', fill: '#475569' }],
+    ],
+  },
+  penSign: {
+    nodes: [
+      ['path', { d: 'm4 20 1-4L16.6 4.4a1.8 1.8 0 0 1 2.6 0l.4.4a1.8 1.8 0 0 1 0 2.6L8 19z', fill: '#0ea5e9' }],
+      ['path', { d: 'M14.8 6.2l3.4 3.4', stroke: '#0369a1', 'stroke-width': '1.4' }],
+      ['path', { d: 'M3.4 20.6h17.2', stroke: '#475569', 'stroke-width': '2', 'stroke-linecap': 'round' }],
+    ],
+  },
+  folderCheck: {
+    defs: '<linearGradient id="g-fck" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#d97706"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M2.8 6.4a1.6 1.6 0 0 1 1.6-1.6h5l1.8 2.2h8.4a1.6 1.6 0 0 1 1.6 1.6v9.4a1.6 1.6 0 0 1-1.6 1.6H4.4a1.6 1.6 0 0 1-1.6-1.6z', fill: 'url(#g-fck)' }],
+      ['path', { d: 'm9.4 12.8 1.8 1.8 3.4-4', stroke: '#ffffff', 'stroke-width': '2', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+    ],
+  },
+  calendarCheck: {
+    nodes: [
+      ['rect', { x: '3.4', y: '4.6', width: '17.2', height: '16', rx: '2.4', fill: '#0ea5e9' }],
+      ['rect', { x: '3.4', y: '4.6', width: '17.2', height: '5', rx: '2.4', fill: '#0369a1' }],
+      ['path', { d: 'M8 2.6v4M16 2.6v4', stroke: '#e0f2fe', 'stroke-width': '2.2', 'stroke-linecap': 'round' }],
+      ['path', { d: 'm9.4 15.4 1.8 1.8 3.4-4', stroke: '#ffffff', 'stroke-width': '2', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+    ],
+  },
+  send: {
+    nodes: [
+      ['path', { d: 'M21 3.6 3.4 10.4l6.4 2.4 2.4 6.4z', fill: '#38bdf8', stroke: '#0369a1', 'stroke-width': '1', 'stroke-linejoin': 'round' }],
+      ['path', { d: 'M21 3.6 9.8 12.8', stroke: '#ffffff', 'stroke-width': '1.6' }],
+    ],
+  },
+  megaphone: {
+    defs: '<linearGradient id="g-meg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f87171"/><stop offset="1" stop-color="#b91c1c"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M3.4 10.4v4.4a1.4 1.4 0 0 0 1.4 1.4h2.4l9.6 4.4a.8.8 0 0 0 1.2-.7V4.5a.8.8 0 0 0-1.2-.7l-9.6 4.4H4.8a1.4 1.4 0 0 0-1.4 1.4z', fill: 'url(#g-meg)' }],
+      ['path', { d: 'M20.6 9.4a4 4 0 0 1 0 6', stroke: '#475569', 'stroke-width': '2', fill: 'none', 'stroke-linecap': 'round' }],
+    ],
+  },
+
+  // ===== Bổ sung: thiết bị & hạ tầng =====
+  transformer: {
+    defs: '<linearGradient id="g-trf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#94a3b8"/><stop offset="1" stop-color="#475569"/></linearGradient>',
+    nodes: [
+      ['rect', { x: '4.6', y: '9', width: '14.8', height: '10.4', rx: '1.6', fill: 'url(#g-trf)' }],
+      ['path', { d: 'M8.4 9V5.4M12 9V3.6M15.6 9V5.4', stroke: '#1f2937', 'stroke-width': '2', 'stroke-linecap': 'round' }],
+      ['circle', { cx: '8.4', cy: '4.2', r: '1.1', fill: '#fbbf24' }],
+      ['circle', { cx: '12', cy: '2.6', r: '1.1', fill: '#fbbf24' }],
+      ['circle', { cx: '15.6', cy: '4.2', r: '1.1', fill: '#fbbf24' }],
+      ['path', { d: 'm12.6 11.4-2.4 4.2h1.7l-.5 2.4 2.6-4.2h-1.7z', fill: '#fde047' }],
+    ],
+  },
+  cabinet: {
+    defs: '<linearGradient id="g-cab" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cbd5e1"/><stop offset="1" stop-color="#64748b"/></linearGradient>',
+    nodes: [
+      ['rect', { x: '5.4', y: '2.8', width: '13.2', height: '17.8', rx: '1.6', fill: 'url(#g-cab)', stroke: '#334155', 'stroke-width': '1' }],
+      ['rect', { x: '7.4', y: '5', width: '9.2', height: '3.4', rx: '0.8', fill: '#0f172a' }],
+      ['circle', { cx: '15.2', cy: '12.4', r: '1', fill: '#1f2937' }],
+      ['path', { d: 'M7.4 12v6M9.4 12v6M11.4 12v6', stroke: '#e2e8f0', 'stroke-width': '1.2' }],
+    ],
+  },
+  warehouse: {
+    defs: '<linearGradient id="g-wh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#94a3b8"/><stop offset="1" stop-color="#64748b"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M2.6 10.2 12 3.4l9.4 6.8v10a1 1 0 0 1-1 1H3.6a1 1 0 0 1-1-1z', fill: 'url(#g-wh)' }],
+      ['rect', { x: '9.4', y: '13.4', width: '5.2', height: '7.8', fill: '#1e293b' }],
+      ['path', { d: 'M7 10.2v3.4M10 10.2v3.4M14 10.2v3.4M17 10.2v3.4', stroke: '#e2e8f0', 'stroke-width': '1.4' }],
+    ],
+  },
+  bank: {
+    defs: '<linearGradient id="g-bank" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2e8f0"/><stop offset="1" stop-color="#94a3b8"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'm12 2.6 9.4 4v1.8H2.6V6.6z', fill: '#475569' }],
+      ['rect', { x: '4', y: '10', width: '2.6', height: '7', fill: 'url(#g-bank)' }],
+      ['rect', { x: '8.2', y: '10', width: '2.6', height: '7', fill: 'url(#g-bank)' }],
+      ['rect', { x: '12.4', y: '10', width: '2.6', height: '7', fill: 'url(#g-bank)' }],
+      ['rect', { x: '16.4', y: '10', width: '2.6', height: '7', fill: 'url(#g-bank)' }],
+      ['rect', { x: '2.6', y: '17.6', width: '18.8', height: '2.6', rx: '1', fill: '#475569' }],
+    ],
+  },
+  hospital: {
+    nodes: [
+      ['rect', { x: '4', y: '9', width: '16', height: '11.6', rx: '1.4', fill: '#f8fafc', stroke: '#dc2626', 'stroke-width': '1.4' }],
+      ['rect', { x: '10.6', y: '4.6', width: '2.8', height: '8.8', fill: '#dc2626' }],
+      ['rect', { x: '7.8', y: '7.4', width: '8.4', height: '2.8', fill: '#dc2626' }],
+      ['rect', { x: '10.8', y: '12.4', width: '2.4', height: '4', fill: '#dc2626' }],
+    ],
+  },
+  market: {
+    defs: '<linearGradient id="g-mkt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ade80"/><stop offset="1" stop-color="#15803d"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M3 9.4a1.4 1.4 0 0 1 1.2-1.4l6-1a1.4 1.4 0 0 1 1.6 1.1l1 4.7H4.2z', fill: 'url(#g-mkt)' }],
+      ['path', { d: 'M21 9.4a1.4 1.4 0 0 0-1.2-1.4l-6-1a1.4 1.4 0 0 0-1.6 1.1l-1 4.7h8.6z', fill: '#86efac' }],
+      ['path', { d: 'M5 12.8h14l-1.2 7.4H6.2z', fill: '#f1f5f9', stroke: '#15803d', 'stroke-width': '1' }],
+    ],
+  },
+
+  // ===== Bổ sung: tài liệu & đánh dấu =====
+  receipt: {
+    nodes: [
+      ['path', { d: 'M6 2.8h12a1.2 1.2 0 0 1 1.2 1.2v16.4l-2.4-1.6-2.4 1.6-2.4-1.6-2.4 1.6-2.4-1.6L4.8 20.4V4A1.2 1.2 0 0 1 6 2.8z', fill: '#f8fafc', stroke: '#64748b', 'stroke-width': '1.2' }],
+      ['path', { d: 'M8.4 8h7.2M8.4 11.2h7.2M8.4 14.4h4.4', stroke: '#64748b', 'stroke-width': '1.4', 'stroke-linecap': 'round' }],
+    ],
+  },
+  banknote: {
+    defs: '<linearGradient id="g-bn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#86efac"/><stop offset="1" stop-color="#16a34a"/></linearGradient>',
+    nodes: [
+      ['rect', { x: '2.4', y: '7', width: '19.2', height: '10', rx: '1.6', fill: 'url(#g-bn)', stroke: '#14532d', 'stroke-width': '1' }],
+      ['circle', { cx: '12', cy: '12', r: '3', fill: 'none', stroke: '#f0fdf4', 'stroke-width': '1.6' }],
+      ['circle', { cx: '12', cy: '12', r: '0.9', fill: '#f0fdf4' }],
+    ],
+  },
+  keyRound: {
+    nodes: [
+      ['circle', { cx: '8', cy: '8', r: '5.2', fill: 'none', stroke: '#d97706', 'stroke-width': '2.6' }],
+      ['path', { d: 'm11.8 11.8 7.4 7.4M16.6 16.6l1.8-1.8M14.4 18.8l1.8-1.8', stroke: '#d97706', 'stroke-width': '2.4', 'stroke-linecap': 'round' }],
+    ],
+  },
+  idCard: {
+    defs: '<linearGradient id="g-id" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#93c5fd"/><stop offset="1" stop-color="#2563eb"/></linearGradient>',
+    nodes: [
+      ['rect', { x: '2.4', y: '5.4', width: '19.2', height: '13.2', rx: '2', fill: 'url(#g-id)' }],
+      ['circle', { cx: '8', cy: '11', r: '2.4', fill: '#eff6ff' }],
+      ['path', { d: 'M4.8 16.4c.5-2.4 1.7-3.4 3.2-3.4s2.7 1 3.2 3.4z', fill: '#eff6ff' }],
+      ['path', { d: 'M14 9.4h5.6M14 12.4h5.6M14 15.4h3.6', stroke: '#eff6ff', 'stroke-width': '1.6', 'stroke-linecap': 'round' }],
+    ],
+  },
+  gear: {
+    nodes: [
+      ['path', { d: 'M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z', fill: '#cbd5e1', stroke: '#475569', 'stroke-width': '1.2' }],
+      ['path', { d: 'M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8', stroke: '#475569', 'stroke-width': '2.2', 'stroke-linecap': 'round' }],
+    ],
+  },
+  bulb: {
+    defs: '<linearGradient id="g-bulb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde047"/><stop offset="1" stop-color="#f59e0b"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M12 2.8a6.4 6.4 0 0 0-3.8 11.6c.7.6 1.2 1.3 1.4 2.2h4.8c.2-.9.7-1.6 1.4-2.2A6.4 6.4 0 0 0 12 2.8z', fill: 'url(#g-bulb)' }],
+      ['rect', { x: '9.8', y: '17.4', width: '4.4', height: '1.8', rx: '0.9', fill: '#64748b' }],
+      ['rect', { x: '10.4', y: '19.6', width: '3.2', height: '1.8', rx: '0.9', fill: '#64748b' }],
+    ],
+  },
+  bookOpen: {
+    defs: '<linearGradient id="g-book" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'M12 5.4C10 4 7.4 3.6 3.6 4v13.2c3.8-.4 6.4 0 8.4 1.4 2-1.4 4.6-1.8 8.4-1.4V4c-3.8-.4-6.4 0-8.4 1.4z', fill: 'url(#g-book)' }],
+      ['path', { d: 'M12 5.4v13.2', stroke: '#dbeafe', 'stroke-width': '1.4' }],
+    ],
+  },
+  pinCheck: {
+    nodes: [
+      ['path', { d: 'M12 2a7.2 7.2 0 0 0-7.2 7.2C4.8 15 12 22 12 22s7.2-7 7.2-12.8A7.2 7.2 0 0 0 12 2z', fill: '#16a34a' }],
+      ['path', { d: 'm9.3 9.2 1.9 1.9 3.6-4.2', stroke: '#ffffff', 'stroke-width': '2', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+    ],
+  },
+  flagCheck: {
+    nodes: [
+      ['path', { d: 'M6 21.5V3.6', stroke: '#475569', 'stroke-width': '2.4', 'stroke-linecap': 'round' }],
+      ['path', { d: 'M6.6 4.4c3.2-2.1 6.4 1.7 12.4-.5v8.5c-6 2.2-9.2-1.6-12.4.5z', fill: '#16a34a' }],
+      ['path', { d: 'm9.4 8.4 1.5 1.5 2.8-3.2', stroke: '#ffffff', 'stroke-width': '1.5', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+    ],
+  },
+  truckCheck: {
+    defs: '<linearGradient id="g-trc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ade80"/><stop offset="1" stop-color="#15803d"/></linearGradient>',
+    nodes: [
+      ['rect', { x: '2.4', y: '7.6', width: '11.4', height: '9', rx: '1.2', fill: 'url(#g-trc)' }],
+      ['path', { d: 'M13.8 10.4h3.6l2.9 3.2v3h-6.5z', fill: '#86efac' }],
+      ['path', { d: 'm5.4 12.4 1.6 1.6 3-3.6', stroke: '#ffffff', 'stroke-width': '1.8', fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+      ['circle', { cx: '6.6', cy: '18', r: '2', fill: '#111827' }],
+      ['circle', { cx: '16.6', cy: '18', r: '2', fill: '#111827' }],
+    ],
+  },
 };
 
 const GROUPS = [
-  { title: 'Trạm & năng lượng', ids: ['bolt', 'plug', 'battery', 'batteryLow', 'evStation', 'solar', 'meter'] },
-  { title: 'Trạng thái & quy trình', ids: ['flag', 'wrench', 'clock', 'hourglass', 'search', 'eye', 'clipboard', 'document', 'check', 'cross', 'alert', 'info', 'play', 'pause', 'stop', 'ban', 'lock', 'bell'] },
-  { title: 'Địa điểm & hạ tầng', ids: ['pin', 'home', 'building', 'factory', 'store', 'parkingP', 'cone', 'road', 'car', 'truck'] },
-  { title: 'Đánh dấu & xếp hạng', ids: ['star', 'medal', 'target', 'chartUp', 'shield', 'person', 'phone'] },
+  { title: 'Trạm & năng lượng', ids: ['bolt', 'plug', 'battery', 'batteryLow', 'evStation', 'solar', 'meter', 'transformer', 'cabinet'] },
+  { title: 'Trạng thái & quy trình', ids: ['flag', 'flagCheck', 'wrench', 'clock', 'hourglass', 'search', 'eye', 'clipboard', 'folderCheck', 'document', 'check', 'pinCheck', 'cross', 'alert', 'info', 'play', 'pause', 'stop', 'ban', 'lock', 'bell', 'stamp', 'handshake', 'scale', 'penSign', 'calendarCheck', 'send', 'megaphone'] },
+  { title: 'Địa điểm & hạ tầng', ids: ['pin', 'home', 'building', 'factory', 'warehouse', 'bank', 'hospital', 'market', 'store', 'parkingP', 'cone', 'road', 'car', 'truck', 'truckCheck'] },
+  { title: 'Đánh dấu & xếp hạng', ids: ['star', 'medal', 'target', 'chartUp', 'shield', 'person', 'phone', 'receipt', 'banknote', 'keyRound', 'idCard', 'gear', 'bulb', 'bookOpen'] },
 ];
 
 const ICON_LABELS = {
@@ -352,6 +544,8 @@ const ICON_LABELS = {
   evStation: 'Trạm sạc',
   solar: 'Điện mặt trời',
   meter: 'Công tơ',
+  transformer: 'Máy biến áp',
+  cabinet: 'Tủ điện',
   flag: 'Quy hoạch',
   wrench: 'Thi công',
   clock: 'Chờ',
@@ -370,6 +564,14 @@ const ICON_LABELS = {
   ban: 'Cấm',
   lock: 'Khóa',
   bell: 'Thông báo',
+  stamp: 'Duyệt chủ trương',
+  handshake: 'Liên kết',
+  scale: 'Cân đối',
+  penSign: 'Ký duyệt',
+  folderCheck: 'Hồ sơ duyệt',
+  calendarCheck: 'Lịch duyệt',
+  send: 'Gửi đi',
+  megaphone: 'Thông báo chung',
   pin: 'Định vị',
   home: 'Nhà',
   building: 'Tòa nhà',
@@ -380,6 +582,11 @@ const ICON_LABELS = {
   road: 'Đường',
   car: 'Ô tô',
   truck: 'Vận chuyển',
+  truckCheck: 'Vận chuyển xong',
+  warehouse: 'Kho',
+  bank: 'Ngân hàng',
+  hospital: 'Bệnh viện',
+  market: 'Chợ',
   star: 'Ưu tiên',
   medal: 'Xuất sắc',
   target: 'Mục tiêu',
@@ -387,6 +594,15 @@ const ICON_LABELS = {
   shield: 'An toàn',
   person: 'Nhân sự',
   phone: 'Liên hệ',
+  receipt: 'Biên nhận',
+  banknote: 'Tiền',
+  keyRound: 'Khóa tròn',
+  idCard: 'Thẻ ID',
+  gear: 'Cài đặt',
+  bulb: 'Ý tưởng',
+  bookOpen: 'Sách',
+  pinCheck: 'Đã định vị',
+  flagCheck: 'Cờ duyệt',
 };
 
 export const MARKER_ICONS = Object.keys(ICONS).map((id) => ({ id, label: ICON_LABELS[id] }));
