@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { stationService, excelService, viewService } from '../../services/api';
+import { stationService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
@@ -66,7 +66,7 @@ const AdminStationsPage = () => {
   useEffect(() => {
     if (!token || isSales) return;
     let cancelled = false;
-    viewService.getAll('entity=stations&status=active&limit=50', token)
+    excelService.getViews('stations', token)
       .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
       .catch(() => {});
     return () => { cancelled = true; };

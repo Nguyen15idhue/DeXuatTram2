@@ -484,6 +484,14 @@ export const dynamicService = {
 };
 
 export const excelService = {
+  async getViews(entity, token) {
+    const res = await fetch(`${API_URL}/admin/excel/views?entity=${encodeURIComponent(entity)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Không tải được danh sách bộ cột');
+    return res.json();
+  },
+
   async downloadBlob(url, token, filename) {
     const response = await api.downloadWithAuth(url, token);
 

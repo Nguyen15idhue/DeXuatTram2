@@ -4,6 +4,9 @@ const proximityService = require('../services/proximityService');
 exports.getAll = async (req, res) => {
   try {
     const proposals = await proposalService.getAllProposals();
+    if (!req.user) {
+      proposals.forEach((p) => { delete p.owner_name; });
+    }
     res.json({ success: true, data: proposals });
   } catch (error) {
     console.error('Get proposals error:', error);
@@ -16,6 +19,9 @@ exports.getById = async (req, res) => {
     const proposal = await proposalService.getProposalById(req.params.id);
     if (!proposal) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (!req.user) {
+      delete proposal.owner_name;
     }
     res.json({ success: true, data: proposal });
   } catch (error) {

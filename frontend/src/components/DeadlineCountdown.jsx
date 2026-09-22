@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-
-const COUNTDOWN_STATUSES = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED'];
+import { loadCountdownConfig, getCountdownStatuses, COUNTDOWN_CONFIG_EVENT, FALLBACK_COUNTDOWN_STATUSES } from '../utils/countdownConfig';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -16,14 +15,29 @@ export const formatCountdown = (deadline) => {
   return { overdue: diff <= 0, text: `${pad(d)} ngày ${pad(h)}:${pad(m)}:${pad(s)}`, under24h: diff > 0 && diff <= 86400000 };
 };
 
-const DeadlineCountdown = ({ deadline, status, compact = false }) => {
+const DeadlineCountdown = ({ deadline, status, compact = false, enabledStatuses = null }) => {
   const [, setNow] = useState(Date.now());
+  const [enabled, setEnabled] = useState(enabledStatuses || null);
+
+  useEffect(() => {
+    if (enabledStatuses) { setEnabled(enabledStatuses); return undefined; }
+    let cancelled = false;
+    const refresh = () => {
+      loadCountdownConfig(true).then((cfg) => { if (!cancelled) setEnabled(getCountdownStatuses(cfg)); });
+    };
+    loadCountdownConfig().then((cfg) => { if (!cancelled && cfg) setEnabled(getCountdownStatuses(cfg)); });
+    window.addEventListener(COUNTDOWN_CONFIG_EVENT, refresh);
+    return () => { cancelled = true; window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refresh); };
+  }, [enabledStatuses]);
+
   useEffect(() => {
     if (!deadline) return undefined;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [deadline]);
-  if (!deadline || !COUNTDOWN_STATUSES.includes(status)) return null;
+
+  const statuses = enabled || FALLBACK_COUNTDOWN_STATUSES;
+  if (!deadline || !statuses.includes(status)) return null;
   const c = formatCountdown(deadline);
   if (!c) return null;
   if (compact) {

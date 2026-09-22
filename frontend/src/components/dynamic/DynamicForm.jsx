@@ -792,8 +792,9 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             if (!cellField || !isFieldVisible(cellField)) {
               return <div key={colIdx} className="form-cell-empty" />;
             }
+            const isFullRow = cellField.type === 'table';
             return (
-              <div key={colIdx} className="form-cell-content">
+              <div key={colIdx} className={`form-cell-content${isFullRow ? ' form-cell-full' : ''}`}>
                 <div className={`dynamic-form-field${isFieldFilled(cellField.key) ? ' is-filled' : ''}${errors[cellField.key] ? ' has-error' : ''}`} data-field-key={cellField.key}>
                   <label>
                     {cellField.labelOverride || cellField.label}

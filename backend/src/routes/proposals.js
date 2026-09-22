@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middlewares/auth');
+const { requireAuth, optionalAuth } = require('../middlewares/auth');
 const { guestSubmitLimiter, guestTrackLimiter } = require('../middlewares/rateLimits');
 const { validateCreateProposal } = require('../middlewares/validators');
 const proposalController = require('../controllers/proposalController');
@@ -11,7 +11,7 @@ const proposalController = require('../controllers/proposalController');
  *   get:
  *     tags: [Proposals]
  *     summary: Lấy danh sách đề xuất (công khai, rút gọn)
- *     description: Hiển thị trên bản đồ, không phân trang. Chỉ trả id/latitude/longitude/address/status/created_at, không trả phone/custom_data.
+  *     description: Hiển thị trên bản đồ, không phân trang. Kèm mã đề xuất/mô hình/trụ/loại ưu tiên; owner_name chỉ trả khi có đăng nhập, không trả phone/custom_data.
  *     responses:
  *       200:
  *         description: Thành công
@@ -27,7 +27,7 @@ const proposalController = require('../controllers/proposalController');
  *                   items:
  *                     $ref: '#/components/schemas/Proposal'
  */
-router.get('/', proposalController.getAll);
+router.get('/', optionalAuth, proposalController.getAll);
 
 /**
  * @swagger
@@ -57,7 +57,7 @@ router.get('/', proposalController.getAll);
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id', proposalController.getById);
+router.get('/:id', optionalAuth, proposalController.getById);
 
 /**
  * @swagger

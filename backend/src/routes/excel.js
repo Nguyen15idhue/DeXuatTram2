@@ -175,7 +175,32 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
+router.get('/template', requireAuth, requireUserManager, excelService.getTemplate);
+
+/**
+ * @swagger
+ * /api/admin/excel/views:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Danh sách view đang hoạt động của 1 entity (ADMIN/SALES dùng cho menu Template/Export)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, users, station_proposals]
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/views', requireAuth, requireUserManager, excelService.getViewsForEntity);
 
 /**
  * @swagger
@@ -226,7 +251,7 @@ router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMiddleware, excelService.importPreview);
+router.post('/import/preview', requireAuth, requireUserManager, excelService.uploadMiddleware, excelService.importPreview);
 
 /**
  * @swagger
@@ -269,7 +294,7 @@ router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMid
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/import/confirm', requireAuth, requireAdmin, excelService.importConfirm);
+router.post('/import/confirm', requireAuth, requireUserManager, excelService.importConfirm);
 
 /**
  * @swagger
@@ -293,7 +318,7 @@ router.post('/import/confirm', requireAuth, requireAdmin, excelService.importCon
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/import/progress/:jobId', requireAuth, requireAdmin, excelService.getImportProgress);
+router.get('/import/progress/:jobId', requireAuth, requireUserManager, excelService.getImportProgress);
 
 /**
  * @swagger

@@ -1,6 +1,6 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { iconSvgMarkup, isValidMarkerIcon } from '../../../utils/mapMarkerIcons';
-import { formatDistanceM } from '../../../utils/formatDistance';
+import { formatDistanceM, haversineM } from '../../../utils/formatDistance';
 import { normalizeClusterOptions, clusterSig } from '../../../utils/mapCluster';
 import { ISLAND_MIN_ZOOM } from '../../../utils/provinceData';
 
@@ -151,6 +151,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let markersState = null;
   let lastClusterSig = null;
   let polylinesState = null;
+  let measureState = null;
+  let measureSnapCb = null;
   let provinceState = null;
   let islandState = null;
   let boundaryState = null;
@@ -200,11 +202,19 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     map.on('click', 'app-unclustered', (e) => {
       const f = e.features && e.features[0];
       if (!f) return;
+      const coords = f.geometry.coordinates;
+      if (measureState && measureState.active) {
+        if (measureSnapCb && Array.isArray(coords)
+          && !Number.isNaN(parseFloat(coords[1])) && !Number.isNaN(parseFloat(coords[0]))) {
+          measureSnapCb([parseFloat(coords[1]), parseFloat(coords[0])]);
+        }
+        return;
+      }
       const state = markersState || {};
       const item = (state.items || [])[f.properties._idx];
       if (!item) return;
       const opts = state.options || {};
-      if (opts.renderPopup) openPopup({ ...item, renderPopup: opts.renderPopup }, f.geometry.coordinates);
+      if (opts.renderPopup) openPopup({ ...item, renderPopup: opts.renderPopup }, coords);
       if (opts.onMarkerClick) opts.onMarkerClick(item, item._type);
     });
     map.on('mouseenter', 'app-unclustered', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -414,6 +424,85 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     }
   }
 
+  const measureSnapMarkers = [];
+
+  function applyMeasure() {
+    removeMarkers(measureSnapMarkers);
+    const { active, points, snapped } = measureState || {};
+    const list = (points || []).filter((p) => Array.isArray(p) && !Number.isNaN(parseFloat(p[0])) && !Number.isNaN(parseFloat(p[1])));
+    try {
+      map.getCanvas().style.cursor = active ? 'crosshair' : '';
+    } catch { /* noop */ }
+    if (map.getSource('app-measure')) {
+      removeManagedSource('app-measure');
+    }
+    if (list.length === 0) return;
+    const features = [];
+    if (list.length >= 2) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: list.map((p) => [parseFloat(p[1]), parseFloat(p[0])]) },
+        properties: { _kind: 'line' },
+      });
+      for (let i = 1; i < list.length; i += 1) {
+        const segM = haversineM(list[i - 1][0], list[i - 1][1], list[i][0], list[i][1]);
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [(parseFloat(list[i - 1][1]) + parseFloat(list[i][1])) / 2, (parseFloat(list[i - 1][0]) + parseFloat(list[i][0])) / 2] },
+          properties: { _kind: 'label', _label: formatDistanceM(segM) },
+        });
+      }
+    }
+    list.forEach((p) => {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [parseFloat(p[1]), parseFloat(p[0])] },
+        properties: { _kind: 'point' },
+      });
+    });
+    const data = { type: 'FeatureCollection', features };
+    map.addSource('app-measure', { type: 'geojson', data });
+    sourceIds.add('app-measure');
+    (snapped || [])
+      .filter((p) => Array.isArray(p) && !Number.isNaN(parseFloat(p[0])) && !Number.isNaN(parseFloat(p[1])))
+      .forEach((p) => {
+        const el = document.createElement('div');
+        el.className = 'measure-snap-ring';
+        const marker = new maplibregl.Marker({ element: el }).setLngLat([parseFloat(p[1]), parseFloat(p[0])]).addTo(map);
+        measureSnapMarkers.push(marker);
+      });
+    map.addLayer({
+      id: 'app-measure-line',
+      type: 'line',
+      source: 'app-measure',
+      filter: ['==', ['get', '_kind'], 'line'],
+      paint: { 'line-color': '#16a34a', 'line-width': 3, 'line-opacity': 0.9 },
+    });
+    map.addLayer({
+      id: 'app-measure-point',
+      type: 'circle',
+      source: 'app-measure',
+      filter: ['==', ['get', '_kind'], 'point'],
+      paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': '#16a34a', 'circle-stroke-width': 2 },
+    });
+    try {
+      map.addLayer({
+        id: 'app-measure-label',
+        type: 'symbol',
+        source: 'app-measure',
+        filter: ['==', ['get', '_kind'], 'label'],
+        layout: {
+          'text-field': ['get', '_label'],
+          'text-size': 12,
+          'text-font': ['Noto Sans Regular'],
+          'text-offset': [0, -1.2],
+        },
+        paint: { 'text-color': '#111827', 'text-halo-color': '#ffffff', 'text-halo-width': 2 },
+      });
+    } catch { /* style lacks glyphs */ }
+    overlayOrderDirty = true;
+  }
+
   function applyProvinceLabels() {
     removeMarkers(provinceMarkers);
     const { points, show } = provinceState || {};
@@ -443,6 +532,22 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     });
   }
 
+  let selectedBoundaryName = null;
+
+  function paintSelectedBoundary() {
+    if (!map.getLayer('app-boundaries-line')) return;
+    try {
+      map.setPaintProperty('app-boundaries-line', 'line-color',
+        selectedBoundaryName
+          ? ['match', ['get', 'name'], [selectedBoundaryName], '#dc2626', '#1565C0']
+          : '#1565C0');
+      map.setPaintProperty('app-boundaries-line', 'line-width',
+        selectedBoundaryName
+          ? ['match', ['get', 'name'], [selectedBoundaryName], 3, 2]
+          : 2);
+    } catch { /* noop */ }
+  }
+
   function applyBoundaries() {
     const { geojson, show } = boundaryState || {};
     if (!geojson || !show) return;
@@ -450,15 +555,37 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       map.addSource('app-boundaries', { type: 'geojson', data: geojson });
       sourceIds.add('app-boundaries');
       map.addLayer({
+        id: 'app-boundaries-fill',
+        type: 'fill',
+        source: 'app-boundaries',
+        paint: { 'fill-color': '#dc2626', 'fill-opacity': 0 },
+      });
+      map.addLayer({
         id: 'app-boundaries-line',
         type: 'line',
         source: 'app-boundaries',
         paint: { 'line-color': '#1565C0', 'line-width': 2, 'line-opacity': 0.7, 'line-dasharray': [4, 2] },
       });
+      try {
+        map.on('click', 'app-boundaries-line', (e) => {
+          const name = e.features && e.features[0] && e.features[0].properties
+            ? e.features[0].properties.name : null;
+          selectedBoundaryName = name || null;
+          paintSelectedBoundary();
+        });
+        map.on('click', (e) => {
+          const features = map.queryRenderedFeatures(e.point, { layers: ['app-boundaries-line'] });
+          if (!features || features.length === 0) {
+            selectedBoundaryName = null;
+            paintSelectedBoundary();
+          }
+        });
+      } catch { /* noop */ }
       overlayOrderDirty = true;
     } else {
       map.getSource('app-boundaries').setData(geojson);
     }
+    paintSelectedBoundary();
   }
 
   function wardVisibleFeatures() {
@@ -544,12 +671,19 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([point.position[1], point.position[0]])
         .addTo(map);
-      if (point.renderPopup) {
-        el.addEventListener('click', (e) => {
+      el.addEventListener('click', (e) => {
+        if (measureState && measureState.active) {
+          if (measureSnapCb && Array.isArray(point.position)) {
+            e.stopPropagation();
+            measureSnapCb([parseFloat(point.position[0]), parseFloat(point.position[1])]);
+          }
+          return;
+        }
+        if (point.renderPopup) {
           e.stopPropagation();
           openPopup({ renderPopup: point.renderPopup }, [point.position[1], point.position[0]]);
-        });
-      }
+        }
+      });
       pointMarkers.push(marker);
     });
   }
@@ -606,7 +740,11 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   const overlayTopOrder = [
     'app-polylines-line',
     'app-polylines-label',
+    'app-boundaries-fill',
     'app-boundaries-line',
+    'app-measure-line',
+    'app-measure-point',
+    'app-measure-label',
     'app-clusters',
     'app-cluster-count',
     'app-unclustered',
@@ -814,6 +952,16 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     setPolylines(pairs, options) {
       polylinesState = { pairs, ...(options || {}) };
       if (loaded) applyPolylines();
+    },
+
+    setMeasure(measure, onSnap) {
+      if (typeof onSnap !== 'undefined') measureSnapCb = onSnap || null;
+      measureState = {
+        active: !!(measure && measure.active),
+        points: (measure && measure.points) || [],
+        snapped: (measure && measure.snapped) || [],
+      };
+      if (loaded) applyMeasure();
     },
 
     setProvinceLabels(points, show) {

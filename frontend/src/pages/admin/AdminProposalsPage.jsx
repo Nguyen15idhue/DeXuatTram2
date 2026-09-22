@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminProposalService, proposalService, excelService, viewService, formService } from '../../services/api';
+import { adminProposalService, proposalService, excelService, formService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
@@ -104,16 +104,16 @@ const AdminProposalsPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!token || isSales) return;
+    if (!token) return;
     let cancelled = false;
-    viewService.getAll('entity=station_proposals&status=active&limit=50', token)
+    excelService.getViews('station_proposals', token)
       .then(res => {
         if (cancelled || !res || !res.success) return;
         setExcelViews(res.data || []);
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [token, isSales]);
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -1178,8 +1178,7 @@ const AdminProposalsPage = () => {
               </>
             )}
           </div>
-          {!isSales && (
-            <>
+          <>
               <div className="relative">
                 <button className="btn btn-ghost btn-sm gap-1" onClick={() => { setTemplateMenuOpen(v => !v); setExportMenuOpen(false); }}>
                   <Download size={14} />
@@ -1215,8 +1214,7 @@ const AdminProposalsPage = () => {
                 <Upload size={14} />
                 Import
               </button>
-            </>
-          )}
+          </>
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset} title="Đặt lại bộ lọc">
             <RotateCcw size={14} />
             <span className="hidden sm:inline">Đặt lại</span>
@@ -1624,6 +1622,11 @@ const AdminProposalsPage = () => {
           title="Preview vị trí đề xuất"
           statusFilter={PREVIEW_STATUS_FILTER}
           onClose={() => { setShowPreview(false); setPreviewSnapshot(null); }}
+          onMarkerClick={(item, type) => {
+            if (type !== 'proposal') return;
+            setShowPreview(false); setPreviewSnapshot(null);
+            setPopup({ open: true, record: null, mode: 'view', recordId: item.id });
+          }}
         />
       )}
 

@@ -584,8 +584,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           const label = field.field_label || field.label;
           const key = field.field_key || field.key;
           const fieldError = mode === 'edit' ? formErrors[key] : null;
+          const isFullRow = field.type === 'table';
           return (
-            <div key={ci} className="form-cell-content" style={{ flex: 1 }}>
+            <div key={ci} className={`form-cell-content${isFullRow ? ' form-cell-full' : ''}`} style={{ flex: isFullRow ? '1 1 100%' : 1, maxWidth: isFullRow ? '100%' : undefined }}>
               <div className={`dynamic-form-field${fieldError ? ' has-error' : ''}`} data-field-key={key}>
                 <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}{field.required && field.type !== 'formula' && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 {mode === 'view' ? (

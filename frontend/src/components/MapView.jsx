@@ -14,7 +14,7 @@ import { MAP_MODES, DEFAULT_MODE } from '../utils/mapModes';
 import { resolveRenderer } from './map/renderers';
 import MapCanvas from './map/MapCanvas';
 import useMediaQuery from '../hooks/useMediaQuery';
-import { formatDistanceM } from '../utils/formatDistance';
+import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import { normalizeClusterOptions } from '../utils/mapCluster';
 
 const EMPTY_PAIRS = [];
@@ -176,11 +176,53 @@ function renderDeniedNote(div) {
   div.appendChild(p);
 }
 
+const MO_HINH_LABELS = { TDT: 'Tự đầu tư', LK: 'Liên kết', NQ: 'Nhượng quyền', NQ_LK: 'Nhượng quyền + Liên kết' };
+
+function parseTableRows(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'object') return [value];
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return [parsed];
+    } catch { /* ignore */ }
+  }
+  return [];
+}
+
+function summarizeTruRows(rows) {
+  const list = parseTableRows(rows).filter((r) => r && (r.loai_tru || r.so_luong));
+  if (list.length === 0) return '';
+  const groups = {};
+  list.forEach((r) => {
+    const name = r.loai_tru || 'Trụ';
+    const qty = Number(r.so_luong) || 0;
+    groups[name] = (groups[name] || 0) + qty;
+  });
+  const parts = Object.entries(groups).map(([name, qty]) => (qty > 0 ? `${qty}× ${name}` : name));
+  const total = Object.values(groups).reduce((a, b) => a + b, 0);
+  return total > 0 ? `${parts.join(' + ')} (tổng ${total} trụ)` : parts.join(' + ');
+}
+
+function pickProposalTru(item) {
+  const moHinh = item.mo_hinh_dau_tu;
+  if (moHinh === 'TDT') return summarizeTruRows(item.tdt_tru) || item.loai_tru || '';
+  if (moHinh === 'NQ') return summarizeTruRows(item.loai_tru_nq) || item.loai_tru || '';
+  if (moHinh === 'NQ_LK') {
+    const rows = [...parseTableRows(item.loai_tru_nq), ...parseTableRows(item.loai_tru_lk)];
+    return summarizeTruRows(rows) || item.loai_tru || '';
+  }
+  if (moHinh === 'LK') return summarizeTruRows(item.loai_tru_lk) || '';
+  return summarizeTruRows(item.tdt_tru) || summarizeTruRows(item.loai_tru_nq) || summarizeTruRows(item.loai_tru_lk) || item.loai_tru || '';
+}
+
 function createStationPopupContent(item, user) {
   const div = document.createElement('div');
   div.className = 'popup-content';
   const h3 = document.createElement('h3');
-  h3.textContent = item.name;
+  h3.textContent = item.ma_tram || item.ma_tram_gen || item.name;
   div.appendChild(h3);
 
   const addRow = (label, value) => {
@@ -192,6 +234,8 @@ function createStationPopupContent(item, user) {
     div.appendChild(p);
   };
 
+  if (item.ma_tram || item.ma_tram_gen) addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
+  addRow('Tên trạm', item.name);
   addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
@@ -202,6 +246,13 @@ function createStationPopupContent(item, user) {
   statusSpan.textContent = getStatusLabel(item.status, 'station');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
+
+  addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_tram] || item.mo_hinh_tram || '');
+  const truText = [item.so_luong_tru && item.loai_tru_sac ? `${item.so_luong_tru}× ${item.loai_tru_sac}` : '',
+    item.so_luong_tru && !item.loai_tru_sac ? `${item.so_luong_tru} trụ` : '',
+    !item.so_luong_tru && item.loai_tru_sac ? item.loai_tru_sac : '',
+    item.tower_type || '', item.power_capacity ? `${item.power_capacity} kW` : ''].filter(Boolean).join(' | ');
+  if (truText) addRow('Trụ', truText);
 
   if (item.description) addRow('Mô tả', item.description);
 
@@ -216,7 +267,7 @@ function createProposalPopupContent(item, user) {
   const div = document.createElement('div');
   div.className = 'popup-content';
   const h3 = document.createElement('h3');
-  h3.textContent = `Đề xuất #${item.id}`;
+  h3.textContent = item.ma_de_xuat || `Đề xuất #${item.id}`;
   div.appendChild(h3);
 
   const addRow = (label, value) => {
@@ -228,6 +279,8 @@ function createProposalPopupContent(item, user) {
     div.appendChild(p);
   };
 
+  if (item.ma_de_xuat) addRow('Mã đề xuất', item.ma_de_xuat);
+  if (item.owner_name) addRow('Tên khách hàng', item.owner_name);
   addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
@@ -238,6 +291,9 @@ function createProposalPopupContent(item, user) {
   statusSpan.textContent = getStatusLabel(item.status, 'proposal');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
+  addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_dau_tu] || item.mo_hinh_dau_tu || '');
+  const proposalTru = pickProposalTru(item);
+  if (proposalTru) addRow('Trụ', proposalTru);
 
   if (canViewProposal(item, user)) {
     renderAdminLink(div, `/admin/proposals/view=${item.id}`);
@@ -306,6 +362,52 @@ const MapView = ({
   const [boundaries, setBoundaries] = useState(null);
   const [configVersion, setConfigVersion] = useState(0);
   const mountedRef = useRef(true);
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchPicked, setSearchPicked] = useState(null);
+  const [searchFly, setSearchFly] = useState(null);
+  const searchTimerRef = useRef(null);
+  const searchReqRef = useRef(0);
+
+  useEffect(() => {
+    const q = searchText.trim();
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (q.length < 3) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return undefined;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      const reqId = searchReqRef.current + 1;
+      searchReqRef.current = reqId;
+      setSearchLoading(true);
+      try {
+        const res = await api.post('/geocode/search', { text: q, limit: 6 });
+        if (searchReqRef.current !== reqId) return;
+        setSearchResults((res && res.data && res.data.results) || []);
+        setSearchOpen(true);
+      } catch {
+        if (searchReqRef.current === reqId) setSearchResults([]);
+      } finally {
+        if (searchReqRef.current === reqId) setSearchLoading(false);
+      }
+    }, 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchText]);
+
+  const handleSearchPick = useCallback((item) => {
+    const lat = parseFloat(item.lat);
+    const lng = parseFloat(item.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    setSearchText(item.name || item.formatted || '');
+    setSearchResults([]);
+    setSearchOpen(false);
+    setSelectedPosition([lat, lng]);
+    setSearchFly([lat, lng]);
+    setSearchPicked({ lat, lng, label: item.formatted || item.name || '' });
+  }, []);
 
   const [config, setConfig] = useState({
     tile_provider_id: 'leaflet-osm',
@@ -325,6 +427,59 @@ const MapView = ({
   });
 
   const isMobile = useMediaQuery('(max-width: 767px)');
+  const [measureActive, setMeasureActive] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState([]);
+  const [measureSnapped, setMeasureSnapped] = useState([]);
+  const measureTotal = useMemo(() => measureTotalM(measurePoints), [measurePoints]);
+  const snapCandidateRef = useRef({ stations: [], proposals: [], myLocation: null });
+  const snapGuardRef = useRef(null);
+  const addMeasurePoint = useCallback((point, snapped) => {
+    setMeasurePoints((prev) => [...prev, point]);
+    if (snapped) setMeasureSnapped((prev) => [...prev, point]);
+  }, []);
+  const handleMeasureSnap = useCallback((point) => {
+    if (!Array.isArray(point) || Number.isNaN(parseFloat(point[0])) || Number.isNaN(parseFloat(point[1]))) return;
+    const p = [parseFloat(point[0]), parseFloat(point[1])];
+    snapGuardRef.current = { lat: p[0], lng: p[1], t: Date.now() };
+    addMeasurePoint(p, true);
+  }, [addMeasurePoint]);
+  const handleMeasureClick = useCallback((lat, lng, zoom) => {
+    const g = snapGuardRef.current;
+    if (g && Date.now() - g.t < 400 && haversineM(lat, lng, g.lat, g.lng) < 30) {
+      snapGuardRef.current = null;
+      return;
+    }
+    const z = Number(zoom);
+    const pxTol = 20;
+    const mPerPx = Number.isFinite(z) ? (156543.03 * Math.cos((parseFloat(lat) * Math.PI) / 180)) / 2 ** z : 1000;
+    const tolM = Math.min(50000, Math.max(5, mPerPx * pxTol));
+    let best = null;
+    let bestD = Infinity;
+    const consider = (cLat, cLng) => {
+      const d = haversineM(lat, lng, cLat, cLng);
+      if (d < bestD) { bestD = d; best = [parseFloat(cLat), parseFloat(cLng)]; }
+    };
+    const { stations: cStations, proposals: cProposals, myLocation: cMine } = snapCandidateRef.current;
+    (cStations || []).forEach((s) => consider(s.latitude, s.longitude));
+    (cProposals || []).forEach((p) => consider(p.latitude, p.longitude));
+    if (Array.isArray(cMine)) consider(cMine[0], cMine[1]);
+    if (best && bestD <= tolM) {
+      addMeasurePoint(best, true);
+    } else {
+      addMeasurePoint([lat, lng], false);
+    }
+  }, [addMeasurePoint]);
+  useEffect(() => {
+    if (!measureActive) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { setMeasureActive(false); setMeasurePoints([]); setMeasureSnapped([]); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [measureActive]);
+  useEffect(() => {
+    if (selectingLocation) { setMeasureActive(false); setMeasurePoints([]); setMeasureSnapped([]); }
+  }, [selectingLocation]);
   const [activeMode, setActiveMode] = useState(DEFAULT_MODE);
   const [active3d, setActive3d] = useState(false);
   const [pmtilesStyle, setPmtilesStyle] = useState(null);
@@ -630,6 +785,8 @@ const MapView = ({
     [layerProposals, markerIconsVersion]
   );
 
+  snapCandidateRef.current = { stations: canvasStations, proposals: canvasProposals, myLocation };
+
   const renderStationPopup = useCallback((item) => createStationPopupContent(item, user), [user]);
   const renderProposalPopup = useCallback((item) => createProposalPopupContent(item, user), [user]);
   const renderDuplicatePopup = useCallback((pair) => createDuplicatePopupContent(pair), []);
@@ -786,7 +943,12 @@ const MapView = ({
         renderMyLocationPopup={renderMyLocationPopup}
         selectingLocation={selectingLocation}
         onMapSelectClick={onMapSelectClick}
-        flyToPosition={highlightPosition || myLocation}
+        measureActive={measureActive}
+        measurePoints={measurePoints}
+        measureSnapped={measureSnapped}
+        onMeasureClick={handleMeasureClick}
+        onMeasureSnap={handleMeasureSnap}
+        flyToPosition={highlightPosition || myLocation || searchFly}
         enable3d={isMaplibre && active3d && !isMobile}
         onTileError={handleTileError}
         onRuntimeInfo={handleRuntimeInfo}
@@ -803,6 +965,49 @@ const MapView = ({
             : (runtimeWarning || tileWarning)}
         </div>
       )}
+
+      <div className="map-search">
+        <div className="map-search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input
+            type="text"
+            placeholder="Tìm địa điểm, địa chỉ..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onFocus={() => { if (searchResults.length > 0) setSearchOpen(true); }}
+          />
+          {searchLoading && <span className="map-search-loading">...</span>}
+          {searchText && (
+            <button type="button" className="map-search-clear" onClick={() => { setSearchText(''); setSearchResults([]); setSearchOpen(false); }} aria-label="Xóa">✕</button>
+          )}
+        </div>
+        {searchOpen && searchResults.length > 0 && (
+          <ul className="map-search-results">
+            {searchResults.map((r, i) => (
+              <li key={`${r.lat}-${r.lon}-${i}`}>
+                <button type="button" onClick={() => handleSearchPick(r)}>
+                  <span className="map-search-name">{r.name || r.address_line1 || r.formatted}</span>
+                  {r.formatted && <span className="map-search-addr">{r.formatted}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {searchPicked && (
+          <div className="map-search-actions">
+            <div className="map-search-actions-label">{searchPicked.label}</div>
+            <div className="map-search-actions-btns">
+              {onLocationSelected && (
+                <button type="button" className="btn btn-xs btn-primary" onClick={() => { onLocationSelected(searchPicked.lat, searchPicked.lng, null, 'proposal'); setSearchPicked(null); }}>Tạo đề xuất</button>
+              )}
+              {onLocationSelected && user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role) && (
+                <button type="button" className="btn btn-xs btn-secondary" onClick={() => { onLocationSelected(searchPicked.lat, searchPicked.lng, null, 'station'); setSearchPicked(null); }}>Tạo trạm</button>
+              )}
+              <button type="button" className="btn btn-xs btn-ghost" onClick={() => setSearchPicked(null)}>Đóng</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="map-controls-top-right">
         <MapControlButton
@@ -824,6 +1029,13 @@ const MapView = ({
           tooltip="Ranh giới"
           active={showBoundaries}
           onClick={() => setShowBoundaries(v => !v)}
+        />
+
+        <MapControlButton
+          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2"/><path d="m10.5 7.5 2 2"/><path d="m13.5 4.5 2 2"/><path d="m4.5 13.5 2 2"/></svg>}
+          tooltip="Thước đo"
+          active={measureActive}
+          onClick={() => { setMeasureActive(v => !v); setMeasurePoints([]); setMeasureSnapped([]); }}
         />
 
         {isMaplibre && (
@@ -867,7 +1079,19 @@ const MapView = ({
         </div>
       )}
 
-      {!readOnly && (
+      {measureActive && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1001] bg-white rounded-xl shadow-lg border border-base-300 px-4 py-3 flex items-center gap-3">
+          <span className="text-sm font-medium text-base-content">
+            {measurePoints.length < 2 ? 'Click lên bản đồ / trạm / đề xuất / vị trí của tôi để thêm điểm đo' : `Tổng: ${formatDistanceM(measureTotal)} (${measurePoints.length} điểm)`}
+          </span>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setMeasurePoints([]); setMeasureSnapped([]); }}>Xóa</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setMeasureActive(false)}>Hoàn tất</button>
+          </div>
+        </div>
+      )}
+
+      {!readOnly && !measureActive && (
       <div className="map-fab-group">
         {showCreateMenu && (
           <div className="map-create-menu">

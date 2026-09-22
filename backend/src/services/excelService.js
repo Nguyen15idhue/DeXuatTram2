@@ -1362,11 +1362,12 @@ exports.importConfirmDynamic = async (req, res) => {
     const table = ENTITY_TABLE_MAP[entity];
     await connection.beginTransaction();
 
-    let importSupplementDays = 7;
+    let importSupplementMinutes = 4320;
     if (entity === 'station_proposals') {
       try {
-        const [cfgRows] = await connection.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
-        importSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
+        const proposalLifecycle = require('./proposalLifecycle');
+        const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
+        importSupplementMinutes = Math.max(1, Number(configured) || 4320);
       } catch { /* silent */ }
     }
 
@@ -1545,8 +1546,8 @@ exports.importConfirmDynamic = async (req, res) => {
         );
         if (entity === 'station_proposals') {
           await connection.query(
-            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
-            [importSupplementDays, result.insertId]
+            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?',
+            [importSupplementMinutes, result.insertId]
           );
         }
 
@@ -1698,17 +1699,48 @@ exports.exportUsers = async (req, res) => {
   return exports.exportDynamic(req, res);
 };
 
+const SALES_ALLOWED_IMPORT_ENTITIES = new Set(['station_proposals']);
+
+const denySalesEntity = (req, res, entity) => {
+  const role = req.user && req.user.role;
+  if (role === 'SALES' && !SALES_ALLOWED_IMPORT_ENTITIES.has(entity)) {
+    res.status(403).json({ success: false, message: 'SALES chỉ được Template/Import/Export đề xuất' });
+    return true;
+  }
+  return false;
+};
+
+exports.getViewsForEntity = async (req, res) => {
+  try {
+    const { entity } = req.query;
+    if (!entity || !ENTITY_TABLE_MAP[entity]) {
+      return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
+    }
+    const [rows] = await pool.query(
+      "SELECT id, name, entity, `usage`, is_locked, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
+      [entity]
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Get excel views error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.getTemplate = async (req, res) => {
   if (!req.query.entity) req.query.entity = 'stations';
+  if (denySalesEntity(req, res, req.query.entity)) return;
   return exports.getTemplateDynamic(req, res);
 };
 
 exports.importPreview = async (req, res) => {
   if (!req.query.entity) req.query.entity = 'stations';
+  if (denySalesEntity(req, res, req.query.entity)) return;
   return exports.importPreviewDynamic(req, res);
 };
 
 exports.importConfirm = async (req, res) => {
+  if (denySalesEntity(req, res, req.body && req.body.entity)) return;
   return exports.importConfirmDynamic(req, res);
 };
 

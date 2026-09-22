@@ -36,6 +36,11 @@ export default function MapCanvas({
   renderMyLocationPopup,
   selectingLocation = false,
   onMapSelectClick,
+  measureActive = false,
+  measurePoints = null,
+  measureSnapped = null,
+  onMeasureClick,
+  onMeasureSnap,
   flyToPosition = null,
   onTileError,
   onRuntimeInfo,
@@ -44,10 +49,12 @@ export default function MapCanvas({
   const runtimeRef = useRef(null);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const clickRef = useRef({ selectingLocation, onMapSelectClick });
+  const measureClickRef = useRef({ measureActive, onMeasureClick, onMeasureSnap });
   const markerClickRef = useRef(onMarkerClick);
   const markersSigRef = useRef({ runtime: null, stations: null, proposals: null, cluster: null });
   const argsRef = useRef({ center, zoom, tile, vectorStyle, apiKey });
   clickRef.current = { selectingLocation, onMapSelectClick };
+  measureClickRef.current = { measureActive, onMeasureClick, onMeasureSnap };
   markerClickRef.current = onMarkerClick;
   argsRef.current = { center, zoom, tile, vectorStyle, apiKey };
 
@@ -70,8 +77,19 @@ export default function MapCanvas({
       runtimeRef.current = runtime;
       if (import.meta.env.DEV) window.__mapRuntime = runtime;
       runtime.on('click', (e) => {
+        const lat = e.latlng ? e.latlng.lat : e.lngLat.lat;
+        const lng = e.latlng ? e.latlng.lng : e.lngLat.lng;
         const { selectingLocation: selecting, onMapSelectClick: onSelect } = clickRef.current;
-        if (selecting && onSelect) onSelect(e.latlng ? e.latlng.lat : e.lngLat.lat, e.latlng ? e.latlng.lng : e.lngLat.lng);
+        if (selecting && onSelect) onSelect(lat, lng);
+        const { measureActive: measuring, onMeasureClick: onMeasure } = measureClickRef.current;
+        if (measuring && onMeasure) {
+          let zoom = null;
+          try {
+            const rt = runtimeRef.current;
+            zoom = typeof rt?.getZoom === 'function' ? rt.getZoom() : null;
+          } catch { /* noop */ }
+          onMeasure(lat, lng, zoom);
+        }
       });
       if (onRuntimeInfo) onRuntimeInfo({ id: runtime.id, fallback: res.fallback, requested: res.requested });
       setRuntimeVersion(v => v + 1);
@@ -119,8 +137,8 @@ export default function MapCanvas({
       markersSigRef.current = { runtime, stations, proposals, cluster: clusterKey, labels: showStationLabels };
     }
     const items = [
-      ...stations.map((s) => ({ ...s, _type: 'station', _color: s._color, _label: s.name || `Trạm #${s.id}` })),
-      ...proposals.map((p) => ({ ...p, _type: 'proposal', _color: p._color, _label: `Đề xuất #${p.id}` })),
+      ...stations.map((s) => ({ ...s, _type: 'station', _color: s._color, _label: s.ma_tram || s.ma_tram_gen || s.name || `Trạm #${s.id}` })),
+      ...proposals.map((p) => ({ ...p, _type: 'proposal', _color: p._color, _label: p.ma_de_xuat || `Đề xuất #${p.id}` })),
     ];
     runtime.setMarkers(items, {
       cluster: showCluster,
@@ -171,6 +189,12 @@ export default function MapCanvas({
     if (!runtime || typeof runtime.setCircle !== 'function') return;
     runtime.setCircle(circle);
   }, [runtimeVersion, circle]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || typeof runtime.setMeasure !== 'function') return;
+    runtime.setMeasure({ active: measureActive, points: measurePoints, snapped: measureSnapped }, onMeasureSnap || null);
+  }, [runtimeVersion, measureActive, measurePoints, measureSnapped, onMeasureSnap]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

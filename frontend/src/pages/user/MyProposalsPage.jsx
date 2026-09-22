@@ -519,6 +519,11 @@ const MyProposalsPage = () => {
           title="Preview vị trí đề xuất"
           statusFilter={PREVIEW_STATUS_FILTER}
           onClose={() => { setShowPreview(false); setPreviewSnapshot(null); }}
+          onMarkerClick={(item, type) => {
+            if (type !== 'proposal') return;
+            setShowPreview(false); setPreviewSnapshot(null);
+            navigate(`/my-proposals/view=${item.id}`);
+          }}
         />
       )}
 

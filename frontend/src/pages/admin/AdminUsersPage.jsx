@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminUserService, excelService, viewService } from '../../services/api';
+import { adminUserService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import Loading from '../../components/Loading';
@@ -180,7 +180,7 @@ const [viewMode, setViewMode] = useState('table');
   useEffect(() => {
     if (!token || isSales) return;
     let cancelled = false;
-    viewService.getAll('entity=users&status=active&limit=50', token)
+    excelService.getViews('users', token)
       .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
       .catch(() => {});
     return () => { cancelled = true; };

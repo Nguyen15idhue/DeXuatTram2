@@ -112,22 +112,12 @@ exports.transition = async (id, to, opts = {}) => {
     [to, cleanReason, actorId || null, id]
   );
 
-  const DEADLINE_CONFIG = {
-    PENDING: { key: 'review_supplement_days', fallback: 3 },
-    REVIEWING: { key: 'review_supplement_days', fallback: 3 },
-    PRINCIPLE_APPROVED: { key: 'principle_supplement_days', fallback: 15 }
-  };
-  if (DEADLINE_CONFIG[to]) {
+  const deadlineMinutes = await exports.getDeadlineMinutes(to);
+  if (deadlineMinutes) {
     try {
-      const { key, fallback } = DEADLINE_CONFIG[to];
-      const [cfgRows] = await pool.query(
-        'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
-        [key]
-      );
-      const days = Math.max(1, Number((cfgRows[0] || {}).value) || fallback);
       await pool.query(
-        'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
-        [days, id]
+        'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?',
+        [deadlineMinutes, id]
       );
     } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
   }
@@ -177,3 +167,113 @@ async function autoPushOnReview(id, reviewerId) {
     return { queued: false, reason: e.message || 'Lỗi tạo lệnh đẩy' };
   }
 }
+
+const COUNTDOWN_CONFIG_KEY = 'supplement_countdown_config';
+
+const LEGACY_DAY_KEYS = {
+  PENDING: 'review_supplement_days',
+  REVIEWING: 'review_supplement_days',
+  PRINCIPLE_APPROVED: 'principle_supplement_days',
+  APPROVED: null,
+  ARCHIVED: null
+};
+
+const DEFAULT_COUNTDOWN_RULES = [
+  { status: 'PENDING', days: 3, hours: 0, minutes: 0, enabled: true },
+  { status: 'REVIEWING', days: 3, hours: 0, minutes: 0, enabled: true },
+  { status: 'PRINCIPLE_APPROVED', days: 15, hours: 0, minutes: 0, enabled: true },
+  { status: 'APPROVED', days: 10, hours: 0, minutes: 0, enabled: false },
+  { status: 'ARCHIVED', days: 10, hours: 0, minutes: 0, enabled: false }
+];
+
+const clamp = (v, max) => {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(max, n);
+};
+
+const normalizeRule = (r, fallback) => {
+  const days = clamp(r.days, 365);
+  const hours = clamp(r.hours, 23);
+  const minutes = clamp(r.minutes, 59);
+  const hasDuration = days > 0 || hours > 0 || minutes > 0;
+  return {
+    status: r.status,
+    days: hasDuration ? days : fallback.days,
+    hours: hasDuration ? hours : 0,
+    minutes: hasDuration ? minutes : 0,
+    enabled: r.enabled !== false
+  };
+};
+
+const parseRules = (raw) => {
+  const map = {};
+  (Array.isArray(raw) ? raw : []).forEach((r) => {
+    if (!r || !ALL_STATUSES.includes(r.status)) return;
+    map[r.status] = r;
+  });
+  return DEFAULT_COUNTDOWN_RULES.map((d) => (map[d.status] ? normalizeRule(map[d.status], d) : { ...d }));
+};
+
+exports.getCountdownConfig = async () => {
+  let rules = null;
+  let warnHours = 24;
+  try {
+    const [rows] = await pool.query(
+      'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
+      [COUNTDOWN_CONFIG_KEY]
+    );
+    if (rows[0] && rows[0].value) {
+      const parsed = JSON.parse(rows[0].value);
+      rules = parseRules(parsed.rules);
+      if (parsed.warn_hours) warnHours = Math.max(1, Math.min(168, Number(parsed.warn_hours) || 24));
+    }
+  } catch { /* fallback below */ }
+
+  if (!rules) {
+    const [legacy] = await pool.query(
+      "SELECT `key`, `value` FROM proposal_lifecycle_configs WHERE `key` IN ('review_supplement_days','principle_supplement_days')"
+    ).catch(() => [[]]);
+    const legacyMap = {};
+    (legacy || []).forEach((r) => { legacyMap[r.key] = r.value; });
+    rules = DEFAULT_COUNTDOWN_RULES.map((d) => {
+      const key = LEGACY_DAY_KEYS[d.status];
+      const v = key ? Number(legacyMap[key]) : NaN;
+      return { ...d, days: Number.isFinite(v) && v > 0 ? Math.min(365, v) : d.days };
+    });
+  }
+  return { warn_hours: warnHours, rules };
+};
+
+exports.saveCountdownConfig = async (config) => {
+  const warnHours = Math.max(1, Math.min(168, Number(config && config.warn_hours) || 24));
+  const rules = parseRules(config && config.rules).map((r) => ({ ...r }));
+  const value = JSON.stringify({ warn_hours: warnHours, rules });
+  await pool.query(
+    `INSERT INTO proposal_lifecycle_configs (\`key\`, \`value\`) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE \`value\` = VALUES(\`value\`), updated_at = CURRENT_TIMESTAMP`,
+    [COUNTDOWN_CONFIG_KEY, value]
+  );
+  return { warn_hours: warnHours, rules };
+};
+
+exports.getDeadlineParts = async (status) => {
+  const cfg = await exports.getCountdownConfig();
+  const rule = cfg.rules.find((r) => r.status === status);
+  if (!rule || !rule.enabled) return null;
+  const totalMinutes = (Number(rule.days) || 0) * 1440 + (Number(rule.hours) || 0) * 60 + (Number(rule.minutes) || 0);
+  if (totalMinutes <= 0) return null;
+  return totalMinutes;
+};
+
+exports.getDeadlineMinutes = async (status) => exports.getDeadlineParts(status);
+
+exports.getEnabledCountdownStatuses = async () => {
+  const cfg = await exports.getCountdownConfig();
+  return cfg.rules.filter((r) => r.enabled).map((r) => r.status);
+};
+
+exports.getCountdownWarnHours = async () => {
+  const cfg = await exports.getCountdownConfig();
+  return cfg.warn_hours || 24;
+};

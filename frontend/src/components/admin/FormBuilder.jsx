@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { fieldDefinitionService, formService, formFieldService } from '../../services/api';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
+import CountdownConfigPanel from './CountdownConfigPanel';
 import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownIcon, Layers, Pencil, Check, X, Zap, Search } from 'lucide-react';
 import { filterFieldsBySearch } from '../../utils/searchText';
 
@@ -14,7 +15,9 @@ const PURPOSE_OPTIONS = [
 ];
 const COL_OPTIONS = [
   { value: '1:1', label: '1 cột' },
-  { value: '1:2', label: '2 cột' }
+  { value: '1:2', label: '2 cột' },
+  { value: '1:3', label: '3 cột' },
+  { value: '1:4', label: '4 cột' }
 ];
 
 const FormBuilder = ({ formId, onSaved }) => {
@@ -200,6 +203,7 @@ const FormBuilder = ({ formId, onSaved }) => {
   };
 
   const updateRowColumns = (rowId, columns) => {
+    const maxCols = parseInt(String(columns).split(':')[1], 10) || 1;
     setLayoutConfig(prev => ({
       ...prev,
       sections: (prev.sections || []).map(s => ({
@@ -207,15 +211,57 @@ const FormBuilder = ({ formId, onSaved }) => {
         rows: (s.rows || []).map(r => r.id === rowId ? { ...r, columns } : r)
       }))
     }));
-    if (columns === '1:1') {
-      setAssignedFields(prev => prev.map(f => {
-        if (f.config?.rowId === rowId && f.config?.colIndex === 1) {
-          const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
-          return { ...f, config: rest };
+    setAssignedFields(prev => prev.map(f => {
+      if (f.config?.rowId === rowId && Number(f.config?.colIndex) >= maxCols) {
+        const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
+        return { ...f, config: rest };
+      }
+      return f;
+    }));
+  };
+
+  const reflowForm = (numCols) => {
+    const n = Math.max(1, Math.min(4, parseInt(numCols, 10) || 1));
+    const baseTime = Date.now();
+    const nextAssignments = {};
+    const nextSections = (layoutConfig.sections || []).map((sec, secIdx) => {
+      const sectionRows = sec.rows || [];
+      const rowIds = new Set(sectionRows.map(r => r.id));
+      const ordered = assignedFields
+        .filter(f => rowIds.has(f.config?.rowId))
+        .sort((a, b) => {
+          const ra = sectionRows.findIndex(r => r.id === a.config.rowId);
+          const rb = sectionRows.findIndex(r => r.id === b.config.rowId);
+          if (ra !== rb) return ra - rb;
+          return Number(a.config.colIndex || 0) - Number(b.config.colIndex || 0);
+        });
+      const rowPlan = [];
+      let buffer = [];
+      const flushBuffer = () => { if (buffer.length) { rowPlan.push({ columns: `1:${n}`, fields: buffer }); buffer = []; } };
+      ordered.forEach(f => {
+        if (f.type === 'table') {
+          flushBuffer();
+          rowPlan.push({ columns: '1:1', fields: [f] });
+        } else {
+          buffer.push(f);
+          if (buffer.length === n) flushBuffer();
         }
-        return f;
-      }));
-    }
+      });
+      flushBuffer();
+      const newRows = rowPlan.map((p, i) => ({ id: `r${baseTime}_${secIdx}_${i}`, columns: p.columns }));
+      if (newRows.length === 0) newRows.push({ id: `r${baseTime}_${secIdx}_0`, columns: `1:${n}` });
+      rowPlan.forEach((p, rowIdx) => {
+        p.fields.forEach((f, colIdx) => {
+          nextAssignments[f.fieldId] = { rowId: newRows[rowIdx].id, rowIndex: rowIdx, colIndex: colIdx };
+        });
+      });
+      return { ...sec, rows: newRows };
+    });
+    setLayoutConfig(prev => ({ ...prev, sections: nextSections }));
+    setAssignedFields(prev => prev.map(f => {
+      if (nextAssignments[f.fieldId]) return { ...f, config: { ...f.config, ...nextAssignments[f.fieldId] } };
+      return f;
+    }));
   };
 
   const moveRow = (rowId, direction, sectionId) => {
@@ -871,7 +917,20 @@ const FormBuilder = ({ formId, onSaved }) => {
       <div className="preview-toggle mb-3">
         <button className={`btn btn-xs ${previewMode === 'desktop' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setPreviewMode('desktop')}>Desktop</button>
         <button className={`btn btn-xs ${previewMode === 'mobile' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setPreviewMode('mobile')}>Mobile</button>
+        <span className="text-xs text-gray-500 ml-3 mr-1">Sắp xếp nhanh toàn form:</span>
+        {[1, 2, 3, 4].map(n => (
+          <button
+            key={n}
+            className="btn btn-xs btn-ghost"
+            title={`Dồn toàn bộ form về ${n} cột (section giữ nguyên)`}
+            onClick={() => { if (window.confirm(`Dồn toàn bộ form về ${n} cột? Các section giữ nguyên, chỉ xếp lại hàng/cột.`)) reflowForm(n); }}
+          >
+            {n}:1
+          </button>
+        ))}
       </div>
+
+      {entity === 'station_proposals' && <CountdownConfigPanel />}
 
       <div className="builder-layout">
         {/* Left: Preview with inline layout controls */}
@@ -1228,7 +1287,7 @@ const FormBuilder = ({ formId, onSaved }) => {
                                   <div
                                     key={colIdx}
                                     data-field-cell={cellField ? cellField.fieldId : undefined}
-                                    className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''}`}
+                                    className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''} ${cellField && cellField.type === 'table' ? 'form-cell-full' : ''}`}
                                     style={cellField && previewSearch.trim() && previewMatches.includes(cellField.fieldId) ? {
                                       outline: cellField.fieldId === previewCurrentId ? '2px solid #6366f1' : '1px dashed #a5b4fc',
                                       outlineOffset: -2,

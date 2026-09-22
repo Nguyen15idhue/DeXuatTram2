@@ -25,4 +25,31 @@ const { geocodeLimiter } = require('../middlewares/rateLimits');
  */
 router.post('/reverse', geocodeLimiter, geocodeController.reverse);
 
+/**
+ * @swagger
+ * /api/geocode/search:
+ *   post:
+ *     tags: [Geocode]
+ *     summary: Tìm địa điểm theo từ khóa (forward geocode, proxy giữ API key)
+ *     description: Trả danh sách gợi ý địa chỉ (tối đa 10) từ text. Public, có rate limit. Bias theo tâm bản đồ nếu truyền lat/lng.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text: { type: string, example: 'Vincom Bà Triệu' }
+ *               lat: { type: number, example: 21.0285 }
+ *               lng: { type: number, example: 105.8542 }
+ *               limit: { type: integer, example: 6 }
+ *     responses:
+ *       200:
+ *         description: Thành công (found=false nếu không có kết quả)
+ *       400:
+ *         description: text < 3 ký tự
+ */
+router.post('/search', geocodeLimiter, geocodeController.search);
+
 module.exports = router;

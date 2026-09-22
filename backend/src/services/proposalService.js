@@ -7,10 +7,15 @@ const proximityService = require('./proximityService');
 
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
-    `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
+    `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
-            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.ma_de_xuat')) AS ma_de_xuat,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_tru')) AS loai_tru,
+            JSON_EXTRACT(p.custom_data, '$.tdt_tru') AS tdt_tru,
+            JSON_EXTRACT(p.custom_data, '$.loai_tru_nq') AS loai_tru_nq,
+            JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
      ORDER BY p.created_at DESC
@@ -21,10 +26,15 @@ exports.getAllProposals = async () => {
 
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.id, p.latitude, p.longitude, p.address, p.status,
+    `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
-            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.ma_de_xuat')) AS ma_de_xuat,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_tru')) AS loai_tru,
+            JSON_EXTRACT(p.custom_data, '$.tdt_tru') AS tdt_tru,
+            JSON_EXTRACT(p.custom_data, '$.loai_tru_nq') AS loai_tru_nq,
+            JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
      WHERE p.id = ?`,
@@ -59,10 +69,11 @@ exports.createProposal = async (userId, data, opts = {}) => {
   const customDataObj = { ...dynamicData };
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
 
-  let supplementDays = 7;
+  let supplementMinutes = 4320;
   try {
-    const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
-    supplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
+    const proposalLifecycle = require('./proposalLifecycle');
+    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
+    supplementMinutes = Math.max(1, Number(configured) || 4320);
   } catch { /* silent */ }
 
   const conn = await pool.getConnection();
@@ -73,8 +84,8 @@ exports.createProposal = async (userId, data, opts = {}) => {
 
     const [result] = await conn.query(
       `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at)
-       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
-      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, supplementDays]
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, supplementMinutes]
     );
 
     recordId = result.insertId;
@@ -273,10 +284,11 @@ exports.createGuestProposal = async (data, ip) => {
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
-  let guestSupplementDays = 7;
+  let guestSupplementMinutes = 4320;
   try {
-    const [cfgRows] = await pool.query("SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = 'review_supplement_days' LIMIT 1");
-    guestSupplementDays = Math.max(1, Number((cfgRows[0] || {}).value) || 3);
+    const proposalLifecycle = require('./proposalLifecycle');
+    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
+    guestSupplementMinutes = Math.max(1, Number(configured) || 4320);
   } catch { /* silent */ }
 
   const conn = await pool.getConnection();
@@ -287,8 +299,8 @@ exports.createGuestProposal = async (data, ip) => {
 
     const [result] = await conn.query(
       `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip, supplement_deadline_at)
-       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
-      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, guestSupplementDays]
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, guestSupplementMinutes]
     );
 
     recordId = result.insertId;

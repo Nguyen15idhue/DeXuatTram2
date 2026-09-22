@@ -171,10 +171,15 @@ const notifyChain = async (proposal, type, title, message) => {
 };
 
 const processDeadlines = async () => {
+  const enabledStatuses = await proposalLifecycle.getEnabledCountdownStatuses();
+  if (enabledStatuses.length === 0) return 0;
+  const warnHours = await proposalLifecycle.getCountdownWarnHours();
+  const placeholders = enabledStatuses.map(() => '?').join(', ');
   const [rows] = await pool.query(
     `SELECT id, user_id, status, supplement_deadline_at FROM station_proposals
-      WHERE status IN ('PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED')
-        AND supplement_deadline_at IS NOT NULL`
+      WHERE status IN (${placeholders})
+        AND supplement_deadline_at IS NOT NULL`,
+    enabledStatuses
   );
   let acted = 0;
   const now = Date.now();
@@ -184,7 +189,7 @@ const processDeadlines = async () => {
       if (Number.isNaN(deadline)) continue;
       const iso = new Date(deadline).toISOString();
       const diff = deadline - now;
-      if (diff > 0 && diff <= 24 * 3600 * 1000) {
+      if (diff > 0 && diff <= warnHours * 3600 * 1000) {
         if (await deadlineNotified(p.id, 'deadline_expiring', iso)) continue;
         const left = Math.ceil(diff / 3600000);
         await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),

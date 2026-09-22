@@ -5,7 +5,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
 import { createCustomIcon } from '../../../utils/mapHelpers';
 import { ISLAND_MIN_ZOOM } from '../../../utils/provinceData';
-import { formatDistanceM } from '../../../utils/formatDistance';
+import { formatDistanceM, haversineM } from '../../../utils/formatDistance';
 import { normalizeClusterOptions } from '../../../utils/mapCluster';
 
 const ZOOM_SHOW_DUP_LABEL = 12;
@@ -65,6 +65,12 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
   let wardState = { points: [], show: false };
   let pointLayer = null;
   let circleLayer = null;
+  let measureLayer = null;
+  const measureRef = { active: false, onSnap: null };
+
+  function closePopupWhileMeasuring() {
+    try { map.closePopup(); } catch { /* noop */ }
+  }
   let dupLabelToggle = null;
   let tileErr = { count: 0, fired: false, loaded: false, handler: null };
 
@@ -197,7 +203,15 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         if (renderPopup) {
           marker.bindPopup(() => renderPopup(item), { className: item._type === 'station' ? 'station-popup' : 'proposal-popup' });
         }
-        marker.on('click', () => onMarkerClick && onMarkerClick(item, item._type));
+        marker.on('click', (e) => {
+          if (measureRef.active && measureRef.onSnap) {
+            try { L.DomEvent.stopPropagation(e); } catch { /* noop */ }
+            closePopupWhileMeasuring();
+            measureRef.onSnap([lat, lng]);
+            return;
+          }
+          if (onMarkerClick) onMarkerClick(item, item._type);
+        });
         group.addLayer(marker);
       });
 
@@ -283,7 +297,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
       if (!show || !geojson) return;
       boundaryLayer = L.geoJSON(geojson, {
         style: {
-          color: '#1565C0',
+          color: '#0462ce',
           weight: 2,
           opacity: 0.7,
           dashArray: '8, 5',
@@ -294,6 +308,11 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
           if (feature.properties?.name) {
             layer.bindTooltip(feature.properties.name, { sticky: true, className: 'province-boundary-tooltip' });
           }
+          layer.on('click', () => {
+            boundaryLayer.eachLayer((l) => boundaryLayer.resetStyle(l));
+            layer.setStyle({ color: '#004089', weight: 3, opacity: 1, fillColor: '#1565C0', fillOpacity: 0.05 });
+            layer.bringToFront();
+          });
         },
       });
       boundaryLayer.addTo(map);
@@ -318,6 +337,15 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
             : createCustomIcon(point.color || '#6b7280');
           const marker = L.marker(point.position, { icon });
           if (point.renderPopup) marker.bindPopup(() => point.renderPopup());
+          marker.on('click', (e) => {
+            const pos = point.position;
+            if (measureRef.active && measureRef.onSnap && Array.isArray(pos)
+              && !Number.isNaN(parseFloat(pos[0])) && !Number.isNaN(parseFloat(pos[1]))) {
+              try { L.DomEvent.stopPropagation(e); } catch { /* noop */ }
+              closePopupWhileMeasuring();
+              measureRef.onSnap([parseFloat(pos[0]), parseFloat(pos[1])]);
+            }
+          });
           return marker;
         })
       );
@@ -333,6 +361,50 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
       if (!center || !radiusM) return;
       circleLayer = L.circle(center, { radius: radiusM, color, weight: 2, fillColor, fillOpacity });
       circleLayer.addTo(map);
+    },
+
+    setMeasure(measure, onSnap) {
+      if (typeof onSnap !== 'undefined') measureRef.onSnap = onSnap || null;
+      if (measureLayer) {
+        map.removeLayer(measureLayer);
+        measureLayer = null;
+      }
+      const { active, points, snapped } = measure || {};
+      measureRef.active = !!active;
+      if (active) {
+        map.on('popupopen', closePopupWhileMeasuring);
+      } else {
+        map.off('popupopen', closePopupWhileMeasuring);
+      }
+      try {
+        map.getContainer().style.cursor = active ? 'crosshair' : '';
+      } catch { /* noop */ }
+      const list = (points || []).filter((p) => Array.isArray(p) && !Number.isNaN(parseFloat(p[0])) && !Number.isNaN(parseFloat(p[1])));
+      if (list.length === 0) return;
+      const group = L.layerGroup();
+      if (list.length >= 2) {
+        group.addLayer(L.polyline(list, { color: '#16a34a', weight: 3, opacity: 0.9 }));
+        for (let i = 1; i < list.length; i += 1) {
+          const mid = [(list[i - 1][0] + list[i][0]) / 2, (list[i - 1][1] + list[i][1]) / 2];
+          const segM = haversineM(list[i - 1][0], list[i - 1][1], list[i][0], list[i][1]);
+          group.addLayer(L.marker(mid, {
+            interactive: false,
+            icon: L.divIcon({ className: 'measure-label-icon', html: `<div class="measure-label">${escapeHtml(formatDistanceM(segM))}</div>`, iconSize: [0, 0] }),
+          }));
+        }
+      }
+      list.forEach((p) => {
+        group.addLayer(L.circleMarker(p, { radius: 5, color: '#16a34a', weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }));
+      });
+      const snappedList = ((measure || {}).snapped || []).filter((p) => Array.isArray(p) && !Number.isNaN(parseFloat(p[0])) && !Number.isNaN(parseFloat(p[1])));
+      snappedList.forEach((p) => {
+        group.addLayer(L.marker([parseFloat(p[0]), parseFloat(p[1])], {
+          interactive: false,
+          icon: L.divIcon({ className: 'measure-snap-icon', html: '<div class="measure-snap-ring"></div>', iconSize: [36, 36], iconAnchor: [18, 18] }),
+        }));
+      });
+      measureLayer = group;
+      group.addTo(map);
     },
 
     set3D() {

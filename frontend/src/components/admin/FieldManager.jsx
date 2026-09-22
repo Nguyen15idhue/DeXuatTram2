@@ -1025,62 +1025,7 @@ const FieldManager = () => {
                         )}
                         <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e2e8f0' }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Liên kết dữ liệu</div>
-                          {(() => {
-                            const linkOn = !!(col.data_link && typeof col.data_link === 'object' && col.data_link.enabled);
-                            return linkOn ? (
-                              <div style={{ fontSize: 11, color: '#075985', marginBottom: 6 }}>
-                                Đang dùng khối "Lấy dữ liệu từ DataList" bên dưới — các ô nguồn options riêng đã ẩn.
-                              </div>
-                            ) : null;
-                          })()}
                           <div style={GRID2_STYLE}>
-                            {(() => {
-                              const linkOn = !!(col.data_link && typeof col.data_link === 'object' && col.data_link.enabled);
-                              if (linkOn) return null;
-                              return (<>
-                            <div className="form-group" style={FIELD_GROUP_STYLE}>
-                              <label>DataList</label>
-                              <select value={col.data_list_id || ''} onChange={(e) => {
-                                const newCols = [...(form.table_config.columns || [])];
-                                newCols[idx] = { ...newCols[idx], data_list_id: parseInt(e.target.value) || null };
-                                updateForm('table_config', { ...form.table_config, columns: newCols });
-                              }} style={INPUT_STYLE}>
-                                <option value="">-- Không --</option>
-                                {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
-                              </select>
-                            </div>
-                            {!!col.data_list_id && (() => {
-                              const dl = dataLists.find(d => d.id === Number(col.data_list_id));
-                              const cfg = dl && dl.columns_config ? dl.columns_config : [];
-                              const cols = Array.isArray(cfg) ? cfg : [];
-                              return (
-                                <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                  <label>Cột giá trị</label>
-                                  <select value={col.data_list_column || ''} onChange={(e) => {
-                                    const newCols = [...(form.table_config.columns || [])];
-                                    newCols[idx] = { ...newCols[idx], data_list_column: e.target.value || null };
-                                    updateForm('table_config', { ...form.table_config, columns: newCols });
-                                  }} style={INPUT_STYLE}>
-                                    <option value="">-- Chọn cột --</option>
-                                    {cols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
-                                  </select>
-                                </div>
-                              );
-                            })()}
-                            {!!col.data_list_id && (form.table_config.columns || []).length > 1 && (
-                              <div className="form-group" style={FIELD_GROUP_STYLE}>
-                                <label>Cột cha (cascade)</label>
-                                <select value={col.parent_column || ''} onChange={(e) => {
-                                  const newCols = [...(form.table_config.columns || [])];
-                                  newCols[idx] = { ...newCols[idx], parent_column: e.target.value || null };
-                                  updateForm('table_config', { ...form.table_config, columns: newCols });
-                                }} style={INPUT_STYLE}>
-                                  <option value="">-- Không --</option>
-                                  {(form.table_config.columns || []).filter((_, i) => i !== idx).map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
-                                </select>
-                              </div>
-                            )}
-                            </>);})()}
                             {(form.table_config.columns || []).length > 1 && !col.formula && (() => {
                               const link = col.data_link && typeof col.data_link === 'object' ? col.data_link : null;
                               const enabled = !!(link && link.enabled);

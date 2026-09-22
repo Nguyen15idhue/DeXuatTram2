@@ -15,6 +15,24 @@ exports.reverse = async (req, res) => {
   }
 };
 
+exports.search = async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim();
+    if (text.length < 3) {
+      return res.status(400).json({ success: false, message: 'Nhập tối thiểu 3 ký tự' });
+    }
+    const data = await geocodeService.forward(text, {
+      lat: req.body.lat,
+      lng: req.body.lng,
+      limit: req.body.limit,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error forward geocoding:', error.message);
+    res.json({ success: true, data: { found: false, results: [], error: true } });
+  }
+};
+
 exports.getConfig = async (req, res) => {
   try {
     const config = await geocodeService.getConfig();

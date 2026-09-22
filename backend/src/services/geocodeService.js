@@ -72,6 +72,15 @@ function httpGetJson(url) {
   });
 }
 
+const FORWARD_CACHE_TTL_MS = 5 * 60 * 1000;
+const forwardCache = new Map();
+
+function forwardCacheKey(text, lat, lng) {
+  const la = Number.isFinite(lat) ? Math.round(lat * 100) / 100 : '';
+  const ln = Number.isFinite(lng) ? Math.round(lng * 100) / 100 : '';
+  return `${String(text).trim().toLowerCase()}|${la}|${ln}`;
+}
+
 function looksLikeWard(value) {
   return /^(phường|xã|thị trấn|đặc khu)\b/i.test(String(value || '').trim());
 }
@@ -163,4 +172,70 @@ exports.reverse = async (lat, lng) => {
   }
 
   return result;
+};
+
+exports.forward = async (text, opts = {}) => {
+  const q = String(text || '').trim();
+  if (q.length < 3) return { found: false, results: [] };
+
+  const config = await exports.getConfig();
+  if (!config || !Number(config.enabled) || !config.api_key) {
+    return { found: false, disabled: true, results: [] };
+  }
+
+  const lat = parseFloat(opts.lat);
+  const lng = parseFloat(opts.lng);
+  const limit = Math.min(10, Math.max(1, parseInt(opts.limit, 10) || 6));
+
+  const key = forwardCacheKey(q, lat, lng);
+  const cached = forwardCache.get(key);
+  if (cached && Date.now() - cached.t < FORWARD_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const params = new URLSearchParams({
+    text: q,
+    format: 'json',
+    limit: String(limit),
+    apiKey: config.api_key,
+  });
+  if (config.lang) params.set('lang', config.lang);
+  const cc = String(config.countrycodes || '').split(',')[0].trim();
+  if (cc) params.set('filter', `countrycode:${cc}`);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    params.set('bias', `proximity:${lng},${lat}`);
+  }
+
+  const url = `https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`;
+  let json;
+  try {
+    json = await httpGetJson(url);
+  } catch (err) {
+    console.warn('[Geocode] forward error:', err.message);
+    return { found: false, error: true, results: [] };
+  }
+
+  const results = (Array.isArray(json && json.results) ? json.results : []).map((r) => ({
+    name: r.name || r.address_line1 || r.formatted || '',
+    formatted: r.formatted || '',
+    address_line1: r.address_line1 || '',
+    address_line2: r.address_line2 || '',
+    lat: r.lat,
+    lon: r.lon,
+    city: r.city || '',
+    county: r.county || '',
+    state: r.state || '',
+    suburb: r.suburb || '',
+    district: r.district || '',
+    country: r.country || '',
+  })).filter((r) => Number.isFinite(parseFloat(r.lat)) && Number.isFinite(parseFloat(r.lon)));
+
+  const data = { found: results.length > 0, results };
+  forwardCache.set(key, { t: Date.now(), data });
+  if (forwardCache.size > 500) {
+    for (const [k, v] of forwardCache) {
+      if (Date.now() - v.t > FORWARD_CACHE_TTL_MS) forwardCache.delete(k);
+    }
+  }
+  return data;
 };

@@ -12,7 +12,7 @@ import useMapConfig from '../hooks/useMapConfig';
 import { ISLAND_POINTS } from '../utils/provinceData';
 import MapCanvas from './map/MapCanvas';
 
-const RADIUS_OPTIONS = [5, 10, 20, 50];
+const RADIUS_OPTIONS = [5, 10, 20, 50, 100];
 
 export const PREVIEW_STATUS_FILTER = {
   stations: ['ACTIVE', 'DEPLOYING'],
@@ -23,7 +23,8 @@ const zoomForRadius = (radius) => {
   if (radius <= 5) return 12;
   if (radius <= 10) return 11;
   if (radius <= 20) return 10;
-  return 9;
+  if (radius <= 50) return 9;
+  return 8;
 };
 
 const haversineKm = (lat1, lng1, lat2, lng2) => {
@@ -35,6 +36,43 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
   return 2 * R * Math.asin(Math.sqrt(a));
 };
 
+const NEARBY_MO_HINH_LABELS = { TDT: 'Tự đầu tư', LK: 'Liên kết', NQ: 'Nhượng quyền', NQ_LK: 'Nhượng quyền + Liên kết' };
+
+function parseNearbyRows(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+  return [];
+}
+
+function summarizeNearbyTru(item, entity) {
+  if (entity === 'station') {
+    const parts = [];
+    if (item.so_luong_tru && item.loai_tru_sac) parts.push(`${item.so_luong_tru}× ${item.loai_tru_sac}`);
+    else if (item.so_luong_tru) parts.push(`${item.so_luong_tru} trụ`);
+    else if (item.loai_tru_sac) parts.push(item.loai_tru_sac);
+    return parts.join(' | ');
+  }
+  const rows = [...parseNearbyRows(item.tdt_tru), ...parseNearbyRows(item.loai_tru_nq), ...parseNearbyRows(item.loai_tru_lk)];
+  if (rows.length > 0) {
+    const groups = {};
+    rows.forEach((r) => {
+      if (!r) return;
+      const name = r.loai_tru || 'Trụ';
+      groups[name] = (groups[name] || 0) + (Number(r.so_luong) || 0);
+    });
+    const parts = Object.entries(groups).map(([name, qty]) => (qty > 0 ? `${qty}× ${name}` : name));
+    const total = Object.values(groups).reduce((a, b) => a + b, 0);
+    return total > 0 ? `${parts.join(' + ')} (tổng ${total} trụ)` : parts.join(' + ');
+  }
+  return item.loai_tru || '';
+}
+
 function createNearbyPopup(title, item, status, entity) {
   const div = document.createElement('div');
   div.className = 'popup-content';
@@ -42,6 +80,7 @@ function createNearbyPopup(title, item, status, entity) {
   h3.textContent = title;
   div.appendChild(h3);
   const addRow = (label, value) => {
+    if (value === undefined || value === null || value === '') return;
     const p = document.createElement('p');
     const strong = document.createElement('strong');
     strong.textContent = `${label}: `;
@@ -49,6 +88,13 @@ function createNearbyPopup(title, item, status, entity) {
     p.appendChild(document.createTextNode(value || ''));
     div.appendChild(p);
   };
+  if (entity === 'station') {
+    if (item.ma_tram || item.ma_tram_gen) addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
+    if (item.name) addRow('Tên trạm', item.name);
+  } else {
+    if (item.ma_de_xuat) addRow('Mã đề xuất', item.ma_de_xuat);
+    if (item.owner_name) addRow('Tên khách hàng', item.owner_name);
+  }
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
   statusStrong.textContent = 'Trạng thái: ';
@@ -60,15 +106,22 @@ function createNearbyPopup(title, item, status, entity) {
   div.appendChild(statusP);
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
   addRow('Địa chỉ', item.address);
+  const moHinh = entity === 'station' ? item.mo_hinh_tram : item.mo_hinh_dau_tu;
+  if (moHinh) addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
+  addRow('Trụ', summarizeNearbyTru(item, entity));
   return div;
 }
 
-const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose, statusFilter = null }) => {
+const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose, statusFilter = null, onMarkerClick }) => {
   const [radius, setRadius] = useState(radiusKm);
   const [showLegend, setShowLegend] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
   const [showDistance, setShowDistance] = useState(false);
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
+  const [selStations, setSelStations] = useState(() => (statusFilter && Array.isArray(statusFilter.stations) && statusFilter.stations.length > 0
+    ? [...statusFilter.stations] : getStationStatuses().map((s) => s.value)));
+  const [selProposals, setSelProposals] = useState(() => (statusFilter && Array.isArray(statusFilter.proposals) && statusFilter.proposals.length > 0
+    ? [...statusFilter.proposals] : getProposalStatuses().map((s) => s.value)));
   const { renderer, vectorStyle, apiKey, tileUrl, attribution, subdomains } = useMapConfig();
   useMarkerIcons();
   useMapStatuses();
@@ -101,14 +154,14 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
     };
     let nearStations = stations.map(within).filter(Boolean);
     let nearProposals = proposals.map(within).filter(Boolean);
-    if (statusFilter && Array.isArray(statusFilter.stations) && statusFilter.stations.length > 0) {
-      nearStations = nearStations.filter((s) => statusFilter.stations.includes(s.status));
+    if (selStations.length < getStationStatuses().length) {
+      nearStations = nearStations.filter((s) => selStations.includes(s.status));
     }
-    if (statusFilter && Array.isArray(statusFilter.proposals) && statusFilter.proposals.length > 0) {
-      nearProposals = nearProposals.filter((p) => statusFilter.proposals.includes(p.status));
+    if (selProposals.length < getProposalStatuses().length) {
+      nearProposals = nearProposals.filter((p) => selProposals.includes(p.status));
     }
     return { stations: nearStations, proposals: nearProposals };
-  }, [position, radius, stations, proposals, statusFilter]);
+  }, [position, radius, stations, proposals, selStations, selProposals]);
 
   const pairs = useMemo(() => {
     if (!showDistance) return [];
@@ -127,23 +180,43 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
 
   const allStationStatuses = getStationStatuses();
   const allProposalStatuses = getProposalStatuses();
-  const legendStations = statusFilter && Array.isArray(statusFilter.stations) && statusFilter.stations.length > 0
-    ? allStationStatuses.filter((s) => statusFilter.stations.includes(s.value))
+  const legendStations = selStations.length < allStationStatuses.length
+    ? allStationStatuses.filter((s) => selStations.includes(s.value))
     : allStationStatuses;
-  const legendProposals = statusFilter && Array.isArray(statusFilter.proposals) && statusFilter.proposals.length > 0
-    ? allProposalStatuses.filter((s) => statusFilter.proposals.includes(s.value))
+  const legendProposals = selProposals.length < allProposalStatuses.length
+    ? allProposalStatuses.filter((s) => selProposals.includes(s.value))
     : allProposalStatuses;
-  const filterNote = statusFilter
+  const narrowed = selStations.length < allStationStatuses.length || selProposals.length < allProposalStatuses.length;
+  const selTotal = selStations.length + selProposals.length;
+  const hiddenStations = allStationStatuses.filter((s) => !selStations.includes(s.value));
+  const hiddenProposals = allProposalStatuses.filter((s) => !selProposals.includes(s.value));
+  const filterNote = !narrowed ? '' : selTotal <= 6
     ? ` (lọc ${[
-        ...(statusFilter.stations || []).map((v) => getStatusLabel(v, 'station')),
-        ...(statusFilter.proposals || []).map((v) => getStatusLabel(v, 'proposal'))
+        ...selStations.map((v) => getStatusLabel(v, 'station')),
+        ...selProposals.map((v) => getStatusLabel(v, 'proposal'))
       ].join('/')})`
-    : '';
+    : ` (ẩn ${[
+        ...hiddenStations.map((s) => s.label),
+        ...hiddenProposals.map((s) => s.label)
+      ].join('/')})`;
+  const toggleStatus = (entity, value) => {
+    if (entity === 'station') {
+      setSelStations((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+    } else {
+      setSelProposals((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+    }
+  };
+  const QUICK_FILTERS = [
+    { entity: 'station', value: 'ACTIVE' },
+    { entity: 'station', value: 'DEPLOYING' },
+    { entity: 'proposal', value: 'PENDING' },
+    { entity: 'proposal', value: 'APPROVED' },
+  ];
   const total = nearby.stations.length + nearby.proposals.length;
   const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station') }));
   const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal') }));
-  const renderStationPopup = (item) => createNearbyPopup(item.name || `Trạm #${item.id}`, item, item.status, 'station');
-  const renderProposalPopup = (item) => createNearbyPopup(`Đề xuất #${item.id}`, item, item.status, 'proposal');
+  const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
+  const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');
 
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
@@ -173,6 +246,25 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
           </span>
         </div>
 
+        <div className="location-map-toolbar">
+          <span className="text-xs font-medium text-base-content/70">Lọc</span>
+          {QUICK_FILTERS.map(({ entity, value }) => {
+            const active = entity === 'station' ? selStations.includes(value) : selProposals.includes(value);
+            return (
+              <button
+                key={`${entity}-${value}`}
+                type="button"
+                className={`btn btn-xs gap-1 ${active ? 'btn-primary' : 'btn-ghost opacity-50'}`}
+                title={active ? 'Ẩn trạng thái này' : 'Hiện trạng thái này'}
+                onClick={() => toggleStatus(entity, value)}
+              >
+                <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: getMarkerColor(value, entity) }} />
+                {getStatusLabel(value, entity)}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="location-map-body">
           <MapCanvas
             renderer={renderer}
@@ -194,6 +286,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
             circle={circle}
             fitView={fitView}
             pairs={pairs}
+            onMarkerClick={onMarkerClick}
             renderStationPopup={renderStationPopup}
             renderProposalPopup={renderProposalPopup}
           />
