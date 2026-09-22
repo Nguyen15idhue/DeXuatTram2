@@ -256,11 +256,12 @@ exports.convertProposalToStation = async (proposalId, opts = {}) => {
 
   if (p.user_id) {
     try {
+      const actorName = (opts.source === 'system_auto') ? 'Hệ thống' : await notificationService.getUserName(opts.actorId);
       await notificationService.create({
         userId: p.user_id,
         type: 'CONTRACT_SIGNED',
         title: notificationService.statusTitle('CONTRACT_SIGNED'),
-        message: `Đề xuất ${maDeXuat} đã trở thành trạm "${station.name}" (#${station.id})`,
+        message: `Mã đề xuất: ${maDeXuat} · Đã trở thành trạm "${station.name}" (#${station.id}) · Người thực hiện: ${actorName || 'Hệ thống'}`,
         entityType: 'stations',
         entityId: station.id,
         createdBy: opts.actorId || null

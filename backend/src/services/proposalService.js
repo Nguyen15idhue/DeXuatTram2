@@ -126,6 +126,26 @@ exports.createProposal = async (userId, data, opts = {}) => {
       source: 'user', manualOverride: false, ip: opts.ip || null
     });
   } catch { /* silent: khong chan tao de xuat vi log */ }
+
+  try {
+    const notificationService = require('./notificationService');
+    const [ownerRows] = await pool.query('SELECT parent_id FROM users WHERE id = ? LIMIT 1', [userId]);
+    const parentId = ownerRows.length > 0 ? ownerRows[0].parent_id : null;
+    if (parentId) {
+      const code = notificationService.proposalCode(finalData.custom_data, recordId);
+      const actorName = await notificationService.getUserName(userId);
+      await notificationService.create({
+        userId: parentId,
+        type: 'PENDING',
+        title: 'Đề xuất mới được tạo',
+        message: notificationService.statusMessage({ code, actorName, status: 'PENDING', actionLabel: 'Người tạo' }),
+        entityType: 'station_proposals',
+        entityId: recordId,
+        createdBy: userId
+      });
+    }
+  } catch { /* silent */ }
+
   return finalData;
 };
 

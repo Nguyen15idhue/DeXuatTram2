@@ -139,11 +139,13 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   );
 
   if (wasRejected && reviewerId) {
+    const code = notificationService.proposalCode(customData, id);
+    const actorName = await notificationService.getUserName(userId);
     await notificationService.create({
       userId: reviewerId,
       type: 'RESUBMITTED',
       title: notificationService.statusTitle('RESUBMITTED'),
-      message: fixedData.owner_name ? `Đề xuất "${fixedData.owner_name}" đã được chỉnh sửa và gửi lại` : 'Đề xuất đã được chỉnh sửa và gửi lại',
+      message: notificationService.statusMessage({ code, actorName, status: 'RESUBMITTED' }),
       entityType: 'station_proposals',
       entityId: id,
       createdBy: userId

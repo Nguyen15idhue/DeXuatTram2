@@ -74,9 +74,10 @@ const recordAutoFail = async (proposal, from, to, error, maxRetries, describe) =
       source: 'system_auto'
     });
     if (!alreadyNotified) {
+      const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
       await notifyAdmins(
         'Tác vụ tự động thất bại',
-        `Đề xuất #${proposal.id}: tự động ${describe} thất bại ${fails + 1} lần. Vui lòng kiểm tra thủ công.`,
+        `Mã đề xuất: ${code} · Tự động ${describe} thất bại ${fails + 1} lần · Người thực hiện: Hệ thống. Vui lòng kiểm tra thủ công.`,
         proposal.id
       );
     }
@@ -98,7 +99,7 @@ const exhausted = async (proposalId, from, to, maxRetries) => {
 
 const processFailed = async (cfg) => {
   const [rows] = await pool.query(
-    `SELECT id, user_id FROM station_proposals
+    `SELECT id, user_id, custom_data FROM station_proposals
      WHERE status = 'CONTRACT_FAILED' AND updated_at <= (NOW() - INTERVAL ? DAY)`,
     [cfg.failedDays]
   );
@@ -135,6 +136,8 @@ const deadlineNotified = async (proposalId, action, deadlineIso) => {
 };
 
 const notifyChain = async (proposal, type, title, message) => {
+  const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
+  const fullMessage = notificationService.withProposalCode(message, code);
   const userIds = new Set();
   if (proposal.user_id) userIds.add(Number(proposal.user_id));
   try {
@@ -157,7 +160,7 @@ const notifyChain = async (proposal, type, title, message) => {
     if (!uid) continue;
     try {
       await notificationService.create({
-        userId: uid, type, title, message,
+        userId: uid, type, title, message: fullMessage,
         entityType: 'station_proposals', entityId: proposal.id, createdBy: null
       });
     } catch { /* silent */ }
@@ -165,7 +168,7 @@ const notifyChain = async (proposal, type, title, message) => {
   try {
     await notificationService.notifyExternal(type, {
       proposal_id: proposal.id, status: proposal.status,
-      deadline: proposal.supplement_deadline_at, title, message
+      deadline: proposal.supplement_deadline_at, title, message: fullMessage
     });
   } catch { /* silent */ }
 };
@@ -176,7 +179,7 @@ const processDeadlines = async () => {
   const warnHours = await proposalLifecycle.getCountdownWarnHours();
   const placeholders = enabledStatuses.map(() => '?').join(', ');
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, supplement_deadline_at FROM station_proposals
+    `SELECT id, user_id, status, supplement_deadline_at, custom_data FROM station_proposals
       WHERE status IN (${placeholders})
         AND supplement_deadline_at IS NOT NULL`,
     enabledStatuses
@@ -193,7 +196,7 @@ const processDeadlines = async () => {
         if (await deadlineNotified(p.id, 'deadline_expiring', iso)) continue;
         const left = Math.ceil(diff / 3600000);
         await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
-          `Đề xuất #${p.id} (${p.status}) còn khoảng ${left} giờ để bổ sung thông tin`);
+          `Còn khoảng ${left} giờ để bổ sung thông tin · Người thực hiện: Hệ thống`);
         await proposalLifecycle.logActivity({
           proposalId: p.id, action: 'deadline_expiring',
           fromStatus: p.status, toStatus: p.status,
@@ -203,7 +206,7 @@ const processDeadlines = async () => {
       } else if (diff <= 0) {
         if (await deadlineNotified(p.id, 'deadline_overdue', iso)) continue;
         await notifyChain(p, 'SUPPLEMENT_OVERDUE', notificationService.statusTitle('SUPPLEMENT_OVERDUE'),
-          `Đề xuất #${p.id} (${p.status}) đã quá hạn bổ sung thông tin`);
+          `Đã quá hạn bổ sung thông tin · Người thực hiện: Hệ thống`);
         await proposalLifecycle.logActivity({
           proposalId: p.id, action: 'deadline_overdue',
           fromStatus: p.status, toStatus: p.status,
@@ -220,7 +223,7 @@ const processDeadlines = async () => {
 
 const processSigned = async (cfg) => {
   const [rows] = await pool.query(
-    `SELECT id, user_id FROM station_proposals
+    `SELECT id, user_id, custom_data FROM station_proposals
      WHERE status = 'CONTRACT_SIGNED' AND station_id IS NULL AND updated_at <= (NOW() - INTERVAL ? DAY)`,
     [cfg.signedDays]
   );

@@ -123,11 +123,20 @@ exports.transition = async (id, to, opts = {}) => {
   }
 
   if (proposal.user_id) {
+    const code = notificationService.proposalCode(proposal.custom_data, id);
+    let actorName;
+    if (source === 'system_auto') actorName = 'Hệ thống';
+    else actorName = (await notificationService.getUserName(actorId)) || (source === 'webhook' ? '1Office' : 'Hệ thống');
     await notificationService.create({
       userId: proposal.user_id,
       type: to,
       title: notificationService.statusTitle(to),
-      message: REASON_REQUIRED.includes(to) ? cleanReason : null,
+      message: notificationService.statusMessage({
+        code,
+        actorName,
+        reason: REASON_REQUIRED.includes(to) ? cleanReason : null,
+        status: to
+      }),
       entityType: 'station_proposals',
       entityId: id,
       createdBy: actorId || null

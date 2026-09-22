@@ -20,6 +20,42 @@ const STATUS_TITLES = {
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';
 
+exports.getUserName = async (userId) => {
+  if (!userId) return null;
+  try {
+    const [rows] = await pool.query('SELECT full_name FROM users WHERE id = ? LIMIT 1', [userId]);
+    return rows.length > 0 ? (rows[0].full_name || null) : null;
+  } catch {
+    return null;
+  }
+};
+
+exports.proposalCode = (customData, id) => {
+  try {
+    const cd = typeof customData === 'string' ? JSON.parse(customData) : (customData || {});
+    if (cd && cd.ma_de_xuat) return String(cd.ma_de_xuat);
+  } catch { /* ignore */ }
+  return id ? `#${id}` : '';
+};
+
+exports.withProposalCode = (message, code) => {
+  if (!code) return message || null;
+  return message ? `Mã đề xuất: ${code} · ${message}` : `Mã đề xuất: ${code}`;
+};
+
+exports.statusMessage = ({ code, actorName, reason, status, actionLabel }) => {
+  const parts = [];
+  if (code) parts.push(`Mã đề xuất: ${code}`);
+  const actor = actorName || 'Hệ thống';
+  if (actionLabel) parts.push(`${actionLabel}: ${actor}`);
+  else if (status === 'REJECTED') parts.push(`Người từ chối: ${actor}`);
+  else if (status === 'CANCELLED') parts.push(`Người hủy: ${actor}`);
+  else if (status === 'RESUBMITTED') parts.push(`Người gửi lại: ${actor}`);
+  else parts.push(`Người thực hiện: ${actor}`);
+  if (reason) parts.push(`Lý do: ${reason}`);
+  return parts.join(' · ');
+};
+
 exports.create = async ({ userId, type, title, message, entityType, entityId, createdBy }) => {
   if (!userId) return null;
   const [result] = await pool.query(
