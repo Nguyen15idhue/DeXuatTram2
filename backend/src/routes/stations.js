@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, optionalAuth } = require('../middlewares/auth');
 const { validateCreateStation, validateUpdateStation } = require('../middlewares/validators');
 const stationController = require('../controllers/stationController');
 
@@ -67,7 +67,7 @@ const stationController = require('../controllers/stationController');
  *                 pagination:
  *                   $ref: '#/components/schemas/Pagination'
  */
-router.get('/', stationController.getAll);
+router.get('/', optionalAuth, stationController.getAll);
 
 /**
  * @swagger
@@ -97,7 +97,7 @@ router.get('/', stationController.getAll);
  *       404:
  *         description: Không tìm thấy trạm
  */
-router.get('/:id', stationController.getById);
+router.get('/:id', optionalAuth, stationController.getById);
 
 /**
  * @swagger

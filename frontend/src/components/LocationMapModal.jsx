@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { getMarkerColor } from '../utils/mapHelpers';
 import { getStatusLabel, getStationStatuses, getProposalStatuses } from '../utils/mapStatuses';
 import { getMarkerIcon } from '../utils/mapMarkerIcons';
+import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import MarkerIcon from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
@@ -80,20 +82,22 @@ function createNearbyPopup(title, item, status, entity) {
   h3.textContent = title;
   div.appendChild(h3);
   const addRow = (label, value) => {
-    if (value === undefined || value === null || value === '') return;
     const p = document.createElement('p');
     const strong = document.createElement('strong');
     strong.textContent = `${label}: `;
     p.appendChild(strong);
-    p.appendChild(document.createTextNode(value || ''));
+    p.appendChild(document.createTextNode(value || '_'));
     div.appendChild(p);
   };
   if (entity === 'station') {
-    if (item.ma_tram || item.ma_tram_gen) addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
-    if (item.name) addRow('Tên trạm', item.name);
+    addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
+    addRow('Tên trạm', item.name);
+    addRow('Chủ trạm', item.chu_tram);
+    addRow('SĐT chủ trạm', item.sdt_chu_tram);
   } else {
-    if (item.ma_de_xuat) addRow('Mã đề xuất', item.ma_de_xuat);
-    if (item.owner_name) addRow('Tên khách hàng', item.owner_name);
+    addRow('Mã đề xuất', item.ma_de_xuat);
+    addRow('Người đề xuất', item.owner_name);
+    addRow('SĐT người đề xuất', item.owner_phone);
   }
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
@@ -107,15 +111,23 @@ function createNearbyPopup(title, item, status, entity) {
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
   addRow('Địa chỉ', item.address);
   const moHinh = entity === 'station' ? item.mo_hinh_tram : item.mo_hinh_dau_tu;
-  if (moHinh) addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
+  addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
   addRow('Trụ', summarizeNearbyTru(item, entity));
   return div;
 }
 
 const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose, statusFilter = null, onMarkerClick }) => {
+  const { token } = useAuth();
   const [radius, setRadius] = useState(radiusKm);
   const [showLegend, setShowLegend] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
   const [showDistance, setShowDistance] = useState(false);
+  const [measureActive, setMeasureActive] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState([]);
+  const [measureSnapped, setMeasureSnapped] = useState([]);
+  const snapGuardRef = useRef(null);
+  const measureTotal = useMemo(() => measureTotalM(measurePoints), [measurePoints]);
+  const stationsRef = useRef([]);
+  const proposalsRef = useRef([]);
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [selStations, setSelStations] = useState(() => (statusFilter && Array.isArray(statusFilter.stations) && statusFilter.stations.length > 0
@@ -134,14 +146,14 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
     let cancelled = false;
     (async () => {
       try {
-        const [s, p] = await Promise.all([stationService.getAll(), proposalService.getAll()]);
+        const [s, p] = await Promise.all([stationService.getAll(token), proposalService.getAll(token)]);
         if (cancelled) return;
         if (s.success) setStations(s.data);
         if (p.success) setProposals(p.data);
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [valid]);
+  }, [valid, token]);
 
   const nearby = useMemo(() => {
     const [clat, clng] = position;
@@ -176,7 +188,52 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   const fitView = useMemo(() => ({ center: position, zoom: zoomForRadius(radius) }), [position, radius]);
   const circle = useMemo(() => ({ center: position, radiusM: radius * 1000 }), [position, radius]);
 
+  const addMeasurePoint = useCallback((point, snapped) => {
+    setMeasurePoints((prev) => [...prev, point]);
+    if (snapped) setMeasureSnapped((prev) => [...prev, point]);
+  }, []);
+
+  const handleMeasureSnap = useCallback((point) => {
+    if (!Array.isArray(point) || Number.isNaN(parseFloat(point[0])) || Number.isNaN(parseFloat(point[1]))) return;
+    const p = [parseFloat(point[0]), parseFloat(point[1])];
+    snapGuardRef.current = { lat: p[0], lng: p[1], t: Date.now() };
+    addMeasurePoint(p, true);
+  }, [addMeasurePoint]);
+
+  const handleMeasureClick = useCallback((clat, clng, zoom) => {
+    const g = snapGuardRef.current;
+    if (g && Date.now() - g.t < 400 && haversineM(clat, clng, g.lat, g.lng) < 30) {
+      snapGuardRef.current = null;
+      return;
+    }
+    const z = Number(zoom);
+    const mPerPx = Number.isFinite(z) ? (156543.03 * Math.cos((parseFloat(clat) * Math.PI) / 180)) / 2 ** z : 1000;
+    const tolM = Math.min(50000, Math.max(5, mPerPx * 20));
+    let best = null;
+    let bestD = Infinity;
+    const consider = (cLat, cLng) => {
+      const d = haversineM(clat, clng, cLat, cLng);
+      if (d < bestD) { bestD = d; best = [parseFloat(cLat), parseFloat(cLng)]; }
+    };
+    stationsRef.current.forEach((s) => consider(s.latitude, s.longitude));
+    proposalsRef.current.forEach((p) => consider(p.latitude, p.longitude));
+    if (best && bestD <= tolM) addMeasurePoint(best, true);
+    else addMeasurePoint([clat, clng], false);
+  }, [addMeasurePoint]);
+
+  useEffect(() => {
+    if (!measureActive) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { setMeasureActive(false); setMeasurePoints([]); setMeasureSnapped([]); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [measureActive]);
+
   if (!valid) return null;
+
+  stationsRef.current = stations;
+  proposalsRef.current = proposals;
 
   const allStationStatuses = getStationStatuses();
   const allProposalStatuses = getProposalStatuses();
@@ -286,6 +343,11 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
             circle={circle}
             fitView={fitView}
             pairs={pairs}
+            measureActive={measureActive}
+            measurePoints={measurePoints}
+            measureSnapped={measureSnapped}
+            onMeasureClick={handleMeasureClick}
+            onMeasureSnap={handleMeasureSnap}
             onMarkerClick={onMarkerClick}
             renderStationPopup={renderStationPopup}
             renderProposalPopup={renderProposalPopup}
@@ -305,9 +367,28 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
               title="Đường khoảng cách"
               onClick={() => setShowDistance((v) => !v)}
             >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 17.5C10 14.5 12 13 15 10.5" strokeDasharray="3 3"/></svg>
+            </button>
+            <button
+              type="button"
+              className={`map-control-btn ${measureActive ? 'map-control-btn-active' : ''}`}
+              title="Thước đo"
+              onClick={() => { setMeasureActive((v) => !v); setMeasurePoints([]); setMeasureSnapped([]); }}
+            >
               <Ruler size={16} />
             </button>
           </div>
+          {measureActive && (
+            <div className="location-map-measure-bar">
+              <span>
+                {measurePoints.length < 2
+                  ? 'Click lên bản đồ / trạm / đề xuất để thêm điểm đo'
+                  : `Tổng: ${formatDistanceM(measureTotal)} (${measurePoints.length} điểm)`}
+              </span>
+              <button type="button" className="btn btn-xs btn-secondary" onClick={() => { setMeasurePoints([]); setMeasureSnapped([]); }}>Xóa</button>
+              <button type="button" className="btn btn-xs btn-primary" onClick={() => setMeasureActive(false)}>Hoàn tất</button>
+            </div>
+          )}
           {showLegend && (
             <div className="map-legend">
               <div className="map-legend-title">Chú thích</div>

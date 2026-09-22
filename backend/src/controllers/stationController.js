@@ -11,7 +11,11 @@ exports.getAll = async (req, res) => {
       moHinhTram: mo_hinh_tram,
       columnFilters: filters
     });
-    res.json({ success: true, data: result.stations, pagination: result.pagination });
+    const data = result.stations;
+    if (!req.user) {
+      data.forEach((s) => { delete s.chu_tram; delete s.sdt_chu_tram; });
+    }
+    res.json({ success: true, data, pagination: result.pagination });
   } catch (error) {
     console.error('Get stations error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -23,6 +27,10 @@ exports.getById = async (req, res) => {
     const station = await stationService.getStationById(req.params.id);
     if (!station) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy trạm' });
+    }
+    if (!req.user) {
+      delete station.chu_tram;
+      delete station.sdt_chu_tram;
     }
     res.json({ success: true, data: station });
   } catch (error) {

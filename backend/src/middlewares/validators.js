@@ -334,9 +334,10 @@ function validationResponse(res, errors) {
 const validateRegister = makeEntityValidator('users');
 
 function validateLogin(req, res, next) {
-  const { email, password } = req.body;
+  const identifier = req.body.email || req.body.identifier || req.body.phone;
+  const { password } = req.body;
   const errors = runValidations([
-    validateRequired(email, 'Email'),
+    validateRequired(identifier, 'Email/Số điện thoại'),
     validateRequired(password, 'Mật khẩu')
   ]);
   if (validationResponse(res, errors)) return;

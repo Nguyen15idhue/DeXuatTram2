@@ -38,13 +38,14 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const identifier = req.body.email || req.body.identifier || req.body.phone || '';
+    const { password, remember } = req.body;
 
-    const user = await authService.findByEmail(email);
+    const user = await authService.findByEmailOrPhone(identifier);
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Email hoặc password không đúng'
+        message: 'Email/Số điện thoại hoặc mật khẩu không đúng'
       });
     }
 
@@ -59,14 +60,14 @@ exports.login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(400).json({
         success: false,
-        message: 'Email hoặc password không đúng'
+        message: 'Email/Số điện thoại hoặc mật khẩu không đúng'
       });
     }
 
     const loginCd = parseCustomData(user.custom_data);
     const avatar = loginCd.avatar || null;
 
-    const token = authService.generateToken(user.id, user.email, user.role, user.token_version || 0);
+    const token = authService.generateToken(user.id, user.email, user.role, user.token_version || 0, !!remember);
 
     res.json({
       success: true,

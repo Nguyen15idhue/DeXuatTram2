@@ -186,8 +186,8 @@ function dedupGetWithAuth(endpoint, token) {
 }
 
 export const stationService = {
-  getAll() {
-    return api.get('/stations');
+  getAll(token) {
+    return token ? api.getWithAuth('/stations', token) : api.get('/stations');
   },
   getAllWithParams(queryString) {
     return api.get(`/stations?${queryString}`);
@@ -207,8 +207,8 @@ export const stationService = {
 };
 
 export const proposalService = {
-  getAll() {
-    return api.get('/proposals');
+  getAll(token) {
+    return token ? api.getWithAuth('/proposals', token) : api.get('/proposals');
   },
   getById(id) {
     return api.get(`/proposals/${id}`);
@@ -319,8 +319,8 @@ export const adminUserService = {
 };
 
 export const authService = {
-  login(email, password) {
-    return api.post('/auth/login', { email, password });
+  login(identifier, password, remember = false) {
+    return api.post('/auth/login', { email: identifier, password, remember });
   },
   register(full_name, email, phone, password) {
     return api.post('/auth/register', { full_name, email, phone, password });

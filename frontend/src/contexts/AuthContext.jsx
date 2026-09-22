@@ -47,11 +47,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password) => {
-    const data = await authService.login(email, password);
+  const login = async (identifier, password, remember = false) => {
+    const data = await authService.login(identifier, password, remember);
     
     if (data.success) {
       localStorage.setItem('token', data.data.token);
+      if (remember) localStorage.setItem('remember_until', String(Date.now() + 30 * 24 * 60 * 60 * 1000));
+      else localStorage.removeItem('remember_until');
       resetAuthExpiredFlag();
       setToken(data.data.token);
       setUser(data.data.user);
@@ -75,6 +77,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('remember_until');
     setToken(null);
     setUser(null);
   };

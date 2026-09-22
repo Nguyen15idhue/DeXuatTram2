@@ -11,7 +11,7 @@ const proposalController = require('../controllers/proposalController');
  *   get:
  *     tags: [Proposals]
  *     summary: Lấy danh sách đề xuất (công khai, rút gọn)
-  *     description: Hiển thị trên bản đồ, không phân trang. Kèm mã đề xuất/mô hình/trụ/loại ưu tiên; owner_name chỉ trả khi có đăng nhập, không trả phone/custom_data.
+  *     description: Hiển thị trên bản đồ, không phân trang. Kèm mã đề xuất/mô hình/trụ/loại ưu tiên; tên + SĐT người đề xuất chỉ trả khi có đăng nhập, không trả custom_data.
  *     responses:
  *       200:
  *         description: Thành công

@@ -16,6 +16,7 @@ import MapCanvas from './map/MapCanvas';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import { normalizeClusterOptions } from '../utils/mapCluster';
+import { useAuth } from '../contexts/AuthContext';
 
 const EMPTY_PAIRS = [];
 
@@ -230,11 +231,11 @@ function createStationPopupContent(item, user) {
     const strong = document.createElement('strong');
     strong.textContent = `${label}: `;
     p.appendChild(strong);
-    p.appendChild(document.createTextNode(value || ''));
+    p.appendChild(document.createTextNode(value || '_'));
     div.appendChild(p);
   };
 
-  if (item.ma_tram || item.ma_tram_gen) addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
+  addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
   addRow('Tên trạm', item.name);
   addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
@@ -252,9 +253,10 @@ function createStationPopupContent(item, user) {
     item.so_luong_tru && !item.loai_tru_sac ? `${item.so_luong_tru} trụ` : '',
     !item.so_luong_tru && item.loai_tru_sac ? item.loai_tru_sac : '',
     item.tower_type || '', item.power_capacity ? `${item.power_capacity} kW` : ''].filter(Boolean).join(' | ');
-  if (truText) addRow('Trụ', truText);
-
-  if (item.description) addRow('Mô tả', item.description);
+  addRow('Trụ', truText);
+  addRow('Chủ trạm', item.chu_tram);
+  addRow('SĐT chủ trạm', item.sdt_chu_tram);
+  addRow('Mô tả', item.description);
 
   if (canOpenAdminRecord(user)) {
     renderAdminLink(div, `/admin/stations/view=${item.id}`);
@@ -275,12 +277,13 @@ function createProposalPopupContent(item, user) {
     const strong = document.createElement('strong');
     strong.textContent = `${label}: `;
     p.appendChild(strong);
-    p.appendChild(document.createTextNode(value || ''));
+    p.appendChild(document.createTextNode(value || '_'));
     div.appendChild(p);
   };
 
-  if (item.ma_de_xuat) addRow('Mã đề xuất', item.ma_de_xuat);
-  if (item.owner_name) addRow('Tên khách hàng', item.owner_name);
+  addRow('Mã đề xuất', item.ma_de_xuat);
+  addRow('Người đề xuất', item.owner_name);
+  addRow('SĐT người đề xuất', item.owner_phone);
   addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
@@ -293,7 +296,7 @@ function createProposalPopupContent(item, user) {
   div.appendChild(statusP);
   addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_dau_tu] || item.mo_hinh_dau_tu || '');
   const proposalTru = pickProposalTru(item);
-  if (proposalTru) addRow('Trụ', proposalTru);
+  addRow('Trụ', proposalTru);
 
   if (canViewProposal(item, user)) {
     renderAdminLink(div, `/admin/proposals/view=${item.id}`);
@@ -319,6 +322,7 @@ const MapView = ({
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
+  const { token } = useAuth();
   const markerIconsVersion = useMarkerIcons();
   const { stationStatuses, proposalStatuses, proposalLegendStatuses } = useMapStatuses();
   void markerIconsVersion;
@@ -554,8 +558,8 @@ const MapView = ({
   const fetchData = useCallback(async (signal) => {
     try {
       const [stationsRes, proposalsRes] = await Promise.all([
-        stationService.getAll(),
-        proposalService.getAll()
+        stationService.getAll(token),
+        proposalService.getAll(token)
       ]);
       if (!signal?.aborted) {
         if (stationsRes.success) setStations(stationsRes.data);
@@ -566,7 +570,7 @@ const MapView = ({
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const buildTileUrl = useCallback((providerId, apiKey, styleIdx, opts = {}) => {
     return buildTileConfig({

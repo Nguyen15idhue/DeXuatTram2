@@ -51,7 +51,7 @@ exports.getAllStations = async (search, status, page, limit, mapMode = false, ex
   const total = countResult[0].total;
 
   const columns = mapMode
-    ? "s.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.created_at, s.ma_tram_gen, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.ma_tram')) AS ma_tram, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien')) AS loai_uu_tien, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram')) AS mo_hinh_tram, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.so_luong_tru')) AS so_luong_tru, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_tru_sac')) AS loai_tru_sac, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.tower_type')) AS tower_type, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.power_capacity')) AS power_capacity"
+    ? "s.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.created_at, s.ma_tram_gen, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.ma_tram')) AS ma_tram, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien')) AS loai_uu_tien, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram')) AS mo_hinh_tram, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.so_luong_tru')) AS so_luong_tru, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_tru_sac')) AS loai_tru_sac, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.tower_type')) AS tower_type, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.power_capacity')) AS power_capacity, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.chu_tram')) AS chu_tram, JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.sdt_chu_tram')) AS sdt_chu_tram"
     : 's.id, s.name, s.latitude, s.longitude, s.address, s.status, s.description, s.custom_data, s.created_at';
 
   const [stations] = await pool.query(

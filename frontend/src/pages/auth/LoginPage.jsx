@@ -5,8 +5,9 @@ import ErrorMessage from '../../components/ErrorMessage';
 import { LogIn } from 'lucide-react';
 
 const LoginPage = () => {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -17,7 +18,7 @@ const LoginPage = () => {
     setError('');
     setLoading(true);
 
-    const result = await login(email, password);
+    const result = await login(identifier, password, remember);
 
     if (result.success) {
       navigate('/map');
@@ -39,14 +40,15 @@ const LoginPage = () => {
         <form onSubmit={handleSubmit}>
           <div className="form-control mb-3">
             <label className="label py-1">
-              <span className="label-text font-medium">Email</span>
+              <span className="label-text font-medium">Email hoặc số điện thoại</span>
             </label>
             <input
-              type="email"
-              placeholder="email@example.com"
+              type="text"
+              placeholder="email@example.com hoặc 0912345678"
               className="input input-bordered w-full"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              autoComplete="username"
               required
             />
           </div>
@@ -61,9 +63,20 @@ const LoginPage = () => {
               className="input input-bordered w-full"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
             />
           </div>
+
+          <label className="label cursor-pointer justify-start gap-2 mb-4 py-0">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-sm checkbox-primary"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            <span className="label-text">Ghi nhớ đăng nhập 30 ngày</span>
+          </label>
 
           <div className="form-control">
             <button

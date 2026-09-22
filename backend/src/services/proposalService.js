@@ -7,7 +7,7 @@ const proximityService = require('./proximityService');
 
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
-    `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name,
+    `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien,
@@ -26,7 +26,7 @@ exports.getAllProposals = async () => {
 
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name,
+    `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien,
