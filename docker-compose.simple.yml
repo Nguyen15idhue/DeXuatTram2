@@ -1,23 +1,4 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    container_name: station-caddy
-    profiles: ["tls"]
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - DOMAIN=${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - frontend
-    restart: unless-stopped
-    networks:
-      - station-network
-
   frontend:
     build:
       context: ./frontend
@@ -75,8 +56,6 @@ services:
 volumes:
   mysql_data:
   uploads_data:
-  caddy_data:
-  caddy_config:
 
 networks:
   station-network:
