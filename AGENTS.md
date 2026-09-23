@@ -31,7 +31,7 @@ Swagger UI:  http://localhost:3000/api-docs
 
 ### User
 - Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV`, `NPP` (file 25, thay `USER`/`ADMIN` cũ; `NPP` thêm ở migration `77` — **hoạt động y hệt `CTV`**, không có RBAC riêng)
-- Cây 2 tầng: `CTV`/`NPP.parent_id` → `SALES` (GĐKV) → `SALES` (GĐTT cùng Trung tâm) — migration 90–92 + script `seed-sales-tree.js`. Scope nhánh **đệ quy** (`adminUserService.getBranchIds`): GĐTT thấy mình + GĐKV + CTV dưới quyền; GĐKV thấy mình + CTV trực tiếp
+- Cây 2 tầng: `CTV`/`NPP.parent_id` → `SALES` (GĐKV) → `SALES` (GĐTT cùng Trung tâm) — migration 90–92 + script `seed-sales-tree.js`. Scope nhánh **đệ quy** (`adminUserService.getBranchIds`): GĐTT thấy mình + GĐKV + CTV dưới quyền; GĐKV thấy mình + CTV trực tiếp. **Xem ngược lên**: SALES được `GET /admin/users/:id` của cấp trên trong chuỗi `parent_id` (`getAncestorIds`, chỉ xem — `PUT` ngoài nhánh vẫn 403); options user (`/options/all`) của SALES = nhánh + cấp trên, của CTV/NPP = mình + cấp trên (để field `user` như GĐTTKD hiện tên ở form edit; `UserField` tự fetch bù user theo id khi vắng trong options)
 - `external_id` map hệ ngoài (unique, = Mã NV 1Office)
 - Field `department` (Phòng ban) + `chuc_vu` (Chức vụ): select options thủ công từ Excel nhân sự (10 PB / 16 CD); `chuc_vu` dùng phân biệt GĐTT/GĐKV trong hiển thị
 - `token_version` tăng khi đổi mật khẩu → revoke JWT cũ

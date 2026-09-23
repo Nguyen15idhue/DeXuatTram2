@@ -41,6 +41,7 @@ const UserChip = ({ value }) => {
           recordId={uid}
           viewId={USERS_VIEW_ID}
           mode="view"
+          allowEdit={false}
           onClose={() => setShow(false)}
         />
       )}

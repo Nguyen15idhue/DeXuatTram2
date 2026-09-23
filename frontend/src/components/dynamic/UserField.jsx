@@ -36,6 +36,24 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (loading || !selectedId) return;
+    if (options.some(o => Number(o.id) === Number(selectedId))) return;
+    let cancelled = false;
+    const token = localStorage.getItem('token') || '';
+    fetch(`${API_URL}/admin/users/${selectedId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data && data.success && data.data) {
+          setOptions((prev) => (prev.some(o => Number(o.id) === Number(selectedId)) ? prev : [...prev, data.data]));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [loading, selectedId, options]);
+
   return (
     <div className={`dynamic-field-user${error ? ' has-error' : ''}`}>
       <SearchableSelect

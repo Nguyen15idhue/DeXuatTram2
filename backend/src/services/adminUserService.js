@@ -3,6 +3,25 @@ const dynamicUtils = require('./dynamicUtils');
 
 const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at FROM users';
 
+exports.getAncestorIds = async (userId) => {
+  const ids = [];
+  const seen = new Set([Number(userId)]);
+  let cur = Number(userId);
+  let guard = 0;
+  while (cur && guard < 20) {
+    guard++;
+    try {
+      const [rows] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [cur]);
+      const pid = rows.length > 0 ? Number(rows[0].parent_id) : 0;
+      if (!pid || seen.has(pid)) break;
+      seen.add(pid);
+      ids.push(pid);
+      cur = pid;
+    } catch { break; }
+  }
+  return ids;
+};
+
 exports.getBranchIds = async (userId) => {
   const ids = [];
   const seen = new Set();
@@ -110,13 +129,14 @@ exports.getUserOptions = async (scope = {}) => {
   const params = [];
   if (scope.role === 'SALES' && scope.userId) {
     const branchIds = await exports.getBranchIds(scope.userId);
-    if (branchIds.length === 0) return [];
-    where.push(`(id IN (${branchIds.map(() => '?').join(',')}))`);
-    params.push(...branchIds);
+    const ancestorIds = await exports.getAncestorIds(scope.userId);
+    const ids = [...new Set([...branchIds, ...ancestorIds])];
+    if (ids.length === 0) return [];
+    where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
+    params.push(...ids);
   } else if (scope.role && ['CTV', 'NPP'].includes(scope.role) && scope.userId) {
-    const [me] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [scope.userId]);
-    const ids = [Number(scope.userId)];
-    if (me.length > 0 && me[0].parent_id) ids.push(Number(me[0].parent_id));
+    const ancestorIds = await exports.getAncestorIds(scope.userId);
+    const ids = [...new Set([Number(scope.userId), ...ancestorIds])];
     where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
     params.push(...ids);
   }

@@ -33,7 +33,10 @@ exports.getById = async (req, res) => {
     if (req.user.role === 'SALES') {
       const branchIds = await adminUserService.getBranchIds(req.user.id);
       if (!branchIds.includes(targetId)) {
-        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+        const ancestorIds = await adminUserService.getAncestorIds(req.user.id);
+        if (!ancestorIds.includes(targetId)) {
+          return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+        }
       }
     } else if (req.user.role === 'ADMIN') {
       if (user.role === 'SUPER_ADMIN') {

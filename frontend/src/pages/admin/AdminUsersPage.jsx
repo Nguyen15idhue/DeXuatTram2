@@ -583,6 +583,11 @@ const [viewMode, setViewMode] = useState('table');
     );
   };
 
+  const popupUserId = popup.open
+    ? (popup.record ? Number(popup.record.id) : parseInt(location.pathname.match(/=(\d+)/)?.[1]))
+    : null;
+  const canEditPopupUser = !isSales || (popupUserId != null && users.some(u => Number(u.id) === popupUserId));
+
   return (
     <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
@@ -830,6 +835,7 @@ const [viewMode, setViewMode] = useState('table');
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
           viewId={usersViewId}
           mode={popup.mode}
+          allowEdit={canEditPopupUser}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view' });
             navigate('/admin/users');
