@@ -240,19 +240,19 @@ export default function AssistantChat({ variant = 'floating' }) {
             {messages.map((m, i) => (
               m.role === 'user' ? (
                 <div key={i} className="chat chat-end">
-                  <div className="chat-bubble chat-bubble-primary text-sm">{m.text}</div>
+                  <div className="chat-bubble chat-bubble-primary text-sm [grid-row-end:auto]">{m.text}</div>
                 </div>
               ) : (
                 <div key={i} className="chat chat-start">
-                  <div className="chat-bubble text-sm max-w-full">
+                  <div className="chat-bubble text-sm max-w-full self-start [grid-row-end:auto]">
                     {m.answer ? (
                       <>
                         <MarkdownText text={m.answer} />
                         {m.streaming && <span className="assistant-cursor" />}
                       </>
                     ) : (m.streaming ? (
-                      <span className="flex items-center gap-2 opacity-70">
-                        <span className="loading loading-dots loading-xs" />
+                      <span className="inline-flex items-center gap-2 opacity-70 whitespace-nowrap">
+                        <RefreshCw size={13} className="animate-spin" />
                         {m.status || 'Đang xử lý...'}
                       </span>
                     ) : null)}
