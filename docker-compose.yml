@@ -40,6 +40,11 @@ services:
       - ONEOFFICE_WEBHOOK_SECRET=dev-webhook-secret-46
       - ONEOFFICE_WEBHOOK_SECRET_STAGING=ffcf330f1bb1f9325e1de499e20077763f18ba3033e2bfba5cb47853a75890c2
       - TZ=Asia/Ho_Chi_Minh
+      - ASSISTANT_ENABLED=${ASSISTANT_ENABLED:-true}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-google/gemini-2.0-flash-001}
     depends_on:
       mysql:
         condition: service_healthy
