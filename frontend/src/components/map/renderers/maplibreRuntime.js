@@ -202,14 +202,9 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     map.on('click', 'app-unclustered', (e) => {
       const f = e.features && e.features[0];
       if (!f) return;
+      // Khi đo: để handler click chung (MapCanvas) xử lý snap — tránh thêm 2 điểm
+      if (measureState && measureState.active) return;
       const coords = f.geometry.coordinates;
-      if (measureState && measureState.active) {
-        if (measureSnapCb && Array.isArray(coords)
-          && !Number.isNaN(parseFloat(coords[1])) && !Number.isNaN(parseFloat(coords[0]))) {
-          measureSnapCb([parseFloat(coords[1]), parseFloat(coords[0])]);
-        }
-        return;
-      }
       const state = markersState || {};
       const item = (state.items || [])[f.properties._idx];
       if (!item) return;
