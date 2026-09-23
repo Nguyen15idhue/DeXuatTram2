@@ -1,11 +1,45 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+import { copyFileSync, mkdirSync, existsSync } from 'node:fs'
+
+const require = createRequire(import.meta.url)
+
+// MapLibre v6 tạo worker bằng new URL('./maplibre-gl-worker.mjs', import.meta.url)
+// => cần file worker + shared nằm cạnh chunk trong dist/assets (Vite không tự emit).
+function copyMaplibreWorkerPlugin() {
+  const files = ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs']
+  return {
+    name: 'copy-maplibre-worker',
+    apply: 'build',
+    closeBundle() {
+      const outDir = resolve(process.cwd(), 'dist', 'assets')
+      const candidates = [resolve(process.cwd(), 'node_modules', 'maplibre-gl', 'dist')]
+      try { candidates.push(dirname(require.resolve('maplibre-gl'))) } catch { /* ignore */ }
+      let copied = 0
+      for (const f of files) {
+        for (const dir of candidates) {
+          const src = resolve(dir, f)
+          if (existsSync(src)) {
+            mkdirSync(outDir, { recursive: true })
+            copyFileSync(src, resolve(outDir, f))
+            copied += 1
+            break
+          }
+        }
+      }
+      if (copied === 0) this.warn('copy-maplibre-worker: khong tim thay file worker cua maplibre-gl')
+    },
+  }
+}
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    copyMaplibreWorkerPlugin(),
   ],
   optimizeDeps: {
     exclude: ['maplibre-gl'],
