@@ -112,7 +112,13 @@ router.post('/ask-stream', assistantLimiter, optionalAuth, async (req, res) => {
   };
 
   try {
-    const result = await assistantService.askStream(question, req.user || null, history, (text) => send('delta', { text }));
+    const result = await assistantService.askStream(
+      question,
+      req.user || null,
+      history,
+      (text) => send('delta', { text }),
+      (statusData) => send('status', statusData)
+    );
     send('done', {
       sources: result.sources || [],
       provider: result.provider || null,

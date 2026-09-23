@@ -66,7 +66,7 @@ function fieldVisible(conditions, model) {
 }
 
 async function getFormFields(nq) {
-  if (!/(can nhap|nhap (thong tin )?gi|can dien|dien (thong tin )?gi|nhung truong (gi|nao)|co nhung truong|gom nhung (truong|gi)|thong tin nao|dien (nhu )?(the nao|ntn|sao)|lam (nhu )?(the nao|ntn|sao)|cach (tao|lam))/ .test(nq)) return null;
+  if (!/(can nhap|nhap (thong tin )?gi|can dien|dien (thong tin )?gi|nhung truong (gi|nao)|co nhung truong|gom nhung (truong|gi)|thong tin nao|dien (nhu )?(the nao|ntn|sao)|cach (tao|lam)|(tao|them) (1 |mot )?(de xuat|tram))/ .test(nq)) return null;
   if (/(trang thai|status)/.test(nq)) return null;
   if (/\bform\b/.test(nq) && /(may|bao nhieu|so luong)/.test(nq) && /(truong|cot)/.test(nq)) return null;
   if (/(may cach|bao nhieu cach|cach nao|nhung cach)/.test(nq)) return null;

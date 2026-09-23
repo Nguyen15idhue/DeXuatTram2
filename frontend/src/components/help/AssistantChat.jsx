@@ -14,7 +14,7 @@ const SUGGESTIONS = [
 const HISTORY_TURNS = 10;
 const MAX_STORED_MESSAGES = HISTORY_TURNS * 2;
 
-async function streamAssistant(body, token, onDelta) {
+async function streamAssistant(body, token, onDelta, onStatus) {
   const res = await fetch(`${API_URL}/assistant/ask-stream`, {
     method: 'POST',
     headers: {
@@ -51,6 +51,7 @@ async function streamAssistant(body, token, onDelta) {
       let data;
       try { data = JSON.parse(dataStr); } catch { continue; }
       if (event === 'delta') { gotDelta = true; onDelta(data.text || ''); }
+      else if (event === 'status') { if (onStatus) onStatus(data); }
       else if (event === 'done') doneData = data;
       else if (event === 'error') throw new Error(data.message || 'Lỗi server');
     }
@@ -142,7 +143,7 @@ export default function AssistantChat({ variant = 'floating' }) {
       .map((m) => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.role === 'user' ? m.text : (m.answer || '') }))
       .filter((m) => m.content)
       .slice(-MAX_STORED_MESSAGES);
-    setMessages((m) => [...m, { role: 'user', text: question }, { role: 'bot', answer: '', streaming: true }]);
+    setMessages((m) => [...m, { role: 'user', text: question }, { role: 'bot', answer: '', streaming: true, status: 'Đang xử lý...' }]);
     setLoading(true);
     const body = { question, history };
     const updateLastBot = (patch) => setMessages((m) => {
@@ -156,10 +157,15 @@ export default function AssistantChat({ variant = 'floating' }) {
       let gotDelta = false;
       let doneData = null;
       try {
-        const r = await streamAssistant(body, token, (chunk) => {
-          gotDelta = true;
-          updateLastBot((b) => ({ answer: (b.answer || '') + chunk }));
-        });
+        const r = await streamAssistant(
+          body,
+          token,
+          (chunk) => {
+            gotDelta = true;
+            updateLastBot((b) => ({ answer: (b.answer || '') + chunk, status: null }));
+          },
+          (s) => { if (!gotDelta) updateLastBot(() => ({ status: (s && s.message) || 'Đang xử lý...' })); }
+        );
         gotDelta = r.gotDelta;
         doneData = r.done;
       } catch (streamErr) {
@@ -173,6 +179,7 @@ export default function AssistantChat({ variant = 'floating' }) {
       }
       updateLastBot((b) => ({
         streaming: false,
+        status: null,
         ...(doneData ? {
           ...(doneData.answer !== undefined ? { answer: doneData.answer } : {}),
           sources: doneData.sources || [],
@@ -182,7 +189,7 @@ export default function AssistantChat({ variant = 'floating' }) {
         } : {}),
       }));
     } catch {
-      updateLastBot((b) => ({ streaming: false, answer: b.answer || 'Lỗi kết nối, thử lại sau.', sources: b.sources || [] }));
+      updateLastBot((b) => ({ streaming: false, status: null, answer: b.answer || 'Lỗi kết nối, thử lại sau.', sources: b.sources || [] }));
     } finally {
       setLoading(false);
     }
@@ -238,19 +245,28 @@ export default function AssistantChat({ variant = 'floating' }) {
               ) : (
                 <div key={i} className="chat chat-start">
                   <div className="chat-bubble text-sm max-w-full">
-                    {m.answer ? <MarkdownText text={m.answer} /> : null}
-                    {m.provider && (
+                    {m.answer ? (
+                      <>
+                        <MarkdownText text={m.answer} />
+                        {m.streaming && <span className="assistant-cursor" />}
+                      </>
+                    ) : (m.streaming ? (
+                      <span className="flex items-center gap-2 opacity-70">
+                        <span className="loading loading-dots loading-xs" />
+                        {m.status || 'Đang xử lý...'}
+                      </span>
+                    ) : null)}
+                    {!m.streaming && m.provider && (
                       <span className={`badge badge-xs ml-1 ${m.provider === 'gemini' ? 'badge-info' : 'badge-secondary'}`}>
                         {m.provider === 'gemini' ? 'Gemini' : 'OpenRouter'}
                       </span>
                     )}
-                    {m.cached && <span className="badge badge-xs badge-ghost ml-1">cache</span>}
+                    {!m.streaming && m.cached && <span className="badge badge-xs badge-ghost ml-1">cache</span>}
                     <SourceCards sources={m.sources} />
                   </div>
                 </div>
               )
             ))}
-            {loading && <div className="chat chat-start"><div className="chat-bubble text-sm"><span className="loading loading-dots loading-sm" /></div></div>}
             <div ref={endRef} />
           </div>
 

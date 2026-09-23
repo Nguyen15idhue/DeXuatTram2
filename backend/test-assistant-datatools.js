@@ -61,6 +61,9 @@ async function main() {
   check('form_fields câu "tạo đề xuất mới ... điền ntn"', create && /cần nhập/.test(create.text) && !/\blatitude\b|longitude|55 trường/.test(create.text), create && create.text.slice(0, 90));
   check('form_fields giữ docs khi hỏi quy trình', create && create.skipDocs === false, create && String(create.skipDocs));
 
+  const huy = await dataTools.lookup('lam sao de huy mot de xuat', USER);
+  check('KHÔNG nhầm "hủy đề xuất" thành form fields', !huy || !/cần nhập/.test(huy.text || ''), huy && huy.text ? huy.text.slice(0, 60) : 'null');
+
   const all = [];
   for (const [q] of allow) { const r = await dataTools.lookup(q, USER); if (r && r.text) all.push(r.text); }
   for (const q of denies) { const r = await dataTools.lookup(q, USER); if (r && r.text) all.push(r.text); }

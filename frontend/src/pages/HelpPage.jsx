@@ -341,6 +341,7 @@ const HelpPage = () => {
   const searchRef = useRef(null);
   const paneRef = useRef(null);
   const trackedRef = useRef(new Set());
+  const lastHashRef = useRef('');
 
   const help = useHelpData(token);
   const apiMode = !help.loading && !help.offline && help.articles.length > 0;
@@ -433,6 +434,11 @@ const HelpPage = () => {
   }, [visibleSections]);
 
   useEffect(() => {
+    const raw = window.location.hash.slice(1);
+    if (!raw) { lastHashRef.current = ''; return undefined; }
+    // Chỉ xử lý khi hash THỰC SỰ đổi — tránh kéo ngược về bài cũ khi đổi section
+    if (raw === lastHashRef.current) return undefined;
+    lastHashRef.current = raw;
     const resolveHash = () => {
       const raw = window.location.hash.slice(1);
       if (!raw) return;
@@ -505,7 +511,7 @@ const HelpPage = () => {
   const pickSection = (id) => {
     setSelectedSection(id);
     setQ('');
-    navigate({ pathname: location.pathname, search: `?s=${encodeURIComponent(id)}`, hash: window.location.hash || '' });
+    navigate({ pathname: location.pathname, search: `?s=${encodeURIComponent(id)}`, hash: '' });
   };
 
   const openLightboxFor = (step, imgIndex) => {

@@ -369,7 +369,7 @@ async function ask(question, user, rawHistory) {
   }
 }
 
-async function askStream(question, user, rawHistory, onDelta) {
+async function askStream(question, user, rawHistory, onDelta, onStatus) {
   const q = String(question || '').trim().slice(0, MAX_QUESTION_CHARS);
   if (q.length < 2) {
     const err = new Error('Câu hỏi quá ngắn');
@@ -381,6 +381,8 @@ async function askStream(question, user, rawHistory, onDelta) {
     err.statusCode = 503;
     throw err;
   }
+  const status = (stage, message) => { if (onStatus) onStatus({ stage, message }); };
+  status('search', 'Đang tìm tài liệu liên quan...');
   let anyEmitted = false;
   let acc = '';
   const emit = (text) => {
@@ -430,6 +432,7 @@ async function askStream(question, user, rawHistory, onDelta) {
 
   const intent = detectIntent(rewritten);
   const maxTokens = tokenBudgetFor(intent);
+  status('think', 'Đang tổng hợp câu trả lời...');
 
   try {
     const res = await router.askStreamWithFallback({
