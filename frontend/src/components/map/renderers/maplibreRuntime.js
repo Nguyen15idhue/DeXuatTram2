@@ -215,6 +215,17 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     map.on('mouseenter', 'app-unclustered', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'app-unclustered', () => { map.getCanvas().style.cursor = ''; });
 
+    map.on('dblclick', 'app-unclustered', (e) => {
+      const f = e.features && e.features[0];
+      if (!f) return;
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      const state = markersState || {};
+      const item = (state.items || [])[f.properties._idx];
+      if (item && state.options && typeof state.options.onMarkerDblClick === 'function') {
+        state.options.onMarkerDblClick(item, item._type);
+      }
+    });
+
     map.on('click', 'app-clusters', (e) => {
       const f = e.features && e.features[0];
       if (!f) return;
@@ -545,7 +556,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
   function applyBoundaries() {
     const { geojson, show } = boundaryState || {};
-    if (!geojson || !show) return;
+    if (!geojson || !show) { removeManagedSource('app-boundaries'); return; }
     if (!map.getSource('app-boundaries')) {
       map.addSource('app-boundaries', { type: 'geojson', data: geojson });
       sourceIds.add('app-boundaries');
@@ -569,6 +580,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           paintSelectedBoundary();
         });
         map.on('click', (e) => {
+          if (!map.getLayer('app-boundaries-line')) return;
           const features = map.queryRenderedFeatures(e.point, { layers: ['app-boundaries-line'] });
           if (!features || features.length === 0) {
             selectedBoundaryName = null;
@@ -685,7 +697,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
 
   function applyCircle() {
     const { center, radiusM, color, fillColor, fillOpacity } = circleState || {};
-    if (!center || !radiusM) return;
+    if (!center || !radiusM) { removeManagedSource('app-circle'); return; }
     const data = circleGeoJSON(center, radiusM);
     if (!map.getSource('app-circle')) {
       map.addSource('app-circle', { type: 'geojson', data });
@@ -957,6 +969,15 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         snapped: (measure && measure.snapped) || [],
       };
       if (loaded) applyMeasure();
+    },
+
+    hasMarkerAt(lat, lng) {
+      try {
+        if (!loaded || !map.getLayer('app-unclustered')) return false;
+        const pt = map.project([lng, lat]);
+        const feats = map.queryRenderedFeatures(pt, { layers: ['app-unclustered'] });
+        return !!(feats && feats.length > 0);
+      } catch { return false; }
     },
 
     setProvinceLabels(points, show) {

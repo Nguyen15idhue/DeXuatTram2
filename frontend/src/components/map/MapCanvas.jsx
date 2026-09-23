@@ -29,6 +29,7 @@ export default function MapCanvas({
   fitView = null,
   enable3d = false,
   onMarkerClick,
+  onMarkerDblClick,
   renderStationPopup,
   renderProposalPopup,
   renderDuplicatePopup,
@@ -36,6 +37,7 @@ export default function MapCanvas({
   renderMyLocationPopup,
   selectingLocation = false,
   onMapSelectClick,
+  onMapClick,
   measureActive = false,
   measurePoints = null,
   measureSnapped = null,
@@ -48,14 +50,16 @@ export default function MapCanvas({
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
-  const clickRef = useRef({ selectingLocation, onMapSelectClick });
+  const clickRef = useRef({ selectingLocation, onMapSelectClick, onMapClick });
   const measureClickRef = useRef({ measureActive, onMeasureClick, onMeasureSnap });
   const markerClickRef = useRef(onMarkerClick);
+  const markerDblClickRef = useRef(onMarkerDblClick);
   const markersSigRef = useRef({ runtime: null, stations: null, proposals: null, cluster: null });
   const argsRef = useRef({ center, zoom, tile, vectorStyle, apiKey });
-  clickRef.current = { selectingLocation, onMapSelectClick };
+  clickRef.current = { selectingLocation, onMapSelectClick, onMapClick };
   measureClickRef.current = { measureActive, onMeasureClick, onMeasureSnap };
   markerClickRef.current = onMarkerClick;
+  markerDblClickRef.current = onMarkerDblClick;
   argsRef.current = { center, zoom, tile, vectorStyle, apiKey };
 
   useEffect(() => {
@@ -89,6 +93,10 @@ export default function MapCanvas({
             zoom = typeof rt?.getZoom === 'function' ? rt.getZoom() : null;
           } catch { /* noop */ }
           onMeasure(lat, lng, zoom);
+        } else if (!selecting && clickRef.current.onMapClick) {
+          const rt = runtimeRef.current;
+          const hitMarker = !!(rt && typeof rt.hasMarkerAt === 'function' && rt.hasMarkerAt(lat, lng));
+          if (!hitMarker) clickRef.current.onMapClick(lat, lng);
         }
       });
       if (onRuntimeInfo) onRuntimeInfo({ id: runtime.id, fallback: res.fallback, requested: res.requested });
@@ -145,6 +153,7 @@ export default function MapCanvas({
       clusterOptions,
       showLabels: showStationLabels,
       onMarkerClick: (...args) => markerClickRef.current && markerClickRef.current(...args),
+      onMarkerDblClick: (...args) => markerDblClickRef.current && markerDblClickRef.current(...args),
       renderPopup: (item) => (item._type === 'station' ? renderStationPopup(item) : renderProposalPopup(item)),
     });
   }, [runtimeVersion, stations, proposals, showCluster, clusterOptions && `${clusterOptions.radius}/${clusterOptions.maxZoom}`, showStationLabels, renderStationPopup, renderProposalPopup]);
@@ -209,7 +218,12 @@ export default function MapCanvas({
   }, [runtimeVersion, fitView]);
 
   useEffect(() => {
-    if (flyToPosition) runtimeRef.current?.flyTo(flyToPosition, 16);
+    if (!flyToPosition) return;
+    const rt = runtimeRef.current;
+    if (!rt) return;
+    const pos = Array.isArray(flyToPosition) ? flyToPosition : flyToPosition.position;
+    const z = Array.isArray(flyToPosition) ? 16 : (flyToPosition.zoom || 16);
+    if (pos) rt.flyTo(pos, z);
   }, [runtimeVersion, flyToPosition]);
 
   useEffect(() => {

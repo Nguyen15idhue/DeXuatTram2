@@ -373,6 +373,8 @@ const MapView = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchPicked, setSearchPicked] = useState(null);
   const [searchFly, setSearchFly] = useState(null);
+  const [focusCircle, setFocusCircle] = useState(null);
+  const [focusFly, setFocusFly] = useState(null);
   const searchTimerRef = useRef(null);
   const searchReqRef = useRef(0);
 
@@ -474,6 +476,30 @@ const MapView = ({
       addMeasurePoint([lat, lng], false);
     }
   }, [addMeasurePoint]);
+  const focusCircleFor = useCallback((item) => {
+    const lat = parseFloat(item && item.latitude);
+    const lng = parseFloat(item && item.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { center: [lat, lng], radiusM: 10000, color: '#60a5fa', fillColor: '#93c5fd', fillOpacity: 0.15 };
+  }, []);
+  const handleMarkerDblClick = useCallback((item) => {
+    const c = focusCircleFor(item);
+    if (!c) return;
+    setFocusCircle(c);
+    setFocusFly({ position: c.center, zoom: 12 });
+  }, [focusCircleFor]);
+  const handleMarkerClickWithFocus = useCallback((...args) => {
+    if (onMarkerClick) onMarkerClick(...args);
+    setFocusCircle((prev) => (prev ? (focusCircleFor(args[0]) || prev) : prev));
+  }, [onMarkerClick, focusCircleFor]);
+  const handleMapClick = useCallback(() => {
+    setFocusFly(null);
+    setFocusCircle((prev) => (prev ? null : prev));
+  }, []);
+  useEffect(() => {
+    setFocusFly(null);
+    setFocusCircle(null);
+  }, [highlightPosition, myLocation, searchFly, selectingLocation, measureActive]);
   useEffect(() => {
     if (!measureActive) return undefined;
     const onKey = (e) => {
@@ -940,7 +966,10 @@ const MapView = ({
         showWardLabels={showWardLabels}
         selectedPosition={selectedPosition}
         myLocation={myLocation}
-        onMarkerClick={onMarkerClick}
+        circle={focusCircle}
+        onMarkerClick={handleMarkerClickWithFocus}
+        onMarkerDblClick={handleMarkerDblClick}
+        onMapClick={handleMapClick}
         renderStationPopup={renderStationPopup}
         renderProposalPopup={renderProposalPopup}
         renderDuplicatePopup={renderDuplicatePopup}
@@ -953,7 +982,7 @@ const MapView = ({
         measureSnapped={measureSnapped}
         onMeasureClick={handleMeasureClick}
         onMeasureSnap={handleMeasureSnap}
-        flyToPosition={highlightPosition || myLocation || searchFly}
+        flyToPosition={focusFly || highlightPosition || myLocation || searchFly}
         enable3d={isMaplibre && active3d && !isMobile}
         onTileError={handleTileError}
         onRuntimeInfo={handleRuntimeInfo}

@@ -176,7 +176,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
       });
     },
 
-    setMarkers(items, { cluster = true, clusterOptions, showLabels = false, onMarkerClick, renderPopup } = {}) {
+    setMarkers(items, { cluster = true, clusterOptions, showLabels = false, onMarkerClick, onMarkerDblClick, renderPopup } = {}) {
       if (markerLayer) {
         map.removeLayer(markerLayer);
         markerLayer = null;
@@ -211,6 +211,10 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
             return;
           }
           if (onMarkerClick) onMarkerClick(item, item._type);
+        });
+        marker.on('dblclick', (e) => {
+          try { L.DomEvent.stop(e); } catch { /* noop */ }
+          if (onMarkerDblClick) onMarkerDblClick(item, item._type);
         });
         group.addLayer(marker);
       });
