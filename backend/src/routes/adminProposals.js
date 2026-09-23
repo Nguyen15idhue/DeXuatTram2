@@ -140,7 +140,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  * /api/admin/proposals/{id}:
  *   put:
  *     tags: [Admin - Proposals]
- *     summary: Admin cập nhật đề xuất (chỉ ADMIN/SUPER_ADMIN; sales đổi trạng thái qua /status)
+  *   summary: Admin cập nhật đề xuất (ADMIN/SUPER_ADMIN tất cả; SALES trong nhánh; đổi trạng thái qua /status)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -181,7 +181,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id', requireAuth, requireAdmin, validateUpdateProposal, adminProposalController.update);
+router.put('/:id', requireAuth, requireUserManager, validateUpdateProposal, adminProposalController.update);
 
 /**
  * @swagger

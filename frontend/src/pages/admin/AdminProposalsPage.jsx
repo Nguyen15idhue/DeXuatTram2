@@ -1000,7 +1000,7 @@ const AdminProposalsPage = () => {
         {label}
       </button>
     );
-    if (isAdmin) {
+    if (isAdmin || isSales) {
       items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
     }
     items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
@@ -1652,7 +1652,7 @@ const AdminProposalsPage = () => {
           recordId={popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))}
           viewId={proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin}
+          allowEdit={isAdmin || isSales}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null });
             navigate('/admin/proposals');

@@ -71,7 +71,7 @@ Swagger UI:  http://localhost:3000/api-docs
 3. CTV KHÔNG truy cập admin API (`/admin/*`); SALES chỉ vào 4 trang `/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`
 4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs` + tạo super admin
 5. SALES chỉ xem trạm (không nút Sửa) dùng `allowEdit={!isSales}` trong `RecordDetailPopup`
-6. SALES đổi trạng thái proposal qua `PUT /admin/proposals/:id/status`; `PUT /admin/proposals/:id` là `requireAdmin`
+6. SALES đổi trạng thái proposal qua `PUT /admin/proposals/:id/status`; `PUT /admin/proposals/:id` là `requireUserManager` (SALES sửa nội dung đề xuất trong nhánh, chặn ngoài nhánh qua `denyOutsideBranch`, cấm đổi `status`); `POST /admin/proposals/:id/convert-to-station` vẫn `requireAdmin`
 7. Route `/admin/audit-log` cho `ADMIN` + `SALES` (sales chỉ thấy log của mình); `/admin/:entity/:id/files` bọc `RoleRoute` ADMIN_AND_SALES (chặn entity `users` với non-admin)
 8. Nút Retry/Cancel queue chỉ render cho `SUPER_ADMIN`
 9. Tạo trạm từ đề xuất `POST /admin/proposals/:id/convert-to-station` là `requireAdmin` (chỉ `ADMIN`/`SUPER_ADMIN`); tab "Hoạt động đề xuất" (`GET /api/admin/proposal-logs`) phân quyền y hệt lịch sử đồng bộ 1Office
