@@ -8,7 +8,7 @@ const notificationController = require('../controllers/notificationController');
  * /api/notifications/all:
  *   get:
  *     tags: [Notifications]
- *     summary: Tất cả thông báo (ADMIN/SUPER_ADMIN — chỉ đọc)
+  *     summary: Tất cả thông báo (ADMIN/SUPER_ADMIN — chỉ đọc, gộp 1 dòng/sự kiện)
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query

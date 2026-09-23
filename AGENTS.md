@@ -92,7 +92,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - `NotificationBell` ở header user + admin (polling 30s + sự kiện `notifications:refresh`; nhấp nháy + badge chưa đọc)
 - Dropdown render qua `createPortal` ra `body` (`position:fixed`, `z-index:9999`) tránh `.drawer-side` che
 - Badge/list chỉ tính thông báo trong `NOTIFICATION_RETENTION_DAYS` ngày gần nhất (mặc định 7)
-- Tab user/SALES: "Của bạn"; admin + ADMIN/SUPER thêm tab "Tất cả" (`GET /api/notifications/all`, requireAdmin, chỉ đọc)
+- Tab user/SALES: "Của bạn"; admin + ADMIN/SUPER thêm tab "Tất cả" (`GET /api/notifications/all`, requireAdmin, chỉ đọc). Tab "Tất cả" **gộp 1 dòng/sự kiện** theo `(type, entity, title, message, ngày)` + trả `recipient_count`/`recipient_names` (FE hiện `→ tên +N`, hover xem danh sách) thay vì 1 dòng/người nhận
 - Click item điều hướng theo `mode` trang: user → `/my-proposals/view=id`, admin → `/admin/proposals/view=id` (không theo role)
 
 ### 4.4. Guest Proposal (không cần đăng nhập)

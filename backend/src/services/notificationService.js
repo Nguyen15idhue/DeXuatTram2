@@ -91,16 +91,29 @@ exports.unreadCount = async (userId) => {
 
 exports.listAll = async (page = 1, limit = 20) => {
   const offset = (Math.max(1, page) - 1) * limit;
-  const retention = `n.created_at >= DATE_SUB(NOW(), INTERVAL ${RETENTION_DAYS} DAY)`;
+  const retentionExpr = `created_at >= DATE_SUB(NOW(), INTERVAL ${RETENTION_DAYS} DAY)`;
+  const groupBy = `n2.type, n2.entity_type, n2.entity_id, MD5(n2.title), MD5(n2.message), DATE(n2.created_at)`;
   const [rows] = await pool.query(
     `SELECT n.id, n.user_id, u.full_name AS user_name, n.type, n.title, n.message,
-            n.entity_type, n.entity_id, n.is_read, n.created_at
+            n.entity_type, n.entity_id, n.is_read, n.created_at,
+            g.recipient_count, g.recipient_names
      FROM notifications n LEFT JOIN users u ON u.id = n.user_id
-     WHERE ${retention}
+     INNER JOIN (
+       SELECT MIN(n2.id) AS rep_id, COUNT(*) AS recipient_count,
+              SUBSTRING(GROUP_CONCAT(DISTINCT u2.full_name SEPARATOR ', '), 1, 255) AS recipient_names
+       FROM notifications n2 LEFT JOIN users u2 ON u2.id = n2.user_id
+       WHERE n2.${retentionExpr}
+       GROUP BY ${groupBy}
+     ) g ON g.rep_id = n.id
+     WHERE n.${retentionExpr}
      ORDER BY n.created_at DESC, n.id DESC LIMIT ? OFFSET ?`,
     [limit, offset]
   );
-  const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM notifications n WHERE ${retention}`);
+  const [countRows] = await pool.query(
+    `SELECT COUNT(*) AS total FROM (
+       SELECT 1 FROM notifications n2 WHERE n2.${retentionExpr} GROUP BY ${groupBy}
+     ) g`
+  );
   return { items: rows, total: countRows[0].total };
 };
 

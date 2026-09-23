@@ -227,7 +227,7 @@ const NotificationBell = ({ mode = 'user' }) => {
                   >
                     <div className="bell-item-title" style={{ color: c.text }}>
                       {n.title}
-                      {tab === 'all' && n.user_name ? <span className="bell-item-who"> → {n.user_name}</span> : null}
+                      {tab === 'all' && n.user_name ? <span className="bell-item-who" title={n.recipient_names || n.user_name}> → {n.user_name}{n.recipient_count > 1 ? ` +${n.recipient_count - 1}` : ''}</span> : null}
                     </div>
                     {n.message && <div className="bell-item-msg">{n.message}</div>}
                     <div className="bell-item-time">{new Date(n.created_at).toLocaleString('vi-VN')}</div>
