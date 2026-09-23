@@ -72,4 +72,12 @@ const webhookLimiter = rateLimit({
   legacyHeaders: false
 });
 
-module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, webhookLimiter };
+const assistantLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: { success: false, message: 'Bạn đã hỏi quá nhiều, vui lòng thử lại sau' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, webhookLimiter, assistantLimiter };

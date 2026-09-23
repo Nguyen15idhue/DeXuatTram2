@@ -6,6 +6,7 @@ import { proposalService, stationService, formService } from '../../services/api
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import Toast from '../../components/Toast';
+import AssistantChat from '../../components/help/AssistantChat';
 import { MapPin, MapPinned, X } from 'lucide-react';
 
 const MapPage = () => {
@@ -189,6 +190,7 @@ const MapPage = () => {
         refreshKey={mapKey}
         user={user}
         filters={filters}
+        fabSlot={<AssistantChat variant="inline" />}
       />
 
       <MapFilterPanel filters={filters} onChange={setFilters} isMobile={isMobile} />

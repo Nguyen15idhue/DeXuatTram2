@@ -318,7 +318,8 @@ const MapView = ({
   highlightIds = null,
   readOnly = false,
   pairs = EMPTY_PAIRS,
-  filters = null
+  filters = null,
+  fabSlot = null
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
@@ -1097,6 +1098,7 @@ const MapView = ({
 
       {!readOnly && !measureActive && (
       <div className="map-fab-group">
+        {fabSlot}
         {showCreateMenu && (
           <div className="map-create-menu">
             <div className="map-create-title">

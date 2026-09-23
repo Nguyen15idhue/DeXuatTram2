@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 
 import PublicLayout from './layouts/PublicLayout';
@@ -6,41 +7,54 @@ import GuestLayout from './layouts/GuestLayout';
 import UserLayout from './layouts/UserLayout';
 import AdminLayout from './layouts/AdminLayout';
 
-import LoginPage from './pages/auth/LoginPage';
-import RegisterPage from './pages/auth/RegisterPage';
-
-import MapPage from './pages/user/MapPage';
-import MyProposalsPage from './pages/user/MyProposalsPage';
-import GuestProposalPage from './pages/user/GuestProposalPage';
-import ProfilePage from './pages/user/ProfilePage';
-import HelpPage from './pages/HelpPage';
-
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsersPage from './pages/admin/AdminUsersPage';
-import AdminStationsPage from './pages/admin/AdminStationsPage';
-import AdminProposalsPage from './pages/admin/AdminProposalsPage';
-import AdminFieldsPage from './pages/admin/AdminFieldsPage';
-import AdminFormsPage from './pages/admin/AdminFormsPage';
-import AdminFormBuilderPage from './pages/admin/AdminFormBuilderPage';
-import AdminViewsPage from './pages/admin/AdminViewsPage';
-import AdminViewBuilderPage from './pages/admin/AdminViewBuilderPage';
-import AdminRecordFilesPage from './pages/admin/AdminRecordFilesPage';
-import AdminDataListsPage from './pages/admin/AdminDataListsPage';
-import AdminMapConfigPage from './pages/admin/AdminMapConfigPage';
-import AdminRolesPage from './pages/admin/AdminRolesPage';
-import AdminApiConfigPage from './pages/admin/AdminApiConfigPage';
-import AdminAuditLogPage from './pages/admin/AdminAuditLogPage';
 import RoleRoute from './components/RoleRoute';
+import AssistantChat from './components/help/AssistantChat';
+
+const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
+
+const MapPage = lazy(() => import('./pages/user/MapPage'));
+const MyProposalsPage = lazy(() => import('./pages/user/MyProposalsPage'));
+const GuestProposalPage = lazy(() => import('./pages/user/GuestProposalPage'));
+const ProfilePage = lazy(() => import('./pages/user/ProfilePage'));
+const HelpPage = lazy(() => import('./pages/HelpPage'));
+
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
+const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
+const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
+const AdminFormsPage = lazy(() => import('./pages/admin/AdminFormsPage'));
+const AdminFormBuilderPage = lazy(() => import('./pages/admin/AdminFormBuilderPage'));
+const AdminViewsPage = lazy(() => import('./pages/admin/AdminViewsPage'));
+const AdminViewBuilderPage = lazy(() => import('./pages/admin/AdminViewBuilderPage'));
+const AdminRecordFilesPage = lazy(() => import('./pages/admin/AdminRecordFilesPage'));
+const AdminDataListsPage = lazy(() => import('./pages/admin/AdminDataListsPage'));
+const AdminMapConfigPage = lazy(() => import('./pages/admin/AdminMapConfigPage'));
+const AdminRolesPage = lazy(() => import('./pages/admin/AdminRolesPage'));
+const AdminApiConfigPage = lazy(() => import('./pages/admin/AdminApiConfigPage'));
+const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'));
+const AdminHelpPage = lazy(() => import('./pages/admin/AdminHelpPage'));
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+const HIDE_ASSISTANT_PATHS = ['/login', '/register', '/map'];
 
 import './App.css';
+
+function GlobalAssistantChat() {
+  const location = useLocation();
+  if (HIDE_ASSISTANT_PATHS.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))) {
+    return null;
+  }
+  return <AssistantChat variant="floating" />;
+}
 
 function App() {
   return (
     <AuthProvider>
       <Router>
+        <GlobalAssistantChat />
         <Routes>
           <Route element={<PublicLayout />}>
             <Route path="/login" element={<LoginPage />} />
@@ -78,6 +92,7 @@ function App() {
             <Route path="/admin/map-config" element={<RoleRoute allowed={SUPER_ONLY}><AdminMapConfigPage /></RoleRoute>} />
             <Route path="/admin/roles" element={<RoleRoute allowed={SUPER_ONLY}><AdminRolesPage /></RoleRoute>} />
             <Route path="/admin/api-configs" element={<RoleRoute allowed={SUPER_ONLY}><AdminApiConfigPage /></RoleRoute>} />
+            <Route path="/admin/help" element={<RoleRoute allowed={SUPER_ONLY}><AdminHelpPage /></RoleRoute>} />
             <Route path="/admin/audit-log" element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminAuditLogPage /></RoleRoute>} />
             <Route path="/admin/huong-dan" element={<HelpPage />} />
           </Route>

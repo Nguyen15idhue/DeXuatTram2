@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import AdminSidebar from '../components/layout/AdminSidebar';
 import AdminHeader from '../components/layout/AdminHeader';
 import Toast from '../components/Toast';
+import RouteFallback from '../components/RouteFallback';
 import useMediaQuery from '../hooks/useMediaQuery';
 
 const AdminLayout = () => {
@@ -55,7 +56,9 @@ const AdminLayout = () => {
       <div className="drawer-content flex flex-col min-h-screen">
         <AdminHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} showBell={!isDesktop} />
         <main className="flex-1 p-4 lg:p-6 bg-base-200">
-          <Outlet />
+          <Suspense fallback={<RouteFallback />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'error' })} duration={3000} />

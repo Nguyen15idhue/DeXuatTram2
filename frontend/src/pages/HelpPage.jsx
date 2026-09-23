@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpen, Search, X, ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
   ExternalLink, Link2, LayoutGrid, Route as RouteIcon, Plug, Flag,
   BarChart3, Users, Zap, FileText, File, List, ShieldCheck, HelpCircle,
   User, Map as MapIcon, ClipboardList, Send, Database, Settings,
+  Eye, WifiOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { GUIDE, resolveFlowStep } from '../help/guideData';
+import { helpApi, clearHelpCache } from '../services/helpApi';
+import { VideoBlock, Gallery } from '../components/help/HelpMedia';
 
-const SECTION_ICONS = { User, Map: MapIcon, ClipboardList, Send, Database, Settings, Book: BookOpen, Flag, Chart: BarChart3, Users, Zap, FileText, File, LayoutGrid, List, Shield: ShieldCheck, Help: HelpCircle };
+const SECTION_ICONS = { User, Map: MapIcon, ClipboardList, Send, Database, Settings, Book: BookOpen, Flag, Chart: BarChart3, Users, Zap, FileText, File, LayoutGrid, List, Shield: ShieldCheck, Help: HelpCircle, Route: RouteIcon, Plug };
+const ICON_BY_SLUG = {
+  'bat-dau': 'Book', 'tai-khoan': 'User', 'ban-do': 'Map', 'de-xuat-cua-toi': 'ClipboardList',
+  khach: 'Send', dash: 'Chart', users: 'Users', stations: 'Zap', proposals: 'ClipboardList',
+  fields: 'FileText', forms: 'File', views: 'LayoutGrid', 'data-lists': 'List', mapcfg: 'Map',
+  'roles-api': 'Shield', faq: 'Help', 'luong-thuc-hien': 'Route', 'tich-hop': 'Plug',
+};
 
 const PANEL_SECTIONS = ['dash', 'users', 'stations', 'proposals'];
 const SUPER_SECTIONS = ['fields', 'forms', 'views', 'data-lists', 'mapcfg', 'roles-api'];
@@ -20,16 +29,91 @@ const TOC_GROUPS = [
   { label: 'Quản lý cấu hình', ids: SUPER_SECTIONS },
   { label: 'Hỗ trợ', ids: ['faq'] },
 ];
+const FLOW_CATEGORY_SLUGS = ['luong-thuc-hien', 'tich-hop'];
 const PANE_CLASS = 'lg:h-full lg:overflow-y-auto lg:pr-2 lg:pb-4 min-h-0';
 const TOC_CLASS = 'hidden lg:block w-60 shrink-0 lg:h-full lg:overflow-y-auto lg:pb-2 min-h-0';
 
+function stripHtml(html) {
+  return String(html || '').replace(/<[^>]*>/g, ' ');
+}
+
 function matches(step, q) {
   if (!q) return true;
-  const hay = `${step.id} ${step.title} ${step.text || ''} ${step.note || ''} ${step.purpose || ''} ${(step.substeps || []).join(' ')} ${(step.errors || []).join(' ')} ${(step.tags || []).join(' ')}`.toLowerCase();
+  const hay = `${step.id} ${step.slug || ''} ${step.title} ${step.text || ''} ${step.note || ''} ${step.purpose || ''} ${stripHtml(step.html || '')} ${(step.substeps || []).join(' ')} ${(step.errors || []).join(' ')} ${(step.tags || []).join(' ')}`.toLowerCase();
   return hay.includes(q.toLowerCase());
 }
 
-function StepCard({ step, index, onZoom, showLink, onGoStep, anchor, hideRelated }) {
+function highlight(text, q) {
+  if (!q || !text) return text;
+  const idx = String(text).toLowerCase().indexOf(q.toLowerCase());
+  if (idx < 0) return text;
+  return (
+    <>
+      {String(text).slice(0, idx)}
+      <mark>{String(text).slice(idx, idx + q.length)}</mark>
+      {String(text).slice(idx + q.length)}
+    </>
+  );
+}
+
+function normalizeArticle(a) {
+  const images = Array.isArray(a.images) ? a.images.map((im) => (typeof im === 'string' ? im : im.url)).filter(Boolean) : [];
+  return {
+    slug: a.slug,
+    id: a.legacy_id || a.slug,
+    title: a.title,
+    purpose: a.summary || '',
+    html: a.content_html || '',
+    images,
+    videos: Array.isArray(a.videos) ? a.videos : [],
+    route: a.route,
+    tags: Array.isArray(a.tags) ? a.tags : [],
+    related: Array.isArray(a.related) ? a.related : [],
+    view_count: a.view_count || 0,
+    status: a.status,
+    isNew: a.published_at ? (Date.now() - new Date(a.published_at).getTime()) < 7 * 864e5 : false,
+    isUpdated: a.updated_at && a.published_at ? new Date(a.updated_at).getTime() - new Date(a.published_at).getTime() > 36e5 : false,
+  };
+}
+
+function useHelpData(token) {
+  const [state, setState] = useState({ loading: true, offline: false, categories: [], articles: [] });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [categories, articles] = await Promise.all([
+          helpApi.getCategories(token),
+          helpApi.getArticles({}, token),
+        ]);
+        if (!cancelled) setState({ loading: false, offline: false, categories, articles });
+      } catch {
+        if (!cancelled) setState({ loading: false, offline: true, categories: [], articles: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+  return state;
+}
+
+function MatchedSnippet({ html, q }) {
+  const snippet = useMemo(() => {
+    const text = stripHtml(html);
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx < 0) return null;
+    const start = Math.max(0, idx - 60);
+    const end = Math.min(text.length, idx + q.length + 80);
+    return { before: (start > 0 ? '...' : '') + text.slice(start, idx), match: text.slice(idx, idx + q.length), after: text.slice(idx + q.length, end) + (end < text.length ? '...' : '') };
+  }, [html, q]);
+  if (!q || !snippet) return null;
+  return (
+    <p className="text-xs text-base-content/70 mt-1">
+      <span className="font-medium">Đoạn khớp: </span>{snippet.before}<mark>{snippet.match}</mark>{snippet.after}
+    </p>
+  );
+}
+
+function StepCard({ step, index, onZoom, showLink, onGoStep, anchor, hideRelated, q, sectionId }) {
   const [open, setOpen] = useState(false);
   return (
     <div id={anchor || step.id} className="card bg-base-100 border border-base-300 shadow-sm scroll-mt-2">
@@ -40,11 +124,11 @@ function StepCard({ step, index, onZoom, showLink, onGoStep, anchor, hideRelated
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-semibold text-base">{step.title}</h3>
+              <h3 className="font-semibold text-base">{highlight(step.title, q)}</h3>
               <span className="badge badge-outline badge-xs">{step.id}</span>
             </div>
-            {step.purpose && <p className="text-sm mt-1"><span className="font-medium">Để làm gì: </span>{step.purpose}</p>}
-            {step.text && !step.purpose && <p className="text-sm text-base-content/70 mt-1">{step.text}</p>}
+            {step.purpose && <p className="text-sm mt-1"><span className="font-medium">Để làm gì: </span>{highlight(step.purpose, q)}</p>}
+            {step.text && !step.purpose && <p className="text-sm text-base-content/70 mt-1">{highlight(step.text, q)}</p>}
             {step.audience && <p className="text-sm text-base-content/70 mt-1"><span className="font-medium">Ai làm / khi nào: </span>{step.audience}</p>}
             {step.prereq && <p className="text-sm text-base-content/70 mt-1"><span className="font-medium">Trước khi bắt đầu: </span>{step.prereq}</p>}
             {step.note && <p className="text-sm text-info mt-1">{step.note}</p>}
@@ -81,7 +165,8 @@ function StepCard({ step, index, onZoom, showLink, onGoStep, anchor, hideRelated
                   className="btn btn-xs btn-ghost gap-1"
                   onClick={() => {
                     try {
-                      const t = `${window.location.origin}${window.location.pathname}${window.location.search}#${step.id}`;
+                      const qs = sectionId ? `?s=${encodeURIComponent(sectionId)}` : '';
+                      const t = `${window.location.origin}${window.location.pathname}${qs}#${step.id}`;
                       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(t).catch(() => {});
                     } catch { /* clipboard unavailable */ }
                   }}
@@ -115,9 +200,89 @@ function StepCard({ step, index, onZoom, showLink, onGoStep, anchor, hideRelated
   );
 }
 
-function Lightbox({ steps, index, onClose, onNav }) {
+function ArticleCard({ step, index, onZoomImage, showLink, onGoStep, anchor, hideRelated, q, token, onVisible, sectionId }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !onVisible) return undefined;
+    const obs = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          onVisible();
+          obs.disconnect();
+        }
+      }
+    }, { threshold: 0.2 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onVisible]);
+  return (
+    <div ref={ref} id={anchor || `help-${step.slug}`} className="card bg-base-100 border border-base-300 shadow-sm scroll-mt-2">
+      <div className="card-body p-4 gap-3">
+        <div className="flex items-start gap-3">
+          <span className="shrink-0 w-8 h-8 rounded-full bg-primary text-primary-content text-sm font-bold flex items-center justify-center">
+            {index + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-semibold text-base">{highlight(step.title, q)}</h3>
+              <span className="badge badge-outline badge-xs">{step.id}</span>
+              {step.isNew && <span className="badge badge-success badge-xs">Mới</span>}
+              {step.isUpdated && !step.isNew && <span className="badge badge-info badge-xs">Cập nhật</span>}
+            </div>
+            {step.purpose && <p className="text-sm mt-1"><span className="font-medium">Để làm gì: </span>{highlight(step.purpose, q)}</p>}
+            {step.html && <MatchedSnippet html={step.html} q={q} />}
+            {step.html && <div className="prose prose-sm max-w-none mt-1" dangerouslySetInnerHTML={{ __html: step.html }} />}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {step.route && (
+                <Link to={step.route} className="btn btn-xs btn-outline gap-1">
+                  <ExternalLink size={12} /> Mở trang
+                </Link>
+              )}
+              {showLink && (
+                <button
+                  type="button"
+                  className="btn btn-xs btn-ghost gap-1"
+                  onClick={() => {
+                    try {
+                      const qs = sectionId ? `?s=${encodeURIComponent(sectionId)}` : '';
+                      const t = `${window.location.origin}${window.location.pathname}${qs}#${step.slug}`;
+                      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(t).catch(() => {});
+                    } catch { /* clipboard unavailable */ }
+                  }}
+                  title="Copy link bài này"
+                >
+                  <Link2 size={12} /> #{step.slug}
+                </button>
+              )}
+              {(step.related || []).map((r) => (
+                !hideRelated ? (
+                  <button key={r} type="button" className="btn btn-xs btn-ghost gap-1" onClick={() => onGoStep && onGoStep(r)} title={`Xem ${r}`}>
+                    <Link2 size={12} /> {r}
+                  </button>
+                ) : null
+              ))}
+              {[...new Set((step.tags || []).filter((t) => /^[A-Z]+\d+$/i.test(t)))].map((t) => (
+                <button key={t} type="button" className="btn btn-xs btn-ghost gap-1" onClick={() => onGoStep && onGoStep(t)} title={`Xem bước ${t}`}>
+                  <Link2 size={12} /> {t}
+                </button>
+              ))}
+              <span className="inline-flex items-center gap-1 text-xs text-base-content/50 ml-auto">
+                <Eye size={12} /> {step.view_count}
+              </span>
+            </div>
+          </div>
+        </div>
+        <Gallery images={step.images} title={step.title} onZoom={onZoomImage} />
+        <VideoBlock videos={step.videos} token={token} />
+      </div>
+    </div>
+  );
+}
+
+function Lightbox({ slides, index, onClose, onNav }) {
   const [zoom, setZoom] = useState(0.75);
-  const step = steps[index];
+  const slide = slides[index];
   useEffect(() => {
     setZoom(0.75);
   }, [index]);
@@ -130,11 +295,11 @@ function Lightbox({ steps, index, onClose, onNav }) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose, onNav]);
-  if (!step) return null;
+  if (!slide) return null;
   return (
     <div className="fixed inset-0 z-[9999] bg-black/80 flex flex-col" onClick={onClose}>
       <div className="flex items-center justify-between p-3 text-white" onClick={(e) => e.stopPropagation()}>
-        <span className="text-sm font-medium">{step.id} — {step.title} ({index + 1}/{steps.length})</span>
+        <span className="text-sm font-medium">{slide.label} ({index + 1}/{slides.length})</span>
         <div className="flex items-center gap-2">
           <button type="button" className="btn btn-sm btn-circle" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}><ZoomOut size={16} /></button>
           <span className="text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
@@ -143,37 +308,42 @@ function Lightbox({ steps, index, onClose, onNav }) {
         </div>
       </div>
       <div className="flex-1 overflow-auto flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
-        {step.image ? (
-          <img src={step.image} alt={step.title} className="rounded-lg max-w-none" style={{ transform: `scale(${zoom})`, maxWidth: zoom === 1 ? '100%' : 'none' }} />
+        {slide.src ? (
+          <img src={slide.src} alt={slide.title} className="rounded-lg max-w-none" style={{ transform: `scale(${zoom})`, maxWidth: zoom === 1 ? '100%' : 'none' }} />
         ) : (
           <p className="text-white/60 text-sm">Ảnh minh họa đang bổ sung.</p>
         )}
       </div>
       <div className="flex items-center justify-between p-3" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="btn btn-sm gap-1" disabled={index === 0} onClick={() => onNav(-1)}><ChevronLeft size={16} /> Trước</button>
-        <button type="button" className="btn btn-sm gap-1" disabled={index === steps.length - 1} onClick={() => onNav(1)}>Sau <ChevronRight size={16} /></button>
+        <button type="button" className="btn btn-sm gap-1" disabled={index === slides.length - 1} onClick={() => onNav(1)}>Sau <ChevronRight size={16} /></button>
       </div>
     </div>
   );
 }
 
 const HelpPage = () => {
-  const { user, isSuperAdmin, canAccessPanel } = useAuth();
+  const { user, token, isSuperAdmin, canAccessPanel } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const isAdminPath = location.pathname.startsWith('/admin');
   const rootHeightClass = isAdminPath
     ? 'lg:h-[calc(100dvh-48px)] lg:-mb-6'
     : 'lg:h-[calc(100dvh-64px)]';
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const tabParam = params.get('tab');
   const sectionParam = params.get('s');
   const [tab, setTab] = useState(tabParam === 'flows' || tabParam === 'integrations' ? tabParam : 'groups');
   const [q, setQ] = useState('');
   const [selectedSection, setSelectedSection] = useState(sectionParam || '');
   const [selectedFlow, setSelectedFlow] = useState('');
-  const [lightbox, setLightbox] = useState({ steps: [], index: 0, open: false });
+  const [lightbox, setLightbox] = useState({ slides: [], index: 0, open: false });
   const searchRef = useRef(null);
   const paneRef = useRef(null);
+  const trackedRef = useRef(new Set());
+
+  const help = useHelpData(token);
+  const apiMode = !help.loading && !help.offline && help.articles.length > 0;
 
   useEffect(() => {
     if (tabParam === 'flows' || tabParam === 'integrations' || tabParam === 'groups') setTab(tabParam);
@@ -190,13 +360,33 @@ const HelpPage = () => {
     return () => window.removeEventListener('keydown', h);
   }, []);
 
-  const visibleSections = useMemo(() => {
+  const apiSections = useMemo(() => {
+    if (!apiMode) return [];
+    const byCat = new Map();
+    for (const c of help.categories) {
+      byCat.set(c.id, { id: c.slug, title: c.title, icon: ICON_BY_SLUG[c.slug] || c.icon || 'Book', steps: [] });
+    }
+    for (const a of help.articles) {
+      const sec = byCat.get(a.category_id);
+      if (sec) sec.steps.push(normalizeArticle(a));
+    }
+    return [...byCat.values()].filter((s) => s.steps.length > 0);
+  }, [apiMode, help.categories, help.articles]);
+
+  const legacySections = useMemo(() => {
     return GUIDE.groups.sections.filter((s) => {
       if (SUPER_SECTIONS.includes(s.id) && !isSuperAdmin) return false;
       if (PANEL_SECTIONS.includes(s.id) && !canAccessPanel) return false;
       return true;
     });
   }, [isSuperAdmin, canAccessPanel]);
+
+  const visibleSections = apiMode ? apiSections : legacySections;
+
+  useEffect(() => {
+    const s = params.get('s');
+    if (s) setSelectedSection(s);
+  }, [params]);
 
   const activeSectionId = selectedSection && visibleSections.some((s) => s.id === selectedSection)
     ? selectedSection
@@ -205,25 +395,73 @@ const HelpPage = () => {
 
   const searchResults = useMemo(() => {
     if (!q) return [];
-    return visibleSections.flatMap((s) => s.steps.filter((st) => matches(st, q)).map((st) => ({ ...st, sectionTitle: s.title })));
+    return visibleSections.flatMap((s) => s.steps.filter((st) => matches(st, q)).map((st) => ({ ...st, sectionTitle: s.title, sectionId: s.id })));
   }, [visibleSections, q]);
 
-  const flowList = tab === 'integrations' ? GUIDE.integrations.flows : GUIDE.flows.flows;
+  const apiFlows = useMemo(() => {
+    if (!apiMode) return [];
+    return apiSections.filter((s) => FLOW_CATEGORY_SLUGS.includes(s.id));
+  }, [apiMode, apiSections]);
+  const legacyFlowList = tab === 'integrations' ? GUIDE.integrations.flows : GUIDE.flows.flows;
+  const flowList = useMemo(() => {
+    if (!apiMode) return legacyFlowList;
+    if (tab === 'integrations') return apiFlows.filter((s) => s.id === 'tich-hop');
+    return apiFlows.filter((s) => s.id === 'luong-thuc-hien');
+  }, [apiMode, legacyFlowList, apiFlows, tab]);
   const activeFlowId = selectedFlow && flowList.some((f) => f.id === selectedFlow) ? selectedFlow : flowList[0]?.id || '';
   const activeFlow = flowList.find((f) => f.id === activeFlowId);
-  const activeFlowSteps = useMemo(() => (activeFlow ? activeFlow.steps.map(resolveFlowStep) : []), [activeFlow]);
+  const activeFlowSteps = useMemo(() => {
+    if (!activeFlow) return [];
+    if (apiMode) return activeFlow.steps;
+    return activeFlow.steps.map(resolveFlowStep);
+  }, [apiMode, activeFlow]);
 
   useEffect(() => {
     paneRef.current?.scrollTo({ top: 0 });
   }, [activeSectionId, activeFlowId, tab]);
 
-  useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (hash) {
-      const el = document.getElementById(hash);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const idToAnchor = useMemo(() => {
+    const m = {};
+    for (const s of visibleSections) {
+      for (const st of s.steps) {
+        if (st.slug) m[st.slug] = `help-${st.slug}`;
+        m[st.id] = st.slug ? `help-${st.slug}` : st.id;
+        m[String(st.id).toUpperCase()] = st.slug ? `help-${st.slug}` : st.id;
+      }
     }
-  }, [tab, activeSectionId, activeFlowId]);
+    return m;
+  }, [visibleSections]);
+
+  useEffect(() => {
+    const resolveHash = () => {
+      const raw = window.location.hash.slice(1);
+      if (!raw) return;
+      const hash = decodeURIComponent(raw);
+      const scrollToHash = (h) => {
+        const target = idToAnchor[h] || h;
+        document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      if (document.getElementById(idToAnchor[hash] || hash)) {
+        scrollToHash(hash);
+        return;
+      }
+      const sec = stepToSection[hash] || stepToSection[String(hash).toUpperCase()];
+      if (!sec) return;
+      if (FLOW_CATEGORY_SLUGS.includes(sec)) {
+        const t = sec === 'tich-hop' ? 'integrations' : 'flows';
+        setTab(t);
+        setQ('');
+        navigate({ pathname: location.pathname, search: `?tab=${t}`, hash: window.location.hash || '' });
+      } else if (sec !== activeSectionId) {
+        pickSection(sec);
+      }
+      setTimeout(() => scrollToHash(hash), 400);
+    };
+    resolveHash();
+    window.addEventListener('hashchange', resolveHash);
+    return () => window.removeEventListener('hashchange', resolveHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [help.loading, help.articles.length, location.hash, location.key, activeSectionId]);
 
   const visibleById = useMemo(() => {
     const m = {};
@@ -261,43 +499,97 @@ const HelpPage = () => {
   const switchTab = (t) => {
     setTab(t);
     setQ('');
-    setParams(t === 'groups' ? {} : { tab: t });
+    navigate({ pathname: location.pathname, search: t === 'groups' ? '' : `?tab=${t}` });
   };
 
   const pickSection = (id) => {
     setSelectedSection(id);
     setQ('');
-    setParams({ s: id });
+    navigate({ pathname: location.pathname, search: `?s=${encodeURIComponent(id)}`, hash: window.location.hash || '' });
   };
 
-  const openLightbox = (steps, index) => setLightbox({ steps, index, open: true });
+  const openLightboxFor = (step, imgIndex) => {
+    const images = step.images || (step.image ? [step.image] : []);
+    const slides = images.map((src, i) => ({ src, title: step.title, label: `${step.id} — ${step.title} (ảnh ${i + 1})` }));
+    setLightbox({ slides: slides.length > 0 ? slides : [{ src: null, title: step.title, label: step.id }], index: imgIndex || 0, open: true });
+  };
+
   const stepToSection = useMemo(() => {
     const m = {};
-    for (const s of GUIDE.groups.sections) {
-      for (const st of s.steps) m[st.id] = s.id;
+    for (const s of visibleSections) {
+      for (const st of s.steps) {
+        m[st.id] = s.id;
+        if (st.slug) m[st.slug] = s.id;
+        m[String(st.id).toUpperCase()] = s.id;
+      }
     }
     return m;
-  }, []);
+  }, [visibleSections]);
   const goStep = (id) => {
-    const el = document.getElementById(id);
+    const target = idToAnchor[id] || idToAnchor[String(id).toUpperCase()] || id;
+    const el = document.getElementById(target);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
-    const sec = stepToSection[id];
+    const sec = stepToSection[id] || stepToSection[String(id).toUpperCase()];
     if (sec && visibleSections.some((s) => s.id === sec)) {
       pickSection(sec);
-      setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
+      setTimeout(() => {
+        const t2 = idToAnchor[id] || id;
+        document.getElementById(t2)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 250);
     }
   };
-  const showIntegrations = canAccessPanel;
+  const trackArticle = (step) => {
+    if (!apiMode || !step.slug || trackedRef.current.has(step.slug)) return;
+    trackedRef.current.add(step.slug);
+    const art = help.articles.find((a) => a.slug === step.slug);
+    if (art) helpApi.trackView(art.id);
+  };
+  const showIntegrations = apiMode ? apiSections.some((s) => s.id === 'tich-hop') : canAccessPanel;
+
+  const renderStepCard = (step, idx, extra) => {
+    const withSection = extra && extra.sectionId ? extra : { ...extra, sectionId: step.sectionId || activeSectionId };
+    if (apiMode) {
+      return (
+        <ArticleCard
+          step={step}
+          index={idx}
+          token={token}
+          q={q}
+          onZoomImage={(i) => openLightboxFor(step, i)}
+          onVisible={() => trackArticle(step)}
+          {...withSection}
+        />
+      );
+    }
+    return (
+      <StepCard
+        step={step}
+        index={idx}
+        q={q}
+        onZoom={() => openLightboxFor(step, 0)}
+        {...withSection}
+      />
+    );
+  };
 
   return (
     <div className={`max-w-6xl mx-auto p-4 pb-4 lg:pb-4 lg:flex lg:flex-col lg:overflow-hidden ${rootHeightClass}`}>
       <div className="flex items-center gap-3 mb-4 shrink-0">
         <BookOpen size={26} className="text-primary" />
         <h1 className="text-2xl font-bold">Hướng dẫn sử dụng</h1>
+        {help.loading && <span className="loading loading-spinner loading-sm" />}
       </div>
+
+      {help.offline && (
+        <div className="alert alert-warning py-2 px-3 mb-4 shrink-0">
+          <WifiOff size={16} />
+          <span className="text-sm">Không tải được nội dung mới từ máy chủ — đang hiển thị bản hướng dẫn kèm sẵn.</span>
+          <button type="button" className="btn btn-xs" onClick={() => { clearHelpCache(); window.location.reload(); }}>Thử lại</button>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2 sm:items-center mb-4 shrink-0">
         <div role="tablist" className="tabs tabs-boxed w-fit">
@@ -332,7 +624,7 @@ const HelpPage = () => {
               <div className="card-body p-3">
                 <p className="text-xs font-bold uppercase text-base-content/50 px-2 pb-2">Mục lục</p>
                 {tocGroups.map((g, gi) => (
-                  <div key={g.label || 'chung'}>
+                  <div key={`${g.label || 'chung'}-${gi}`}>
                     {gi > 0 && <div className="border-t border-base-300 my-2 mx-1" />}
                     {g.label && (
                       <p className="px-2 pt-1 pb-1 text-xs font-semibold text-base-content/50 uppercase tracking-wider">{g.label}</p>
@@ -365,15 +657,9 @@ const HelpPage = () => {
               <>
                 <p className="text-sm">Tìm thấy <b>{searchResults.length}</b> bước cho "{q}".</p>
                 {searchResults.map((step, i) => (
-                  <div key={`${step.id}-${i}`}>
+                  <div key={`${step.slug || step.id}-${i}`}>
                     <p className="text-xs text-base-content/50 mb-1">{step.sectionTitle}</p>
-                    <StepCard
-                      step={step}
-                      index={i}
-                      showLink
-                      onGoStep={goStep}
-                      onZoom={() => openLightbox(searchResults, i)}
-                    />
+                    {renderStepCard(step, i, { showLink: true, onGoStep: goStep })}
                   </div>
                 ))}
                 {searchResults.length === 0 && <p className="text-sm text-base-content/60">Không tìm thấy bước nào.</p>}
@@ -387,14 +673,9 @@ const HelpPage = () => {
                   <span className="text-xs font-normal text-base-content/50 ml-auto hidden sm:inline">vai trò: {user?.role}</span>
                 </h2>
                 {activeSection.steps.map((step, idx) => (
-                  <StepCard
-                    key={step.id}
-                    step={step}
-                    index={idx}
-                    showLink
-                    onGoStep={goStep}
-                    onZoom={() => openLightbox(activeSection.steps, idx)}
-                  />
+                  <div key={step.slug || step.id}>
+                    {renderStepCard(step, idx, { showLink: true, onGoStep: goStep, anchor: apiMode ? `help-${step.slug}` : step.id })}
+                  </div>
                 ))}
               </>
             ) : null}
@@ -432,34 +713,41 @@ const HelpPage = () => {
                 ))}
               </select>
             </div>
-            {tab === 'integrations' && <p className="text-sm text-base-content/60">{GUIDE.integrations.title}</p>}
+            {tab === 'integrations' && !apiMode && <p className="text-sm text-base-content/60">{GUIDE.integrations.title}</p>}
             {activeFlow && (
               <section key={activeFlow.id}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="badge badge-primary">{activeFlow.id}</span>
                   <h2 className="text-lg font-bold">{activeFlow.title}</h2>
                 </div>
-                <p className="text-sm text-base-content/60 mb-3">{activeFlow.desc} — {activeFlowSteps.length} bước</p>
+                {!apiMode && <p className="text-sm text-base-content/60 mb-3">{activeFlow.desc} — {activeFlowSteps.length} bước</p>}
                 <div className="space-y-3">
                   {activeFlowSteps.filter((s) => matches(s, q)).map((st, i) => (
                     <div key={`${activeFlow.id}-${i}`}>
-                      <StepCard
-                        step={{ ...st, title: `B${i + 1}. ${st.title}` }}
-                        index={i}
-                        showLink={false}
-                        hideRelated
-                        anchor={`${activeFlow.id}-${i}`}
-                        onZoom={() => openLightbox(activeFlowSteps, i)}
-                      />
-                      {i < activeFlowSteps.length - 1 && (
-                        <div className="flex items-center justify-end mt-3">
-                          <button
-                            type="button"
-                            className="btn btn-xs btn-outline gap-1"
-                            onClick={() => document.getElementById(`${activeFlow.id}-${i + 1}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-                          >
-                            Bước tiếp theo <ChevronRight size={12} />
-                          </button>
+                      {apiMode ? (
+                        renderStepCard(st, i, { showLink: true, onGoStep: goStep, anchor: `help-${st.slug}`, sectionId: activeFlow.id })
+                      ) : (
+                        <div>
+                          <StepCard
+                            step={{ ...st, title: `B${i + 1}. ${st.title}` }}
+                            index={i}
+                            q={q}
+                            showLink={false}
+                            hideRelated
+                            anchor={`${activeFlow.id}-${i}`}
+                            onZoom={() => openLightboxFor(st, 0)}
+                          />
+                          {i < activeFlowSteps.length - 1 && (
+                            <div className="flex items-center justify-end mt-3">
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-outline gap-1"
+                                onClick={() => document.getElementById(`${activeFlow.id}-${i + 1}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                              >
+                                Bước tiếp theo <ChevronRight size={12} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -473,10 +761,10 @@ const HelpPage = () => {
 
       {lightbox.open && (
         <Lightbox
-          steps={lightbox.steps}
+          slides={lightbox.slides}
           index={lightbox.index}
           onClose={() => setLightbox((v) => ({ ...v, open: false }))}
-          onNav={(d) => setLightbox((v) => ({ ...v, index: Math.min(v.steps.length - 1, Math.max(0, v.index + d)) }))}
+          onNav={(d) => setLightbox((v) => ({ ...v, index: Math.min(v.slides.length - 1, Math.max(0, v.index + d)) }))}
         />
       )}
     </div>

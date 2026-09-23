@@ -59,11 +59,29 @@ const canAccessFile = async (file, req) => {
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
   const reqIp = req.ip || req.connection?.remoteAddress || null;
   if (file.uploaded_by === null && file.submitter_ip && reqIp && file.submitter_ip === reqIp) return true;
+  if (!requesterId) {
+    try {
+      const fid = Number(file.id);
+      const [arts] = await pool.query("SELECT videos, roles FROM help_articles WHERE status = 'published'");
+      for (const a of arts) {
+        let videos = a.videos;
+        if (typeof videos === 'string') {
+          try { videos = JSON.parse(videos); } catch { continue; }
+        }
+        if (!Array.isArray(videos)) continue;
+        if (!videos.some((v) => v && Number(v.file_id) === fid)) continue;
+        let roles = a.roles;
+        if (typeof roles === 'string') {
+          try { roles = JSON.parse(roles); } catch { roles = null; }
+        }
+        if (!roles || (Array.isArray(roles) && roles.includes('guest'))) return true;
+      }
+    } catch { /* silent */ }
+  }
   if (requesterId) {
     try {
       const fid = Number(file.id);
-      const [props] = await pool.query('SELECT user_id, custom_data FROM station_proposals');
-      let branchIds = null;
+      const [props] = await pool.query('SELECT user_id, custom_data FROM station_proposals');      let branchIds = null;
       if (requesterRole === 'SALES') {
         const [brows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [requesterId, requesterId]);
         branchIds = new Set(brows.map(r => Number(r.id)));
@@ -77,6 +95,21 @@ const canAccessFile = async (file, req) => {
       for (const s of sts) {
         if (!containsFileId(s.custom_data, fid)) continue;
         if (['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
+      }
+      const [arts] = await pool.query("SELECT videos, roles FROM help_articles WHERE status = 'published'");
+      for (const a of arts) {
+        let videos = a.videos;
+        if (typeof videos === 'string') {
+          try { videos = JSON.parse(videos); } catch { continue; }
+        }
+        if (!Array.isArray(videos)) continue;
+        const linked = videos.some((v) => v && Number(v.file_id) === fid);
+        if (!linked) continue;
+        let roles = a.roles;
+        if (typeof roles === 'string') {
+          try { roles = JSON.parse(roles); } catch { roles = null; }
+        }
+        if (!roles || (Array.isArray(roles) && roles.includes(requesterRole))) return true;
       }
     } catch { /* silent */ }
   }

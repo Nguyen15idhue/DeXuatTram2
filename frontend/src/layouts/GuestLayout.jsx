@@ -1,4 +1,6 @@
+import { Suspense } from 'react';
 import { Outlet, Link } from 'react-router-dom';
+import RouteFallback from '../components/RouteFallback';
 
 const GuestLayout = () => {
   return (
@@ -9,7 +11,9 @@ const GuestLayout = () => {
         <Link to="/login" className="btn btn-ghost btn-sm">Đăng nhập</Link>
       </header>
       <main>
-        <Outlet />
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
       <footer className="footer footer-center p-4 bg-base-200 text-base-content text-sm">
         Gửi đề xuất vị trí trạm sạc — không cần tài khoản

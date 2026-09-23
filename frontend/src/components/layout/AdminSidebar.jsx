@@ -21,6 +21,7 @@ const menuItems = [
   { path: '/admin/map-config', label: 'Map Config', icon: Map, roles: ['SUPER_ADMIN'] },
   { path: '/admin/roles', label: 'Phân quyền', icon: ShieldCheck, roles: ['SUPER_ADMIN'] },
   { path: '/admin/api-configs', label: 'API Configs', icon: Settings, roles: ['SUPER_ADMIN'] },
+  { path: '/admin/help', label: 'Quản lý Hướng dẫn', icon: BookOpen, roles: ['SUPER_ADMIN'] },
 ];
 
 const AdminSidebar = ({ onNavClick, showBell = true }) => {

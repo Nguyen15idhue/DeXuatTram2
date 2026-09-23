@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import UserHeader from '../components/layout/UserHeader';
 import UserSidebar from '../components/layout/UserSidebar';
+import RouteFallback from '../components/RouteFallback';
 
 const UserLayout = () => {
   const { isAuthenticated, loading } = useAuth();
@@ -21,7 +22,9 @@ const UserLayout = () => {
       <UserHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
       <UserSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="flex-1 overflow-y-auto min-h-0">
-        <Outlet />
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

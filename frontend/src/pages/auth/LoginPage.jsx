@@ -7,7 +7,7 @@ import { LogIn } from 'lucide-react';
 const LoginPage = () => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(false);
+  const [remember, setRemember] = useState(() => localStorage.getItem('remember_login') === '1');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -73,7 +73,10 @@ const LoginPage = () => {
               type="checkbox"
               className="checkbox checkbox-sm checkbox-primary"
               checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
+              onChange={(e) => {
+                setRemember(e.target.checked);
+                localStorage.setItem('remember_login', e.target.checked ? '1' : '0');
+              }}
             />
             <span className="label-text">Ghi nhớ đăng nhập 30 ngày</span>
           </label>

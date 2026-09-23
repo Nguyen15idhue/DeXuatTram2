@@ -498,6 +498,16 @@ body {
   background: #f3ecff;
 }
 
+.map-fab.assistant-fab {
+  width: 60px;
+  height: 60px;
+}
+
+.map-fab.assistant-fab svg {
+  width: 28px;
+  height: 28px;
+}
+
 /* Create Menu */
 .map-create-menu {
   background: white;

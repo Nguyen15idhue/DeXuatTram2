@@ -9,6 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tiptap/extension-image": "^3.31.3",
+    "@tiptap/extension-link": "^3.31.3",
+    "@tiptap/extension-placeholder": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/extension-youtube": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "daisyui": "^5.7.27",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",

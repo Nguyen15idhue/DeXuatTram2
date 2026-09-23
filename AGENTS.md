@@ -23,7 +23,7 @@ Browser → Frontend (Vite, :5173) → REST API (/api) → Backend (Express, :30
 /scripts     migrate.sh (tracking schema_migrations), sync-data.sh
 /e2e         Playwright E2E (root config: playwright.config.js)
 /tests       Script test API thủ công (test_api.js)
-/docs        Tài liệu theo mốc (0–7)
+/docs        Tài liệu theo mốc (0–8)
 Swagger UI:  http://localhost:3000/api-docs
 ```
 
@@ -69,7 +69,7 @@ Swagger UI:  http://localhost:3000/api-docs
 1. CTV chỉ xem/sửa/xóa proposal của chính mình (theo `user_id`)
 2. SUPER_ADMIN quản lý tất cả; ADMIN quản lý tất cả **trừ tài khoản `SUPER_ADMIN`** (list/get/update/delete/lock đều chặn ở API + ẩn ở UI)
 3. CTV KHÔNG truy cập admin API (`/admin/*`); SALES chỉ vào 4 trang `/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`
-4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs` + tạo super admin
+4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs`, `/admin/help` + tạo super admin
 5. SALES chỉ xem trạm (không nút Sửa) dùng `allowEdit={!isSales}` trong `RecordDetailPopup`
 6. SALES đổi trạng thái proposal qua `PUT /admin/proposals/:id/status`; `PUT /admin/proposals/:id` là `requireUserManager` (SALES sửa nội dung đề xuất trong nhánh, chặn ngoài nhánh qua `denyOutsideBranch`, cấm đổi `status`); `POST /admin/proposals/:id/convert-to-station` vẫn `requireAdmin`
 7. Route `/admin/audit-log` cho `ADMIN` + `SALES` (sales chỉ thấy log của mình); `/admin/:entity/:id/files` bọc `RoleRoute` ADMIN_AND_SALES (chặn entity `users` với non-admin)
@@ -112,7 +112,10 @@ Swagger UI:  http://localhost:3000/api-docs
 - `GET /stations` **không `limit`** → trả toàn bộ marker fields (map), kèm `loai_uu_tien`/`mo_hinh_tram` trích từ `custom_data`; có `limit` → phân trang. Proposals cap 20000, kèm `mo_hinh_dau_tu`/`loai_uu_tien`
 - `RecordDetailPopup` nút "Xem bản đồ" mở `LocationMapModal` (chỉ khi có tọa độ): tâm tại record, vành nét đứt xoay (`location-point-ring`), bán kính **5/10/20/50/100 km** (`L.Circle`) + hiện trạm/đề xuất lân cận (`proximityService`)
 - Trang `/map` (chỉ `ADMIN`/`SUPER_ADMIN`): FAB **"Tạo trạm nhanh"** (nằm trên FAB "Vị trí của tôi") mở **cùng menu 3 cách chọn toạ độ** như tạo đề xuất (`MapView.createTarget` = `proposal`/`station`; `onLocationSelected(lat,lng,mode,target)`); chọn xong mở modal `DynamicForm entity="stations" purpose="create"` với `latitude`/`longitude` + địa chỉ tự điền (reverse geocode). SALES/CTV không thấy nút. Menu có tiêu đề in đậm màu xanh đậm `Tạo trạm mới` (target `station`) / `Tạo đề xuất mới` (target `proposal`) ứng với từng chức năng
-- Trang `/huong-dan` (`frontend/src/pages/HelpPage.jsx`): 3 tab — **I. Nhóm chức năng** (section `bat-dau` S01–S04 + `G01–G42` + FAQ `Q01–Q09`, section `dash/users/stations/proposals` gate `canAccessPanel`, `fields/forms/views/data-lists/mapcfg/roles-api` gate SUPER), **II. Luồng thực hiện** (F1–F3, bước là `{ref}` trỏ vào G-step, resolve qua `resolveFlowStep`), **III. Tích hợp** (F4, gate `canAccessPanel`). Tìm kiếm tiếng Việt + phím `/`, lightbox ảnh, deep-link `#G39`/`?s=`/`?tab=`. Nội dung ở `frontend/src/help/guideData.{start,groups,flows,integrations}.js` (gộp qua `guideData.js` — **không** còn file user/adminData/adminConfig); TOC khai báo id trong `TOC_GROUPS` (section lạ tự rơi vào nhóm cuối). Ảnh annotate ở `frontend/public/help/{user,admin-data,admin-config}/` sinh bằng `frontend/scripts/help/gen-images-*.mjs` (+ `gen-images-help2.mjs` cho G13/G39/G40/G42/F42; `annotate.mjs`, `shared.mjs`, `aggregate.mjs`); verify bằng `verify-help*.mjs`. Link ở `UserSidebar` + `AdminSidebar`
+- Trang hướng dẫn (`/huong-dan` + `/admin/huong-dan`, cùng `frontend/src/pages/HelpPage.jsx`): **nguồn nội dung = DB** (`help_categories`/`help_articles`, migration `104`) qua `services/helpApi.js` (cache module-level 60s + dedupe in-flight), **fallback** `frontend/src/help/guideData.{start,groups,flows,integrations}.js` + banner offline khi API lỗi (cố ý giữ, xem `docs/8/53`). 3 tab — **I. Nhóm chức năng** (S01–S04 + G01–G42 + FAQ Q01–Q09), **II. Luồng thực hiện** (F1–F3), **III. Tích hợp** (F4). Public `GET /api/help/categories|articles|articles/:slug` + `POST /track-view` (`optionalAuth` lọc theo role, ẩn draft/archived); slug nhận cả `legacy_id` (`#G39` cũ vẫn mở đúng). `ArticleCard` render `content_html` sanitized + gallery nhiều ảnh + **video YouTube lazy-iframe** (thumb `i.ytimg.com`, iframe chỉ tải khi click) + **video nội bộ** `<video preload="none">` (`/api/files/:id/download?token=`), badge Mới/Cập nhật, `view_count` (IntersectionObserver), copy-link, highlight `<mark>` + snippet khi tìm kiếm, deep-link **`/huong-dan?s=<chuyên mục>#<slug>`** (thiếu `?s=` sẽ không mở đúng section vì trang chỉ render section active; điều hướng cùng trang cần cả `?s=` để đổi section và `#slug` để cuộn — `HelpPage` dùng `navigate({ search, hash })` để giữ hash). TOC nhóm (`TOC_GROUPS`) + mobile `<select>`.
+- Trang cấu hình hướng dẫn `/admin/help` (`pages/admin/AdminHelpPage.jsx`, `RoleRoute SUPER_ONLY` + `requireSuperAdmin`): **2 chế độ xem** — (1) **Bảng** (DataTable + search/filter trạng thái & danh mục + **phân trang** 10/25/50/100 qua `components/Pagination.jsx`), (2) **Hướng dẫn** (`components/admin/HelpGuideBoard.jsx` — layout giống trang xem: TOC danh mục + tiêu đề mục + thẻ bài render nội dung, có nút thao tác ngay trong thẻ: Thêm chung/từng mục, Sửa, Xóa, Đổi trạng thái, Xem trước). Editor `components/admin/HelpEditor.jsx` dùng **TipTap 3.x** (starter-kit + link + image + youtube + placeholder + table) với toolbar 12 nút + undo/redo/preview, slug auto, tags/related/route/roles/status, upload ảnh qua `/api/files/upload`, upload video nội bộ qua `POST /api/admin/help/videos` (multer riêng **200MB**, mp4/webm/mov, subdir `help-videos/`). API admin: CRUD + `publish`/`archive` + `categories` + `import-legacy` (SUPER). Xóa bài hỏi `ConfirmDialog`. `DataTable` gọi `render(value, row)` — chú ý tham số.
+- **Chatbot hướng dẫn** (nút **toàn cục góc dưới-phải** mọi trang qua `<GlobalAssistantChat />` trong `App.jsx`, ẩn ở `/login`/`/register`; riêng `/map` neo trong cụm FAB **trên nút "Tạo trạm nhanh"** qua `MapView` prop `fabSlot` + `<AssistantChat variant="inline" />`): `POST /api/assistant/ask` (rate-limit 30/h) → truy hồi `helpService.searchForAssistant` (tokenize bỏ dấu + chấm điểm title/tags/summary/content, top-5) + `knowledgeService.search` (tài liệu nội bộ, top-3, chỉ SUPER/ADMIN/SALES) → `services/assistantService.js` build prompt (PHẦN 1 bài help được trích dẫn / PHẦN 2 tài liệu nội bộ) + `services/assistant/router.js` chạy **Gemini (chính, 15s) → OpenRouter (dự phòng)**, circuit-breaker 5 phút/provider, cache `ttlCache` 1h, log `assistant_logs`, redact SĐT/email. `GET /api/assistant/status` cho FE ẩn nút khi chưa cấu hình. Trả lời render markdown (`components/help/MarkdownText.jsx`) + **card nguồn có thumbnail** (`sources[].images`). Provider/model cấu hình bằng env (`GEMINI_API_KEY`/`GEMINI_MODEL`/`OPENROUTER_API_KEY`/`OPENROUTER_MODEL`/`ASSISTANT_ENABLED`) — `OPENROUTER_MODEL` nhận **danh sách phân tách dấu phẩy**, thử lần lượt. **Không dùng Ollama** (xem `docs/8/53` §9, `docs/8/54`).
+- **Kho tri thức tài liệu** (`assistant_knowledge`, migration `105`): index từ `AGENTS.md` + `docs/**/*.md` bằng `backend/scripts/index-knowledge.js` (allowlist, redact secret, loại `docs/0`/`docs/6`/`.env`/`docker-compose`). KHÔNG đọc bảng nghiệp vụ. Chạy lại script sau khi sửa docs.
 - Trang `/map` có nút **chuyển Mode** (Đường phố/Vệ tinh/Vệ tinh + nhãn/Địa hình — `MAP_MODES`) và nút **bật/tắt 3D** khi renderer là MapLibre; thay đổi cục bộ theo phiên (không ghi `map_configs`), mobile ẩn 3D. Legend (`.map-legend`) ở **góc trên-phải** (`top:12; right:64px`) để không đè bộ lọc (`.map-filter` ở trên-trái); legend tách **2 cột Trạm / Đề xuất**, nút "Chú thích" (cụm controls) thu gọn/mở rộng — mobile (<768px) **mặc định đóng**
 
 ### 4.6. Map Tile & Renderer
@@ -165,11 +168,11 @@ Swagger UI:  http://localhost:3000/api-docs
 
 ### 4.12. Security & Rate Limiting
 - Mật khẩu bcrypt; JWT 12h (`JWT_EXPIRES_IN`) + `token_version` revoke; FE `api.js` interceptor 401 → xóa token + về `/login`
-- Đăng nhập bằng **email hoặc SĐT** (`authService.findByEmailOrPhone`, chuẩn hóa `0`/`84`/`+84`); tick "Ghi nhớ đăng nhập 30 ngày" → token `30d` (FE lưu `remember_until`), không tick → `12h`
+- Đăng nhập bằng **email hoặc SĐT** (`authService.findByEmailOrPhone`, chuẩn hóa `0`/`84`/`+84`); tick "Ghi nhớ đăng nhập 30 ngày" → token `30d` (FE lưu `remember_until` = mốc hết hạn), không tick → `12h`. `AuthContext` lưu lựa chọn tick vào `remember_login` (LoginPage tự tick sẵn lần sau) và định kỳ 30s kiểm tra `remember_until` để **tự logout client-side đúng hạn**; `fetchUser` bỏ qua kết quả trả về nếu token đã bị xóa (chống race hồi sinh phiên)
 - `helmet`, CORS theo `CORS_ORIGINS`, body limit 10MB, `compression`, `trust proxy 1`
 - **Upload**: allowlist MIME/ext, chặn svg/html/js/exe/php (kể cả double-ext), tên random + ext ép từ MIME, verify chữ ký thật. KHÔNG serve static `/uploads`; tải qua `/files/:id/download|image` có auth + ownership (admin bypass, owner, guest cùng IP). `optionalAuth`/`requireAuth` hỗ trợ `?token=` cho `<img>`
 - **Public proposals rút gọn**: `GET /api/proposals` / `:id` chỉ trả `id,latitude,longitude,address,status,created_at` (không PII)
-- Rate limit (`middlewares/rateLimits.js`): auth 10–30/ph, admin 60–120/ph, excel 10–30/ph, guest submit 5/h, guest upload 10/h, guest track 30/h, public data 120/ph, geocode 30–60/ph
+- Rate limit (`middlewares/rateLimits.js`): auth 10–30/ph, admin 60–120/ph, excel 10–30/ph, guest submit 5/h, guest upload 10/h, guest track 30/h, public data 120/ph, geocode 30–60/ph, assistant 30/h
 
 ## 5. Coding Conventions
 
@@ -198,13 +201,16 @@ frontend/src/
 │   ├── admin/      FieldManager, FormBuilder, ViewBuilder, DragDropList, DataListManager,
 │   │               DataListEditor, RecordDetailPopup, FieldMappingPanel, TemplateEditor,
 │   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel,
-│   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo
+│   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo,
+│   │               HelpEditor (TipTap), HelpGuideBoard
+│   ├── help/       HelpMedia (VideoBlock + Gallery), AssistantChat, MarkdownText
 │   ├── layout/     AdminHeader, AdminSidebar, UserHeader, UserSidebar, NotificationBell
 │   ├── map/        MapCanvas + renderers/ (index registry, leafletRuntime, maplibreRuntime,
 │   │               leafletRenderer, maplibreRenderer, README)
 │   ├── ui/         Button, Input, Select, Dialog, DataTable, FilterBar, Badge, PageHeader, ...
 │   └── (common)    MapView, MapFilterPanel, LocationMapModal, Toast, Pagination, ErrorMessage,
-│                   Loading, EmptyState, ConfirmDialog, FormInput, DuplicateCheckPanel, RoleRoute
+│                   Loading, EmptyState, ConfirmDialog, FormInput, DuplicateCheckPanel, RoleRoute,
+│                   RouteFallback
 ├── pages/
 │   ├── auth/       LoginPage, RegisterPage
 │   ├── user/       MapPage, MyProposalsPage, GuestProposalPage, ProfilePage
@@ -212,8 +218,8 @@ frontend/src/
 │                   AdminFieldsPage, AdminFormsPage, AdminFormBuilderPage, AdminViewsPage,
 │                   AdminViewBuilderPage, AdminDataListsPage, AdminRecordFilesPage,
 │                   AdminMapConfigPage, AdminRolesPage, AdminApiConfigPage, AdminAuditLogPage,
-│                   RecordDetailPage
-├── services/       api.js (all API calls)
+│                   AdminHelpPage, RecordDetailPage
+├── services/       api.js (all API calls), helpApi.js (help + adminHelpApi)
 ├── hooks/          useFieldOptions, useDataList, useDataListMap, useMapConfig,
 │                   useDebouncedValue, useMediaQuery
 ├── layouts/        PublicLayout, GuestLayout, UserLayout, AdminLayout
@@ -234,7 +240,8 @@ backend/src/
 │                       dashboard, excel, mapUtils, mapConfigs, tiles, geocode, adminGeocodeConfig,
 │                       fieldDefinitions, forms, formFields, views, viewFields, dynamicEngine,
 │                       files, dataLists, dataListsPublic, formulas, apiConfigs, fieldMappings,
-│                       queueLogs, proposalActivity, webhooks, externalUsers, oneOfficeSync, notifications
+│                       queueLogs, proposalActivity, webhooks, externalUsers, oneOfficeSync, notifications,
+│                       helpPublic, adminHelp, adminHelpVideos, assistant
 ├── controllers/        (matching routes)
 ├── services/           auth, station, proposal, myProposal, adminProposal, adminUser, dashboard,
 │                       map, mapConfig, proximity, fieldDefinition, form, formField, view,
@@ -242,7 +249,7 @@ backend/src/
 │                       formula, apiConfig, fieldMapper, fieldMapping, oneOffice, sync,
 │                       personnelSync, externalUser, externalEvent, proposalLifecycle, proposalActivity,
 │                       notification, template, addressEnrichment,
-│                       geocode, queue
+│                       geocode, queue, help, knowledge, assistantService + assistant/{provider,gemini,openrouter,router}
 ├── workers/            queueWorker (push/pull), personnelSyncWorker (cron nhân sự), proposalLifecycleWorker (auto CANCELLED/tạo trạm)
 └── utils/              db.js (MySQL pool), ttlCache.js, cronMatcher.js
 ```
@@ -254,7 +261,7 @@ backend/src/
 - Response: `{ success, data, message, pagination? }`
 - Validation trên backend (`middlewares/validators.js`)
 - Body size limit 10MB
-- Env chính (`.env.example`): `TZ=Asia/Ho_Chi_Minh`, `JWT_SECRET`/`JWT_EXPIRES_IN=12h`, `CORS_ORIGINS`, `BASE_URL`, `FRONTEND_URL`, `CAPTCHA_ENABLED`/`TURNSTILE_SECRET_KEY`, `ORPHAN_FILE_TTL_HOURS`, `ENABLE_SWAGGER`, `ONEOFFICE_WEBHOOK_SECRET` (webhook 1Office gọi sang), `VITE_API_URL=/api` (relative, không URL tuyệt đối)
+- Env chính (`.env.example`): `TZ=Asia/Ho_Chi_Minh`, `JWT_SECRET`/`JWT_EXPIRES_IN=12h`, `CORS_ORIGINS`, `BASE_URL`, `FRONTEND_URL`, `CAPTCHA_ENABLED`/`TURNSTILE_SECRET_KEY`, `ORPHAN_FILE_TTL_HOURS`, `ENABLE_SWAGGER`, `ONEOFFICE_WEBHOOK_SECRET` (webhook 1Office gọi sang), `VITE_API_URL=/api` (relative, không URL tuyệt đối), `GEMINI_API_KEY`/`GEMINI_MODEL`/`OPENROUTER_API_KEY`/`OPENROUTER_MODEL`/`ASSISTANT_ENABLED` (chatbot hướng dẫn — key để trong `.env` gitignored, compose truyền qua `${...}`)
 
 ## 8. Database Rules
 
@@ -264,7 +271,7 @@ backend/src/
 - Schema = file SQL thủ công trong `database/` (đánh số); áp dụng qua `scripts/migrate.sh` có tracking `schema_migrations`; chỉ viết script tiến tới, idempotent
 - **DB mới**: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động
 
-### Database Tables (24 bảng)
+### Database Tables (28 bảng)
 
 | Bảng | Mô tả |
 |------|-------|
@@ -288,9 +295,12 @@ backend/src/
 | `api_queue_logs` | Queue push/pull + inbound webhook + audit log |
 | `proposal_activity_logs` | Log hoạt động đề xuất (created/updated/status_change/denied/station_created/auto_failed) |
 | `proposal_lifecycle_configs` | Config auto vòng đời (90/30 ngày, max retries, cron) |
+| `help_categories` / `help_articles` | Hướng dẫn (TIP `/admin/help`): bài viết TipTap (`content_json`/`content_html`), `videos`/`images` JSON, `roles`, `status` draft/published/archived, FULLTEXT tìm kiếm (migration `104`) |
+| `assistant_logs` | Log chatbot hướng dẫn (`question`, `answer`, `sources`, `provider`, `latency_ms`, `fallback_reason`, `user_id`) — migration `104` |
+| `assistant_knowledge` | Kho tri thức tài liệu nội bộ (`source_path`, `heading`, `content`, FULLTEXT) — index từ `AGENTS.md`+`docs/**/*.md`, migration `105` |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→94). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED).
+Migrations nằm ở `database/` (01→105). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT).
 
 ## 9. Swagger & Documentation
 
@@ -303,7 +313,7 @@ Migrations nằm ở `database/` (01→94). Một số mốc quan trọng: Một
   - `docs/3/` — Bug fixes
   - `docs/4/` — Thiết kế tính năng (Formula Pre/Post, Excel theo View, Cascading Select, Dynamic Form/View)
    - `docs/5/` — Kế hoạch & triển khai các mốc lớn (tìm kiếm, stress test, guest form, RBAC, 1Office, bản đồ, reverse geocode, MapLibre 35–36, self-host PMTiles 37)
-   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời) + Kế hoạch 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban)  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
+   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời), 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban), 48–52 (webhook, ARCHIVED, cải tiến đề xuất, map/popup, nginx prod), **53 (hệ thống hướng dẫn mới: viewer DB + `/admin/help` + video + chatbot)**, **54 (nâng cấp chatbot: markdown/nguồn có ảnh, nút chat toàn cục, kho tri thức tài liệu, tối ưu Vite + fix lazy-load vỡ layout)**  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
   - `docs/7/` — Review toàn mã nguồn (P0/P1/P2 + chuẩn hóa UIUX + kế hoạch test frontend). Nguồn chính xác nhất về bug đã/chưa fix.
 
 ## 10. Docker & Deploy
@@ -369,7 +379,8 @@ Migrations nằm ở `database/` (01→94). Một số mốc quan trọng: Một
 - Áp dụng: FieldRenderer, FormulaEditor output, DynamicForm computeFormula, DataListEditor
 
 ### File Management
-- Upload `POST /api/files/upload` (multer disk, 10MB); download `/files/:id/download` (auth-aware, Content-Disposition UTF-8)
+- Upload `POST /api/files/upload` (multer disk, 10MB); download `/files/:id/download` (auth-aware, Content-Disposition UTF-8, hỗ trợ `Range` → 206 để tua video)
+- Video hướng dẫn nội bộ: `POST /api/admin/help/videos` (multer riêng **200MB**, mp4/webm/mov, subdir `help-videos/`, SUPER_ADMIN). Quyền tải video theo `roles` của bài viết chứa `file_id` (mở rộng `fileController.canAccessFile`)
 - Types: image, video, audio, pdf, word (.docx → HTML via mammoth), excel (.xlsx → table via xlsx), text
 - Viewer: zoom ảnh, play video/audio, render PDF/Word/Excel inline
 
@@ -403,6 +414,9 @@ Migrations nằm ở `database/` (01→94). Một số mốc quan trọng: Một
 ## 13. Performance Optimizations
 
 ### Đã áp dụng
+- **Route-level code splitting**: 21 page dùng `React.lazy` trong `App.jsx`; mỗi layout bọc `<Suspense fallback={<RouteFallback/>}>` **quanh `<Outlet />`** (KHÔNG bọc ngoài `<Routes>` — sẽ làm header/taskbar unmount khi tải chunk)
+- **`vite.config.js` manualChunks** tách vendor (`react-vendor`/`leaflet`/`icons`/`mathjs`/`xlsx`/`mammoth`/`excel-io`); khớp chính xác `/node_modules/<pkg>/` (regex rộng kiểu `/react/` bắt nhầm `@tiptap/react`). Kết quả: entry 2.897 kB → **53 kB**; preload đầu chỉ `index + react-vendor + icons`; không còn cảnh báo bundle
+- **`server.watch.ignored`** loại `public/pmtiles/**` + `*.pmtiles` (file 313MB) → tránh `[vite] page reload` mỗi lần file đổi/di chuyển; `optimizeDeps.include` dep nặng → hết `Re-optimizing dependencies` khi mở lazy page lần đầu
 - Module-level caching `useFieldOptions`; `dataListCache.js` cache + dedupe in-flight; build tree O(n) bằng Set
 - `useCallback`/`useMemo` cho load functions, filteredData, sortedData, parentFieldMap
 - `React.lazy` + `Suspense` cho FileListPopup trong FieldRenderer
@@ -416,7 +430,6 @@ Migrations nằm ở `database/` (01→94). Một số mốc quan trọng: Một
 - Map endpoint: `GET /stations` không `limit` chỉ trả marker fields + `loai_uu_tien`/`mo_hinh_tram` (JSON_EXTRACT, bỏ merge `custom_data`); proposals cap 20000 + `mo_hinh_dau_tu`/`loai_uu_tien`
 
 ### Chưa có (cơ hội cải thiện)
-- Route-level code splitting (pages import eager trong `App.jsx`)
 - API response caching (không SWR/ETag)
 - Context value memoization (`AuthProvider`)
 - Skeleton loading states
@@ -484,6 +497,8 @@ docker exec station-mysql mysql -u root -ppassword station_management --default-
 - `AGENTS.md` mô tả 13 types nhưng code có thêm `user`/`password`/`table` — `table` chưa có cột DB tương ứng
 - MapLibre + 4 mode + self-host PMTiles đã triển khai (kế hoạch 36, Phase 1–8). File `frontend/public/pmtiles/vietnam.pmtiles` (~299MB) **không commit** — cần build lại theo `docs/5/37`. Glyphs nhãn đang dùng remote OpenFreeMap; self-host offline hoàn toàn cần thêm glyphs.
 - `/de-xuat` (guest) gọi `/api/field-definitions` bị **401 → redirect `/login`** ⇒ form đề xuất cho khách chưa đăng nhập bị chặn (cần nhường endpoint public). Phát hiện khi làm `docs/5/41`.
+- Trang hướng dẫn đã chuyển nguồn sang DB (migration 104, kế hoạch 53). **Cố ý giữ fallback `guideData.*.js`** cho trường hợp API help lỗi (bundle +~50KB); muốn gỡ hẳn thì đổi `apiMode ? apiSections : legacySections` → `apiMode ? apiSections : []` ở `HelpPage.jsx` rồi bỏ import `GUIDE`/`resolveFlowStep`.
+- Chatbot hướng dẫn **không dùng Ollama** (máy dev/VPS nhỏ không đủ RAM cho model 7B). Provider: Gemini chính + OpenRouter dự phòng (`OPENROUTER_MODEL` nhận danh sách model free, thử lần lượt — xem `docs/8/54`). Video hướng dẫn nội bộ giới hạn **200MB** (route riêng `POST /api/admin/help/videos`); cần thêm thì làm tus resumable (nấc 2).
 
 ## 17. Definition of Done
 
