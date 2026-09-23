@@ -42,14 +42,18 @@ exports.getBranchIds = async (userId) => {
 exports.getAllUsers = async (search, page, limit, scope = {}) => {
   const where = [];
   const params = [];
+  let ancestorSet = null;
 
   if (scope.role === 'SALES' && scope.userId) {
     const branchIds = await exports.getBranchIds(scope.userId);
-    if (branchIds.length === 0) {
+    const ancestorIds = await exports.getAncestorIds(scope.userId);
+    ancestorSet = new Set(ancestorIds);
+    const ids = [...new Set([...branchIds, ...ancestorIds])];
+    if (ids.length === 0) {
       return { users: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
-    where.push(`(id IN (${branchIds.map(() => '?').join(',')}))`);
-    params.push(...branchIds);
+    where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
+    params.push(...ids);
   }
 
   if (scope.role && scope.role !== 'SUPER_ADMIN') {
@@ -81,6 +85,7 @@ exports.getAllUsers = async (search, page, limit, scope = {}) => {
     );
     const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
     const merged = users.map(u => dynamicUtils.mergeData(u, fieldDefs));
+    if (ancestorSet) merged.forEach(u => { u._scope = ancestorSet.has(Number(u.id)) ? 'ancestor' : 'branch'; });
     return { users: merged, pagination: { page: 1, limit: total, total, totalPages: 1 } };
   }
 
@@ -92,6 +97,7 @@ exports.getAllUsers = async (search, page, limit, scope = {}) => {
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
   const merged = users.map(u => dynamicUtils.mergeData(u, fieldDefs));
+  if (ancestorSet) merged.forEach(u => { u._scope = ancestorSet.has(Number(u.id)) ? 'ancestor' : 'branch'; });
 
   return {
     users: merged,

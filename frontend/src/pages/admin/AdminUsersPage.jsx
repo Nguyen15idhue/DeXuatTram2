@@ -32,6 +32,8 @@ const parseCustomData = (cd) => {
 
 const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
   const [detectedRole, setDetectedRole] = useState(createRole);
+  const [dept, setDept] = useState('');
+  const [chucVu, setChucVu] = useState('');
   const modalRef = useRef(null);
 
   const handleValuesChange = (vals) => {
@@ -41,15 +43,42 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
       setCreateRole(val);
       if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
     }
+    if (vals.department !== undefined) setDept(vals.department || '');
+    if (vals.chuc_vu !== undefined) setChucVu(vals.chuc_vu || '');
   };
 
   const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
+  const isNewGdkv = detectedRole === 'SALES' && chucVu === 'Giám đốc Khu vực';
 
+  const deptOfSales = (s) => parseCustomData(s.custom_data).department || '';
   const gdkvList = salesList.filter(s => {
     if (s.role !== 'SALES' || s.status !== 'ACTIVE') return false;
     const cd = parseCustomData(s.custom_data);
     return cd.chuc_vu === 'Giám đốc Khu vực';
   });
+  const gdttList = salesList.filter(s => {
+    if (s.role !== 'SALES' || s.status !== 'ACTIVE') return false;
+    const cd = parseCustomData(s.custom_data);
+    return cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh';
+  });
+  const suggestedGdtt = isNewGdkv && dept
+    ? gdttList.find(s => deptOfSales(s) === dept) || null
+    : null;
+  const sameDeptGdkv = isCtvOrNpp && dept ? gdkvList.filter(s => deptOfSales(s) === dept) : [];
+  const sortedGdkv = [...gdkvList].sort((a, b) => {
+    const ad = deptOfSales(a) === dept ? 0 : 1;
+    const bd = deptOfSales(b) === dept ? 0 : 1;
+    return ad - bd;
+  });
+
+  useEffect(() => {
+    if (isSales || createParentId) return;
+    if (isCtvOrNpp) {
+      if (sameDeptGdkv.length === 1) setCreateParentId(String(sameDeptGdkv[0].id));
+    } else if (suggestedGdtt) {
+      setCreateParentId(String(suggestedGdtt.id));
+    }
+  }, [dept, detectedRole, chucVu, salesList]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <dialog className="modal modal-open" ref={modalRef}>
@@ -68,13 +97,42 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
           onValuesChange={handleValuesChange}
           initialData={{ role: createRole || 'CTV', status: 'ACTIVE' }}
           optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
-          beforeActions={isCtvOrNpp ? (
+          beforeActions={isCtvOrNpp || detectedRole === 'SALES' ? (
             <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
               <div className="flex items-center gap-2 mb-3">
                 <Network size={16} className="text-indigo-500" />
                 <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
-                <span className="text-xs opacity-60">(Áp dụng cho {detectedRole})</span>
+                <span className="text-xs opacity-60">(Áp dụng cho {detectedRole}{isNewGdkv ? ' — Giám đốc Khu vực' : ''})</span>
               </div>
+              {isNewGdkv || (detectedRole === 'SALES' && !chucVu) ? (
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text text-sm">Giám đốc Trung tâm (cấp trên)</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={createParentId}
+                  onChange={(e) => setCreateParentId(e.target.value)}
+                >
+                  <option value="">— Chọn GĐTT —</option>
+                  {gdttList.map(s => {
+                    const sDept = deptOfSales(s);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name} — {sDept || 'Chưa có phòng ban'}{dept && sDept === dept ? ' •' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                {suggestedGdtt && String(suggestedGdtt.id) === String(createParentId) ? (
+                  <div className="mt-2 text-xs opacity-70">Tự gợi ý theo phòng ban ({dept}) — có thể đổi tay.</div>
+                ) : (!chucVu && (
+                  <div className="mt-2 text-xs opacity-70">Chọn thêm Chức vụ = Giám đốc Khu vực + Phòng ban để tự gợi ý GĐTT.</div>
+                ))}
+              </div>
+              ) : detectedRole === 'SALES' ? (
+              <div className="text-xs opacity-70">Chức vụ hiện tại không cần gán cấp trên (chỉ GĐKV mới gán GĐTT).</div>
+              ) : (
               <div className="form-control">
                 <label className="label">
                   <span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span>
@@ -85,16 +143,18 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
                   onChange={(e) => setCreateParentId(e.target.value)}
                 >
                   <option value="">— Chọn GĐKV —</option>
-                  {gdkvList.map(s => {
-                    const cd = parseCustomData(s.custom_data);
-                    const dept = cd.department || '';
+                  {sortedGdkv.map(s => {
+                    const sDept = deptOfSales(s);
                     return (
                       <option key={s.id} value={s.id}>
-                        {s.full_name} — {dept || 'Chưa có phòng ban'}
+                        {s.full_name} — {sDept || 'Chưa có phòng ban'}{dept && sDept === dept ? ' •' : ''}
                       </option>
                     );
                   })}
                 </select>
+                {dept && sameDeptGdkv.length === 1 && String(sameDeptGdkv[0].id) === String(createParentId) && (
+                  <div className="mt-2 text-xs opacity-70">Tự gợi ý theo phòng ban ({dept}) — có thể đổi tay.</div>
+                )}
                 {createParentId && (() => {
                   const parent = salesList.find(s => s.id === Number(createParentId));
                   if (!parent) return null;
@@ -113,6 +173,7 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
                   );
                 })()}
               </div>
+              )}
             </div>
           ) : null}
         >
@@ -171,11 +232,11 @@ const [viewMode, setViewMode] = useState('table');
   const [pwError, setPwError] = useState('');
 
   useEffect(() => {
-    if (!showCreateForm || !token) return;
+    if (!token) return;
     adminUserService.getAllWithParams('all=1', token)
       .then(res => { if (res && res.success) setSalesList((res.data || []).filter(u => u.role === 'SALES' && u.status === 'ACTIVE')); })
       .catch(() => {});
-  }, [showCreateForm, token]);
+  }, [token]);
 
   useEffect(() => {
     if (!token || isSales) return;
@@ -471,7 +532,7 @@ const [viewMode, setViewMode] = useState('table');
     if (Object.keys(customData).length > 0) {
       payload.custom_data = customData;
     }
-    if (['CTV', 'NPP'].includes(payload.role) && createParentId) {
+    if ((['CTV', 'NPP'].includes(payload.role) || (payload.role === 'SALES' && formData.chuc_vu === 'Giám đốc Khu vực')) && createParentId) {
       payload.parent_id = Number(createParentId);
     }
     if (!payload.full_name || !payload.email) {
@@ -560,7 +621,8 @@ const [viewMode, setViewMode] = useState('table');
     const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
     const myRank = RANK[currentUser.role] ?? 99;
     const rowRank = RANK[row.role] ?? 99;
-    const canManage = isSuperAdmin || (row.id !== currentUser.id && (myRank < RANK.SALES || (row.role !== 'ADMIN' && row.role !== 'SUPER_ADMIN')));
+    const inBranch = !isSales || row._scope === 'branch';
+    const canManage = isSuperAdmin || (inBranch && row.id !== currentUser.id && (myRank < RANK.SALES || (row.role !== 'ADMIN' && row.role !== 'SUPER_ADMIN')));
     const canDelete = row.id !== currentUser.id && myRank < rowRank;
     return (
       <div className="flex flex-wrap gap-1">
@@ -586,7 +648,10 @@ const [viewMode, setViewMode] = useState('table');
   const popupUserId = popup.open
     ? (popup.record ? Number(popup.record.id) : parseInt(location.pathname.match(/=(\d+)/)?.[1]))
     : null;
-  const canEditPopupUser = !isSales || (popupUserId != null && users.some(u => Number(u.id) === popupUserId));
+  const popupUserScope = popup.open
+    ? (popup.record?._scope || users.find(u => Number(u.id) === popupUserId)?._scope || null)
+    : null;
+  const canEditPopupUser = !isSales || popupUserScope === 'branch';
 
   return (
     <div>
@@ -598,7 +663,7 @@ const [viewMode, setViewMode] = useState('table');
           <h1 className="text-2xl font-bold">Quản lý Users</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowCreateForm(true)}>
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => { setCreateParentId(''); setCreateRole('CTV'); setShowCreateForm(true); }}>
             <Plus size={14} />
             Tạo user
           </button>
@@ -846,14 +911,24 @@ const [viewMode, setViewMode] = useState('table');
             navigate(`/admin/users/${newMode}=${id}`, { replace: true });
           }}
           beforeActions={({ formData: fd, setFormData: setFd, mode: popupMode, record: rec }) => {
+            const recCd = parseCustomData(rec?.custom_data);
             const targetRole = popupMode === 'edit' ? (fd.role || rec?.role) : rec?.role;
-            if (!['CTV', 'NPP'].includes(targetRole)) return null;
+            const targetChucVu = popupMode === 'edit' ? (fd.chuc_vu || recCd.chuc_vu) : recCd.chuc_vu;
+            const isGdkvTarget = targetRole === 'SALES' && targetChucVu === 'Giám đốc Khu vực';
+            if (!['CTV', 'NPP'].includes(targetRole) && !isGdkvTarget) return null;
             const gdkv = salesList.filter(s => {
               const cd = parseCustomData(s.custom_data);
               return cd.chuc_vu === 'Giám đốc Khu vực';
             });
+            const gdtt = salesList.filter(s => {
+              const cd = parseCustomData(s.custom_data);
+              return s.role === 'SALES' && s.status === 'ACTIVE' && cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh';
+            });
             const currentParentId = popupMode === 'edit' ? (fd.parent_id ?? rec?.parent_id) : rec?.parent_id;
             const currentParent = salesList.find(s => s.id === Number(currentParentId));
+            const parentOptions = isGdkvTarget ? gdtt : gdkv;
+            const parentLabel = isGdkvTarget ? 'Giám đốc Trung tâm (cấp trên)' : 'Giám đốc Khu vực (GĐKV)';
+            const emptyLabel = isGdkvTarget ? '— Chọn GĐTT —' : '— Chọn GĐKV —';
             return (
               <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
                 <div className="flex items-center gap-2 mb-3">
@@ -862,14 +937,14 @@ const [viewMode, setViewMode] = useState('table');
                 </div>
                 {popupMode === 'edit' ? (
                   <div className="form-control">
-                    <label className="label"><span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span></label>
+                    <label className="label"><span className="label-text text-sm">{parentLabel}</span></label>
                     <select
                       className="select select-bordered select-sm w-full"
                       value={currentParentId || ''}
                       onChange={(e) => setFd(prev => ({ ...prev, parent_id: e.target.value ? Number(e.target.value) : null }))}
                     >
-                      <option value="">— Chọn GĐKV —</option>
-                      {gdkv.map(s => {
+                      <option value="">{emptyLabel}</option>
+                      {parentOptions.map(s => {
                         const cd = parseCustomData(s.custom_data);
                         return (
                           <option key={s.id} value={s.id}>{s.full_name} — {cd.department || 'Chưa có phòng ban'}</option>
@@ -879,7 +954,7 @@ const [viewMode, setViewMode] = useState('table');
                   </div>
                 ) : (
                   <div className="text-sm">
-                    <span className="opacity-70">Giám đốc Khu vực: </span>
+                    <span className="opacity-70">{parentLabel}: </span>
                     {currentParent ? <strong>{currentParent.full_name}</strong> : <span className="opacity-50">Chưa phân nhánh</span>}
                   </div>
                 )}

@@ -32,11 +32,14 @@ exports.getById = async (req, res) => {
     }
     if (req.user.role === 'SALES') {
       const branchIds = await adminUserService.getBranchIds(req.user.id);
-      if (!branchIds.includes(targetId)) {
+      if (branchIds.includes(targetId)) {
+        user._scope = 'branch';
+      } else {
         const ancestorIds = await adminUserService.getAncestorIds(req.user.id);
         if (!ancestorIds.includes(targetId)) {
           return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
         }
+        user._scope = 'ancestor';
       }
     } else if (req.user.role === 'ADMIN') {
       if (user.role === 'SUPER_ADMIN') {
@@ -72,7 +75,7 @@ exports.create = async (req, res) => {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       role = role || 'CTV';
-      if (['CTV', 'NPP'].includes(role) && parent_id) {
+      if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
         if (parentUser && parentUser.role === 'SALES') {
           parentId = parentUser.id;
@@ -80,7 +83,7 @@ exports.create = async (req, res) => {
       }
     } else {
       role = role || 'CTV';
-      if (['CTV', 'NPP'].includes(role) && parent_id) {
+      if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
         if (parentUser && parentUser.role === 'SALES') {
           parentId = parentUser.id;
