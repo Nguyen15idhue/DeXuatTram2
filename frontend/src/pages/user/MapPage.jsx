@@ -194,7 +194,7 @@ const MapPage = () => {
       <MapFilterPanel filters={filters} onChange={setFilters} isMobile={isMobile} />
 
       {selectingLocation && highlightPosition && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1001] bg-white rounded-xl shadow-lg border border-base-300 px-4 py-3 flex items-center gap-4">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1001] bg-white rounded-xl shadow-lg border border-base-300 px-4 py-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-[calc(100vw-1.5rem)]">
           <span className="flex items-center gap-1.5 text-sm text-base-content/70">
             <MapPin size={14} />
             {highlightPosition[0].toFixed(6)}, {highlightPosition[1].toFixed(6)}

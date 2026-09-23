@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Download, ChevronDown } from 'lucide-react';
 
 export const usageLabel = (u) => {
@@ -16,10 +16,21 @@ export const usageBadge = (u) => {
 
 const ViewPickerMenu = ({ label, views, onPick, onPickForm, title = 'Chọn bộ cột', icon: Icon = Download }) => {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const [top, setTop] = useState(null);
+  const toggle = () => {
+    if (!open && btnRef.current && window.innerWidth < 768) {
+      const r = btnRef.current.getBoundingClientRect();
+      setTop(Math.max(8, Math.min(r.bottom + 4, window.innerHeight - 160)));
+    } else {
+      setTop(null);
+    }
+    setOpen(v => !v);
+  };
 
   return (
     <div className="relative">
-      <button className="btn btn-ghost btn-sm gap-1" onClick={() => setOpen(v => !v)}>
+      <button ref={btnRef} className="btn btn-ghost btn-sm gap-1" onClick={toggle}>
         <Icon size={14} />
         {label}
         <ChevronDown size={12} />
@@ -27,7 +38,7 @@ const ViewPickerMenu = ({ label, views, onPick, onPickForm, title = 'Chọn bộ
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2">
+          <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2 dropdown-center-mobile" style={top != null ? { top } : undefined}>
             <li className="menu-title text-xs">{title}</li>
             {onPickForm && (
               <li>

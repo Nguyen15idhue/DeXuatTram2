@@ -90,6 +90,20 @@ const AdminProposalsPage = () => {
   const importPollRef = useRef(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const moreBtnRef = useRef(null);
+  const exportBtnRef = useRef(null);
+  const templateBtnRef = useRef(null);
+  const [moreTop, setMoreTop] = useState(null);
+  const [exportTop, setExportTop] = useState(null);
+  const [templateTop, setTemplateTop] = useState(null);
+  const placeBelow = (btnRef, setTop) => {
+    if (btnRef.current && window.innerWidth < 768) {
+      const r = btnRef.current.getBoundingClientRect();
+      setTop(Math.max(8, Math.min(r.bottom + 4, window.innerHeight - 160)));
+    } else {
+      setTop(null);
+    }
+  };
   const dupRef = useRef(null);
   const tableRef = useRef(null);
   const syncPollRef = useRef(null);
@@ -1092,8 +1106,9 @@ const AdminProposalsPage = () => {
 
           <div className="relative">
             <button
+              ref={moreBtnRef}
               className="btn btn-ghost btn-sm btn-circle"
-              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              onClick={() => { if (!showMoreMenu) placeBelow(moreBtnRef, setMoreTop); setShowMoreMenu(!showMoreMenu); }}
               title="Thao tác"
             >
               <MoreVertical size={18} />
@@ -1101,7 +1116,7 @@ const AdminProposalsPage = () => {
             {showMoreMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52">
+                <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52 dropdown-center-mobile" style={moreTop != null ? { top: moreTop } : undefined}>
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
                     onClick={handleBatchApprove}
@@ -1142,7 +1157,7 @@ const AdminProposalsPage = () => {
           </div>
 
           <div className="relative">
-            <button className="btn btn-ghost btn-sm gap-1" onClick={() => { setExportMenuOpen(v => !v); setTemplateMenuOpen(false); }}>
+            <button ref={exportBtnRef} className="btn btn-ghost btn-sm gap-1" onClick={() => { if (!exportMenuOpen) placeBelow(exportBtnRef, setExportTop); setExportMenuOpen(v => !v); setTemplateMenuOpen(false); }}>
               <Download size={14} />
               Export
               <ChevronDown size={12} />
@@ -1150,7 +1165,7 @@ const AdminProposalsPage = () => {
             {exportMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
-                <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2">
+                <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2 dropdown-center-mobile" style={exportTop != null ? { top: exportTop } : undefined}>
                   <li className="menu-title text-xs">Chọn bộ cột để export</li>
                   <li>
                     <button onClick={handleExportProposalsByForm}>
@@ -1180,7 +1195,7 @@ const AdminProposalsPage = () => {
           </div>
           <>
               <div className="relative">
-                <button className="btn btn-ghost btn-sm gap-1" onClick={() => { setTemplateMenuOpen(v => !v); setExportMenuOpen(false); }}>
+                <button ref={templateBtnRef} className="btn btn-ghost btn-sm gap-1" onClick={() => { if (!templateMenuOpen) placeBelow(templateBtnRef, setTemplateTop); setTemplateMenuOpen(v => !v); setExportMenuOpen(false); }}>
                   <Download size={14} />
                   Template
                   <ChevronDown size={12} />
@@ -1188,7 +1203,7 @@ const AdminProposalsPage = () => {
                 {templateMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setTemplateMenuOpen(false)} />
-                    <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2">
+                    <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2 dropdown-center-mobile" style={templateTop != null ? { top: templateTop } : undefined}>
                       <li className="menu-title text-xs">Chọn bộ cột cho file mẫu</li>
                       {excelViews.map(v => (
                         <li key={v.id}>
