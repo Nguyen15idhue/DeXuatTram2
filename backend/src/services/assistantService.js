@@ -369,4 +369,98 @@ async function ask(question, user, rawHistory) {
   }
 }
 
-module.exports = { ask, isEnabled, stripHtml, htmlToStructuredText, redactPII, SYSTEM_PROMPT, sanitizeHistory, detectIntent, selectSections };
+async function askStream(question, user, rawHistory, onDelta) {
+  const q = String(question || '').trim().slice(0, MAX_QUESTION_CHARS);
+  if (q.length < 2) {
+    const err = new Error('Câu hỏi quá ngắn');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!isEnabled()) {
+    const err = new Error('Chatbot chưa được cấu hình');
+    err.statusCode = 503;
+    throw err;
+  }
+  let anyEmitted = false;
+  let acc = '';
+  const emit = (text) => {
+    if (!text) return;
+    anyEmitted = true;
+    const redacted = redactPII(text);
+    acc += redacted;
+    if (onDelta) onDelta(redacted);
+  };
+
+  const role = user ? user.role : null;
+  const history = sanitizeHistory(rawHistory);
+  const historyKey = history.map((h) => `${h.role[0]}:${h.content}`).join('|').slice(0, 1200);
+
+  const version = await articlesVersion();
+  const cacheKey = `assistant:${hashKey(`${q}|${role || 'guest'}|${version}|${historyKey}`)}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached) { emit(cached.answer); return { ...cached, cached: true }; }
+
+  const rewritten = await rewriteQuestion(q, history);
+  const dataResult = await dataTools.lookup(rewritten, user);
+  const dataContext = dataResult ? dataResult.text : null;
+
+  if (dataResult && (dataResult.deny || dataResult.error)) {
+    const result = { answer: dataResult.text, sources: [], knowledge: [], provider: null, latencyMs: 0, fallbackReason: dataResult.deny ? 'data_denied' : 'data_error' };
+    ttlCache.set(cacheKey, result, CACHE_TTL_MS);
+    await log({ question: q, answer: result.answer, sources: [], provider: null, latencyMs: 0, fallbackReason: result.fallbackReason, userId: user?.id });
+    emit(result.answer);
+    return result;
+  }
+
+  const tokens = helpService.tokenize(rewritten).slice(0, 8);
+  const skipDocs = !!(dataResult && dataResult.skipDocs);
+  const model = dataTools.detectModel(helpService.normalizeText(rewritten));
+  const articles = skipDocs ? [] : filterArticlesByModel(await retrieve(rewritten, role), model);
+  const knowledge = dataResult ? [] : (knowledgeService.canUseKnowledge(role) ? await knowledgeService.search(rewritten, 3) : []);
+  const sources = articles.map(toSource);
+
+  if (articles.length === 0 && knowledge.length === 0 && !dataContext) {
+    const msg = 'Mình không tìm thấy nội dung này trong tài liệu hướng dẫn. Bạn thử diễn đạt khác, hoặc xem mục lục trang Hướng dẫn để tìm bài gần nhất nhé.';
+    const result = { answer: msg, sources: [], knowledge: [], provider: null, latencyMs: 0, fallbackReason: null };
+    ttlCache.set(cacheKey, result, CACHE_TTL_MS);
+    await log({ question: q, answer: msg, sources: [], provider: null, latencyMs: 0, fallbackReason: 'no_sources', userId: user?.id });
+    emit(msg);
+    return result;
+  }
+
+  const intent = detectIntent(rewritten);
+  const maxTokens = tokenBudgetFor(intent);
+
+  try {
+    const res = await router.askStreamWithFallback({
+      systemPrompt: SYSTEM_PROMPT,
+      userPrompt: buildUserPrompt({ question: q, articles, knowledge, history, tokens, dataContext }),
+      maxTokens,
+      temperature: 0.2,
+      onDelta: (text) => emit(text),
+    });
+    const result = {
+      answer: acc || redactPII(res.text),
+      sources,
+      knowledge: [],
+      provider: res.provider,
+      model: res.model,
+      latencyMs: res.latencyMs,
+      fallbackReason: res.fallbackReason,
+    };
+    ttlCache.set(cacheKey, result, CACHE_TTL_MS);
+    await log({ question: q, answer: result.answer, sources, provider: res.provider, latencyMs: res.latencyMs, fallbackReason: res.fallbackReason, userId: user?.id });
+    return result;
+  } catch (err) {
+    if (anyEmitted) {
+      return { answer: acc, sources, knowledge: [], provider: null, latencyMs: 0, fallbackReason: JSON.stringify(err.attempts || err.message) };
+    }
+    const msg = dataContext || 'Hệ thống trả lời đang tạm quá tải. Bạn thử lại sau ít phút, hoặc xem trực tiếp các bài liên quan bên dưới.';
+    const result = { answer: msg, sources: dataContext ? [] : sources, knowledge: [], provider: null, latencyMs: 0, fallbackReason: JSON.stringify(err.attempts || err.message) };
+    await log({ question: q, answer: result.answer, sources: result.sources, provider: null, latencyMs: 0, fallbackReason: result.fallbackReason, userId: user?.id });
+    emit(msg);
+    return result;
+  }
+}
+
+module.exports = { ask, askStream, isEnabled, stripHtml, htmlToStructuredText, redactPII, SYSTEM_PROMPT, sanitizeHistory, detectIntent, selectSections };

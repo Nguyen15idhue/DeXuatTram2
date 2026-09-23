@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, Send, X, Sparkles, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import MarkdownText from './MarkdownText';
 
 const SUGGESTIONS = [
@@ -13,6 +13,50 @@ const SUGGESTIONS = [
 
 const HISTORY_TURNS = 10;
 const MAX_STORED_MESSAGES = HISTORY_TURNS * 2;
+
+async function streamAssistant(body, token, onDelta) {
+  const res = await fetch(`${API_URL}/assistant/ask-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    let msg = `HTTP ${res.status}`;
+    try { const e = await res.json(); if (e && e.message) msg = e.message; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let doneData = null;
+  let gotDelta = false;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const raw = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      let event = 'message';
+      let dataStr = '';
+      for (const line of raw.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+      }
+      if (!dataStr) continue;
+      let data;
+      try { data = JSON.parse(dataStr); } catch { continue; }
+      if (event === 'delta') { gotDelta = true; onDelta(data.text || ''); }
+      else if (event === 'done') doneData = data;
+      else if (event === 'error') throw new Error(data.message || 'Lỗi server');
+    }
+  }
+  return { done: doneData, gotDelta };
+}
 
 function SourceCards({ sources }) {
   const hasSrc = Array.isArray(sources) && sources.length > 0;
@@ -98,20 +142,47 @@ export default function AssistantChat({ variant = 'floating' }) {
       .map((m) => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.role === 'user' ? m.text : (m.answer || '') }))
       .filter((m) => m.content)
       .slice(-MAX_STORED_MESSAGES);
-    setMessages((m) => [...m, { role: 'user', text: question }]);
+    setMessages((m) => [...m, { role: 'user', text: question }, { role: 'bot', answer: '', streaming: true }]);
     setLoading(true);
-    try {
-      const body = { question, history };
-      const res = token
-        ? await api.postWithAuth('/assistant/ask', body, token)
-        : await api.post('/assistant/ask', body);
-      if (res && res.success) {
-        setMessages((m) => [...m, { role: 'bot', ...res.data }]);
-      } else {
-        setMessages((m) => [...m, { role: 'bot', answer: (res && res.message) || 'Không trả lời được, thử lại sau.', sources: [] }]);
+    const body = { question, history };
+    const updateLastBot = (patch) => setMessages((m) => {
+      const copy = m.slice();
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].role === 'bot') { copy[i] = { ...copy[i], ...patch(copy[i]) }; break; }
       }
+      return copy;
+    });
+    try {
+      let gotDelta = false;
+      let doneData = null;
+      try {
+        const r = await streamAssistant(body, token, (chunk) => {
+          gotDelta = true;
+          updateLastBot((b) => ({ answer: (b.answer || '') + chunk }));
+        });
+        gotDelta = r.gotDelta;
+        doneData = r.done;
+      } catch (streamErr) {
+        if (!gotDelta) {
+          const res = token
+            ? await api.postWithAuth('/assistant/ask', body, token)
+            : await api.post('/assistant/ask', body);
+          if (res && res.success) doneData = { ...res.data };
+          else throw new Error((res && res.message) || 'Không trả lời được');
+        }
+      }
+      updateLastBot((b) => ({
+        streaming: false,
+        ...(doneData ? {
+          ...(doneData.answer !== undefined ? { answer: doneData.answer } : {}),
+          sources: doneData.sources || [],
+          provider: doneData.provider || null,
+          model: doneData.model || null,
+          cached: !!doneData.cached,
+        } : {}),
+      }));
     } catch {
-      setMessages((m) => [...m, { role: 'bot', answer: 'Lỗi kết nối, thử lại sau.', sources: [] }]);
+      updateLastBot((b) => ({ streaming: false, answer: b.answer || 'Lỗi kết nối, thử lại sau.', sources: b.sources || [] }));
     } finally {
       setLoading(false);
     }

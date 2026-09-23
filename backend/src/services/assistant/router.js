@@ -59,4 +59,47 @@ async function askWithFallback({ systemPrompt, userPrompt, maxTokens, temperatur
   throw err;
 }
 
-module.exports = { askWithFallback, isOpen, trip };
+async function askStreamWithFallback({ systemPrompt, userPrompt, maxTokens, temperature, onDelta }) {
+  const providers = providerRegistry.available().filter((p) => typeof p.streamAsk === 'function');
+  if (providers.length === 0) {
+    const err = new Error('Chua cau hinh provider AI');
+    err.statusCode = 503;
+    throw err;
+  }
+  const attempts = [];
+  for (const provider of providers) {
+    if (isOpen(provider.name)) {
+      attempts.push({ provider: provider.name, skipped: 'circuit_open' });
+      continue;
+    }
+    const started = Date.now();
+    let emitted = false;
+    try {
+      const result = await provider.streamAsk({
+        systemPrompt,
+        userPrompt,
+        maxTokens,
+        temperature,
+        onDelta: (text) => { emitted = true; if (onDelta) onDelta(text); },
+      });
+      return {
+        text: result.text,
+        provider: provider.name,
+        model: result.model,
+        latencyMs: Date.now() - started,
+        fallbackReason: attempts.length > 0 ? JSON.stringify(attempts) : null,
+      };
+    } catch (err) {
+      const fatal = isFatal(err);
+      attempts.push({ provider: provider.name, error: err.message, fatal });
+      if (emitted || err.emitted) throw err;
+      if (!fatal) trip(provider.name, err.message);
+    }
+  }
+  const err = new Error('Tat ca provider AI deu that bai');
+  err.statusCode = 503;
+  err.attempts = attempts;
+  throw err;
+}
+
+module.exports = { askWithFallback, askStreamWithFallback, isOpen, trip };
