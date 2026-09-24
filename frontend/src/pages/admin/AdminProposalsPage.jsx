@@ -15,6 +15,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
+import { ImportSheetsSummary } from '../../components/admin/ImportViewPanel';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -143,14 +144,16 @@ const AdminProposalsPage = () => {
   }, [token]);
 
   const usageLabel = (usage) => {
-    if (usage === 'excel_basic') return 'Excel cơ bản';
+    if (usage === 'excel_basic') return 'Excel Tạo nhanh';
     if (usage === 'excel_full') return 'Excel đầy đủ';
+    if (usage === 'by_model') return 'Theo mô hình';
     if (usage === 'table') return 'Bảng danh sách';
     return usage;
   };
   const usageBadge = (usage) => {
     if (usage === 'excel_basic') return 'badge-info';
     if (usage === 'excel_full') return 'badge-success';
+    if (usage === 'by_model') return 'badge-accent';
     return 'badge-primary';
   };
 
@@ -550,12 +553,31 @@ const AdminProposalsPage = () => {
     }
   };
 
+  const handleExportProposalsByModel = async () => {
+    setExportMenuOpen(false);
+    try {
+      await excelService.exportDataByModel('station_proposals', token, { search, status: filter });
+      setToast({ message: 'Export theo mô hình thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export theo mô hình');
+    }
+  };
+
   const handleDownloadTemplate = async (viewIds) => {
     setTemplateMenuOpen(false);
     try {
       await excelService.downloadTemplate('station_proposals', token, { viewIds: viewIds || undefined });
     } catch {
       setError('Lỗi download template');
+    }
+  };
+
+  const handleDownloadTemplateByModel = async () => {
+    setTemplateMenuOpen(false);
+    try {
+      await excelService.downloadTemplateByModel('station_proposals', token);
+    } catch {
+      setError('Lỗi download template theo mô hình');
     }
   };
 
@@ -583,7 +605,7 @@ const AdminProposalsPage = () => {
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.previewImport('station_proposals', importFile, token, { viewId: viewIdToUse || undefined, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
+      const res = await excelService.previewImport('station_proposals', importFile, token, { viewId: (viewIdToUse && viewIdToUse !== 'by_model') ? viewIdToUse : undefined, usage: viewIdToUse === 'by_model' ? 'by_model' : undefined, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
       if (res.success) {
         setImportFailures([]);
         setImportPreview(res.data);
@@ -1173,7 +1195,7 @@ const AdminProposalsPage = () => {
             {exportMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
-                <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2 dropdown-center-mobile" style={exportTop != null ? { top: exportTop } : undefined}>
+                <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-80 max-w-[90vw] z-50 p-2 dropdown-center-mobile" style={exportTop != null ? { top: exportTop } : undefined}>
                   <li className="menu-title text-xs">Chọn bộ cột để export</li>
                   <li>
                     <button onClick={handleExportProposalsByForm}>
@@ -1181,11 +1203,17 @@ const AdminProposalsPage = () => {
                       <span>Theo form (section/tab, 3 hàng header)</span>
                     </button>
                   </li>
+                  <li>
+                    <button onClick={handleExportProposalsByModel} title="File nhiều sheet: HDSD + 4 sheet NQ/TDT/LK/NQ_LK lọc đúng mô hình + Chưa rõ mô hình" className="items-start text-left">
+                      <span className="badge badge-xs badge-accent shrink-0 mt-0.5">4 sheet</span>
+                      <span className="flex-1 whitespace-normal break-words">Theo mô hình đầu tư (lọc NQ/TDT/LK/NQ_LK + Chưa rõ)</span>
+                    </button>
+                  </li>
                   {excelViews.map(v => (
                     <li key={v.id}>
-                      <button onClick={() => handleExportProposals([v.id])} title={`${v.field_count || 0} cột`}>
-                        <span className={`badge badge-xs ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
-                        <span className="truncate">{v.name}</span>
+                      <button onClick={() => handleExportProposals([v.id])} title={v.name} className="items-start text-left">
+                        <span className={`badge badge-xs shrink-0 mt-0.5 ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
+                        <span className="flex-1 whitespace-normal break-words">{v.name}</span>
                       </button>
                     </li>
                   ))}
@@ -1211,13 +1239,19 @@ const AdminProposalsPage = () => {
                 {templateMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setTemplateMenuOpen(false)} />
-                    <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2 dropdown-center-mobile" style={templateTop != null ? { top: templateTop } : undefined}>
+                    <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-80 max-w-[90vw] z-50 p-2 dropdown-center-mobile" style={templateTop != null ? { top: templateTop } : undefined}>
                       <li className="menu-title text-xs">Chọn bộ cột cho file mẫu</li>
+                      <li>
+                        <button onClick={handleDownloadTemplateByModel} title="File 5 sheet: HDSD + 4 sheet NQ/TDT/LK/NQ_LK — copy 1 sheet sang file mới để import" className="items-start text-left">
+                          <span className="badge badge-xs badge-accent shrink-0 mt-0.5">4 sheet</span>
+                          <span className="flex-1 whitespace-normal break-words">Theo mô hình đầu tư (HDSD + NQ/TDT/LK/NQ_LK)</span>
+                        </button>
+                      </li>
                       {excelViews.map(v => (
                         <li key={v.id}>
-                          <button onClick={() => handleDownloadTemplate([v.id])} title={`${v.field_count || 0} cột`}>
-                            <span className={`badge badge-xs ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
-                            <span className="truncate">{v.name}</span>
+                          <button onClick={() => handleDownloadTemplate([v.id])} title={v.name} className="items-start text-left">
+                            <span className={`badge badge-xs shrink-0 mt-0.5 ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
+                            <span className="flex-1 whitespace-normal break-words">{v.name}</span>
                           </button>
                         </li>
                       ))}
@@ -1860,6 +1894,7 @@ const AdminProposalsPage = () => {
                   </label>
                   <select className="select select-bordered w-full" value={importViewId} onChange={(e) => setImportViewId(e.target.value)}>
                     <option value="">Tự nhận diện theo file (khuyến nghị)</option>
+                    <option value="by_model">Theo mô hình đầu tư (HDSD + NQ/TDT/LK/NQ_LK)</option>
                     {excelViews.map(v => (
                       <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
                     ))}
@@ -1965,15 +2000,18 @@ const AdminProposalsPage = () => {
                           className="select select-bordered select-xs"
                           value={importViewId}
                           onChange={(e) => handleChangeImportView(e.target.value)}
-                          disabled={importLoading}
+                          disabled={importLoading || importPreview.detection.detectedUsage === 'by_model'}
+                          title={importPreview.detection.detectedUsage === 'by_model' ? 'File theo mô hình dùng bộ cột cố định theo tên sheet' : undefined}
                         >
                           <option value="">Tự nhận diện theo file</option>
+                          <option value="by_model">Theo mô hình đầu tư</option>
                           {excelViews.map(v => (
                             <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
                           ))}
                         </select>
                         {importLoading && <span className="loading loading-spinner loading-xs"></span>}
                       </div>
+                      <ImportSheetsSummary sheets={importPreview.sheets} />
                     </div>
                   </div>
                 )}

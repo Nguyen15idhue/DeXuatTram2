@@ -538,6 +538,14 @@ export const excelService = {
     await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${fileStamp()}_export_${entity}.xlsx`);
   },
 
+  async exportDataByModel(entity, token, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) params.append('status', filters.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    await this.downloadBlob(`/admin/excel/export/${entity}/by-model${query}`, token, `${fileStamp()}_export_${entity}_mo_hinh.xlsx`);
+  },
+
   async exportMyProposals(token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
@@ -584,6 +592,11 @@ export const excelService = {
     if (opts.viewIds && opts.viewIds.length) params.append('viewIds', opts.viewIds.join(','));
     if (opts.usage) params.append('usage', opts.usage);
     await this.downloadBlob(`/admin/excel/template?${params.toString()}`, token, `template_${entity}.xlsx`);
+  },
+
+  async downloadTemplateByModel(entity, token) {
+    const params = new URLSearchParams({ entity });
+    await this.downloadBlob(`/admin/excel/template/by-model?${params.toString()}`, token, `template_${entity}_mo_hinh_dau_tu.xlsx`);
   },
 
   previewImport(entity, file, token, opts = {}) {

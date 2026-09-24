@@ -12,6 +12,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
+import { ImportSheetsSummary } from '../../components/admin/ImportViewPanel';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -175,6 +176,14 @@ const MyProposalsPage = () => {
       await excelService.downloadTemplate('station_proposals', token);
     } catch {
       setError('Lỗi download template');
+    }
+  };
+
+  const handleDownloadTemplateByModel = async () => {
+    try {
+      await excelService.downloadTemplateByModel('station_proposals', token);
+    } catch {
+      setError('Lỗi download template theo mô hình');
     }
   };
 
@@ -545,6 +554,11 @@ const MyProposalsPage = () => {
                     <span>File: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                 )}
+                <div className="flex flex-wrap gap-2 text-sm">
+                  <button className="btn btn-ghost btn-xs gap-1" onClick={handleDownloadTemplateByModel} title="File 5 sheet: HDSD + 4 sheet NQ/TDT/LK/NQ_LK — copy 1 sheet sang file mới để import">
+                    Tải file mẫu theo mô hình đầu tư
+                  </button>
+                </div>
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
                   <button className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
@@ -578,6 +592,7 @@ const MyProposalsPage = () => {
                     </div>
                   )}
                 </div>
+                <ImportSheetsSummary sheets={importPreview.sheets} />
                 <ImportErrorList errors={importPreview.errors} failures={importFailures} warnings={importPreview.warnings} />
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>

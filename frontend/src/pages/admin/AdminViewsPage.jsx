@@ -16,7 +16,7 @@ const ENTITIES = [
 const USAGE_OPTIONS = [
   { value: 'table', label: 'Bảng danh sách', badge: 'badge-primary' },
   { value: 'excel_full', label: 'Excel đầy đủ', badge: 'badge-success' },
-  { value: 'excel_basic', label: 'Excel cơ bản', badge: 'badge-info' },
+  { value: 'excel_basic', label: 'Excel Tạo nhanh', badge: 'badge-info' },
 ];
 
 const usageMeta = (usage) => USAGE_OPTIONS.find(u => u.value === usage) || { value: usage, label: usage, badge: 'badge-ghost' };
@@ -114,7 +114,7 @@ const AdminViewsPage = () => {
         <h1 className="text-2xl font-bold">Views Manager</h1>
       </div>
       <p className="text-sm text-base-content/60 mb-6">
-        Mỗi entity có 3 loại view: <b>Bảng danh sách</b> (hiển thị bảng), <b>Excel đầy đủ</b> và <b>Excel cơ bản</b> (dùng cho Template/Import/Export).
+        Mỗi entity có 3 loại view: <b>Bảng danh sách</b> (hiển thị bảng), <b>Excel đầy đủ</b> và <b>Excel Tạo nhanh</b> (dùng cho Template/Import/Export).
         View có ổ khóa là view hệ thống — chỉ sửa được, không xóa.
       </p>
 

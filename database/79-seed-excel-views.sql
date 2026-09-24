@@ -14,7 +14,7 @@ FROM (
 WHERE NOT EXISTS (SELECT 1 FROM views v WHERE v.entity = e.entity AND v.`usage` = 'excel_full');
 
 INSERT INTO views (entity, name, description, status, `usage`, is_locked)
-SELECT e.entity, CONCAT('Excel ', e.label, ' – cơ bản'), 'Chỉ các cột cốt lõi', 'active', 'excel_basic', 1
+SELECT e.entity, CASE WHEN e.entity = 'station_proposals' THEN 'Excel Đề xuất - Tạo nhanh' ELSE CONCAT('Excel ', e.label, ' – cơ bản') END, 'Chỉ các cột cốt lõi', 'active', 'excel_basic', 1
 FROM (
   SELECT 'stations' AS entity, 'Trạm' AS label
   UNION ALL SELECT 'station_proposals', 'Đề xuất'

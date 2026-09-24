@@ -134,6 +134,36 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
 
 /**
  * @swagger
+ * /api/admin/excel/export/station_proposals/by-model:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất đề xuất theo mô hình đầu tư (dynamic columns)
+ *     description: Admin/Super xuất tất cả; Sales xuất nhánh mình (scope role tự động). File gồm sheet HDSD + 4 sheet NQ/TDT/LK/NQ_LK (chỉ đề xuất đúng mô hình, cột theo sheet template) + sheet Chưa rõ mô hình.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, địa chỉ, người tạo (bỏ trống = tất cả)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/export/station_proposals/by-model', requireAuth, requireUserManager, excelService.exportProposalsByModel);
+
+/**
+ * @swagger
  * /api/admin/excel/template:
  *   get:
  *     tags: [Admin - Excel]
@@ -176,6 +206,35 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *         description: Không có quyền Admin
  */
 router.get('/template', requireAuth, requireUserManager, excelService.getTemplate);
+
+/**
+ * @swagger
+ * /api/admin/excel/template/by-model:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Tải file template import đề xuất theo mô hình đầu tư
+ *     description: File 5 sheet — `HDSD` (hướng dẫn) + 4 sheet `Mô hình NQ/TDT/LK/NQ_LK` (cột chung + cột riêng từng mô hình). Chỉ hỗ trợ `entity=station_proposals`. Import trực tiếp file này (tự gán mô hình theo tên sheet) hoặc copy 1 sheet sang file mới rồi import.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [station_proposals]
+ *         description: Chỉ nhận station_proposals
+ *     responses:
+ *       200:
+ *         description: File Excel template 5 sheet
+ *       400:
+ *         description: Entity không hỗ trợ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/template/by-model', requireAuth, requireUserManager, excelService.getTemplateByModel);
 
 /**
  * @swagger

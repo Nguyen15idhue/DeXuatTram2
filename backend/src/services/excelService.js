@@ -88,7 +88,7 @@ const HEADER_STYLE = {
   }
 };
 
-const USAGE_LABELS = { table: 'bảng danh sách', excel_full: 'đầy đủ', excel_basic: 'cơ bản' };
+const USAGE_LABELS = { table: 'bảng danh sách', excel_full: 'đầy đủ', excel_basic: 'tạo nhanh' };
 
 const GUIDE_MARKER = '#HDSD';
 const MAX_GUIDE_OPTIONS = 30;
@@ -195,7 +195,7 @@ async function buildExportColumns(entity, view) {
     columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type });
   });
 
-  // View 'cơ bản' = CHỈ các cột trong view (không nối thêm field còn lại)
+  // View 'tạo nhanh' = CHỈ các cột trong view (không nối thêm field còn lại)
   if (view.usage === 'excel_basic') return columns;
 
   const allFieldsResult = await pool.query(
@@ -1241,13 +1241,43 @@ exports.importPreviewDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'File Excel trống hoặc không có dữ liệu' });
     }
 
-    // --- Nhận diện bộ cột + cho phép override bằng viewId/usage ---
+    const modelSheets = entity === 'station_proposals' ? detectModelSheets(workbook) : [];
+    const forceByModel = entity === 'station_proposals' && req.query.usage === 'by_model' && !req.query.viewId;
+    if (forceByModel && modelSheets.length === 0) {
+      return res.status(400).json({ success: false, message: 'File không có sheet theo mô hình (Mô hình NQ/TDT/LK/NQ_LK). Hãy dùng file mẫu theo mô hình.' });
+    }
+
+    let view = null;
+    let detection = null;
+    let columns = [];
+    let sheets = null;
+    const validRows = [];
+    const errors = [];
+    const previewWarnings = [];
+
+    if (modelSheets.length > 0) {
+      // --- File đa sheet theo mô hình: parse từng sheet, tự gán mô hình theo tên sheet ---
+      const multi = await previewModelSheets(modelSheets, entity);
+      if (forceByModel) multi.detection.source = 'override';
+      columns = multi.columns;
+      detection = multi.detection;
+      sheets = multi.sheets;
+      validRows.push(...multi.validRows);
+      errors.push(...multi.errors);
+      previewWarnings.push(...multi.previewWarnings);
+    } else {
+      const firstSheetName = String(sheet.name || '').trim();
+      const firstCellText = String((sheet.getRow(1).getCell(1).value) ?? '').trim().toLowerCase();
+      if (/^hdsd$/i.test(firstSheetName) || firstCellText.startsWith('hướng dẫn import')) {
+        return res.status(400).json({ success: false, message: 'Đây là file template tổng (sheet HDSD) nhưng không có sheet mô hình nào. Hãy tải lại file mẫu theo mô hình rồi import.' });
+      }
+
+      // --- Nhận diện bộ cột + cho phép override bằng viewId/usage ---
     const fileLabels = getFileHeaderLabels(sheet.getRow(1));
     const candidates = await detectViewForFile(entity, fileLabels);
     const best = candidates[0] || null;
     const confident = !!best && best.coverage >= 0.5;
 
-    let view = null;
     let detectionSource = 'default';
     if (req.query.viewId) {
       view = await resolveView(entity, Number(req.query.viewId), null);
@@ -1268,7 +1298,7 @@ exports.importPreviewDynamic = async (req, res) => {
 
     const viewStats = await computeViewStats(entity, view, fileLabels);
 
-    const detection = {
+    detection = {
       detectedViewId: view.id,
       detectedViewName: view.name,
       detectedUsage: view.usage,
@@ -1287,7 +1317,7 @@ exports.importPreviewDynamic = async (req, res) => {
     };
 
     const fieldDefs = await getFieldDefsForView(entity, view);
-    const columns = buildImportColumns(entity, fieldDefs);
+    columns = buildImportColumns(entity, fieldDefs);
     await attachSelectOptions(columns);
 
     const headerColumns = entity === 'station_proposals'
@@ -1298,9 +1328,6 @@ exports.importPreviewDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: `Lỗi header: ${headerErrors.join('; ')}`, data: { detection } });
     }
 
-    const validRows = [];
-    const errors = [];
-    const previewWarnings = [];
     const headerMap = buildHeaderMap(sheet.getRow(1), columns);
     let importUserMap = null;
     if (columns.some(c => c.type === 'user')) {
@@ -1330,6 +1357,7 @@ exports.importPreviewDynamic = async (req, res) => {
         });
       }
     });
+    } // end else (single-sheet)
 
     if (entity === 'station_proposals' || entity === 'stations') {
       const kept = [];
@@ -1442,10 +1470,11 @@ exports.importPreviewDynamic = async (req, res) => {
     res.json({
       success: true,
       data: {
-        viewId: view.id,
-        viewName: view.name,
-        viewUsage: view.usage,
+        viewId: view ? view.id : null,
+        viewName: view ? view.name : 'Theo mô hình đầu tư',
+        viewUsage: view ? view.usage : 'by_model',
         detection,
+        sheets,
         columns: columns.map(c => ({ key: c.key, label: c.label, type: c.type })),
         totalRows: validRows.length + errors.length,
         validRows: validRows.length,
@@ -1815,6 +1844,90 @@ exports.exportUsers = async (req, res) => {
   return exports.exportDynamic(req, res);
 };
 
+// Export de xuat theo mo hinh dau tu: 5 sheet = HDSD + 4 sheet mo hinh (loc du lieu theo mo hinh) + sheet 'Chua ro mo hinh'.
+exports.exportProposalsByModel = async (req, res) => {
+  try {
+    const { search = '', status = '' } = req.query;
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
+    if (denySalesEntity(req, res, 'station_proposals')) return;
+
+    let scopeBranchUserIds = req.query.scopeBranchUserIds;
+    if (req.user.role === 'SALES') {
+      const [rows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [req.user.id, req.user.id]);
+      scopeBranchUserIds = rows.map(r => r.id).join(',');
+    }
+
+    const [defs] = await pool.query(
+      "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = 'station_proposals' AND status = 'active' ORDER BY id"
+    );
+    if (defs.length === 0) {
+      return res.status(400).json({ success: false, message: 'Chưa có field cho entity này' });
+    }
+    const allColumns = buildImportColumns('station_proposals', defs);
+
+    let userMap = null;
+    if (allColumns.some(c => c.type === 'user')) {
+      try {
+        const m = await getUserLabelMap();
+        userMap = m.byId;
+      } catch { /* silent */ }
+    }
+
+    const [rows] = await getAllData('station_proposals', { search, status, scopeBranchUserIds });
+    const groups = { NQ: [], TDT: [], LK: [], NQ_LK: [], UNKNOWN: [] };
+    rows.forEach((r) => {
+      let m = '';
+      try {
+        const c = r.custom_data ? (typeof r.custom_data === 'string' ? JSON.parse(r.custom_data) : r.custom_data) : {};
+        m = String(c.mo_hinh_dau_tu || '').toUpperCase();
+      } catch { /* silent */ }
+      if (groups[m]) groups[m].push(r);
+      else groups.UNKNOWN.push(r);
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const usedNames = new Set(['hdsd']);
+    const info = [
+      ...MODEL_TEMPLATE_SHEETS.map(m => ({ name: m.sheet, count: groups[m.model].length })),
+      { name: 'Chưa rõ mô hình', count: groups.UNKNOWN.length }
+    ];
+    const infoSheet = workbook.addWorksheet('HDSD');
+    infoSheet.addRow(['XUẤT ĐỀ XUẤT THEO MÔ HÌNH ĐẦU TƯ']).getCell(1).font = { bold: true, size: 14 };
+    infoSheet.addRow([`Tổng ${rows.length} đề xuất (lọc hiện tại). Mỗi sheet bên dưới chỉ chứa đề xuất đúng mô hình đó.`]);
+    info.forEach(i => infoSheet.addRow([`• ${i.name}: ${i.count} dòng`]));
+    infoSheet.getColumn(1).width = 110;
+
+    for (const m of MODEL_TEMPLATE_SHEETS) {
+      const cols = columnsForModel(allColumns, m.model);
+      const sheet = workbook.addWorksheet(safeSheetName(m.sheet, usedNames));
+      sheet.addRow(cols.map(c => c.label));
+      styleHeaderRow(sheet);
+      groups[m.model].forEach((row, idx) => {
+        sheet.addRow(exportRowToValues(row, cols, idx, token, userMap));
+      });
+      autoWidthColumns(sheet, cols);
+    }
+
+    const unknownCols = [{ key: '_stt', label: 'STT', type: 'number', source_type: 'system' },
+      ...allColumns.filter(c => c.key !== '_stt' && modelOfProposalColumn(c.key) === 'COMMON')];
+    const unknownSheet = workbook.addWorksheet(safeSheetName('Chưa rõ mô hình', usedNames));
+    unknownSheet.addRow(unknownCols.map(c => c.label));
+    styleHeaderRow(unknownSheet);
+    groups.UNKNOWN.forEach((row, idx) => {
+      unknownSheet.addRow(exportRowToValues(row, unknownCols, idx, token, userMap));
+    });
+    autoWidthColumns(unknownSheet, unknownCols);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileStamp()}_export_station_proposals_mo_hinh.xlsx`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export proposals by model error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 const SALES_ALLOWED_IMPORT_ENTITIES = new Set(['station_proposals']);
 
 const denySalesEntity = (req, res, entity) => {
@@ -1847,6 +1960,218 @@ exports.getTemplate = async (req, res) => {
   if (!req.query.entity) req.query.entity = 'stations';
   if (denySalesEntity(req, res, req.query.entity)) return;
   return exports.getTemplateDynamic(req, res);
+};
+
+// Template import de xuat theo mo hinh dau tu: 5 sheet = HDSD + 4 sheet (NQ/TDT/LK/NQ_LK).
+// Moi sheet mo hinh gom cot chung + cot rieng cua mo hinh do.
+// Nguoi dung copy 1 sheet mo hinh sang file Excel moi roi import file moi (khong import truc tiep file nay).
+const MODEL_TEMPLATE_SHEETS = [
+  { model: 'NQ', sheet: 'Mô hình NQ', desc: 'Nhượng quyền' },
+  { model: 'TDT', sheet: 'Mô hình TDT', desc: 'Tự đầu tư' },
+  { model: 'LK', sheet: 'Mô hình LK', desc: 'Liên kết' },
+  { model: 'NQ_LK', sheet: 'Mô hình NQ_LK', desc: 'Nhượng quyền + Liên kết' }
+];
+
+const NQLK_ONLY_FIELDS = new Set([
+  'chinh_sach_nq', 'loai_tru_nq',
+  'chinh_sach_lk', 'loai_tru_lk', 'chi_phi_lk', 'dat_coc', 'ghi_chu_dat_coc', 'tong_chi_phi'
+]);
+
+function modelOfProposalColumn(key) {
+  if (NQLK_ONLY_FIELDS.has(key)) return 'NQLK';
+  if (key.startsWith('tdt_')) return 'TDT';
+  if (key.startsWith('lk_')) return 'LK';
+  if (key.startsWith('nq_')) return 'NQ';
+  return 'COMMON';
+}
+
+function columnsForModel(columns, model) {
+  return columns.filter((c) => {
+    if (c.key === '_stt') return true;
+    const g = modelOfProposalColumn(c.key);
+    if (g === 'COMMON') return true;
+    if (model === 'NQ_LK') return g === 'NQ' || g === 'LK' || g === 'NQLK';
+    return g === model;
+  });
+}
+
+function normSheetName(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function modelFromSheetName(name) {
+  const n = normSheetName(name);
+  if (n === 'hdsd') return null;
+  if (n.includes('nq_lk') || (n.includes('nq') && n.includes('lk'))) return 'NQ_LK';
+  if (n.includes('tdt') || n.includes('tu dau tu')) return 'TDT';
+  if (n.includes('lk') || n.includes('lien ket')) return 'LK';
+  if (n.includes('nq') || n.includes('nhuong quyen')) return 'NQ';
+  return null;
+}
+
+function detectModelSheets(workbook) {
+  const out = [];
+  workbook.worksheets.forEach((sheet) => {
+    const model = modelFromSheetName(sheet.name);
+    if (model) out.push({ sheet, model });
+  });
+  return out;
+}
+
+// Parse file import de xuat đa sheet theo mo hinh: moi sheet dung bo cot cua mo hinh do,
+// mo_hinh_dau_tu tu gan theo ten sheet (ghi de gia tri trong file).
+async function previewModelSheets(modelSheets, entity) {
+  const [defs] = await pool.query(
+    "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = ? AND status = 'active' ORDER BY id",
+    [entity]
+  );
+  const allColumns = buildImportColumns(entity, defs);
+  await attachSelectOptions(allColumns);
+
+  let importUserMap = null;
+  if (allColumns.some(c => c.type === 'user')) {
+    try {
+      importUserMap = await getUserLabelMap();
+    } catch { /* silent */ }
+  }
+
+  const validRows = [];
+  const errors = [];
+  const previewWarnings = [];
+  const sheets = [];
+
+  for (const { sheet, model } of modelSheets) {
+    const sheetCols = columnsForModel(allColumns, model)
+      .map(c => (c.key === 'mo_hinh_dau_tu' ? { ...c, required: false } : c));
+    const headerColumns = sheetCols.filter(c => c.key !== 'ma_tinh' && c.key !== 'vung_mien');
+    const headerErrors = validateHeaders(sheet.getRow(1), headerColumns, entity);
+    let sValid = 0;
+    let sErr = 0;
+    if (headerErrors.length > 0) {
+      const msg = `Lỗi header: ${headerErrors.join('; ')}`;
+      errors.push({ row: `${sheet.name}!1`, sheet: sheet.name, model, errors: [msg] });
+      sheets.push({ sheet: sheet.name, model, totalRows: 0, validRows: 0, errorRows: 0, headerError: msg });
+      continue;
+    }
+    const headerMap = buildHeaderMap(sheet.getRow(1), sheetCols);
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const firstCell = row.getCell(1) ? row.getCell(1).value : '';
+      if (String(firstCell == null ? '' : firstCell).trim().startsWith('#')) return;
+      const isEmpty = row.values.every((v, i) => i === 0 || v == null || v === '');
+      if (isEmpty) return;
+      const parsed = parseExcelRow(row, sheetCols, entity, headerMap, importUserMap);
+      if (parsed.fixedData) delete parsed.fixedData.mo_hinh_dau_tu;
+      if (parsed.dynamicData) parsed.dynamicData.mo_hinh_dau_tu = model;
+      const tag = `${sheet.name}#${rowNumber}`;
+      if (parsed.errors.length > 0) {
+        errors.push({ row: tag, sheet: sheet.name, model, errors: parsed.errors });
+        sErr++;
+      } else {
+        validRows.push({ rowNumber: tag, sheet: sheet.name, model, fixedData: parsed.fixedData, dynamicData: parsed.dynamicData });
+        sValid++;
+      }
+    });
+    sheets.push({ sheet: sheet.name, model, totalRows: sValid + sErr, validRows: sValid, errorRows: sErr });
+  }
+
+  const detection = {
+    detectedViewId: null,
+    detectedViewName: 'Theo mô hình đầu tư (tự gán theo tên sheet)',
+    detectedUsage: 'by_model',
+    source: 'auto',
+    confident: validRows.length > 0,
+    score: 1,
+    coverage: 1,
+    autoDetectedViewId: null,
+    autoDetectedViewName: null,
+    candidates: [],
+    unmatchedFileColumns: [],
+    missingViewColumns: [],
+    omittedFields: [],
+    totalViewColumns: allColumns.length,
+    totalFileColumns: 0
+  };
+  return { validRows, errors, previewWarnings, sheets, columns: allColumns, detection };
+}
+
+function addModelSheetGuides(sheet, columns, model) {
+  sheet.addRow(columns.map(c => c.label));
+  styleHeaderRow(sheet);
+  const guides = columns.map((c) => {
+    if (c.key === 'mo_hinh_dau_tu') return `[Bắt buộc] Nhập đúng ${model} cho sheet này`;
+    return buildColumnGuide(c, 'station_proposals');
+  });
+  const guideRow = sheet.addRow(guides);
+  styleGuideRow(guideRow, columns.length);
+  autoWidthColumns(sheet, columns);
+}
+
+function addGuideSheet(workbook, modelInfos) {
+  const sheet = workbook.addWorksheet('HDSD');
+  const lines = [
+    'HƯỚNG DẪN IMPORT ĐỀ XUẤT THEO MÔ HÌNH ĐẦU TƯ',
+    '',
+    'File này gồm 5 sheet: HDSD (sheet này) và 4 sheet dữ liệu theo mô hình đầu tư.',
+    ...modelInfos.map(m => `• ${m.sheet} (${m.desc}): ${m.count} cột`),
+    '',
+    'CÁCH IMPORT (chọn 1 trong 2):',
+    'A. Import trực tiếp file này: vào trang Đề xuất → Import → chọn file → hệ thống tự đọc 4 sheet mô hình (bỏ qua HDSD), tự gán mô hình theo tên sheet.',
+    'B. Copy 1 sheet sang file mới: chuột phải vào tên sheet tương ứng → "Move or Copy..." → tick "Create a copy" → "To book: (new book)" → OK, rồi import file mới.',
+    'Trong file import: giữ nguyên hàng 1 (tiêu đề) và hàng 2 (hướng dẫn, bắt đầu bằng #HDSD), nhập dữ liệu từ hàng 3 trở đi.',
+    'Cột Mô hình đầu tư được tự gán theo sheet — không cần nhập (nhập sai cũng bị ghi đè).',
+    '',
+    'LƯU Ý:',
+    '• Cột [Bắt buộc] phải nhập, cột formula/file/bảng nhiều dòng thì bỏ trống.',
+    '• Dòng có ô đầu tiên bắt đầu bằng # sẽ bị bỏ qua khi import.'
+  ];
+  lines.forEach((t, i) => {
+    const row = sheet.addRow([t]);
+    if (i === 0) row.getCell(1).font = { bold: true, size: 14 };
+    else if (/^[A-ZÀ-Ỹ ]+:$/.test(t)) row.getCell(1).font = { bold: true, size: 11 };
+    row.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+  });
+  sheet.getColumn(1).width = 130;
+}
+
+exports.getTemplateByModel = async (req, res) => {
+  try {
+    const { entity } = req.query;
+    if (entity !== 'station_proposals') {
+      return res.status(400).json({ success: false, message: 'Template theo mô hình đầu tư chỉ hỗ trợ đề xuất' });
+    }
+    if (denySalesEntity(req, res, entity)) return;
+
+    const [rows] = await pool.query(
+      "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = ? AND status = 'active' ORDER BY id",
+      [entity]
+    );
+    if (rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'Chưa có field cho entity này' });
+    }
+    const allColumns = buildImportColumns(entity, rows);
+    await attachSelectOptions(allColumns);
+
+    const workbook = new ExcelJS.Workbook();
+    const usedNames = new Set(['hdsd']);
+    const modelCols = MODEL_TEMPLATE_SHEETS.map((m) => ({
+      ...m,
+      cols: columnsForModel(allColumns, m.model)
+    }));
+    addGuideSheet(workbook, modelCols.map(m => ({ ...m, count: m.cols.length })));
+    for (const m of modelCols) {
+      const sheet = workbook.addWorksheet(safeSheetName(m.sheet, usedNames));
+      addModelSheetGuides(sheet, m.cols, m.model);
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=template_station_proposals_mo_hinh_dau_tu.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Get template by model error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
 };
 
 exports.importPreview = async (req, res) => {

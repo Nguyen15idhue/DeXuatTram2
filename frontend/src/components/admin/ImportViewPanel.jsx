@@ -1,12 +1,38 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { usageLabel, usageBadge } from './ViewPickerMenu';
 
-const ImportViewPanel = ({ detection, views, value, onChange, loading }) => {
+export const ImportSheetsSummary = ({ sheets }) => {
+  if (!sheets || sheets.length === 0) return null;
+  return (
+    <div className="mt-2 overflow-x-auto">
+      <table className="table table-xs w-full">
+        <thead>
+          <tr><th>Sheet</th><th>Mô hình</th><th className="text-right">Tổng dòng</th><th className="text-right">Hợp lệ</th><th className="text-right">Lỗi</th></tr>
+        </thead>
+        <tbody>
+          {sheets.map((s) => (
+            <tr key={s.sheet}>
+              <td>{s.sheet}</td>
+              <td><span className="badge badge-xs badge-accent">{s.model}</span></td>
+              <td className="text-right">{s.totalRows}</td>
+              <td className="text-right text-success">{s.validRows}</td>
+              <td className="text-right text-error">{s.errorRows}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs opacity-70 mt-1">Mô hình đầu tư tự gán theo tên sheet — không cần nhập cột Mô hình.</p>
+    </div>
+  );
+};
+
+const ImportViewPanel = ({ detection, views, value, onChange, loading, sheets }) => {
   if (!detection) return null;
 
   const unmatched = detection.unmatchedFileColumns || [];
   const omitted = detection.omittedFields || [];
   const omittedRequired = omitted.filter(f => f.required);
+  const isByModel = detection.detectedUsage === 'by_model';
   const tone = !detection.confident ? 'alert-error' : ((unmatched.length > 0 || omitted.length > 0) ? 'alert-warning' : 'alert-success');
 
   return (
@@ -47,7 +73,8 @@ const ImportViewPanel = ({ detection, views, value, onChange, loading }) => {
             className="select select-bordered select-xs"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            disabled={loading}
+            disabled={loading || isByModel}
+            title={isByModel ? 'File theo mô hình dùng bộ cột cố định theo tên sheet' : undefined}
           >
             <option value="">Tự nhận diện theo file</option>
             {views.map(v => (
@@ -56,6 +83,7 @@ const ImportViewPanel = ({ detection, views, value, onChange, loading }) => {
           </select>
           {loading && <span className="loading loading-spinner loading-xs"></span>}
         </div>
+        <ImportSheetsSummary sheets={sheets} />
       </div>
     </div>
   );

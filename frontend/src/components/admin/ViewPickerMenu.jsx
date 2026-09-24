@@ -2,8 +2,9 @@ import { useState, useRef } from 'react';
 import { Download, ChevronDown } from 'lucide-react';
 
 export const usageLabel = (u) => {
-  if (u === 'excel_basic') return 'Excel cơ bản';
+  if (u === 'excel_basic') return 'Excel Tạo nhanh';
   if (u === 'excel_full') return 'Excel đầy đủ';
+  if (u === 'by_model') return 'Theo mô hình';
   if (u === 'table') return 'Bảng danh sách';
   return u;
 };
@@ -11,6 +12,7 @@ export const usageLabel = (u) => {
 export const usageBadge = (u) => {
   if (u === 'excel_basic') return 'badge-info';
   if (u === 'excel_full') return 'badge-success';
+  if (u === 'by_model') return 'badge-accent';
   return 'badge-primary';
 };
 
@@ -38,7 +40,7 @@ const ViewPickerMenu = ({ label, views, onPick, onPickForm, title = 'Chọn bộ
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-72 z-50 p-2 dropdown-center-mobile" style={top != null ? { top } : undefined}>
+          <ul className="absolute right-0 mt-1 menu bg-base-100 rounded-box shadow-lg border border-base-300 w-80 max-w-[90vw] z-50 p-2 dropdown-center-mobile" style={top != null ? { top } : undefined}>
             <li className="menu-title text-xs">{title}</li>
             {onPickForm && (
               <li>
@@ -51,11 +53,12 @@ const ViewPickerMenu = ({ label, views, onPick, onPickForm, title = 'Chọn bộ
             {views.map(v => (
               <li key={v.id}>
                 <button
-                  title={`${v.field_count || 0} cột`}
+                  title={v.name}
+                  className="items-start text-left"
                   onClick={() => { setOpen(false); onPick([v.id]); }}
                 >
-                  <span className={`badge badge-xs ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
-                  <span className="truncate">{v.name}</span>
+                  <span className={`badge badge-xs shrink-0 mt-0.5 ${usageBadge(v.usage)}`}>{usageLabel(v.usage)}</span>
+                  <span className="flex-1 whitespace-normal break-words">{v.name}</span>
                 </button>
               </li>
             ))}
