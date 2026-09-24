@@ -9,6 +9,7 @@ import EmptyState from '../EmptyState';
 import ErrorMessage from '../ErrorMessage';
 import Pagination from '../Pagination';
 import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
+import { getColumnSource } from '../../utils/tableColumnSource';
 import { MARKER_ICON_GROUPS, isValidMarkerIcon, notifyMarkerIconsChanged } from '../../utils/mapMarkerIcons';
 import MarkerIcon from '../MarkerIcon';
 import FormulaEditor from '../dynamic/FormulaEditor';
@@ -874,7 +875,12 @@ const FieldManager = () => {
                       const expanded = !!expandedTblCols[idx];
                       const tblCols = form.table_config.columns || [];
                       const badges = [];
-                      if (col.data_list_id) badges.push(['DL', '#e0e7ff', '#3730a3']);
+                      if (col.column_type === 'select') {
+                        const baseFld = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                        const effSrc = getColumnSource(col, baseFld);
+                        if (effSrc === 'datalist') badges.push(['DL', '#e0e7ff', '#3730a3']);
+                        else if (effSrc === 'inherit') badges.push(['Kế thừa', '#e0f2fe', '#075985']);
+                      }
                       if (!col.data_list_id && (col.data_list_column || col.parent_column)) badges.push(['DL ẩn', '#fef3c7', '#92400e']);
                       if (col.parent_column) badges.push(['Cascade', '#dcfce7', '#166534']);
                       if (col.data_link && col.data_link.enabled) badges.push(['DL-Link', '#e0f2fe', '#075985']);
@@ -972,23 +978,102 @@ const FieldManager = () => {
                             />
                           </div>
                         )}
-                        {!col.field_id && (col.column_type === 'select') && !col.data_list_id && (
+                        {(col.column_type === 'select') && (() => {
+                          const baseFld = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                          const src = getColumnSource(col, baseFld);
+                          const setSource = (next) => {
+                            const newCols = [...(form.table_config.columns || [])];
+                            const cur = { ...newCols[idx] };
+                            const linkObj = (cur.data_link && typeof cur.data_link === 'object') ? { ...cur.data_link } : null;
+                            if (next === 'manual') {
+                              delete cur.data_list_id; delete cur.data_list_column; delete cur.data_list_label_column; delete cur.parent_column;
+                              cur.options_source = 'manual';
+                              if (linkObj) cur.data_link = { ...linkObj, enabled: false };
+                            } else if (next === 'datalist') {
+                              cur.options_source = 'datalist';
+                              if (!cur.data_list_id && dataLists.length > 0) {
+                                cur.data_list_id = dataLists[0].id;
+                                const cfg = Array.isArray(dataLists[0].columns_config) ? dataLists[0].columns_config : [];
+                                if (cfg.length > 0 && !cur.data_list_column) {
+                                  cur.data_list_column = cfg[0].key;
+                                  cur.data_list_label_column = cfg[0].key;
+                                }
+                              }
+                              cur.data_link = { ...(linkObj || {}), enabled: true };
+                            } else if (next === 'inherit') {
+                              delete cur.data_list_id; delete cur.data_list_column; delete cur.data_list_label_column;
+                              cur.options_source = 'inherit';
+                            }
+                            newCols[idx] = cur;
+                            updateForm('table_config', { ...form.table_config, columns: newCols });
+                          };
+                          const selDl = dataLists.find(dl => dl.id === Number(col.data_list_id));
+                          const selDlCols = selDl && Array.isArray(selDl.columns_config) ? selDl.columns_config : [];
+                          const baseDl = baseFld && baseFld.data_list_id ? dataLists.find(dl => dl.id === Number(baseFld.data_list_id)) : null;
+                          return (
                           <div style={{ marginTop: 4, fontSize: 12 }}>
-                            <label>Options (cách nhau bởi dấu phẩy):</label>
-                            <input type="text" className="form-control" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
-                              onChange={(e) => {
-                                const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                                const newCols = [...(form.table_config.columns || [])];
-                                newCols[idx] = { ...newCols[idx], options: opts };
-                                updateForm('table_config', { ...form.table_config, columns: newCols });
-                              }} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }} />
+                            <label>Nguồn options
+                              <select value={src} onChange={(e) => setSource(e.target.value)} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                <option value="manual">Thủ công (nhập tay)</option>
+                                <option value="datalist">Từ DataList</option>
+                                {col.field_id
+                                  ? <option value="inherit">Theo field liên kết</option>
+                                  : <option value="inherit" disabled>Theo field liên kết (cần gắn field ở trên)</option>}
+                              </select>
+                            </label>
+                            {src === 'manual' && (
+                              <>
+                                <label style={{ marginTop: 4 }}>Options (cách nhau bởi dấu phẩy):</label>
+                                <input type="text" className="form-control" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
+                                  onChange={(e) => {
+                                    const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                    const newCols = [...(form.table_config.columns || [])];
+                                    newCols[idx] = { ...newCols[idx], options: opts };
+                                    updateForm('table_config', { ...form.table_config, columns: newCols });
+                                  }} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }} />
+                              </>
+                            )}
+                            {src === 'datalist' && (
+                              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                                <label style={{ flex: 1, minWidth: 140 }}>DataList
+                                  <select value={col.data_list_id || ''} onChange={(e) => {
+                                    const newCols = [...(form.table_config.columns || [])];
+                                    const patch = { ...newCols[idx], data_list_id: e.target.value ? parseInt(e.target.value) : null, options_source: 'datalist' };
+                                    const dl = dataLists.find(d => d.id === parseInt(e.target.value));
+                                    const cfg = dl && Array.isArray(dl.columns_config) ? dl.columns_config : [];
+                                    if (cfg.length > 0) {
+                                      if (!cfg.some(c => c.key === patch.data_list_column)) patch.data_list_column = cfg[0].key;
+                                      if (!cfg.some(c => c.key === patch.data_list_label_column)) patch.data_list_label_column = patch.data_list_column;
+                                    }
+                                    newCols[idx] = patch;
+                                    updateForm('table_config', { ...form.table_config, columns: newCols });
+                                  }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                    <option value="">-- Chọn --</option>
+                                    {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
+                                  </select>
+                                </label>
+                                <label style={{ flex: 1, minWidth: 140 }}>Cột giá trị
+                                  <select value={col.data_list_column || ''} onChange={(e) => {
+                                    const newCols = [...(form.table_config.columns || [])];
+                                    newCols[idx] = { ...newCols[idx], data_list_column: e.target.value || null };
+                                    updateForm('table_config', { ...form.table_config, columns: newCols });
+                                  }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                    <option value="">-- Chọn --</option>
+                                    {selDlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                  </select>
+                                </label>
+                              </div>
+                            )}
+                            {src === 'inherit' && (
+                              <div style={{ marginTop: 4, fontSize: 11, color: baseDl ? '#075985' : '#92400e' }}>
+                                {baseDl
+                                  ? `Đang kế thừa options từ field "${baseFld.label || baseFld.key}" → DataList "${baseDl.name}".`
+                                  : `Field "${(baseFld && (baseFld.label || baseFld.key)) || ''}" gốc nhập tay — cột này cũng nhập tay.`}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {!col.field_id && (col.column_type === 'select') && !!col.data_list_id && (
-                          <div style={{ marginTop: 4, fontSize: 11, color: '#888' }}>
-                            Đang lấy options từ DataList — ô nhập tay đã ẩn.
-                          </div>
-                        )}
+                          );
+                        })()}
                         <div style={{ marginTop: 4, fontSize: 12 }}>
                           <label style={{ fontWeight: 500 }}>Formula (tự tính — để trống nếu nhập tay):</label>
                           <input type="text" className="form-control" placeholder={`VD: ${col.key || 'col_a'} * ${col.key || 'col_b'}`}
@@ -1024,16 +1109,24 @@ const FieldManager = () => {
                             </select>
                           </div>
                         )}
+                        {(() => {
+                          const lb0 = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                          if (col.column_type === 'select' && getColumnSource(col, lb0) !== 'datalist') return null;
+                          return (
                         <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e2e8f0' }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Liên kết dữ liệu</div>
                           <div style={GRID2_STYLE}>
                             {(form.table_config.columns || []).length > 1 && !col.formula && (() => {
                               const link = col.data_link && typeof col.data_link === 'object' ? col.data_link : null;
                               const enabled = !!(link && link.enabled);
+                              const linkBase = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                              const linkSrc = getColumnSource(col, linkBase);
+                              const isSelectCol = col.column_type === 'select';
+                              const forceEnabled = isSelectCol && linkSrc === 'datalist';
                               const setLink = (patch) => {
                                 const newCols = [...(form.table_config.columns || [])];
                                 const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
-                                newCols[idx] = { ...newCols[idx], data_link: { ...prev, ...patch } };
+                                newCols[idx] = { ...newCols[idx], data_link: { ...prev, ...(forceEnabled ? { enabled: true } : {}), ...patch } };
                                 updateForm('table_config', { ...form.table_config, columns: newCols });
                               };
                               const dlCols = (() => {
@@ -1054,6 +1147,7 @@ const FieldManager = () => {
                               const legacy = !link && col.autofill_from ? { from: col.autofill_from, col: col.autofill_column || null } : null;
                               return (
                                 <div className="form-group" style={{ ...FIELD_GROUP_STYLE, gridColumn: '1 / -1' }}>
+                                {!isSelectCol && (
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#1e293b', padding: '10px 12px', borderRadius: 8, border: enabled ? '1.5px solid #2563eb' : '1px solid #e2e8f0', background: enabled ? '#eff6ff' : '#f8fafc' }}>
                                   <input type="checkbox" checked={enabled} style={{ width: 20, height: 20, accentColor: '#2563eb', cursor: 'pointer', flexShrink: 0 }} onChange={(e) => {
                                       const newCols = [...(form.table_config.columns || [])];
@@ -1067,7 +1161,8 @@ const FieldManager = () => {
                                     }} />
                                     <span>Lấy dữ liệu từ DataList</span>
                                     <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 999, background: enabled ? '#2563eb' : '#cbd5e1', color: '#fff', whiteSpace: 'nowrap' }}>{enabled ? 'Đang bật' : 'Đang tắt'}</span>
-                                  </label>
+                                </label>
+                                )}
                                   {legacy && (
                                     <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>
                                       Đang dùng cấu hình cũ (từ cột {legacy.from}{legacy.col ? `, lấy cột ${legacy.col}` : ''}).
@@ -1079,7 +1174,7 @@ const FieldManager = () => {
                                       }}>Chuyển sang model mới</button>
                                     </div>
                                   )}
-                                  {enabled && (
+                                  {(enabled || forceEnabled) && (
                                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                         <label style={{ flex: 1, minWidth: 140 }}>Danh mục dữ liệu
@@ -1160,6 +1255,8 @@ const FieldManager = () => {
                             })()}
                           </div>
                         </div>
+                          );
+                        })()}
                         <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
                           {col.field_id
                             ? `Tham chiếu field #${col.field_id}`

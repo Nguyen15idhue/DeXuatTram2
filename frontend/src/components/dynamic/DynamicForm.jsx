@@ -5,6 +5,7 @@ import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
 import { parseFormattedNumber, formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { getDataListLabel } from '../../utils/dataListLabel';
+import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import { fetchDataList } from '../../utils/dataListCache';
 
 const math = create(all);
@@ -254,7 +255,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             if (typeof f.source_config === 'object') return f.source_config;
             try { return JSON.parse(f.source_config); } catch { return {}; }
           })();
-          (tc.columns || []).forEach(col => { if (col.data_list_id) dlIdSet.add(col.data_list_id); });
+          (tc.columns || []).forEach(col => { for (const id of collectTableDatalistIds([col], fieldList)) dlIdSet.add(id); });
         });
         const dlIds = [...dlIdSet];
         if (dlIds.length > 0) {

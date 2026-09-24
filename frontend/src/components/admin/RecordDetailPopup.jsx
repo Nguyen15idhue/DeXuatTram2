@@ -12,6 +12,7 @@ import { notifyBellRefresh } from '../layout/NotificationBell';
 import useDataListMap from '../../hooks/useDataListMap';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import DeadlineCountdown from '../DeadlineCountdown';
+import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import Toast from '../Toast';
 import { computeFormulaValue } from '../../utils/formulaEngine';
 
@@ -67,7 +68,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         if (typeof f.source_config === 'object') return f.source_config;
         try { return JSON.parse(f.source_config); } catch { return {}; }
       })();
-      (tc.columns || []).forEach(col => { if (col.data_list_id) ids.add(col.data_list_id); });
+      (tc.columns || []).forEach(col => { for (const id of collectTableDatalistIds([col], allFields)) ids.add(id); });
     });
     return [...ids];
   })();

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 import UserField from './UserField';
 import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../utils/formatNumber';
+import { resolveColumnDatalist, getColumnSource } from '../../utils/tableColumnSource';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -56,7 +57,7 @@ const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'n
 
 const normalizeTableLink = (col) => {
   if (!col) return null;
-  if (col.data_link && col.data_link.enabled) {
+  if (col.data_link && (col.data_link.enabled || (col.column_type === 'select' && getColumnSource(col, null) === 'datalist'))) {
     return {
       trigger: col.data_link.trigger_column || null,
       fallbackColumn: col.data_link.default_column || null,
@@ -144,12 +145,13 @@ const resolveTableCellRef = (col, allFields) => {
       options: (col.options || []).map(o => typeof o === 'object' ? o : { label: o, value: o })
     };
   })();
+  const dl = resolveColumnDatalist(col, col.field_id ? base : null);
   return {
     ...base,
     type: col.column_type || base.type,
-    data_list_id: col.data_list_id ?? base.data_list_id ?? null,
-    data_list_column: col.data_list_column ?? base.data_list_column ?? null,
-    data_list_label_column: col.data_list_label_column ?? base.data_list_label_column ?? null,
+    data_list_id: dl ? dl.data_list_id : null,
+    data_list_column: dl ? dl.data_list_column : null,
+    data_list_label_column: dl ? dl.data_list_label_column : null,
     parent_column: col.parent_column || null
   };
 };
