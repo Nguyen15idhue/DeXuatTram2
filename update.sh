@@ -29,8 +29,16 @@ echo "[update] Index kho tri thuc chatbot (best-effort)..."
 if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
   (cd backend && node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai (bo qua)."
   (cd backend && node scripts/index-code-knowledge.js) || echo "[update] Canh bao: index-code-knowledge that bai (bo qua)."
+elif docker compose -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
+  # VPS: host khong co node_modules -> chay trong container backend (co san node_modules),
+  # mount ca repo de script thay AGENTS.md + docs/ + frontend/src.
+  echo "[update] Chay index trong container backend (mount repo)..."
+  docker compose -f "$COMPOSE_FILE" run --rm --no-deps \
+    -v "$PWD:/repo" -w /repo/backend backend \
+    sh -c 'LINKED=0; if [ ! -e node_modules ]; then ln -sfn /app/node_modules node_modules && LINKED=1; fi; node scripts/index-knowledge.js && node scripts/index-code-knowledge.js; rc=$?; [ "$LINKED" = "1" ] && rm -f node_modules; exit $rc' \
+    || echo "[update] Canh bao: index chatbot that bai (bo qua)."
 else
-  echo "[update] Bo qua index chatbot (thieu node/mysql2). Chay tay: npm run index:knowledge (trong backend/)."
+  echo "[update] Bo qua index chatbot (khong co node host va khong chay duoc container)."
 fi
 
 echo "Da cap nhat. Log: docker compose -f $COMPOSE_FILE logs -f"
