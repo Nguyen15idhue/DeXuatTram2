@@ -870,6 +870,17 @@ select:focus {
   font-size: 14px;
 }
 
+.pagination .pagination-size {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+}
+
 /* Form Input (textarea in form-group) */
 .form-group textarea {
   width: 100%;

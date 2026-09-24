@@ -148,6 +148,7 @@ const FieldManager = () => {
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [dataLists, setDataLists] = useState([]);
 
   const [entityFields, setEntityFields] = useState([]);
@@ -175,7 +176,7 @@ const FieldManager = () => {
   const loadFields = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: 10 });
+      const params = new URLSearchParams({ page, limit: pageSize });
       if (filterEntity) params.append('entity', filterEntity);
       if (filterStatus) params.append('status', filterStatus);
       if (searchText) params.append('search', searchText);
@@ -183,14 +184,14 @@ const FieldManager = () => {
       const res = await fieldDefinitionService.getAll(params.toString(), token);
       if (res.success) {
         setFields(res.data);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+        setPagination(res.pagination || { page: 1, limit: pageSize, total: 0, totalPages: 1 });
       }
     } catch {
       setError('Lỗi tải danh sách field definitions');
     } finally {
       setLoading(false);
     }
-  }, [filterEntity, filterStatus, searchText, filterType, token]);
+  }, [filterEntity, filterStatus, searchText, filterType, token, pageSize]);
 
   useEffect(() => { loadFields(1); }, [loadFields]);
 
@@ -1267,6 +1268,8 @@ const FieldManager = () => {
         totalPages={pagination.pagination?.totalPages || pagination.totalPages}
         total={pagination.pagination?.total || pagination.total}
         onPageChange={loadFields}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
     </div>
   );

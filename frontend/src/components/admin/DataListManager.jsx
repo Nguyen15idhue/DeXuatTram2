@@ -21,6 +21,7 @@ const DataListManager = () => {
   const [form, setForm] = useState({ name: '', description: '', columns_config: [{ key: '', label: '', type: 'text' }] });
   const [editingId, setEditingId] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [showImport, setShowImport] = useState(false);
   const [importListId, setImportListId] = useState(null);
   const [importFile, setImportFile] = useState(null);
@@ -31,10 +32,10 @@ const DataListManager = () => {
   const loadLists = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await dataListService.getAll(`page=${page}&limit=10`, token);
+      const res = await dataListService.getAll(`page=${page}&limit=${pageSize}`, token);
       if (res && res.success) {
         setLists(res.data || []);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+        setPagination(res.pagination || { page: 1, limit: pageSize, total: 0, totalPages: 1 });
       } else {
         setError(res?.message || 'Lỗi tải danh sách');
       }
@@ -44,7 +45,7 @@ const DataListManager = () => {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, pageSize]);
 
   useEffect(() => { loadLists(1); }, [loadLists]);
 
@@ -403,6 +404,8 @@ const DataListManager = () => {
         totalPages={pagination.totalPages}
         total={pagination.total}
         onPageChange={loadLists}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
     </div>
   );

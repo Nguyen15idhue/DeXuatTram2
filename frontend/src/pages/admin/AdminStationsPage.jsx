@@ -45,6 +45,7 @@ const AdminStationsPage = () => {
   const [filterMoHinh, setFilterMoHinh] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
   const tableRef = useRef(null);
@@ -97,7 +98,7 @@ const AdminStationsPage = () => {
   const loadStations = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: 10 });
+      const params = new URLSearchParams({ page, limit: pageSize });
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
@@ -114,14 +115,14 @@ const AdminStationsPage = () => {
       const res = await stationService.getAllWithParams(params.toString());
       if (res.success) {
         setStations(res.data);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+        setPagination(res.pagination || { page: 1, limit: pageSize, total: 0, totalPages: 1 });
       }
     } catch {
       setError('Lỗi tải danh sách trạm');
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh, columnFilters]);
+  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh, columnFilters, pageSize]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -650,6 +651,8 @@ const AdminStationsPage = () => {
         totalPages={pagination.totalPages}
         total={pagination.total}
         onPageChange={loadStations}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
     </div>
   );

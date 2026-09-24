@@ -198,7 +198,7 @@ const AdminHelpPage = () => {
         {viewMode === 'table' && (
           <select className="select select-bordered select-sm w-28" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
             <option value={10}>10 / trang</option>
-            <option value={25}>25 / trang</option>
+            <option value={20}>20 / trang</option>
             <option value={50}>50 / trang</option>
             <option value={100}>100 / trang</option>
           </select>

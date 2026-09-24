@@ -90,6 +90,9 @@ const HEADER_STYLE = {
 
 const USAGE_LABELS = { table: 'bảng danh sách', excel_full: 'đầy đủ', excel_basic: 'cơ bản' };
 
+const GUIDE_MARKER = '#HDSD';
+const MAX_GUIDE_OPTIONS = 30;
+
 const fileStamp = () => {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -170,7 +173,8 @@ async function resolveExportViews(entity, query) {
 
 async function getViewFields(viewId) {
   const [rows] = await pool.query(
-    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config, fd.\`options\`
+    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config, fd.\`options\`,
+            fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.source_config, fd.placeholder, fd.help_text
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
      WHERE vf.view_id = ? AND vf.visible = 1 AND fd.status = 'active' AND fd.type <> 'password'
@@ -406,11 +410,14 @@ async function getFieldDefsForView(entity, view) {
     const rows = await getViewFields(view.id);
     return rows.map(r => ({
       key: r.key, label: r.label, type: r.type, source_type: r.source_type,
-      required: r.required, formula_config: r.formula_config, options: r.options || null
+      required: r.required, formula_config: r.formula_config, options: r.options || null,
+      data_list_id: r.data_list_id || null, data_list_column: r.data_list_column || null,
+      data_list_label_column: r.data_list_label_column || null, source_config: r.source_config || null,
+      placeholder: r.placeholder || null, help_text: r.help_text || null
     }));
   }
   const [rows] = await pool.query(
-    'SELECT `key`, label, type, source_type, required, formula_config, `options` FROM field_definitions WHERE entity = ? AND status = \'active\' ORDER BY id',
+    "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = ? AND status = 'active' ORDER BY id",
     [entity]
   );
   return rows;
@@ -435,11 +442,40 @@ function buildImportColumns(entity, fieldDefs) {
       source_type: f.source_type,
       required: !!f.required,
       computeMode: formulaConfig ? (formulaConfig.compute_mode || 'pre') : null,
-      options: f.options || null
+      options: f.options || null,
+      data_list_id: f.data_list_id || null,
+      data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
+      source_config: f.source_config || null,
+      placeholder: f.placeholder || null,
+      help_text: f.help_text || null
     });
   });
 
   return columns;
+}
+
+// Voi select/multiselect lay tu Data List (khong co options), nap danh muc de co cap gia tri-nhan
+async function attachSelectOptions(columns) {
+  for (const col of columns) {
+    if (col.type !== 'select' && col.type !== 'multiselect') continue;
+    if (col.options) continue;
+    if (!col.data_list_id || !col.data_list_column) continue;
+    try {
+      const dl = await dataListService.getById(col.data_list_id);
+      const valueCol = col.data_list_column;
+      const labelCol = col.data_list_label_column || valueCol;
+      const opts = (dl && Array.isArray(dl.rows) ? dl.rows : [])
+        .map((r) => {
+          const data = r.data || {};
+          const value = data[valueCol];
+          const label = data[labelCol] != null ? data[labelCol] : value;
+          return { value, label };
+        })
+        .filter((o) => o.value !== undefined && o.value !== null && o.value !== '');
+      if (opts.length > 0) col.options = opts;
+    } catch { /* silent */ }
+  }
 }
 
 function getAllData(entity, filters = {}) {
@@ -500,6 +536,8 @@ function autoWidthColumns(sheet, columns) {
     let maxWidth = col.label.length + 4;
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
+      const first = row.getCell(1) ? row.getCell(1).value : '';
+      if (String(first == null ? '' : first).trim().startsWith('#')) return;
       const cell = row.getCell(colNum);
       const val = cell.value != null ? String(cell.value) : '';
       if (val.length > maxWidth) maxWidth = val.length;
@@ -508,19 +546,93 @@ function autoWidthColumns(sheet, columns) {
   });
 }
 
-function getSampleValue(col) {
-  if (col.type === 'formula' && col.computeMode === 'post') return '';
+function optionValueLabelPairs(options) {
+  const opts = dynamicUtils.parseOptions(options);
+  const pairs = [];
+  for (const o of opts) {
+    if (!o || typeof o !== 'object') {
+      if (o !== undefined && o !== null && o !== '') pairs.push({ value: String(o), label: '' });
+      continue;
+    }
+    const value = o.value !== undefined && o.value !== null ? String(o.value) : '';
+    const label = o.label !== undefined && o.label !== null ? String(o.label) : '';
+    if (value) pairs.push({ value, label });
+  }
+  return pairs;
+}
+
+function optionLabelList(options) {
+  const seen = new Set();
+  const out = [];
+  for (const p of optionValueLabelPairs(options)) {
+    const label = p.label && p.label !== p.value ? p.label : p.value;
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push(label);
+  }
+  return out;
+}
+
+function acceptedList(values, options) {
+  const pairs = optionValueLabelPairs(options);
+  const labelByValue = {};
+  pairs.forEach((p) => { if (labelByValue[p.value] === undefined) labelByValue[p.value] = p.label; });
+  return values.map((v) => {
+    const label = labelByValue[v];
+    return label && label !== v ? `${v} (${label})` : v;
+  }).join(', ');
+}
+
+function buildColumnGuide(col, entity) {
+  if (col.key === '_stt') return `${GUIDE_MARKER} – Dòng hướng dẫn, không nhập vào đây`;
+  if (entity === 'station_proposals' && (col.key === 'ma_tinh' || col.key === 'vung_mien')) {
+    return 'Bỏ trống – hệ thống tự suy từ Tỉnh/Thành';
+  }
+  if (col.type === 'formula') {
+    return col.computeMode === 'post'
+      ? 'Bỏ trống – hệ thống tự tính sau khi lưu'
+      : 'Bỏ trống – hệ thống tự tính';
+  }
+  if (col.type === 'file') return 'Không nhập trong file Excel';
+  const prefix = col.required ? '[Bắt buộc]' : '[Tùy chọn]';
+  let text = '';
   switch (col.type) {
-    case 'number': return 0;
-    case 'email': return 'example@email.com';
-    case 'phone': return '0901234567';
-    case 'date': return '01/01/2026';
-    case 'datetime': return '01/01/2026 12:00';
-    case 'boolean': return 'true';
-    case 'select': return 'option1';
-    case 'multiselect': return 'option1,option2';
-    case 'file': return '(file upload - không import được)';
-    default: return '';
+    case 'text': text = 'Nhập chữ'; break;
+    case 'textarea': text = 'Nhập đoạn văn'; break;
+    case 'email': text = 'Nhập email. VD: example@email.com'; break;
+    case 'phone': text = 'Số điện thoại 10 số, bắt đầu bằng 0. VD: 0901234567'; break;
+    case 'url': text = 'Nhập đường dẫn. VD: https://...'; break;
+    case 'number': text = 'Nhập số'; break;
+    case 'date': text = 'Ngày dạng dd/mm/yyyy. VD: 01/01/2026'; break;
+    case 'datetime': text = 'Ngày giờ dạng dd/mm/yyyy hh:mm'; break;
+    case 'boolean': text = 'Nhập true hoặc false'; break;
+    case 'user': text = 'Nhập mã nhân viên hoặc tên. VD: NV06'; break;
+    case 'select': text = 'Chọn 1 trong'; break;
+    case 'multiselect': text = 'Chọn nhiều, phân tách bằng dấu phẩy'; break;
+    case 'table': text = 'Bảng nhiều dòng – nhập trong form, không nhập trong file Excel'; break;
+    default: text = '';
+  }
+  if (col.type === 'select' || col.type === 'multiselect') {
+    const labels = optionLabelList(col.options);
+    if (labels.length > 0) {
+      let shown = labels.slice(0, MAX_GUIDE_OPTIONS).join(' / ');
+      if (labels.length > MAX_GUIDE_OPTIONS) shown += ' …';
+      text = text ? `${text}: ${shown}` : shown;
+    }
+  }
+  const maxLen = MAX_LENGTHS[`${entity}.${col.key}`];
+  if (maxLen && (col.type === 'text' || col.type === 'textarea')) {
+    text = text ? `${text} (tối đa ${maxLen} ký tự)` : `tối đa ${maxLen} ký tự`;
+  }
+  return text ? `${prefix} ${text}` : prefix;
+}
+
+function styleGuideRow(row, colCount) {
+  row.height = 44;
+  for (let i = 1; i <= colCount; i++) {
+    const cell = row.getCell(i);
+    cell.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
+    cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
   }
 }
 
@@ -715,17 +827,23 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
       } else if (col.type === 'boolean') {
         fixedData[col.key] = value === 'true' || value === '1' || value === 'TRUE' ? 1 : 0;
       } else if (col.type === 'select' && entity && VALID_STATUSES[entity] && col.key === 'status') {
-        let upper = String(value).toUpperCase();
+        const raw = String(value).trim();
+        let resolved = raw;
+        if (col.options) resolved = resolveSelectValue(raw, col.options, false);
+        let upper = String(resolved).toUpperCase();
         if (STATUS_LABEL_MAP[entity] && STATUS_LABEL_MAP[entity][upper]) upper = STATUS_LABEL_MAP[entity][upper];
         if (value !== '' && !VALID_STATUSES[entity].includes(upper)) {
-          errors.push(`${col.label}: trạng thái không hợp lệ "${value}". Chấp nhận: ${VALID_STATUSES[entity].join(', ')}`);
+          errors.push(`${col.label}: trạng thái không hợp lệ "${value}". Chấp nhận: ${acceptedList(VALID_STATUSES[entity], col.options)}`);
         } else {
           fixedData[col.key] = upper || DEFAULT_STATUS[entity] || VALID_STATUSES[entity][0];
         }
       } else if (col.type === 'select' && entity === 'users' && col.key === 'role') {
-        const upper = String(value).toUpperCase();
+        const raw = String(value).trim();
+        let resolved = raw;
+        if (col.options) resolved = resolveSelectValue(raw, col.options, false);
+        const upper = String(resolved).toUpperCase();
         if (value !== '' && !VALID_ROLES.includes(upper)) {
-          errors.push(`${col.label}: vai trò không hợp lệ "${value}". Chấp nhận: ${VALID_ROLES.join(', ')}`);
+          errors.push(`${col.label}: vai trò không hợp lệ "${value}". Chấp nhận: ${acceptedList(VALID_ROLES, col.options)}`);
         } else {
           fixedData[col.key] = upper || 'CTV';
         }
@@ -1170,6 +1288,7 @@ exports.importPreviewDynamic = async (req, res) => {
 
     const fieldDefs = await getFieldDefsForView(entity, view);
     const columns = buildImportColumns(entity, fieldDefs);
+    await attachSelectOptions(columns);
 
     const headerColumns = entity === 'station_proposals'
       ? columns.filter(c => c.key !== 'ma_tinh' && c.key !== 'vung_mien')
@@ -1192,6 +1311,9 @@ exports.importPreviewDynamic = async (req, res) => {
 
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
+
+      const firstCell = row.getCell(1) ? row.getCell(1).value : '';
+      if (String(firstCell == null ? '' : firstCell).trim().startsWith('#')) return;
 
       const isEmpty = row.values.every((v, i) => i === 0 || v == null || v === '');
       if (isEmpty) return;
@@ -1651,21 +1773,15 @@ exports.getTemplateDynamic = async (req, res) => {
     for (const view of views) {
       const fieldDefs = await getFieldDefsForView(entity, view);
       const columns = buildImportColumns(entity, fieldDefs);
+      await attachSelectOptions(columns);
 
       const sheet = workbook.addWorksheet(multi ? safeSheetName(view.name, usedNames) : entity);
 
       sheet.addRow(columns.map(c => c.label));
       styleHeaderRow(sheet);
 
-      const sampleRow = sheet.addRow(columns.map(c => getSampleValue(c)));
-      columns.forEach((c, idx) => {
-        if (c.type === 'formula' && c.computeMode === 'post') {
-          sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự sinh sau khi lưu';
-        }
-        if (entity === 'station_proposals' && (c.key === 'ma_tinh' || c.key === 'vung_mien')) {
-          sampleRow.getCell(idx + 1).note = 'Bỏ trống - hệ thống tự suy từ Tỉnh thành';
-        }
-      });
+      const guideRow = sheet.addRow(columns.map(c => buildColumnGuide(c, entity)));
+      styleGuideRow(guideRow, columns.length);
 
       autoWidthColumns(sheet, columns);
     }

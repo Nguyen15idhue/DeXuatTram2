@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { queueLogService, proposalLogService } from '../../services/api';
 import { getStatusLabel } from '../../utils/mapStatuses';
@@ -59,6 +59,10 @@ function AdminAuditLogPage() {
   const [alogs, setAlogs] = useState([]);
   const [aloading, setAloading] = useState(false);
   const [apagination, setApagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const [logPageSize, setLogPageSize] = useState(20);
+  const [activityPageSize, setActivityPageSize] = useState(20);
+  const logPageSizeRef = useRef(20);
+  const activityPageSizeRef = useRef(20);
   const [afilters, setAfilters] = useState({ id: '', proposal_id: '', code: '', actor: '', action: '', source: '', date_from: '', date_to: '' });
   const [activityDetail, setActivityDetail] = useState(null);
 
@@ -69,13 +73,13 @@ function AdminAuditLogPage() {
     } catch {}
   }, [token]);
 
-  const loadLogsWith = useCallback(async (applied, page = 1) => {
+  const loadLogsWith = useCallback(async (applied, page = 1, limit = logPageSizeRef.current) => {
     setLoading(true);
     try {
-      const res = await queueLogService.getAll({ ...applied, page, limit: 20 }, token);
+      const res = await queueLogService.getAll({ ...applied, page, limit }, token);
       if (res.success) {
         setLogs(res.data || []);
-        setPagination(res.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
+        setPagination(res.pagination || { page: 1, limit, total: 0, totalPages: 0 });
       }
     } catch (err) {
       setToast({ message: err.message || 'Lỗi tải logs', type: 'error' });
@@ -83,19 +87,31 @@ function AdminAuditLogPage() {
     setLoading(false);
   }, [token]);
 
-  const loadActivityWith = useCallback(async (applied, page = 1) => {
+  const loadActivityWith = useCallback(async (applied, page = 1, limit = activityPageSizeRef.current) => {
     setAloading(true);
     try {
-      const res = await proposalLogService.getAll({ ...applied, page, limit: 20 }, token);
+      const res = await proposalLogService.getAll({ ...applied, page, limit }, token);
       if (res.success) {
         setAlogs(res.data || []);
-        setApagination(res.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
+        setApagination(res.pagination || { page: 1, limit, total: 0, totalPages: 0 });
       }
     } catch (err) {
       setToast({ message: err.message || 'Lỗi tải log hoạt động', type: 'error' });
     }
     setAloading(false);
   }, [token]);
+
+  const changeLogPageSize = (n) => {
+    logPageSizeRef.current = n;
+    setLogPageSize(n);
+    loadLogsWith(filters, 1, n);
+  };
+
+  const changeActivityPageSize = (n) => {
+    activityPageSizeRef.current = n;
+    setActivityPageSize(n);
+    loadActivityWith(afilters, 1, n);
+  };
 
   useEffect(() => { loadLogsWith(filters, 1); loadStats(); }, []);
   useEffect(() => { if (activeTab === 'activity') loadActivityWith(afilters, 1); }, [activeTab]);
@@ -388,24 +404,29 @@ function AdminAuditLogPage() {
         </table>
       </div>
 
-      {pagination.totalPages > 1 && (
+      {pagination.total > 0 && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-base-content/60">
             Trang {pagination.page}/{pagination.totalPages} — Tổng {pagination.total} bản ghi
           </span>
-          <div className="join">
-            <button className="join-item btn btn-sm" disabled={pagination.page <= 1} onClick={() => loadLogsWith(filters, pagination.page - 1)}><ChevronLeft size={14} /></button>
-            {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, i) => {
-              let pageNum;
-              if (pagination.totalPages <= 5) pageNum = i + 1;
-              else if (pagination.page <= 3) pageNum = i + 1;
-              else if (pagination.page >= pagination.totalPages - 2) pageNum = pagination.totalPages - 4 + i;
-              else pageNum = pagination.page - 2 + i;
-              return (
-                <button key={pageNum} className={`join-item btn btn-sm ${pagination.page === pageNum ? 'btn-active' : ''}`} onClick={() => loadLogsWith(filters, pageNum)}>{pageNum}</button>
-              );
-            })}
-            <button className="join-item btn btn-sm" disabled={pagination.page >= pagination.totalPages} onClick={() => loadLogsWith(filters, pagination.page + 1)}><ChevronRight size={14} /></button>
+          <div className="flex items-center gap-2">
+            <select className="select select-bordered select-sm w-28" value={logPageSize} onChange={(e) => changeLogPageSize(Number(e.target.value))}>
+              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / trang</option>)}
+            </select>
+            <div className="join">
+              <button className="join-item btn btn-sm" disabled={pagination.page <= 1} onClick={() => loadLogsWith(filters, pagination.page - 1)}><ChevronLeft size={14} /></button>
+              {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, i) => {
+                let pageNum;
+                if (pagination.totalPages <= 5) pageNum = i + 1;
+                else if (pagination.page <= 3) pageNum = i + 1;
+                else if (pagination.page >= pagination.totalPages - 2) pageNum = pagination.totalPages - 4 + i;
+                else pageNum = pagination.page - 2 + i;
+                return (
+                  <button key={pageNum} className={`join-item btn btn-sm ${pagination.page === pageNum ? 'btn-active' : ''}`} onClick={() => loadLogsWith(filters, pageNum)}>{pageNum}</button>
+                );
+              })}
+              <button className="join-item btn btn-sm" disabled={pagination.page >= pagination.totalPages} onClick={() => loadLogsWith(filters, pagination.page + 1)}><ChevronRight size={14} /></button>
+            </div>
           </div>
         </div>
       )}
@@ -483,14 +504,19 @@ function AdminAuditLogPage() {
         </table>
       </div>
 
-      {apagination.totalPages > 1 && (
+      {apagination.total > 0 && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-base-content/60">
             Trang {apagination.page}/{apagination.totalPages} — Tổng {apagination.total} bản ghi
           </span>
-          <div className="join">
-            <button className="join-item btn btn-sm" disabled={apagination.page <= 1} onClick={() => loadActivityWith(afilters, apagination.page - 1)}><ChevronLeft size={14} /></button>
-            <button className="join-item btn btn-sm" disabled={apagination.page >= apagination.totalPages} onClick={() => loadActivityWith(afilters, apagination.page + 1)}><ChevronRight size={14} /></button>
+          <div className="flex items-center gap-2">
+            <select className="select select-bordered select-sm w-28" value={activityPageSize} onChange={(e) => changeActivityPageSize(Number(e.target.value))}>
+              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / trang</option>)}
+            </select>
+            <div className="join">
+              <button className="join-item btn btn-sm" disabled={apagination.page <= 1} onClick={() => loadActivityWith(afilters, apagination.page - 1)}><ChevronLeft size={14} /></button>
+              <button className="join-item btn btn-sm" disabled={apagination.page >= apagination.totalPages} onClick={() => loadActivityWith(afilters, apagination.page + 1)}><ChevronRight size={14} /></button>
+            </div>
           </div>
         </div>
       )}

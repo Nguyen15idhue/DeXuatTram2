@@ -12,6 +12,26 @@ const DEFAULT_RULES = [
   { status: 'ARCHIVED', days: 10, hours: 0, minutes: 0, enabled: false }
 ];
 
+const MERGED_STATUS_GROUPS = { PENDING: ['PENDING', 'REVIEWING'] };
+const MERGED_LABELS = { PENDING: 'Đang đề xuất / Đang xem xét' };
+
+const buildDisplayRows = (statuses) => {
+  const rows = [];
+  const consumed = new Set();
+  statuses.forEach((s) => {
+    if (consumed.has(s.value)) return;
+    const group = MERGED_STATUS_GROUPS[s.value];
+    if (group && group.length > 1) {
+      group.forEach((v) => consumed.add(v));
+      rows.push({ value: s.value, label: MERGED_LABELS[s.value] || s.label, color: s.color, statuses: group });
+    } else {
+      consumed.add(s.value);
+      rows.push({ value: s.value, label: s.label, color: s.color, statuses: [s.value] });
+    }
+  });
+  return rows;
+};
+
 const CountdownConfigPanel = () => {
   const { token } = useAuth();
   const [open, setOpen] = useState(false);
@@ -22,6 +42,7 @@ const CountdownConfigPanel = () => {
   const [rules, setRules] = useState(DEFAULT_RULES);
 
   const statuses = getProposalStatuses();
+  const displayRows = buildDisplayRows(statuses);
 
   useEffect(() => {
     if (!open || !token) return;
@@ -38,11 +59,25 @@ const CountdownConfigPanel = () => {
     return () => { cancelled = true; };
   }, [open, token]);
 
-  const setRule = (status, patch) => {
-    setRules((prev) => prev.map((r) => (r.status === status ? { ...r, ...patch } : r)));
+  const setRule = (row, patch) => {
+    setRules((prev) => {
+      const next = [...prev];
+      row.statuses.forEach((status) => {
+        const idx = next.findIndex((r) => r.status === status);
+        if (idx >= 0) next[idx] = { ...next[idx], ...patch };
+        else next.push({ status, ...patch });
+      });
+      return next;
+    });
   };
 
-  const ensureRule = (status) => rules.find((r) => r.status === status) || { status, days: 3, hours: 0, minutes: 0, enabled: false };
+  const ensureRule = (row) => {
+    for (const status of row.statuses) {
+      const r = rules.find((x) => x.status === status);
+      if (r) return r;
+    }
+    return { days: 3, hours: 0, minutes: 0, enabled: false };
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -50,15 +85,15 @@ const CountdownConfigPanel = () => {
     try {
       const payload = {
         warn_hours: Number(warnHours) || 24,
-        rules: statuses.map((s) => {
-          const r = ensureRule(s.value);
-          return {
-            status: s.value,
+        rules: displayRows.flatMap((row) => {
+          const r = ensureRule(row);
+          const rule = {
             days: Number(r.days) || 0,
             hours: Number(r.hours) || 0,
             minutes: Number(r.minutes) || 0,
             enabled: !!r.enabled
           };
+          return row.statuses.map((status) => ({ status, ...rule }));
         })
       };
       const res = await api.putWithAuth('/admin/lifecycle-config', payload, token);
@@ -99,6 +134,7 @@ const CountdownConfigPanel = () => {
                 />
                 <span>giờ (mặc định 24)</span>
               </div>
+              <p className="text-xs text-gray-500 mb-1">Đang đề xuất và Đang xem xét dùng chung 1 mốc, không đếm lại khi duyệt &amp; đẩy.</p>
               <table className="table table-xs w-full">
                 <thead>
                   <tr>
@@ -110,8 +146,8 @@ const CountdownConfigPanel = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {statuses.map((s) => {
-                    const r = ensureRule(s.value);
+                  {displayRows.map((s) => {
+                    const r = ensureRule(s);
                     return (
                       <tr key={s.value}>
                         <td>
@@ -125,7 +161,7 @@ const CountdownConfigPanel = () => {
                             type="checkbox"
                             className="checkbox checkbox-xs"
                             checked={!!r.enabled}
-                            onChange={(e) => setRule(s.value, { enabled: e.target.checked, days: r.days ?? 3, hours: r.hours ?? 0, minutes: r.minutes ?? 0 })}
+                            onChange={(e) => setRule(s, { enabled: e.target.checked, days: r.days ?? 3, hours: r.hours ?? 0, minutes: r.minutes ?? 0 })}
                           />
                         </td>
                         <td>
@@ -136,7 +172,7 @@ const CountdownConfigPanel = () => {
                             className="input input-bordered input-xs w-16"
                             disabled={!r.enabled}
                             value={r.days ?? 0}
-                            onChange={(e) => setRule(s.value, { days: e.target.value })}
+                            onChange={(e) => setRule(s, { days: e.target.value })}
                           />
                         </td>
                         <td>
@@ -147,7 +183,7 @@ const CountdownConfigPanel = () => {
                             className="input input-bordered input-xs w-16"
                             disabled={!r.enabled}
                             value={r.hours ?? 0}
-                            onChange={(e) => setRule(s.value, { hours: e.target.value })}
+                            onChange={(e) => setRule(s, { hours: e.target.value })}
                           />
                         </td>
                         <td>
@@ -158,7 +194,7 @@ const CountdownConfigPanel = () => {
                             className="input input-bordered input-xs w-16"
                             disabled={!r.enabled}
                             value={r.minutes ?? 0}
-                            onChange={(e) => setRule(s.value, { minutes: e.target.value })}
+                            onChange={(e) => setRule(s, { minutes: e.target.value })}
                           />
                         </td>
                       </tr>

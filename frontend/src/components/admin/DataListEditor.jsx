@@ -20,11 +20,12 @@ const DataListEditor = () => {
   const [editingCell, setEditingCell] = useState(null);
   const [newRow, setNewRow] = useState(null);
   const [rowPagination, setRowPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(20);
 
   const loadList = useCallback(async (rowPage = 1) => {
     try {
       setLoading(true);
-      const params = `row_page=${rowPage}&row_limit=20`;
+      const params = `row_page=${rowPage}&row_limit=${pageSize}`;
       const res = await dataListService.getById(id, token, params);
       if (res.success) {
         setList(res.data);
@@ -40,7 +41,7 @@ const DataListEditor = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, token]);
+  }, [id, token, pageSize]);
 
   useEffect(() => { loadList(1); }, [loadList]);
 
@@ -194,6 +195,8 @@ const DataListEditor = () => {
         totalPages={rowPagination.totalPages}
         total={rowPagination.total}
         onPageChange={loadList}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
 
       <p className="mt-2.5 text-[13px] text-gray-500">

@@ -20,7 +20,6 @@ import UserTreeView from '../../components/admin/UserTreeView';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 15;
-const USERS_PAGE_SIZE = 10;
 
 const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
 
@@ -211,6 +210,7 @@ const [viewMode, setViewMode] = useState('table');
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -358,19 +358,19 @@ const [viewMode, setViewMode] = useState('table');
     return rows;
   }, [users, appliedSearch, columnFilters]);
 
-  const totalPages = Math.max(1, Math.ceil(treeRows.length / USERS_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(treeRows.length / pageSize));
 
   useEffect(() => {
     setPage(1);
-  }, [appliedSearch, filterStatus, columnFilters]);
+  }, [appliedSearch, filterStatus, columnFilters, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
   const pagedRows = useMemo(
-    () => treeRows.slice((page - 1) * USERS_PAGE_SIZE, page * USERS_PAGE_SIZE),
-    [treeRows, page]
+    () => treeRows.slice((page - 1) * pageSize, page * pageSize),
+    [treeRows, page, pageSize]
   );
 
   const handleReset = () => {
@@ -982,7 +982,7 @@ const [viewMode, setViewMode] = useState('table');
             viewId={usersViewId}
             data={pagedRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
             actions={renderActions}
-            startIndex={(page - 1) * USERS_PAGE_SIZE}
+            startIndex={(page - 1) * pageSize}
             rowDepth={(row) => row._depth || 0}
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
@@ -993,6 +993,8 @@ const [viewMode, setViewMode] = useState('table');
             totalPages={totalPages}
             total={treeRows.length}
             onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
           />
         </>
       )}

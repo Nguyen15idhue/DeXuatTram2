@@ -46,6 +46,7 @@ const AdminProposalsPage = () => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null });
   const [logProposalId, setLogProposalId] = useState(null);
   const [rowMenu, setRowMenu] = useState(null);
@@ -178,7 +179,7 @@ const AdminProposalsPage = () => {
   const loadProposals = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: 10 });
+      const params = new URLSearchParams({ page, limit: pageSize });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
@@ -193,14 +194,14 @@ const AdminProposalsPage = () => {
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setProposals(res.data);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+        setPagination(res.pagination || { page: 1, limit: pageSize, total: 0, totalPages: 1 });
       }
     } catch {
       setError('Lỗi tải danh sách đề xuất');
     } finally {
       setLoading(false);
     }
-  }, [filter, filterUuTien, debouncedSearch, columnFilters, token]);
+  }, [filter, filterUuTien, debouncedSearch, columnFilters, token, pageSize]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -1801,6 +1802,8 @@ const AdminProposalsPage = () => {
         totalPages={pagination.totalPages}
         total={pagination.total}
         onPageChange={loadProposals}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
       </>
       )}

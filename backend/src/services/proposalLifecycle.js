@@ -76,7 +76,7 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Trạng thái không hợp lệ', 400);
   }
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, contact_1office_code, custom_data FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, contact_1office_code, custom_data, supplement_deadline_at FROM station_proposals WHERE id = ?',
     [id]
   );
   if (rows.length === 0) {
@@ -113,7 +113,9 @@ exports.transition = async (id, to, opts = {}) => {
   );
 
   const deadlineMinutes = await exports.getDeadlineMinutes(to);
-  if (deadlineMinutes) {
+  const sameSharedGroup = COUNTDOWN_SHARED_GROUP[from] && COUNTDOWN_SHARED_GROUP[from] === COUNTDOWN_SHARED_GROUP[to];
+  const keepDeadline = sameSharedGroup && proposal.supplement_deadline_at != null;
+  if (deadlineMinutes && !keepDeadline) {
     try {
       await pool.query(
         'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?',
@@ -194,6 +196,10 @@ const DEFAULT_COUNTDOWN_RULES = [
   { status: 'APPROVED', days: 10, hours: 0, minutes: 0, enabled: false },
   { status: 'ARCHIVED', days: 10, hours: 0, minutes: 0, enabled: false }
 ];
+
+// PENDING va REVIEWING dung chung 1 moc countdown: khi chuyen PENDING -> REVIEWING
+// KHONG dat lai deadline (giu moc cua PENDING).
+const COUNTDOWN_SHARED_GROUP = { PENDING: 'review', REVIEWING: 'review' };
 
 const clamp = (v, max) => {
   const n = Math.floor(Number(v));
