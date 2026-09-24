@@ -125,10 +125,6 @@ exports.updateProfile = async (req, res) => {
   try {
     const { full_name, phone, current_password, new_password, avatar } = req.body;
 
-    if (!full_name) {
-      return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
-    }
-
     const user = await authService.findByIdFull(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
@@ -140,7 +136,8 @@ exports.updateProfile = async (req, res) => {
       customData.avatar = avatar;
     }
 
-    if (new_password) {
+    const wantsPassword = new_password !== undefined && new_password !== null && new_password !== '';
+    if (wantsPassword) {
       if (!current_password) {
         return res.status(400).json({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại' });
       }
@@ -151,8 +148,14 @@ exports.updateProfile = async (req, res) => {
       if (new_password.length < 6) {
         return res.status(400).json({ success: false, message: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
       }
-      await authService.updatePassword(req.user.id, full_name, phone, new_password);
+      await authService.updatePassword(req.user.id, full_name || user.full_name, phone !== undefined ? phone : user.phone, new_password);
+      if (avatar !== undefined) {
+        await authService.updateProfile(req.user.id, full_name || user.full_name, phone !== undefined ? phone : user.phone, customData);
+      }
     } else {
+      if (!full_name) {
+        return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
+      }
       await authService.updateProfile(req.user.id, full_name, phone, customData);
     }
 

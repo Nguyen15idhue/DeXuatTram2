@@ -154,7 +154,7 @@ router.get('/me', requireAuth, authController.getMe);
  * /api/auth/profile:
  *   put:
  *     tags: [Auth]
- *     summary: Cập nhật hồ sơ cá nhân
+ *     summary: Cập nhật hồ sơ cá nhân (đổi mật khẩu không cần họ tên)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -163,13 +163,13 @@ router.get('/me', requireAuth, authController.getMe);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [full_name]
  *             properties:
  *               full_name:
  *                 type: string
  *                 minLength: 2
  *                 maxLength: 100
  *                 example: Nguyen Van A
+ *                 description: Bắt buộc khi sửa hồ sơ, không cần khi chỉ đổi mật khẩu
  *               phone:
  *                 type: string
  *                 example: 0912345678

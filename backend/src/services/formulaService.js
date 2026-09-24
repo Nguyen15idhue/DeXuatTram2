@@ -83,7 +83,7 @@ exports.validateFormula = (expression, availableFields = []) => {
   }
 
   try {
-    const node = math.parse(expression);
+    const node = math.parse(substituteMetadataPlaceholders(expression, {}));
     const symbols = new Set();
     const funcNames = new Set();
     node.traverse(n => {
@@ -131,8 +131,9 @@ exports.evaluateFormula = (expression, scope = {}) => {
 
 exports.evaluatePostFormula = (expression, metadata = {}) => {
   const scope = exports.buildPostScope(metadata, {});
+  const substituted = substituteMetadataPlaceholders(expression, scope);
   try {
-    return math.evaluate(expression, scope);
+    return math.evaluate(substituted, scope);
   } catch {
     return null;
   }
@@ -159,6 +160,59 @@ exports.buildPostScope = (metadata = {}, recordData = {}) => {
 };
 
 const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name', 'id_1office']);
+
+const substituteMetadataPlaceholders = (expression, values) => {
+  const toRaw = (v) => (v === null || v === undefined ? '' : String(v));
+  const toLiteral = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)))) return String(v);
+    return JSON.stringify(String(v));
+  };
+  const src = String(expression || '');
+  let out = '';
+  let quote = null;
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === '\\' && i + 1 < src.length) {
+        out += ch + src[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === quote) {
+        quote = null;
+        out += ch;
+        i += 1;
+        continue;
+      }
+      const m = /^\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(src.slice(i));
+      if (m && POST_METADATA.has(m[1])) {
+        out += toRaw(values ? values[m[1]] : undefined);
+        i += m[0].length;
+        continue;
+      }
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    const m = /^\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(src.slice(i));
+    if (m && POST_METADATA.has(m[1])) {
+      out += toLiteral(values ? values[m[1]] : undefined);
+      i += m[0].length;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+};
 
 exports.getNextSequence = async (prefix, connection) => {
   const p = String(prefix ?? '').slice(0, 20);
@@ -220,9 +274,10 @@ exports.reconcileSequences = async () => {
 
 exports.evaluatePostFormulaAsync = async (expression, metadata = {}, recordData = {}, options = {}) => {
   const scope = exports.buildPostScope(metadata, recordData);
+  const substituted = substituteMetadataPlaceholders(expression, scope);
   let node;
   try {
-    node = math.parse(expression);
+    node = math.parse(substituted);
   } catch {
     return null;
   }
