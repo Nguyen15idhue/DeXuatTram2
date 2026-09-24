@@ -1054,8 +1054,8 @@ const FieldManager = () => {
                               const legacy = !link && col.autofill_from ? { from: col.autofill_from, col: col.autofill_column || null } : null;
                               return (
                                 <div className="form-group" style={{ ...FIELD_GROUP_STYLE, gridColumn: '1 / -1' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
-                                  <input type="checkbox" checked={enabled} onChange={(e) => {
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#1e293b', padding: '10px 12px', borderRadius: 8, border: enabled ? '1.5px solid #2563eb' : '1px solid #e2e8f0', background: enabled ? '#eff6ff' : '#f8fafc' }}>
+                                  <input type="checkbox" checked={enabled} style={{ width: 20, height: 20, accentColor: '#2563eb', cursor: 'pointer', flexShrink: 0 }} onChange={(e) => {
                                       const newCols = [...(form.table_config.columns || [])];
                                       if (e.target.checked) {
                                         const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
@@ -1065,7 +1065,8 @@ const FieldManager = () => {
                                       }
                                       updateForm('table_config', { ...form.table_config, columns: newCols });
                                     }} />
-                                    Lấy dữ liệu từ DataList
+                                    <span>Lấy dữ liệu từ DataList</span>
+                                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 999, background: enabled ? '#2563eb' : '#cbd5e1', color: '#fff', whiteSpace: 'nowrap' }}>{enabled ? 'Đang bật' : 'Đang tắt'}</span>
                                   </label>
                                   {legacy && (
                                     <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>
