@@ -10,18 +10,49 @@ const resolveUserId = (value) => {
   return Number.isInteger(n) && n > 0 ? n : '';
 };
 
+const parseAutoUser = (field) => {
+  if (!field) return null;
+  if (field.autoUser) return field.autoUser;
+  const sc = field.source_config;
+  if (!sc) return null;
+  if (typeof sc === 'object') return sc.auto_user || null;
+  try { return JSON.parse(sc).auto_user || null; } catch { return null; }
+};
+
+const poolOfField = (field) => {
+  const mode = parseAutoUser(field);
+  if (mode === 'area_director') return 'gdkv';
+  if (mode === 'center_director') return 'gdtt';
+  return null;
+};
+
+const buildOptions = (users) => {
+  const opts = [];
+  let lastGroup;
+  (users || []).forEach(u => {
+    if (u.group && u.group !== lastGroup) {
+      opts.push({ value: `__group_${u.group}`, label: u.group, isGroup: true });
+      lastGroup = u.group;
+    }
+    opts.push({ value: String(u.id), label: `${u.full_name} (${u.role})` });
+  });
+  return opts;
+};
+
 const UserField = ({ field, value, onChange, disabled, error }) => {
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const selectedId = resolveUserId(value);
   const selectedUser = options.find(o => Number(o.id) === Number(selectedId));
+  const pool = poolOfField(field);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
         const token = localStorage.getItem('token') || '';
-        const res = await fetch(`${API_URL}/admin/users/options/all`, {
+        const url = `${API_URL}/admin/users/options/all${pool ? `?pool=${pool}` : ''}`;
+        const res = await fetch(url, {
           headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         const data = await res.json();
@@ -34,7 +65,7 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
     };
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [pool]);
 
   useEffect(() => {
     if (loading || !selectedId) return;
@@ -57,7 +88,7 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
   return (
     <div className={`dynamic-field-user${error ? ' has-error' : ''}`}>
       <SearchableSelect
-        options={options.map(u => ({ value: String(u.id), label: `${u.full_name} (${u.role})` }))}
+        options={buildOptions(options)}
         value={selectedId === '' ? '' : String(selectedId)}
         onChange={(v) => onChange(v === '' ? '' : { id: Number(v) })}
         placeholder={loading ? 'Đang tải...' : '-- Chọn người dùng --'}

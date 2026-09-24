@@ -6,6 +6,8 @@ import ErrorMessage from '../ErrorMessage';
 import CountdownConfigPanel from './CountdownConfigPanel';
 import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownIcon, Layers, Pencil, Check, X, Zap, Search } from 'lucide-react';
 import { filterFieldsBySearch } from '../../utils/searchText';
+import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
+import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
 
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const PURPOSE_OPTIONS = [
@@ -663,6 +665,18 @@ const FormBuilder = ({ formId, onSaved }) => {
     const layoutForSave = buildLayoutForSave();
     const layoutErrors = validateLayout(layoutForSave);
     if (layoutErrors.length > 0) { setError(layoutErrors[0]); return; }
+    for (const field of assignedFields) {
+      if (field.type === 'table' && field.config?.tableConfig?.columns) {
+        const cols = field.config.tableConfig.columns;
+        for (const c of cols) {
+          const v = validateFooterFormula(c.footer_formula, cols, c.key);
+          if (!v.valid) {
+            setError(`Công thức footer cột "${c.label || c.key}"${field.label ? ` (${field.label})` : ''}: ${v.error}`);
+            return;
+          }
+        }
+      }
+    }
     setSaving(true);
     setError('');
     try {
@@ -1666,23 +1680,32 @@ const FormBuilder = ({ formId, onSaved }) => {
                         {!col.formula && <span style={{ color: '#888', fontSize: 11 }}>Dùng tên cột khác trong dòng</span>}
                       </div>
                       {isNumber && (
-                        <div style={{ marginTop: 4, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <label style={{ fontWeight: 500 }}>Footer:</label>
-                          <select value={col.footer_formula || ''} onChange={(e) => {
-                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
-                            newCols[idx] = { ...newCols[idx], footer_formula: e.target.value || null };
-                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
-                              ...(selectedField.config?.tableConfig || {}),
-                              columns: newCols
-                            });
-                          }} style={{ fontSize: 11, padding: '2px 4px' }}>
-                            <option value="">Không</option>
-                            <option value="SUM">SUM — Tổng</option>
-                            <option value="AVG">AVG — Trung bình</option>
-                            <option value="MIN">MIN — Nhỏ nhất</option>
-                            <option value="MAX">MAX — Lớn nhất</option>
-                            <option value="COUNT">COUNT — Đếm dòng</option>
-                          </select>
+                        <div style={{ marginTop: 4, fontSize: 12 }}>
+                          <label style={{ fontWeight: 500 }}>Footer (công thức):</label>
+                          <TableFooterFormulaInput
+                            value={col.footer_formula || ''}
+                            currentColKey={col.key}
+                            columns={selectedField.config?.tableConfig?.columns || []}
+                            onChange={(v) => {
+                              const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                              newCols[idx] = { ...newCols[idx], footer_formula: v || null };
+                              handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                                ...(selectedField.config?.tableConfig || {}),
+                                columns: newCols
+                              });
+                            }} />
+                          <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{FOOTER_FUNCTION_HELP}</div>
+                          <input type="text" placeholder="Tên footer (VD: Tổng giá khuyến mãi)"
+                            value={col.footer_label || ''}
+                            onChange={(e) => {
+                              const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                              newCols[idx] = { ...newCols[idx], footer_label: e.target.value };
+                              handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                                ...(selectedField.config?.tableConfig || {}),
+                                columns: newCols
+                              });
+                            }}
+                            style={{ width: '100%', fontSize: 12, padding: '6px 8px', marginTop: 4 }} />
                         </div>
                       )}
                     </div>

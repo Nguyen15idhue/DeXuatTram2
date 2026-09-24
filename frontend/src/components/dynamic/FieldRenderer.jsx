@@ -4,6 +4,7 @@ import { create, all } from 'mathjs';
 import { Zap } from 'lucide-react';
 import { formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { getDataListLabelFromMap } from '../../utils/dataListLabel';
+import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
 
 const math = create(all);
 const customFunctions = {
@@ -288,28 +289,20 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
               </tr>
             ))}
           </tbody>
-          {columns.some(col => col.footer_formula) && (
+          {hasFooter(columns) && (
             <tfoot>
               <tr>
                 <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', textAlign: 'center', fontWeight: 700 }}></td>
                 {columns.map(col => {
-                  if (!col.footer_formula) return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9' }}></td>;
-                  const values = rows.map(r => {
-                    const raw = computeCell(col, r);
-                    const n = parseFloat(raw);
-                    return isNaN(n) ? null : n;
-                  }).filter(v => v !== null);
-                  const FOOTER_LABELS = { SUM: 'Tổng', AVG: 'TB', MIN: 'Min', MAX: 'Max', COUNT: 'Đếm' };
-                  let footerVal = '';
-                  switch (col.footer_formula) {
-                    case 'SUM': footerVal = values.reduce((a, b) => a + b, 0); break;
-                    case 'AVG': footerVal = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0; break;
-                    case 'MIN': footerVal = values.length ? Math.min(...values) : 0; break;
-                    case 'MAX': footerVal = values.length ? Math.max(...values) : 0; break;
-                    case 'COUNT': footerVal = values.length; break;
-                  }
-                  const label = FOOTER_LABELS[col.footer_formula] || col.footer_formula;
-                  return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}><span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{label}:</span>{typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}</td>;
+                  const cfg = getFooterConfig(col);
+                  if (!cfg) return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9' }}></td>;
+                  const footerVal = computeFooterValue(col, columns, rows, (c, r) => computeCell(c, r));
+                  return (
+                    <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}>
+                      {cfg.label && <span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{cfg.label}:</span>}
+                      {formatFooterValue(footerVal, col)}
+                    </td>
+                  );
                 })}
               </tr>
             </tfoot>

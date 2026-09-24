@@ -130,23 +130,85 @@ exports.findById = async (id) => {
   return users.length > 0 ? users[0] : null;
 };
 
-exports.getUserOptions = async (scope = {}) => {
+const USER_OPTION_META = `id, full_name, role,
+  JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) AS chuc_vu,
+  JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) AS department`;
+
+const CHUC_VU_GDKV_OPT = 'Giám đốc Khu vực';
+const CHUC_VU_GDTT_OPT = 'Giám đốc Trung tâm Kinh doanh';
+
+exports.getUserOptions = async (scope = {}, poolType = null) => {
+  const role = scope.role;
+  const userId = scope.userId;
+
+  if (poolType === 'gdkv' || poolType === 'gdtt') {
+    const targetChucVu = poolType === 'gdkv' ? CHUC_VU_GDKV_OPT : CHUC_VU_GDTT_OPT;
+    const group = targetChucVu;
+
+    if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
+      const roleFilter = role === 'SUPER_ADMIN'
+        ? `role IN ('SALES','ADMIN','SUPER_ADMIN')`
+        : `role IN ('SALES','ADMIN')`;
+      const [rows] = await pool.query(`SELECT ${USER_OPTION_META} FROM users
+        WHERE status = 'ACTIVE' AND ${roleFilter} ORDER BY full_name`, []);
+      const isPrimary = (r) => r.role === 'SALES' && r.chuc_vu === targetChucVu;
+      return [
+        ...rows.filter(isPrimary).map(r => ({ ...r, group })),
+        ...rows.filter(r => !isPrimary(r)).map(r => ({ ...r, group: 'Khác' })),
+      ];
+    }
+
+    if (role === 'SALES' && userId) {
+      const [meRows] = await pool.query(
+        `SELECT ${USER_OPTION_META} FROM users WHERE id = ? LIMIT 1`, [userId]
+      );
+      const me = meRows[0] || {};
+      if (poolType === 'gdkv' && me.chuc_vu === CHUC_VU_GDKV_OPT) {
+        return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group }];
+      }
+      const dept = me.department || null;
+      if (!dept) return [];
+      const [rows] = await pool.query(
+        `SELECT ${USER_OPTION_META} FROM users
+         WHERE status = 'ACTIVE' AND role = 'SALES'
+           AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) = ?
+           AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?
+         ORDER BY full_name`,
+        [targetChucVu, dept]
+      );
+      return rows.map(r => ({ ...r, group }));
+    }
+
+    if (['CTV', 'NPP'].includes(role) && userId) {
+      const ancestorIds = await exports.getAncestorIds(userId);
+      const ids = [...new Set([Number(userId), ...ancestorIds])];
+      if (ids.length === 0) return [];
+      const [rows] = await pool.query(
+        `SELECT ${USER_OPTION_META} FROM users
+         WHERE status = 'ACTIVE' AND id IN (${ids.map(() => '?').join(',')})
+         ORDER BY full_name`,
+        ids
+      );
+      return rows.map(r => ({ ...r, group: null }));
+    }
+  }
+
   const where = [`status = 'ACTIVE'`];
   const params = [];
-  if (scope.role === 'SALES' && scope.userId) {
-    const branchIds = await exports.getBranchIds(scope.userId);
-    const ancestorIds = await exports.getAncestorIds(scope.userId);
+  if (role === 'SALES' && userId) {
+    const branchIds = await exports.getBranchIds(userId);
+    const ancestorIds = await exports.getAncestorIds(userId);
     const ids = [...new Set([...branchIds, ...ancestorIds])];
     if (ids.length === 0) return [];
     where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
     params.push(...ids);
-  } else if (scope.role && ['CTV', 'NPP'].includes(scope.role) && scope.userId) {
-    const ancestorIds = await exports.getAncestorIds(scope.userId);
-    const ids = [...new Set([Number(scope.userId), ...ancestorIds])];
+  } else if (role && ['CTV', 'NPP'].includes(role) && userId) {
+    const ancestorIds = await exports.getAncestorIds(userId);
+    const ids = [...new Set([Number(userId), ...ancestorIds])];
     where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
     params.push(...ids);
   }
-  if (scope.role && scope.role !== 'SUPER_ADMIN') {
+  if (role && role !== 'SUPER_ADMIN') {
     where.push(`role <> 'SUPER_ADMIN'`);
   }
   const [rows] = await pool.query(

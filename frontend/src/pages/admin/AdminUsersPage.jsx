@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService, excelService } from '../../services/api';
@@ -29,7 +29,7 @@ const parseCustomData = (cd) => {
   try { return JSON.parse(cd); } catch { return {}; }
 };
 
-const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
+const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, allUsers, currentUser, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
   const [detectedRole, setDetectedRole] = useState(createRole);
   const [dept, setDept] = useState('');
   const [chucVu, setChucVu] = useState('');
@@ -50,34 +50,39 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   const isNewGdkv = detectedRole === 'SALES' && chucVu === 'Giám đốc Khu vực';
 
   const deptOfSales = (s) => parseCustomData(s.custom_data).department || '';
-  const gdkvList = salesList.filter(s => {
-    if (s.role !== 'SALES' || s.status !== 'ACTIVE') return false;
-    const cd = parseCustomData(s.custom_data);
-    return cd.chuc_vu === 'Giám đốc Khu vực';
-  });
-  const gdttList = salesList.filter(s => {
-    if (s.role !== 'SALES' || s.status !== 'ACTIVE') return false;
-    const cd = parseCustomData(s.custom_data);
-    return cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh';
-  });
+  const meCd = parseCustomData(currentUser && currentUser.custom_data);
+  const meChucVu = meCd.chuc_vu || '';
+  const meDept = meCd.department || '';
+  const isGdkvViewer = isSales && meChucVu === 'Giám đốc Khu vực';
+  const isGdttViewer = isSales && meChucVu === 'Giám đốc Trung tâm Kinh doanh';
+
+  const activeUsers = (allUsers || []).filter(u => u.status === 'ACTIVE');
+  const gdkvList = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Khu vực');
+  const gdttList = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Trung tâm Kinh doanh');
+  const parentableUsers = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
+  const gdkvIds = new Set(gdkvList.map(s => s.id));
+  const otherUsers = parentableUsers.filter(u => !gdkvIds.has(u.id));
+
   const suggestedGdtt = isNewGdkv && dept
     ? gdttList.find(s => deptOfSales(s) === dept) || null
     : null;
   const sameDeptGdkv = isCtvOrNpp && dept ? gdkvList.filter(s => deptOfSales(s) === dept) : [];
-  const sortedGdkv = [...gdkvList].sort((a, b) => {
-    const ad = deptOfSales(a) === dept ? 0 : 1;
-    const bd = deptOfSales(b) === dept ? 0 : 1;
-    return ad - bd;
-  });
+  const gdkvForGdttViewer = gdkvList.filter(s => deptOfSales(s) === meDept);
 
   useEffect(() => {
-    if (isSales || createParentId) return;
+    if (createParentId) return;
+    if (isGdkvViewer && isCtvOrNpp) { setCreateParentId(String(currentUser.id)); return; }
+    if (isGdttViewer && isCtvOrNpp) {
+      if (gdkvForGdttViewer.length === 1) setCreateParentId(String(gdkvForGdttViewer[0].id));
+      return;
+    }
+    if (isSales) return;
     if (isCtvOrNpp) {
       if (sameDeptGdkv.length === 1) setCreateParentId(String(sameDeptGdkv[0].id));
     } else if (suggestedGdtt) {
       setCreateParentId(String(suggestedGdtt.id));
     }
-  }, [dept, detectedRole, chucVu, salesList]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dept, detectedRole, chucVu, allUsers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <dialog className="modal modal-open" ref={modalRef}>
@@ -131,46 +136,77 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
               </div>
               ) : detectedRole === 'SALES' ? (
               <div className="text-xs opacity-70">Chức vụ hiện tại không cần gán cấp trên (chỉ GĐKV mới gán GĐTT).</div>
+              ) : isSales ? (
+                isGdttViewer ? (
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text text-sm">Giám đốc Khu vực (GĐKV) — cùng phòng ban</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm w-full"
+                    value={createParentId}
+                    onChange={(e) => setCreateParentId(e.target.value)}
+                  >
+                    <option value="">— Chọn GĐKV —</option>
+                    {gdkvForGdttViewer.map(s => {
+                      const sDept = deptOfSales(s);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} — {sDept || 'Chưa có phòng ban'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {meDept && gdkvForGdttViewer.length === 0 && (
+                    <div className="mt-2 text-xs text-orange-600">Không có GĐKV cùng phòng ban ({meDept}).</div>
+                  )}
+                </div>
+                ) : (
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text text-sm">Cấp trên</span>
+                  </label>
+                  <div className="text-sm px-1 py-2">
+                    <strong>{currentUser.full_name}</strong>
+                    <span className="ml-1 opacity-60">(bản thân)</span>
+                  </div>
+                </div>
+                )
               ) : (
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text text-sm">Giám đốc Khu vực (GĐKV)</span>
+                  <span className="label-text text-sm">Cấp trên</span>
                 </label>
                 <select
                   className="select select-bordered select-sm w-full"
                   value={createParentId}
                   onChange={(e) => setCreateParentId(e.target.value)}
                 >
-                  <option value="">— Chọn GĐKV —</option>
-                  {sortedGdkv.map(s => {
-                    const sDept = deptOfSales(s);
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {s.full_name} — {sDept || 'Chưa có phòng ban'}{dept && sDept === dept ? ' •' : ''}
-                      </option>
-                    );
-                  })}
+                  <option value="">— Chọn cấp trên —</option>
+                  <optgroup label="Giám đốc Khu vực">
+                    {gdkvList.map(s => {
+                      const sDept = deptOfSales(s);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} — {sDept || 'Chưa có phòng ban'}{dept && sDept === dept ? ' •' : ''}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Khác">
+                    {otherUsers.map(s => {
+                      const sDept = deptOfSales(s);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} — {s.role}{sDept ? ` — ${sDept}` : ''}{s.id === currentUser.id ? ' (bản thân)' : ''}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
                 </select>
                 {dept && sameDeptGdkv.length === 1 && String(sameDeptGdkv[0].id) === String(createParentId) && (
                   <div className="mt-2 text-xs opacity-70">Tự gợi ý theo phòng ban ({dept}) — có thể đổi tay.</div>
                 )}
-                {createParentId && (() => {
-                  const parent = salesList.find(s => s.id === Number(createParentId));
-                  if (!parent) return null;
-                  const parentCd = parseCustomData(parent.custom_data);
-                  const parentDept = parentCd.department || '';
-                  const gdtt = salesList.find(s => {
-                    const scd = parseCustomData(s.custom_data);
-                    return scd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh' && scd.department === parentDept;
-                  });
-                  if (!gdtt) return null;
-                  return (
-                    <div className="mt-2 p-2 rounded text-xs" style={{ background: '#e0f2fe', color: '#0369a1' }}>
-                      Giám đốc Trung tâm (tự match): <strong>{gdtt.full_name}</strong>
-                      <span className="ml-1 opacity-70">— {parentDept}</span>
-                    </div>
-                  );
-                })()}
               </div>
               )}
             </div>
@@ -851,6 +887,8 @@ const [viewMode, setViewMode] = useState('table');
           isSales={isSales}
           createRoleAllowlist={createRoleAllowlist}
           salesList={salesList}
+          allUsers={users}
+          currentUser={currentUser}
           onClose={() => { setShowCreateForm(false); setCreateParentId(''); setCreateRole('CTV'); }}
           onSubmit={handleCreateUser}
           createRole={createRole}
@@ -916,26 +954,63 @@ const [viewMode, setViewMode] = useState('table');
             const targetChucVu = popupMode === 'edit' ? (fd.chuc_vu || recCd.chuc_vu) : recCd.chuc_vu;
             const isGdkvTarget = targetRole === 'SALES' && targetChucVu === 'Giám đốc Khu vực';
             if (!['CTV', 'NPP'].includes(targetRole) && !isGdkvTarget) return null;
-            const gdkv = salesList.filter(s => {
-              const cd = parseCustomData(s.custom_data);
-              return cd.chuc_vu === 'Giám đốc Khu vực';
-            });
-            const gdtt = salesList.filter(s => {
-              const cd = parseCustomData(s.custom_data);
-              return s.role === 'SALES' && s.status === 'ACTIVE' && cd.chuc_vu === 'Giám đốc Trung tâm Kinh doanh';
-            });
+
+            const meCd = parseCustomData(currentUser.custom_data);
+            const meChucVu = meCd.chuc_vu || '';
+            const meDept = meCd.department || '';
+            const isAdminish = !isSales;
+
+            const activeUsers = (users || []).filter(u => u.status === 'ACTIVE');
+            const gdkv = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Khu vực');
+            const gdtt = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Trung tâm Kinh doanh');
+            const parentable = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
+            const gdkvIdSet = new Set(gdkv.map(s => s.id));
+            const otherUsers = parentable.filter(u => !gdkvIdSet.has(u.id));
+
             const currentParentId = popupMode === 'edit' ? (fd.parent_id ?? rec?.parent_id) : rec?.parent_id;
-            const currentParent = salesList.find(s => s.id === Number(currentParentId));
-            const parentOptions = isGdkvTarget ? gdtt : gdkv;
+            const currentParent = (users || []).find(s => s.id === Number(currentParentId));
+
             const parentLabel = isGdkvTarget ? 'Giám đốc Trung tâm (cấp trên)' : 'Giám đốc Khu vực (GĐKV)';
             const emptyLabel = isGdkvTarget ? '— Chọn GĐTT —' : '— Chọn GĐKV —';
+
+            let groups = [];
+            if (isAdminish) {
+              if (isGdkvTarget) {
+                groups = [
+                  { label: 'Giám đốc Trung tâm Kinh doanh', users: gdtt },
+                  { label: 'Khác', users: parentable.filter(u => !gdtt.some(g => g.id === u.id)) },
+                ];
+              } else {
+                groups = [
+                  { label: 'Giám đốc Khu vực', users: gdkv },
+                  { label: 'Khác', users: otherUsers },
+                ];
+              }
+            } else if (isGdkvTarget) {
+              groups = [{ label: null, users: gdtt }];
+            } else if (meChucVu === 'Giám đốc Khu vực') {
+              groups = [{ label: null, users: (users || []).filter(u => u.id === currentUser.id) }];
+            } else {
+              const sameDept = gdkv.filter(s => (parseCustomData(s.custom_data).department || '') === meDept);
+              groups = [{ label: null, users: sameDept }];
+            }
+
+            const renderOption = (s) => {
+              const cd = parseCustomData(s.custom_data);
+              return (
+                <option key={s.id} value={s.id}>
+                  {s.full_name} — {cd.department || 'Chưa có phòng ban'}{isAdminish && !isGdkvTarget ? ` (${s.role})` : ''}
+                </option>
+              );
+            };
+
             return (
               <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
                 <div className="flex items-center gap-2 mb-3">
                   <Network size={16} className="text-indigo-500" />
                   <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
                 </div>
-                {popupMode === 'edit' ? (
+                {popupMode === 'edit' && isAdminish ? (
                   <div className="form-control">
                     <label className="label"><span className="label-text text-sm">{parentLabel}</span></label>
                     <select
@@ -944,12 +1019,11 @@ const [viewMode, setViewMode] = useState('table');
                       onChange={(e) => setFd(prev => ({ ...prev, parent_id: e.target.value ? Number(e.target.value) : null }))}
                     >
                       <option value="">{emptyLabel}</option>
-                      {parentOptions.map(s => {
-                        const cd = parseCustomData(s.custom_data);
-                        return (
-                          <option key={s.id} value={s.id}>{s.full_name} — {cd.department || 'Chưa có phòng ban'}</option>
-                        );
-                      })}
+                      {groups.map((g, gi) => (
+                        g.label
+                          ? <optgroup key={gi} label={g.label}>{g.users.map(renderOption)}</optgroup>
+                          : <Fragment key={gi}>{g.users.map(renderOption)}</Fragment>
+                      ))}
                     </select>
                   </div>
                 ) : (

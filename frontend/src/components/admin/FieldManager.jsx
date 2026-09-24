@@ -13,7 +13,9 @@ import { getColumnSource } from '../../utils/tableColumnSource';
 import { MARKER_ICON_GROUPS, isValidMarkerIcon, notifyMarkerIconsChanged } from '../../utils/mapMarkerIcons';
 import MarkerIcon from '../MarkerIcon';
 import FormulaEditor from '../dynamic/FormulaEditor';
+import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
 import { formatNumber } from '../../utils/formatNumber';
+import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
 const ENTITIES = ['stations', 'station_proposals', 'users'];
@@ -363,6 +365,16 @@ const FieldManager = () => {
     if (!form.entity || !form.key || !form.label) {
       setError('Vui lòng nhập đầy đủ entity, key, label');
       return;
+    }
+    if (form.type === 'table') {
+      const cols = form.table_config?.columns || [];
+      for (const c of cols) {
+        const v = validateFooterFormula(c.footer_formula, cols, c.key);
+        if (!v.valid) {
+          setError(`Công thức footer cột "${c.label || c.key}": ${v.error}`);
+          return;
+        }
+      }
     }
     const payload = {
       entity: form.entity, key: form.key, label: form.label, type: form.type,
@@ -886,7 +898,7 @@ const FieldManager = () => {
                       if (col.data_link && col.data_link.enabled) badges.push(['DL-Link', '#e0f2fe', '#075985']);
                       else if (col.autofill_from) badges.push(['Auto', '#ffedd5', '#9a3412']);
                       if (col.formula) badges.push(['Fx', '#f3e8ff', '#6b21a8']);
-                      if (col.footer_formula) badges.push([col.footer_formula, '#f1f5f9', '#334155']);
+                      if (col.footer_formula) badges.push([`Footer: ${col.footer_label || col.footer_formula}`, '#f1f5f9', '#334155']);
                       return (
                       <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
@@ -1093,20 +1105,26 @@ const FieldManager = () => {
                           )}
                         </div>
                         {((!col.field_id && col.column_type === 'number') || (col.field_id && entityFields.find(f => f.id === parseInt(col.field_id))?.type === 'number')) && (
-                          <div style={{ marginTop: 4, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <label style={{ fontWeight: 500 }}>Footer:</label>
-                            <select value={col.footer_formula || ''} onChange={(e) => {
-                              const newCols = [...(form.table_config.columns || [])];
-                              newCols[idx] = { ...newCols[idx], footer_formula: e.target.value || null };
-                              updateForm('table_config', { ...form.table_config, columns: newCols });
-                            }} style={{ fontSize: 11, padding: '2px 4px' }}>
-                              <option value="">Không</option>
-                              <option value="SUM">SUM — Tổng</option>
-                              <option value="AVG">AVG — Trung bình</option>
-                              <option value="MIN">MIN — Nhỏ nhất</option>
-                              <option value="MAX">MAX — Lớn nhất</option>
-                              <option value="COUNT">COUNT — Đếm dòng</option>
-                            </select>
+                          <div style={{ marginTop: 4, fontSize: 12 }}>
+                            <label style={{ fontWeight: 500 }}>Footer (công thức):</label>
+                            <TableFooterFormulaInput
+                              value={col.footer_formula || ''}
+                              currentColKey={col.key}
+                              columns={form.table_config.columns || []}
+                              onChange={(v) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], footer_formula: v || null };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }} />
+                            <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{FOOTER_FUNCTION_HELP}</div>
+                            <input type="text" className="form-control" placeholder="Tên footer (VD: Tổng giá khuyến mãi)"
+                              value={col.footer_label || ''}
+                              onChange={(e) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], footer_label: e.target.value };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }}
+                              style={{ width: '100%', fontSize: 12, padding: '6px 8px', marginTop: 4 }} />
                           </div>
                         )}
                         {(() => {

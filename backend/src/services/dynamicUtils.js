@@ -490,7 +490,8 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
       else if (me.role === 'SALES' && me.chucVu !== CHUC_VU_GDTT) picId = currentId;
       if (picId) {
         const pic = await getUserWorkInfo(db, picId);
-        id = await findCenterDirectorId(db, pic.phongBan);
+        if (['ADMIN', 'SUPER_ADMIN'].includes(pic.role)) id = picId;
+        else id = await findCenterDirectorId(db, pic.phongBan);
       } else {
         id = null;
       }

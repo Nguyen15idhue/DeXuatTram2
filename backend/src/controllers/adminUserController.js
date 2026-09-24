@@ -1,6 +1,16 @@
 const bcrypt = require('bcryptjs');
 const adminUserService = require('../services/adminUserService');
 
+const ALLOWED_PARENT_ROLES = ['SALES', 'ADMIN', 'SUPER_ADMIN'];
+const CHUC_VU_GDKV = 'Giám đốc Khu vực';
+const CHUC_VU_GDTT = 'Giám đốc Trung tâm Kinh doanh';
+
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
 exports.getAll = async (req, res) => {
   try {
     const { page = 1, limit = 10, search = '', all = '' } = req.query;
@@ -15,7 +25,8 @@ exports.getAll = async (req, res) => {
 
 exports.getOptions = async (req, res) => {
   try {
-    const options = await adminUserService.getUserOptions({ role: req.user.role, userId: req.user.id });
+    const pool = ['gdkv', 'gdtt'].includes(req.query.pool) ? req.query.pool : null;
+    const options = await adminUserService.getUserOptions({ role: req.user.role, userId: req.user.id }, pool);
     res.json({ success: true, data: options });
   } catch (error) {
     console.error('Get user options error:', error);
@@ -69,7 +80,20 @@ exports.create = async (req, res) => {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
       role = role || 'CTV';
-      parentId = req.user.id;
+      const creator = await adminUserService.findById(req.user.id);
+      const creatorCd = parseCustomData(creator && creator.custom_data);
+      if (creatorCd.chuc_vu === CHUC_VU_GDKV) {
+        parentId = req.user.id;
+      } else if (creatorCd.chuc_vu === CHUC_VU_GDTT && parent_id) {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        const parentCd = parseCustomData(parentUser && parentUser.custom_data);
+        const sameDept = parentCd.department && parentCd.department === creatorCd.department;
+        parentId = (parentUser && parentUser.role === 'SALES' && parentCd.chuc_vu === CHUC_VU_GDKV && sameDept)
+          ? parentUser.id
+          : req.user.id;
+      } else {
+        parentId = req.user.id;
+      }
     } else if (creatorRole === 'ADMIN') {
       if (role === 'SUPER_ADMIN') {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
@@ -77,7 +101,7 @@ exports.create = async (req, res) => {
       role = role || 'CTV';
       if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
-        if (parentUser && parentUser.role === 'SALES') {
+        if (parentUser && ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
           parentId = parentUser.id;
         }
       }
@@ -85,7 +109,7 @@ exports.create = async (req, res) => {
       role = role || 'CTV';
       if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
-        if (parentUser && parentUser.role === 'SALES') {
+        if (parentUser && ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
           parentId = parentUser.id;
         }
       }
@@ -183,11 +207,14 @@ exports.update = async (req, res) => {
         parentId = null;
       } else {
         const parentUser = await adminUserService.findById(Number(parent_id));
-        if (parentUser && parentUser.role === 'SALES') {
-          parentId = parentUser.id;
-        } else {
-          return res.status(400).json({ success: false, message: 'Phụ trách phải là tài khoản SALES' });
+        if (!parentUser || !ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
+          return res.status(400).json({ success: false, message: 'Cấp trên phải là tài khoản SALES/ADMIN/SUPER_ADMIN' });
         }
+        const branchIds = await adminUserService.getBranchIds(targetId);
+        if (branchIds.includes(Number(parentUser.id))) {
+          return res.status(400).json({ success: false, message: 'Không thể gán cấp trên là chính mình hoặc cấp dưới' });
+        }
+        parentId = parentUser.id;
       }
     }
 

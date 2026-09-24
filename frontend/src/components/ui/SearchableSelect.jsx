@@ -41,6 +41,7 @@ const SearchableSelect = ({
   const term = normalizeForSearch(search.trim());
   const filtered = term
     ? (options || []).filter((o) => {
+        if (o && typeof o === 'object' && o.isGroup) return false;
         const label = o && typeof o === 'object' ? (o.label ?? o.value ?? '') : o;
         const val = o && typeof o === 'object' ? (o.value ?? o.label ?? '') : o;
         return normalizeForSearch(label).includes(term) || normalizeForSearch(val).includes(term);
@@ -48,7 +49,7 @@ const SearchableSelect = ({
     : (options || []);
 
   const pick = (opt) => {
-    if (!opt || opt.disabled) return;
+    if (!opt || opt.disabled || opt.isGroup) return;
     const v = opt && typeof opt === 'object' ? (opt.value ?? opt) : opt;
     if (onChange) onChange(v);
     setOpen(false);
@@ -113,6 +114,16 @@ const SearchableSelect = ({
             <div className="px-2.5 py-2 text-[13px] text-gray-400">{noResultText}</div>
           ) : (
             filtered.map((opt, idx) => {
+              if (opt && typeof opt === 'object' && opt.isGroup) {
+                return (
+                  <div
+                    key={`g-${idx}`}
+                    style={{ padding: '6px 10px 2px', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.3 }}
+                  >
+                    {opt.label}
+                  </div>
+                );
+              }
               const v = opt && typeof opt === 'object' ? (opt.value ?? opt) : opt;
               const label = opt && typeof opt === 'object' ? (opt.label ?? opt.value) : opt;
               const isSelected = String(v) === String(value);

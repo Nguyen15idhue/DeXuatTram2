@@ -3,6 +3,7 @@ import FileUpload from './FileUpload';
 import UserField from './UserField';
 import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { resolveColumnDatalist, getColumnSource } from '../../utils/tableColumnSource';
+import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -973,32 +974,21 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                 </tr>
               ))}
             </tbody>
-            {columns.some(col => col.footer_formula) && rows.length > 0 && (
+            {hasFooter(columns) && rows.length > 0 && (
               <tfoot>
                 <tr>
                   <td style={{ ...TABLE_HEADER_STYLE, textAlign: 'center', fontWeight: 700, background: '#f1f5f9' }}></td>
                   {columns.map(col => {
-                    if (!col.footer_formula) {
+                    const cfg = getFooterConfig(col);
+                    if (!cfg) {
                       return <td key={col.key} style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9' }}></td>;
                     }
-                    const values = rows.map(r => {
-                      const raw = col.formula ? computeFormula(col.formula, r) : r[col.key];
-                      const n = parseFloat(raw);
-                      return isNaN(n) ? null : n;
-                    }).filter(v => v !== null);
-                    const FOOTER_LABELS = { SUM: 'Tổng', AVG: 'TB', MIN: 'Min', MAX: 'Max', COUNT: 'Đếm' };
-                    let footerVal = '';
-                    switch (col.footer_formula) {
-                      case 'SUM': footerVal = values.reduce((a, b) => a + b, 0); break;
-                      case 'AVG': footerVal = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0; break;
-                      case 'MIN': footerVal = values.length ? Math.min(...values) : 0; break;
-                      case 'MAX': footerVal = values.length ? Math.max(...values) : 0; break;
-                      case 'COUNT': footerVal = values.length; break;
-                    }
-                    const label = FOOTER_LABELS[col.footer_formula] || col.footer_formula;
+                    const getCellValue = (c, r) => (c.formula ? computeFormula(c.formula, r) : r[c.key]);
+                    const footerVal = computeFooterValue(col, columns, rows, getCellValue);
                     return (
                       <td key={col.key} style={{ ...TABLE_HEADER_STYLE, background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}>
-                        <span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{label}:</span>{typeof footerVal === 'number' ? footerVal.toLocaleString() : footerVal}
+                        {cfg.label && <span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{cfg.label}:</span>}
+                        {formatFooterValue(footerVal, col)}
                       </td>
                     );
                   })}
