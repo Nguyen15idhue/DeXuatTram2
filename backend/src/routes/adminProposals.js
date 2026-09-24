@@ -111,6 +111,30 @@ router.get('/:id', requireAuth, requireUserManager, adminProposalController.getB
 
 /**
  * @swagger
+ * /api/admin/proposals/{id}/push-check:
+ *   get:
+ *     tags: [Admin - Proposals]
+ *     summary: Kiểm tra liên kết 1Office của người phụ trách trước khi duyệt/đẩy
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Trả về missing (chưa gán) và unlinked (đã gán nhưng chưa liên kết / chưa có tài khoản 1Office)
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id/push-check', requireAuth, requireUserManager, adminProposalController.pushCheck);
+
+/**
+ * @swagger
  * /api/admin/proposals/{id}:
  *   delete:
  *     tags: [Admin - Proposals]

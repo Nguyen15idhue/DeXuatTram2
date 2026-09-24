@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Search, Pencil, Trash2, Eye, Upload, Archive, RefreshCw, BookOpen, Film,
-  Table as TableIcon, LayoutGrid,
+  Table as TableIcon, LayoutGrid, Bot,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -9,6 +9,7 @@ import { adminHelpApi, clearHelpCache } from '../../services/helpApi';
 import { VideoBlock, Gallery } from '../../components/help/HelpMedia';
 import HelpEditor from '../../components/admin/HelpEditor';
 import HelpGuideBoard from '../../components/admin/HelpGuideBoard';
+import AssistantConfigPanel from '../../components/admin/AssistantConfigPanel';
 import PageHeader from '../../components/ui/PageHeader';
 import Badge from '../../components/ui/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -34,6 +35,7 @@ const AdminHelpPage = () => {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [toast, setToast] = useState('');
   const [viewMode, setViewMode] = useState('table');
+  const [mainTab, setMainTab] = useState('help');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [presetCategoryId, setPresetCategoryId] = useState(null);
@@ -164,15 +166,18 @@ const AdminHelpPage = () => {
         actions={(
           <>
             <div role="tablist" className="tabs tabs-boxed tabs-sm">
-              <button type="button" role="tab" className={`tab gap-1 ${viewMode === 'table' ? 'tab-active' : ''}`} onClick={() => setViewMode('table')}>
+              <button type="button" role="tab" className={`tab gap-1 ${mainTab === 'help' && viewMode === 'table' ? 'tab-active' : ''}`} onClick={() => { setMainTab('help'); setViewMode('table'); }}>
                 <TableIcon size={13} /> Bảng
               </button>
-              <button type="button" role="tab" className={`tab gap-1 ${viewMode === 'guide' ? 'tab-active' : ''}`} onClick={() => setViewMode('guide')}>
+              <button type="button" role="tab" className={`tab gap-1 ${mainTab === 'help' && viewMode === 'guide' ? 'tab-active' : ''}`} onClick={() => { setMainTab('help'); setViewMode('guide'); }}>
                 <LayoutGrid size={13} /> Hướng dẫn
+              </button>
+              <button type="button" role="tab" className={`tab gap-1 ${mainTab === 'assistant' ? 'tab-active' : ''}`} onClick={() => setMainTab('assistant')}>
+                <Bot size={13} /> Trợ lý AI
               </button>
             </div>
             <button type="button" className="btn btn-sm btn-ghost gap-1" onClick={load} disabled={loading}><RefreshCw size={14} /> Tải lại</button>
-            <button type="button" className="btn btn-sm btn-primary gap-1" onClick={() => openCreate(null)}><Plus size={14} /> Thêm bài</button>
+            {mainTab === 'help' && <button type="button" className="btn btn-sm btn-primary gap-1" onClick={() => openCreate(null)}><Plus size={14} /> Thêm bài</button>}
           </>
         )}
       />
@@ -180,6 +185,10 @@ const AdminHelpPage = () => {
       {error && <div className="alert alert-error py-2 px-3"><span className="text-sm">{error}</span></div>}
       {toast && <div className="alert alert-success py-2 px-3"><span className="text-sm">{toast}</span></div>}
 
+      {mainTab === 'assistant' ? (
+        <AssistantConfigPanel token={token} />
+      ) : (
+      <>
       <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
@@ -222,6 +231,8 @@ const AdminHelpPage = () => {
           onStatus={changeStatus}
           onPreview={(a) => setPreview(a)}
         />
+      )}
+      </>
       )}
 
       {editorOpen && (

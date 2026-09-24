@@ -80,4 +80,12 @@ const assistantLimiter = rateLimit({
   legacyHeaders: false
 });
 
-module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, webhookLimiter, assistantLimiter };
+const assistantFileLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: 'Bạn đã gửi quá nhiều tệp, vui lòng thử lại sau' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, webhookLimiter, assistantLimiter, assistantFileLimiter };

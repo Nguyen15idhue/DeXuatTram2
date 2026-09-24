@@ -43,6 +43,7 @@ const webhookConfigsRoutes = require('./routes/webhookConfigs');
 const lifecycleConfigRoutes = require('./routes/lifecycleConfig');
 const helpPublicRoutes = require('./routes/helpPublic');
 const adminHelpRoutes = require('./routes/adminHelp');
+const adminAssistantRoutes = require('./routes/adminAssistant');
 const adminHelpVideosRoutes = require('./routes/adminHelpVideos');
 const assistantRoutes = require('./routes/assistant');
 const queueWorker = require('./workers/queueWorker');
@@ -141,6 +142,7 @@ app.use('/api/admin/lifecycle-config', adminLimiter, lifecycleConfigRoutes);
 app.use('/api/help', helpPublicRoutes);
 app.use('/api/admin/help', adminLimiter, adminHelpRoutes);
 app.use('/api/admin/help/videos', adminLimiter, adminHelpVideosRoutes);
+app.use('/api/admin/assistant', adminLimiter, adminAssistantRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/tiles', tilesRoutes);
 

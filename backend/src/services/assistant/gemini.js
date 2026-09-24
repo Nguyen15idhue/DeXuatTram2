@@ -5,14 +5,26 @@ function isConfigured() {
   return !!process.env.GEMINI_API_KEY;
 }
 
-async function ask({ systemPrompt, userPrompt, timeoutMs = 15000, maxTokens = 600, temperature = 0.2 }) {
+function supportsVision() {
+  return isConfigured();
+}
+
+function toParts(userPrompt, files) {
+  const parts = [{ text: userPrompt }];
+  for (const f of files || []) {
+    if (f && f.base64 && f.mime) parts.push({ inlineData: { mimeType: f.mime, data: f.base64 } });
+  }
+  return parts;
+}
+
+async function ask({ systemPrompt, userPrompt, files, models, timeoutMs = 15000, maxTokens = 600, temperature = 0.2 }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error('GEMINI chua cau hinh');
     err.providerFatal = true;
     throw err;
   }
-  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+  const model = (models && models[0]) || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -22,7 +34,7 @@ async function ask({ systemPrompt, userPrompt, timeoutMs = 15000, maxTokens = 60
       signal: controller.signal,
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        contents: [{ role: 'user', parts: toParts(userPrompt, files) }],
         generationConfig: { temperature, maxOutputTokens: maxTokens },
       }),
     });
@@ -34,23 +46,26 @@ async function ask({ systemPrompt, userPrompt, timeoutMs = 15000, maxTokens = 60
     }
     const text = body?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('\n').trim();
     if (!text) throw new Error('Gemini tra ve rong');
-    return { text, model };
+    const meta = body?.usageMetadata || null;
+    const usage = meta ? { prompt: meta.promptTokenCount || 0, completion: meta.candidatesTokenCount || 0 } : null;
+    return { text, model, usage };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function streamAsk({ systemPrompt, userPrompt, timeoutMs = 60000, maxTokens = 600, temperature = 0.2, onDelta }) {
+async function streamAsk({ systemPrompt, userPrompt, files, models, timeoutMs = 60000, maxTokens = 600, temperature = 0.2, onDelta }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error('GEMINI chua cau hinh');
     err.providerFatal = true;
     throw err;
   }
-  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+  const model = (models && models[0]) || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let full = '';
+  let usage = null;
   try {
     const res = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`, {
       method: 'POST',
@@ -58,7 +73,7 @@ async function streamAsk({ systemPrompt, userPrompt, timeoutMs = 60000, maxToken
       signal: controller.signal,
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        contents: [{ role: 'user', parts: toParts(userPrompt, files) }],
         generationConfig: { temperature, maxOutputTokens: maxTokens },
       }),
     });
@@ -73,12 +88,14 @@ async function streamAsk({ systemPrompt, userPrompt, timeoutMs = 60000, maxToken
       try { obj = JSON.parse(data); } catch { continue; }
       const t = (obj?.candidates?.[0]?.content?.parts || []).map((p) => p.text).filter(Boolean).join('');
       if (t) { full += t; if (onDelta) onDelta(t); }
+      const meta = obj?.usageMetadata;
+      if (meta) usage = { prompt: meta.promptTokenCount || 0, completion: meta.candidatesTokenCount || 0 };
     }
     if (!full) throw new Error('Gemini tra ve rong');
-    return { text: full, model };
+    return { text: full, model, usage };
   } finally {
     clearTimeout(timer);
   }
 }
 
-module.exports = { isConfigured, ask, streamAsk, name: 'gemini' };
+module.exports = { isConfigured, supportsVision, ask, streamAsk, name: 'gemini' };

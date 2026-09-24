@@ -176,7 +176,13 @@ function judge(c, d) {
 async function main() {
   const rows = [];
   let pass = 0;
-  for (let i = 0; i < CASES.length; i++) {
+  const only = String(process.env.EVAL_ONLY || '')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= CASES.length);
+  const onlySet = only.length > 0 ? new Set(only) : null;
+  for (let i = 0; i < CASES.length; i += 1) {
+    if (onlySet && !onlySet.has(i + 1)) continue;
     const c = CASES[i];
     const user = c.user === 'guest' ? null : (c.user === 'ctv' ? CTV : ADMIN);
     const started = Date.now();
@@ -191,7 +197,7 @@ async function main() {
     const row = { n: i + 1, cat: c.cat, q: c.q, type: c.type, ok: j.ok, reason: j.reason, provider: d.provider || '-', cached: !!d.cached, ms: Date.now() - started, slugs: j.slugs, answer: String(d.answer || '').slice(0, 400) };
     rows.push(row);
     console.log(`${j.ok ? 'PASS' : 'FAIL'} | ${i + 1} | [${c.cat}] ${c.q} | ${j.reason || '-'} | ${row.provider} | ${row.ms}ms`);
-    await new Promise((r) => setTimeout(r, 4500));
+    await new Promise((r) => setTimeout(r, Number(process.env.EVAL_PACING_MS) || 4500));
   }
   const fs = require('fs');
   const path = require('path');
@@ -207,4 +213,8 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(async (e) => { console.error('FATAL', e.message); try { await pool.end(); } catch { /* silent */ } process.exit(2); });
+if (require.main === module) {
+  main().catch(async (e) => { console.error('FATAL', e.message); try { await pool.end(); } catch { /* silent */ } process.exit(2); });
+}
+
+module.exports = { CASES, LEAK_RE, ADMIN, CTV };

@@ -56,6 +56,26 @@ exports.getById = async (req, res) => {
   }
 };
 
+exports.pushCheck = async (req, res) => {
+  try {
+    const light = await adminProposalService.getProposalById(req.params.id);
+    if (!light) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const scope = await scopeFor(req);
+    if (denyOutsideBranch(light, scope)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
+    }
+    const proposal = await adminProposalService.getProposalWithUser(req.params.id);
+    const syncService = require('../services/syncService');
+    const result = await syncService.getPushCheck(proposal || light);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Admin push check error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.delete = async (req, res) => {
   try {
     const existing = await adminProposalService.getProposalById(req.params.id);

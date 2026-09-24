@@ -165,7 +165,7 @@ const DENY_TEXT = 'Trợ lý không truy cập dữ liệu vận hành (người
 
 async function getCurrentTime(nq) {
   if (!/(hom nay|bay gio|may gio|ngay may|thoi gian hien tai|hom qua|ngay bao nhieu)/.test(nq)) return null;
-  return { skipDocs: true, text: `Thời gian hệ thống hiện tại: ${nowVN()} (múi giờ Việt Nam).` };
+  return { skipDocs: true, direct: true, text: `Thời gian hệ thống hiện tại: ${nowVN()} (múi giờ Việt Nam).` };
 }
 
 async function getLifecycleRules(nq) {
@@ -180,7 +180,7 @@ async function getLifecycleRules(nq) {
   if (map.principle_supplement_days) parts.push(`Bổ sung hồ sơ ở bước duyệt chủ trương: ${map.principle_supplement_days} ngày`);
   if (map.lifecycle_max_retries) parts.push(`Số lần thử lại tối đa khi tự động lỗi: ${map.lifecycle_max_retries}`);
   if (parts.length === 0) return null;
-  return { skipDocs: true, text: `Quy tắc vòng đời tự động của đề xuất: ${parts.join('; ')}.` };
+  return { skipDocs: true, direct: true, text: `Quy tắc vòng đời tự động của đề xuất: ${parts.join('; ')}.` };
 }
 
 async function countEntities(nq) {
@@ -193,7 +193,7 @@ async function countEntities(nq) {
   if (!target) return { skipDocs: true, deny: true, text: DENY_TEXT };
   const [rows] = await pool.query(target.sql);
   const n = Number(rows[0] && rows[0].n) || 0;
-  return { skipDocs: true, text: `Tổng số ${target.label}: ${n}. (Tính đến ${nowVN()}).` };
+  return { skipDocs: true, direct: true, text: `Tổng số ${target.label}: ${n}. (Tính đến ${nowVN()}).` };
 }
 
 async function getFieldMeta(nq) {
@@ -254,12 +254,12 @@ async function getStatusLabels(nq) {
     out.push(`**${name}**: ${opts.map((o) => `${o.label || o.value} (\`${o.value}\`)`).join(', ')}`);
   }
   if (out.length === 0) return null;
-  return { skipDocs: true, text: `Các trạng thái trong hệ thống:\n${out.join('\n')}` };
+  return { skipDocs: true, direct: true, text: `Các trạng thái trong hệ thống:\n${out.join('\n')}` };
 }
 
 async function getFieldTypes(nq) {
   if (!/(loai truong|kieu truong|\bfield type|ho tro.*(loai|kieu).*(truong|du lieu)|cac loai truong|nhung loai truong)/.test(nq)) return null;
-  return { skipDocs: true, text: `Hệ thống hỗ trợ các loại trường: ${FIELD_TYPES.map((t) => `\`${t}\``).join(', ')}.` };
+  return { skipDocs: true, direct: true, text: `Hệ thống hỗ trợ các loại trường: ${FIELD_TYPES.map((t) => `\`${t}\``).join(', ')}.` };
 }
 
 async function getFormInfo(nq) {
@@ -274,9 +274,9 @@ async function getFormInfo(nq) {
      ${where} GROUP BY f.id ORDER BY f.entity, f.id`,
     params
   );
-  if (rows.length === 0) return { skipDocs: true, text: 'Chưa có form nào phù hợp trong hệ thống.' };
+  if (rows.length === 0) return { skipDocs: true, direct: true, text: 'Chưa có form nào phù hợp trong hệ thống.' };
   const lines = rows.map((r) => `- ${r.name} (${r.entity}, mục đích: ${r.purpose || 'all'}, ${r.status}${r.is_default ? ', mặc định' : ''}) — ${Number(r.field_count)} trường`);
-  return { skipDocs: true, text: `Danh sách form:\n${lines.join('\n')}` };
+  return { skipDocs: true, direct: true, text: `Danh sách form:\n${lines.join('\n')}` };
 }
 
 async function getViewInfo(nq) {
@@ -291,9 +291,9 @@ async function getViewInfo(nq) {
      ${where} GROUP BY v.id ORDER BY v.entity, v.id`,
     params
   );
-  if (rows.length === 0) return { skipDocs: true, text: 'Chưa có view nào phù hợp trong hệ thống.' };
+  if (rows.length === 0) return { skipDocs: true, direct: true, text: 'Chưa có view nào phù hợp trong hệ thống.' };
   const lines = rows.map((r) => `- ${r.name} (${r.entity}, dùng cho: ${r.usage || 'table'}, ${r.status}) — ${Number(r.col_count)} cột`);
-  return { skipDocs: true, text: `Danh sách view:\n${lines.join('\n')}` };
+  return { skipDocs: true, direct: true, text: `Danh sách view:\n${lines.join('\n')}` };
 }
 
 async function getMapConfig(nq) {
@@ -303,7 +303,7 @@ async function getMapConfig(nq) {
     'SELECT renderer, default_mode, tile_mode, retina, enable_3d, center_lat, center_lng, default_zoom, max_zoom, tile_provider_id FROM map_configs WHERE entity = ? LIMIT 1',
     ['stations']
   );
-  if (rows.length === 0) return { skipDocs: true, text: 'Chưa có cấu hình bản đồ trong hệ thống.' };
+  if (rows.length === 0) return { skipDocs: true, direct: true, text: 'Chưa có cấu hình bản đồ trong hệ thống.' };
   const c = rows[0];
   const provider = TILE_PROVIDERS.find((p) => p.id === c.tile_provider_id);
   const providerName = provider ? provider.name : (c.tile_provider_id || 'không rõ');
@@ -316,7 +316,7 @@ async function getMapConfig(nq) {
     `3D: ${c.enable_3d ? 'bật' : 'tắt'}`,
     `tâm bản đồ: ${Number(c.center_lat).toFixed(4)}, ${Number(c.center_lng).toFixed(4)} (zoom ${c.default_zoom}, tối đa ${c.max_zoom})`,
   ];
-  return { skipDocs: true, text: `Bản đồ đang dùng: ${parts.join('; ')}.` };
+  return { skipDocs: true, direct: true, text: `Bản đồ đang dùng: ${parts.join('; ')}.` };
 }
 
 async function getMapProviders(nq) {
@@ -326,14 +326,14 @@ async function getMapProviders(nq) {
   const parts = [];
   if (free.length) parts.push(`Miễn phí (không cần khóa): ${free.join(', ')}`);
   if (paid.length) parts.push(`Cần khóa API: ${paid.join(', ')}`);
-  return { skipDocs: true, text: `Các nhà cung cấp bản đồ hỗ trợ:\n- ${parts.join('\n- ')}` };
+  return { skipDocs: true, direct: true, text: `Các nhà cung cấp bản đồ hỗ trợ:\n- ${parts.join('\n- ')}` };
 }
 
 async function getGeocodeProvider(nq) {
   if (!/(geocode)|(dia chi.*(dich vu|provider|\bapi\b|tra cuu))|((dich vu|provider|tra cuu).*dia chi)/.test(nq)) return null;
   const [rows] = await pool.query('SELECT provider, enabled FROM geocode_configs WHERE enabled = 1 LIMIT 1');
-  if (rows.length === 0) return { skipDocs: true, text: 'Chưa cấu hình dịch vụ tra cứu địa chỉ.' };
-  return { skipDocs: true, text: `Dịch vụ tra cứu địa chỉ (reverse geocode) đang dùng: **${rows[0].provider}**.` };
+  if (rows.length === 0) return { skipDocs: true, direct: true, text: 'Chưa cấu hình dịch vụ tra cứu địa chỉ.' };
+  return { skipDocs: true, direct: true, text: `Dịch vụ tra cứu địa chỉ (reverse geocode) đang dùng: **${rows[0].provider}**.` };
 }
 
 async function getHelpToc(nq) {
@@ -343,7 +343,7 @@ async function getHelpToc(nq) {
   );
   if (rows.length === 0) return null;
   const lines = rows.map((r) => `- ${r.title} (${Number(r.n)} bài)`);
-  return { skipDocs: true, text: `Các chuyên mục hướng dẫn:\n${lines.join('\n')}` };
+  return { skipDocs: true, direct: true, text: `Các chuyên mục hướng dẫn:\n${lines.join('\n')}` };
 }
 
 const TOOL_ORDER = [
@@ -369,7 +369,7 @@ async function lookup(question, user) {
   for (const tool of TOOL_ORDER) {
     try {
       const res = await tool(nq, user);
-      if (res) return res;
+      if (res) return { ...res, tool: tool.name };
     } catch (err) {
       console.error(`[assistant] dataTool ${tool.name} error:`, err.message);
       return { skipDocs: true, error: true, text: 'Không truy vấn được dữ liệu lúc này. Bạn thử lại sau.' };

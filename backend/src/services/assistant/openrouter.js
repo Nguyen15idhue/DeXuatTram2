@@ -12,7 +12,28 @@ function modelList() {
     .filter(Boolean);
 }
 
-async function callModel(model, { systemPrompt, userPrompt, timeoutMs, maxTokens = 600, temperature = 0.2 }) {
+function visionModelList() {
+  return String(process.env.OPENROUTER_VISION_MODEL || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+}
+
+function supportsVision() {
+  return isConfigured() && visionModelList().length > 0;
+}
+
+function toContent(userPrompt, files) {
+  const content = [{ type: 'text', text: userPrompt }];
+  for (const f of files || []) {
+    if (f && f.base64 && f.mime && String(f.mime).startsWith('image/')) {
+      content.push({ type: 'image_url', image_url: { url: `data:${f.mime};base64,${f.base64}` } });
+    }
+  }
+  return content;
+}
+
+async function callModel(model, { systemPrompt, userPrompt, files, timeoutMs, maxTokens = 600, temperature = 0.2 }) {
   const key = process.env.OPENROUTER_API_KEY;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -32,7 +53,7 @@ async function callModel(model, { systemPrompt, userPrompt, timeoutMs, maxTokens
         max_tokens: maxTokens,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'user', content: toContent(userPrompt, files) },
         ],
       }),
     });
@@ -44,25 +65,34 @@ async function callModel(model, { systemPrompt, userPrompt, timeoutMs, maxTokens
     }
     const text = body?.choices?.[0]?.message?.content?.trim();
     if (!text) throw new Error('OpenRouter tra ve rong');
-    return text;
+    const u = body?.usage || null;
+    const usage = u ? { prompt: u.prompt_tokens || 0, completion: u.completion_tokens || 0 } : null;
+    return { text, usage };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function ask({ systemPrompt, userPrompt, timeoutMs = 30000, maxTokens = 600, temperature = 0.2 }) {
+async function ask({ systemPrompt, userPrompt, files, models, timeoutMs = 30000, maxTokens = 600, temperature = 0.2 }) {
   if (!process.env.OPENROUTER_API_KEY) {
     const err = new Error('OpenRouter chua cau hinh');
     err.providerFatal = true;
     throw err;
   }
-  const models = modelList();
-  const perModelTimeout = Math.max(8000, Math.floor(timeoutMs / models.length));
+  const list = (models && models.length > 0)
+    ? models
+    : ((files && files.length > 0) ? visionModelList() : modelList());
+  if (list.length === 0) {
+    const err = new Error(files && files.length > 0 ? 'OpenRouter chua cau hinh model thi giac' : 'OpenRouter that bai');
+    err.providerFatal = true;
+    throw err;
+  }
+  const perModelTimeout = Math.max(8000, Math.floor(timeoutMs / list.length));
   let lastErr = null;
-  for (const model of models) {
+  for (const model of list) {
     try {
-      const text = await callModel(model, { systemPrompt, userPrompt, timeoutMs: perModelTimeout, maxTokens, temperature });
-      return { text, model };
+      const out = await callModel(model, { systemPrompt, userPrompt, files, timeoutMs: perModelTimeout, maxTokens, temperature });
+      return { text: out.text, model, usage: out.usage || null };
     } catch (err) {
       lastErr = err;
       const code = err.statusCode;
@@ -72,11 +102,12 @@ async function ask({ systemPrompt, userPrompt, timeoutMs = 30000, maxTokens = 60
   throw lastErr || new Error('OpenRouter that bai');
 }
 
-async function streamModel(model, { systemPrompt, userPrompt, timeoutMs, maxTokens, temperature, onDelta }) {
+async function streamModel(model, { systemPrompt, userPrompt, files, timeoutMs, maxTokens, temperature, onDelta }) {
   const key = process.env.OPENROUTER_API_KEY;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let emitted = false;
+  let usage = null;
   try {
     const res = await fetch(OPENROUTER_URL, {
       method: 'POST',
@@ -94,7 +125,7 @@ async function streamModel(model, { systemPrompt, userPrompt, timeoutMs, maxToke
         stream: true,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'user', content: toContent(userPrompt, files) },
         ],
       }),
     });
@@ -111,9 +142,11 @@ async function streamModel(model, { systemPrompt, userPrompt, timeoutMs, maxToke
       try { obj = JSON.parse(data); } catch { continue; }
       const t = obj?.choices?.[0]?.delta?.content || '';
       if (t) { full += t; emitted = true; if (onDelta) onDelta(t); }
+      const u = obj?.usage;
+      if (u) usage = { prompt: u.prompt_tokens || 0, completion: u.completion_tokens || 0 };
     }
     if (!full) throw new Error('OpenRouter tra ve rong');
-    return { text: full, model };
+    return { text: full, model, usage };
   } catch (err) {
     err.emitted = emitted;
     throw err;
@@ -122,18 +155,25 @@ async function streamModel(model, { systemPrompt, userPrompt, timeoutMs, maxToke
   }
 }
 
-async function streamAsk({ systemPrompt, userPrompt, timeoutMs = 60000, maxTokens = 600, temperature = 0.2, onDelta }) {
+async function streamAsk({ systemPrompt, userPrompt, files, models, timeoutMs = 60000, maxTokens = 600, temperature = 0.2, onDelta }) {
   if (!process.env.OPENROUTER_API_KEY) {
     const err = new Error('OpenRouter chua cau hinh');
     err.providerFatal = true;
     throw err;
   }
-  const models = modelList();
-  const perModelTimeout = Math.max(15000, Math.floor(timeoutMs / models.length));
+  const list = (models && models.length > 0)
+    ? models
+    : ((files && files.length > 0) ? visionModelList() : modelList());
+  if (list.length === 0) {
+    const err = new Error(files && files.length > 0 ? 'OpenRouter chua cau hinh model thi giac' : 'OpenRouter that bai');
+    err.providerFatal = true;
+    throw err;
+  }
+  const perModelTimeout = Math.max(15000, Math.floor(timeoutMs / list.length));
   let lastErr = null;
-  for (const model of models) {
+  for (const model of list) {
     try {
-      return await streamModel(model, { systemPrompt, userPrompt, timeoutMs: perModelTimeout, maxTokens, temperature, onDelta });
+      return await streamModel(model, { systemPrompt, userPrompt, files, timeoutMs: perModelTimeout, maxTokens, temperature, onDelta });
     } catch (err) {
       lastErr = err;
       if (err.emitted) throw err;
@@ -144,4 +184,4 @@ async function streamAsk({ systemPrompt, userPrompt, timeoutMs = 60000, maxToken
   throw lastErr || new Error('OpenRouter that bai');
 }
 
-module.exports = { isConfigured, ask, streamAsk, modelList, name: 'openrouter' };
+module.exports = { isConfigured, supportsVision, ask, streamAsk, modelList, visionModelList, name: 'openrouter' };

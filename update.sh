@@ -24,4 +24,13 @@ fi
 
 echo "[update] Khoi dong lai..."
 docker compose -f "$COMPOSE_FILE" up -d
+
+echo "[update] Index kho tri thuc chatbot (best-effort)..."
+if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
+  (cd backend && node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai (bo qua)."
+  (cd backend && node scripts/index-code-knowledge.js) || echo "[update] Canh bao: index-code-knowledge that bai (bo qua)."
+else
+  echo "[update] Bo qua index chatbot (thieu node/mysql2). Chay tay: npm run index:knowledge (trong backend/)."
+fi
+
 echo "Da cap nhat. Log: docker compose -f $COMPOSE_FILE logs -f"

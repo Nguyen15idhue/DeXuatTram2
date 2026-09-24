@@ -1,8 +1,30 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const { optionalAuth } = require('../middlewares/auth');
-const { assistantLimiter } = require('../middlewares/rateLimits');
+const { assistantLimiter, assistantFileLimiter } = require('../middlewares/rateLimits');
 const assistantService = require('../services/assistantService');
+const attachments = require('../services/assistant/attachments');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: attachments.maxBytes(), files: attachments.maxFiles() },
+  fileFilter: attachments.fileFilter,
+});
+
+function checkFileLimit(req, res, next) {
+  if (req.files && req.files.length > 0) return assistantFileLimiter(req, res, next);
+  next();
+}
+
+function parseAskBody(req) {
+  const question = req.body && req.body.question;
+  let history = req.body && req.body.history;
+  if (typeof history === 'string') {
+    try { history = JSON.parse(history); } catch { history = []; }
+  }
+  return { question, history };
+}
 
 /**
  * @swagger
@@ -14,6 +36,22 @@ const assistantService = require('../services/assistantService');
  *     requestBody:
  *       required: true
  *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [question]
+ *             properties:
+ *               question:
+ *                 type: string
+ *               history:
+ *                 type: string
+ *                 description: Lịch sử hội thoại (JSON) để hiểu ngữ cảnh
+ *               files:
+ *                 type: array
+ *                 description: Ảnh/tài liệu đính kèm (tối đa 3 tệp, 5MB/tệp; chỉ ảnh, PDF, Word, Excel, CSV, TXT)
+ *                 items:
+ *                   type: string
+ *                   format: binary
  *         application/json:
  *           schema:
  *             type: object
@@ -42,14 +80,13 @@ const assistantService = require('../services/assistantService');
  *       503:
  *         description: Chưa cấu hình provider AI
  */
-router.post('/ask', assistantLimiter, optionalAuth, async (req, res) => {
+router.post('/ask', assistantLimiter, optionalAuth, upload.array('files', attachments.maxFiles()), checkFileLimit, async (req, res) => {
   try {
-    const question = req.body && req.body.question;
-    const history = req.body && req.body.history;
+    const { question, history } = parseAskBody(req);
     if (!question || String(question).trim().length < 2) {
       return res.status(400).json({ success: false, message: 'Câu hỏi quá ngắn' });
     }
-    const data = await assistantService.ask(question, req.user || null, history);
+    const data = await assistantService.ask(question, req.user || null, history, { files: req.files || [] });
     res.json({ success: true, data });
   } catch (error) {
     if (error.statusCode === 400) {
@@ -73,6 +110,22 @@ router.post('/ask', assistantLimiter, optionalAuth, async (req, res) => {
  *     requestBody:
  *       required: true
  *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [question]
+ *             properties:
+ *               question:
+ *                 type: string
+ *               history:
+ *                 type: string
+ *                 description: Lịch sử hội thoại (JSON) để hiểu ngữ cảnh
+ *               files:
+ *                 type: array
+ *                 description: Ảnh/tài liệu đính kèm (tối đa 3 tệp, 5MB/tệp)
+ *                 items:
+ *                   type: string
+ *                   format: binary
  *         application/json:
  *           schema:
  *             type: object
@@ -92,9 +145,8 @@ router.post('/ask', assistantLimiter, optionalAuth, async (req, res) => {
  *       503:
  *         description: Chưa cấu hình provider AI
  */
-router.post('/ask-stream', assistantLimiter, optionalAuth, async (req, res) => {
-  const question = req.body && req.body.question;
-  const history = req.body && req.body.history;
+router.post('/ask-stream', assistantLimiter, optionalAuth, upload.array('files', attachments.maxFiles()), checkFileLimit, async (req, res) => {
+  const { question, history } = parseAskBody(req);
   if (!question || String(question).trim().length < 2) {
     return res.status(400).json({ success: false, message: 'Câu hỏi quá ngắn' });
   }
@@ -117,7 +169,8 @@ router.post('/ask-stream', assistantLimiter, optionalAuth, async (req, res) => {
       req.user || null,
       history,
       (text) => send('delta', { text }),
-      (statusData) => send('status', statusData)
+      (statusData) => send('status', statusData),
+      { files: req.files || [] }
     );
     send('done', {
       sources: result.sources || [],
@@ -129,6 +182,8 @@ router.post('/ask-stream', assistantLimiter, optionalAuth, async (req, res) => {
   } catch (error) {
     if (error.statusCode === 503) {
       send('error', { message: 'Chatbot chưa được cấu hình' });
+    } else if (error.statusCode === 400) {
+      send('error', { message: error.message || 'Yêu cầu không hợp lệ' });
     } else {
       send('error', { message: 'Lỗi server' });
       console.error('Assistant ask-stream error:', error);
@@ -155,6 +210,20 @@ router.get('/status', optionalAuth, async (req, res) => {
     console.error('Assistant status error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
+});
+
+router.use((err, req, res, next) => {
+  if (!err) return next();
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ success: false, message: `Tệp vượt quá ${Math.round(attachments.maxBytes() / 1024 / 1024)}MB cho phép` });
+  }
+  if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({ success: false, message: `Quá số lượng tệp cho phép (tối đa ${attachments.maxFiles()})` });
+  }
+  if (err.message) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+  return res.status(500).json({ success: false, message: 'Lỗi server' });
 });
 
 module.exports = router;

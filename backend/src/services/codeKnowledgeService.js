@@ -1,22 +1,25 @@
 const pool = require('../utils/db');
 const helpService = require('./helpService');
 
-const INTERNAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+function enabled() {
+  return process.env.ASSISTANT_CODE_KNOWLEDGE !== 'false';
+}
 
-function canUseKnowledge(userRole) {
-  return INTERNAL_ROLES.includes(userRole);
+function canUseCodeKnowledge(userRole) {
+  return userRole === 'SUPER_ADMIN';
 }
 
 function rowToChunk(row) {
   return {
     source_path: row.source_path,
+    kind: row.kind,
     heading: row.heading,
     content: row.content,
-    tags: row.tags ? (typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags) : [],
   };
 }
 
 async function search(question, limit) {
+  if (!enabled()) return [];
   const max = limit || 3;
   const tokens = helpService.tokenize(question).slice(0, 8);
   if (tokens.length === 0) return [];
@@ -25,7 +28,7 @@ async function search(question, limit) {
 
   try {
     const [ft] = await pool.query(
-      'SELECT id, source_path, heading, content, tags FROM assistant_knowledge WHERE MATCH(heading, content) AGAINST (? IN NATURAL LANGUAGE MODE) LIMIT 80',
+      'SELECT id, source_path, kind, heading, content FROM assistant_code_knowledge WHERE MATCH(heading, content) AGAINST (? IN NATURAL LANGUAGE MODE) LIMIT 80',
       [question]
     );
     for (const row of ft) candidates.set(row.id, row);
@@ -40,7 +43,7 @@ async function search(question, limit) {
       params.push(like, like);
     }
     const [likeRows] = await pool.query(
-      'SELECT id, source_path, heading, content, tags FROM assistant_knowledge WHERE ' + clauses.join(' OR ') + ' LIMIT 200',
+      'SELECT id, source_path, kind, heading, content FROM assistant_code_knowledge WHERE ' + clauses.join(' OR ') + ' LIMIT 200',
       params
     );
     for (const row of likeRows) candidates.set(row.id, row);
@@ -49,11 +52,10 @@ async function search(question, limit) {
   const scored = [...candidates.values()].map((row) => {
     const heading = helpService.normHay(row.heading);
     const content = helpService.normHay(row.content);
-    const path = helpService.normHay(row.source_path);
-    let score = 0;
+    const kindBoost = row.kind === 'schema' ? 2 : 0;
+    let score = kindBoost;
     for (const t of tokens) {
       if (helpService.fieldIncludes(heading, t)) score += 8;
-      if (helpService.fieldIncludes(path, t)) score += 3;
       if (helpService.fieldIncludes(content, t)) score += 1;
     }
     return { row, score };
@@ -63,8 +65,8 @@ async function search(question, limit) {
 }
 
 async function stats() {
-  const [rows] = await pool.query('SELECT COUNT(*) AS n, COUNT(DISTINCT source_path) AS files FROM assistant_knowledge');
-  return { chunks: rows[0].n, files: rows[0].files };
+  const [rows] = await pool.query("SELECT COUNT(*) AS n, SUM(kind = 'code') AS code_chunks, SUM(kind = 'schema') AS schema_chunks FROM assistant_code_knowledge");
+  return { chunks: rows[0].n, code: rows[0].code_chunks, schema: rows[0].schema_chunks };
 }
 
-module.exports = { search, stats, canUseKnowledge, INTERNAL_ROLES };
+module.exports = { search, stats, canUseCodeKnowledge, enabled };

@@ -64,7 +64,7 @@ const AdminProposalsPage = () => {
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [transitionModal, setTransitionModal] = useState({ open: false, id: null, to: null, saving: false });
-  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [] });
+  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false });
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
   const [blockModal, setBlockModal] = useState({ open: false, missing: [], id: null });
@@ -245,16 +245,15 @@ const AdminProposalsPage = () => {
     return labels;
   };
 
-  const unlinkedUserLabels = (row) => {
-    const custom = (row && row.custom_data) || {};
-    const labels = [];
-    for (const key of PUSH_USER_KEYS) {
-      const direct = row ? row[key] : null;
-      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
-      const idVal = v && typeof v === 'object' ? (v.id ?? v.user_id) : v;
-      if (idVal) labels.push(getFieldLabel(key));
+  const unlinkedUserLabels = async (row) => {
+    if (!row || !row.id) return { missing: [], unlinked: [] };
+    try {
+      const res = await adminProposalService.pushCheck(row.id, token);
+      const data = res && res.data ? res.data : res;
+      return { missing: data.missing || [], unlinked: data.unlinked || [] };
+    } catch {
+      return { missing: [], unlinked: [] };
     }
-    return labels;
   };
 
   const statusLabel = (v) => (statusOptions.find(o => o.value === v) || {}).label || v;
@@ -269,9 +268,13 @@ const AdminProposalsPage = () => {
       return;
     }
     if (newStatus === 'REVIEWING') {
-      const row = proposals.find(p => p.id === id);
-      const unlinked = unlinkedUserLabels(row);
-      setApproveModal({ open: true, id, saving: false, warnings: unlinked });
+      setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], checking: true });
+      try {
+        const check = await unlinkedUserLabels(proposals.find(p => p.id === id));
+        setApproveModal({ open: true, id, saving: false, warnings: check.unlinked, missing: check.missing, checking: false });
+      } catch {
+        setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], checking: false });
+      }
       return;
     }
     if (['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
@@ -326,7 +329,7 @@ const AdminProposalsPage = () => {
           msg += ` — chưa đẩy được sang 1Office (${auto.reason || 'thiếu cấu hình'}), hãy đẩy thủ công`;
         }
         setToast({ message: msg, type: auto && auto.queued === false ? 'warning' : 'success' });
-        setApproveModal({ open: false, id: null, saving: false, warnings: [] });
+        setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false });
         notifyBellRefresh();
         loadProposals(pagination.page);
         if (auto && auto.queued && auto.jobId) {
@@ -428,8 +431,12 @@ const AdminProposalsPage = () => {
     const unlinked = [];
     const failed = [];
     for (const row of pendings) {
-      const labels = unlinkedUserLabels(row);
-      if (labels.length > 0) unlinked.push(`#${row.id}: ${labels.join(', ')}`);
+      try {
+        const check = await unlinkedUserLabels(row);
+        if (check.unlinked.length > 0) {
+          unlinked.push(`#${row.id}: ${check.unlinked.map(w => w.label || w).join(', ')}`);
+        }
+      } catch { /* silent: vẫn duyệt, bỏ qua cảnh báo */ }
       try {
         const res = await adminProposalService.updateStatus(row.id, 'REVIEWING', token);
         if (res.success) ok.push(row.id);
@@ -1419,7 +1426,7 @@ const AdminProposalsPage = () => {
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Duyệt và đẩy sang 1Office</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [] })}>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false })}>
                 <X size={18} />
               </button>
             </div>
@@ -1435,30 +1442,52 @@ const AdminProposalsPage = () => {
                 ))}
               </div>
             )}
+            {approveModal.checking && (
+              <p className="text-xs text-base-content/60 mt-3">Đang kiểm tra liên kết 1Office...</p>
+            )}
+            {approveModal.missing && approveModal.missing.length > 0 && (
+              <div className="alert alert-error py-2 px-3 mt-3 text-xs">
+                <div>
+                  <p className="font-bold mb-1">Chưa thể đẩy — thiếu người phụ trách:</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {approveModal.missing.map((m, i) => (
+                      <li key={i}>{m.label || m} chưa được gán — duyệt sẽ bị chặn, hãy gán trước</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
             {approveModal.warnings && approveModal.warnings.length > 0 && (
               <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
                 <div>
                   <p className="font-bold mb-1">Cảnh báo:</p>
                   <ul className="list-disc pl-4 space-y-0.5">
                     {approveModal.warnings.map((w, i) => (
-                      <li key={i}>{w} chưa liên kết với 1Office — sẽ bị bỏ qua khi đẩy</li>
+                      <li key={typeof w === 'string' ? w : w.key}>
+                        {typeof w === 'string'
+                          ? <>{w} chưa liên kết với 1Office — sẽ bị bỏ qua khi đẩy</>
+                          : w.reason === 'no_account'
+                            ? <>{w.label} ({w.userName}) đã liên kết nhưng chưa có tài khoản 1Office — sẽ bị bỏ qua khi đẩy</>
+                            : <>{w.label} ({w.userName}) chưa liên kết với 1Office — sẽ bị bỏ qua khi đẩy</>}
+                      </li>
                     ))}
                   </ul>
                 </div>
               </div>
             )}
             <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [] })}>Hủy</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false })}>Hủy</button>
               <button
                 className="btn btn-success btn-sm"
-                disabled={approveModal.saving}
+                disabled={approveModal.saving || approveModal.checking || (approveModal.missing && approveModal.missing.length > 0)}
+                title={approveModal.missing && approveModal.missing.length > 0 ? 'Thiếu người phụ trách — hãy gán trước khi duyệt' : ''}
                 onClick={handleConfirmApprove}
               >
                 {approveModal.saving ? 'Đang duyệt...' : 'Duyệt & đẩy 1Office'}
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false })} />
+          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false })} />
         </dialog>
       )}
 

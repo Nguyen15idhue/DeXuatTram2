@@ -212,19 +212,8 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     return labels;
   };
 
-  const pushUserWarnings = (rec) => {
-    if (!rec || entity !== 'station_proposals') return [];
-    const custom = (rec && rec.custom_data) || {};
-    const warnings = [];
-    for (const key of PUSH_USER_KEYS) {
-      const direct = rec ? rec[key] : null;
-      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
-      const idVal = resolveUserId(v);
-      if (idVal) {
-        warnings.push({ key, label: getFieldLabel(key), id: idVal, warning: `chưa liên kết 1Office` });
-      }
-    }
-    return warnings;
+  const pushUserWarnings = () => {
+    return [];
   };
 
   const handleFieldChange = (key, value) => {

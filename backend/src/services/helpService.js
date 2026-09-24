@@ -1,7 +1,14 @@
 const pool = require('../utils/db');
+const ttlCache = require('../utils/ttlCache');
 
 const KNOWN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'guest'];
 const ARTICLE_STATUSES = ['draft', 'published', 'archived'];
+
+function bumpAssistantCache() {
+  ttlCache.del('assistant:articles-version');
+  ttlCache.del('assistant:knowledge-version');
+  ttlCache.delPrefix('assistant:');
+}
 
 function parseJson(value, fallback) {
   if (value === null || value === undefined) return fallback;
@@ -343,6 +350,7 @@ async function createArticle(data, userId) {
       status === 'published' ? new Date() : null,
     ]
   );
+  bumpAssistantCache();
   return adminGet(res.insertId);
 }
 
@@ -413,11 +421,13 @@ async function updateArticle(id, data, userId) {
   }
   params.push(id);
   await pool.query('UPDATE help_articles SET ' + sets.join(', ') + ' WHERE id = ?', params);
+  bumpAssistantCache();
   return adminGet(id);
 }
 
 async function deleteArticle(id) {
   const [res] = await pool.query('DELETE FROM help_articles WHERE id = ?', [id]);
+  if (res.affectedRows > 0) bumpAssistantCache();
   return res.affectedRows > 0;
 }
 
@@ -433,6 +443,7 @@ async function setArticleStatus(id, status, userId) {
     'UPDATE help_articles SET status = ?, published_at = ?, updated_by = ? WHERE id = ?',
     [status, status === 'published' ? new Date() : current.published_at, userId || null, id]
   );
+  bumpAssistantCache();
   return adminGet(id);
 }
 
@@ -457,6 +468,7 @@ async function createCategory(data) {
     'INSERT INTO help_categories (slug, title, icon, sort_order, visible_roles) VALUES (?, ?, ?, ?, CAST(? AS JSON))',
     [data.slug, String(data.title).trim(), data.icon || null, data.sort_order || 0, toJsonParam(data.visible_roles || null)]
   );
+  bumpAssistantCache();
   const [rows] = await pool.query('SELECT * FROM help_categories WHERE id = ?', [res.insertId]);
   return rowToCategory(rows[0]);
 }
@@ -477,45 +489,89 @@ function normalizeText(text) {
     .toLowerCase();
 }
 
+const SHORT_TOKENS = new Set([
+  'nq', 'lk', 'tdt', 'nqlk', '3d', 'api', 'qr', 'ip', 'pdf', 'csv', 'txt',
+  'ctv', 'npp', 'sms', 'otp', 'url', 'id', 'gps', 'ev', 'kw', 'kwh', 'ac',
+  'dc', 'faq', 'ui', 'ux', 'db', 'sql', 'cdn', 'ssl', 'lcd', 'led', 'sim',
+  'pb', 'cd', 'gd', 'tt', 'kv', 'bc', 'dx', 'tmdv', 'kcn',
+]);
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function fieldIncludes(field, t) {
+  if (!field || !t) return false;
+  if (t.length < 3) return new RegExp(`\\b${escapeRegExp(t)}\\b`).test(field);
+  return field.includes(t);
+}
+
 function tokenize(text) {
   return normalizeText(text)
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .map((t) => t.trim())
-    .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+    .filter((t) => (t.length >= 3 || SHORT_TOKENS.has(t)) && !STOPWORDS.has(t));
+}
+
+function normHay(text) {
+  return normalizeText(text).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ');
+}
+
+function scoreArticle(row, tokens, phrases) {
+  const title = normHay(row.title);
+  const summary = normHay(row.summary);
+  const content = normHay(row.content_html);
+  const tags = normHay(parseJson(row.tags, []).join(' '));
+  let score = 0;
+  let contentHits = 0;
+  for (const t of tokens) {
+    if (fieldIncludes(title, t)) score += 6;
+    if (fieldIncludes(tags, t)) score += 4;
+    if (fieldIncludes(summary, t)) score += 3;
+    if (fieldIncludes(content, t)) contentHits += 1;
+  }
+  score += contentHits / Math.sqrt(content.length / 2000 + 1);
+  for (const p of phrases) {
+    if (title.includes(p)) score += 6;
+    else if (summary.includes(p)) score += 3;
+  }
+  return score;
 }
 
 async function searchForAssistant(question, userRole, limit) {
   const max = limit || 5;
   const tokens = tokenize(question).slice(0, 8);
-  const normalizedQuestion = normalizeText(question).trim();
+  const phrases = [];
+  for (let i = 0; i + 1 < tokens.length; i += 1) {
+    phrases.push(`${tokens[i]} ${tokens[i + 1]}`);
+    if (i + 2 < tokens.length) phrases.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
+  }
 
-  const [rows] = await pool.query(
-    'SELECT a.*, c.slug AS category_slug, c.title AS category_title FROM help_articles a' +
-    ' LEFT JOIN help_categories c ON c.id = a.category_id' +
-    ' WHERE a.status = \'published\'' + roleVisibleClause(userRole, 'a') +
-    ' LIMIT 500'
-  );
+  let rows = [];
+  try {
+    const [ft] = await pool.query(
+      'SELECT a.*, c.slug AS category_slug, c.title AS category_title FROM help_articles a' +
+      ' LEFT JOIN help_categories c ON c.id = a.category_id' +
+      ' WHERE a.status = \'published\'' + roleVisibleClause(userRole, 'a') +
+      ' AND MATCH(a.title, a.summary, a.content_html) AGAINST(? IN NATURAL LANGUAGE MODE) LIMIT 60',
+      [question]
+    );
+    rows = ft;
+  } catch { /* FULLTEXT unavailable */ }
 
-  const scored = rows.map((row) => {
-    const title = normalizeText(row.title);
-    const summary = normalizeText(row.summary);
-    const content = normalizeText(row.content_html);
-    const tags = normalizeText(parseJson(row.tags, []).join(' '));
-    let score = 0;
-    for (const t of tokens) {
-      if (title.includes(t)) score += 6;
-      if (tags.includes(t)) score += 4;
-      if (summary.includes(t)) score += 3;
-      if (content.includes(t)) score += 1;
-    }
-    if (normalizedQuestion.length >= 6) {
-      const head = normalizedQuestion.slice(0, 24);
-      if (title.includes(head)) score += 10;
-      else if (summary.includes(head)) score += 5;
-    }
-    return { row, score };
-  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score);
+  if (rows.length === 0) {
+    const [all] = await pool.query(
+      'SELECT a.*, c.slug AS category_slug, c.title AS category_title FROM help_articles a' +
+      ' LEFT JOIN help_categories c ON c.id = a.category_id' +
+      ' WHERE a.status = \'published\'' + roleVisibleClause(userRole, 'a') +
+      ' LIMIT 500'
+    );
+    rows = all;
+  }
+
+  const scored = rows.map((row) => ({ row, score: scoreArticle(row, tokens, phrases) }))
+    .filter((x) => x.score > 0).sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) {
     const fulltext = await listArticles({ q: question }, userRole);
@@ -543,6 +599,8 @@ module.exports = {
   trackView,
   searchForAssistant,
   normalizeText,
+  normHay,
+  fieldIncludes,
   tokenize,
   adminList,
   adminGet,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, Send, X, Sparkles, RefreshCw } from 'lucide-react';
+import { MessageCircle, Send, X, Sparkles, RefreshCw, Paperclip, FileText, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { api, API_URL } from '../../services/api';
 import MarkdownText from './MarkdownText';
@@ -13,15 +13,52 @@ const SUGGESTIONS = [
 
 const HISTORY_TURNS = 10;
 const MAX_STORED_MESSAGES = HISTORY_TURNS * 2;
+const MAX_FILE_MB = 5;
+const MAX_FILES = 3;
+const ACCEPT = 'image/jpeg,image/png,image/gif,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt';
 
-async function streamAssistant(body, token, onDelta, onStatus) {
+const ALLOWED_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv', 'text/plain',
+]);
+const ALLOWED_EXT = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt']);
+
+function fileAccepted(f) {
+  const mime = String(f.type || '').toLowerCase().split(';')[0].trim();
+  if (mime && ALLOWED_MIME.has(mime)) return true;
+  const name = String(f.name || '').toLowerCase();
+  const dot = name.lastIndexOf('.');
+  if (dot >= 0 && ALLOWED_EXT.has(name.slice(dot))) return true;
+  return false;
+}
+
+function fileKind(f) {
+  const mime = String(f.type || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  return 'doc';
+}
+
+async function streamAssistant(body, token, onDelta, onStatus, attachedFiles) {
+  let fetchBody = JSON.stringify(body);
+  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  if (attachedFiles && attachedFiles.length > 0) {
+    const fd = new FormData();
+    fd.append('question', body.question);
+    fd.append('history', JSON.stringify(body.history || []));
+    for (const f of attachedFiles) fd.append('files', f, f.name);
+    fetchBody = fd;
+  } else {
+    headers['Content-Type'] = 'application/json';
+  }
   const res = await fetch(`${API_URL}/assistant/ask-stream`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
+    headers,
+    body: fetchBody,
   });
   if (!res.ok || !res.body) {
     let msg = `HTTP ${res.status}`;
@@ -92,7 +129,11 @@ export default function AssistantChat({ variant = 'floating' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [fileError, setFileError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
   const endRef = useRef(null);
+  const fileInputRef = useRef(null);
   const persistRef = useRef(true);
   const storageKey = `assistant_chat_history:${user?.id || 'guest'}`;
 
@@ -131,19 +172,53 @@ export default function AssistantChat({ variant = 'floating' }) {
 
   const resetConversation = useCallback(() => {
     setMessages([]);
+    setFiles([]);
+    setFileError('');
     try { localStorage.removeItem(storageKey); } catch { /* silent */ }
   }, [storageKey]);
+
+  const addFiles = useCallback((fileList) => {
+    const incoming = Array.from(fileList || []);
+    if (incoming.length === 0) return;
+    setFileError('');
+    setFiles((prev) => {
+      if (prev.length + incoming.length > MAX_FILES) {
+        setFileError(`Tối đa ${MAX_FILES} tệp mỗi lượt`);
+        return prev;
+      }
+      for (const f of incoming) {
+        if (!fileAccepted(f)) {
+          setFileError(`"${f.name}" không đúng định dạng (chỉ ảnh, PDF, Word, Excel, CSV, TXT)`);
+          return prev;
+        }
+        if (f.size > MAX_FILE_MB * 1024 * 1024) {
+          setFileError(`"${f.name}" vượt quá ${MAX_FILE_MB}MB`);
+          return prev;
+        }
+      }
+      return [...prev, ...incoming];
+    });
+  }, []);
+
+  const removeFile = useCallback((index) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileError('');
+  }, []);
 
   const send = useCallback(async (text) => {
     const question = String(text !== undefined ? text : input).trim();
     if (!question || loading) return;
     setInput('');
+    const attached = files.slice(0, MAX_FILES);
+    setFiles([]);
+    setFileError('');
+    const fileMetas = attached.map((f) => ({ name: f.name, size: f.size, kind: fileKind(f) }));
     const history = messages
       .filter((m) => m.role === 'user' || m.role === 'bot')
       .map((m) => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.role === 'user' ? m.text : (m.answer || '') }))
       .filter((m) => m.content)
       .slice(-MAX_STORED_MESSAGES);
-    setMessages((m) => [...m, { role: 'user', text: question }, { role: 'bot', answer: '', streaming: true, status: 'Đang xử lý...' }]);
+    setMessages((m) => [...m, { role: 'user', text: question, attachments: fileMetas }, { role: 'bot', answer: '', streaming: true, status: 'Đang xử lý...' }]);
     setLoading(true);
     const body = { question, history };
     const updateLastBot = (patch) => setMessages((m) => {
@@ -164,15 +239,30 @@ export default function AssistantChat({ variant = 'floating' }) {
             gotDelta = true;
             updateLastBot((b) => ({ answer: (b.answer || '') + chunk, status: null }));
           },
-          (s) => { if (!gotDelta) updateLastBot(() => ({ status: (s && s.message) || 'Đang xử lý...' })); }
+          (s) => { if (!gotDelta) updateLastBot(() => ({ status: (s && s.message) || 'Đang xử lý...' })); },
+          attached
         );
         gotDelta = r.gotDelta;
         doneData = r.done;
       } catch (streamErr) {
         if (!gotDelta) {
-          const res = token
-            ? await api.postWithAuth('/assistant/ask', body, token)
-            : await api.post('/assistant/ask', body);
+          let res;
+          if (attached.length > 0) {
+            const fd = new FormData();
+            fd.append('question', question);
+            fd.append('history', JSON.stringify(history));
+            for (const f of attached) fd.append('files', f, f.name);
+            const raw = await fetch(`${API_URL}/assistant/ask`, {
+              method: 'POST',
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              body: fd,
+            });
+            res = await raw.json();
+          } else if (token) {
+            res = await api.postWithAuth('/assistant/ask', body, token);
+          } else {
+            res = await api.post('/assistant/ask', body);
+          }
           if (res && res.success) doneData = { ...res.data };
           else throw new Error((res && res.message) || 'Không trả lời được');
         }
@@ -193,7 +283,7 @@ export default function AssistantChat({ variant = 'floating' }) {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, token, messages]);
+  }, [input, loading, token, messages, files]);
 
   if (!available) return null;
 
@@ -217,7 +307,12 @@ export default function AssistantChat({ variant = 'floating' }) {
       )}
 
       {open && (
-        <div className={`fixed z-[1002] bg-base-100 border border-base-300 rounded-xl shadow-2xl flex flex-col w-[min(92vw,390px)] h-[min(72vh,560px)] ${panelPos}`}>
+        <div
+          className={`fixed z-[1002] bg-base-100 border border-base-300 rounded-xl shadow-2xl flex flex-col w-[min(92vw,390px)] h-[min(72vh,560px)] ${panelPos}${dragOver ? ' ring-2 ring-primary' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files); }}
+        >
           <div className="flex items-center gap-2 p-3 border-b border-base-300">
             <Sparkles size={16} className="text-primary" />
             <span className="font-semibold text-sm">Trợ lý hướng dẫn</span>
@@ -231,7 +326,7 @@ export default function AssistantChat({ variant = 'floating' }) {
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && (
               <div className="space-y-2">
-                <p className="text-sm text-base-content/60">Hỏi mình về cách dùng hệ thống. Mình trả lời dựa trên tài liệu hướng dẫn và kèm bài viết liên quan.</p>
+                <p className="text-sm text-base-content/60">Hỏi mình về cách dùng hệ thống. Mình trả lời dựa trên tài liệu hướng dẫn và kèm bài viết liên quan. Bạn có thể đính kèm ảnh/tài liệu (tối đa 3 tệp, 5MB/tệp) để mình xem cùng.</p>
                 {SUGGESTIONS.map((s) => (
                   <button key={s} type="button" className="btn btn-xs btn-outline btn-block justify-start" onClick={() => send(s)}>{s}</button>
                 ))}
@@ -240,7 +335,19 @@ export default function AssistantChat({ variant = 'floating' }) {
             {messages.map((m, i) => (
               m.role === 'user' ? (
                 <div key={i} className="chat chat-end">
-                  <div className="chat-bubble chat-bubble-primary text-sm [grid-row-end:auto]">{m.text}</div>
+                  <div className="chat-bubble chat-bubble-primary text-sm [grid-row-end:auto]">
+                    {m.text}
+                    {Array.isArray(m.attachments) && m.attachments.length > 0 && (
+                      <span className="block mt-1.5 space-y-1">
+                        {m.attachments.map((a, j) => (
+                          <span key={j} className="flex items-center gap-1.5 text-xs opacity-90 bg-black/15 rounded px-1.5 py-1">
+                            {a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
+                            <span className="truncate max-w-[180px]">{a.name}</span>
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div key={i} className="chat chat-start">
@@ -270,16 +377,33 @@ export default function AssistantChat({ variant = 'floating' }) {
             <div ref={endRef} />
           </div>
 
-          <div className="p-3 border-t border-base-300 flex items-center gap-2">
-            <input
-              className="input input-bordered input-sm flex-1"
-              placeholder="Nhập câu hỏi..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
-              disabled={loading}
-            />
-            <button type="button" className="btn btn-sm btn-primary btn-circle" onClick={() => send()} disabled={loading || !input.trim()}><Send size={14} /></button>
+          <div className="p-3 border-t border-base-300">
+            {files.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {files.map((f, i) => (
+                  <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-base-200 border border-base-300 rounded-lg pl-1.5 pr-1 py-1 max-w-full">
+                    {fileKind(f) === 'image' ? <ImageIcon size={13} className="shrink-0" /> : <FileText size={13} className="shrink-0" />}
+                    <span className="truncate max-w-[150px]" title={f.name}>{f.name}</span>
+                    <button type="button" className="btn btn-xs btn-ghost btn-circle" title="Gỡ tệp" onClick={() => removeFile(i)} disabled={loading}><X size={12} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {fileError && <p className="text-xs text-error mb-2">{fileError}</p>}
+            <div className="flex items-center gap-2">
+              <input ref={fileInputRef} type="file" className="hidden" accept={ACCEPT} multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} disabled={loading} />
+              <button type="button" className="btn btn-sm btn-ghost btn-circle shrink-0" title={`Đính kèm ảnh/tài liệu (tối đa ${MAX_FILES} tệp, ${MAX_FILE_MB}MB/tệp)`} onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={loading}><Paperclip size={15} /></button>
+              <input
+                className="input input-bordered input-sm flex-1"
+                placeholder="Nhập câu hỏi..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
+                onPaste={(e) => { if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) addFiles(e.clipboardData.files); }}
+                disabled={loading}
+              />
+              <button type="button" className="btn btn-sm btn-primary btn-circle" onClick={() => send()} disabled={loading || !input.trim()}><Send size={14} /></button>
+            </div>
           </div>
         </div>
       )}

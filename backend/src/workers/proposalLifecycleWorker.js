@@ -205,8 +205,6 @@ const processDeadlines = async () => {
         acted++;
       } else if (diff <= 0) {
         if (await deadlineNotified(p.id, 'deadline_overdue', iso)) continue;
-        await notifyChain(p, 'SUPPLEMENT_OVERDUE', notificationService.statusTitle('SUPPLEMENT_OVERDUE'),
-          `Đã quá hạn bổ sung thông tin · Người thực hiện: Hệ thống`);
         await proposalLifecycle.logActivity({
           proposalId: p.id, action: 'deadline_overdue',
           fromStatus: p.status, toStatus: p.status,

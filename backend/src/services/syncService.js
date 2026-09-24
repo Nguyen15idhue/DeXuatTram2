@@ -53,6 +53,53 @@ exports.getMissingPushUserFieldLabels = async (proposal, fieldDefs) => {
   return missing;
 };
 
+exports.getPushCheck = async (proposal, fieldDefs) => {
+  const defs = fieldDefs || await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const system = '1office';
+  const labelOf = (key) => {
+    const f = (defs || []).find(d => d.key === key);
+    return (f && f.label) || key;
+  };
+  const custom = parseCustomData(proposal && proposal.custom_data);
+  let userMapInfo = null;
+  try {
+    userMapInfo = await fieldMapper.getUserMapInfo(system);
+  } catch { userMapInfo = null; }
+  const missing = [];
+  const unlinked = [];
+  for (const key of PUSH_REQUIRED_USER_FIELDS) {
+    const direct = proposal ? proposal[key] : null;
+    const value = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
+    const userId = fieldMapper.resolveUserId(value);
+    if (userId === null) {
+      missing.push({ key, label: labelOf(key) });
+      continue;
+    }
+    let ext = null;
+    try {
+      ext = await adminUserService.findExternalByUser(userId, system);
+    } catch { ext = null; }
+    if (!ext) {
+      let userName = `User #${userId}`;
+      try {
+        const [uRows] = await pool.query('SELECT full_name FROM users WHERE id = ?', [userId]);
+        if (uRows.length > 0) userName = uRows[0].full_name;
+      } catch { /* silent */ }
+      unlinked.push({ key, label: labelOf(key), userId, userName, reason: 'no_map' });
+      continue;
+    }
+    if (userMapInfo && userMapInfo.noAccount && userMapInfo.noAccount.has(String(ext))) {
+      let userName = `User #${userId}`;
+      try {
+        const [uRows] = await pool.query('SELECT full_name FROM users WHERE id = ?', [userId]);
+        if (uRows.length > 0) userName = uRows[0].full_name;
+      } catch { /* silent */ }
+      unlinked.push({ key, label: labelOf(key), userId, userName, reason: 'no_account', personnelId: String(ext) });
+    }
+  }
+  return { missing, unlinked, canPush: missing.length === 0 };
+};
+
 exports.getUnlinkedPushUserWarnings = async (proposal, fieldDefs) => {
   const defs = fieldDefs || await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const system = '1office';

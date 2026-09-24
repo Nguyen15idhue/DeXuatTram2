@@ -256,6 +256,9 @@ export const adminProposalService = {
   },
   duplicates(minM, maxM, token) {
     return api.getWithAuth(`/admin/proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
+  },
+  pushCheck(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}/push-check`, token);
   }
 };
 
