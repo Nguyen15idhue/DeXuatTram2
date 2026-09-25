@@ -943,6 +943,36 @@ export const documentService = {
   validateMapping(id, mapping, token) {
     return api.postWithAuth(`/admin/documents/templates/${id}/validate`, { mapping }, token);
   },
+  getLayout(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/layout`, token);
+  },
+  async fetchLayoutPreview(id, token) {
+    const response = await fetch(`${API_URL}/admin/documents/templates/${id}/layout/preview`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Không tải được bố cục template';
+      try { const err = await response.json(); if (err && err.message) message = err.message; } catch {}
+      throw new Error(message);
+    }
+    return response.arrayBuffer();
+  },
+  insertLayoutToken(id, nodeId, name, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/layout/insert`, { nodeId, name }, token);
+  },
+  removeLayoutToken(id, nodeId, tokenName, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/layout/remove`, { nodeId, token: tokenName }, token);
+  },
+  alignLayout(id, nodeId, opts, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/layout/align`, { nodeId, ...(opts || {}) }, token);
+  },
+  listLayoutVersions(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/versions`, token);
+  },
+  restoreLayoutVersion(id, versionId, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/versions/${versionId}/restore`, {}, token);
+  },
   async fetchTemplateBytes(fileId, token) {
     const response = await fetch(`${API_URL}/files/${fileId}/download?token=${encodeURIComponent(token)}`);
     handleUnauthorized(response);

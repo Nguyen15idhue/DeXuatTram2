@@ -113,7 +113,7 @@ docker exec station-backend date          # phải hiện +07 (TZ Asia/Ho_Chi_Mi
 # API sống
 curl -s -o /dev/null -w "api=%{http_code}\n" http://127.0.0.1:8081/api/test   # mong đợi 200
 
-# DB: kỳ vọng tracked=112, tables=34
+# DB: kỳ vọng tracked=113, tables=35
 docker exec -i station-mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" station_management' <<'SQL'
 SELECT COUNT(*) AS tracked FROM schema_migrations;
 SELECT COUNT(*) AS tables FROM information_schema.tables WHERE table_schema='station_management';
@@ -131,7 +131,7 @@ SELECT COUNT(*) AS has_help_tables FROM information_schema.tables
 SQL
 ```
 
-> `tracked` = số file migration trong `database/` (hiện **112**). `tables` = **34**. Nếu thiếu số nhiều → DB chưa chạy đủ migration, xem mục 7.
+> `tracked` = số file migration trong `database/` (hiện **113**). `tables` = **35**. Nếu thiếu số nhiều → DB chưa chạy đủ migration, xem mục 7.
 
 Sau đó mở web bằng trình duyệt: login, vào `/map`, `/admin/proposals`, chuông thông báo, `/admin/map-config` — đảm bảo không lỗi console.
 
@@ -293,6 +293,7 @@ Từ mốc **104** trở đi, schema có thêm nhiều bảng mới (hướng d�
 | 107–109 | mở role `guest`, `assistant_provider_configs`, `assistant_model_cache` | ✅ migration |
 | 111 | `document_templates` / `document_constants` (Quản lý tài liệu BCĐX) | ✅ migration |
 | 112 | chuẩn hoá hằng số BCĐX (`signer_tgd_*`) | ✅ migration |
+| 113 | `document_template_versions` (lịch sử bố cục Word, rollback) | ✅ migration |
 
 **Riêng `document_templates` cần thêm file `.docx` mẫu** — migration chỉ tạo bảng, không tạo template. `update.sh`/`deploy.sh` đã tự chạy bước **seed best-effort** sau khi `up -d`:
 
@@ -314,6 +315,8 @@ docker compose -f docker-compose.simple.yml exec -T backend node /tmp/q-info.js 
 ```
 
 **Hằng số BCĐX** sửa tại `/admin/documents` (tab Hằng số) — không cần sửa code. Giá trị mặc định: `company_name`, `company_short`, `plan_tdt/lk/nq/npp`, `signer_ketoan`, `signer_tgd_tdt`, `signer_tgd_nq_lk`, `so_van_ban`.
+
+**Sửa bố cục Word** (nút "Bố cục" ở bảng template): thêm vị trí trường, xóa trường (để trống), căn chỉnh đoạn (trái/giữa/phải/đều, thẳng hàng theo dòng trên, thụt lề/tab) và **lịch sử rollback**. Không cần seed — hoạt động ngay sau `update.sh` (schema 113). Lưu ý: mỗi lần sửa bố cục tạo 1 file `.docx` mới trong volume `uploads_data` (giữ mọi bản để rollback) — backup định kỳ xem mục 9.
 
 **Chatbot hướng dẫn (tùy chọn)**: để bật, thêm vào `.env` trên VPS rồi `docker compose -f docker-compose.simple.yml up -d backend`:
 

@@ -420,7 +420,7 @@ exports.exportReports = async (proposalIds, opts = {}) => {
         stripEmptyLoopRow(zip, loopKey);
       }
     }
-    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+    const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
     try {
       doc.render(data);
     } catch (e) {

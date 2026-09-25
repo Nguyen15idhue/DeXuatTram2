@@ -385,4 +385,246 @@ router.post('/templates/:id/validate', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/layout:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Cây bố cục (đoạn/ô) của file .docx
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get('/templates/:id/layout', async (req, res) => {
+  try {
+    const data = await documentTemplateService.getLayout(req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/layout/preview:
+ *   get:
+ *     tags: [Documents]
+ *     summary: File .docx có anchor ẩn để click chọn vị trí
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: File docx
+ */
+router.get('/templates/:id/layout/preview', async (req, res) => {
+  try {
+    const { buffer, filename, contentType } = await documentTemplateService.getLayoutPreview(req.params.id);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/layout/insert:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Chèn token-slot vào đoạn
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nodeId, name]
+ *             properties:
+ *               nodeId:
+ *                 type: integer
+ *               name:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.post('/templates/:id/layout/insert', async (req, res) => {
+  try {
+    const { nodeId, name } = req.body || {};
+    const data = await documentTemplateService.insertLayoutToken(req.params.id, nodeId, name);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/layout/remove:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Xóa token khỏi đoạn (để trống vị trí)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nodeId, token]
+ *             properties:
+ *               nodeId:
+ *                 type: integer
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.post('/templates/:id/layout/remove', async (req, res) => {
+  try {
+    const { nodeId, token } = req.body || {};
+    const data = await documentTemplateService.removeLayoutToken(req.params.id, nodeId, token);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/layout/align:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Căn chỉnh đoạn (ngang / thụt lề / tab / copy từ đoạn trên)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nodeId]
+ *             properties:
+ *               nodeId:
+ *                 type: integer
+ *               jc:
+ *                 type: string
+ *                 enum: [left, center, right, both]
+ *               indentLeftCm:
+ *                 type: number
+ *               tabPosCm:
+ *                 type: number
+ *               copyFromId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.post('/templates/:id/layout/align', async (req, res) => {
+  try {
+    const { nodeId, ...opts } = req.body || {};
+    const data = await documentTemplateService.alignLayout(req.params.id, nodeId, opts);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/versions:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Lịch sử bố cục template
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get('/templates/:id/versions', async (req, res) => {
+  try {
+    const data = await documentTemplateService.listLayoutVersions(req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/documents/templates/{id}/versions/{versionId}/restore:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Khôi phục bố cục từ phiên bản
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.post('/templates/:id/versions/:versionId/restore', async (req, res) => {
+  try {
+    const data = await documentTemplateService.restoreLayoutVersion(req.params.id, req.params.versionId);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 module.exports = router;

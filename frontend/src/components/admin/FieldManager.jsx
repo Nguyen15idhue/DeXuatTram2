@@ -1011,7 +1011,12 @@ const FieldManager = () => {
                                   cur.data_list_label_column = cfg[0].key;
                                 }
                               }
-                              cur.data_link = { ...(linkObj || {}), enabled: true };
+                              cur.data_link = {
+                                ...(linkObj || {}),
+                                enabled: true,
+                                datalist_id: cur.data_list_id || (linkObj && linkObj.datalist_id) || null,
+                                default_column: cur.data_list_column || (linkObj && linkObj.default_column) || null
+                              };
                             } else if (next === 'inherit') {
                               delete cur.data_list_id; delete cur.data_list_column; delete cur.data_list_label_column;
                               cur.options_source = 'inherit';
@@ -1020,7 +1025,6 @@ const FieldManager = () => {
                             updateForm('table_config', { ...form.table_config, columns: newCols });
                           };
                           const selDl = dataLists.find(dl => dl.id === Number(col.data_list_id));
-                          const selDlCols = selDl && Array.isArray(selDl.columns_config) ? selDl.columns_config : [];
                           const baseDl = baseFld && baseFld.data_list_id ? dataLists.find(dl => dl.id === Number(baseFld.data_list_id)) : null;
                           return (
                           <div style={{ marginTop: 4, fontSize: 12 }}>
@@ -1046,34 +1050,10 @@ const FieldManager = () => {
                               </>
                             )}
                             {src === 'datalist' && (
-                              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                                <label style={{ flex: 1, minWidth: 140 }}>DataList
-                                  <select value={col.data_list_id || ''} onChange={(e) => {
-                                    const newCols = [...(form.table_config.columns || [])];
-                                    const patch = { ...newCols[idx], data_list_id: e.target.value ? parseInt(e.target.value) : null, options_source: 'datalist' };
-                                    const dl = dataLists.find(d => d.id === parseInt(e.target.value));
-                                    const cfg = dl && Array.isArray(dl.columns_config) ? dl.columns_config : [];
-                                    if (cfg.length > 0) {
-                                      if (!cfg.some(c => c.key === patch.data_list_column)) patch.data_list_column = cfg[0].key;
-                                      if (!cfg.some(c => c.key === patch.data_list_label_column)) patch.data_list_label_column = patch.data_list_column;
-                                    }
-                                    newCols[idx] = patch;
-                                    updateForm('table_config', { ...form.table_config, columns: newCols });
-                                  }} style={{ ...INPUT_STYLE, width: '100%' }}>
-                                    <option value="">-- Chọn --</option>
-                                    {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
-                                  </select>
-                                </label>
-                                <label style={{ flex: 1, minWidth: 140 }}>Cột giá trị
-                                  <select value={col.data_list_column || ''} onChange={(e) => {
-                                    const newCols = [...(form.table_config.columns || [])];
-                                    newCols[idx] = { ...newCols[idx], data_list_column: e.target.value || null };
-                                    updateForm('table_config', { ...form.table_config, columns: newCols });
-                                  }} style={{ ...INPUT_STYLE, width: '100%' }}>
-                                    <option value="">-- Chọn --</option>
-                                    {selDlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
-                                  </select>
-                                </label>
+                              <div style={{ marginTop: 4, fontSize: 11, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '6px 8px' }}>
+                                {selDl
+                                  ? <>Danh mục: <b>{selDl.name}</b>{col.data_list_column ? <> · Cột giá trị: <b>{col.data_list_column}</b></> : null}. Chỉnh ở mục <b>Liên kết dữ liệu</b> bên dưới.</>
+                                  : <>Chọn <b>Danh mục dữ liệu</b> và <b>Cột mặc định (Cột giá trị)</b> ở mục <b>Liên kết dữ liệu</b> bên dưới.</>}
                               </div>
                             )}
                             {src === 'inherit' && (
@@ -1144,14 +1124,32 @@ const FieldManager = () => {
                               const setLink = (patch) => {
                                 const newCols = [...(form.table_config.columns || [])];
                                 const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
-                                newCols[idx] = { ...newCols[idx], data_link: { ...prev, ...(forceEnabled ? { enabled: true } : {}), ...patch } };
+                                const next = { ...newCols[idx], data_link: { ...prev, ...(forceEnabled ? { enabled: true } : {}), ...patch } };
+                                if (isSelectCol) {
+                                  if (Object.prototype.hasOwnProperty.call(patch, 'datalist_id')) next.data_list_id = patch.datalist_id || null;
+                                  if (Object.prototype.hasOwnProperty.call(patch, 'default_column')) next.data_list_column = patch.default_column || null;
+                                  next.data_list_label_column = next.data_list_column || next.data_list_label_column || null;
+                                }
+                                newCols[idx] = next;
                                 updateForm('table_config', { ...form.table_config, columns: newCols });
                               };
                               const dlCols = (() => {
-                                const dl = dataLists.find(d => d.id === Number(link && link.datalist_id));
+                                const dlId = (link && link.datalist_id) || (isSelectCol ? col.data_list_id : null);
+                                const dl = dataLists.find(d => d.id === Number(dlId));
                                 const cfg = dl && dl.columns_config ? dl.columns_config : [];
                                 return Array.isArray(cfg) ? cfg : [];
                               })();
+                              const changeDatalist = (raw) => {
+                                const dlId = raw ? parseInt(raw) : null;
+                                const dl = dataLists.find(d => d.id === Number(dlId));
+                                const cfg = dl && Array.isArray(dl.columns_config) ? dl.columns_config : [];
+                                const patch = { datalist_id: dlId };
+                                if (isSelectCol) {
+                                  const cur = col.data_list_column;
+                                  patch.default_column = cfg.some(c => c.key === cur) ? cur : (cfg[0] ? cfg[0].key : null);
+                                }
+                                setLink(patch);
+                              };
                               const siblings = (form.table_config.columns || []).filter((_, i) => i !== idx);
                               const conds = Array.isArray(link && link.conditions) ? link.conditions : [];
                               const setConds = (next) => setLink({ conditions: next });
@@ -1196,20 +1194,24 @@ const FieldManager = () => {
                                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                         <label style={{ flex: 1, minWidth: 140 }}>Danh mục dữ liệu
-                                          <select value={(link && link.datalist_id) || ''} onChange={(e) => setLink({ datalist_id: e.target.value ? parseInt(e.target.value) : null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                          <select value={(link && link.datalist_id) || (isSelectCol ? col.data_list_id : '') || ''} onChange={(e) => changeDatalist(e.target.value)} style={{ ...INPUT_STYLE, width: '100%' }}>
                                             <option value="">-- Chọn --</option>
                                             {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
                                           </select>
                                         </label>
-                                        <label style={{ flex: 1, minWidth: 140 }}>Tự động điền khi cột có giá trị
+                                        <label style={{ flex: 1, minWidth: 140 }}>Tự động điền khi cột có giá trị (tùy chọn)
                                           <select value={(link && link.trigger_column) || ''} onChange={(e) => setLink({ trigger_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
-                                            <option value="">-- Chọn cột --</option>
+                                            <option value="">-- Không tự động điền --</option>
                                             {siblings.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
                                           </select>
                                         </label>
                                       </div>
+                                      <span style={{ fontSize: 11, color: '#888' }}>Để trống nếu muốn người dùng tự chọn/nhập giá trị trong ô này.</span>
                                       <div>
                                         <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Điều kiện (dòng đầu khớp thắng)</div>
+                                        {!(link && link.trigger_column) && conds.length > 0 && (
+                                          <div style={{ fontSize: 11, color: '#b45309', marginBottom: 4 }}>Chưa chọn cột kích hoạt — các điều kiện này sẽ bị bỏ qua.</div>
+                                        )}
                                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                           <thead>
                                             <tr>
@@ -1259,8 +1261,8 @@ const FieldManager = () => {
                                         </table>
                                         <button type="button" className="btn btn-xs btn-secondary mt-1" onClick={() => setConds([...conds, { field: '', op: '=', value: '', column: '' }])}>+ Thêm dòng</button>
                                       </div>
-                                      <label>Cột mặc định (lấy khi không khớp điều kiện nào)
-                                        <select value={(link && link.default_column) || ''} onChange={(e) => setLink({ default_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                      <label>{isSelectCol ? 'Cột mặc định (Cột giá trị của ô select)' : 'Cột mặc định (lấy khi không khớp điều kiện nào)'}
+                                        <select value={(link && link.default_column) || (isSelectCol ? col.data_list_column : '') || ''} onChange={(e) => setLink({ default_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
                                           <option value="">-- Chọn --</option>
                                           {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
                                         </select>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { documentService } from '../../services/api';
-import { FileText, Plus, X, Trash2, Pencil, Network } from 'lucide-react';
+import { FileText, Plus, X, Trash2, Pencil, Network, LayoutTemplate } from 'lucide-react';
 import Loading from '../../components/Loading';
 import DocumentTemplateEditor from '../../components/admin/DocumentTemplateEditor';
+import DocumentLayoutEditor from '../../components/admin/DocumentLayoutEditor';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -26,6 +27,7 @@ const AdminDocumentsPage = () => {
   const [mapModal, setMapModal] = useState({ open: false, id: null, name: '', text: '' });
   const [constSaving, setConstSaving] = useState(false);
   const [editorId, setEditorId] = useState(null);
+  const [layoutTpl, setLayoutTpl] = useState(null);
 
   const loadAll = useCallback(async () => {
     try {
@@ -280,6 +282,9 @@ const AdminDocumentsPage = () => {
                       <button className="btn btn-ghost btn-xs gap-1" onClick={() => openMapping(t)} title="Xem/sửa mapping JSON">
                         <Network size={13} /> Mapping
                       </button>
+                      <button className="btn btn-ghost btn-xs gap-1" onClick={() => setLayoutTpl(t)} title="Sửa bố cục Word (thêm/xóa/căn trường)">
+                        <LayoutTemplate size={13} /> Bố cục
+                      </button>
                       <button className="btn btn-ghost btn-xs gap-1" onClick={() => openEdit(t)} title="Sửa">
                         <Pencil size={13} /> Sửa
                       </button>
@@ -388,6 +393,15 @@ const AdminDocumentsPage = () => {
             <button onClick={() => setShowForm(false)}>close</button>
           </form>
         </dialog>
+      )}
+
+      {layoutTpl && (
+        <DocumentLayoutEditor
+          templateId={layoutTpl.id}
+          templateName={layoutTpl.name}
+          onClose={() => setLayoutTpl(null)}
+          onSaved={() => loadAll()}
+        />
       )}
 
       {editorId && (

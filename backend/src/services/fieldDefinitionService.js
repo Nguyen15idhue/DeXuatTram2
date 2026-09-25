@@ -33,27 +33,31 @@ exports.validateTableLink = async (entity, tableConfig) => {
     }
     const link = col.data_link;
     if (!link || !link.enabled) continue;
-    if (!link.datalist_id) throw badRequest(`Cột "${col.label || col.key}": chưa chọn Danh mục dữ liệu`);
-    const bKeys = await dlColumns(link.datalist_id);
+    const dlId = link.datalist_id || col.data_list_id;
+    if (!dlId) throw badRequest(`Cột "${col.label || col.key}": chưa chọn Danh mục dữ liệu`);
+    const bKeys = await dlColumns(dlId);
     if (bKeys.length === 0) throw badRequest(`Cột "${col.label || col.key}": DataList đã chọn không có cột nào`);
-    if (!link.trigger_column) throw badRequest(`Cột "${col.label || col.key}": chưa chọn cột kích hoạt tự động điền`);
-    if (!columns.some((c) => c && c.key === link.trigger_column)) {
-      throw badRequest(`Cột "${col.label || col.key}": cột kích hoạt "${link.trigger_column}" không có trong table`);
+    const defaultColumn = link.default_column || col.data_list_column;
+    if (!defaultColumn) throw badRequest(`Cột "${col.label || col.key}": chưa chọn Cột mặc định`);
+    if (!bKeys.includes(defaultColumn)) {
+      throw badRequest(`Cột "${col.label || col.key}": Cột mặc định "${defaultColumn}" không có trong DataList`);
     }
-    if (!link.default_column) throw badRequest(`Cột "${col.label || col.key}": chưa chọn Cột mặc định`);
-    if (!bKeys.includes(link.default_column)) {
-      throw badRequest(`Cột "${col.label || col.key}": Cột mặc định "${link.default_column}" không có trong DataList`);
-    }
-    for (const [i, cond] of ((link.conditions || [])).entries()) {
-      const n = i + 1;
-      if (!cond.field || !fieldKeys.has(cond.field)) {
-        throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} dùng field "${cond.field || '(trống)'}" không tồn tại trong entity`);
+    const trigger = link.trigger_column;
+    if (trigger) {
+      if (!columns.some((c) => c && c.key === trigger)) {
+        throw badRequest(`Cột "${col.label || col.key}": cột kích hoạt "${trigger}" không có trong table`);
       }
-      if (!LINK_OPS.includes(cond.op)) {
-        throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} có toán tử không hợp lệ`);
-      }
-      if (!cond.column || !bKeys.includes(cond.column)) {
-        throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} lấy cột "${cond.column || '(trống)'}" không có trong DataList`);
+      for (const [i, cond] of ((link.conditions || [])).entries()) {
+        const n = i + 1;
+        if (!cond.field || !fieldKeys.has(cond.field)) {
+          throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} dùng field "${cond.field || '(trống)'}" không tồn tại trong entity`);
+        }
+        if (!LINK_OPS.includes(cond.op)) {
+          throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} có toán tử không hợp lệ`);
+        }
+        if (!cond.column || !bKeys.includes(cond.column)) {
+          throw badRequest(`Cột "${col.label || col.key}": điều kiện ${n} lấy cột "${cond.column || '(trống)'}" không có trong DataList`);
+        }
       }
     }
   }

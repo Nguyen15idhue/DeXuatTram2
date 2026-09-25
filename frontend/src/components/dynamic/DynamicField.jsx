@@ -61,7 +61,7 @@ const normalizeTableLink = (col) => {
   if (col.data_link && (col.data_link.enabled || (col.column_type === 'select' && getColumnSource(col, null) === 'datalist'))) {
     return {
       trigger: col.data_link.trigger_column || null,
-      fallbackColumn: col.data_link.default_column || null,
+      fallbackColumn: col.data_link.default_column || col.data_list_column || null,
       datalistId: col.data_link.datalist_id || col.data_list_id || null,
       conditions: Array.isArray(col.data_link.conditions) ? col.data_link.conditions : []
     };

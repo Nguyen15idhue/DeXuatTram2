@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { fieldDefinitionService, formService, formFieldService } from '../../services/api';
+import { fieldDefinitionService, formService, formFieldService, dataListService } from '../../services/api';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
 import CountdownConfigPanel from './CountdownConfigPanel';
@@ -8,6 +8,7 @@ import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, Chevr
 import { filterFieldsBySearch } from '../../utils/searchText';
 import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
 import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
+import { getColumnSource } from '../../utils/tableColumnSource';
 
 const ENTITIES = ['stations', 'station_proposals', 'users'];
 const PURPOSE_OPTIONS = [
@@ -20,6 +21,15 @@ const COL_OPTIONS = [
   { value: '1:2', label: '2 cột' },
   { value: '1:3', label: '3 cột' },
   { value: '1:4', label: '4 cột' }
+];
+const LINK_OPS = [
+  { value: '=', label: '=' },
+  { value: '!=', label: '≠' },
+  { value: 'contains', label: 'chứa' },
+  { value: 'not_contains', label: 'không chứa' },
+  { value: 'in', label: 'thuộc (a,b)' },
+  { value: 'empty', label: 'trống' },
+  { value: 'not_empty', label: 'không trống' }
 ];
 
 const FormBuilder = ({ formId, onSaved }) => {
@@ -46,10 +56,20 @@ const FormBuilder = ({ formId, onSaved }) => {
   const [availableSearch, setAvailableSearch] = useState('');
   const [previewSearch, setPreviewSearch] = useState('');
   const [previewMatchIdx, setPreviewMatchIdx] = useState(0);
+  const [dataLists, setDataLists] = useState([]);
 
   useEffect(() => {
     if (formId) loadFormConfig();
   }, [formId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await dataListService.getAll('limit=100', token);
+        if (res.success) setDataLists(res.data || []);
+      } catch { /* silent */ }
+    })();
+  }, [token]);
 
   useEffect(() => { setPreviewMatchIdx(0); }, [previewSearch]);
 
@@ -1649,20 +1669,137 @@ const FormBuilder = ({ formId, onSaved }) => {
                           }} /> Bắt buộc
                         </label>
                       </div>
-                      {!col.field_id && col.column_type === 'select' && (
-                        <div style={{ marginTop: 4, fontSize: 12 }}>
-                          <input type="text" placeholder="Options (cách nhau bởi dấu phẩy)" value={(col.options || []).join(', ')}
-                            onChange={(e) => {
-                              const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                              const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
-                              newCols[idx] = { ...newCols[idx], options: opts };
-                              handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
-                                ...(selectedField.config?.tableConfig || {}),
-                                columns: newCols
-                              });
-                            }} style={{ width: '100%', fontSize: 12 }} />
-                        </div>
-                      )}
+                      {(() => {
+                        const baseFld = col.field_id ? availableFields.find(f => f.id === parseInt(col.field_id)) : null;
+                        const isSelectCol = (col.column_type === 'select') || (baseFld && baseFld.type === 'select');
+                        if (!isSelectCol) return null;
+                        const src = getColumnSource(col, baseFld);
+                        const link = (col.data_link && typeof col.data_link === 'object') ? col.data_link : null;
+                        const enabled = !!(link && link.enabled);
+                        const isSelectOwn = col.column_type === 'select';
+                        const forceEnabled = isSelectOwn && src === 'datalist';
+                        const dlId = (link && link.datalist_id) || col.data_list_id || null;
+                        const dl = dataLists.find(d => d.id === Number(dlId));
+                        const dlCols = dl && Array.isArray(dl.columns_config) ? dl.columns_config : [];
+                        const baseDl = baseFld && baseFld.data_list_id ? dataLists.find(d => d.id === Number(baseFld.data_list_id)) : null;
+                        const siblings = (selectedField.config?.tableConfig?.columns || []).filter((_, i) => i !== idx);
+                        const conds = Array.isArray(link && link.conditions) ? link.conditions : [];
+                        const updateCol = (patch) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], ...patch };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}), columns: newCols
+                          });
+                        };
+                        const setLink = (patch) => {
+                          const prev = (col.data_link && typeof col.data_link === 'object') ? col.data_link : {};
+                          const next = { data_link: { ...prev, ...(forceEnabled ? { enabled: true } : {}), ...patch } };
+                          if (isSelectOwn) {
+                            if (Object.prototype.hasOwnProperty.call(patch, 'datalist_id')) next.data_list_id = patch.datalist_id || null;
+                            if (Object.prototype.hasOwnProperty.call(patch, 'default_column')) next.data_list_column = patch.default_column || null;
+                            next.data_list_label_column = next.data_list_column || col.data_list_label_column || null;
+                          }
+                          updateCol(next);
+                        };
+                        const setSource = (next) => {
+                          if (next === 'manual') {
+                            updateCol({ options_source: 'manual', data_list_id: null, data_list_column: null, data_list_label_column: null, data_link: { ...(col.data_link || {}), enabled: false } });
+                          } else if (next === 'datalist') {
+                            const first = dataLists[0];
+                            const cfg = first && Array.isArray(first.columns_config) ? first.columns_config : [];
+                            const keep = (col.data_list_column && cfg.some(c => c.key === col.data_list_column)) ? col.data_list_column : (cfg[0] ? cfg[0].key : null);
+                            const id = col.data_list_id || (first ? first.id : null);
+                            updateCol({ options_source: 'datalist', data_list_id: id, data_list_column: keep, data_list_label_column: keep, data_link: { ...(col.data_link || {}), enabled: true, datalist_id: id, default_column: keep } });
+                          } else if (next === 'inherit') {
+                            updateCol({ options_source: 'inherit', data_list_id: null, data_list_column: null, data_list_label_column: null });
+                          }
+                        };
+                        const changeDatalist = (raw) => {
+                          const id = raw ? parseInt(raw) : null;
+                          const d = dataLists.find(x => x.id === Number(id));
+                          const cfg = d && Array.isArray(d.columns_config) ? d.columns_config : [];
+                          const keep = cfg.some(c => c.key === col.data_list_column) ? col.data_list_column : (cfg[0] ? cfg[0].key : null);
+                          setLink({ datalist_id: id, default_column: keep });
+                        };
+                        const setConds = (next) => setLink({ conditions: next });
+                        return (
+                          <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px dashed #e2e8f0', fontSize: 12 }}>
+                            <div style={{ fontWeight: 600, color: '#475569', marginBottom: 6 }}>Liên kết dữ liệu</div>
+                            <label>Nguồn options
+                              <select value={src} onChange={(e) => setSource(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
+                                <option value="manual">Thủ công (nhập tay)</option>
+                                <option value="datalist">Từ DataList</option>
+                                {col.field_id
+                                  ? <option value="inherit">Theo field liên kết</option>
+                                  : <option value="inherit" disabled>Theo field liên kết (cần gắn field)</option>}
+                              </select>
+                            </label>
+                            {src === 'manual' && (
+                              <input type="text" placeholder="Options (cách nhau bởi dấu phẩy)" value={(col.options || []).join(', ')}
+                                onChange={(e) => {
+                                  const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                  updateCol({ options: opts });
+                                }} style={{ width: '100%', fontSize: 12, marginTop: 4 }} />
+                            )}
+                            {src === 'inherit' && (
+                              <div style={{ fontSize: 11, color: baseDl ? '#075985' : '#92400e', marginTop: 4 }}>
+                                {baseDl
+                                  ? `Kế thừa DataList "${baseDl.name}" từ field "${baseFld.label || baseFld.key}".`
+                                  : `Field "${(baseFld && (baseFld.label || baseFld.key)) || ''}" gốc nhập tay — cột này cũng nhập tay.`}
+                              </div>
+                            )}
+                            {src === 'datalist' && (
+                              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                  <label style={{ flex: 1, minWidth: 140 }}>Danh mục dữ liệu
+                                    <select value={dlId || ''} onChange={(e) => changeDatalist(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
+                                      <option value="">-- Chọn --</option>
+                                      {dataLists.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                    </select>
+                                  </label>
+                                  <label style={{ flex: 1, minWidth: 140 }}>Cột mặc định (Cột giá trị)
+                                    <select value={(link && link.default_column) || col.data_list_column || ''} onChange={(e) => setLink({ default_column: e.target.value || null })} style={{ width: '100%', fontSize: 12 }}>
+                                      <option value="">-- Chọn --</option>
+                                      {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                    </select>
+                                  </label>
+                                </div>
+                                <label>Tự động điền khi cột có giá trị (tùy chọn)
+                                  <select value={(link && link.trigger_column) || ''} onChange={(e) => setLink({ trigger_column: e.target.value || null })} style={{ width: '100%', fontSize: 12 }}>
+                                    <option value="">-- Không tự động điền --</option>
+                                    {siblings.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                  </select>
+                                </label>
+                                {enabled && !(link && link.trigger_column) && conds.length > 0 && (
+                                  <div style={{ fontSize: 11, color: '#b45309' }}>Chưa chọn cột kích hoạt — các điều kiện này sẽ bị bỏ qua.</div>
+                                )}
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Điều kiện (dòng đầu khớp thắng)</div>
+                                  {conds.map((cd, ci) => (
+                                    <div key={ci} style={{ display: 'flex', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
+                                      <select value={cd.field || ''} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], field: e.target.value }; setConds(n); }} style={{ flex: 2, minWidth: 110, fontSize: 12 }}>
+                                        <option value="">-- Field --</option>
+                                        {availableFields.filter(f => f.status !== 'inactive').map(f => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+                                      </select>
+                                      <select value={cd.op || '='} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], op: e.target.value }; setConds(n); }} style={{ width: 100, fontSize: 12 }}>
+                                        {LINK_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                      </select>
+                                      <input type="text" placeholder="Giá trị" value={cd.value || ''} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], value: e.target.value }; setConds(n); }} style={{ flex: 1, minWidth: 70, fontSize: 12 }} />
+                                      <select value={cd.column || ''} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], column: e.target.value }; setConds(n); }} style={{ flex: 1, minWidth: 90, fontSize: 12 }}>
+                                        <option value="">-- Cột DL --</option>
+                                        {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                      </select>
+                                      <button type="button" className="btn btn-xs btn-ghost text-error" onClick={() => setConds(conds.filter((_, i) => i !== ci))}>✕</button>
+                                    </div>
+                                  ))}
+                                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => setConds([...conds, { field: '', op: '=', value: '', column: '' }])}>+ Thêm điều kiện</button>
+                                </div>
+                                <span style={{ fontSize: 11, color: '#888' }}>Ô trong table thành select: 1 giá trị → tự chọn (khóa), nhiều → chọn tay.</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div style={{ marginTop: 4, fontSize: 12 }}>
                         <input type="text" placeholder={`Formula (VD: so_luong * don_gia)`}
                           value={col.formula || ''}

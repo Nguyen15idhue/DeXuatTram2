@@ -4,6 +4,7 @@ const path = require('path');
 const PizZip = require('pizzip');
 const mammoth = require('mammoth');
 const documentFormula = require('./documentFormula');
+const documentXmlService = require('./documentXmlService');
 
 const parseJson = (v, fb) => {
   if (!v) return fb;
@@ -310,4 +311,121 @@ exports.validateMapping = async (templateId, mapping) => {
     } catch {}
   }
   return { valid: errors.length === 0, errors };
+};
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+const saveBufferAsFile = async (buf, name) => {
+  const now = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const rand = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  const relativePath = `general/${p(now.getDate())}-${p(now.getMonth() + 1)}-${now.getFullYear()}/${Date.now()}-${rand}.docx`;
+  const dest = path.join(__dirname, '../../storage/uploads', relativePath);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, buf);
+  const [result] = await pool.query(
+    `INSERT INTO files (original_name, storage_key, mime_type, size, checksum, uploaded_by, submitter_ip, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, relativePath, DOCX_MIME, buf.length, null, null, null, 'active']
+  );
+  return result.insertId;
+};
+
+const writeDocxXml = async (sourceFileId, xml, name) => {
+  const { zip } = await readDocxXml(sourceFileId);
+  zip.file('word/document.xml', xml);
+  const buf = zip.generate({ type: 'nodebuffer' });
+  return saveBufferAsFile(buf, name || 'template.docx');
+};
+
+const snapshotVersion = async (tpl, label) => {
+  if (!tpl || !tpl.file_id) return;
+  await pool.query(
+    'INSERT INTO document_template_versions (template_id, file_id, mapping, label) VALUES (?, ?, ?, ?)',
+    [tpl.id, tpl.file_id, JSON.stringify(tpl.mapping || {}), label ? String(label).slice(0, 255) : null]
+  );
+};
+
+const stripTokenFromMapping = (mapping, tokenName) => {
+  const m = JSON.parse(JSON.stringify(mapping || {}));
+  if (m.tokens) delete m.tokens[tokenName];
+  Object.values(m.loops || {}).forEach((cfg) => {
+    if (!cfg || typeof cfg !== 'object') return;
+    if (cfg.columns) delete cfg.columns[tokenName];
+    if (cfg.scalars) delete cfg.scalars[tokenName];
+    (cfg.parts || []).forEach((p) => { if (p && p.columns) delete p.columns[tokenName]; });
+  });
+  return m;
+};
+
+const readLayoutXml = async (templateId) => {
+  const tpl = await exports.getTemplate(templateId);
+  if (!tpl) throw Object.assign(new Error('Không tìm thấy template'), { statusCode: 404 });
+  if (!tpl.file_id) throw Object.assign(new Error('Template chưa gắn file .docx'), { statusCode: 400 });
+  const { xml } = await readDocxXml(tpl.file_id);
+  return { tpl, xml };
+};
+
+exports.getLayout = async (templateId) => {
+  const { tree } = documentXmlService.extractTree((await readLayoutXml(templateId)).xml);
+  return { tree };
+};
+
+exports.getLayoutPreview = async (templateId) => {
+  const { tpl, xml } = await readLayoutXml(templateId);
+  const { zip } = await readDocxXml(tpl.file_id);
+  zip.file('word/document.xml', documentXmlService.injectAnchors(xml));
+  return {
+    buffer: zip.generate({ type: 'nodebuffer' }),
+    filename: `layout-${tpl.id}.docx`,
+    contentType: DOCX_MIME,
+  };
+};
+
+const applyLayoutEdit = async (templateId, newXml, label, mappingPatch) => {
+  const tpl = await exports.getTemplate(templateId);
+  if (!tpl) throw Object.assign(new Error('Không tìm thấy template'), { statusCode: 404 });
+  if (!tpl.file_id) throw Object.assign(new Error('Template chưa gắn file .docx'), { statusCode: 400 });
+  await snapshotVersion(tpl, label);
+  const fileId = await writeDocxXml(tpl.file_id, newXml, `${tpl.name || 'template'}.docx`);
+  await exports.updateTemplate(templateId, { file_id: fileId, mapping: mappingPatch ? mappingPatch(tpl.mapping) : tpl.mapping });
+  return { template: await exports.getTemplate(templateId), layout: await exports.getLayout(templateId) };
+};
+
+exports.insertLayoutToken = async (templateId, nodeId, name) => {
+  const { xml } = await readLayoutXml(templateId);
+  const { xml: next, token } = documentXmlService.insertToken(xml, Number(nodeId), name);
+  return applyLayoutEdit(templateId, next, `Chèn ${token}`);
+};
+
+exports.removeLayoutToken = async (templateId, nodeId, tokenName) => {
+  const { xml } = await readLayoutXml(templateId);
+  const next = documentXmlService.removeToken(xml, Number(nodeId), tokenName);
+  return applyLayoutEdit(templateId, next, `Xóa {${tokenName}}`, (m) => stripTokenFromMapping(m, tokenName));
+};
+
+exports.alignLayout = async (templateId, nodeId, opts) => {
+  const { xml } = await readLayoutXml(templateId);
+  const next = documentXmlService.align(xml, Number(nodeId), opts || {});
+  return applyLayoutEdit(templateId, next, 'Căn chỉnh đoạn');
+};
+
+exports.listLayoutVersions = async (templateId) => {
+  const [rows] = await pool.query(
+    `SELECT v.id, v.template_id, v.file_id, v.label, v.created_at, f.original_name AS file_name
+     FROM document_template_versions v LEFT JOIN files f ON f.id = v.file_id
+     WHERE v.template_id = ? ORDER BY v.id DESC LIMIT 50`,
+    [templateId]
+  );
+  return rows;
+};
+
+exports.restoreLayoutVersion = async (templateId, versionId) => {
+  const tpl = await exports.getTemplate(templateId);
+  if (!tpl) throw Object.assign(new Error('Không tìm thấy template'), { statusCode: 404 });
+  const [rows] = await pool.query('SELECT * FROM document_template_versions WHERE id = ? AND template_id = ?', [versionId, templateId]);
+  if (rows.length === 0) throw Object.assign(new Error('Không tìm thấy phiên bản'), { statusCode: 404 });
+  await snapshotVersion(tpl, 'Trước khi khôi phục');
+  await exports.updateTemplate(templateId, { file_id: rows[0].file_id, mapping: parseJson(rows[0].mapping, {}) });
+  return { template: await exports.getTemplate(templateId), layout: await exports.getLayout(templateId) };
 };

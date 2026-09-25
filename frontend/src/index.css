@@ -133,6 +133,20 @@
   .dxp-token-close {
     display: none;
   }
+  .dxp-doc-clickable .dxp-oom-block {
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.12s ease;
+  }
+  .dxp-doc-clickable .dxp-oom-block:hover {
+    background: rgba(37, 99, 235, 0.12);
+    outline: 1px dashed rgba(37, 99, 235, 0.6);
+  }
+  .dxp-doc-clickable .dxp-oom-block.dxp-oom-selected {
+    background: rgba(37, 99, 235, 0.18);
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+  }
   .doc-tabs .tab-active {
     background: #1d4ed8;
     color: #fff;
