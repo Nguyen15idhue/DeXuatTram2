@@ -113,7 +113,7 @@ docker exec station-backend date          # phải hiện +07 (TZ Asia/Ho_Chi_Mi
 # API sống
 curl -s -o /dev/null -w "api=%{http_code}\n" http://127.0.0.1:8081/api/test   # mong đợi 200
 
-# DB: kỳ vọng tracked=65, tables=22
+# DB: kỳ vọng tracked=112, tables=34
 docker exec -i station-mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" station_management' <<'SQL'
 SELECT COUNT(*) AS tracked FROM schema_migrations;
 SELECT COUNT(*) AS tables FROM information_schema.tables WHERE table_schema='station_management';
@@ -123,8 +123,15 @@ SELECT COUNT(*) AS missing_review_cols FROM information_schema.columns
 SELECT COUNT(*) AS missing_map_cols FROM information_schema.columns
   WHERE table_schema='station_management' AND table_name='map_configs'
     AND column_name IN ('renderer','tile_mode','retina','default_mode','layers_config','enable_3d'); -- kỳ vọng 6
+-- Tính năng BCĐX (Quản lý tài liệu): kỳ vọng templates=3, có 2 bảng mới
+SELECT COUNT(*) AS doc_templates FROM document_templates;          -- kỳ vọng 3
+SELECT COUNT(*) AS doc_constants FROM document_constants;          -- kỳ vọng >= 9
+SELECT COUNT(*) AS has_help_tables FROM information_schema.tables
+  WHERE table_schema='station_management' AND table_name IN ('help_articles','assistant_knowledge'); -- kỳ vọng 2
 SQL
 ```
+
+> `tracked` = số file migration trong `database/` (hiện **112**). `tables` = **34**. Nếu thiếu số nhiều → DB chưa chạy đủ migration, xem mục 7.
 
 Sau đó mở web bằng trình duyệt: login, vào `/map`, `/admin/proposals`, chuông thông báo, `/admin/map-config` — đảm bảo không lỗi console.
 
@@ -140,7 +147,7 @@ git pull origin ui-redesign
 ./update.sh
 ```
 
-`update.sh` tự: `migrate.sh run` (áp file migration mới) → build lại → `up -d`. Dữ liệu giữ nguyên.
+`update.sh` tự: `migrate.sh run` (áp file migration mới) → build lại → `up -d` → **seed template BCĐX** (best-effort) → index kho tri thức chatbot. Dữ liệu giữ nguyên.
 
 Nếu `git pull` báo "local changes would be overwritten":
 
@@ -275,6 +282,51 @@ SQL
 
 Kỳ vọng: `has_deadline_col=1`; `status_enum` chứa `PRINCIPLE_APPROVED`; config `review_supplement_days=3`, `principle_supplement_days=15`, `supplement_webhook_url` (rỗng = tắt).
 
+### 7.3 Tính năng mới theo mã nguồn (migration 104→112) — có cần làm gì thêm?
+
+Từ mốc **104** trở đi, schema có thêm nhiều bảng mới (hướng dẫn/chatbot, tài liệu BCĐX). Chỉ cần `git pull && ./update.sh` là đủ để **chạy migration + build**, vì:
+
+| Mốc | Thêm gì | `update.sh` tự lo? |
+|---|---|---|
+| 104 | `help_categories` / `help_articles` / `assistant_logs` (+ FULLTEXT) | ✅ chạy migration |
+| 105–106 | `assistant_knowledge` / `assistant_code_knowledge` | ✅ migration + `index-knowledge`/`index-code-knowledge` (best-effort) |
+| 107–109 | mở role `guest`, `assistant_provider_configs`, `assistant_model_cache` | ✅ migration |
+| 111 | `document_templates` / `document_constants` (Quản lý tài liệu BCĐX) | ✅ migration |
+| 112 | chuẩn hoá hằng số BCĐX (`signer_tgd_*`) | ✅ migration |
+
+**Riêng `document_templates` cần thêm file `.docx` mẫu** — migration chỉ tạo bảng, không tạo template. `update.sh`/`deploy.sh` đã tự chạy bước **seed best-effort** sau khi `up -d`:
+
+```bash
+# Chạy tự động trong update.sh/deploy.sh; muốn chạy tay:
+docker compose -f docker-compose.simple.yml exec -T backend node scripts/seed-document-templates.js
+```
+
+Script lấy 3 mẫu `backend/templates/bcxd/{tdt,nq,lk}.docx` (có sẵn trong image) + mapping từ `build-bcxd-templates.js`, tạo bản ghi `files` + `document_templates`. **Idempotent**: đã có template theo `model` thì bỏ qua. Muốn cập nhật lại mapping (ghi đè) dùng `--force`:
+
+```bash
+docker compose -f docker-compose.simple.yml exec -T backend node scripts/seed-document-templates.js --force
+```
+
+Kiểm tra: vào `/admin/documents` (SUPER_ADMIN) phải thấy 3 mẫu "Báo cáo đề xuất TDT/NQ/LK"; hoặc:
+
+```bash
+docker compose -f docker-compose.simple.yml exec -T backend node /tmp/q-info.js   # TEMPLATES=[...] đủ 3
+```
+
+**Hằng số BCĐX** sửa tại `/admin/documents` (tab Hằng số) — không cần sửa code. Giá trị mặc định: `company_name`, `company_short`, `plan_tdt/lk/nq/npp`, `signer_ketoan`, `signer_tgd_tdt`, `signer_tgd_nq_lk`, `so_van_ban`.
+
+**Chatbot hướng dẫn (tùy chọn)**: để bật, thêm vào `.env` trên VPS rồi `docker compose -f docker-compose.simple.yml up -d backend`:
+
+```env
+ASSISTANT_ENABLED=true
+GEMINI_API_KEY=<key>            # provider chính
+OPENROUTER_API_KEY=<key>        # dự phòng (tùy chọn)
+```
+
+Không có key thì nút chatbot vẫn ẩn (`GET /api/assistant/status` báo chưa cấu hình) — phần còn lại của app không ảnh hưởng.
+
+> **Lưu ý file không commit**: `frontend/public/pmtiles/vietnam.pmtiles` (~300MB) bị gitignore. Nếu VPS dùng chế độ bản đồ self-host PMTiles thì phải copy file này thủ công (`docs/5/37`). Mặc định `map_configs` dùng provider online nên **không bắt buộc**.
+
 ---
 
 ## 8. Cloudflare & HTTPS (không dùng Caddy)
@@ -407,6 +459,8 @@ docker run --rm -v dexuattram2_uploads_data:/data -v /root/backups:/backup busyb
 | Đã deploy bản cũ, thiếu bảng (`notifications`, `geocode_configs`...) | Xem **mục 7.1** (unmark 45→67 rồi `migrate.sh run`). |
 | `update.sh` dừng ở migration: `Unknown column ... in 'field list'` | Migration phụ thuộc bị mark mà chưa chạy → xem **mục 7.2** (unmark 96→101 rồi `run`, sau đó **chạy lại `./update.sh`** để build). |
 | `migrate.sh run` báo "DB da co du lieu nhung chua co tracking" | Chỉ khi schema đã đúng: `scripts/migrate.sh mark-all --yes` rồi `run`. Nếu DB còn thiếu bảng thì làm theo mục 7.1. |
+| `/admin/documents` không có mẫu báo cáo / xuất BCĐX báo "Chưa cấu hình template" | Seed template chưa chạy. Chạy tay: `docker compose -f docker-compose.simple.yml exec -T backend node scripts/seed-document-templates.js` (xem mục 7.3). |
+| Chatbot hướng dẫn không hiện nút | Chưa cấu hình `GEMINI_API_KEY`/`ASSISTANT_ENABLED=true` trong `.env` (xem mục 7.3). |
 
 Kiểm tra nhanh:
 

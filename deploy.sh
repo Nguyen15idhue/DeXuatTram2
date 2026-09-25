@@ -184,6 +184,11 @@ fi
 log "Khoi dong backend + frontend..."
 docker compose -f "$COMPOSE_FILE" up -d backend frontend
 
+log "Seed template bao cao BCX (best-effort, bo qua neu da co)..."
+sleep 5
+docker compose -f "$COMPOSE_FILE" exec -T backend node scripts/seed-document-templates.js \
+  || echo "[deploy] Canh bao: seed template BCX that bai (bo qua)."
+
 echo ""
 echo "==================== HOAN TAT ===================="
 echo "Link truy cap : http://${IP}:${WEB_PORT}"

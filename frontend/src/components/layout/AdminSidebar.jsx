@@ -1,33 +1,127 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useState, useEffect } from 'react';
 import {
   BarChart3, Users, Zap, ClipboardList, Settings,
-  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History, BookOpen
+  FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History, BookOpen, ChevronDown
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 
-const menuItems = [
+const mainItems = [
   { path: '/admin', label: 'Dashboard', icon: BarChart3, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/users', label: 'Quản lý Users', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/stations', label: 'Quản lý Trạm', icon: Zap, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/proposals', label: 'Quản lý Đề xuất', icon: ClipboardList, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/audit-log', label: 'Audit Log', icon: History, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
-  { divider: true, roles: ['SUPER_ADMIN'] },
-  { label: 'Cấu hình', isGroup: true, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/fields', label: 'Field Definitions', icon: FileText, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/forms', label: 'Forms Manager', icon: File, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/views', label: 'Views Manager', icon: LayoutGrid, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/data-lists', label: 'Data Lists', icon: List, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/map-config', label: 'Map Config', icon: Map, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/roles', label: 'Phân quyền', icon: ShieldCheck, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/api-configs', label: 'API Configs', icon: Settings, roles: ['SUPER_ADMIN'] },
-  { path: '/admin/help', label: 'Quản lý Hướng dẫn', icon: BookOpen, roles: ['SUPER_ADMIN'] },
 ];
+
+const configGroups = [
+  {
+    id: 'fields',
+    label: 'Trường thông tin',
+    roles: ['SUPER_ADMIN'],
+    items: [
+      { path: '/admin/fields', label: 'Định nghĩa trường', icon: FileText, roles: ['SUPER_ADMIN'] },
+      { path: '/admin/forms', label: 'Biểu mẫu nhập liệu', icon: File, roles: ['SUPER_ADMIN'] },
+      { path: '/admin/views', label: 'Cấu hình bảng', icon: LayoutGrid, roles: ['SUPER_ADMIN'] },
+    ],
+  },
+  {
+    id: 'data',
+    label: 'Dữ liệu',
+    roles: ['SUPER_ADMIN'],
+    items: [
+      { path: '/admin/data-lists', label: 'Danh mục dữ liệu', icon: List, roles: ['SUPER_ADMIN'] },
+      { path: '/admin/map-config', label: 'Cấu hình bản đồ', icon: Map, roles: ['SUPER_ADMIN'] },
+      { path: '/admin/help', label: 'Quản lý hướng dẫn', icon: BookOpen, roles: ['SUPER_ADMIN'] },
+      { path: '/admin/api-configs', label: 'Kết nối API', icon: Settings, roles: ['SUPER_ADMIN'] },
+      { path: '/admin/documents', label: 'Quản lý tài liệu', icon: FileText, roles: ['SUPER_ADMIN'] },
+    ],
+  },
+  {
+    id: 'perms',
+    label: 'Phân quyền',
+    roles: ['SUPER_ADMIN'],
+    items: [
+      { path: '/admin/roles', label: 'Phân quyền', icon: ShieldCheck, roles: ['SUPER_ADMIN'] },
+    ],
+  },
+];
+
+const STORAGE_KEY = 'admin-sidebar-groups';
+
+const loadCollapsed = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCollapsed = (arr) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+  } catch {}
+};
+
+const isItemActive = (pathname, path) => pathname === path || (path !== '/admin' && pathname.startsWith(path));
 
 const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const visibleItems = menuItems.filter((item) => !item.roles || item.roles.includes(user?.role));
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+
+  useEffect(() => {
+    setCollapsed((prev) => {
+      const next = prev.filter((id) => {
+        const g = configGroups.find((x) => x.id === id);
+        if (!g) return false;
+        return !g.items.some((it) => isItemActive(location.pathname, it.path));
+      });
+      if (next.length !== prev.length) {
+        saveCollapsed(next);
+        return next;
+      }
+      return prev;
+    });
+  }, [location.pathname]);
+
+  const toggleGroup = (id) => {
+    setCollapsed((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      saveCollapsed(next);
+      return next;
+    });
+  };
+
+  const visibleMain = mainItems.filter((item) => !item.roles || item.roles.includes(user?.role));
+  const visibleGroups = configGroups
+    .filter((g) => !g.roles || g.roles.includes(user?.role))
+    .map((g) => ({ ...g, items: g.items.filter((it) => !it.roles || it.roles.includes(user?.role)) }))
+    .filter((g) => g.items.length > 0);
+
+  const linkClass = (isActive) => `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${
+    isActive
+      ? 'bg-primary text-primary-content shadow-sm'
+      : 'text-base-content/70 hover:bg-base-200 hover:text-base-content'
+  }`;
+
+  const renderLink = (item) => {
+    const isActive = isItemActive(location.pathname, item.path);
+    return (
+      <Link
+        key={item.path}
+        to={item.path}
+        className={linkClass(isActive)}
+        onClick={onNavClick}
+      >
+        <item.icon size={18} className={isActive ? 'text-primary-content' : ''} />
+        <span className="truncate">{item.label}</span>
+      </Link>
+    );
+  };
 
   return (
     <aside className="w-64 h-full flex flex-col bg-base-100 border-r border-base-300">
@@ -41,32 +135,22 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
-        {visibleItems.map((item, idx) => {
-          if (item.divider) {
-            return <div key={`divider-${idx}`} className="border-t border-base-300 my-3 mx-1" />;
-          }
-          if (item.isGroup) {
-            return (
-              <div key={item.label} className="px-2 pt-4 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider">
-                {item.label}
-              </div>
-            );
-          }
-          const isActive = location.pathname === item.path || (item.path !== '/admin' && location.pathname.startsWith(item.path));
+        {visibleMain.map(renderLink)}
+        {visibleGroups.length > 0 && <div className="border-t border-base-300 my-3 mx-1" />}
+        {visibleGroups.map((g) => {
+          const isCollapsed = collapsed.includes(g.id);
           return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${
-                isActive
-                  ? 'bg-primary text-primary-content shadow-sm'
-                  : 'text-base-content/70 hover:bg-base-200 hover:text-base-content'
-              }`}
-              onClick={onNavClick}
-            >
-              <item.icon size={18} className={isActive ? 'text-primary-content' : ''} />
-              <span className="truncate">{item.label}</span>
-            </Link>
+            <div key={g.id} className="mb-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(g.id)}
+                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:text-base-content"
+              >
+                <span>{g.label}</span>
+                <ChevronDown size={14} className={`transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+              </button>
+              {!isCollapsed && g.items.map(renderLink)}
+            </div>
           );
         })}
         <div className="border-t border-base-300 my-3 mx-1" />

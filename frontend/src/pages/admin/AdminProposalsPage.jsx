@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminProposalService, proposalService, excelService, formService } from '../../services/api';
+import { adminProposalService, proposalService, excelService, formService, documentService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
@@ -58,6 +58,22 @@ const AdminProposalsPage = () => {
   const [dupMode, setDupMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const handleExportReports = async (ids) => {
+    const list = (ids || []).filter((x) => Number.isInteger(Number(x)));
+    if (list.length === 0) return;
+    try {
+      setExportLoading(true);
+      const res = await documentService.exportReports(list, null, token);
+      const extra = [res.skipped ? `bỏ qua: ${res.skipped}` : '', res.warnings || ''].filter(Boolean).join(' — ');
+      setToast({ message: `Đã xuất ${res.filename}${extra ? ` (${extra})` : ''}`, type: extra ? 'warning' : 'success' });
+    } catch (e) {
+      setError(e.message || 'Lỗi xuất báo cáo');
+    } finally {
+      setExportLoading(false);
+    }
+  };
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -1034,6 +1050,7 @@ const AdminProposalsPage = () => {
       items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
     }
     items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
+    items.push(item('report', <Download size={14} />, 'Xuất báo cáo đề xuất', () => handleExportReports([row.id])));
     if (row.status === 'REVIEWING') {
       items.push(item('approve', <FileSignature size={14} />, 'Đã duyệt BCĐX', () => go('APPROVED')));
       items.push(item('archive', <Archive size={14} />, 'Lưu trữ', () => go('ARCHIVED')));
@@ -1163,6 +1180,15 @@ const AdminProposalsPage = () => {
                   >
                     <Upload size={14} className="text-success" />
                     Đẩy sang 1Office
+                    {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
+                  </button>
+                  <button
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
+                    onClick={() => { setShowMoreMenu(false); handleExportReports(selectedIds); }}
+                    disabled={selectedIds.length === 0 || batchLoading || exportLoading}
+                  >
+                    <Download size={14} className="text-primary" />
+                    Xuất báo cáo đề xuất
                     {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
                   </button>
                   <button

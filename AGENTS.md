@@ -69,7 +69,7 @@ Swagger UI:  http://localhost:3000/api-docs
 1. CTV chỉ xem/sửa/xóa proposal của chính mình (theo `user_id`)
 2. SUPER_ADMIN quản lý tất cả; ADMIN quản lý tất cả **trừ tài khoản `SUPER_ADMIN`** (list/get/update/delete/lock đều chặn ở API + ẩn ở UI)
 3. CTV KHÔNG truy cập admin API (`/admin/*`); SALES chỉ vào 4 trang `/admin`, `/admin/users`, `/admin/stations`, `/admin/proposals`
-4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs`, `/admin/help` + tạo super admin
+4. Chỉ `SUPER_ADMIN` vào trang cấu hình: `/admin/fields`, `/admin/forms`, `/admin/views`, `/admin/data-lists`, `/admin/map-config`, `/admin/roles`, `/admin/api-configs`, `/admin/help`, `/admin/documents` (Quản lý tài liệu BCĐX) + tạo super admin. Sidebar cấu hình nhóm accordion nhớ `localStorage` (`Trường thông tin`: fields/forms/views; `Dữ liệu`: data-lists/map-config/help/api-configs/documents; `Phân quyền`: roles)
 5. SALES chỉ xem trạm (không nút Sửa) dùng `allowEdit={!isSales}` trong `RecordDetailPopup`
 6. SALES đổi trạng thái proposal qua `PUT /admin/proposals/:id/status`; `PUT /admin/proposals/:id` là `requireUserManager` (SALES sửa nội dung đề xuất trong nhánh, chặn ngoài nhánh qua `denyOutsideBranch`, cấm đổi `status`); `POST /admin/proposals/:id/convert-to-station` vẫn `requireAdmin`
 7. Route `/admin/audit-log` cho `ADMIN` + `SALES` (sales chỉ thấy log của mình); `/admin/:entity/:id/files` bọc `RoleRoute` ADMIN_AND_SALES (chặn entity `users` với non-admin)
@@ -203,7 +203,8 @@ frontend/src/
 │   │               DataListEditor, RecordDetailPopup, FieldMappingPanel, TemplateEditor,
 │   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel,
 │   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo,
-│   │               HelpEditor (TipTap), HelpGuideBoard, AssistantConfigPanel
+│   │               HelpEditor (TipTap), HelpGuideBoard, AssistantConfigPanel,
+│   │               DocumentTemplateEditor, DocxPreviewPane (docx-preview, dynamic import)
 │   ├── help/       HelpMedia (VideoBlock + Gallery), AssistantChat, MarkdownText
 │   ├── layout/     AdminHeader, AdminSidebar, UserHeader, UserSidebar, NotificationBell
 │   ├── map/        MapCanvas + renderers/ (index registry, leafletRuntime, maplibreRuntime,
@@ -219,7 +220,7 @@ frontend/src/
 │                   AdminFieldsPage, AdminFormsPage, AdminFormBuilderPage, AdminViewsPage,
 │                   AdminViewBuilderPage, AdminDataListsPage, AdminRecordFilesPage,
 │                   AdminMapConfigPage, AdminRolesPage, AdminApiConfigPage, AdminAuditLogPage,
-│                   AdminHelpPage, RecordDetailPage
+│                   AdminHelpPage, RecordDetailPage, AdminDocumentsPage
 ├── services/       api.js (all API calls), helpApi.js (help + adminHelpApi)
 ├── hooks/          useFieldOptions, useDataList, useDataListMap, useMapConfig,
 │                   useDebouncedValue, useMediaQuery
@@ -242,7 +243,8 @@ backend/src/
 │                       fieldDefinitions, forms, formFields, views, viewFields, dynamicEngine,
 │                       files, dataLists, dataListsPublic, formulas, apiConfigs, fieldMappings,
 │                       queueLogs, proposalActivity, webhooks, externalUsers, oneOfficeSync, notifications,
-│                       helpPublic, adminHelp, adminHelpVideos, adminAssistant, assistant
+│                       helpPublic, adminHelp, adminHelpVideos, adminAssistant, assistant,
+│                       adminDocuments
 ├── controllers/        (matching routes)
 ├── services/           auth, station, proposal, myProposal, adminProposal, adminUser, dashboard,
 │                       map, mapConfig, proximity, fieldDefinition, form, formField, view,
@@ -250,7 +252,8 @@ backend/src/
 │                       formula, apiConfig, fieldMapper, fieldMapping, oneOffice, sync,
 │                       personnelSync, externalUser, externalEvent, proposalLifecycle, proposalActivity,
 │                       notification, template, addressEnrichment,
-│                       geocode, queue, help, knowledge, codeKnowledge, assistantConfig, assistantService + assistant/{provider,gemini,openrouter,router,guard,attachments}
+│                       geocode, queue, help, knowledge, codeKnowledge, assistantConfig, assistantService + assistant/{provider,gemini,openrouter,router,guard,attachments},
+│                       documentTemplateService, documentService, documentFormula
 ├── workers/            queueWorker (push/pull), personnelSyncWorker (cron nhân sự), proposalLifecycleWorker (auto CANCELLED/tạo trạm)
 └── utils/              db.js (MySQL pool), ttlCache.js, cronMatcher.js
 ```
@@ -302,9 +305,10 @@ backend/src/
 | `assistant_code_knowledge` | Kho tri thức code/schema (`source_path`, `kind`, `heading`, `content`, FULLTEXT) — index từ `backend/src`+`frontend/src`+`information_schema`, chỉ SUPER_ADMIN, migration `106` |
 | `assistant_provider_configs` | Cấu hình provider/model/fallback chatbot (`provider`, `enabled`, `models`, `vision_models`, `priority`) — quản lý ở tab Trợ lý AI `/admin/help`, migration `108` |
 | `assistant_model_cache` | Cache danh sách model thực tế (`provider`, `models`, `fetched_at`, TTL 24h) — nguồn cho picker model, migration `109` |
+| `document_templates` / `document_constants` | Template báo cáo BCĐX (`entity`, `model` TDT/NQ/LK, `file_id`→files, `mapping` JSON tokens/loops/footers + hằng số dùng chung) — quản lý ở `/admin/documents`, sinh docx qua `docxtemplater`, migration `111`. **Loop đa nguồn**: mỗi loop có `parts[]` (nguồn hàng theo thứ tự: bảng trường/danh mục) — mỗi ô = stack binding, ô thiếu binding để trống; `scalars{}` lặp mọi hàng; STT liên tục; hàng tổng cố định cuối bảng. Backward-compat: loop cũ `source/table|listId/columns` tự chuẩn hóa thành 1 part |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→109). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT), `106` kho tri thức code/schema (`assistant_code_knowledge` + cột log token/file), `107` mở `'guest'` cho bài/chuyên mục chung, `108` cấu hình provider/model/fallback chatbot (`assistant_provider_configs`), `109` cache danh sách model thực tế (`assistant_model_cache`), `110` đổi tên view Excel `excel_basic` của đề xuất thành "Excel Đề xuất - Tạo nhanh".
+Migrations nằm ở `database/` (01→111). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT), `106` kho tri thức code/schema (`assistant_code_knowledge` + cột log token/file), `107` mở `'guest'` cho bài/chuyên mục chung, `108` cấu hình provider/model/fallback chatbot (`assistant_provider_configs`), `109` cache danh sách model thực tế (`assistant_model_cache`), `110` đổi tên view Excel `excel_basic` của đề xuất thành "Excel Đề xuất - Tạo nhanh", `111` quản lý tài liệu BCĐX (`document_templates`/`document_constants`).
 
 ## 9. Swagger & Documentation
 

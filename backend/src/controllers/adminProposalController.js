@@ -1,5 +1,6 @@
 const adminProposalService = require('../services/adminProposalService');
 const proximityService = require('../services/proximityService');
+const documentService = require('../services/documentService');
 
 const scopeFor = async (req) => {
   if (req.user.role !== 'SALES') return { role: req.user.role };
@@ -184,6 +185,52 @@ exports.convertToStation = async (req, res) => {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
     console.error('Admin convert to station error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.exportReports = async (req, res) => {
+  try {
+    // TODO(P58-L2): chỉ cho xuất khi status=Duyệt chủ trương
+    let { proposalIds, templateId } = req.body || {};
+    if (!Array.isArray(proposalIds)) proposalIds = [];
+    proposalIds = [...new Set(proposalIds.map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 50);
+    if (proposalIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Chưa chọn đề xuất' });
+    }
+    const scope = await scopeFor(req);
+    const allowed = [];
+    const denied = [];
+    for (const pid of proposalIds) {
+      const light = await adminProposalService.getProposalById(pid);
+      if (!light) { denied.push(pid); continue; }
+      if (denyOutsideBranch({ user_id: light.user_id }, scope)) { denied.push(pid); continue; }
+      allowed.push(pid);
+    }
+    if (allowed.length === 0) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xuất các đề xuất đã chọn' });
+    }
+    const result = await documentService.exportReports(allowed, { templateId });
+    res.setHeader('Content-Type', result.contentType);
+    const ascii = result.kind === 'zip' ? 'bao-cao-de-xuat.zip' : 'bao-cao-de-xuat.docx';
+    res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`);
+    const skippedAll = [...denied, ...(result.skipped || [])];
+    if (skippedAll.length > 0) res.setHeader('X-Report-Skipped', skippedAll.join(','));
+    if (result.warnings.length > 0) {
+      res.setHeader('X-Report-Warnings', encodeURIComponent(result.warnings.map((w) => `#${w.proposalId} ${w.reason}`).join('; ').slice(0, 500)));
+    }
+    return res.send(result.buffer);
+  } catch (error) {
+    if (error.statusCode) {
+      const body = { success: false, message: error.message };
+      if (error.details) {
+        body.generated = error.details.generated || 0;
+        body.skipped = error.details.skipped || [];
+        body.warnings = error.details.warnings || [];
+      }
+      return res.status(error.statusCode).json(body);
+    }
+    console.error('Admin export reports error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

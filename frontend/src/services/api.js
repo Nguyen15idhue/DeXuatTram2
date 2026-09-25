@@ -868,3 +868,127 @@ export const proposalLogService = {
     return api.getWithAuth(`/admin/proposal-logs/${proposalId}/timeline`, token);
   }
 };
+
+export const documentService = {
+  listTemplates(token) {
+    return api.getWithAuth('/admin/documents/templates', token);
+  },
+  getTemplate(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}`, token);
+  },
+  createTemplate(data, token) {
+    return api.postWithAuth('/admin/documents/templates', data, token);
+  },
+  updateTemplate(id, data, token) {
+    return api.putWithAuth(`/admin/documents/templates/${id}`, data, token);
+  },
+  deleteTemplate(id, token) {
+    return api.deleteWithAuth(`/admin/documents/templates/${id}`, token);
+  },
+  listConstants(token) {
+    return api.getWithAuth('/admin/documents/constants', token);
+  },
+  updateConstants(items, token) {
+    return api.putWithAuth('/admin/documents/constants', { items }, token);
+  },
+  deleteConstant(key, token) {
+    return api.deleteWithAuth(`/admin/documents/constants/${encodeURIComponent(key)}`, token);
+  },
+  listDatalists(token) {
+    return api.getWithAuth('/admin/documents/datalists', token);
+  },
+  async exportReports(proposalIds, templateId, token) {
+    const response = await fetch(`${API_URL}/admin/proposals/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ proposalIds, templateId: templateId || undefined })
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Xuất báo cáo thất bại';
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch {}
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    let filename = 'bao-cao-de-xuat.docx';
+    const disp = response.headers.get('Content-Disposition') || '';
+    const m = disp.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m) {
+      try { filename = decodeURIComponent(m[1]); } catch {}
+    }
+    const skipped = response.headers.get('X-Report-Skipped') || '';
+    const warnings = response.headers.get('X-Report-Warnings') || '';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return { filename, skipped, warnings: warnings ? decodeURIComponent(warnings) : '' };
+  },
+  listTokens(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/tokens`, token);
+  },
+  previewBlank(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/preview-blank`, token);
+  },
+  validateMapping(id, mapping, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/validate`, { mapping }, token);
+  },
+  async fetchTemplateBytes(fileId, token) {
+    const response = await fetch(`${API_URL}/files/${fileId}/download?token=${encodeURIComponent(token)}`);
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Không tải được file template';
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch {}
+      throw new Error(message);
+    }
+    const ct = (response.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('wordprocessingml') && !ct.includes('octet-stream') && !ct.includes('zip')) {
+      throw new Error('File template không phải định dạng docx');
+    }
+    return response.arrayBuffer();
+  },
+  async fetchReportBytes(proposalId, templateId, token) {
+    const response = await fetch(`${API_URL}/admin/proposals/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ proposalIds: [proposalId], templateId: templateId || undefined })
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Xuất báo cáo thất bại';
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch {}
+      throw new Error(message);
+    }
+    return response.arrayBuffer();
+  },
+  async uploadTemplateFile(file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_URL}/files/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    handleUnauthorized(response);
+    return response.json();
+  }
+};

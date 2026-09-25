@@ -25,6 +25,11 @@ fi
 echo "[update] Khoi dong lai..."
 docker compose -f "$COMPOSE_FILE" up -d
 
+echo "[update] Seed template bao cao BCX (best-effort, bo qua neu da co)..."
+sleep 5
+docker compose -f "$COMPOSE_FILE" exec -T backend node scripts/seed-document-templates.js \
+  || echo "[update] Canh bao: seed template BCX that bai (bo qua)."
+
 echo "[update] Index kho tri thuc chatbot (best-effort)..."
 if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
   (cd backend && node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai (bo qua)."

@@ -85,4 +85,70 @@
       box-shadow: 0 0 14px #0ea5e9;
     }
   }
+
+  .dxp-pane {
+    background: #525659;
+    border-radius: 8px;
+    padding: 16px;
+    max-height: 65vh;
+    overflow: auto;
+  }
+  .dxp-loading {
+    color: #fff;
+    font-size: 13px;
+    padding: 12px;
+    text-align: center;
+  }
+  .dxp-doc .docx-wrapper {
+    margin: 0 auto 16px auto !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  }
+  .dxp-token {
+    display: inline;
+    max-width: 100%;
+    background: #fef3c7;
+    border: 1px dashed #d97706;
+    border-radius: 4px;
+    padding: 0 4px;
+    margin: 0 1px;
+    font-size: 0.92em;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .dxp-token.dxp-bound {
+    background: #d1fae5;
+    border-style: solid;
+    border-color: #059669;
+  }
+  .dxp-token .dxp-val {
+    color: #065f46;
+    font-weight: 600;
+  }
+  .dxp-token .dxp-empty {
+    display: inline-block;
+    min-width: 2.4em;
+    min-height: 1.1em;
+    vertical-align: baseline;
+  }
+  .dxp-token-close {
+    display: none;
+  }
+  .doc-tabs .tab-active {
+    background: #1d4ed8;
+    color: #fff;
+  }
+  .dxp-unbind {
+    border: none;
+    background: none;
+    color: #b91c1c;
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0 0 0 3px;
+    line-height: 1;
+  }
+  .dxp-drop-hover {
+    outline: 2px solid #4f46e5 !important;
+    outline-offset: 1px;
+    background: #eef2ff !important;
+  }
 }

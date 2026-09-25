@@ -283,4 +283,38 @@ router.put('/:id/status', requireAuth, requireUserManager, adminProposalControll
  */
 router.post('/:id/convert-to-station', requireAuth, requireAdmin, adminProposalController.convertToStation);
 
+/**
+ * @swagger
+ * /api/admin/proposals/reports:
+ *   post:
+ *     tags: [Proposals]
+ *     summary: Xuất báo cáo đề xuất (.docx lẻ, .zip khi nhiều)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [proposalIds]
+ *             properties:
+ *               proposalIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Tối đa 50 ID
+ *               templateId:
+ *                 type: integer
+ *                 description: Ép dùng template (bỏ trống để tự chọn theo mô hình)
+ *     responses:
+ *       200:
+ *         description: File báo cáo
+ *       400:
+ *         description: Không xuất được
+ *       403:
+ *         description: Ngoài phạm vi nhánh
+ */
+router.post('/reports', requireAuth, requireUserManager, adminProposalController.exportReports);
+
 module.exports = router;
