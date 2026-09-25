@@ -213,7 +213,9 @@ async function main() {
     if (fs.existsSync(full)) walk(full, files);
   }
   const uniq = [...new Set(files)];
+  console.log(`[index-code] bat dau: ${uniq.length} file...`);
   let order = 0;
+  let processed = 0;
   for (const rel of uniq) {
     const full = path.join(ROOT, rel);
     let raw;
@@ -235,6 +237,8 @@ async function main() {
         if (r2 === 'inserted') inserted += 1; else if (r2 === 'updated') updated += 1; else fresh += 1;
       }
     }
+    processed += 1;
+    if (processed % 50 === 0) console.log(`[index-code] ... ${processed}/${uniq.length} file, ${order} chunk`);
   }
 
   for (const c of await schemaChunks()) {
@@ -255,6 +259,7 @@ async function main() {
   console.log(`[index-code] files=${uniq.length} inserted=${inserted} updated=${updated} unchanged=${fresh} removed=${removed}`);
   console.log(`[index-code] total chunks=${cnt[0].n} (code=${cnt[0].code_chunks}, schema=${cnt[0].schema_chunks})`);
   await pool.end();
+  process.exit(0);
 }
 
 main().catch((e) => { console.error('[index-code] LOI:', e.message); process.exit(1); });

@@ -167,6 +167,7 @@ async function main() {
   console.log(`[index-knowledge] files=${sources.length} inserted=${inserted} updated=${updated} unchanged=${skippedFresh} removed=${removed}`);
   console.log(`[index-knowledge] total chunks=${cnt[0].n} from ${cnt[0].f} files`);
   await pool.end();
+  process.exit(0);
 }
 
 main().catch((e) => { console.error('[index-knowledge] LOI:', e.message); process.exit(1); });

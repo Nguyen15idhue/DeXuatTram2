@@ -30,20 +30,31 @@ sleep 5
 docker compose -f "$COMPOSE_FILE" exec -T backend node scripts/seed-document-templates.js \
   || echo "[update] Canh bao: seed template BCX that bai (bo qua)."
 
-echo "[update] Index kho tri thuc chatbot (best-effort)..."
-if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
-  (cd backend && node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai (bo qua)."
-  (cd backend && node scripts/index-code-knowledge.js) || echo "[update] Canh bao: index-code-knowledge that bai (bo qua)."
-elif docker compose -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
-  # VPS: host khong co node_modules -> chay trong container backend (co san node_modules),
-  # mount ca repo de script thay AGENTS.md + docs/ + frontend/src.
-  echo "[update] Chay index trong container backend (mount repo)..."
-  docker compose -f "$COMPOSE_FILE" run --rm --no-deps \
-    -v "$PWD:/repo" -w /repo/backend backend \
-    sh -c 'LINKED=0; if [ ! -e node_modules ]; then ln -sfn /app/node_modules node_modules && LINKED=1; fi; node scripts/index-knowledge.js && node scripts/index-code-knowledge.js; rc=$?; [ "$LINKED" = "1" ] && rm -f node_modules; exit $rc' \
-    || echo "[update] Canh bao: index chatbot that bai (bo qua)."
+if [ "${SKIP_INDEX:-0}" = "1" ]; then
+  echo "[update] Bo qua index chatbot (SKIP_INDEX=1)."
 else
-  echo "[update] Bo qua index chatbot (khong co node host va khong chay duoc container)."
+  echo "[update] Index kho tri thuc chatbot (best-effort, toi da ${INDEX_TIMEOUT:-600}s/script)..."
+  INDEX_TIMEOUT="${INDEX_TIMEOUT:-600}"
+  if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
+    (cd backend && echo "[update] > index-knowledge.js ..." && timeout "$INDEX_TIMEOUT" node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai/qua han (bo qua)."
+    (cd backend && echo "[update] > index-code-knowledge.js ..." && timeout "$INDEX_TIMEOUT" node scripts/index-code-knowledge.js) || echo "[update] Canh bao: index-code-knowledge that bai/qua han (bo qua)."
+  elif docker compose -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
+    # VPS: host khong co node_modules -> chay trong container backend (co san node_modules),
+    # mount ca repo de script thay AGENTS.md + docs/ + frontend/src.
+    echo "[update] Chay index trong container backend (mount repo)..."
+    run_index() {
+      local script="$1"
+      echo "[update] > $script ..."
+      timeout "$INDEX_TIMEOUT" docker compose -f "$COMPOSE_FILE" run --rm --no-deps -T \
+        -v "$PWD:/repo" -w /repo/backend backend \
+        sh -c 'SCRIPT="$1"; LINKED=0; if [ ! -e node_modules ]; then ln -sfn /app/node_modules node_modules && LINKED=1; fi; node "scripts/$SCRIPT"; rc=$?; [ "$LINKED" = "1" ] && rm -f node_modules; exit $rc' _ "$script" \
+        || echo "[update] Canh bao: $script that bai/qua han (bo qua)."
+    }
+    run_index index-knowledge.js
+    run_index index-code-knowledge.js
+  else
+    echo "[update] Bo qua index chatbot (khong co node host va khong chay duoc container)."
+  fi
 fi
 
 echo "Da cap nhat. Log: docker compose -f $COMPOSE_FILE logs -f"
