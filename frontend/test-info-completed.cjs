@@ -23,6 +23,7 @@ async function main() {
   await setup('SOON', 'DATE_ADD(NOW(), INTERVAL 10 HOUR)', false);
   await setup('OVERDUE', 'DATE_SUB(NOW(), INTERVAL 2 HOUR)', false);
   await setup('DONE', 'DATE_ADD(NOW(), INTERVAL 10 HOUR)', true);
+  await setup('FAR', 'DATE_ADD(NOW(), INTERVAL 3 DAY)', false);
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -38,8 +39,11 @@ async function main() {
 
     const bodyText = await page.textContent('body');
     check('bang hien badge Con han (sap het han)', /Còn \d+ ngày/.test(bodyText || ''));
-    check('bang KHONG hien badge Qua han', !/Quá hạn/.test(bodyText || ''));
-    check('row qua han van hien trong bang', (bodyText || '').includes('TEST_FE_OVERDUE'));
+    check('bang KHONG hien dem Qua han', !/Quá hạn/.test(bodyText || ''));
+    check('bang hien dem nguoc xa han (dang Ngay)', /Còn 0[23] ngày \d{2}:\d{2}:\d{2}/.test(bodyText || ''));
+    check('row qua han dung o 00 dong bang', (bodyText || '').includes('TEST_FE_OVERDUE') && /Còn 00 ngày 00:00:00/.test(bodyText || ''));
+    const zeroBg = await page.locator('.badge', { hasText: 'Còn 00 ngày' }).first().evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
+    check('badge so 0 nen xam nhat', zeroBg.replace(/\s+/g, '') === 'rgb(243,244,246)', zeroBg);
 
     const myReopen = await page.request.post(`${API}/api/my-proposals/${ids.DONE}/reopen-info`, {
       headers: { Authorization: `Bearer ${data.token}` }
@@ -81,7 +85,7 @@ async function main() {
     await page.waitForSelector('.popup-detail', { timeout: 15000 });
     await page.waitForTimeout(1500);
     const odText = await page.textContent('.popup-detail');
-    check('popup qua han khong bao do', !/Quá hạn|Đã quá hạn/.test(odText || ''));
+    check('popup qua han hien so 0 dong bang', /Còn 00 ngày 00:00:00/.test(odText || '') && !/Quá hạn \d|Hết hạn/.test(odText || ''));
 
     await page.goto(`${BASE}/my-proposals`);
     await page.waitForLoadState('networkidle');
