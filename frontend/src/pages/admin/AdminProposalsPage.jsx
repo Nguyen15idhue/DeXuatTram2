@@ -1125,7 +1125,7 @@ const AdminProposalsPage = () => {
                     disabled={selectedIds.length === 0 || batchLoading}
                   >
                     <Upload size={14} className="text-success" />
-                    Đẩy sang 1Office
+                    Đồng bộ sang 1Office
                     {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
                   </button>
                   <button
@@ -1143,7 +1143,7 @@ const AdminProposalsPage = () => {
                     disabled={batchLoading}
                   >
                     <ArrowDownToLine size={14} className="text-info" />
-                    Lấy về từ 1Office
+                    Đồng bộ từ 1Office về
                   </button>
                   <div className="border-t border-base-200 my-1" />
                   <button
