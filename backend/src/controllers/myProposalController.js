@@ -86,6 +86,21 @@ const setInfoCompleted = async (req, res, completed) => {
 
 exports.confirmInfo = async (req, res) => setInfoCompleted(req, res, true);
 
+exports.extendInfo = async (req, res) => {
+  try {
+    const existing = await myProposalService.getProposalByIdAndUser(req.params.id, req.user.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const proposalLifecycle = require('../services/proposalLifecycle');
+    const info = await proposalLifecycle.getExtendInfo(req.params.id);
+    res.json({ success: true, data: info });
+  } catch (error) {
+    console.error('Extend info error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.reopenInfo = async (req, res) => setInfoCompleted(req, res, false);
 
 exports.extendDeadline = async (req, res) => {

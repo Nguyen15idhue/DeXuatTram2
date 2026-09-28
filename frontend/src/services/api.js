@@ -271,6 +271,9 @@ export const adminProposalService = {
   },
   extendDeadline(id, data, token) {
     return api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token);
+  },
+  extendInfo(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}/extend-info`, token);
   }
 };
 
@@ -303,6 +306,9 @@ export const myProposalService = {
   },
   extendDeadline(id, data, token) {
     return api.postWithAuth(`/my-proposals/${id}/extend-deadline`, data || {}, token);
+  },
+  extendInfo(id, token) {
+    return api.getWithAuth(`/my-proposals/${id}/extend-info`, token);
   }
 };
 

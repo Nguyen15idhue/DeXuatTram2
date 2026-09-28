@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { getMarkerColor } from '../utils/mapHelpers';
-import { getMarkerIcon } from '../utils/mapMarkerIcons';
+import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
-import MarkerIcon from './MarkerIcon';
+import { MapBadge } from './MarkerIcon';
 import { PRIORITY_OPTIONS } from '../utils/mapStatuses';
 
 export const EMPTY_MAP_FILTERS = {
@@ -47,13 +47,7 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
             className={`map-filter-chip ${active ? 'active' : ''}`}
             onClick={() => set({ [key]: toggleValue(list, s.value) })}
           >
-            {getMarkerIcon(s.value, entity) ? (
-              <span className="map-filter-badge" style={{ borderColor: getMarkerColor(s.value, entity) }}>
-                <MarkerIcon id={getMarkerIcon(s.value, entity)} size={11} />
-              </span>
-            ) : (
-              <span className="map-filter-dot" style={{ background: getMarkerColor(s.value, entity) }} />
-            )}
+            <MapBadge type="filter" icon={getMarkerIcon(s.value, entity)} color={getMarkerColor(s.value, entity)} bg={getMarkerIconBg(s.value, entity)} size={11} />
             {s.label}
             {s.show_in_legend === false && (
               <span className="map-filter-offmap" title="Trạng thái này không hiện marker trên bản đồ">không hiện bản đồ</span>

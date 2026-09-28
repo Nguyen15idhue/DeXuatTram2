@@ -40,6 +40,8 @@ const CountdownConfigPanel = () => {
   const [message, setMessage] = useState('');
   const [warnHours, setWarnHours] = useState(24);
   const [rules, setRules] = useState(DEFAULT_RULES);
+  const [maxTimes, setMaxTimes] = useState(3);
+  const [maxDaysPerTime, setMaxDaysPerTime] = useState(30);
 
   const statuses = getProposalStatuses();
   const displayRows = buildDisplayRows(statuses);
@@ -53,6 +55,8 @@ const CountdownConfigPanel = () => {
         if (cancelled || !res || !res.success || !res.data) return;
         setWarnHours(res.data.warn_hours || 24);
         setRules(Array.isArray(res.data.rules) && res.data.rules.length > 0 ? res.data.rules : DEFAULT_RULES);
+        if (res.data.maxTimes !== undefined) setMaxTimes(res.data.maxTimes);
+        if (res.data.maxDaysPerTime !== undefined) setMaxDaysPerTime(res.data.maxDaysPerTime);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -85,6 +89,8 @@ const CountdownConfigPanel = () => {
     try {
       const payload = {
         warn_hours: Number(warnHours) || 24,
+        extend_max_times: Number(maxTimes),
+        extend_max_days_per_time: Number(maxDaysPerTime),
         rules: displayRows.flatMap((row) => {
           const r = ensureRule(row);
           const rule = {
@@ -99,6 +105,8 @@ const CountdownConfigPanel = () => {
       const res = await api.putWithAuth('/admin/lifecycle-config', payload, token);
       if (res && res.success) {
         notifyCountdownConfigChanged();
+        if (res.data?.maxTimes !== undefined) setMaxTimes(res.data.maxTimes);
+        if (res.data?.maxDaysPerTime !== undefined) setMaxDaysPerTime(res.data.maxDaysPerTime);
         setMessage('Đã lưu cấu hình countdown');
       } else {
         setMessage('Lưu thất bại');
@@ -135,6 +143,29 @@ const CountdownConfigPanel = () => {
                 <span>giờ (mặc định 24)</span>
               </div>
               <p className="text-xs text-gray-500 mb-1">Đang đề xuất và Đang xem xét dùng chung 1 mốc, không đếm lại khi duyệt &amp; đẩy.</p>
+              <div className="flex items-center gap-2 py-2 text-sm flex-wrap">
+                <span>Gia hạn tối đa</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={99}
+                  className="input input-bordered input-xs w-16"
+                  value={maxTimes}
+                  onChange={(e) => setMaxTimes(e.target.value)}
+                  title="Số lần gia hạn tối đa cho 1 đề xuất (0 = không giới hạn)"
+                />
+                <span>lần (0 = không giới hạn), mỗi lần tối đa</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  className="input input-bordered input-xs w-16"
+                  value={maxDaysPerTime}
+                  onChange={(e) => setMaxDaysPerTime(e.target.value)}
+                  title="Số ngày tối đa cho 1 lần gia hạn"
+                />
+                <span>ngày</span>
+              </div>
               <table className="table table-xs w-full">
                 <thead>
                   <tr>

@@ -301,10 +301,13 @@ const ICONS = {
   },
   target: {
     nodes: [
-      ['circle', { cx: '12', cy: '12', r: '9.2', fill: '#ef4444' }],
-      ['circle', { cx: '12', cy: '12', r: '6.2', fill: '#ffffff' }],
-      ['circle', { cx: '12', cy: '12', r: '3.4', fill: '#ef4444' }],
-      ['circle', { cx: '12', cy: '12', r: '1.1', fill: '#ffffff' }],
+      ['circle', { cx: '11', cy: '13', r: '9', fill: '#ef4444' }],
+      ['circle', { cx: '11', cy: '13', r: '6.2', fill: '#ffffff' }],
+      ['circle', { cx: '11', cy: '13', r: '3.4', fill: '#ef4444' }],
+      ['circle', { cx: '11', cy: '13', r: '1.2', fill: '#ffffff' }],
+      ['path', { d: 'M20.5 3.5L12.9 11.1', stroke: '#1d4ed8', 'stroke-width': '2.2', 'stroke-linecap': 'round' }],
+      ['path', { d: 'M12.9 11.1l3.5-.5-2 2.9z', fill: '#1d4ed8', 'stroke-linejoin': 'round' }],
+      ['path', { d: 'M20.5 3.5l-3-.3M20.5 3.5l-.4 3', stroke: '#93c5fd', 'stroke-width': '2', 'stroke-linecap': 'round' }],
     ],
   },
   chartUp: {
@@ -527,6 +530,57 @@ const ICONS = {
       ['circle', { cx: '16.6', cy: '18', r: '2', fill: '#111827' }],
     ],
   },
+
+  // ===== Nhóm 5: Quy hoạch (nét đậm, nổi trên nền đường phố + vệ tinh) =====
+  plus: {
+    nodes: [
+      ['path', { d: 'M12 4.5v15M4.5 12h15', stroke: '#16a34a', 'stroke-width': '5', 'stroke-linecap': 'round' }],
+    ],
+  },
+  clipboardList: {
+    nodes: [
+      ['rect', { x: '5', y: '3.5', width: '14', height: '17.5', rx: '2', fill: '#2563eb' }],
+      ['rect', { x: '7.2', y: '6.5', width: '9.6', height: '12', rx: '1', fill: '#ffffff' }],
+      ['rect', { x: '9.6', y: '2', width: '4.8', height: '3', rx: '1.2', fill: '#1e3a8a' }],
+      ['path', { d: 'M9.4 10.4h5.2M9.4 13.4h5.2M9.4 16.4h3.4', stroke: '#2563eb', 'stroke-width': '1.6', 'stroke-linecap': 'round' }],
+    ],
+  },
+  draftingCompass: {
+    nodes: [
+      ['circle', { cx: '12', cy: '5', r: '2.2', fill: '#b45309' }],
+      ['path', { d: 'M11 7L7.5 20M13 7l3.5 13', stroke: '#b45309', 'stroke-width': '2.2', 'stroke-linecap': 'round' }],
+      ['path', { d: 'M7.5 20l-1.5 2M16.5 20l1.5 2', stroke: '#78350f', 'stroke-width': '1.8', 'stroke-linecap': 'round' }],
+      ['path', { d: 'M8.6 12.5h6.8', stroke: '#f59e0b', 'stroke-width': '1.6', 'stroke-linecap': 'round' }],
+    ],
+  },
+  construction: {
+    nodes: [
+      ['path', { d: 'M5 9V4.5M19 9V4.5', stroke: '#451a03', 'stroke-width': '2.2', 'stroke-linecap': 'round' }],
+      ['rect', { x: '2.8', y: '8', width: '18.4', height: '6', rx: '1.2', fill: '#f59e0b', stroke: '#451a03', 'stroke-width': '1.2' }],
+      ['path', { d: 'M6.5 8l3 6M11.5 8l3 6M16.5 8l3 6', stroke: '#451a03', 'stroke-width': '1.6' }],
+      ['path', { d: 'M4 21.5h16', stroke: '#451a03', 'stroke-width': '2.4', 'stroke-linecap': 'round' }],
+    ],
+  },
+  crosshair: {
+    nodes: [
+      ['circle', { cx: '12', cy: '12', r: '7.5', fill: 'none', stroke: '#0284c7', 'stroke-width': '2.6' }],
+      ['path', { d: 'M12 1.5v4.5M12 18v4.5M1.5 12H6M18 12h4.5', stroke: '#0284c7', 'stroke-width': '2.4', 'stroke-linecap': 'round' }],
+      ['circle', { cx: '12', cy: '12', r: '1.8', fill: '#0284c7' }],
+    ],
+  },
+  foldMap: {
+    nodes: [
+      ['path', { d: 'M8.5 3.5L3 5.3v15.2l5.5-1.8 7 1.8L21 18.7V3.5l-5.5 1.8z', fill: '#16a34a' }],
+      ['path', { d: 'M8.5 3.5v15.2M15.5 5.3v15.2', stroke: '#ffffff', 'stroke-width': '1.4' }],
+      ['circle', { cx: '12', cy: '10.5', r: '2.2', fill: '#ef4444', stroke: '#ffffff', 'stroke-width': '1' }],
+    ],
+  },
+  sparkles: {
+    nodes: [
+      ['path', { d: 'M11 2l1.8 5.7 5.7 1.8-5.7 1.8L11 17l-1.8-5.7L3.5 9.5l5.7-1.8z', fill: '#eab308', stroke: '#a16207', 'stroke-width': '1', 'stroke-linejoin': 'round' }],
+      ['path', { d: 'M18 14l1 2.8 2.8 1-2.8 1-1 2.8-1-2.8-2.8-1 2.8-1z', fill: '#fde047', stroke: '#a16207', 'stroke-width': '0.8', 'stroke-linejoin': 'round' }],
+    ],
+  },
 };
 
 const GROUPS = [
@@ -534,6 +588,7 @@ const GROUPS = [
   { title: 'Trạng thái & quy trình', ids: ['flag', 'flagCheck', 'wrench', 'clock', 'hourglass', 'search', 'eye', 'clipboard', 'folderCheck', 'document', 'check', 'pinCheck', 'cross', 'alert', 'info', 'play', 'pause', 'stop', 'ban', 'lock', 'bell', 'stamp', 'handshake', 'scale', 'penSign', 'calendarCheck', 'send', 'megaphone'] },
   { title: 'Địa điểm & hạ tầng', ids: ['pin', 'home', 'building', 'factory', 'warehouse', 'bank', 'hospital', 'market', 'store', 'parkingP', 'cone', 'road', 'car', 'truck', 'truckCheck'] },
   { title: 'Đánh dấu & xếp hạng', ids: ['star', 'medal', 'target', 'chartUp', 'shield', 'person', 'phone', 'receipt', 'banknote', 'keyRound', 'idCard', 'gear', 'bulb', 'bookOpen'] },
+  { title: 'Ghim quy hoạch', ids: ['target', 'plus', 'check', 'clipboardList', 'draftingCompass', 'construction', 'crosshair', 'foldMap', 'sparkles', 'flag'] },
 ];
 
 const ICON_LABELS = {
@@ -603,6 +658,13 @@ const ICON_LABELS = {
   bookOpen: 'Sách',
   pinCheck: 'Đã định vị',
   flagCheck: 'Cờ duyệt',
+  plus: 'Dấu cộng',
+  clipboardList: 'Danh sách',
+  draftingCompass: 'Compa phương án',
+  construction: 'Xây dựng',
+  crosshair: 'Tâm điểm',
+  foldMap: 'Bản đồ',
+  sparkles: 'Mới',
 };
 
 export const MARKER_ICONS = Object.keys(ICONS).map((id) => ({ id, label: ICON_LABELS[id] }));
@@ -610,6 +672,8 @@ export const MARKER_ICONS = Object.keys(ICONS).map((id) => ({ id, label: ICON_LA
 export const MARKER_ICON_GROUPS = GROUPS.map((g) => ({ title: g.title, icons: g.ids.map((id) => ({ id, label: ICON_LABELS[id] })) }));
 
 export const isValidMarkerIcon = (id) => !!id && id !== 'none' && !!ICONS[id];
+
+export const isValidMarkerBadge = (b) => b === '1' || b === '2' || b === 1 || b === 2;
 
 export const iconSvgMarkup = (id, { size = 16 } = {}) => {
   if (!isValidMarkerIcon(id)) return '';
@@ -622,8 +686,33 @@ export const iconSvgMarkup = (id, { size = 16 } = {}) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" style="display:block">${defs}${inner}</svg>`;
 };
 
+export const glyphImageId = (icon, badge) => (isValidMarkerBadge(badge)
+  ? `app-glyph-${icon}--b${badge}`
+  : `app-glyph-${icon}`);
+
+export const parseGlyphKey = (key) => {
+  if (!key) return { icon: '', badge: '' };
+  const m = String(key).match(/^app-glyph-(.+)--b([12])$/);
+  if (m) return { icon: m[1], badge: m[2] };
+  if (String(key).startsWith('app-glyph-')) return { icon: String(key).slice(10), badge: '' };
+  return { icon: String(key), badge: '' };
+};
+
+export const iconSvgWithBadge = (id, badge, { size = 32 } = {}) => {
+  if (!isValidMarkerIcon(id)) return '';
+  if (!isValidMarkerBadge(badge)) return iconSvgMarkup(id, { size });
+  const icon = ICONS[id];
+  const defs = icon.defs ? `<defs>${icon.defs}</defs>` : '';
+  const inner = icon.nodes.map(([tag, a]) => {
+    const attrs = Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ');
+    return `<${tag} ${attrs}/>`;
+  }).join('');
+  const b = String(badge);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32" style="display:block">${defs}<g transform="translate(2,2) scale(1.1667)">${inner}</g><circle cx="25" cy="7" r="7" fill="#ffffff" stroke="#a855f7" stroke-width="2"/><text x="25" y="7" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="800" font-family="system-ui,sans-serif" fill="#7e22ce">${b}</text></svg>`;
+};
+
 export const STATUS_ICON_DEFAULTS = {
-  station: { PLANNING: 'flag', ACTIVE: 'evStation', DEPLOYING: 'wrench', REJECTED: 'ban' },
+  station: { PLANNING: 'target', ACTIVE: 'evStation', DEPLOYING: 'wrench', REJECTED: 'ban' },
   proposal: { PENDING: 'clock', REVIEWING: 'search', APPROVED: 'check', REJECTED: 'cross', CANCELLED: 'ban', CONTRACT_SIGNED: 'document', CONTRACT_FAILED: 'alert' },
 };
 
@@ -642,17 +731,24 @@ const parseOptions = (raw) => {
   return [];
 };
 
+export const MARKER_ICON_BG = { CIRCLE: 'circle', FLAT: 'flat' };
+
+export const isValidMarkerIconBg = (b) => b === MARKER_ICON_BG.CIRCLE || b === MARKER_ICON_BG.FLAT;
+
 const extractOverrides = (defs) => {
   const out = { station: {}, proposal: {} };
+  const bg = { station: {}, proposal: {} };
   (defs || []).forEach((fd) => {
     if (!fd || fd.key !== 'status' || !ENTITY_TO_MAP[fd.entity]) return;
     parseOptions(fd.options).forEach((opt) => {
       if (!opt || typeof opt !== 'object' || opt.value == null) return;
-      if (opt.icon === 'none') { out[ENTITY_TO_MAP[fd.entity]][opt.value] = ''; return; }
-      if (isValidMarkerIcon(opt.icon)) out[ENTITY_TO_MAP[fd.entity]][opt.value] = opt.icon;
+      const target = out[ENTITY_TO_MAP[fd.entity]];
+      if (opt.icon === 'none') { target[opt.value] = ''; }
+      else if (isValidMarkerIcon(opt.icon)) target[opt.value] = opt.icon;
+      if (isValidMarkerIconBg(opt.icon_bg)) bg[ENTITY_TO_MAP[fd.entity]][opt.value] = opt.icon_bg;
     });
   });
-  return out;
+  return { overrides: out, bg };
 };
 
 const extractStatusOptions = (defs) => {
@@ -681,12 +777,15 @@ export const loadMarkerIconConfig = (force = false) => {
     fieldDefinitionService.getByEntity('station_proposals'),
   ]).then((resList) => {
     const overrides = { station: {}, proposal: {} };
+    const bgOverrides = { station: {}, proposal: {} };
     const statusOpts = { station: [], proposal: [] };
     resList.forEach((res) => {
       if (res && res.success) {
         const part = extractOverrides(res.data);
-        Object.assign(overrides.station, part.station || {});
-        Object.assign(overrides.proposal, part.proposal || {});
+        Object.assign(overrides.station, part.overrides.station || {});
+        Object.assign(overrides.proposal, part.overrides.proposal || {});
+        Object.assign(bgOverrides.station, part.bg.station || {});
+        Object.assign(bgOverrides.proposal, part.bg.proposal || {});
         const sopts = extractStatusOptions(res.data);
         if (sopts.station.length > 0) statusOpts.station = sopts.station;
         if (sopts.proposal.length > 0) statusOpts.proposal = sopts.proposal;
@@ -697,6 +796,10 @@ export const loadMarkerIconConfig = (force = false) => {
     configCache = {
       station: { ...STATUS_ICON_DEFAULTS.station, ...overrides.station },
       proposal: { ...STATUS_ICON_DEFAULTS.proposal, ...overrides.proposal },
+      bg: {
+        station: { ...bgOverrides.station },
+        proposal: { ...bgOverrides.proposal },
+      },
     };
     return configCache;
   }).finally(() => { loadPromise = null; });
@@ -708,6 +811,13 @@ export const getMarkerIcon = (status, entity) => {
   if (map && Object.prototype.hasOwnProperty.call(map, status)) return map[status];
   const defaults = STATUS_ICON_DEFAULTS[entity === 'station' ? 'station' : 'proposal'];
   return defaults[status] || '';
+};
+
+export const getMarkerIconBg = (status, entity) => {
+  const key = entity === 'station' ? 'station' : 'proposal';
+  const map = configCache && configCache.bg && configCache.bg[key];
+  if (map && Object.prototype.hasOwnProperty.call(map, status)) return map[status];
+  return MARKER_ICON_BG.FLAT;
 };
 
 export const getStatusOptions = (entity) => {

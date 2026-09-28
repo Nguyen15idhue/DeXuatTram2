@@ -245,6 +245,24 @@ exports.extendDeadline = async (req, res) => {
   }
 };
 
+exports.extendInfo = async (req, res) => {
+  try {
+    const existing = await adminProposalService.getProposalById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    const proposalLifecycle = require('../services/proposalLifecycle');
+    const info = await proposalLifecycle.getExtendInfo(req.params.id);
+    res.json({ success: true, data: info });
+  } catch (error) {
+    console.error('Admin extend info error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.convertToStation = async (req, res) => {
   try {
     const stationService = require('../services/stationService');

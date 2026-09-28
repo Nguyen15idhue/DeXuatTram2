@@ -12,13 +12,16 @@ exports.get = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const { rules, warn_hours } = req.body || {};
+    const { rules, warn_hours, extend_max_times, extend_max_days_per_time } = req.body || {};
     if (!Array.isArray(rules)) {
       return res.status(400).json({ success: false, message: 'rules phải là mảng' });
     }
-    const config = await proposalLifecycle.saveCountdownConfig({ rules, warn_hours });
+    const config = await proposalLifecycle.saveCountdownConfig({ rules, warn_hours, extend_max_times, extend_max_days_per_time });
     res.json({ success: true, data: config, message: 'Cập nhật thành công' });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Update lifecycle countdown config error:', error);
     res.status(500).json({ success: false, message: 'Lỗi cập nhật cấu hình' });
   }

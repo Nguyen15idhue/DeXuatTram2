@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { stationService, proposalService, api } from '../services/api';
 import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
-import { getMarkerIcon } from '../utils/mapMarkerIcons';
-import MarkerIcon from './MarkerIcon';
+import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
+import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
 import { getStatusLabel } from '../utils/mapStatuses';
@@ -63,7 +63,7 @@ function createPositionPopupContent(title, position) {
   return div;
 }
 
-const ADMIN_LABEL_OPTIONS = [
+export const ADMIN_LABEL_OPTIONS = [
   { id: 'new', label: 'Nhãn mới' },
   { id: 'old', label: 'Nhãn cũ' },
   { id: 'off', label: 'Tắt nhãn' },
@@ -93,7 +93,7 @@ function MapControlButton({ icon, tooltip, active, onClick, disabled }) {
   );
 }
 
-function MapLayerSwitcher({ groups }) {
+export function MapLayerSwitcher({ groups }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -332,9 +332,7 @@ const MapView = ({
   for (let i = 0; i < MAP_LEGEND.proposals.length; i += 5) proposalChunks.push(MAP_LEGEND.proposals.slice(i, i + 5));
   const renderProposalLegendItem = (item) => (
     <div key={`p-${item.value}`} className="map-legend-item">
-      {getMarkerIcon(item.value, 'proposal')
-        ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'proposal') }}><MarkerIcon id={getMarkerIcon(item.value, 'proposal')} size={13} /></span>
-        : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'proposal') }} />}
+      <MapBadge icon={getMarkerIcon(item.value, 'proposal')} color={getMarkerColor(item.value, 'proposal')} bg={getMarkerIconBg(item.value, 'proposal')} />
       <span className="map-legend-label">{item.label}</span>
     </div>
   );
@@ -745,33 +743,25 @@ const MapView = ({
 
   const visibleStations = useMemo(() => {
     if (!filters) return stations;
-    // If both hidden, return empty
+    // Quy hoach (PLANNING) tach rieng khoi tram: chi dieu khien boi
+    // hideStationPlans + planningPriorities, khong bi chip trang thai tram loc.
     if (filters.hideStations && filters.hideStationPlans) return [];
     let list = stations;
-    // Filter PLANNING by priority (only applies when showing PLANNING)
     const planPriorities = filters.planningPriorities || [];
     const showPlans = !filters.hideStationPlans;
     const showOtherStations = !filters.hideStations;
-    if (showPlans && !showOtherStations) {
-      // Only showing PLANNING stations
-      if (planPriorities.length > 0) {
-        list = list.filter(s => s.status === 'PLANNING' && planPriorities.includes(String(s.loai_uu_tien)));
-      } else {
-        list = list.filter(s => s.status === 'PLANNING');
-      }
-    } else if (showPlans && showOtherStations) {
-      // Showing all stations - apply priority filter to PLANNING if set
-      if (planPriorities.length > 0) {
-        list = list.filter(s => s.status !== 'PLANNING' || planPriorities.includes(String(s.loai_uu_tien)));
-      }
-    } else if (!showPlans && showOtherStations) {
-      // Showing non-PLANNING only
-      list = list.filter(s => s.status !== 'PLANNING');
+    if (!showPlans) {
+      list = list.filter((s) => s.status !== 'PLANNING');
+    } else if (planPriorities.length > 0) {
+      list = list.filter((s) => s.status !== 'PLANNING' || planPriorities.includes(String(s.loai_uu_tien)));
     }
-    // Filter other statuses
+    if (!showOtherStations) {
+      list = list.filter((s) => s.status === 'PLANNING');
+    }
+    // Chip trang thai tram chi ap cho tram khong phai quy hoach
     const statuses = filters.stationStatuses || [];
     if (statuses.length > 0) {
-      list = list.filter(s => statuses.includes(s.status));
+      list = list.filter((s) => s.status === 'PLANNING' || statuses.includes(s.status));
     }
     return list;
   }, [stations, filters]);
@@ -808,11 +798,11 @@ const MapView = ({
   }, [visibleProposals, highlightIds]);
 
   const canvasStations = useMemo(
-    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station') })),
+    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '', _bg: getMarkerIconBg(s.status, 'station') })),
     [layerStations, markerIconsVersion]
   );
   const canvasProposals = useMemo(
-    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal') })),
+    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') })),
     [layerProposals, markerIconsVersion]
   );
 
@@ -1092,9 +1082,7 @@ const MapView = ({
               <div className="map-legend-col-title">Trạm</div>
               {MAP_LEGEND.stations.map((item) => (
                 <div key={`s-${item.value}`} className="map-legend-item">
-                  {getMarkerIcon(item.value, 'station')
-                    ? <span className="map-legend-badge" style={{ borderColor: getMarkerColor(item.value, 'station') }}><MarkerIcon id={getMarkerIcon(item.value, 'station')} size={13} /></span>
-                    : <span className="map-legend-dot" style={{ backgroundColor: getMarkerColor(item.value, 'station') }} />}
+                  <MapBadge icon={getMarkerIcon(item.value, 'station')} color={getMarkerColor(item.value, 'station')} bg={getMarkerIconBg(item.value, 'station')} />
                   <span className="map-legend-label">{item.label}</span>
                 </div>
               ))}

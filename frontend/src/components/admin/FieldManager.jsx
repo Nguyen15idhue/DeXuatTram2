@@ -649,6 +649,10 @@ const FieldManager = () => {
                             <input type="text" placeholder="Value" value={opt.value} disabled />
                             <div className="color-selected" style={{ backgroundColor: opt.color || '#666666', flex: '0 0 auto' }} title="Màu badge" />
                             <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                            <select value={opt.icon_bg || 'flat'} onChange={(e) => updateOption(idx, 'icon_bg', e.target.value)} title="Nền icon trên bản đồ">
+                              <option value="flat">Phẳng</option>
+                              <option value="circle">Tròn trắng</option>
+                            </select>
                           </div>
                         ))}
                       </div>
@@ -772,7 +776,13 @@ const FieldManager = () => {
                                 </div>
                               </div>
                               {(form.key === 'status' && (form.entity === 'stations' || form.entity === 'station_proposals')) && (
-                                <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                                <>
+                                  <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                                  <select value={opt.icon_bg || 'flat'} onChange={(e) => updateOption(idx, 'icon_bg', e.target.value)} title="Nền icon trên bản đồ">
+                                    <option value="flat">Phẳng</option>
+                                    <option value="circle">Tròn trắng</option>
+                                  </select>
+                                </>
                               )}
                               <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
                                 {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}

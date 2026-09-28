@@ -66,6 +66,20 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [confirming, setConfirming] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [extendLimits, setExtendLimits] = useState(null);
+
+  const openExtend = async () => {
+    setExtendOpen(true);
+    setExtendLimits(null);
+    try {
+      if (record && record.id && infoSvc.extendInfo) {
+        const res = await infoSvc.extendInfo(record.id, token);
+        if (res && res.success && res.data) {
+          setExtendLimits({ maxDaysPerTime: res.data.maxDaysPerTime, remaining: res.data.remaining, maxTimes: res.data.maxTimes });
+        }
+      }
+    } catch { /* dialog dùng giới hạn mặc định */ }
+  };
   const modalRef = useRef(null);
   const dataListIds = (() => {
     const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
@@ -771,7 +785,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                   <button
                     type="button"
                     className="btn btn-sm btn-outline"
-                    onClick={() => setExtendOpen(true)}
+                    onClick={openExtend}
                   >
                     Gia hạn
                   </button>
@@ -792,7 +806,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                   <button
                     type="button"
                     className="btn btn-sm btn-outline"
-                    onClick={() => setExtendOpen(true)}
+                    onClick={openExtend}
                   >
                     Gia hạn
                   </button>
@@ -889,6 +903,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       <ExtendDeadlineDialog
         isOpen={extendOpen}
         saving={extending}
+        limits={extendLimits}
         onConfirm={handleExtend}
         onCancel={() => { if (!extending) setExtendOpen(false); }}
       />

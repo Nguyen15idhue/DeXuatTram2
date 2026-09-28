@@ -1,5 +1,5 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { iconSvgMarkup, isValidMarkerIcon } from '../../../utils/mapMarkerIcons';
+import { iconSvgWithBadge, isValidMarkerIcon, isValidMarkerBadge, glyphImageId, parseGlyphKey } from '../../../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM } from '../../../utils/formatDistance';
 import { normalizeClusterOptions, clusterSig } from '../../../utils/mapCluster';
 import { ISLAND_MIN_ZOOM } from '../../../utils/provinceData';
@@ -16,15 +16,15 @@ function loadMaplibre() {
   return maplibrePromise;
 }
 
-const glyphImageId = (icon) => `app-glyph-${icon}`;
-
-function ensureGlyphImages(map, icons) {
-  icons.filter(isValidMarkerIcon).forEach((icon) => {
-    const id = glyphImageId(icon);
+function ensureGlyphImages(map, glyphKeys) {
+  [...new Set((glyphKeys || []).filter(Boolean))].forEach((key) => {
+    const { icon, badge } = parseGlyphKey(key);
+    if (!isValidMarkerIcon(icon)) return;
+    const id = glyphImageId(icon, isValidMarkerBadge(badge) ? badge : '');
     if (map.hasImage(id)) return;
     try {
-      const svg = iconSvgMarkup(icon, { size: 32 });
-      const img = new Image(32, 32);
+      const svg = iconSvgWithBadge(icon, isValidMarkerBadge(badge) ? badge : '', { size: 44 });
+      const img = new Image(44, 44);
       img.onload = () => {
         try {
           if (!map.hasImage(id)) map.addImage(id, img, { pixelRatio: 2 });
@@ -298,13 +298,13 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           return {
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [lng, lat] },
-            properties: { _idx: idx, _color: item._color || '#6b7280', _glyph: isValidMarkerIcon(item._icon) ? item._icon : '', _label: item._label || '', _type: item._type },
+            properties: { _idx: idx, _color: item._color || '#6b7280', _glyph: isValidMarkerIcon(item._icon) ? glyphImageId(item._icon, isValidMarkerBadge(item._badge) ? item._badge : '') : '', _bg: item._bg === 'circle' ? 'circle' : 'flat', _label: item._label || '', _type: item._type },
           };
         })
         .filter(Boolean),
     };
 
-    ensureGlyphImages(map, [...new Set(items.map((i) => i._icon).filter(Boolean))]);
+    ensureGlyphImages(map, [...new Set(items.map((i) => (isValidMarkerIcon(i._icon) ? glyphImageId(i._icon, isValidMarkerBadge(i._badge) ? i._badge : '') : '')).filter(Boolean))]);
 
     const sig = clusterSig(clusterOpts, cluster);
     if (map.getSource('app-markers') && lastClusterSig !== sig) {
@@ -349,20 +349,34 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
         source: 'app-markers',
         filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-color': ['case', ['!=', ['get', '_glyph'], ''], '#ffffff', ['get', '_color']],
-          'circle-radius': ['case', ['!=', ['get', '_glyph'], ''], 11, 9],
+          'circle-color': ['case', ['==', ['get', '_glyph'], ''], ['get', '_color'], '#ffffff'],
+          'circle-radius': ['case', ['==', ['get', '_glyph'], ''], 9, ['==', ['get', '_bg'], 'circle'], 13, 9],
+          'circle-opacity': ['case', ['==', ['get', '_glyph'], ''], 1, ['==', ['get', '_bg'], 'circle'], 1, 0],
           'circle-stroke-width': 3,
-          'circle-stroke-color': ['case', ['!=', ['get', '_glyph'], ''], ['get', '_color'], '#ffffff'],
+          'circle-stroke-color': ['case', ['==', ['get', '_glyph'], ''], '#ffffff', ['get', '_color']],
+          'circle-stroke-opacity': ['case', ['==', ['get', '_glyph'], ''], 1, ['==', ['get', '_bg'], 'circle'], 1, 0],
         },
       });
       map.addLayer({
-        id: 'app-marker-glyphs',
+        id: 'app-marker-glyphs-circle',
         type: 'symbol',
         source: 'app-markers',
-        filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', '_glyph'], '']],
+        filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', '_glyph'], ''], ['==', ['get', '_bg'], 'circle']],
         layout: {
-          'icon-image': ['concat', 'app-glyph-', ['get', '_glyph']],
-          'icon-size': 0.55,
+          'icon-image': ['get', '_glyph'],
+          'icon-size': 1.0,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+      map.addLayer({
+        id: 'app-marker-glyphs-flat',
+        type: 'symbol',
+        source: 'app-markers',
+        filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', '_glyph'], ''], ['!=', ['get', '_bg'], 'circle']],
+        layout: {
+          'icon-image': ['get', '_glyph'],
+          'icon-size': 1.15,
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
         },
@@ -755,7 +769,8 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     'app-clusters',
     'app-cluster-count',
     'app-unclustered',
-    'app-marker-glyphs',
+    'app-marker-glyphs-circle',
+    'app-marker-glyphs-flat',
     'app-marker-labels',
   ];
 

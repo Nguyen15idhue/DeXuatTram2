@@ -196,7 +196,7 @@ export function createLeafletRuntime({ container, center, zoom, zoomControl = fa
         const lat = parseFloat(item.latitude);
         const lng = parseFloat(item.longitude);
         if (isNaN(lat) || isNaN(lng)) return;
-        const marker = L.marker([lat, lng], { icon: createCustomIcon(item._color, item._icon) });
+        const marker = L.marker([lat, lng], { icon: createCustomIcon(item._color, item._icon, item._badge, item._bg) });
         if (showLabels && item._label) {
           marker.bindTooltip(item._label, { permanent: false, direction: 'top', offset: [0, -8], className: 'marker-label-tooltip' });
         }

@@ -182,13 +182,14 @@ exports.updateFieldDefinition = async (id, data) => {
       }
     : data;
 
-  // Field bị khóa: options chỉ được cập nhật duy nhất key `icon` theo value đã khớp,
+  // Field bị khóa: options chỉ được cập nhật key `icon` + `icon_bg` theo value đã khớp,
   // mọi thứ khác (label/value/color/...) giữ nguyên bản đang lưu.
   const parseJsonArr = (v) => {
     if (Array.isArray(v)) return v;
     if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : null; } catch { return null; } }
     return null;
   };
+  const cleanIconBg = (v) => (v === 'circle' || v === 'flat' ? v : undefined);
   let lockedIconOptions = existing.options;
   if (existing.is_locked && data.options !== undefined) {
     const incoming = parseJsonArr(data.options);
@@ -198,7 +199,11 @@ exports.updateFieldDefinition = async (id, data) => {
         const match = incoming.find((o) => o && opt && String(o.value) === String(opt.value));
         if (!match) return opt;
         const icon = typeof match.icon === 'string' ? match.icon : null;
-        return { ...opt, icon: icon || undefined };
+        const iconBg = cleanIconBg(match.icon_bg);
+        const patched = { ...opt, icon: icon || undefined };
+        if (iconBg !== undefined) patched.icon_bg = iconBg;
+        else if (patched.icon_bg !== 'circle' && patched.icon_bg !== 'flat') delete patched.icon_bg;
+        return patched;
       });
       lockedIconOptions = JSON.stringify(next);
     }

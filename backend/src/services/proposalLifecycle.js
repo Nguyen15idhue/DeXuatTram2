@@ -278,7 +278,7 @@ exports.getCountdownConfig = async () => {
       return { ...d, days: Number.isFinite(v) && v > 0 ? Math.min(365, v) : d.days };
     });
   }
-  return { warn_hours: warnHours, rules };
+  return { warn_hours: warnHours, rules, ...(await exports.getExtendLimits()) };
 };
 
 exports.saveCountdownConfig = async (config) => {
@@ -290,7 +290,15 @@ exports.saveCountdownConfig = async (config) => {
      ON DUPLICATE KEY UPDATE \`value\` = VALUES(\`value\`), updated_at = CURRENT_TIMESTAMP`,
     [COUNTDOWN_CONFIG_KEY, value]
   );
-  return { warn_hours: warnHours, rules };
+  let limits = null;
+  if (config && (config.extend_max_times !== undefined || config.extend_max_days_per_time !== undefined)) {
+    const current = await exports.getExtendLimits();
+    limits = await exports.saveExtendLimits({
+      maxTimes: config.extend_max_times !== undefined ? config.extend_max_times : current.maxTimes,
+      maxDaysPerTime: config.extend_max_days_per_time !== undefined ? config.extend_max_days_per_time : current.maxDaysPerTime
+    });
+  }
+  return { warn_hours: warnHours, rules, ...(limits || await exports.getExtendLimits()) };
 };
 
 exports.getDeadlineParts = async (status) => {
@@ -316,15 +324,76 @@ exports.getCountdownWarnHours = async () => {
 
 const INFO_NOTIFY_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
-const EXTEND_MAX_DAYS = 30;
+const EXTEND_MAX_TIMES_KEY = 'extend_max_times';
+const EXTEND_MAX_DAYS_KEY = 'extend_max_days_per_time';
 const EXTEND_MAX_HOURS = 23;
+const DEFAULT_EXTEND_MAX_TIMES = 3;
+const DEFAULT_EXTEND_MAX_DAYS = 30;
+
+exports.getExtendLimits = async () => {
+  let maxTimes = DEFAULT_EXTEND_MAX_TIMES;
+  let maxDaysPerTime = DEFAULT_EXTEND_MAX_DAYS;
+  try {
+    const [rows] = await pool.query(
+      'SELECT `key`, `value` FROM proposal_lifecycle_configs WHERE `key` IN (?, ?)',
+      [EXTEND_MAX_TIMES_KEY, EXTEND_MAX_DAYS_KEY]
+    );
+    (rows || []).forEach((r) => {
+      if (r.key === EXTEND_MAX_TIMES_KEY) {
+        const v = Math.floor(Number(r.value));
+        if (Number.isFinite(v) && v >= 0 && v <= 99) maxTimes = v;
+      }
+      if (r.key === EXTEND_MAX_DAYS_KEY) {
+        const v = Math.floor(Number(r.value));
+        if (Number.isFinite(v) && v >= 1 && v <= 365) maxDaysPerTime = v;
+      }
+    });
+  } catch { /* fallback defaults */ }
+  return { maxTimes, maxDaysPerTime };
+};
+
+exports.saveExtendLimits = async ({ maxTimes, maxDaysPerTime }) => {
+  const t = Math.floor(Number(maxTimes));
+  const d = Math.floor(Number(maxDaysPerTime));
+  if (!Number.isFinite(t) || t < 0 || t > 99) throw err('Số lần gia hạn tối đa không hợp lệ (0–99, 0 = không giới hạn)', 400);
+  if (!Number.isFinite(d) || d < 1 || d > 365) throw err('Số ngày tối đa mỗi lần không hợp lệ (1–365)', 400);
+  await pool.query(
+    'INSERT INTO proposal_lifecycle_configs (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = CURRENT_TIMESTAMP',
+    [EXTEND_MAX_TIMES_KEY, String(t)]
+  );
+  await pool.query(
+    'INSERT INTO proposal_lifecycle_configs (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = CURRENT_TIMESTAMP',
+    [EXTEND_MAX_DAYS_KEY, String(d)]
+  );
+  return { maxTimes: t, maxDaysPerTime: d };
+};
+
+exports.countDeadlineExtends = async (id) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT COUNT(*) AS n FROM proposal_activity_logs WHERE proposal_id = ? AND action = 'deadline_extended'",
+      [id]
+    );
+    return Number(rows[0] ? rows[0].n : 0) || 0;
+  } catch { return 0; }
+};
+
+exports.getExtendInfo = async (id) => {
+  const { maxTimes, maxDaysPerTime } = await exports.getExtendLimits();
+  const used = await exports.countDeadlineExtends(id);
+  return {
+    maxTimes, maxDaysPerTime, used,
+    remaining: maxTimes === 0 ? null : Math.max(0, maxTimes - used)
+  };
+};
 
 exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, opts = {}) => {
   const { actorId, actorRole, source = 'user', ip } = opts;
+  const { maxTimes, maxDaysPerTime } = await exports.getExtendLimits();
   const d = Math.floor(Number(days) || 0);
   const h = Math.floor(Number(hours) || 0);
-  if (d < 0 || h < 0 || d > EXTEND_MAX_DAYS || h > EXTEND_MAX_HOURS) {
-    throw err(`Thời gian gia hạn không hợp lệ (tối đa ${EXTEND_MAX_DAYS} ngày/lần)`, 400);
+  if (d < 0 || h < 0 || d > maxDaysPerTime || h > EXTEND_MAX_HOURS) {
+    throw err(`Thời gian gia hạn không hợp lệ (tối đa ${maxDaysPerTime} ngày/lần)`, 400);
   }
   const totalMinutes = d * 1440 + h * 60;
   if (totalMinutes <= 0) {
@@ -348,6 +417,10 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
   }
   if (new Date(proposal.supplement_deadline_at).getTime() <= Date.now()) {
     throw err('Đề xuất đã quá hạn, không thể gia hạn', 400);
+  }
+  const usedExtends = await exports.countDeadlineExtends(id);
+  if (maxTimes > 0 && usedExtends >= maxTimes) {
+    throw err(`Đề xuất đã gia hạn ${usedExtends}/${maxTimes} lần, không thể gia hạn thêm`, 400);
   }
   const oldIso = new Date(proposal.supplement_deadline_at).toISOString();
   await pool.query(
@@ -385,7 +458,7 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
       });
     } catch { /* silent */ }
   }
-  return { id, oldDeadline: oldIso, newDeadline: newIso, days: d, hours: h };
+  return { id, oldDeadline: oldIso, newDeadline: newIso, days: d, hours: h, usedExtends: usedExtends + 1, maxTimes, remaining: maxTimes === 0 ? null : Math.max(0, maxTimes - usedExtends - 1) };
 };
 
 const collectInfoNotifyIds = async (proposal) => {

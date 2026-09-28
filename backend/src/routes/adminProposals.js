@@ -347,7 +347,7 @@ router.post('/:id/reopen-info', requireAuth, requireUserManager, adminProposalCo
  *               days:
  *                 type: integer
  *                 default: 0
- *                 description: Số ngày gia hạn (0-30)
+ *                 description: Số ngày gia hạn (tối đa theo cấu hình extend_max_days_per_time)
  *               hours:
  *                 type: integer
  *                 default: 0
@@ -366,6 +366,30 @@ router.post('/:id/reopen-info', requireAuth, requireUserManager, adminProposalCo
  *         description: Không tìm thấy đề xuất
  */
 router.post('/:id/extend-deadline', requireAuth, requireUserManager, adminProposalController.extendDeadline);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/extend-info:
+ *   get:
+ *     tags: [Admin - Proposals]
+ *     summary: Xem giới hạn và số lần gia hạn còn lại của đề xuất
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thông tin gia hạn (maxTimes, maxDaysPerTime, used, remaining)
+ *       403:
+ *         description: Ngoài phạm vi nhánh
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id/extend-info', requireAuth, requireUserManager, adminProposalController.extendInfo);
 
 /**
  * @swagger

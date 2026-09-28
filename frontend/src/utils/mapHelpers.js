@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import { mapService } from '../services/api';
 import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP, getStatusColor } from './mapStatuses';
-import { iconSvgMarkup } from './mapMarkerIcons';
+import { iconSvgMarkup, isValidMarkerBadge, MARKER_ICON_BG } from './mapMarkerIcons';
 
 export const MARKER_COLORS = {
   PLANNING: '#a855f7',
@@ -26,22 +26,11 @@ export const getMarkerColor = (status, entity) => {
   return MARKER_COLORS[status] || '#6b7280';
 };
 
-export const createCustomIcon = (color, icon) => {
+export const createCustomIcon = (color, icon, badge, bg) => {
   const hasIcon = !!icon;
-  const size = hasIcon ? 30 : 24;
-  const inner = hasIcon
-    ? `<div style="
-        width: ${size}px;
-        height: ${size}px;
-        background-color: #ffffff;
-        border: 3px solid ${color};
-        border-radius: 50%;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.35);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      ">${iconSvgMarkup(icon, { size: 17 })}</div>`
-    : `<div style="
+  if (!hasIcon) {
+    const size = 24;
+    const inner = `<div style="
         width: ${size}px;
         height: ${size}px;
         background-color: ${color};
@@ -49,8 +38,83 @@ export const createCustomIcon = (color, icon) => {
         border-radius: 50%;
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
       "></div>`;
+    return L.divIcon({
+      className: 'custom-marker',
+      html: inner,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2]
+    });
+  }
+  const showBadge = isValidMarkerBadge(badge);
+  if (bg === MARKER_ICON_BG.CIRCLE) {
+    const size = 38;
+    const badgeHtml = showBadge ? `<span style="
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 17px;
+        height: 17px;
+        padding: 0 3px;
+        background-color: #ffffff;
+        border: 2px solid ${color};
+        border-radius: 999px;
+        color: ${color};
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 14px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      ">${badge}</span>` : '';
+    const inner = `<div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        background-color: #ffffff;
+        border: 3px solid ${color};
+        border-radius: 50%;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">${iconSvgMarkup(icon, { size: 24 })}${badgeHtml}</div>`;
+    return L.divIcon({
+      className: 'custom-marker',
+      html: inner,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2]
+    });
+  }
+  const size = 38;
+  const badgeHtml = showBadge ? `<span style="
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 17px;
+        height: 17px;
+        padding: 0 3px;
+        background-color: #ffffff;
+        border: 2px solid ${color};
+        border-radius: 999px;
+        color: ${color};
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 14px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      ">${badge}</span>` : '';
+  const inner = `<div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        filter: drop-shadow(0 3px 4px rgba(0,0,0,0.65));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">${iconSvgMarkup(icon, { size: 36 })}${badgeHtml}</div>`;
   return L.divIcon({
-    className: 'custom-marker',
+    className: 'custom-marker-flat',
     html: inner,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
