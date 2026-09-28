@@ -262,6 +262,7 @@ const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'n
 
 const normalizeTableLink = (col) => {
   if (!col) return null;
+  if (col.data_link && typeof col.data_link.enabled === 'boolean' && !col.data_link.enabled) return null;
   if (col.data_link && col.data_link.enabled) {
     return {
       trigger: col.data_link.trigger_column || null,
@@ -392,13 +393,14 @@ exports.resolveTablePrices = async (formValues, dynamicData, fieldDefs) => {
           if (!seen.has(k)) { seen.add(k); allowed.push(v); }
         });
         const cur = row[pc.key];
+        const isEmpty = cur === '' || cur === null || cur === undefined;
         const inSet = allowed.some(v => String(v) === String(cur));
-        if (!inSet) {
+        if (isEmpty) {
           if (allowed.length === 1) {
             rows[i] = { ...row, [pc.key]: allowed[0] };
-          } else if (cur !== '' && cur !== null && cur !== undefined) {
-            flags.push(`${f.label || f.key}: dòng ${i + 1} giá "${cur}" không thuộc bảng giá theo điều kiện hiện tại`);
           }
+        } else if (!inSet) {
+          flags.push(`${f.label || f.key}: dòng ${i + 1} giá "${cur}" không thuộc bảng giá theo điều kiện hiện tại`);
         }
       }
     }

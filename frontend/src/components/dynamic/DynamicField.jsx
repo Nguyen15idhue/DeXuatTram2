@@ -58,6 +58,7 @@ const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'n
 
 const normalizeTableLink = (col) => {
   if (!col) return null;
+  if (col.data_link && typeof col.data_link.enabled === 'boolean' && !col.data_link.enabled) return null;
   if (col.data_link && (col.data_link.enabled || (col.column_type === 'select' && getColumnSource(col, null) === 'datalist'))) {
     return {
       trigger: col.data_link.trigger_column || null,
@@ -193,8 +194,14 @@ const applyTablePriceRulesToRow = ({ columns, row, formValues, dataListOptions, 
     const opts = collectTablePriceOptions({ columns, col, row: next || row, formValues, dataListOptions, resolveCellField, allFields });
     if (opts === null) return;
     const cur = (next || row)[col.key];
-    if (!opts.some((v) => String(v) === String(cur))) {
-      next = { ...(next || row), [col.key]: opts.length === 1 ? opts[0] : '' };
+    const isEmpty = cur === '' || cur === null || cur === undefined;
+    if (!isEmpty) return;
+    if (opts.length === 1) {
+      next = { ...(next || row), [col.key]: opts[0] };
+    } else if (opts.length === 0) {
+      return;
+    } else {
+      next = { ...(next || row), [col.key]: '' };
     }
   });
   return next;
@@ -875,6 +882,8 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         if (changedCol) {
           columns.forEach(col => {
             if (col.autofill_from === colKey && col.autofill_column && !getTablePriceRule(col)) {
+              const cur = updatedRow[col.key];
+              if (cur !== '' && cur !== null && cur !== undefined) return;
               const raw = findDataListRaw(changedCol, val);
               if (raw && raw[col.autofill_column] !== undefined && raw[col.autofill_column] !== null) {
                 updatedRow[col.key] = raw[col.autofill_column];
@@ -935,10 +944,11 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                     const priceOpts = getTablePriceRule(col)
                       ? collectTablePriceOptions({ columns, col, row, formValues, dataListOptions, resolveCellField, allFields })
                       : null;
-                    const priceValid = priceOpts !== null && priceOpts.some((v) => String(v) === String(cellVal));
+                    const usePriceSelect = priceOpts !== null && priceOpts.length > 1;
+                    const priceValid = usePriceSelect && priceOpts.some((v) => String(v) === String(cellVal));
                     return (
                       <td key={col.key} style={{ ...TABLE_CELL_STYLE, background: hasFormula ? '#f0fdf4' : undefined }}>
-                        {priceOpts !== null ? (
+                        {usePriceSelect ? (
                           <select
                             className="form-control"
                             value={priceValid ? cellVal : ''}
@@ -946,8 +956,8 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                               const raw = e.target.value;
                               updateCell(rowIdx, col.key, raw === '' ? '' : (raw !== '' && !isNaN(Number(raw)) ? Number(raw) : raw));
                             }}
-                            disabled={cellDisabled || priceOpts.length <= 1}
-                            title={priceOpts.length <= 1 ? 'Tự động theo điều kiện giá' : 'Chọn giá'}
+                            disabled={cellDisabled}
+                            title="Chọn giá"
                             style={{ padding: '2px 4px', fontSize: 13, border: 'none', width: '100%' }}
                           >
                             <option value="">--</option>

@@ -1267,7 +1267,7 @@ const FieldManager = () => {
                                           {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
                                         </select>
                                       </label>
-                                      <span style={{ fontSize: 11, color: '#888' }}>Ô trong table thành select: 1 giá trị → tự chọn (khóa), nhiều → chọn tay.</span>
+                                       <span style={{ fontSize: 11, color: '#888' }}>Ô trong table thành select khi có nhiều giá trị; 1 giá trị → tự điền gợi ý (vẫn sửa tay được).</span>
                                     </div>
                                   )}
                                 </div>
