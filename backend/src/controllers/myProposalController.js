@@ -55,6 +55,63 @@ exports.update = async (req, res) => {
   }
 };
 
+const setInfoCompleted = async (req, res, completed) => {
+  try {
+    const existing = await myProposalService.getProposalByIdAndUser(req.params.id, req.user.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const proposalLifecycle = require('../services/proposalLifecycle');
+    const result = await proposalLifecycle.setInfoCompleted(req.params.id, completed, {
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      source: 'user',
+      ip: req.ip || null
+    });
+    const proposal = await myProposalService.getProposalById(req.params.id);
+    res.json({
+      success: true,
+      data: proposal,
+      message: completed ? 'Đã xác nhận đủ thông tin' : 'Đã mở lại để bổ sung thông tin',
+      unchanged: !!result.unchanged
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Set info completed error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.confirmInfo = async (req, res) => setInfoCompleted(req, res, true);
+
+exports.reopenInfo = async (req, res) => setInfoCompleted(req, res, false);
+
+exports.extendDeadline = async (req, res) => {
+  try {
+    const existing = await myProposalService.getProposalByIdAndUser(req.params.id, req.user.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const proposalLifecycle = require('../services/proposalLifecycle');
+    const result = await proposalLifecycle.extendDeadline(req.params.id, req.body || {}, {
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      source: 'user',
+      ip: req.ip || null
+    });
+    const proposal = await myProposalService.getProposalById(req.params.id);
+    res.json({ success: true, data: proposal, extend: result, message: 'Gia hạn thành công' });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Extend deadline error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.delete = async (req, res) => {
   try {
     const { id } = req.params;

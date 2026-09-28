@@ -144,11 +144,23 @@ const loadRowsByName = async (name) => {
     .filter(Boolean);
 };
 
+const TINH_LIST_NAMES = ['dm_tinh', 'Tỉnh'];
+
+const loadRowsByNames = async (names) => {
+  const [rows] = await pool.query(
+    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${names.map(() => '?').join(', ')})`,
+    names
+  );
+  return rows
+    .map(r => (typeof r.data === 'string' ? parseJsonField(r.data) : r.data))
+    .filter(Boolean);
+};
+
 const loadAdminLists = async () => {
   const now = Date.now();
   if (ADMIN_LIST_CACHE.dmTinh && now - ADMIN_LIST_CACHE.at < ADMIN_LIST_TTL) return ADMIN_LIST_CACHE;
   const [dmTinh, wards] = await Promise.all([
-    loadRowsByName('dm_tinh'),
+    loadRowsByNames(TINH_LIST_NAMES),
     loadRowsByName('Danh muc Phuong Xa'),
   ]);
   ADMIN_LIST_CACHE.at = now;
@@ -217,14 +229,16 @@ exports.getDiaGioiByTenTinh = async (tenTinh) => {
     if (!data || !data.ma_tinh) return null;
     return { ma_tinh: data.ma_tinh, vung_mien: data.vung_mien || '', ten_tinh: data.ten_tinh || '' };
   };
+  const inList = TINH_LIST_NAMES.map(() => '?').join(', ');
   const [exact] = await pool.query(
     `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id
-     WHERE l.name = 'dm_tinh' AND JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.ten_tinh')) = ? LIMIT 1`,
-    [name]
+     WHERE l.name IN (${inList}) AND JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.ten_tinh')) = ? LIMIT 1`,
+    [...TINH_LIST_NAMES, name]
   );
   if (exact.length > 0) return pick(exact[0]);
   const [all] = await pool.query(
-    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name = 'dm_tinh'`
+    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${inList})`,
+    TINH_LIST_NAMES
   );
   const lowered = name.toLowerCase();
   for (const row of all) {

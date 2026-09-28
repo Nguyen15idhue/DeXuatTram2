@@ -23,7 +23,12 @@ const ACTION_LABEL = {
   status_change: 'Đổi trạng thái',
   status_change_denied: 'Đổi trạng thái bị chặn',
   station_created: 'Tạo trạm',
-  auto_failed: 'Tự động thất bại'
+  auto_failed: 'Tự động thất bại',
+  info_completed: 'Xác nhận đủ thông tin',
+  info_reopened: 'Mở lại bổ sung',
+  deadline_extended: 'Gia hạn bổ sung',
+  deadline_expiring: 'Sắp hết hạn bổ sung',
+  deadline_overdue: 'Quá hạn bổ sung'
 };
 
 const SOURCE_LABEL = {
@@ -41,6 +46,26 @@ const fmtTime = (t) => {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   });
+};
+
+const RAW_LABELS = {
+  old_deadline: 'Hạn cũ',
+  new_deadline: 'Hạn mới',
+  days: 'Số ngày gia hạn',
+  hours: 'Số giờ gia hạn',
+  deadline: 'Hạn bổ sung',
+  attempt: 'Lần thử',
+  final: 'Kết quả cuối',
+  error: 'Lỗi'
+};
+
+const fmtRawValue = (key, v) => {
+  if (v === null || v === undefined || v === '') return '—';
+  if ((/deadline/i).test(key)) {
+    const t = new Date(v);
+    if (!Number.isNaN(t.getTime())) return fmtTime(v);
+  }
+  return String(v);
 };
 
 const ProposalActivityPopup = ({ proposalId, onClose }) => {
@@ -101,18 +126,24 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
                 <thead>
                   <tr className="bg-base-200">
                     <th>Trường</th>
-                    <th>Cũ</th>
-                    <th>Mới</th>
+                    <th>Giá trị</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(changed).map(([k, v]) => (
-                    <tr key={k}>
-                      <td className="font-medium">{(v && v.label) || k}</td>
-                      <td className="text-base-content/70 max-w-[160px] truncate" title={v && v.old}>{(v && v.old) || '—'}</td>
-                      <td className="max-w-[160px] truncate" title={v && v.new}>{(v && v.new) || '—'}</td>
-                    </tr>
-                  ))}
+                  {Object.entries(changed).map(([k, v]) => {
+                    const isDiff = v && typeof v === 'object';
+                    const label = (isDiff && v.label) || RAW_LABELS[k] || k;
+                    const rawNew = isDiff ? v.new : v;
+                    const newText = isDiff
+                      ? ((rawNew ?? '') === '' ? '—' : String(rawNew))
+                      : fmtRawValue(k, rawNew);
+                    return (
+                      <tr key={k}>
+                        <td className="font-medium">{label}</td>
+                        <td className="max-w-[320px] truncate" title={newText}>{newText}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -123,7 +154,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
   };
 
   return (
-    <dialog className="modal modal-open">
+    <dialog className="modal modal-open" onClick={(e) => e.stopPropagation()}>
       <div className="modal-box max-w-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg flex items-center gap-2">

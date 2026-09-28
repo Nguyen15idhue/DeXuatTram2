@@ -51,7 +51,7 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at
+            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.info_completed_at
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -131,7 +131,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   await pool.query(
     `UPDATE station_proposals
      SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
-     ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)' : ''}
+     ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
      WHERE id = ? AND user_id = ?`,
     resetDeadlineMinutes
       ? [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, id, userId]
@@ -190,13 +190,24 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
   const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });
+  const finalDynamic = { ...mergedDynamic, ...postResults };
+  let filesRenamed = 0;
+  try {
+    const fileService = require('./fileService');
+    filesRenamed = await fileService.renameProposalFiles({
+      dynamicData: finalDynamic,
+      fieldDefs,
+      maDeXuat: finalDynamic.ma_de_xuat || current.ma_de_xuat || `DX${id}`
+    });
+  } catch { /* silent: khong chan luu vi rename */ }
   if (Object.keys(postResults).length > 0) {
-    const updatedDynamic = { ...mergedDynamic, ...postResults };
     if (postResults.ma_de_xuat) {
-      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), postResults.ma_de_xuat, id]);
+      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(finalDynamic), postResults.ma_de_xuat, id]);
     } else {
-      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
+      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
     }
+  } else if (filesRenamed > 0) {
+    await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
   }
 };
 

@@ -97,7 +97,7 @@ if (process.env.ENABLE_SWAGGER !== 'false') {
   const swaggerSpec = require('./config/swagger');
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'Station Management API Docs'
+    customSiteTitle: 'TMT-EGREEN API Docs'
   }));
 
   app.get('/api-docs.json', (req, res) => {

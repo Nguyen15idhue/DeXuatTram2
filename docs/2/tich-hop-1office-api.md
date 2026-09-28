@@ -1,4 +1,4 @@
-# Tích hợp API 1Office - Station Management System
+# Tích hợp API 1Office - TMT-EGREEN System
 
 > **Cập nhật:** 11/09/2026
 > **Phạm vi:** toàn bộ tính năng tích hợp 1Office (liên hệ + nhân sự) hiện có.

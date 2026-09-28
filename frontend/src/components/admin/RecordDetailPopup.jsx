@@ -7,8 +7,11 @@ import DynamicField from '../dynamic/DynamicField';
 import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
-import { MapPinned, History, AlertTriangle } from 'lucide-react';
+import { MapPinned, History, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
+import ConfirmDialog from '../ConfirmDialog';
+import ExtendDeadlineDialog from './ExtendDeadlineDialog';
+import { loadCountdownConfig, getCountdownStatuses, COUNTDOWN_CONFIG_EVENT, FALLBACK_COUNTDOWN_STATUSES } from '../../utils/countdownConfig';
 import useDataListMap from '../../hooks/useDataListMap';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import DeadlineCountdown from '../DeadlineCountdown';
@@ -58,6 +61,11 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [activeTabs, setActiveTabs] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [confirmStatuses, setConfirmStatuses] = useState(FALLBACK_COUNTDOWN_STATUSES);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, action: null });
+  const [confirming, setConfirming] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extending, setExtending] = useState(false);
   const modalRef = useRef(null);
   const dataListIds = (() => {
     const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
@@ -83,6 +91,16 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   useEffect(() => {
     if (modeProp) setMode(allowEdit ? modeProp : 'view');
   }, [modeProp, allowEdit]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCountdownConfig().then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getCountdownStatuses(cfg)); });
+    const refresh = () => {
+      loadCountdownConfig(true).then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getCountdownStatuses(cfg)); });
+    };
+    window.addEventListener(COUNTDOWN_CONFIG_EVENT, refresh);
+    return () => { cancelled = true; window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refresh); };
+  }, []);
 
   useEffect(() => {
     if (!recordProp && recordId && entity) {
@@ -215,6 +233,59 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   const pushUserWarnings = () => {
     return [];
+  };
+
+  const infoSvc = (updateService && updateService.confirmInfo) ? updateService : adminProposalService;
+  const showInfoConfirm = entity === 'station_proposals'
+    && record && record.id
+    && record.supplement_deadline_at
+    && confirmStatuses.includes(record.status)
+    && allowEdit;
+  const infoCompleted = !!(record && record.info_completed_at);
+
+  const handleInfoAction = async () => {
+    const action = confirmDialog.action;
+    if (!action || !record || !record.id) return;
+    setConfirming(true);
+    try {
+      const res = action === 'confirm'
+        ? await infoSvc.confirmInfo(record.id, token)
+        : await infoSvc.reopenInfo(record.id, token);
+      if (res && res.success) {
+        if (res.data) setRecord(res.data);
+        setToast({ message: res.message || 'Thành công', type: 'success' });
+        notifyBellRefresh();
+        if (onSaved) onSaved();
+      } else {
+        setToast({ message: (res && res.message) || 'Thao tác thất bại', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Lỗi kết nối server', type: 'error' });
+    } finally {
+      setConfirming(false);
+      setConfirmDialog({ open: false, action: null });
+    }
+  };
+
+  const handleExtend = async ({ days, hours, reason }) => {
+    if (!record || !record.id || !infoSvc.extendDeadline) return;
+    setExtending(true);
+    try {
+      const res = await infoSvc.extendDeadline(record.id, { days, hours, reason }, token);
+      if (res && res.success) {
+        if (res.data) setRecord(res.data);
+        setToast({ message: res.message || 'Gia hạn thành công', type: 'success' });
+        notifyBellRefresh();
+        if (onSaved) onSaved();
+        setExtendOpen(false);
+      } else {
+        setToast({ message: (res && res.message) || 'Gia hạn thất bại', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Lỗi kết nối server', type: 'error' });
+    } finally {
+      setExtending(false);
+    }
   };
 
   const handleFieldChange = (key, value) => {
@@ -678,7 +749,58 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
         {error && <div className="error-message">{error}</div>}
 
-        <DeadlineCountdown deadline={record.supplement_deadline_at} status={record.status} />
+        <DeadlineCountdown deadline={record.supplement_deadline_at} status={record.status} completedAt={record.info_completed_at} />
+
+        {showInfoConfirm && (
+          <div className={`alert py-2 px-3 text-sm ${infoCompleted ? 'alert-success' : 'alert-info'}`} style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {infoCompleted ? (
+              <>
+                <CheckCircle2 size={16} />
+                <span>
+                  Đã xác nhận đủ thông tin
+                  {record.info_completed_at ? ` lúc ${new Date(record.info_completed_at).toLocaleString('vi-VN')}` : ''}.
+                </span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => setConfirmDialog({ open: true, action: 'reopen' })}
+                  >
+                    Mở lại để bổ sung
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={() => setExtendOpen(true)}
+                  >
+                    Gia hạn
+                  </button>
+                </span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle size={16} />
+                <span>Kiểm tra kỹ rồi xác nhận để admin xét duyệt.</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => setConfirmDialog({ open: true, action: 'confirm' })}
+                  >
+                    Xác nhận đã đủ thông tin
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={() => setExtendOpen(true)}
+                  >
+                    Gia hạn
+                  </button>
+                </span>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="popup-body">
           {entity === 'station_proposals' && record?.status === 'REJECTED' && record?.reject_reason && (
@@ -764,6 +886,24 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       {showLog && entity === 'station_proposals' && record?.id && (
         <ProposalActivityPopup proposalId={record.id} onClose={() => setShowLog(false)} />
       )}
+      <ExtendDeadlineDialog
+        isOpen={extendOpen}
+        saving={extending}
+        onConfirm={handleExtend}
+        onCancel={() => { if (!extending) setExtendOpen(false); }}
+      />
+      <ConfirmDialog
+        isOpen={confirmDialog.open}
+        title={confirmDialog.action === 'reopen' ? 'Mở lại để bổ sung?' : 'Xác nhận đủ thông tin?'}
+        message={confirmDialog.action === 'reopen'
+          ? 'Xác nhận đủ thông tin sẽ được gỡ (đề xuất giữ nguyên trạng thái hiện tại và thời hạn cũ) để bạn bổ sung tiếp. Tiếp tục?'
+          : 'Bạn chắc chắn đề xuất này đã đầy đủ thông tin? Admin sẽ nhận được thông báo để xét duyệt.'}
+        confirmText={confirming ? 'Đang xử lý...' : (confirmDialog.action === 'reopen' ? 'Mở lại' : 'Xác nhận')}
+        cancelText="Hủy"
+        type={confirmDialog.action === 'reopen' ? 'warning' : 'info'}
+        onConfirm={handleInfoAction}
+        onCancel={() => { if (!confirming) setConfirmDialog({ open: false, action: null }); }}
+      />
     </div>
   );
 };

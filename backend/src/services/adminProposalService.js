@@ -74,7 +74,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status, p.station_id,
-            p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at,
+            p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.info_completed_at,
             u.full_name as user_name, u.email as user_email
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
@@ -193,12 +193,23 @@ exports.updateProposal = async (id, data, opts = {}) => {
   const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
   const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, null, null, { excludeKeys: exclude });
+  const finalDynamic = { ...mergedDynamic, ...postResults };
+  let filesRenamed = 0;
+  try {
+    const fileService = require('./fileService');
+    filesRenamed = await fileService.renameProposalFiles({
+      dynamicData: finalDynamic,
+      fieldDefs,
+      maDeXuat: finalDynamic.ma_de_xuat || current.ma_de_xuat || `DX${id}`
+    });
+  } catch { /* silent: khong chan luu vi rename */ }
   if (Object.keys(postResults).length > 0) {
-    const updatedDynamic = { ...mergedDynamic, ...postResults };
     if (postResults.ma_de_xuat) {
-      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), postResults.ma_de_xuat, id]);
+      await pool.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(finalDynamic), postResults.ma_de_xuat, id]);
     } else {
-      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
+      await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
     }
+  } else if (filesRenamed > 0) {
+    await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
   }
 };

@@ -77,6 +77,28 @@ exports.pushCheck = async (req, res) => {
   }
 };
 
+exports.completeness = async (req, res) => {
+  try {
+    const light = await adminProposalService.getProposalById(req.params.id);
+    if (!light) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const scope = await scopeFor(req);
+    if (denyOutsideBranch(light, scope)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
+    }
+    const { checkCompleteness } = require('../services/proposalCompleteness');
+    const result = await checkCompleteness(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Admin completeness check error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.delete = async (req, res) => {
   try {
     const existing = await adminProposalService.getProposalById(req.params.id);
@@ -125,7 +147,7 @@ exports.updateStatus = async (req, res) => {
     res.json({ success: true, data: proposal, autoPush: result.autoPush || null, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
     if (error.statusCode) {
-      return res.status(error.statusCode).json({ success: false, message: error.message });
+      return res.status(error.statusCode).json({ success: false, message: error.message, errors: error.details || undefined });
     }
     console.error('Admin update status error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -156,6 +178,69 @@ exports.update = async (req, res) => {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+const setInfoCompleted = async (req, res, completed) => {
+  try {
+    const existing = await adminProposalService.getProposalById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    const proposalLifecycle = require('../services/proposalLifecycle');
+    const result = await proposalLifecycle.setInfoCompleted(req.params.id, completed, {
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      source: 'user',
+      ip: req.ip || null
+    });
+    const proposal = await adminProposalService.getProposalWithUser(req.params.id);
+    res.json({
+      success: true,
+      data: proposal,
+      message: completed ? 'Đã xác nhận đủ thông tin' : 'Đã mở lại để bổ sung thông tin',
+      unchanged: !!result.unchanged
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Admin set info completed error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.confirmInfo = async (req, res) => setInfoCompleted(req, res, true);
+
+exports.reopenInfo = async (req, res) => setInfoCompleted(req, res, false);
+
+exports.extendDeadline = async (req, res) => {
+  try {
+    const existing = await adminProposalService.getProposalById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    const proposalLifecycle = require('../services/proposalLifecycle');
+    const result = await proposalLifecycle.extendDeadline(req.params.id, req.body || {}, {
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      source: 'user',
+      ip: req.ip || null
+    });
+    const proposal = await adminProposalService.getProposalWithUser(req.params.id);
+    res.json({ success: true, data: proposal, extend: result, message: 'Gia hạn thành công' });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Admin extend deadline error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

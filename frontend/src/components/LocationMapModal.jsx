@@ -276,7 +276,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
   const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="legacy-modal location-map-modal" onClick={(e) => e.stopPropagation()}>
         <div className="popup-header">
           <h2 className="flex items-center gap-2">

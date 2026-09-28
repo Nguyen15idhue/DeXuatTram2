@@ -173,15 +173,18 @@ const notifyChain = async (proposal, type, title, message) => {
   } catch { /* silent */ }
 };
 
-const processDeadlines = async () => {
+const INFO_AUTO_CANCEL_REASON = 'Chưa cập nhật đầy đủ thông tin';
+
+const processDeadlines = async (maxRetries = 5) => {
   const enabledStatuses = await proposalLifecycle.getEnabledCountdownStatuses();
   if (enabledStatuses.length === 0) return 0;
   const warnHours = await proposalLifecycle.getCountdownWarnHours();
   const placeholders = enabledStatuses.map(() => '?').join(', ');
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, supplement_deadline_at, custom_data FROM station_proposals
+    `SELECT id, user_id, status, supplement_deadline_at, info_completed_at, custom_data FROM station_proposals
       WHERE status IN (${placeholders})
-        AND supplement_deadline_at IS NOT NULL`,
+        AND supplement_deadline_at IS NOT NULL
+        AND info_completed_at IS NULL`,
     enabledStatuses
   );
   let acted = 0;
@@ -204,13 +207,21 @@ const processDeadlines = async () => {
         });
         acted++;
       } else if (diff <= 0) {
-        if (await deadlineNotified(p.id, 'deadline_overdue', iso)) continue;
-        await proposalLifecycle.logActivity({
-          proposalId: p.id, action: 'deadline_overdue',
-          fromStatus: p.status, toStatus: p.status,
-          changedFields: { deadline: iso }, source: 'system_auto'
-        });
-        acted++;
+        try {
+          await proposalLifecycle.transition(p.id, 'CANCELLED', {
+            reason: INFO_AUTO_CANCEL_REASON,
+            source: 'system_auto'
+          });
+          console.log(`[LifecycleWorker] auto-cancel overdue proposal #${p.id}`);
+          acted++;
+        } catch (tErr) {
+          console.error(`[LifecycleWorker] auto-cancel overdue #${p.id} loi: ${tErr.message}`);
+          try {
+            await recordAutoFail(p, p.status, 'CANCELLED', tErr, maxRetries, 'hủy quá hạn');
+          } catch (e) {
+            console.error(`[LifecycleWorker] recordAutoFail #${p.id} loi: ${e.message}`);
+          }
+        }
       }
     } catch (err) {
       console.error(`[LifecycleWorker] deadline #${p.id} loi: ${err.message}`);
@@ -262,7 +273,7 @@ const tick = async () => {
     lastRunMinute = key;
     const failed = await processFailed(cfg);
     const signed = await processSigned(cfg);
-    const deadlines = await processDeadlines();
+    const deadlines = await processDeadlines(cfg.maxRetries);
     if (failed > 0 || signed > 0 || deadlines > 0) {
       console.log(`[LifecycleWorker] tick: ${failed} cancel, ${signed} station, ${deadlines} deadline`);
     }

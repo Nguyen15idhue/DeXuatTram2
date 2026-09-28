@@ -63,6 +63,7 @@ const resolveAutoUserId = (sc, authUser) => {
   }
   if (mode === 'area_director') {
     if (['CTV', 'NPP'].includes(authUser.role)) return authUser.parent_id || authUser.id;
+    if (authUser.role === 'SALES') return authUser.id;
     return null;
   }
   if (mode === 'center_director') return null;

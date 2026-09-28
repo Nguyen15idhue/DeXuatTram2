@@ -4,6 +4,7 @@ const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const proximityService = require('./proximityService');
+const fileService = require('./fileService');
 
 exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
@@ -91,11 +92,17 @@ exports.createProposal = async (userId, data, opts = {}) => {
     recordId = result.insertId;
 
     postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, userId, null, { connection: conn });
-    if (Object.keys(postResults).length > 0) {
-      const updatedDynamic = { ...customDataObj, ...postResults };
-      const trackingCode = postResults.ma_de_xuat || null;
-      await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
-    }
+    const updatedDynamic = { ...customDataObj, ...postResults };
+    const trackingCode = postResults.ma_de_xuat || null;
+    try {
+      await fileService.renameProposalFiles({
+        dynamicData: updatedDynamic,
+        fieldDefs,
+        maDeXuat: postResults.ma_de_xuat || customDataObj.ma_de_xuat || `DX${recordId}`,
+        connection: conn
+      });
+    } catch { /* silent: khong chan tao de xuat vi rename */ }
+    await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
 
     await conn.commit();
   } catch (err) {
@@ -326,11 +333,17 @@ exports.createGuestProposal = async (data, ip) => {
     recordId = result.insertId;
 
     postResults = await dynamicEngineService.computePostFormulas('station_proposals', recordId, dynamicData, null, null, { connection: conn });
-    if (Object.keys(postResults).length > 0) {
-      const updatedDynamic = { ...dynamicData, ...postResults };
-      const trackingCode = postResults.ma_de_xuat || null;
-      await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
-    }
+    const updatedDynamic = { ...dynamicData, ...postResults };
+    const trackingCode = postResults.ma_de_xuat || null;
+    try {
+      await fileService.renameProposalFiles({
+        dynamicData: updatedDynamic,
+        fieldDefs,
+        maDeXuat: postResults.ma_de_xuat || dynamicData.ma_de_xuat || `DX${recordId}`,
+        connection: conn
+      });
+    } catch { /* silent: khong chan tao de xuat vi rename */ }
+    await conn.query('UPDATE station_proposals SET custom_data = ?, tracking_code = ? WHERE id = ?', [JSON.stringify(updatedDynamic), trackingCode, recordId]);
 
     await conn.commit();
   } catch (err) {

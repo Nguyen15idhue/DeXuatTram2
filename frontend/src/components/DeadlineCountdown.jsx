@@ -15,7 +15,7 @@ export const formatCountdown = (deadline) => {
   return { overdue: diff <= 0, text: `${pad(d)} ngày ${pad(h)}:${pad(m)}:${pad(s)}`, under24h: diff > 0 && diff <= 86400000 };
 };
 
-const DeadlineCountdown = ({ deadline, status, compact = false, enabledStatuses = null }) => {
+const DeadlineCountdown = ({ deadline, status, compact = false, enabledStatuses = null, completedAt = null }) => {
   const [, setNow] = useState(Date.now());
   const [enabled, setEnabled] = useState(enabledStatuses || null);
 
@@ -37,17 +37,17 @@ const DeadlineCountdown = ({ deadline, status, compact = false, enabledStatuses 
   }, [deadline]);
 
   const statuses = enabled || FALLBACK_COUNTDOWN_STATUSES;
+  if (completedAt) return null;
   if (!deadline || !statuses.includes(status)) return null;
   const c = formatCountdown(deadline);
-  if (!c) return null;
+  if (!c || c.overdue) return null;
   if (compact) {
-    if (c.overdue) return <span className="badge badge-error badge-xs gap-1 whitespace-nowrap">Quá hạn {c.text}</span>;
     if (c.under24h) return <span className="badge badge-warning badge-xs gap-1 whitespace-nowrap">Còn {c.text}</span>;
     return null;
   }
   return (
-    <div className={`alert ${c.overdue ? 'alert-error' : (c.under24h ? 'alert-warning' : 'alert-info')} py-2 px-3 text-sm`} style={{ marginBottom: 12 }}>
-      <span>{c.overdue ? `Đã quá hạn bổ sung thông tin: ${c.text}` : `Còn ${c.text} để bổ sung thông tin`}</span>
+    <div className={`alert ${c.under24h ? 'alert-warning' : 'alert-info'} py-2 px-3 text-sm`} style={{ marginBottom: 12 }}>
+      <span>Còn {c.text} để bổ sung thông tin</span>
     </div>
   );
 };

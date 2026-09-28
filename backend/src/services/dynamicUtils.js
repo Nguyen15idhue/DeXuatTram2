@@ -484,7 +484,7 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
       id = ['CTV', 'NPP'].includes(me.role) ? (me.parentId || currentId) : currentId;
     } else if (sc.auto_user === 'area_director') {
       if (['CTV', 'NPP'].includes(me.role)) id = me.parentId || currentId;
-      else if (me.role === 'SALES' && me.chucVu !== CHUC_VU_GDTT) id = currentId;
+      else if (me.role === 'SALES') id = currentId;
       else id = null;
     } else if (sc.auto_user === 'center_director') {
       let picId = null;

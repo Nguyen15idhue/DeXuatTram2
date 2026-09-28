@@ -17,11 +17,15 @@ const ALLOWED_TRANSITIONS = {
 
 const REASON_REQUIRED = ['REJECTED', 'CANCELLED'];
 
+// Cac dich chi duoc cap nhat tu 1Office (webhook) hoac he thong tu dong.
+// Thao tac tay tu UI (source=user) bi chan ke ca khi ma tran cho phep.
+const WEBHOOK_ONLY_TARGETS = ['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
+
 const SKIP_DIFF_KEYS = new Set([
   'id', 'user_id', 'created_at', 'updated_at', 'custom_data', 'status',
   'submission_source', 'submitter_ip', 'contact_1office_id', 'contact_1office_code',
   'last_synced_at', 'last_synced_data', 'sync_status', 'ma_de_xuat_gen',
-  'reviewed_by', 'reviewed_at', 'reject_reason'
+  'reviewed_by', 'reviewed_at', 'reject_reason', 'supplement_deadline_at', 'info_completed_at'
 ]);
 
 const normVal = (v) => {
@@ -100,6 +104,23 @@ exports.transition = async (id, to, opts = {}) => {
   if (REASON_REQUIRED.includes(to) && !cleanReason) {
     throw err(to === 'REJECTED' ? 'Vui lòng nhập lý do từ chối' : 'Vui lòng nhập lý do hủy', 400);
   }
+  if (WEBHOOK_ONLY_TARGETS.includes(to) && source === 'user') {
+    await exports.logActivity({
+      proposalId: id, action: 'status_change_denied',
+      fromStatus: from, toStatus: to,
+      actorId, actorRole, source, ip
+    });
+    throw err('Trạng thái này chỉ được cập nhật tự động từ 1Office', 400);
+  }
+  if (from === 'PENDING' && to === 'REVIEWING' && source === 'user') {
+    const { checkCompleteness } = require('./proposalCompleteness');
+    const check = await checkCompleteness(id);
+    if (!check.complete) {
+      const e = err(`Thông tin chưa đầy đủ, không thể duyệt: ${check.missing[0] || 'thiếu trường bắt buộc'}`, 400);
+      e.details = check.missing;
+      throw e;
+    }
+  }
   if (isEmergencyReopen && !String(reason || '').trim()) {
     throw err('Mở lại khẩn cấp cần nhập lý do', 400);
   }
@@ -118,7 +139,7 @@ exports.transition = async (id, to, opts = {}) => {
   if (deadlineMinutes && !keepDeadline) {
     try {
       await pool.query(
-        'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?',
+        'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL WHERE id = ?',
         [deadlineMinutes, id]
       );
     } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
@@ -291,4 +312,176 @@ exports.getEnabledCountdownStatuses = async () => {
 exports.getCountdownWarnHours = async () => {
   const cfg = await exports.getCountdownConfig();
   return cfg.warn_hours || 24;
+};
+
+const INFO_NOTIFY_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+const EXTEND_MAX_DAYS = 30;
+const EXTEND_MAX_HOURS = 23;
+
+exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, opts = {}) => {
+  const { actorId, actorRole, source = 'user', ip } = opts;
+  const d = Math.floor(Number(days) || 0);
+  const h = Math.floor(Number(hours) || 0);
+  if (d < 0 || h < 0 || d > EXTEND_MAX_DAYS || h > EXTEND_MAX_HOURS) {
+    throw err(`Thời gian gia hạn không hợp lệ (tối đa ${EXTEND_MAX_DAYS} ngày/lần)`, 400);
+  }
+  const totalMinutes = d * 1440 + h * 60;
+  if (totalMinutes <= 0) {
+    throw err('Vui lòng nhập thời gian gia hạn', 400);
+  }
+  const cleanReason = String(reason || '').trim();
+  if (!cleanReason) {
+    throw err('Vui lòng nhập lý do gia hạn', 400);
+  }
+  const [rows] = await pool.query(
+    'SELECT id, user_id, status, custom_data, supplement_deadline_at, info_completed_at FROM station_proposals WHERE id = ?',
+    [id]
+  );
+  if (rows.length === 0) {
+    throw err('Không tìm thấy đề xuất', 404);
+  }
+  const proposal = rows[0];
+  const enabled = await exports.getEnabledCountdownStatuses();
+  if (!proposal.supplement_deadline_at || !enabled.includes(proposal.status)) {
+    throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
+  }
+  if (new Date(proposal.supplement_deadline_at).getTime() <= Date.now()) {
+    throw err('Đề xuất đã quá hạn, không thể gia hạn', 400);
+  }
+  const oldIso = new Date(proposal.supplement_deadline_at).toISOString();
+  await pool.query(
+    'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(supplement_deadline_at, INTERVAL ? MINUTE), info_completed_at = NULL, updated_at = NOW() WHERE id = ?',
+    [totalMinutes, id]
+  );
+  const [after] = await pool.query('SELECT supplement_deadline_at FROM station_proposals WHERE id = ?', [id]);
+  const newIso = new Date(after[0].supplement_deadline_at).toISOString();
+  await exports.logActivity({
+    proposalId: id, action: 'deadline_extended',
+    fromStatus: proposal.status, toStatus: proposal.status,
+    changedFields: { old_deadline: oldIso, new_deadline: newIso, days: d, hours: h },
+    reason: cleanReason, actorId, actorRole, source, ip
+  });
+  const code = notificationService.proposalCode(proposal.custom_data, id);
+  const actorName = source === 'system_auto'
+    ? 'Hệ thống'
+    : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
+  const userIds = await collectInfoNotifyIds(proposal);
+  userIds.delete(Number(actorId));
+  for (const uid of userIds) {
+    if (!uid) continue;
+    try {
+      await notificationService.create({
+        userId: uid,
+        type: 'SUPPLEMENT_EXTENDED',
+        title: notificationService.statusTitle('SUPPLEMENT_EXTENDED'),
+        message: notificationService.statusMessage({
+          code, actorName, status: 'SUPPLEMENT_EXTENDED',
+          actionLabel: 'Người gia hạn', reason: `Gia hạn ${d} ngày ${h} giờ: ${cleanReason}`
+        }),
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: actorId || null
+      });
+    } catch { /* silent */ }
+  }
+  return { id, oldDeadline: oldIso, newDeadline: newIso, days: d, hours: h };
+};
+
+const collectInfoNotifyIds = async (proposal) => {
+  const userIds = new Set();
+  if (proposal.user_id) userIds.add(Number(proposal.user_id));
+  try {
+    const [owner] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [proposal.user_id]);
+    let pid = owner.length > 0 ? owner[0].parent_id : null;
+    let guard = 0;
+    while (pid && guard < 10) {
+      guard++;
+      userIds.add(Number(pid));
+      const [up] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [pid]);
+      pid = up.length > 0 ? up[0].parent_id : null;
+    }
+  } catch { /* silent */ }
+  try {
+    const [admins] = await pool.query(
+      `SELECT id FROM users WHERE role IN (${INFO_NOTIFY_ROLES.map(() => '?').join(', ')}) AND status = 'ACTIVE'`,
+      INFO_NOTIFY_ROLES
+    );
+    admins.forEach((a) => userIds.add(Number(a.id)));
+  } catch { /* silent */ }
+  return userIds;
+};
+
+exports.setInfoCompleted = async (id, completed, opts = {}) => {
+  const { actorId, actorRole, source = 'user', ip } = opts;
+  const [rows] = await pool.query(
+    'SELECT id, user_id, status, custom_data, supplement_deadline_at, info_completed_at FROM station_proposals WHERE id = ?',
+    [id]
+  );
+  if (rows.length === 0) {
+    throw err('Không tìm thấy đề xuất', 404);
+  }
+  const proposal = rows[0];
+  const enabled = await exports.getEnabledCountdownStatuses();
+  if (!proposal.supplement_deadline_at || !enabled.includes(proposal.status)) {
+    throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
+  }
+  const already = proposal.info_completed_at != null;
+  if ((completed && already) || (!completed && !already)) {
+    return { id, completed: already, unchanged: true };
+  }
+  if (completed) {
+    await pool.query('UPDATE station_proposals SET info_completed_at = NOW(), updated_at = NOW() WHERE id = ?', [id]);
+  } else {
+    await pool.query('UPDATE station_proposals SET info_completed_at = NULL, updated_at = NOW() WHERE id = ?', [id]);
+  }
+  await exports.logActivity({
+    proposalId: id, action: completed ? 'info_completed' : 'info_reopened',
+    fromStatus: proposal.status, toStatus: proposal.status,
+    actorId, actorRole, source, ip
+  });
+  if (completed) {
+    const code = notificationService.proposalCode(proposal.custom_data, id);
+    const actorName = source === 'system_auto'
+      ? 'Hệ thống'
+      : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
+    const userIds = await collectInfoNotifyIds(proposal);
+    userIds.delete(Number(actorId));
+    for (const uid of userIds) {
+      if (!uid) continue;
+      try {
+        await notificationService.create({
+          userId: uid,
+          type: 'INFO_COMPLETED',
+          title: notificationService.statusTitle('INFO_COMPLETED'),
+          message: notificationService.statusMessage({ code, actorName, status: 'INFO_COMPLETED', actionLabel: 'Người xác nhận' }),
+          entityType: 'station_proposals',
+          entityId: id,
+          createdBy: actorId || null
+        });
+      } catch { /* silent */ }
+    }
+  } else {
+    const code = notificationService.proposalCode(proposal.custom_data, id);
+    const actorName = source === 'system_auto'
+      ? 'Hệ thống'
+      : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
+    const userIds = await collectInfoNotifyIds(proposal);
+    userIds.delete(Number(actorId));
+    for (const uid of userIds) {
+      if (!uid) continue;
+      try {
+        await notificationService.create({
+          userId: uid,
+          type: 'INFO_REOPENED',
+          title: notificationService.statusTitle('INFO_REOPENED'),
+          message: notificationService.statusMessage({ code, actorName, status: 'INFO_REOPENED', actionLabel: 'Người mở lại' }),
+          entityType: 'station_proposals',
+          entityId: id,
+          createdBy: actorId || null
+        });
+      } catch { /* silent */ }
+    }
+  }
+  return { id, completed: !!completed, unchanged: false };
 };

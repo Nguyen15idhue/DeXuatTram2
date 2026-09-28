@@ -168,6 +168,97 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
 
 /**
  * @swagger
+ * /api/my-proposals/{id}/confirm-info:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Xác nhận đề xuất của mình đã đủ thông tin (thông báo tới admin)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Xác nhận thành công
+ *       400:
+ *         description: Đề xuất không trong thời gian bổ sung thông tin
+ *       404:
+ *         description: Không tìm thấy đề xuất hoặc không phải của user
+ */
+router.post('/:id/confirm-info', requireAuth, myProposalController.confirmInfo);
+
+/**
+ * @swagger
+ * /api/my-proposals/{id}/reopen-info:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Mở lại đề xuất của mình để bổ sung tiếp (giữ deadline cũ)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Mở lại thành công
+ *       400:
+ *         description: Đề xuất không trong thời gian bổ sung thông tin
+ *       404:
+ *         description: Không tìm thấy đề xuất hoặc không phải của user
+ */
+router.post('/:id/reopen-info', requireAuth, myProposalController.reopenInfo);
+
+/**
+ * @swagger
+ * /api/my-proposals/{id}/extend-deadline:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Gia hạn thời gian bổ sung thông tin cho đề xuất của mình
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               days:
+ *                 type: integer
+ *                 default: 0
+ *                 description: Số ngày gia hạn (0-30)
+ *               hours:
+ *                 type: integer
+ *                 default: 0
+ *                 description: Số giờ gia hạn (0-23)
+ *               reason:
+ *                 type: string
+ *                 description: Lý do gia hạn (bắt buộc)
+ *     responses:
+ *       200:
+ *         description: Gia hạn thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ hoặc đề xuất đã quá hạn
+ *       404:
+ *         description: Không tìm thấy đề xuất hoặc không phải của user
+ */
+router.post('/:id/extend-deadline', requireAuth, myProposalController.extendDeadline);
+
+/**
+ * @swagger
  * /api/my-proposals/{id}:
  *   delete:
  *     tags: [My Proposals]

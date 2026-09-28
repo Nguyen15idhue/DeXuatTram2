@@ -15,7 +15,10 @@ const STATUS_TITLES = {
   ARCHIVED: 'Đề xuất đã được lưu trữ',
   PRINCIPLE_APPROVED: 'Đề xuất đã được duyệt chủ trương',
   SUPPLEMENT_EXPIRING: 'Đề xuất sắp hết hạn bổ sung thông tin',
-  SUPPLEMENT_OVERDUE: 'Đề xuất đã quá hạn bổ sung thông tin'
+  SUPPLEMENT_OVERDUE: 'Đề xuất đã quá hạn bổ sung thông tin',
+  INFO_COMPLETED: 'Đề xuất đã bổ sung đủ thông tin',
+  INFO_REOPENED: 'Đề xuất được mở lại để bổ sung',
+  SUPPLEMENT_EXTENDED: 'Đề xuất được gia hạn bổ sung thông tin'
 };
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';

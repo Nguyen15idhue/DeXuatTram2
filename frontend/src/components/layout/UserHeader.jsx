@@ -26,7 +26,7 @@ const UserHeader = ({ onMenuToggle }) => {
           <Menu size={20} />
         </label>
         <Link to="/map" className="btn btn-ghost text-lg sm:text-xl font-bold text-primary px-1 sm:px-2 min-w-0">
-          <span className="truncate">Station Management</span>
+          <span className="truncate">TMT-EGREEN</span>
         </Link>
       </div>
 

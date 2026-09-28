@@ -1,6 +1,6 @@
 # Hướng dẫn Deploy & Cập nhật trên VPS
 
-> Cập nhật: **14/09/2026**. Đây là tài liệu **chuẩn để vận hành** dự án **Station Management (DeXuatTram2)**.
+> Cập nhật: **14/09/2026**. Đây là tài liệu **chuẩn để vận hành** dự án **TMT-EGREEN (DeXuatTram2)**.
 > Các file `Chuanbi_deploy.md` và `Cac_buoc_code_truoc_deploy.md` là **tài liệu lịch sử/quá trình** (còn nhắc `docker-compose.prod.yml`, baseline `01→44` — đã lỗi thời), chỉ dùng tham khảo.
 > Đối tượng: deploy mới hoàn toàn trên VPS + cập nhật code về sau.
 

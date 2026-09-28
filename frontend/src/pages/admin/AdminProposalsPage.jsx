@@ -22,7 +22,7 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, FileSignature, History, GitBranch, Archive } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -80,8 +80,7 @@ const AdminProposalsPage = () => {
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
-  const [transitionModal, setTransitionModal] = useState({ open: false, id: null, to: null, saving: false });
-  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false });
+  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
   const [blockModal, setBlockModal] = useState({ open: false, missing: [], id: null });
@@ -275,8 +274,6 @@ const AdminProposalsPage = () => {
     }
   };
 
-  const statusLabel = (v) => (statusOptions.find(o => o.value === v) || {}).label || v;
-
   const handleStatusChange = async (id, newStatus) => {
     if (newStatus === 'REJECTED') {
       setRejectModal({ open: true, id, reason: '', saving: false });
@@ -287,17 +284,18 @@ const AdminProposalsPage = () => {
       return;
     }
     if (newStatus === 'REVIEWING') {
-      setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], checking: true });
+      setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], incomplete: [], checking: true });
       try {
-        const check = await unlinkedUserLabels(proposals.find(p => p.id === id));
-        setApproveModal({ open: true, id, saving: false, warnings: check.unlinked, missing: check.missing, checking: false });
+        const row = proposals.find(p => p.id === id);
+        const [check, comp] = await Promise.all([
+          unlinkedUserLabels(row),
+          adminProposalService.getCompleteness(id, token).catch(() => null)
+        ]);
+        const incomplete = comp && comp.success && comp.data && Array.isArray(comp.data.missing) ? comp.data.missing : [];
+        setApproveModal({ open: true, id, saving: false, warnings: check.unlinked, missing: check.missing, incomplete, checking: false });
       } catch {
-        setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], checking: false });
+        setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
       }
-      return;
-    }
-    if (['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'].includes(newStatus)) {
-      setTransitionModal({ open: true, id, to: newStatus, saving: false });
       return;
     }
     try {
@@ -348,7 +346,7 @@ const AdminProposalsPage = () => {
           msg += ` — chưa đẩy được sang 1Office (${auto.reason || 'thiếu cấu hình'}), hãy đẩy thủ công`;
         }
         setToast({ message: msg, type: auto && auto.queued === false ? 'warning' : 'success' });
-        setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false });
+        setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
         notifyBellRefresh();
         loadProposals(pagination.page);
         if (auto && auto.queued && auto.jobId) {
@@ -363,8 +361,13 @@ const AdminProposalsPage = () => {
           });
         }
       } else {
-        setError(res.message || 'Duyệt thất bại');
-        setApproveModal(prev => ({ ...prev, saving: false }));
+        const errs = Array.isArray(res.errors) && res.errors.length > 0 ? res.errors : null;
+        if (errs) {
+          setApproveModal(prev => ({ ...prev, saving: false, incomplete: errs }));
+        } else {
+          setError(res.message || 'Duyệt thất bại');
+          setApproveModal(prev => ({ ...prev, saving: false }));
+        }
       }
     } catch {
       setError('Lỗi kết nối server');
@@ -409,30 +412,6 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
       setReopenModal(prev => ({ ...prev, saving: false }));
-    }
-  };
-
-  const transitionTitle = (to) => {
-    return statusLabel(to);
-  };
-
-  const handleConfirmTransition = async () => {
-    const { id, to } = transitionModal;
-    setTransitionModal(prev => ({ ...prev, saving: true }));
-    try {
-      const res = await adminProposalService.updateStatus(id, to, token);
-      if (res.success) {
-        setToast({ message: `Đã chuyển sang ${statusLabel(to)}`, type: 'success' });
-        setTransitionModal({ open: false, id: null, to: null, saving: false });
-        notifyBellRefresh();
-        loadProposals(pagination.page);
-      } else {
-        setError(res.message || 'Cập nhật thất bại');
-        setTransitionModal(prev => ({ ...prev, saving: false }));
-      }
-    } catch {
-      setError('Lỗi kết nối server');
-      setTransitionModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -983,33 +962,7 @@ const AdminProposalsPage = () => {
           </button>
         );
       case 'REVIEWING':
-        return (
-          <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('PRINCIPLE_APPROVED')} title="Duyệt chủ trương (sang Duyệt chủ trương)">
-            <CheckCircle2 size={12} />
-            Duyệt chủ trương
-          </button>
-        );
-      case 'PRINCIPLE_APPROVED':
-        return (
-          <button className="btn btn-info btn-xs gap-1 shrink-0" onClick={() => go('APPROVED')} title="1Office báo đã duyệt (webhook)">
-            <FileSignature size={12} />
-            Đã duyệt BCĐX
-          </button>
-        );
-      case 'APPROVED':
-        return (
-          <button className="btn btn-success btn-outline btn-xs gap-1 shrink-0" onClick={() => go('CONTRACT_SIGNED')} title="Ký hợp đồng thành công (webhook)">
-            <CheckCircle2 size={12} />
-            Ký thành công
-          </button>
-        );
-      case 'ARCHIVED':
-        return (
-          <button className="btn btn-success btn-outline btn-xs gap-1 shrink-0" onClick={() => go('CONTRACT_SIGNED')} title="Kích hoạt từ kho lưu trữ, ký hợp đồng thành công (webhook)">
-            <CheckCircle2 size={12} />
-            Ký thành công
-          </button>
-        );
+        return null;
       case 'CONTRACT_SIGNED':
         if (row.station_id) {
           return (
@@ -1051,19 +1004,12 @@ const AdminProposalsPage = () => {
     }
     items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
     items.push(item('report', <Download size={14} />, 'Xuất báo cáo đề xuất', () => handleExportReports([row.id])));
-    if (row.status === 'REVIEWING') {
-      items.push(item('approve', <FileSignature size={14} />, 'Đã duyệt BCĐX', () => go('APPROVED')));
-      items.push(item('archive', <Archive size={14} />, 'Lưu trữ', () => go('ARCHIVED')));
-    }
     if (row.status === 'CANCELLED' && isSuperAdmin) {
       items.push(item('reopen', <RotateCcw size={14} />, 'Mở lại (khẩn cấp)', () => setReopenModal({ open: true, id: row.id, reason: '', saving: false })));
     }
     const dangerItems = [];
     if (row.status === 'PENDING') {
       dangerItems.push(item('reject', <X size={14} />, 'Từ chối', () => go('REJECTED'), true));
-    }
-    if (row.status === 'APPROVED') {
-      dangerItems.push(item('signfail', <X size={14} />, 'Ký thất bại', () => go('CONTRACT_FAILED'), true));
     }
     if (row.status !== 'CANCELLED') {
       dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
@@ -1486,7 +1432,7 @@ const AdminProposalsPage = () => {
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Duyệt và đẩy sang 1Office</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false })}>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false })}>
                 <X size={18} />
               </button>
             </div>
@@ -1517,6 +1463,18 @@ const AdminProposalsPage = () => {
                 </div>
               </div>
             )}
+            {approveModal.incomplete && approveModal.incomplete.length > 0 && (
+              <div className="alert alert-error py-2 px-3 mt-3 text-xs">
+                <div>
+                  <p className="font-bold mb-1">Thông tin chưa đầy đủ — hãy sửa đề xuất bổ sung:</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {approveModal.incomplete.map((m, i) => (
+                      <li key={i}>{typeof m === 'string' ? m : (m.label || m.message || JSON.stringify(m))}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
             {approveModal.warnings && approveModal.warnings.length > 0 && (
               <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
                 <div>
@@ -1536,18 +1494,18 @@ const AdminProposalsPage = () => {
               </div>
             )}
             <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false })}>Hủy</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false })}>Hủy</button>
               <button
                 className="btn btn-success btn-sm"
-                disabled={approveModal.saving || approveModal.checking || (approveModal.missing && approveModal.missing.length > 0)}
-                title={approveModal.missing && approveModal.missing.length > 0 ? 'Thiếu người phụ trách — hãy gán trước khi duyệt' : ''}
+                disabled={approveModal.saving || approveModal.checking || (approveModal.missing && approveModal.missing.length > 0) || (approveModal.incomplete && approveModal.incomplete.length > 0)}
+                title={(approveModal.missing && approveModal.missing.length > 0) ? 'Thiếu người phụ trách — hãy gán trước khi duyệt' : ((approveModal.incomplete && approveModal.incomplete.length > 0) ? 'Thông tin chưa đầy đủ — hãy sửa đề xuất trước khi duyệt' : '')}
                 onClick={handleConfirmApprove}
               >
                 {approveModal.saving ? 'Đang duyệt...' : 'Duyệt & đẩy 1Office'}
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], checking: false })} />
+          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false })} />
         </dialog>
       )}
 
@@ -1586,32 +1544,6 @@ const AdminProposalsPage = () => {
             </div>
           </div>
           <div className="modal-backdrop bg-black/50" onClick={() => setCancelModal({ open: false, id: null, reason: '', saving: false })} />
-        </dialog>
-      )}
-
-      {transitionModal.open && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">{transitionTitle(transitionModal.to)}</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <p className="text-sm text-base-content/80">Xác nhận chuyển đề xuất #{transitionModal.id} sang <b>{statusLabel(transitionModal.to)}</b>?</p>
-            <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })}>Hủy bỏ</button>
-              <button
-                className="btn btn-primary btn-sm"
-                disabled={transitionModal.saving}
-                onClick={handleConfirmTransition}
-              >
-                {transitionModal.saving ? 'Đang chuyển...' : 'Xác nhận'}
-              </button>
-            </div>
-          </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setTransitionModal({ open: false, id: null, to: null, saving: false })} />
         </dialog>
       )}
 
@@ -1883,7 +1815,7 @@ const AdminProposalsPage = () => {
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
         onColumnFiltersChange={handleColumnFiltersChange}
-        cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} status={row.status} compact /> : null)}
+        cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} status={row.status} completedAt={row.info_completed_at} compact /> : null)}
       />
 
       <Pagination

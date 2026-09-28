@@ -353,7 +353,7 @@ const validateCreateUser = makeEntityValidator('users');
 const validateUpdateUser = makeEntityValidator('users', { partial: true });
 
 module.exports = {
-  validateEmail,
+  getApplicableFieldKeys,  validateEmail,
   validatePhone,
   validateFullName,
   validatePassword,

@@ -259,6 +259,18 @@ export const adminProposalService = {
   },
   pushCheck(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}/push-check`, token);
+  },
+  getCompleteness(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}/completeness`, token);
+  },
+  confirmInfo(id, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/confirm-info`, {}, token);
+  },
+  reopenInfo(id, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/reopen-info`, {}, token);
+  },
+  extendDeadline(id, data, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token);
   }
 };
 
@@ -282,6 +294,15 @@ export const myProposalService = {
   },
   duplicates(minM, maxM, token) {
     return api.getWithAuth(`/my-proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
+  },
+  confirmInfo(id, token) {
+    return api.postWithAuth(`/my-proposals/${id}/confirm-info`, {}, token);
+  },
+  reopenInfo(id, token) {
+    return api.postWithAuth(`/my-proposals/${id}/reopen-info`, {}, token);
+  },
+  extendDeadline(id, data, token) {
+    return api.postWithAuth(`/my-proposals/${id}/extend-deadline`, data || {}, token);
   }
 };
 

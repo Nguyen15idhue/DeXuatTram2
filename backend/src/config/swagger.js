@@ -4,9 +4,9 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Station Management API',
+      title: 'TMT-EGREEN API',
       version: '1.0.0',
-      description: 'API Documentation for Station Management System',
+      description: 'API Documentation for TMT-EGREEN System',
       contact: {
         name: 'Admin'
       }

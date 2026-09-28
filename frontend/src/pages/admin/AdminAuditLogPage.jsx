@@ -21,7 +21,13 @@ const ACTIVITY_ACTIONS = [
   { value: 'updated', label: 'Cập nhật nội dung' },
   { value: 'status_change', label: 'Đổi trạng thái' },
   { value: 'status_change_denied', label: 'Đổi trạng thái bị chặn' },
-  { value: 'auto_failed', label: 'Tự động thất bại' }
+  { value: 'station_created', label: 'Tạo trạm' },
+  { value: 'auto_failed', label: 'Tự động thất bại' },
+  { value: 'info_completed', label: 'Xác nhận đủ thông tin' },
+  { value: 'info_reopened', label: 'Mở lại bổ sung' },
+  { value: 'deadline_extended', label: 'Gia hạn bổ sung' },
+  { value: 'deadline_expiring', label: 'Sắp hết hạn bổ sung' },
+  { value: 'deadline_overdue', label: 'Quá hạn bổ sung' }
 ];
 
 const ACTIVITY_SOURCES = [
@@ -30,7 +36,8 @@ const ACTIVITY_SOURCES = [
   { value: 'webhook', label: 'Webhook 1Office' },
   { value: 'script', label: 'Script demo' },
   { value: 'system_auto', label: 'Tự động' },
-  { value: 'admin_override', label: 'Admin ghi đè' }
+  { value: 'admin_override', label: 'Admin ghi đè' },
+  { value: 'import', label: 'Nhập Excel' }
 ];
 
 const ACTIVITY_ACTION_LABEL = Object.fromEntries(ACTIVITY_ACTIONS.filter(o => o.value).map(o => [o.value, o.label]));
@@ -42,7 +49,12 @@ const ACTIVITY_ACTION_BADGE = {
   status_change: 'badge-success',
   status_change_denied: 'badge-error',
   station_created: 'badge-primary',
-  auto_failed: 'badge-warning'
+  auto_failed: 'badge-warning',
+  info_completed: 'badge-success',
+  info_reopened: 'badge-warning',
+  deadline_extended: 'badge-info',
+  deadline_expiring: 'badge-warning',
+  deadline_overdue: 'badge-error'
 };
 
 function AdminAuditLogPage() {

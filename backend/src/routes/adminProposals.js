@@ -135,6 +135,30 @@ router.get('/:id/push-check', requireAuth, requireUserManager, adminProposalCont
 
 /**
  * @swagger
+ * /api/admin/proposals/{id}/completeness:
+ *   get:
+ *     tags: [Admin - Proposals]
+ *     summary: Kiểm tra đầy đủ thông tin theo form sửa trước khi duyệt/đẩy
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Trả về complete (đủ/không) và missing (danh sách thiếu)
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id/completeness', requireAuth, requireUserManager, adminProposalController.completeness);
+
+/**
+ * @swagger
  * /api/admin/proposals/{id}:
  *   delete:
  *     tags: [Admin - Proposals]
@@ -245,6 +269,103 @@ router.put('/:id', requireAuth, requireUserManager, validateUpdateProposal, admi
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id/status', requireAuth, requireUserManager, adminProposalController.updateStatus);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/confirm-info:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Xác nhận đề xuất đã đủ thông tin (thông báo tới admin)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Xác nhận thành công
+ *       400:
+ *         description: Đề xuất không trong thời gian bổ sung thông tin
+ *       403:
+ *         description: Ngoài phạm vi nhánh
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/confirm-info', requireAuth, requireUserManager, adminProposalController.confirmInfo);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/reopen-info:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Mở lại đề xuất để bổ sung tiếp (giữ deadline cũ)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Mở lại thành công
+ *       400:
+ *         description: Đề xuất không trong thời gian bổ sung thông tin
+ *       403:
+ *         description: Ngoài phạm vi nhánh
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/reopen-info', requireAuth, requireUserManager, adminProposalController.reopenInfo);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/extend-deadline:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Gia hạn thời gian bổ sung thông tin (cộng vào deadline hiện tại)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               days:
+ *                 type: integer
+ *                 default: 0
+ *                 description: Số ngày gia hạn (0-30)
+ *               hours:
+ *                 type: integer
+ *                 default: 0
+ *                 description: Số giờ gia hạn (0-23)
+ *               reason:
+ *                 type: string
+ *                 description: Lý do gia hạn (bắt buộc)
+ *     responses:
+ *       200:
+ *         description: Gia hạn thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ hoặc đề xuất đã quá hạn
+ *       403:
+ *         description: Ngoài phạm vi nhánh
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/extend-deadline', requireAuth, requireUserManager, adminProposalController.extendDeadline);
 
 /**
  * @swagger

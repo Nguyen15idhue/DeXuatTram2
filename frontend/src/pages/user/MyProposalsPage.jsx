@@ -644,7 +644,7 @@ const MyProposalsPage = () => {
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}
         onColumnFiltersChange={handleColumnFiltersChange}
-        cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} status={row.status} compact /> : null)}
+        cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} status={row.status} completedAt={row.info_completed_at} compact /> : null)}
       />
 
       <Pagination

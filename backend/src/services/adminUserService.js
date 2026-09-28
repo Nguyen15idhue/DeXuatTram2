@@ -167,7 +167,12 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
         return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group }];
       }
       const dept = me.department || null;
-      if (!dept) return [];
+      if (!dept) {
+        if (poolType === 'gdkv' && me.chuc_vu === CHUC_VU_GDTT_OPT && me.id) {
+          return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: 'Chính bạn' }];
+        }
+        return [];
+      }
       const [rows] = await pool.query(
         `SELECT ${USER_OPTION_META} FROM users
          WHERE status = 'ACTIVE' AND role = 'SALES'
@@ -176,7 +181,13 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
          ORDER BY full_name`,
         [targetChucVu, dept]
       );
-      return rows.map(r => ({ ...r, group }));
+      const listed = rows.map(r => ({ ...r, group }));
+      if (poolType === 'gdkv' && me.chuc_vu === CHUC_VU_GDTT_OPT && me.id) {
+        if (!listed.some(r => Number(r.id) === Number(me.id))) {
+          listed.push({ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: 'Chính bạn' });
+        }
+      }
+      return listed;
     }
 
     if (['CTV', 'NPP'].includes(role) && userId) {
