@@ -214,8 +214,9 @@ const DataListManager = () => {
       />
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="legacy-modal max-w-[640px]" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="legacy-modal max-w-[640px]" style={{ position: 'relative' }}>
+            <button type="button" className="btn btn-ghost btn-sm btn-circle" style={{ position: 'absolute', top: 12, right: 12 }} onClick={() => setShowForm(false)} aria-label="Close">✕</button>
             <h2>{editingId ? 'Sửa danh sách' : 'Tạo danh sách mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}
@@ -264,8 +265,9 @@ const DataListManager = () => {
       )}
 
       {showImport && (
-        <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="legacy-modal legacy-modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="legacy-modal legacy-modal-lg" style={{ position: 'relative' }}>
+            <button type="button" className="btn btn-ghost btn-sm btn-circle" style={{ position: 'absolute', top: 12, right: 12 }} onClick={() => setShowImport(false)} aria-label="Close">✕</button>
             {importStep === 'upload' && (
               <>
                 <div className="import-modal-header">

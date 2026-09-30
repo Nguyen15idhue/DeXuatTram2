@@ -452,8 +452,8 @@ const MyProposalsPage = () => {
       />
 
       {showCreateForm && (
-        <div className="modal-overlay" onClick={closeCreate}>
-          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="legacy-modal legacy-modal-lg popup-detail">
             <div className="popup-header">
               <h2>Tạo đề xuất mới</h2>
               <div className="flex items-center gap-2">
@@ -538,9 +538,14 @@ const MyProposalsPage = () => {
       )}
 
       {showImport && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Import Đề xuất từ Excel</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Import Đề xuất từ Excel</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowImport(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             {importStep === 'upload' && (
               <div className="space-y-4">
                 <div className="form-control">
@@ -605,9 +610,7 @@ const MyProposalsPage = () => {
               </div>
             )}
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowImport(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 

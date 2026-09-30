@@ -409,8 +409,7 @@ exports.resolveTablePrices = async (formValues, dynamicData, fieldDefs) => {
 };
 
 const AUTO_USER_MODES = ['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'];
-const CHUC_VU_GDTT = 'Giám đốc Trung tâm Kinh doanh';
-const CHUC_VU_GDKV = 'Giám đốc Khu vực';
+const { gdttTitlesFor, isGdtt } = require('../constants/salesRanks');
 
 const parseCustomData = (val) => {
   if (!val) return {};
@@ -445,12 +444,13 @@ const getUserWorkInfo = async (db, userId) => {
 const findCenterDirectorId = async (db, phongBan) => {
   if (!phongBan) return null;
   try {
+    const titles = gdttTitlesFor(phongBan);
     const [rows] = await db.query(
       `SELECT id FROM users WHERE role = 'SALES' AND status = 'ACTIVE'
        AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?
-       AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) = ?
+       AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) IN (${titles.map(() => '?').join(',')})
        ORDER BY id ASC LIMIT 1`,
-      [phongBan, CHUC_VU_GDTT]
+      [phongBan, ...titles]
     );
     return rows.length > 0 ? rows[0].id : null;
   } catch { return null; }
@@ -489,7 +489,7 @@ exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection 
     } else if (sc.auto_user === 'center_director') {
       let picId = null;
       if (['CTV', 'NPP'].includes(me.role)) picId = me.parentId || currentId;
-      else if (me.role === 'SALES' && me.chucVu !== CHUC_VU_GDTT) picId = currentId;
+      else if (me.role === 'SALES' && !isGdtt(me.chucVu, me.phongBan)) picId = currentId;
       if (picId) {
         const pic = await getUserWorkInfo(db, picId);
         if (['ADMIN', 'SUPER_ADMIN'].includes(pic.role)) id = picId;

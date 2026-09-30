@@ -56,6 +56,21 @@ const parseTableConfig = (sc) => {
 
 const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'not_empty'];
 
+const MemoryHints = ({ memory, onPick }) => {
+  if (!memory || !memory.suggestions || memory.suggestions.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1 mt-1">
+      <span className="text-[11px] text-base-content/50">Đã nhập:</span>
+      {memory.suggestions.map((s, i) => (
+        <button key={i} type="button" className="badge badge-ghost badge-sm" style={{ cursor: 'pointer' }} onClick={() => onPick(s)} title="Dùng lại giá trị này">
+          {s.length > 40 ? s.slice(0, 40) + '…' : s}
+        </button>
+      ))}
+      <button type="button" className="text-[11px] text-base-content/40 hover:text-error px-1" onClick={memory.onClear} title="Xóa lịch sử ô này">✕</button>
+    </div>
+  );
+};
+
 const normalizeTableLink = (col) => {
   if (!col) return null;
   if (col.data_link && typeof col.data_link.enabled === 'boolean' && !col.data_link.enabled) return null;
@@ -207,7 +222,7 @@ const applyTablePriceRulesToRow = ({ columns, row, formValues, dataListOptions, 
   return next;
 };
 
-const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {}, formValues = {} }) => {
+const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {}, formValues = {}, memory = null }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [focusedCell, setFocusedCell] = useState(null);
   const [selectSearch, setSelectSearch] = useState('');
@@ -532,51 +547,63 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
   switch (field.type) {
     case 'textarea':
       return (
-        <textarea
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          disabled={disabled}
-          rows={3}
-        />
+        <>
+          <textarea
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            placeholder={field.placeholder || ''}
+            disabled={disabled}
+            rows={3}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'number':
       return (
-        <input
-          type="number"
-          className={baseClass}
-          value={value ?? ''}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          disabled={disabled}
-          step={step || 'any'}
-        />
+        <>
+          <input
+            type="number"
+            className={baseClass}
+            value={value ?? ''}
+            onChange={handleChange}
+            placeholder={field.placeholder || ''}
+            disabled={disabled}
+            step={step || 'any'}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'email':
       return (
-        <input
-          type="email"
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          disabled={disabled}
-        />
+        <>
+          <input
+            type="email"
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            placeholder={field.placeholder || ''}
+            disabled={disabled}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'phone':
       return (
-        <input
-          type="tel"
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          disabled={disabled}
-        />
+        <>
+          <input
+            type="tel"
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            placeholder={field.placeholder || ''}
+            disabled={disabled}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'password':
@@ -594,36 +621,45 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
 
     case 'url':
       return (
-        <input
-          type="url"
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          disabled={disabled}
-        />
+        <>
+          <input
+            type="url"
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            placeholder={field.placeholder || ''}
+            disabled={disabled}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'date':
       return (
-        <input
-          type="date"
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          disabled={disabled}
-        />
+        <>
+          <input
+            type="date"
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            disabled={disabled}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'datetime':
       return (
-        <input
-          type="datetime-local"
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          disabled={disabled}
-        />
+        <>
+          <input
+            type="datetime-local"
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            disabled={disabled}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
 
     case 'boolean':
@@ -1027,14 +1063,17 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
 
     default:
       return (
-        <input
-          type="text"
-          className={baseClass}
-          value={value || ''}
-          onChange={handleChange}
-          placeholder={field.placeholder || ''}
-          disabled={disabled}
-        />
+        <>
+          <input
+            type="text"
+            className={baseClass}
+            value={value || ''}
+            onChange={handleChange}
+            placeholder={field.placeholder || ''}
+            disabled={disabled}
+          />
+          <MemoryHints memory={memory} onPick={onChange} />
+        </>
       );
   }
 };

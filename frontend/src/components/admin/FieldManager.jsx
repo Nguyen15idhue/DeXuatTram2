@@ -506,11 +506,10 @@ const FieldManager = () => {
       />
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+        <div className="modal-overlay">
           <div
             className="legacy-modal"
             style={{ maxWidth: 780, width: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0 }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
               <h2 style={{ margin: 0, fontSize: 18 }}>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>

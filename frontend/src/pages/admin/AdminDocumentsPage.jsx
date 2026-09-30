@@ -343,7 +343,7 @@ const AdminDocumentsPage = () => {
       )}
 
       {showForm && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">{editingId ? 'Sửa template' : 'Thêm template'}</h3>
@@ -389,9 +389,7 @@ const AdminDocumentsPage = () => {
               </div>
             </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowForm(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 
@@ -405,22 +403,25 @@ const AdminDocumentsPage = () => {
       )}
 
       {editorId && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-6xl">
+            <div className="flex items-center justify-end mb-2">
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setEditorId(null)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             <DocumentTemplateEditor
               templateId={editorId}
               onClose={() => setEditorId(null)}
               onSaved={() => loadAll()}
             />
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setEditorId(null)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 
       {mapModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Mapping — {mapModal.name}</h3>
@@ -440,9 +441,7 @@ const AdminDocumentsPage = () => {
               <button className="btn btn-primary" onClick={saveMapping}>Lưu mapping</button>
             </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setMapModal({ open: false, id: null, name: '', text: '' })}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
     </div>

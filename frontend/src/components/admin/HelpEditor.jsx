@@ -193,8 +193,8 @@ const HelpEditor = ({ article, categories, allArticles, presetCategoryId, onClos
   }, [editor, contentJson, showPreview]);
 
   return (
-    <div className="fixed inset-0 z-[9998] bg-black/50 flex items-start justify-center overflow-y-auto p-2 sm:p-4" onClick={onClose}>
-      <div className="bg-base-100 rounded-xl border border-base-300 w-full max-w-6xl my-2" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[9998] bg-black/50 flex items-start justify-center overflow-y-auto p-2 sm:p-4">
+      <div className="bg-base-100 rounded-xl border border-base-300 w-full max-w-6xl my-2">
         <div className="flex items-center justify-between p-4 border-b border-base-300">
           <h2 className="text-lg font-bold">{isEdit ? `Sửa: ${article.title}` : 'Thêm bài hướng dẫn'}</h2>
           <button type="button" className="btn btn-sm btn-circle btn-ghost" onClick={onClose} title="Đóng"><X size={16} /></button>

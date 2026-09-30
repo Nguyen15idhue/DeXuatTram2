@@ -249,7 +249,7 @@ const WebhookManager = ({ onChanged }) => {
         )}
 
         {showCreate && (
-          <dialog className="modal modal-open">
+          <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
             <div className="modal-box max-w-md">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-lg">Thêm webhook mới</h3>
@@ -284,7 +284,7 @@ const WebhookManager = ({ onChanged }) => {
                 </button>
               </div>
             </div>
-            <div className="modal-backdrop bg-black/50" onClick={() => setShowCreate(false)} />
+            <div className="modal-backdrop bg-black/50" />
           </dialog>
         )}
       </div>

@@ -38,10 +38,13 @@ const ExtendDeadlineDialog = ({ isOpen, onConfirm, onCancel, saving = false, lim
   };
 
   return (
-    <div className="modal-overlay" onClick={(e) => { e.stopPropagation(); close(); }}>
+    <div className="modal-overlay">
       <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
         <div className="confirm-icon confirm-icon-info">◷</div>
-        <h3 className="confirm-title">Gia hạn bổ sung thông tin</h3>
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+          <h3 className="confirm-title" style={{ flex: 1 }}>Gia hạn bổ sung thông tin</h3>
+          <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={close} disabled={saving} aria-label="Close">✕</button>
+        </div>
         <p className="confirm-message">Thời gian được cộng thêm vào hạn hiện tại. Hết hạn mới thì đề xuất mới bị hủy.</p>
         {limits && (
           <p className="confirm-message" style={{ marginTop: 4 }}>

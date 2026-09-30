@@ -739,7 +739,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   };
 
   return (
-    <div className="modal-overlay" onClick={handleClose}>
+    <div className="modal-overlay" onClick={mode === 'edit' ? undefined : handleClose}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       <div ref={modalRef} className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
         <div className="popup-header">

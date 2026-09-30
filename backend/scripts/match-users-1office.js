@@ -1,5 +1,6 @@
 try { require('dotenv').config(); } catch { /* env provided by container */ }
 const pool = require('../src/utils/db');
+const { isGdkv, isGdtt } = require('../src/constants/salesRanks');
 
 const APPLY = process.argv.includes('--apply');
 const SYSTEM = '1office';
@@ -107,9 +108,9 @@ async function main() {
     const prop = propById.get(u.id) || {};
     const dept = cd.department || prop.department || '';
     const cv = cd.chuc_vu || prop.chuc_vu || '';
-    if (cv === 'Giám đốc Trung tâm Kinh doanh' || cv === 'Giám đốc Khu vực') {
+    if (isGdtt(cv, dept) || isGdkv(cv, dept)) {
       if (!byDept[dept]) byDept[dept] = { gdtt: [], gdkv: [] };
-      if (cv === 'Giám đốc Trung tâm Kinh doanh') byDept[dept].gdtt.push(u);
+      if (isGdtt(cv, dept)) byDept[dept].gdtt.push(u);
       else byDept[dept].gdkv.push(u);
     }
   }

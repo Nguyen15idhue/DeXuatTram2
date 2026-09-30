@@ -432,9 +432,14 @@ const AdminStationsPage = () => {
       )}
 
       {showImport && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Import Stations từ Excel</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Import Stations từ Excel</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowImport(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             {importStep === 'upload' && (
               <div className="space-y-4">
                 <div className="form-control">
@@ -583,14 +588,12 @@ const AdminStationsPage = () => {
               </div>
             )}
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowImport(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 
       {showCreateForm && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Thêm trạm mới</h3>
@@ -608,9 +611,7 @@ const AdminStationsPage = () => {
               <button type="button" className="btn btn-ghost" onClick={() => setShowCreateForm(false)}>Hủy</button>
             </DynamicForm>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowCreateForm(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 

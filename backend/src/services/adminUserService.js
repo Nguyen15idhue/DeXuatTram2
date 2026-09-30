@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const { gdttTitlesFor, gdkvTitlesFor, isGdkv, isGdtt } = require('../constants/salesRanks');
 
 const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at FROM users';
 
@@ -142,8 +143,7 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
   const userId = scope.userId;
 
   if (poolType === 'gdkv' || poolType === 'gdtt') {
-    const targetChucVu = poolType === 'gdkv' ? CHUC_VU_GDKV_OPT : CHUC_VU_GDTT_OPT;
-    const group = targetChucVu;
+    const group = poolType === 'gdkv' ? 'Giám đốc Khu vực' : 'Giám đốc Trung tâm Kinh doanh';
 
     if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
       const roleFilter = role === 'SUPER_ADMIN'
@@ -151,7 +151,7 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
         : `role IN ('SALES','ADMIN')`;
       const [rows] = await pool.query(`SELECT ${USER_OPTION_META} FROM users
         WHERE status = 'ACTIVE' AND ${roleFilter} ORDER BY full_name`, []);
-      const isPrimary = (r) => r.role === 'SALES' && r.chuc_vu === targetChucVu;
+      const isPrimary = (r) => r.role === 'SALES' && (poolType === 'gdkv' ? isGdkv(r.chuc_vu, r.department) : isGdtt(r.chuc_vu, r.department));
       return [
         ...rows.filter(isPrimary).map(r => ({ ...r, group })),
         ...rows.filter(r => !isPrimary(r)).map(r => ({ ...r, group: 'Khác' })),
@@ -163,26 +163,27 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
         `SELECT ${USER_OPTION_META} FROM users WHERE id = ? LIMIT 1`, [userId]
       );
       const me = meRows[0] || {};
-      if (poolType === 'gdkv' && me.chuc_vu === CHUC_VU_GDKV_OPT) {
+      if (poolType === 'gdkv' && isGdkv(me.chuc_vu, me.department)) {
         return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group }];
       }
       const dept = me.department || null;
       if (!dept) {
-        if (poolType === 'gdkv' && me.chuc_vu === CHUC_VU_GDTT_OPT && me.id) {
+        if (poolType === 'gdkv' && isGdtt(me.chuc_vu, me.department) && me.id) {
           return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: 'Chính bạn' }];
         }
         return [];
       }
+      const titles = poolType === 'gdkv' ? gdkvTitlesFor(dept) : gdttTitlesFor(dept);
       const [rows] = await pool.query(
         `SELECT ${USER_OPTION_META} FROM users
          WHERE status = 'ACTIVE' AND role = 'SALES'
-           AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) = ?
+           AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) IN (${titles.map(() => '?').join(',')})
            AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?
          ORDER BY full_name`,
-        [targetChucVu, dept]
+        [...titles, dept]
       );
       const listed = rows.map(r => ({ ...r, group }));
-      if (poolType === 'gdkv' && me.chuc_vu === CHUC_VU_GDTT_OPT && me.id) {
+      if (poolType === 'gdkv' && isGdtt(me.chuc_vu, me.department) && me.id) {
         if (!listed.some(r => Number(r.id) === Number(me.id))) {
           listed.push({ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: 'Chính bạn' });
         }

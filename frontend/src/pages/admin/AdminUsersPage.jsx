@@ -17,6 +17,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2, List, Network } from 'lucide-react';
 import UserTreeView from '../../components/admin/UserTreeView';
+import { isGdkv, isGdtt } from '../../utils/salesRanks';
 
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 15;
@@ -47,18 +48,18 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   };
 
   const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
-  const isNewGdkv = detectedRole === 'SALES' && chucVu === 'Giám đốc Khu vực';
+  const isNewGdkv = detectedRole === 'SALES' && isGdkv(chucVu, dept);
 
   const deptOfSales = (s) => parseCustomData(s.custom_data).department || '';
   const meCd = parseCustomData(currentUser && currentUser.custom_data);
   const meChucVu = meCd.chuc_vu || '';
   const meDept = meCd.department || '';
-  const isGdkvViewer = isSales && meChucVu === 'Giám đốc Khu vực';
-  const isGdttViewer = isSales && meChucVu === 'Giám đốc Trung tâm Kinh doanh';
+  const isGdkvViewer = isSales && isGdkv(meChucVu, meDept);
+  const isGdttViewer = isSales && isGdtt(meChucVu, meDept);
 
   const activeUsers = (allUsers || []).filter(u => u.status === 'ACTIVE');
-  const gdkvList = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Khu vực');
-  const gdttList = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Trung tâm Kinh doanh');
+  const gdkvList = activeUsers.filter(s => s.role === 'SALES' && isGdkv(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
+  const gdttList = activeUsers.filter(s => s.role === 'SALES' && isGdtt(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
   const parentableUsers = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
   const gdkvIds = new Set(gdkvList.map(s => s.id));
   const otherUsers = parentableUsers.filter(u => !gdkvIds.has(u.id));
@@ -85,7 +86,7 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   }, [dept, detectedRole, chucVu, allUsers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <dialog className="modal modal-open" ref={modalRef}>
+    <dialog className="modal modal-open" ref={modalRef} onCancel={(e) => e.preventDefault()}>
       <div className="modal-box max-w-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">Tạo user mới</h3>
@@ -106,7 +107,7 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
               <div className="flex items-center gap-2 mb-3">
                 <Network size={16} className="text-indigo-500" />
                 <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
-                <span className="text-xs opacity-60">(Áp dụng cho {detectedRole}{isNewGdkv ? ' — Giám đốc Khu vực' : ''})</span>
+                <span className="text-xs opacity-60">(Áp dụng cho {detectedRole}{isNewGdkv && chucVu ? ` — ${chucVu}` : ''})</span>
               </div>
               {isNewGdkv || (detectedRole === 'SALES' && !chucVu) ? (
               <div className="form-control">
@@ -131,7 +132,7 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
                 {suggestedGdtt && String(suggestedGdtt.id) === String(createParentId) ? (
                   <div className="mt-2 text-xs opacity-70">Tự gợi ý theo phòng ban ({dept}) — có thể đổi tay.</div>
                 ) : (!chucVu && (
-                  <div className="mt-2 text-xs opacity-70">Chọn thêm Chức vụ = Giám đốc Khu vực + Phòng ban để tự gợi ý GĐTT.</div>
+                  <div className="mt-2 text-xs opacity-70">Chọn thêm Chức vụ quản lý cấp giữa + Phòng ban để tự gợi ý GĐTT.</div>
                 ))}
               </div>
               ) : detectedRole === 'SALES' ? (
@@ -215,9 +216,7 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
           <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
         </DynamicForm>
       </div>
-      <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose}>close</button>
-      </form>
+      <div className="modal-backdrop" />
     </dialog>
   );
 };
@@ -568,7 +567,7 @@ const [viewMode, setViewMode] = useState('table');
     if (Object.keys(customData).length > 0) {
       payload.custom_data = customData;
     }
-    if ((['CTV', 'NPP'].includes(payload.role) || (payload.role === 'SALES' && formData.chuc_vu === 'Giám đốc Khu vực')) && createParentId) {
+    if ((['CTV', 'NPP'].includes(payload.role) || (payload.role === 'SALES' && isGdkv(formData.chuc_vu, formData.department))) && createParentId) {
       payload.parent_id = Number(createParentId);
     }
     if (!payload.full_name || !payload.email) {
@@ -800,9 +799,14 @@ const [viewMode, setViewMode] = useState('table');
 
       {/* Import Modal */}
       {showImport && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Import Users từ Excel</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Import Users từ Excel</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowImport(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             {importStep === 'upload' && (
               <div className="space-y-4">
                 <div className="form-control">
@@ -873,9 +877,7 @@ const [viewMode, setViewMode] = useState('table');
               </div>
             )}
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowImport(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 
@@ -899,9 +901,14 @@ const [viewMode, setViewMode] = useState('table');
       )}
 
       {pwModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Đổi mật khẩu — {pwModal.name}</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Đổi mật khẩu — {pwModal.name}</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setPwModal({ open: false, id: null, name: '' })} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             <div className="space-y-4">
               {pwModal.id === currentUser.id && (
               <div className="form-control">
@@ -926,9 +933,7 @@ const [viewMode, setViewMode] = useState('table');
               </div>
             </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setPwModal({ open: false, id: null, name: '' })}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 
@@ -952,7 +957,8 @@ const [viewMode, setViewMode] = useState('table');
             const recCd = parseCustomData(rec?.custom_data);
             const targetRole = popupMode === 'edit' ? (fd.role || rec?.role) : rec?.role;
             const targetChucVu = popupMode === 'edit' ? (fd.chuc_vu || recCd.chuc_vu) : recCd.chuc_vu;
-            const isGdkvTarget = targetRole === 'SALES' && targetChucVu === 'Giám đốc Khu vực';
+            const targetDept = popupMode === 'edit' ? (fd.department || recCd.department) : recCd.department;
+            const isGdkvTarget = targetRole === 'SALES' && isGdkv(targetChucVu, targetDept);
             if (!['CTV', 'NPP'].includes(targetRole) && !isGdkvTarget) return null;
 
             const meCd = parseCustomData(currentUser.custom_data);
@@ -961,8 +967,8 @@ const [viewMode, setViewMode] = useState('table');
             const isAdminish = !isSales;
 
             const activeUsers = (users || []).filter(u => u.status === 'ACTIVE');
-            const gdkv = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Khu vực');
-            const gdtt = activeUsers.filter(s => s.role === 'SALES' && parseCustomData(s.custom_data).chuc_vu === 'Giám đốc Trung tâm Kinh doanh');
+            const gdkv = activeUsers.filter(s => s.role === 'SALES' && isGdkv(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
+            const gdtt = activeUsers.filter(s => s.role === 'SALES' && isGdtt(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
             const parentable = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
             const gdkvIdSet = new Set(gdkv.map(s => s.id));
             const otherUsers = parentable.filter(u => !gdkvIdSet.has(u.id));
@@ -988,7 +994,7 @@ const [viewMode, setViewMode] = useState('table');
               }
             } else if (isGdkvTarget) {
               groups = [{ label: null, users: gdtt }];
-            } else if (meChucVu === 'Giám đốc Khu vực') {
+            } else if (isGdkv(meChucVu, meDept)) {
               groups = [{ label: null, users: (users || []).filter(u => u.id === currentUser.id) }];
             } else {
               const sameDept = gdkv.filter(s => (parseCustomData(s.custom_data).department || '') === meDept);

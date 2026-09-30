@@ -7,6 +7,7 @@ import { parseFormattedNumber, formatNumber, parseLeadingNumber } from '../../ut
 import { getDataListLabel } from '../../utils/dataListLabel';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import { fetchDataList } from '../../utils/dataListCache';
+import { getSuggestions, rememberFormValues, clearFieldMemory, isMemorableField } from '../../utils/formMemory';
 
 const math = create(all);
 const customFunctions = {
@@ -174,6 +175,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const [geocoding, setGeocoding] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [memVersion, setMemVersion] = useState(0);
   const formRef = useRef(null);
   const geocodeTimerRef = useRef(null);
   const geocodeSeqRef = useRef(0);
@@ -402,6 +404,18 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     });
     return map;
   }, [fields]);
+
+  const memoryMap = useMemo(() => {
+    if (purpose !== 'create') return {};
+    const map = {};
+    const formKey = resolvedFormId || purpose;
+    fields.forEach(f => {
+      if (isMemorableField(f)) {
+        map[f.key] = getSuggestions(entity, formKey, f.key, authUser?.id);
+      }
+    });
+    return map;
+  }, [purpose, entity, resolvedFormId, fields, authUser?.id, memVersion]);
 
   const getParentValue = useCallback((parentCol) => {
     if (formData[parentCol] !== undefined) return formData[parentCol];
@@ -683,6 +697,10 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       if (onSubmit) {
         await onSubmit(formData);
       }
+      if (purpose === 'create') {
+        rememberFormValues(entity, resolvedFormId || purpose, fields, formData, authUser?.id);
+        setMemVersion((v) => v + 1);
+      }
       setSubmitAttempted(false);
     } catch (err) {
       setError(err.message || 'Lỗi lưu dữ liệu');
@@ -744,6 +762,17 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         allFields={allEntityFields.length > 0 ? allEntityFields : fields}
         dataListOptions={dataListOptions}
         formValues={formData}
+        memory={(() => {
+          const list = memoryMap[field.key];
+          if (!list || list.length === 0) return null;
+          return {
+            suggestions: list,
+            onClear: () => {
+              clearFieldMemory(entity, resolvedFormId || purpose, field.key, authUser?.id);
+              setMemVersion((v) => v + 1);
+            }
+          };
+        })()}
       />
     );
   };

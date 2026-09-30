@@ -309,7 +309,7 @@ const AdminApiConfigPage = () => {
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setShowModal(false)} />
+          <div className="modal-backdrop bg-black/50" />
         </div>
       )}
 

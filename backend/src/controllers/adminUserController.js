@@ -2,8 +2,7 @@ const bcrypt = require('bcryptjs');
 const adminUserService = require('../services/adminUserService');
 
 const ALLOWED_PARENT_ROLES = ['SALES', 'ADMIN', 'SUPER_ADMIN'];
-const CHUC_VU_GDKV = 'Giám đốc Khu vực';
-const CHUC_VU_GDTT = 'Giám đốc Trung tâm Kinh doanh';
+const { isGdkv, isGdtt } = require('../constants/salesRanks');
 
 const parseCustomData = (val) => {
   if (!val) return {};
@@ -82,13 +81,13 @@ exports.create = async (req, res) => {
       role = role || 'CTV';
       const creator = await adminUserService.findById(req.user.id);
       const creatorCd = parseCustomData(creator && creator.custom_data);
-      if (creatorCd.chuc_vu === CHUC_VU_GDKV) {
+      if (isGdkv(creatorCd.chuc_vu, creatorCd.department)) {
         parentId = req.user.id;
-      } else if (creatorCd.chuc_vu === CHUC_VU_GDTT && parent_id) {
+      } else if (isGdtt(creatorCd.chuc_vu, creatorCd.department) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
         const parentCd = parseCustomData(parentUser && parentUser.custom_data);
         const sameDept = parentCd.department && parentCd.department === creatorCd.department;
-        parentId = (parentUser && parentUser.role === 'SALES' && parentCd.chuc_vu === CHUC_VU_GDKV && sameDept)
+        parentId = (parentUser && parentUser.role === 'SALES' && isGdkv(parentCd.chuc_vu, parentCd.department) && sameDept)
           ? parentUser.id
           : req.user.id;
       } else {

@@ -209,8 +209,8 @@ const MapPage = () => {
       )}
 
       {showForm && (
-        <div className="modal-overlay" onClick={closeProposalForm}>
-          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="legacy-modal legacy-modal-lg popup-detail">
             <div className="popup-header">
               <h2>{quickMode ? 'Đề xuất trạm mới (tạo nhanh)' : 'Đề xuất trạm mới'}</h2>
               <div className="flex items-center gap-2">
@@ -269,7 +269,7 @@ const MapPage = () => {
       )}
 
       {showStationForm && (
-        <dialog className="modal modal-open map-form-modal">
+        <dialog className="modal modal-open map-form-modal" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Thêm trạm mới</h3>
@@ -287,9 +287,7 @@ const MapPage = () => {
               <button type="button" className="btn btn-ghost" onClick={() => setShowStationForm(false)}>Hủy</button>
             </DynamicForm>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowStationForm(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
     </div>

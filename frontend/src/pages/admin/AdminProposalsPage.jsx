@@ -1303,7 +1303,7 @@ const AdminProposalsPage = () => {
       />
 
       {linkModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Liên kết đề xuất #{linkModal.proposalId}</h3>
@@ -1329,9 +1329,7 @@ const AdminProposalsPage = () => {
               </button>
             </div>
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setLinkModal({ open: false, proposalId: null, code: '' })}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
 
@@ -1510,7 +1508,7 @@ const AdminProposalsPage = () => {
       )}
 
       {cancelModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg text-error">Hủy đề xuất</h3>
@@ -1543,12 +1541,12 @@ const AdminProposalsPage = () => {
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setCancelModal({ open: false, id: null, reason: '', saving: false })} />
+          <div className="modal-backdrop bg-black/50" />
         </dialog>
       )}
 
       {rejectModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Từ chối đề xuất</h3>
@@ -1577,13 +1575,13 @@ const AdminProposalsPage = () => {
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setRejectModal({ open: false, id: null, reason: '', saving: false })} />
+          <div className="modal-backdrop bg-black/50" />
         </dialog>
       )}
 
       {showCreateForm && (
-        <div className="modal-overlay" onClick={closeCreateForm}>
-          <div className="legacy-modal legacy-modal-lg popup-detail" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="legacy-modal legacy-modal-lg popup-detail">
             <div className="popup-header">
               <h2>Tạo đề xuất mới</h2>
               <div className="flex items-center gap-2">
@@ -1696,7 +1694,7 @@ const AdminProposalsPage = () => {
       )}
 
       {reopenModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg text-warning">Mở lại đề xuất đã hủy</h3>
@@ -1729,7 +1727,7 @@ const AdminProposalsPage = () => {
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setReopenModal({ open: false, id: null, reason: '', saving: false })} />
+          <div className="modal-backdrop bg-black/50" />
         </dialog>
       )}
 
@@ -1748,7 +1746,7 @@ const AdminProposalsPage = () => {
       )}
 
       {stationModal.open && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Tạo trạm từ đề xuất #{stationModal.id}</h3>
@@ -1785,7 +1783,7 @@ const AdminProposalsPage = () => {
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setStationModal({ open: false, id: null, name: '', saving: false })} />
+          <div className="modal-backdrop bg-black/50" />
         </dialog>
       )}
 
@@ -1830,9 +1828,14 @@ const AdminProposalsPage = () => {
       )}
 
       {showImport && (
-        <dialog className="modal modal-open">
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">Import Đề xuất từ Excel</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Import Đề xuất từ Excel</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowImport(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             {importStep === 'upload' && (
               <div className="space-y-4">
                 <div className="form-control">
@@ -2026,9 +2029,7 @@ const AdminProposalsPage = () => {
               </div>
             )}
           </div>
-          <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setShowImport(false)}>close</button>
-          </form>
+          <div className="modal-backdrop" />
         </dialog>
       )}
     </div>
