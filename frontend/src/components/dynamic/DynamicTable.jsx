@@ -79,10 +79,13 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
     return null;
   };
 
-  const toDisplayValue = (val) => {
-    if (val && typeof val === 'object' && !Array.isArray(val) && typeof val.label === 'string') return val.label;
-    return val;
-  };
+const toDisplayValue = (val) => {
+  if (val && typeof val === 'object' && !Array.isArray(val)) {
+    if (typeof val.label === 'string') return val.label;
+    if (val.id !== undefined && val.id !== null) return val.id;
+  }
+  return val;
+};
 
   const filteredData = useMemo(() => {
     if (!data) return [];
@@ -217,8 +220,8 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, st
                         <input
                           type="text"
                           className="input input-bordered input-xs w-full"
-                          placeholder={serverMode ? 'Lọc toàn bộ...' : 'Lọc...'}
-                          title={serverMode ? 'Lọc trên toàn bộ dữ liệu' : 'Lọc trong trang hiện tại'}
+                          placeholder={col.type === 'user' ? 'ID, #id, tên...' : (serverMode ? 'Lọc toàn bộ...' : 'Lọc...')}
+                          title={col.type === 'user' ? 'Lọc user: nhập nhiều ID cách nhau dấu phẩy (1,2), #id để khớp chính xác, hoặc tên user' : (serverMode ? 'Lọc trên toàn bộ dữ liệu' : 'Lọc trong trang hiện tại')}
                           value={filters[key] || ''}
                           onClick={e => e.stopPropagation()}
                           onChange={(e) => handleFilterChange(key, e.target.value)}

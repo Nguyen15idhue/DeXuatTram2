@@ -103,7 +103,9 @@ const AdminProposalsPage = () => {
   const [importViewId, setImportViewId] = useState('');
   const [importCheckDuplicate, setImportCheckDuplicate] = useState(true);
   const [importCheckIntraFile, setImportCheckIntraFile] = useState(true);
+  const [importGeocode, setImportGeocode] = useState(true);
   const [importProgress, setImportProgress] = useState(null);
+  const [importResult, setImportResult] = useState(null);
   const importPollRef = useRef(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
@@ -596,6 +598,7 @@ const AdminProposalsPage = () => {
 
   const handlePreviewImport = async (overrideViewId) => {
     if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    if (importFile.size > 8 * 1024 * 1024) { setError('File quá lớn (>8MB). Hãy chia file <200 dòng rồi import từng phần để tránh mất kết nối trên VPS chậm.'); return; }
     const viewIdToUse = overrideViewId !== undefined ? overrideViewId : importViewId;
     try {
       setImportLoading(true);
@@ -603,6 +606,7 @@ const AdminProposalsPage = () => {
       const res = await excelService.previewImport('station_proposals', importFile, token, { viewId: (viewIdToUse && viewIdToUse !== 'by_model') ? viewIdToUse : undefined, usage: viewIdToUse === 'by_model' ? 'by_model' : undefined, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
       if (res.success) {
         setImportFailures([]);
+        setImportResult(null);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
@@ -634,37 +638,63 @@ const AdminProposalsPage = () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
     const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     setImportProgress({ done: 0, total: importPreview.rows.length });
-    if (importPollRef.current) clearInterval(importPollRef.current);
+    setImportResult(null);
+    const stopPoll = () => { if (importPollRef.current) { clearInterval(importPollRef.current); importPollRef.current = null; } };
+    stopPoll();
+    const finishJob = (data) => {
+      stopPoll();
+      setImportProgress(null);
+      setImportLoading(false);
+      setImportResult(data);
+      if (data.status === 'done') {
+        setToast({ message: `Import thành công: ${data.imported} bản ghi`, type: 'success' });
+        loadProposals(1);
+      } else if (data.status === 'partial') {
+        setToast({ message: `Import một phần: ${data.imported}/${data.total} thành công, ${data.failed} lỗi — xem tab Excel`, type: 'warning' });
+        loadProposals(1);
+      } else if (data.status === 'cancelled') {
+        setToast({ message: `Đã hủy import: ${data.imported} đã tạo, ${data.failed} lỗi, ${data.pending} chưa xử lý — xem tab Excel`, type: 'warning' });
+        loadProposals(1);
+      } else {
+        setError(data.error || 'Import thất bại');
+      }
+    };
     importPollRef.current = setInterval(async () => {
       try {
         const p = await excelService.getImportProgress(jobId, token);
         if (p && p.success && p.data && p.data.status !== 'not_found') {
-          setImportProgress({ done: p.data.done, total: p.data.total, status: p.data.status });
+          const d = p.data;
+          setImportProgress({ done: d.done, total: d.total, status: d.status });
+          if (['done', 'partial', 'failed', 'cancelled'].includes(d.status)) finishJob(d);
         }
       } catch { }
-    }, 1500);
+    }, 2000);
     try {
       setImportLoading(true);
       setError('');
-      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId, jobId, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile });
-      if (res.success) {
-        const warns = (res.data && res.data.warnDetails) || [];
-        setToast({
-          message: warns.length > 0 ? `${res.message} (có ${warns.length} dòng cảnh báo trùng vị trí)` : res.message,
-          type: warns.length > 0 ? 'warning' : 'success'
-        });
-        setShowImport(false);
-        loadProposals(1);
-      } else {
+      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { viewId: importPreview.viewId, jobId, geocode: importGeocode, checkDuplicate: importCheckDuplicate, checkIntraFile: importCheckIntraFile, fileName: (importFile && importFile.name) || null, columns: importPreview.columns || null });
+      if (!res.success) {
+        stopPoll();
+        setImportProgress(null);
+        setImportLoading(false);
         setImportFailures((res.data && res.data.failDetails) || []);
         setError(res.message || 'Lỗi import');
+      } else {
+        setShowImport(false);
+        setImportLoading(false);
+        setImportProgress(null);
+        setToast({
+          message: `Đang xử lý import ${importPreview.rows.length} dòng — xong sẽ báo tại đây.`,
+          type: 'info',
+          duration: 5000,
+          action: { label: 'Xem tiến độ', onClick: () => navigate('/admin/audit-log', { state: { tab: 'excel', jobId } }) }
+        });
       }
-    } catch {
-      setError('Lỗi kết nối server');
-    } finally {
-      if (importPollRef.current) { clearInterval(importPollRef.current); importPollRef.current = null; }
+    } catch (err) {
+      stopPoll();
       setImportProgress(null);
       setImportLoading(false);
+      setError((err && err.message) || 'Lỗi kết nối server');
     }
   };
 
@@ -1080,7 +1110,7 @@ const AdminProposalsPage = () => {
 
   return (
     <div>
-      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
+      <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
@@ -2005,6 +2035,24 @@ const AdminProposalsPage = () => {
                     <span className="block text-xs opacity-70">Kiểm tra các dòng trùng tọa độ trong cùng file (bán kính 200m) — chỉ cảnh báo, vẫn cho import</span>
                   </span>
                 </label>
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary toggle-sm"
+                    checked={importGeocode}
+                    onChange={(e) => setImportGeocode(e.target.checked)}
+                    disabled={importLoading}
+                  />
+                  <span className="label-text">
+                    Tự suy Địa chỉ / Xã phường từ tọa độ (reverse geocode)
+                    <span className="block text-xs opacity-70">Tắt sẽ import nhanh hơn nhiều (bỏ ~1 giây/dòng) — nên tắt khi file &gt;100 dòng trên VPS chậm</span>
+                  </span>
+                </label>
+                {(importPreview.validRows || 0) > 100 && (importCheckDuplicate || importGeocode) && (
+                  <div className="alert alert-warning text-sm">
+                    <span>File {importPreview.validRows} dòng + đang bật check trùng/geocode nên import lâu, dễ mất kết nối trên VPS chậm. Nên tắt bớt tùy chọn trên hoặc chia file &lt;200 dòng.</span>
+                  </div>
+                )}
                 {importLoading && importProgress && (
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs">
@@ -2018,9 +2066,23 @@ const AdminProposalsPage = () => {
                     ></progress>
                   </div>
                 )}
+                {importResult && (
+                  <div className={`alert ${importResult.status === 'done' ? 'alert-success' : importResult.status === 'partial' ? 'alert-warning' : importResult.status === 'cancelled' ? 'alert-warning' : 'alert-error'} text-sm`}>
+                    <span>
+                      {importResult.status === 'done' && `Import thành công: ${importResult.imported} bản ghi.`}
+                      {importResult.status === 'partial' && `Import một phần: ${importResult.imported}/${importResult.total} thành công, ${importResult.failed} lỗi.`}
+                      {importResult.status === 'cancelled' && `Đã hủy import: ${importResult.imported} đã tạo, ${importResult.failed} lỗi, ${importResult.pending} chưa xử lý.`}
+                      {importResult.status === 'failed' && `Import thất bại${importResult.error ? `: ${importResult.error}` : '.'}`}
+                      {' '}Chi tiết trong tab Excel của Audit Log.
+                    </span>
+                  </div>
+                )}
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
-                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowImport(false); setImportResult(null); }}>Hủy</button>
+                  {importResult && ['partial', 'cancelled', 'failed'].includes(importResult.status) && (
+                    <button className="btn btn-info" onClick={() => { setShowImport(false); setImportResult(null); navigate('/admin/audit-log'); }}>Xem trong tab Excel</button>
+                  )}
                   <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
                     {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} đề xuất`}

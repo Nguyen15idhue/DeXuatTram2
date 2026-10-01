@@ -22,6 +22,19 @@ function parseCustomData(customData) {
   try { return JSON.parse(customData); } catch { return {}; }
 }
 
+let pointsCache = { ts: 0, data: null };
+const POINTS_CACHE_TTL_MS = 30000;
+
+async function getCachedPoints() {
+  const now = Date.now();
+  if (pointsCache.data && now - pointsCache.ts < POINTS_CACHE_TTL_MS) return pointsCache.data;
+  const data = await loadPoints();
+  pointsCache = { ts: now, data };
+  return data;
+}
+
+exports.invalidatePointsCache = () => { pointsCache = { ts: 0, data: null }; };
+
 async function loadPoints() {
   const [stations] = await pool.query(
     'SELECT id, name, latitude, longitude, status, custom_data FROM stations'
@@ -59,7 +72,7 @@ exports.checkNearby = async (latitude, longitude, radiusM = 200, excludeProposal
   if (isNaN(lng) || lng < -180 || lng > 180) throw new Error('Kinh độ không hợp lệ (phải từ -180 đến 180)');
   if (radius <= 0 || radius > MAX_RADIUS_M) throw new Error(`Bán kính phải từ 1 đến ${MAX_RADIUS_M}m`);
 
-  const { stations, proposals } = await loadPoints();
+  const { stations, proposals } = await getCachedPoints();
   const kinds = Array.isArray(opts.kinds) && opts.kinds.length ? new Set(opts.kinds) : null;
   const points = [...stations, ...proposals].filter(p => !kinds || kinds.has(p.kind)).filter(p =>
     !(p.kind === 'proposal' && excludeProposalId && p.id === Number(excludeProposalId))
@@ -84,7 +97,7 @@ exports.findDuplicates = async ({ minM = 200, maxM = 2000, ownUserId = null, bra
   if (min >= max) throw new Error('min_m phải nhỏ hơn max_m');
   if (max > MAX_RADIUS_M) throw new Error(`max_m tối đa ${MAX_RADIUS_M}m`);
 
-  const { stations, proposals } = await loadPoints();
+  const { stations, proposals } = await getCachedPoints();
 
   let sideA;
   let sideB;

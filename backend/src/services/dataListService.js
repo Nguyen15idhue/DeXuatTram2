@@ -221,6 +221,17 @@ exports.applyDiaGioi = async (dynamicData) => {
 exports.getDiaGioiByTenTinh = async (tenTinh) => {
   const name = String(tenTinh || '').trim();
   if (!name) return null;
+  const cacheKey = 'diagioi:tinh-rows';
+  let all = ttlCache.get(cacheKey);
+  if (!all) {
+    const inList = TINH_LIST_NAMES.map(() => '?').join(', ');
+    const [rows] = await pool.query(
+      `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${inList})`,
+      TINH_LIST_NAMES
+    );
+    all = rows;
+    ttlCache.set(cacheKey, all, 60000);
+  }
   const normalize = (s) => String(s || '').trim().toLowerCase()
     .replace(/^(thành phố|tp\.?|tỉnh)\s+/i, '');
   const pick = (row) => {
@@ -229,17 +240,10 @@ exports.getDiaGioiByTenTinh = async (tenTinh) => {
     if (!data || !data.ma_tinh) return null;
     return { ma_tinh: data.ma_tinh, vung_mien: data.vung_mien || '', ten_tinh: data.ten_tinh || '' };
   };
-  const inList = TINH_LIST_NAMES.map(() => '?').join(', ');
-  const [exact] = await pool.query(
-    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id
-     WHERE l.name IN (${inList}) AND JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.ten_tinh')) = ? LIMIT 1`,
-    [...TINH_LIST_NAMES, name]
-  );
-  if (exact.length > 0) return pick(exact[0]);
-  const [all] = await pool.query(
-    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${inList})`,
-    TINH_LIST_NAMES
-  );
+  for (const row of all) {
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (data && String(data.ten_tinh || '').trim() === name) return pick(row);
+  }
   const lowered = name.toLowerCase();
   for (const row of all) {
     const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});

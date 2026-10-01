@@ -46,6 +46,9 @@ const MyProposalsPage = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
   const [importFailures, setImportFailures] = useState([]);
+  const [importProgress, setImportProgress] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const importPollRef = useRef(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createFormId, setCreateFormId] = useState(PROPOSALS_FORM_ID);
   const [quickFormId, setQuickFormId] = useState(null);
@@ -305,11 +308,13 @@ const MyProposalsPage = () => {
 
   const handlePreviewImport = async () => {
     if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    if (importFile.size > 8 * 1024 * 1024) { setError('File quá lớn (>8MB). Hãy chia file <200 dòng rồi import từng phần để tránh mất kết nối.'); return; }
     try {
       setImportLoading(true);
       const res = await excelService.previewImport('station_proposals', importFile, token);
       if (res.success) {
         setImportFailures([]);
+        setImportResult(null);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
@@ -324,25 +329,64 @@ const MyProposalsPage = () => {
 
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
-    try {
-      setImportLoading(true);
-      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token);
-      if (res.success) {
-        const warns = (res.data && res.data.warnDetails) || [];
-        setShowImport(false);
-        setToast({
-          message: warns.length > 0 ? `${res.message} (có ${warns.length} dòng cảnh báo trùng vị trí)` : res.message,
-          type: warns.length > 0 ? 'warning' : 'success'
-        });
+    const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setImportProgress({ done: 0, total: importPreview.rows.length });
+    setImportResult(null);
+    const stopPoll = () => { if (importPollRef.current) { clearInterval(importPollRef.current); importPollRef.current = null; } };
+    stopPoll();
+    const finishJob = (data) => {
+      stopPoll();
+      setImportProgress(null);
+      setImportLoading(false);
+      setImportResult(data);
+      if (data.status === 'done') {
+        setToast({ message: `Import thành công: ${data.imported} bản ghi`, type: 'success' });
+        loadProposals(1);
+      } else if (data.status === 'partial') {
+        setToast({ message: `Import một phần: ${data.imported}/${data.total} thành công, ${data.failed} lỗi`, type: 'warning' });
+        loadProposals(1);
+      } else if (data.status === 'cancelled') {
+        setToast({ message: `Đã hủy import: ${data.imported} đã tạo, ${data.failed} lỗi, ${data.pending} chưa xử lý`, type: 'warning' });
         loadProposals(1);
       } else {
+        setError(data.error || 'Import thất bại');
+      }
+    };
+    importPollRef.current = setInterval(async () => {
+      try {
+        const p = await excelService.getImportProgress(jobId, token);
+        if (p && p.success && p.data && p.data.status !== 'not_found') {
+          const d = p.data;
+          setImportProgress({ done: d.done, total: d.total, status: d.status });
+          if (['done', 'partial', 'failed', 'cancelled'].includes(d.status)) finishJob(d);
+        }
+      } catch { }
+    }, 2000);
+    try {
+      setImportLoading(true);
+      setError('');
+      const res = await excelService.confirmImport('station_proposals', importPreview.rows, token, { jobId, fileName: (importFile && importFile.name) || null, columns: importPreview.columns || null });
+      if (!res.success) {
+        stopPoll();
+        setImportProgress(null);
+        setImportLoading(false);
         setImportFailures((res.data && res.data.failDetails) || []);
         setError(res.message || 'Lỗi import');
+      } else {
+        setShowImport(false);
+        setImportLoading(false);
+        setImportProgress(null);
+        setToast({
+          message: `Đang xử lý import ${importPreview.rows.length} dòng — xong sẽ báo tại đây.`,
+          type: 'info',
+          duration: 5000
+        });
       }
-    } catch {
-      setError('Lỗi import');
-    } finally {
+    } catch (err) {
+      stopPoll();
+      setImportProgress(null);
       setImportLoading(false);
+      setError((err && err.message) || 'Lỗi import');
     }
   };
 
@@ -375,7 +419,7 @@ const MyProposalsPage = () => {
 
   return (
     <div className="p-4 md:p-6">
-      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
+      <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -599,9 +643,32 @@ const MyProposalsPage = () => {
                 </div>
                 <ImportSheetsSummary sheets={importPreview.sheets} />
                 <ImportErrorList errors={importPreview.errors} failures={importFailures} warnings={importPreview.warnings} />
+                {importLoading && importProgress && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Đang import...</span>
+                      <span>{importProgress.done}/{importProgress.total} dòng</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={importProgress.done}
+                      max={Math.max(importProgress.total, 1)}
+                    ></progress>
+                  </div>
+                )}
+                {importResult && (
+                  <div className={`alert ${importResult.status === 'done' ? 'alert-success' : importResult.status === 'partial' ? 'alert-warning' : importResult.status === 'cancelled' ? 'alert-warning' : 'alert-error'} text-sm`}>
+                    <span>
+                      {importResult.status === 'done' && `Import thành công: ${importResult.imported} bản ghi.`}
+                      {importResult.status === 'partial' && `Import một phần: ${importResult.imported}/${importResult.total} thành công, ${importResult.failed} lỗi.`}
+                      {importResult.status === 'cancelled' && `Đã hủy import: ${importResult.imported} đã tạo, ${importResult.failed} lỗi, ${importResult.pending} chưa xử lý.`}
+                      {importResult.status === 'failed' && `Import thất bại${importResult.error ? `: ${importResult.error}` : '.'}`}
+                    </span>
+                  </div>
+                )}
                 <div className="modal-action">
                   <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
-                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowImport(false); setImportResult(null); }}>Hủy</button>
                   <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
                     {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} đề xuất`}

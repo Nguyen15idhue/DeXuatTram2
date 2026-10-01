@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { queueLogService, proposalLogService } from '../../services/api';
+import { queueLogService, proposalLogService, importJobService } from '../../services/api';
 import { getStatusLabel } from '../../utils/mapStatuses';
 import { History, RefreshCw, Search, X, RotateCcw, Ban, Eye, ChevronLeft, ChevronRight, Filter, AlertTriangle, CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-react';
 import Toast from '../../components/Toast';
@@ -57,8 +58,53 @@ const ACTIVITY_ACTION_BADGE = {
   deadline_overdue: 'badge-error'
 };
 
+const IMPORT_STATUS_CONFIG = {
+  queued: { label: 'Chờ', color: 'badge-warning', icon: Clock },
+  processing: { label: 'Đang chạy', color: 'badge-info', icon: Loader2 },
+  done: { label: 'Xong', color: 'badge-success', icon: CheckCircle2 },
+  partial: { label: 'Một phần', color: 'badge-warning', icon: AlertTriangle },
+  failed: { label: 'Thất bại', color: 'badge-error', icon: XCircle },
+  cancelled: { label: 'Đã hủy', color: 'badge-ghost', icon: Ban }
+};
+
+const IMPORT_ENTITY_LABEL = {
+  stations: 'Trạm',
+  station_proposals: 'Đề xuất',
+  users: 'Người dùng'
+};
+
+const IMPORT_ENTITY_BADGE = {
+  stations: 'badge-info',
+  station_proposals: 'badge-warning',
+  users: 'badge-primary'
+};
+
+const importEntityLabel = (entity) => {
+  if (!entity) return '—';
+  if (IMPORT_ENTITY_LABEL[entity]) return IMPORT_ENTITY_LABEL[entity];
+  if (String(entity).startsWith('data_list:')) return 'Danh mục';
+  return entity;
+};
+
+const summarizeRowData = (data) => {
+  if (!data || typeof data !== 'object') return '—';
+  const pick = ['name', 'full_name', 'owner_name', 'ma_tram', 'email', 'phone', 'owner_phone', 'address'];
+  const parts = [];
+  pick.forEach((k) => {
+    if (data[k] !== undefined && data[k] !== null && String(data[k]).trim() !== '') parts.push(String(data[k]).slice(0, 40));
+  });
+  Object.keys(data).forEach((k) => {
+    if (parts.length >= 3 || pick.includes(k)) return;
+    const v = data[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '' && typeof v !== 'object') parts.push(String(v).slice(0, 40));
+  });
+  return parts.slice(0, 3).join(' · ') || '—';
+};
+
 function AdminAuditLogPage() {
   const { token, isSuperAdmin } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +123,17 @@ function AdminAuditLogPage() {
   const activityPageSizeRef = useRef(20);
   const [afilters, setAfilters] = useState({ id: '', proposal_id: '', code: '', actor: '', action: '', source: '', date_from: '', date_to: '' });
   const [activityDetail, setActivityDetail] = useState(null);
+  const [elogs, setElogs] = useState([]);
+  const [eloading, setEloading] = useState(false);
+  const [epagination, setEpagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const [excelPageSize, setExcelPageSize] = useState(20);
+  const excelPageSizeRef = useRef(20);
+  const [efilters, setEfilters] = useState({ entity: '', status: '', date_from: '', date_to: '' });
+  const [excelDetail, setExcelDetail] = useState(null);
+  const [excelDetailLoading, setExcelDetailLoading] = useState(false);
+  const [excelFailPage, setExcelFailPage] = useState(1);
+  const [excelPendingPage, setExcelPendingPage] = useState(1);
+  const [excelCancelling, setExcelCancelling] = useState(false);
 
   const loadStats = useCallback(async () => {
     try {
@@ -125,8 +182,84 @@ function AdminAuditLogPage() {
     loadActivityWith(afilters, 1, n);
   };
 
+  const loadExcelWith = useCallback(async (applied, page = 1, limit = excelPageSizeRef.current) => {
+    setEloading(true);
+    try {
+      const res = await importJobService.list({ ...applied, page, limit }, token);
+      if (res.success) {
+        setElogs(res.data || []);
+        setEpagination(res.pagination || { page: 1, limit, total: 0, totalPages: 0 });
+      }
+    } catch (err) {
+      setToast({ message: err.message || 'Lỗi tải log import', type: 'error' });
+    }
+    setEloading(false);
+  }, [token]);
+
+  const changeExcelPageSize = (n) => {
+    excelPageSizeRef.current = n;
+    setExcelPageSize(n);
+    loadExcelWith(efilters, 1, n);
+  };
+
+  const showExcelDetail = async (id) => {
+    setExcelDetailLoading(true);
+    setExcelDetail(null);
+    setExcelFailPage(1);
+    setExcelPendingPage(1);
+    try {
+      const res = await importJobService.getById(id, token);
+      if (res.success) setExcelDetail(res.data);
+    } catch (err) {
+      setToast({ message: err.message || 'Lỗi tải chi tiết', type: 'error' });
+    }
+    setExcelDetailLoading(false);
+  };
+
+  const handleExcelCancel = async (id) => {
+    setExcelCancelling(true);
+    try {
+      const res = await importJobService.cancel(id, token);
+      if (res.success) {
+        setToast({ message: 'Đã hủy job import', type: 'success' });
+        if (excelDetail && excelDetail.id === id) setExcelDetail(res.data);
+        loadExcelWith(efilters, epagination.page);
+      } else {
+        setToast({ message: res.message || 'Lỗi hủy job', type: 'error' });
+      }
+    } catch (err) {
+      setToast({ message: err.message || 'Lỗi hủy job', type: 'error' });
+    }
+    setExcelCancelling(false);
+  };
+
+  const handleExcelExport = async (id, kind) => {
+    try {
+      if (kind === 'success') await importJobService.exportSuccess(id, token);
+      else await importJobService.exportFailed(id, token);
+      setToast({ message: 'Đã tải file', type: 'success' });
+    } catch (err) {
+      setToast({ message: err.message || 'Lỗi xuất file', type: 'error' });
+    }
+  };
+
   useEffect(() => { loadLogsWith(filters, 1); loadStats(); }, []);
   useEffect(() => { if (activeTab === 'activity') loadActivityWith(afilters, 1); }, [activeTab]);
+  useEffect(() => { if (activeTab === 'excel') loadExcelWith(efilters, 1); }, [activeTab]);
+  useEffect(() => {
+    const st = location.state;
+    if (st && st.tab === 'excel') {
+      setActiveTab('excel');
+      if (st.jobId) showExcelDetail(st.jobId);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, []);
+  useEffect(() => {
+    if (activeTab !== 'excel') return undefined;
+    if (!(elogs || []).some((l) => l.status === 'queued' || l.status === 'processing')) return undefined;
+    const timer = setInterval(() => loadExcelWith(efilters, epagination.page), 3000);
+    return () => clearInterval(timer);
+  }, [activeTab, elogs, efilters, epagination.page, loadExcelWith]);
 
   const TEXT_KEYS = ['id', 'action', 'code', 'actor'];
   const ATEXT_KEYS = ['id', 'proposal_id', 'code', 'actor'];
@@ -168,6 +301,16 @@ function AdminAuditLogPage() {
     setAdraft({ id: '', proposal_id: '', code: '', actor: '' });
     setAfilters(cleared);
     loadActivityWith(cleared, 1);
+  };
+  const applyESelectFilter = (key, value) => {
+    const next = { ...efilters, [key]: value };
+    setEfilters(next);
+    loadExcelWith(next, 1);
+  };
+  const clearEFilters = () => {
+    const cleared = { entity: '', status: '', date_from: '', date_to: '' };
+    setEfilters(cleared);
+    loadExcelWith(cleared, 1);
   };
   const onEnterApply = (fn) => (e) => { if (e.key === 'Enter') fn(); };
 
@@ -259,6 +402,9 @@ function AdminAuditLogPage() {
         </button>
         <button className={`tab ${activeTab === 'activity' ? 'tab-active' : ''}`} onClick={() => setActiveTab('activity')}>
           Hoạt động đề xuất
+        </button>
+        <button className={`tab ${activeTab === 'excel' ? 'tab-active' : ''}`} onClick={() => setActiveTab('excel')}>
+          Excel
         </button>
       </div>
 
@@ -444,6 +590,104 @@ function AdminAuditLogPage() {
       )}
       </>)}
 
+      {activeTab === 'excel' && (<>      {activeTab === 'excel' && (
+      <>
+      <div className="bg-base-100 rounded-lg border border-base-300 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Filter size={16} />
+          <span className="text-sm font-medium">Bộ lọc import</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <select className="select select-bordered select-sm" value={efilters.entity} onChange={e => applyESelectFilter('entity', e.target.value)}>
+            <option value="">Tất cả phân loại</option>
+            <option value="stations">Trạm</option>
+            <option value="station_proposals">Đề xuất</option>
+            <option value="users">Người dùng</option>
+          </select>
+          <select className="select select-bordered select-sm" value={efilters.status} onChange={e => applyESelectFilter('status', e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {Object.entries(IMPORT_STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <input type="date" className="input input-bordered input-sm" value={efilters.date_from} onChange={e => applyESelectFilter('date_from', e.target.value)} />
+          <input type="date" className="input input-bordered input-sm" value={efilters.date_to} onChange={e => applyESelectFilter('date_to', e.target.value)} />
+        </div>
+        <div className="flex gap-2 mt-3">
+          <button className="btn btn-ghost btn-sm gap-1" onClick={clearEFilters}><X size={14} /> Xóa bộ lọc</button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => loadExcelWith(efilters, epagination.page)}><RefreshCw size={14} /> Làm mới</button>
+        </div>
+      </div>
+
+      <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
+        <table className="table table-zebra table-sm">
+          <thead>
+            <tr className="bg-base-200">
+              <th className="w-16">STT</th>
+              <th>Hành động</th>
+              <th>Phân loại</th>
+              <th>Người thực hiện</th>
+              <th>Thời gian</th>
+              <th>Trạng thái</th>
+              <th className="w-16">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {elogs.length === 0 ? (
+              <tr><td colSpan={7} className="text-center py-8 text-base-content/50">{eloading ? 'Đang tải...' : 'Không có job import'}</td></tr>
+            ) : (
+            <>
+            {eloading && (
+              <tr><td colSpan={7} className="text-center text-xs text-base-content/40 py-1">Đang tải...</td></tr>
+            )}
+            {elogs.map((log, idx) => {
+              const st = IMPORT_STATUS_CONFIG[log.status] || IMPORT_STATUS_CONFIG.queued;
+              const Icon = st.icon;
+              const stt = (epagination.page - 1) * epagination.limit + idx + 1;
+              return (
+                <tr key={log.id} className="hover">
+                  <td className="text-xs">{stt}</td>
+                  <td><span className="badge badge-sm badge-outline whitespace-nowrap">Import Excel</span></td>
+                  <td><span className={`badge badge-sm whitespace-nowrap ${IMPORT_ENTITY_BADGE[log.entity] || 'badge-ghost'}`}>{importEntityLabel(log.entity)}</span></td>
+                  <td className="text-xs">{log.full_name || '—'}</td>
+                  <td className="text-xs whitespace-nowrap">{log.created_at ? new Date(log.created_at).toLocaleString('vi-VN') : '—'}</td>
+                  <td>
+                    <span className={`badge badge-sm ${st.color} gap-1 whitespace-nowrap`}>
+                      <Icon size={12} className="shrink-0" /> {st.label}
+                      {(log.status === 'partial' || log.status === 'cancelled') && ` ${log.imported}/${log.total}`}
+                    </span>
+                    {(log.status === 'queued' || log.status === 'processing') && (
+                      <span className="block text-[11px] text-base-content/60 mt-0.5">{log.done}/{log.total} dòng</span>
+                    )}
+                  </td>
+                  <td>
+                    <button className="btn btn-ghost btn-xs" onClick={() => showExcelDetail(log.id)} title="Xem chi tiết"><Eye size={14} /></button>
+                  </td>
+                </tr>
+              );
+            })}
+            </>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {epagination.total > 0 && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-base-content/60">
+            Trang {epagination.page}/{epagination.totalPages} — Tổng {epagination.total} bản ghi
+          </span>
+          <div className="flex items-center gap-2">
+            <select className="select select-bordered select-sm w-28" value={excelPageSize} onChange={(e) => changeExcelPageSize(Number(e.target.value))}>
+              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / trang</option>)}
+            </select>
+            <div className="join">
+              <button className="join-item btn btn-sm" disabled={epagination.page <= 1} onClick={() => loadExcelWith(efilters, epagination.page - 1)}><ChevronLeft size={14} /></button>
+              <button className="join-item btn btn-sm" disabled={epagination.page >= epagination.totalPages} onClick={() => loadExcelWith(efilters, epagination.page + 1)}><ChevronRight size={14} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+      )}</>)}
       {activeTab === 'activity' && (<>
       <div className="bg-base-100 rounded-lg border border-base-300 p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -607,6 +851,146 @@ function AdminAuditLogPage() {
         );
       })()}
 
+      {excelDetailLoading && (
+        <dialog className="modal modal-open">
+          <div className="modal-box">
+            <div className="flex justify-center py-8"><span className="loading loading-spinner loading-lg"></span></div>
+          </div>
+        </dialog>
+      )}
+
+      {excelDetail && (() => {
+        const d = excelDetail;
+        const dst = IMPORT_STATUS_CONFIG[d.status] || IMPORT_STATUS_CONFIG.queued;
+        const failedRows = Array.isArray(d.failed_rows) ? d.failed_rows : [];
+        const pendingRows = Array.isArray(d.pending_rows) ? d.pending_rows : [];
+        const warns = Array.isArray(d.warn_details) ? d.warn_details : [];
+        const failTotal = Math.ceil(failedRows.length / 20);
+        const pendTotal = Math.ceil(pendingRows.length / 20);
+        const failPage = Math.min(excelFailPage, Math.max(failTotal, 1));
+        const pendPage = Math.min(excelPendingPage, Math.max(pendTotal, 1));
+        const failSlice = failedRows.slice((failPage - 1) * 20, failPage * 20);
+        const pendSlice = pendingRows.slice((pendPage - 1) * 20, pendPage * 20);
+        const params = d.params || {};
+        return (
+          <dialog className="modal modal-open">
+            <div className="modal-box max-w-3xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg">Chi tiết import {importEntityLabel(d.entity)}</h3>
+                <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setExcelDetail(null)}><X size={18} /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                <div><span className="font-medium">File:</span> {d.file_name || d.id}</div>
+                <div><span className="font-medium">Trạng thái:</span>{' '}
+                  <span className={`badge badge-sm ${dst.color}`}>{dst.label}</span>
+                </div>
+                <div><span className="font-medium">Tùy chọn:</span> {`geocode=${params.geocode !== false ? 'bật' : 'tắt'}, trùng=${params.checkDuplicate !== false ? 'bật' : 'tắt'}`}</div>
+                <div><span className="font-medium">Thời gian:</span> {d.created_at ? new Date(d.created_at).toLocaleString('vi-VN') : '—'}{d.finished_at ? ` → ${new Date(d.finished_at).toLocaleString('vi-VN')}` : ''}</div>
+              </div>
+              <div className="w-full bg-base-200 rounded-full h-3 overflow-hidden mb-1">
+                <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${d.total > 0 ? Math.round((d.done / d.total) * 100) : 0}%` }} />
+              </div>
+              <div className="stats shadow w-full mb-3">
+                <div className="stat"><div className="stat-title">Tổng</div><div className="stat-value text-lg">{d.total}</div></div>
+                <div className="stat"><div className="stat-title text-success">Đã tạo</div><div className="stat-value text-lg text-success">{d.imported}</div></div>
+                <div className="stat"><div className="stat-title text-error">Lỗi</div><div className="stat-value text-lg text-error">{d.failed}</div></div>
+                {d.pending > 0 && (
+                  <div className="stat"><div className="stat-title text-warning">Chưa xử lý</div><div className="stat-value text-lg text-warning">{d.pending}</div></div>
+                )}
+              </div>
+              {d.pending_summary && (
+                <div className="alert alert-warning py-2 px-3 text-xs mb-3"><span>{d.pending_summary}</span></div>
+              )}
+              {d.failed_truncated === 1 && (
+                <div className="alert py-2 px-3 text-xs mb-3"><span>Chỉ hiện 2000 dòng lỗi đầu — tải file để xem đầy đủ.</span></div>
+              )}
+              {failedRows.length > 0 && (
+                <div className="mb-3">
+                  <div className="font-medium text-sm mb-1">Dòng lỗi ({failedRows.length})</div>
+                  <div className="border border-base-300 rounded-lg overflow-hidden">
+                    <table className="table table-xs">
+                      <thead><tr className="bg-base-200"><th>Dòng</th><th>Dữ liệu</th><th>Lỗi</th></tr></thead>
+                      <tbody>
+                        {failSlice.map((r, i) => (
+                          <tr key={i}>
+                            <td className="font-mono">{r.row}</td>
+                            <td className="max-w-[220px] break-words text-base-content/70">{summarizeRowData(r.data)}</td>
+                            <td className="max-w-[220px] break-words text-error">{r.error}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {failTotal > 1 && (
+                    <div className="flex items-center justify-end gap-2 mt-1 text-xs">
+                      <button className="btn btn-xs" disabled={failPage <= 1} onClick={() => setExcelFailPage(failPage - 1)}>‹</button>
+                      <span>{failPage}/{failTotal}</span>
+                      <button className="btn btn-xs" disabled={failPage >= failTotal} onClick={() => setExcelFailPage(failPage + 1)}>›</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {pendingRows.length > 0 && (
+                <div className="mb-3">
+                  <div className="font-medium text-sm mb-1">Dòng chưa được import ({pendingRows.length})</div>
+                  {d.pending_truncated === 1 && (
+                    <div className="alert py-2 px-3 text-xs mb-2"><span>Chỉ hiện 2000 dòng đầu — tải file để xem đầy đủ.</span></div>
+                  )}
+                  <div className="border border-base-300 rounded-lg overflow-hidden">
+                    <table className="table table-xs">
+                      <thead><tr className="bg-base-200"><th>Dòng</th><th>Dữ liệu</th></tr></thead>
+                      <tbody>
+                        {pendSlice.map((r, i) => (
+                          <tr key={i}>
+                            <td className="font-mono">{r.row}</td>
+                            <td className="max-w-[340px] break-words text-base-content/70">{summarizeRowData(r.data)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {pendTotal > 1 && (
+                    <div className="flex items-center justify-end gap-2 mt-1 text-xs">
+                      <button className="btn btn-xs" disabled={pendPage <= 1} onClick={() => setExcelPendingPage(pendPage - 1)}>‹</button>
+                      <span>{pendPage}/{pendTotal}</span>
+                      <button className="btn btn-xs" disabled={pendPage >= pendTotal} onClick={() => setExcelPendingPage(pendPage + 1)}>›</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {warns.length > 0 && (
+                <div className="text-xs text-base-content/60 mb-3">{warns.length} dòng cảnh báo trùng vị trí (vẫn đã import).</div>
+              )}
+              {d.error_message && (
+                <div className="bg-error/10 border border-error/30 rounded-lg p-3 mb-3">
+                  <pre className="text-xs whitespace-pre-wrap">{d.error_message}</pre>
+                </div>
+              )}
+              <div className="modal-action flex-wrap gap-2">
+                <button
+                  className="btn btn-success btn-sm"
+                  disabled={d.imported === 0}
+                  title={d.imported === 0 ? 'Không có bản ghi thành công' : undefined}
+                  onClick={() => handleExcelExport(d.id, 'success')}
+                >Xuất bản ghi thành công ({d.imported})</button>
+                <button
+                  className="btn btn-warning btn-sm"
+                  disabled={d.failed === 0 && d.pending === 0}
+                  title={(d.failed === 0 && d.pending === 0) ? 'Không có dòng lỗi/chưa xử lý' : (d.pending > 0 ? 'Xuất dòng lỗi + dòng chưa xử lý' : undefined)}
+                  onClick={() => handleExcelExport(d.id, 'failed')}
+                >Xuất bản ghi thất bại ({d.failed + (d.pending || 0)})</button>
+                {(d.status === 'queued' || d.status === 'processing') && (
+                  <button className="btn btn-error btn-sm" disabled={excelCancelling} onClick={() => handleExcelCancel(d.id)}>
+                    {excelCancelling ? 'Đang hủy...' : 'Hủy job'}
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={() => setExcelDetail(null)}>Đóng</button>
+              </div>
+            </div>
+            <div className="modal-backdrop bg-black/50" onClick={() => setExcelDetail(null)} />
+          </dialog>
+        );
+      })()}
       {showDetail && (
         <dialog className="modal modal-open" onClick={() => setShowDetail(null)}>
           <div className="modal-box max-w-3xl" onClick={e => e.stopPropagation()}>

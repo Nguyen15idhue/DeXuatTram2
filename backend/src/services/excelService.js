@@ -13,6 +13,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 exports.uploadMiddleware = upload.single('file');
 
+const importJobService = require('./importJobService');
+
 const ENTITY_TABLE_MAP = {
   stations: 'stations',
   users: 'users',
@@ -1221,6 +1223,8 @@ async function detectViewForFile(entity, fileLabels) {
 }
 
 exports.importPreviewDynamic = async (req, res) => {
+  const startedAt = Date.now();
+  try { req.setTimeout(10 * 60 * 1000); } catch { /* silent */ }
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'Vui lòng chọn file Excel' });
@@ -1485,6 +1489,7 @@ exports.importPreviewDynamic = async (req, res) => {
         warnings: previewWarnings
       }
     });
+    console.log(`[Import] preview done in ${Date.now() - startedAt}ms`);
   } catch (error) {
     console.error('Import preview dynamic error:', error);
     res.status(500).json({ success: false, message: 'Lỗi đọc file Excel. Vui lòng kiểm tra lại định dạng file.' });
@@ -1492,13 +1497,8 @@ exports.importPreviewDynamic = async (req, res) => {
 };
 
 exports.importConfirmDynamic = async (req, res) => {
-  const connection = await pool.getConnection();
   try {
     const { entity, rows, viewId, jobId } = req.body;
-    const skipGeocode = req.body.geocode === false || String(req.body.geocode).toLowerCase() === 'false' || String(req.body.geocode) === '0';
-    const checkDuplicate = req.body.checkDuplicate !== false;
-    const checkIntraFile = req.body.checkIntraFile !== false;
-    const job = registerImportJob(jobId, Array.isArray(rows) ? rows.length : 0);
 
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
@@ -1508,278 +1508,34 @@ exports.importConfirmDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không có dữ liệu để import' });
     }
 
-    const confirmView = viewId ? await resolveView(entity, Number(viewId), null) : null;
-
-    const table = ENTITY_TABLE_MAP[entity];
-    await connection.beginTransaction();
-
-    let importSupplementMinutes = 4320;
-    if (entity === 'station_proposals') {
-      try {
-        const proposalLifecycle = require('./proposalLifecycle');
-        const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
-        importSupplementMinutes = Math.max(1, Number(configured) || 4320);
-      } catch { /* silent */ }
+    if (rows.length > 2000) {
+      return res.status(400).json({ success: false, message: 'File quá lớn (tối đa 2000 dòng/job). Hãy chia file rồi import từng phần.' });
     }
 
-    const dynamicEngineService = require('./dynamicEngineService');
-    const [allDefs] = await connection.query(
-      'SELECT `key`, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\'',
-      [entity]
-    );
-    let confirmTableDefs = [];
-    try {
-      const [tDefs] = await connection.query(
-        "SELECT `key`, label, source_config FROM field_definitions WHERE entity = ? AND type = 'table' AND source_type = 'json' AND status = 'active'",
-        [entity]
-      );
-      confirmTableDefs = (tDefs || []).map(r => ({ key: r.key, label: r.label, type: 'table', source_type: 'json', source_config: r.source_config }));
-    } catch { /* silent */ }
-    const postFormulaKeys = new Set(
-      allDefs.filter(f => {
-        if (!f.formula_config) return false;
-        try {
-          const fc = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config;
-          return fc.compute_mode === 'post';
-        } catch { return false; }
-      }).map(f => f.key)
-    );
-    const keepProvidedPost = entity === 'stations' ? new Set(['ma_tram', 'loai_uu_tien']) : new Set();
-
-    let imported = 0;
-    let failed = 0;
-    const failDetails = [];
-    const confirmWarnDetails = [];
-    const createdProposalIds = [];
-    let defaultUserPasswordHash = null;
-    const insertedCoords = [];
-    const usedCodes = new Set();
-    if (entity === 'stations') {
-      const [existing] = await connection.query(
-        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) AS code FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) IS NOT NULL`
-      );
-      existing.forEach(r => { if (r.code) usedCodes.add(r.code); });
-    }
-
-    for (const row of rows) {
-      try {
-        const fixedData = row.fixedData || {};
-        const dynamicData = row.dynamicData || {};
-        try {
-          const priceFlags = await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, confirmTableDefs);
-          if (priceFlags.length > 0) confirmWarnDetails.push({ row: row.rowNumber || '?', warnings: priceFlags });
-        } catch { /* silent */ }
-        const keptPost = {};
-        postFormulaKeys.forEach(k => {
-          if (keepProvidedPost.has(k) && dynamicData[k] !== undefined && dynamicData[k] !== null && dynamicData[k] !== '') {
-            keptPost[k] = dynamicData[k];
-          }
-          delete dynamicData[k];
-        });
-        if (entity === 'stations' && keptPost.loai_uu_tien !== undefined) {
-          const n = Number(keptPost.loai_uu_tien);
-          if (n !== 1 && n !== 2) throw new Error(`Loại ưu tiên không hợp lệ "${keptPost.loai_uu_tien}" (chấp nhận 1 hoặc 2)`);
-          keptPost.loai_uu_tien = n;
-        }
-
-        if (entity === 'stations' || entity === 'station_proposals') {
-          const coordErr = validateLatitude(fixedData.latitude) || validateLongitude(fixedData.longitude);
-          if (coordErr) throw new Error(coordErr);
-        }
-        if (entity === 'station_proposals' || entity === 'stations') {
-          const lat = parseFloat(fixedData.latitude);
-          const lng = parseFloat(fixedData.longitude);
-          const rowWarns = [];
-          if (checkDuplicate) {
-            const opts = entity === 'stations' ? { kinds: ['station'] } : {};
-            const nearby = await proximityService.checkNearby(lat, lng, 200, null, opts);
-            if (nearby.is_duplicate) {
-              const n = nearby.nearest;
-              const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-              const label = n.name ? ` "${n.name}"` : (n.code ? ` "${n.code}"` : '');
-              rowWarns.push(`Vị trí gần với ${who} #${n.id}${label} (cách ${n.distance_m}m < 200m)`);
-            }
-          }
-          if (checkIntraFile) {
-            for (const c of insertedCoords) {
-              if (proximityService.haversineM(lat, lng, c.lat, c.lng) < 200) {
-                rowWarns.push(`Vị trí gần với dòng ${c.row} trong cùng file import (< 200m)`);
-                break;
-              }
-            }
-          }
-          if (rowWarns.length > 0) confirmWarnDetails.push({ row: row.rowNumber || '?', warnings: rowWarns });
-          insertedCoords.push({ lat, lng, row: row.rowNumber });
-        }
-        if (entity === 'stations') {
-          const code = dynamicData.ma_tram;
-          if (code) {
-            const [dup] = await connection.query(
-              `SELECT id FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) = ? LIMIT 1`,
-              [code]
-            );
-            if (dup.length > 0 || usedCodes.has(code)) throw new Error(`Mã trạm "${code}" đã tồn tại, không cho import`);
-            usedCodes.add(code);
-          }
-        }
-        if (entity === 'users') {
-          const uErr = validateRequired(fixedData.full_name, 'Họ tên') || validateEmail(fixedData.email);
-          if (uErr) throw new Error(uErr);
-        }
-
-        if (entity === 'station_proposals' || entity === 'stations') {
-          if (!skipGeocode && process.env.GEOCODE_ON_IMPORT !== 'false') {
-            await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
-          }
-          const provinceEmpty = !dynamicData.province || String(dynamicData.province).trim() === '';
-          if (provinceEmpty && !dynamicData.ma_tinh) {
-            await addressEnrichment.extractProvinceFromAddress({ dynamicData, fixedData }).catch(() => {});
-          }
-          if (dynamicData.province && String(dynamicData.province).trim() !== '') {
-            await dataListService.applyDiaGioi(dynamicData);
-          } else if (!dynamicData.ma_tinh) {
-            console.warn(`[Import] Dòng ${row.rowNumber}: Không xác định được tỉnh/thành từ toạ độ và địa chỉ. Import bỏ qua.`);
-          }
-        }
-
-        if (entity === 'station_proposals' && req.user && req.user.id) {
-          fixedData.user_id = req.user.id;
-          const proposalFieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-          await dynamicUtils.applyAutoUserFields(dynamicData, proposalFieldDefs, req.user.id, connection);
-        }
-
-        if (entity === 'users') {
-          if (fixedData.password && String(fixedData.password).trim() !== '') {
-            const salt = await bcrypt.genSalt(10);
-            fixedData.password = await bcrypt.hash(String(fixedData.password), salt);
-          } else {
-            if (!defaultUserPasswordHash) {
-              const salt = await bcrypt.genSalt(10);
-              defaultUserPasswordHash = await bcrypt.hash('123456', salt);
-            }
-            fixedData.password = defaultUserPasswordHash;
-          }
-          if (!fixedData.role) fixedData.role = 'CTV';
-          if (!fixedData.status) fixedData.status = 'ACTIVE';
-          if (fixedData.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
-            throw new Error('Không được import tài khoản Super Admin');
-          }
-          // external_id rong -> NULL (cot UNIQUE, nhieu ban ghi rong se vi pham unique)
-          if (fixedData.external_id !== undefined && String(fixedData.external_id).trim() === '') {
-            delete fixedData.external_id;
-          }
-        }
-
-        // Cột NOT NULL không default: template/view excel_basic có thể thiếu cột
-        // (preview vẫn hợp lệ vì chỉ required cột có trong file) → INSERT thiếu cột
-        // sẽ lỗi MySQL 1364 "doesn't have a default value". Default '' như proposalService.
-        if (entity === 'station_proposals') {
-          if (fixedData.owner_name == null) fixedData.owner_name = '';
-          if (fixedData.owner_phone == null) fixedData.owner_phone = '';
-        }
-        if (entity === 'stations') {
-          if (fixedData.name == null) fixedData.name = '';
-        }
-
-        const fixedCols = Object.keys(fixedData);
-        const fixedValues = Object.values(fixedData);
-
-        if (fixedCols.length === 0) {
-          failed++;
-          failDetails.push({ row: row.rowNumber || '?', error: 'Không có dữ liệu cột cố định' });
-          continue;
-        }
-
-        const placeholders = fixedCols.map(() => '?').join(', ');
-        const [result] = await connection.query(
-          `INSERT INTO ${table} (${fixedCols.join(', ')}) VALUES (${placeholders})`,
-          fixedValues
-        );
-        if (entity === 'station_proposals') {
-          await connection.query(
-            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?',
-            [importSupplementMinutes, result.insertId]
-          );
-        }
-
-        const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, req.user ? req.user.id : null, null, { connection, excludeKeys: Object.keys(keptPost) });
-        const mergedDynamic = { ...dynamicData, ...postResults, ...keptPost };
-        if (Object.keys(mergedDynamic).length > 0) {
-          await connection.query(
-            `UPDATE ${table} SET custom_data = ? WHERE id = ?`,
-            [JSON.stringify(mergedDynamic), result.insertId]
-          );
-        }
-
-        if (entity === 'station_proposals') {
-          createdProposalIds.push(result.insertId);
-        }
-
-        imported++;
-      } catch (err) {
-        failed++;
-        failDetails.push({ row: row.rowNumber || '?', error: err.message });
-      }
-      if (job) { job.done++; job.ts = Date.now(); }
-    }
-
-    if (failed > 0) {
-      await connection.rollback();
-      if (job) { job.status = 'failed'; job.ts = Date.now(); }
-      return res.status(400).json({
-        success: false,
-        message: `Import thất bại: ${failed} dòng lỗi. Tất cả đã được hoàn tác.`,
-        data: { imported: 0, failed, failDetails }
-      });
-    }
-
-    if (entity === 'stations') {
-      const [codeRows] = await connection.query(
-        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) AS code FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) IS NOT NULL`
-      );
-      const maxByPrefix = {};
-      const formulaService = require('./formulaService');
-      for (const r of codeRows) {
-        const parsed = formulaService.parseCodeToSeq(r.code);
-        if (!parsed) continue;
-        maxByPrefix[parsed.prefix] = Math.max(maxByPrefix[parsed.prefix] || 0, parsed.num);
-      }
-      for (const [prefix, max] of Object.entries(maxByPrefix)) {
-        await connection.query(
-          'INSERT INTO proposal_sequences (prefix, last_number) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_number = GREATEST(last_number, VALUES(last_number))',
-          [prefix, max]
-        );
-      }
-    }
-
-    await connection.commit();
-    if (job) { job.status = 'done'; job.ts = Date.now(); }
-
-    if (entity === 'station_proposals' && createdProposalIds.length > 0) {
-      const proposalLifecycle = require('./proposalLifecycle');
-      for (const pid of createdProposalIds) {
-        try {
-          await proposalLifecycle.logActivity({
-            proposalId: pid, action: 'created', fromStatus: null, toStatus: 'PENDING',
-            actorId: req.user ? req.user.id : null,
-            actorRole: req.user ? req.user.role : null,
-            source: 'import', ip: req.ip || null
-          });
-        } catch { /* silent */ }
-      }
-    }
-
-    res.json({
+    const id = String(jobId || `${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    const importJobService = require('./importJobService');
+    const job = await importJobService.create({
+      id,
+      entity,
+      rows,
+      params: {
+        viewId: viewId || null,
+        geocode: req.body.geocode !== false,
+        checkDuplicate: req.body.checkDuplicate !== false,
+        checkIntraFile: req.body.checkIntraFile !== false
+      },
+      fileName: req.body.fileName || null,
+      columns: Array.isArray(req.body.columns) ? req.body.columns : null,
+      createdBy: req.user ? req.user.id : null
+    });
+    return res.status(202).json({
       success: true,
-      data: { imported, failed: 0, failDetails: [], warnDetails: confirmWarnDetails, viewId: confirmView ? confirmView.id : null, viewUsage: confirmView ? confirmView.usage : null },
-      message: `Import thành công: ${imported} bản ghi`
+      data: { jobId: job.id, status: job.status, total: job.total },
+      message: `Đã nhận import ${job.total} dòng. Theo dõi tiến độ trong tab Excel.`
     });
   } catch (error) {
-    await connection.rollback();
-    console.error('Import confirm dynamic error:', error);
+    console.error('Import confirm enqueue error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
-  } finally {
-    connection.release();
   }
 };
 
@@ -2358,5 +2114,171 @@ exports.importDataListConfirm = async (req, res) => {
   } catch (error) {
     console.error('Import data list confirm error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.listImportJobs = async (req, res) => {
+  try {
+    const filters = {
+      entity: req.query.entity || undefined,
+      status: req.query.status || undefined,
+      date_from: req.query.date_from || undefined,
+      date_to: req.query.date_to || undefined
+    };
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const result = await importJobService.listScoped(filters, page, limit, req.user);
+    res.json({ success: true, data: result.data, pagination: result.pagination });
+  } catch (error) {
+    console.error('List import jobs error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.getImportJob = async (req, res) => {
+  try {
+    const job = await importJobService.getByIdScoped(req.params.id, req.user);
+    if (!job) return res.status(404).json({ success: false, message: 'Không tìm thấy job import' });
+    if (job.status === 'cancelled' && job.pending > 0) {
+      const firstPending = (job.pending_rows && job.pending_rows[0] && job.pending_rows[0].row) || '?';
+      job.pending_summary = `Job dừng ở ${job.done}/${job.total} dòng — ${job.pending} dòng (từ dòng ${firstPending}) chưa được import.`;
+    }
+    res.json({ success: true, data: job });
+  } catch (error) {
+    console.error('Get import job error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.cancelImportJob = async (req, res) => {
+  try {
+    const job = await importJobService.cancel(req.params.id, req.user);
+    res.json({ success: true, data: job, message: 'Đã hủy job import' });
+  } catch (error) {
+    console.error('Cancel import job error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.getImportProgress = async (req, res) => {
+  try {
+    const job = await importJobService.getById(String(req.params.jobId));
+    if (job) {
+      return res.json({
+        success: true,
+        data: {
+          status: job.status, total: job.total, done: job.done,
+          imported: job.imported, failed: job.failed, pending: job.pending || 0
+        }
+      });
+    }
+  } catch { /* silent */ }
+  const legacy = importJobs.get(String(req.params.jobId));
+  if (!legacy) return res.json({ success: true, data: { status: 'not_found', total: 0, done: 0 } });
+  res.json({ success: true, data: { status: legacy.status, total: legacy.total, done: legacy.done } });
+};
+
+async function resolveJobExportColumns(entity, params) {
+  const view = await resolveView(entity, params && params.viewId ? Number(params.viewId) : null, null);
+  if (view) {
+    const columns = await buildExportColumns(entity, view);
+    return { columns, view };
+  }
+  return { columns: [], view: null };
+}
+
+exports.exportImportSuccess = async (req, res) => {
+  try {
+    const job = await importJobService.getByIdScoped(req.params.id, req.user);
+    if (!job) return res.status(404).json({ success: false, message: 'Không tìm thấy job import' });
+    if (!ENTITY_TABLE_MAP[job.entity]) {
+      return res.status(400).json({ success: false, message: 'Job này không hỗ trợ xuất bản ghi thành công' });
+    }
+    const ids = Array.isArray(job.success_ids) ? job.success_ids.map(Number).filter(n => Number.isInteger(n) && n > 0) : [];
+    let truncatedNote = null;
+    const table = ENTITY_TABLE_MAP[job.entity];
+    let records = [];
+    if (ids.length > 0) {
+      const [rows] = await pool.query(`SELECT * FROM ${table} WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      const order = new Map(ids.map((id, i) => [id, i]));
+      records = rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    } else if (job.imported > 0 && job.created_by && job.created_at && job.finished_at) {
+      const [rows] = await pool.query(
+        `SELECT * FROM ${table} WHERE created_at >= ? AND created_at <= DATE_ADD(?, INTERVAL 5 MINUTE) ORDER BY id ASC LIMIT 5000`,
+        [job.created_at, job.finished_at]
+      );
+      records = rows;
+      truncatedNote = 'Danh sách id vượt giới hạn, xuất theo khoảng thời gian job chạy (có thể thừa/thiếu).';
+    } else {
+      return res.status(400).json({ success: false, message: 'Job không có bản ghi thành công để xuất' });
+    }
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
+    const { columns } = await resolveJobExportColumns(job.entity, job.params);
+    if (columns.length === 0) {
+      return res.status(400).json({ success: false, message: 'Không xác định được bộ cột để xuất' });
+    }
+    let userMap = null;
+    if (columns.some(c => c.type === 'user')) {
+      try {
+        const m = await getUserLabelMap();
+        userMap = m.byId;
+      } catch { /* silent */ }
+    }
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Thanh cong');
+    sheet.addRow(columns.map(c => c.label));
+    styleHeaderRow(sheet);
+    records.forEach((row, idx) => {
+      sheet.addRow(exportRowToValues(row, columns, idx, token, userMap));
+    });
+    autoWidthColumns(sheet, columns);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileStamp()}_import_${job.entity}_success.xlsx`);
+    if (truncatedNote) res.setHeader('X-Export-Note', encodeURIComponent(truncatedNote));
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export import success error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.exportImportFailed = async (req, res) => {
+  try {
+    const job = await importJobService.getByIdScoped(req.params.id, req.user);
+    if (!job) return res.status(404).json({ success: false, message: 'Không tìm thấy job import' });
+    const failedRows = Array.isArray(job.failed_rows) ? job.failed_rows : [];
+    const pendingRows = Array.isArray(job.pending_rows) ? job.pending_rows : [];
+    if (failedRows.length === 0 && pendingRows.length === 0) {
+      return res.status(400).json({ success: false, message: 'Job không có dòng lỗi hoặc dòng chưa xử lý để xuất' });
+    }
+    const columns = Array.isArray(job.columns) && job.columns.length > 0 ? job.columns : null;
+    if (!columns) {
+      return res.status(400).json({ success: false, message: 'Job không lưu header file gốc, không thể xuất' });
+    }
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('That bai');
+    sheet.addRow([...columns.map(c => c.label), 'Lỗi import']);
+    styleHeaderRow(sheet);
+    const cellOf = (data, key) => {
+      const v = data ? data[key] : undefined;
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'object') { try { return JSON.stringify(v); } catch { return String(v); } }
+      return v;
+    };
+    failedRows.forEach((r) => {
+      sheet.addRow([...columns.map(c => cellOf(r.data, c.key)), r.error || '']);
+    });
+    pendingRows.forEach((r) => {
+      sheet.addRow([...columns.map(c => cellOf(r.data, c.key)), 'Chưa xử lý do hủy job']);
+    });
+    autoWidthColumns(sheet, [...columns, { label: 'Lỗi import' }]);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileStamp()}_import_${job.entity}_failed.xlsx`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export import failed error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

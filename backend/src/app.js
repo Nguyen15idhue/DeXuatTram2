@@ -5,7 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const ttlCache = require('./utils/ttlCache');
-const { authLimiter, adminLimiter, excelLimiter } = require('./middlewares/rateLimits');
+const { authLimiter, adminLimiter } = require('./middlewares/rateLimits');
 const swaggerUi = require('swagger-ui-express');
 const testRoutes = require('./routes/test');
 const authRoutes = require('./routes/auth');
@@ -50,6 +50,7 @@ const assistantRoutes = require('./routes/assistant');
 const queueWorker = require('./workers/queueWorker');
 const personnelSyncWorker = require('./workers/personnelSyncWorker');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
+const importWorker = require('./workers/importWorker');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -69,8 +70,10 @@ app.use(cors({
 }));
 
 // 3. Body parser với size limit — Chống payload attacks
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Import Excel confirm gửi cả mảng rows (500 dòng ~ MB) nên nâng lên 50mb;
+// nginx (client_max_body_size 210m) vẫn là lớp chặn ngoài.
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 3b. Nén response (giảm mạnh payload lớn như data list)
 app.use(compression());
@@ -114,7 +117,7 @@ app.use('/api/proposals', proposalsRoutes);
 app.use('/api/admin/proposals', adminLimiter, adminProposalsRoutes);
 app.use('/api/my-proposals', myProposalsRoutes);
 app.use('/api/admin/users', adminLimiter, adminUsersRoutes);
-app.use('/api/admin/excel', adminLimiter, excelLimiter, excelRoutes);
+app.use('/api/admin/excel', adminLimiter, excelRoutes);
 app.use('/api/admin/dashboard', adminLimiter, dashboardRoutes);
 app.use('/api/map', mapUtilsRoutes);
 app.use('/api/field-definitions', fieldDefinitionsRoutes);
@@ -166,10 +169,14 @@ app.listen(PORT, '0.0.0.0', () => {
   proposalLifecycleWorker.start().catch((err) => {
     console.error('[LifecycleWorker] start error:', err.message);
   });
+  importWorker.start().catch((err) => {
+    console.error('[ImportWorker] start error:', err.message);
+  });
 });
 
 const fileService = require('./services/fileService');
 const formulaService = require('./services/formulaService');
+const importJobService = require('./services/importJobService');
 const runOrphanCleanup = async () => {
   try {
     const ttl = Number(process.env.ORPHAN_FILE_TTL_HOURS) || 24;
@@ -191,5 +198,16 @@ const runSequenceReconcile = async () => {
   }
 };
 runSequenceReconcile();
+
+const runImportJobCleanup = async () => {
+  try {
+    const result = await importJobService.cleanupOld();
+    if (result.deleted > 0) console.log(`Old import jobs cleaned: ${result.deleted}`);
+  } catch (err) {
+    console.error('Import job cleanup error:', err.message);
+  }
+};
+runImportJobCleanup();
+setInterval(runImportJobCleanup, 24 * 60 * 60 * 1000);
 
 module.exports = app;

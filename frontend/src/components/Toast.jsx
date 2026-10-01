@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const Toast = ({ message, type = 'success', onClose, duration = 3000 }) => {
+const Toast = ({ message, type = 'success', onClose, duration = 3000, action }) => {
   useEffect(() => {
     if (message && duration > 0) {
       const timer = setTimeout(() => onClose(), duration);
@@ -13,6 +13,12 @@ const Toast = ({ message, type = 'success', onClose, duration = 3000 }) => {
   return (
     <div className={`toast toast-${type}`}>
       <span className="toast-message">{message}</span>
+      {action && action.label && (
+        <button
+          className="btn btn-xs btn-info"
+          onClick={() => { try { action.onClick(); } catch { /* silent */ } onClose(); }}
+        >{action.label}</button>
+      )}
       <button className="toast-close" onClick={onClose}>×</button>
     </div>
   );

@@ -27,6 +27,30 @@ const triggerDownload = (href, filename) => {
   setTimeout(() => { try { a.remove(); } catch { /* silent */ } }, 5000);
 };
 
+const parseJsonSafe = async (response) => {
+  const text = await response.text();
+  if (!text) throw new Error(`Server không trả dữ liệu (HTTP ${response.status}). Có thể request bị ngắt do xử lý quá lâu — hãy chia file nhỏ hơn, tắt check trùng/geocode rồi thử lại.`);
+  try { return JSON.parse(text); } catch {
+    if (response.status >= 500) throw new Error(`Server lỗi (HTTP ${response.status}). Có thể import quá lâu trên VPS chậm — hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.`);
+    throw new Error(`Phản hồi không hợp lệ (HTTP ${response.status})`);
+  }
+};
+
+const importErrorMessage = (err) => {
+  const msg = String((err && err.message) || '');
+  if (/Failed to fetch|NetworkError|load failed/i.test(msg)) {
+    return 'Mất kết nối tới server khi import (VPS xử lý quá lâu hoặc mạng chập chờn). Hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.';
+  }
+  if (/aborted|abort/i.test(msg)) return 'Import bị hủy do quá thời gian. Hãy chia file nhỏ hơn rồi thử lại.';
+  return msg || 'Lỗi kết nối server';
+};
+
+const fetchWithImportTimeout = (url, options = {}, timeoutMs = 10 * 60 * 1000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
 let authExpiredNotified = false;
 
 export const resetAuthExpiredFlag = () => { authExpiredNotified = false; };
@@ -91,16 +115,24 @@ export const api = {
   },
 
   async postWithAuth(endpoint, body, token) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(body)
-    });
+    let response;
+    try {
+      response = await fetchWithImportTimeout(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (err) {
+      throw new Error(importErrorMessage(err));
+    }
     handleUnauthorized(response);
-    const data = await response.json();
+    if (response.status === 413) throw new Error('Dữ liệu import quá lớn (HTTP 413). Hãy chia file <200 dòng rồi import từng phần.');
+    if (response.status === 429) throw new Error('Thao tác quá nhanh (HTTP 429). Hãy chờ 1 phút rồi thử lại.');
+    if (response.status === 504) throw new Error('Server xử lý quá lâu (HTTP 504). Hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.');
+    const data = await parseJsonSafe(response);
     return data;
   },
 
@@ -159,13 +191,21 @@ export const api = {
   },
 
   async uploadWithAuth(endpoint, formData, token) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
+    let response;
+    try {
+      response = await fetchWithImportTimeout(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+    } catch (err) {
+      throw new Error(importErrorMessage(err));
+    }
     handleUnauthorized(response);
-    const data = await response.json();
+    if (response.status === 413) throw new Error('File quá lớn (HTTP 413). Hãy chia file <200 dòng hoặc nén <8MB rồi thử lại.');
+    if (response.status === 429) throw new Error('Thao tác quá nhanh (HTTP 429). Hãy chờ 1 phút rồi thử lại.');
+    if (response.status === 504) throw new Error('Server xử lý quá lâu (HTTP 504). Hãy chia file <200 dòng, tắt check trùng rồi thử lại.');
+    const data = await parseJsonSafe(response);
     return data;
   }
 };
@@ -642,7 +682,9 @@ export const excelService = {
       entity, rows, viewId: opts.viewId || null, jobId: opts.jobId || null,
       geocode: opts.geocode !== false,
       checkDuplicate: opts.checkDuplicate !== false,
-      checkIntraFile: opts.checkIntraFile !== false
+      checkIntraFile: opts.checkIntraFile !== false,
+      fileName: opts.fileName || null,
+      columns: Array.isArray(opts.columns) ? opts.columns : null
     }, token);
   },
 
@@ -880,6 +922,28 @@ export const queueLogService = {
   },
   cancel(id, token) {
     return api.postWithAuth(`/admin/queue-logs/${id}/cancel`, {}, token);
+  }
+};
+
+export const importJobService = {
+  list(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/excel/import/jobs?${params.toString()}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/excel/import/jobs/${encodeURIComponent(id)}`, token);
+  },
+  cancel(id, token) {
+    return api.postWithAuth(`/admin/excel/import/jobs/${encodeURIComponent(id)}/cancel`, {}, token);
+  },
+  exportSuccess(id, token) {
+    return excelService.downloadBlob(`/admin/excel/import/jobs/${encodeURIComponent(id)}/export-success`, token, `import_success.xlsx`);
+  },
+  exportFailed(id, token) {
+    return excelService.downloadBlob(`/admin/excel/import/jobs/${encodeURIComponent(id)}/export-failed`, token, `import_failed.xlsx`);
   }
 };
 
