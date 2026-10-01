@@ -22,7 +22,7 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -76,6 +76,7 @@ const AdminProposalsPage = () => {
   };
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
+  const [restoreModal, setRestoreModal] = useState({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
@@ -866,6 +867,58 @@ const AdminProposalsPage = () => {
     setBatchLoading(false);
   };
 
+  const openRestoreModal = () => {
+    setRestoreModal({ open: true, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
+  };
+
+  const handleRestorePreview = async () => {
+    if (!restoreModal.code.trim()) return;
+    setRestoreModal(prev => ({ ...prev, loading: true, error: '' }));
+    try {
+      const res = await oneOfficeSyncService.restorePreview(restoreModal.code.trim(), token);
+      if (res.success) {
+        const pv = res.data;
+        setRestoreModal(prev => ({
+          ...prev,
+          loading: false,
+          step: 'preview',
+          preview: pv,
+          overrides: {
+            latitude: (pv.fixedData && pv.fixedData.latitude) || '',
+            longitude: (pv.fixedData && pv.fixedData.longitude) || '',
+            owner_name: (pv.fixedData && pv.fixedData.owner_name) || '',
+            province: (pv.dynamicData && pv.dynamicData.province) || ''
+          }
+        }));
+      } else {
+        setRestoreModal(prev => ({ ...prev, loading: false, error: res.message || 'Không tìm thấy dữ liệu khôi phục' }));
+      }
+    } catch (err) {
+      setRestoreModal(prev => ({ ...prev, loading: false, error: (err && err.message) || 'Lỗi khi tìm trên 1Office' }));
+    }
+  };
+
+  const handleRestoreConfirm = async () => {
+    setRestoreModal(prev => ({ ...prev, loading: true, error: '' }));
+    try {
+      const ov = {};
+      Object.entries(restoreModal.overrides).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && String(v).trim() !== '') ov[k] = v;
+      });
+      const res = await oneOfficeSyncService.restoreConfirm(restoreModal.code.trim(), ov, token, 3, restoreModal.fileAssignments);
+      if (res.success) {
+        setToast({ message: `${res.message || `Đã khôi phục đề xuất ${res.data.maDeXuat}`}${res.data.attachedFiles > 0 ? ` (kèm ${res.data.attachedFiles} file)` : ''}${(res.data.fileWarnings || []).length > 0 ? ` — lưu ý: ${res.data.fileWarnings.join('; ')}` : ''}`, type: (res.data.fileWarnings || []).length > 0 ? 'warning' : 'success' });
+        setRestoreModal({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
+        loadProposals(1);
+        navigate(`/admin/proposals/view=${res.data.proposalId}`);
+      } else {
+        setRestoreModal(prev => ({ ...prev, loading: false, error: res.message || 'Khôi phục thất bại' }));
+      }
+    } catch (err) {
+      setRestoreModal(prev => ({ ...prev, loading: false, error: (err && err.message) || 'Lỗi khi khôi phục' }));
+    }
+  };
+
   const handleConfirmBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     setConfirmBulkDelete(false);
@@ -1175,6 +1228,14 @@ const AdminProposalsPage = () => {
                     <ArrowDownToLine size={14} className="text-info" />
                     Đồng bộ từ 1Office về
                   </button>
+                  <button
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
+                    onClick={() => { setShowMoreMenu(false); openRestoreModal(); }}
+                    disabled={batchLoading}
+                  >
+                    <RotateCcw size={14} className="text-warning" />
+                    Khôi phục từ 1Office
+                  </button>
                   <div className="border-t border-base-200 my-1" />
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
@@ -1358,6 +1419,112 @@ const AdminProposalsPage = () => {
                 <Link size={14} /> Liên kết
               </button>
             </div>
+          </div>
+          <div className="modal-backdrop" />
+        </dialog>
+      )}
+
+      {restoreModal.open && (
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+          <div className="modal-box max-w-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Khôi phục đề xuất từ 1Office</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setRestoreModal(prev => ({ ...prev, open: false }))}>
+                <X size={18} />
+              </button>
+            </div>
+            {restoreModal.step === 'code' && (
+              <>
+                <p className="text-sm text-base-content/70 mb-3">Nhập mã đề xuất (mã contact bên 1Office). Hệ thống sẽ tìm contact còn trên 1Office và dựng lại đề xuất.</p>
+                <label className="label">
+                  <span className="label-text">Mã đề xuất</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  placeholder="VD: NQ_LK_BNI_0001"
+                  value={restoreModal.code}
+                  onChange={(e) => setRestoreModal(prev => ({ ...prev, code: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRestorePreview()}
+                />
+                {restoreModal.error && <div className="alert alert-error text-sm mt-3"><span>{restoreModal.error}</span></div>}
+                <div className="modal-action">
+                  <button type="button" className="btn btn-ghost" onClick={() => setRestoreModal(prev => ({ ...prev, open: false }))}>Hủy</button>
+                  <button type="button" className="btn btn-primary gap-1" onClick={handleRestorePreview} disabled={!restoreModal.code.trim() || restoreModal.loading}>
+                    {restoreModal.loading ? <span className="loading loading-spinner loading-xs" /> : <Search size={14} />} Tìm trên 1Office
+                  </button>
+                </div>
+              </>
+            )}
+            {restoreModal.step === 'preview' && restoreModal.preview && (
+              <>
+                <div className="alert alert-info text-sm mb-3">
+                  <span>Tìm thấy contact <b>{restoreModal.preview.contact.code}</b> ({restoreModal.preview.contact.name || 'không tên'}) — dựng được {restoreModal.preview.mappedCount} trường{restoreModal.preview.unmappedCount > 0 ? `, ${restoreModal.preview.unmappedCount} trường bên 1Office không có mapping` : ''}{restoreModal.preview.descStats && restoreModal.preview.descStats.parsed > 0 ? ` (gồm ${restoreModal.preview.descStats.parsed} trường tách từ mô tả)` : ''}. Vui lòng kiểm tra và bổ sung các ô còn thiếu.</span>
+                </div>
+                {restoreModal.preview.files && restoreModal.preview.files.total > 0 && (
+                  <div className="alert text-sm mb-3">
+                    <span>1Office còn giữ {restoreModal.preview.files.total} file đính kèm — sẽ tự tải về khi khôi phục: {restoreModal.preview.files.assigned.map(a => `${a.names.length} vào "${a.fieldLabel}"`).join(', ')}{restoreModal.preview.files.unassigned.length > 0 ? `; ${restoreModal.preview.files.unassigned.length} file chưa xác định được ô (gán tay bên dưới hoặc tải sau)` : ''}.</span>
+                  </div>
+                )}
+                {restoreModal.preview.files && restoreModal.preview.files.unassigned.length > 0 && (
+                  <div className="mb-3">
+                    <div className="font-medium text-sm mb-1">Gán ô cho file chưa xác định ({restoreModal.preview.files.unassigned.length})</div>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {restoreModal.preview.files.unassigned.map((f) => (
+                        <div key={f.name} className="flex items-center gap-2 text-sm">
+                          {f.url ? (
+                            <a href={f.url} target="_blank" rel="noreferrer" className="link link-primary truncate flex-1" title={f.name}>{f.name}</a>
+                          ) : (
+                            <span className="truncate flex-1" title={f.name}>{f.name}</span>
+                          )}
+                          <select
+                            className="select select-bordered select-sm w-48 shrink-0"
+                            value={restoreModal.fileAssignments[f.name] || ''}
+                            onChange={(e) => setRestoreModal(prev => {
+                              const next = { ...prev.fileAssignments };
+                              if (e.target.value) next[f.name] = e.target.value;
+                              else delete next[f.name];
+                              return { ...prev, fileAssignments: next };
+                            })}
+                          >
+                            <option value="">Bỏ qua</option>
+                            {(restoreModal.preview.files.fileFields || []).map(ff => (
+                              <option key={ff.key} value={ff.key}>{ff.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label"><span className="label-text">Vĩ độ *</span></label>
+                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.latitude} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, latitude: e.target.value } }))} />
+                  </div>
+                  <div>
+                    <label className="label"><span className="label-text">Kinh độ *</span></label>
+                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.longitude} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, longitude: e.target.value } }))} />
+                  </div>
+                  <div>
+                    <label className="label"><span className="label-text">Tên khách hàng *</span></label>
+                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.owner_name} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, owner_name: e.target.value } }))} />
+                  </div>
+                  <div>
+                    <label className="label"><span className="label-text">Tỉnh/Thành phố *</span></label>
+                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.province} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, province: e.target.value } }))} />
+                  </div>
+                </div>
+                <p className="text-xs text-base-content/60 mt-3">File đính kèm không kéo về được từ 1Office — bổ sung lại sau khi khôi phục. Đề xuất mới tạo ở trạng thái PENDING, giữ nguyên mã và tự liên kết contact cũ.</p>
+                {restoreModal.error && <div className="alert alert-error text-sm mt-3"><span>{restoreModal.error}</span></div>}
+                <div className="modal-action">
+                  <button type="button" className="btn btn-ghost" onClick={() => setRestoreModal(prev => ({ ...prev, step: 'code', preview: null, error: '' }))}>Quay lại</button>
+                  <button type="button" className="btn btn-primary gap-1" onClick={handleRestoreConfirm} disabled={restoreModal.loading}>
+                    {restoreModal.loading ? <span className="loading loading-spinner loading-xs" /> : <RotateCcw size={14} />} Khôi phục
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           <div className="modal-backdrop" />
         </dialog>

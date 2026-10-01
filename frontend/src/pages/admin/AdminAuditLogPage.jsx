@@ -38,7 +38,8 @@ const ACTIVITY_SOURCES = [
   { value: 'script', label: 'Script demo' },
   { value: 'system_auto', label: 'Tự động' },
   { value: 'admin_override', label: 'Admin ghi đè' },
-  { value: 'import', label: 'Nhập Excel' }
+  { value: 'import', label: 'Nhập Excel' },
+  { value: 'restore', label: 'Khôi phục 1Office' }
 ];
 
 const ACTIVITY_ACTION_LABEL = Object.fromEntries(ACTIVITY_ACTIONS.filter(o => o.value).map(o => [o.value, o.label]));

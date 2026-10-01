@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
 const syncService = require('../services/syncService');
 const templateService = require('../services/templateService');
 const apiConfigService = require('../services/apiConfigService');
@@ -303,6 +303,85 @@ router.put('/template', requireAuth, async (req, res) => {
     }
     await apiConfigService.updateDescTemplate(parseInt(configId), template);
     res.json({ success: true, message: 'Cập nhật template thành công' });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/1office/restore/preview:
+ *   post:
+ *     tags: [1Office Sync]
+ *     summary: Xem trước khôi phục đề xuất đã xóa từ contact 1Office (theo mã)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: Mã đề xuất (mã contact bên 1Office)
+ *               apiConfigId:
+ *                 type: integer
+ *                 default: 3
+ *     responses:
+ *       200:
+ *         description: Dữ liệu dựng lại + danh sách trường còn thiếu
+ *       404:
+ *         description: Mã không còn trên 1Office
+ *       409:
+ *         description: Mã đã tồn tại bên web
+ */
+router.post('/restore/preview', requireAuth, requireUserManager, async (req, res) => {
+  try {
+    const { code, apiConfigId } = req.body;
+    const result = await syncService.previewRestoreFrom1Office(code, apiConfigId || 3);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/1office/restore/confirm:
+ *   post:
+ *     tags: [1Office Sync]
+ *     summary: Xác nhận khôi phục đề xuất từ 1Office (tạo mới PENDING + giữ mã + auto-link)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *               apiConfigId:
+ *                 type: integer
+ *                 default: 3
+ *               overrides:
+ *                 type: object
+ *                 description: Bổ sung trường bắt buộc còn thiếu (latitude, longitude, owner_name, province...)
+ *               fileAssignments:
+ *                 type: object
+ *                 description: Gán tay file chưa xác định được ô {ten_file: ma_o_file}
+ *     responses:
+ *       200:
+ *         description: Đã khôi phục (trả proposalId)
+ */
+router.post('/restore/confirm', requireAuth, requireUserManager, async (req, res) => {
+  try {
+    const { code, apiConfigId, overrides, fileAssignments } = req.body;
+    const result = await syncService.confirmRestoreFrom1Office(code, apiConfigId || 3, req.user.id, overrides || {}, req.ip, fileAssignments || {});
+    res.json({ success: true, data: result, message: `Đã khôi phục đề xuất ${result.maDeXuat}` });
   } catch (e) {
     res.status(e.statusCode || 500).json({ success: false, message: e.message });
   }

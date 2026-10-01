@@ -899,6 +899,12 @@ export const oneOfficeSyncService = {
   },
   previewDesc(configId, proposalId, token) {
     return api.postWithAuth('/admin/1office/preview', { apiConfigId: configId, proposalId }, token);
+  },
+  restorePreview(code, token, apiConfigId = 3) {
+    return api.postWithAuth('/admin/1office/restore/preview', { code, apiConfigId }, token);
+  },
+  restoreConfirm(code, overrides, token, apiConfigId = 3, fileAssignments = {}) {
+    return api.postWithAuth('/admin/1office/restore/confirm', { code, overrides, apiConfigId, fileAssignments }, token);
   }
 };
 
