@@ -3,10 +3,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiConfigService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code, Webhook } from 'lucide-react';
+import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code, Webhook, ScrollText } from 'lucide-react';
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
 import SyncPanel from '../../components/admin/SyncPanel';
 import WebhookManager from '../../components/admin/WebhookManager';
+import WebhookEndpoints from '../../components/admin/WebhookEndpoints';
 import WebhookListener from '../../components/admin/WebhookListener';
 import TemplateEditor from '../../components/admin/TemplateEditor';
 import PersonnelSyncPanel from '../../components/admin/PersonnelSyncPanel';
@@ -43,6 +44,12 @@ const AdminApiConfigPage = () => {
   const [templateConfig, setTemplateConfig] = useState(null);
   const [personnelConfig, setPersonnelConfig] = useState(null);
   const [activeTab, setActiveTab] = useState('api');
+  const [logAction, setLogAction] = useState('');
+
+  const handleViewLogs = (action) => {
+    setLogAction(action || '');
+    setActiveTab('logs');
+  };
 
   const [form, setForm] = useState({
     name: '',
@@ -335,7 +342,15 @@ const AdminApiConfigPage = () => {
           onClick={() => setActiveTab('webhook')}
         >
           <Webhook size={14} className="inline mr-1" />
-          Webhook Configs
+          Webhooks
+        </button>
+        <button
+          role="tab"
+          className={`tab ${activeTab === 'logs' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('logs')}
+        >
+          <ScrollText size={14} className="inline mr-1" />
+          Log webhook
         </button>
       </div>
 
@@ -505,11 +520,13 @@ const AdminApiConfigPage = () => {
         </div>
       )}
         </>
-      ) : (
+      ) : activeTab === 'webhook' ? (
         <>
+          <WebhookEndpoints onViewLogs={handleViewLogs} />
           <WebhookManager />
-          <WebhookListener />
         </>
+      ) : (
+        <WebhookListener initialAction={logAction} />
       )}
     </div>
   );

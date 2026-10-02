@@ -801,6 +801,9 @@ export const webhookConfigService = {
   testSend(data, token) {
     return api.postWithAuth('/admin/webhook-configs/test-send', data, token);
   },
+  testSendWork(data, token) {
+    return api.postWithAuth('/admin/webhook-configs/test-send-work', data, token);
+  },
   inboundLogs(params, token) {
     const qs = new URLSearchParams();
     Object.entries(params || {}).forEach(([k, v]) => {

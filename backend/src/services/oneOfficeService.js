@@ -203,6 +203,37 @@ exports.deleteContact = async (apiConfigId, codes) => {
   return requestWithRetry('POST', `${baseUrl}/api/customer/contact/delete`, { delIds: codeList.join(',') }, token);
 };
 
+const normalizeWorkBaseUrl = (baseUrl) => String(baseUrl || '').trim().replace(/\/$/, '');
+
+const assertWorkBaseUrlAllowed = (baseUrl) => {
+  let host = '';
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    throw Object.assign(new Error('base_url không hợp lệ'), { statusCode: 400 });
+  }
+  if (host !== 'egr.1office.vn' && !host.endsWith('.1office.vn')) {
+    throw Object.assign(new Error('base_url không nằm trong whitelist 1Office'), { statusCode: 400 });
+  }
+  return normalizeWorkBaseUrl(baseUrl);
+};
+
+exports.updateWorkProcess = async ({ baseUrl, token, ID, project_id }) => {
+  const cleanBase = assertWorkBaseUrlAllowed(baseUrl || 'https://egr.1office.vn');
+  if (ID === undefined || ID === null || String(ID).trim() === '') {
+    throw Object.assign(new Error('Thiếu ID quy trình'), { statusCode: 400 });
+  }
+  if (project_id === undefined || project_id === null || String(project_id).trim() === '') {
+    throw Object.assign(new Error('Thiếu project_id'), { statusCode: 400 });
+  }
+  if (!token) {
+    throw Object.assign(new Error('Thiếu access_token 1Office'), { statusCode: 400 });
+  }
+  return requestWithRetry('POST', `${cleanBase}/api/work/process/update`, { ID: String(ID), project_id: String(project_id) }, token);
+};
+
+exports.assertWorkBaseUrlAllowed = assertWorkBaseUrlAllowed;
+
 exports.uploadFile = async (apiConfigId, files) => {
   const { baseUrl, token } = await getToken(apiConfigId);
   const fileList = Array.isArray(files) ? files : [files];

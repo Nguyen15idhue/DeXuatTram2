@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { webhookConfigService } from '../../services/api';
 import Toast from '../Toast';
-import { X, Pause, Play, Trash2, ChevronDown, Radio, Send } from 'lucide-react';
+import { Pause, Play, Trash2, ChevronDown } from 'lucide-react';
 
-const EVENTS = ['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED'];
+const ACTION_FILTERS = [
+  { value: '', label: 'Tất cả webhook' },
+  { value: 'webhook', label: 'Trạng thái đề xuất (cũ)' },
+  { value: 'work_process_move', label: 'Đẩy quy trình (mới, inbound)' },
+  { value: 'work_process_update', label: 'Gọi sang 1Office (push)' }
+];
 const POLL_MS = 3000;
 
 const fmtTime = (t) => {
@@ -25,22 +30,21 @@ const pretty = (v) => {
   }
 };
 
-const WebhookListener = () => {
+const WebhookListener = ({ initialAction = '' }) => {
   const { token } = useAuth();
   const [rows, setRows] = useState([]);
   const [listening, setListening] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [actionFilter, setActionFilter] = useState(initialAction);
   const [expanded, setExpanded] = useState(null);
   const [freshIds, setFreshIds] = useState(new Set());
   const [toast, setToast] = useState({ message: '', type: 'success' });
-  const [testForm, setTestForm] = useState({ event: 'APPROVED', proposal_code: '', contact_code: '', note: '' });
-  const [testing, setTesting] = useState(false);
   const maxIdRef = useRef(0);
   const timersRef = useRef({});
 
   const fetchLogs = useCallback(async (sinceId) => {
     try {
-      const res = await webhookConfigService.inboundLogs({ since_id: sinceId || 0, limit: 30, status: statusFilter || undefined }, token);
+      const res = await webhookConfigService.inboundLogs({ since_id: sinceId || 0, limit: 30, status: statusFilter || undefined, action: actionFilter || undefined }, token);
       if (!res.success) return;
       const data = res.data || [];
       if (sinceId > 0) {
@@ -74,12 +78,16 @@ const WebhookListener = () => {
         if (data.length > 0) maxIdRef.current = Math.max(...data.map(r => r.id));
       }
     } catch { /* silent: giu log cu khi poll loi */ }
-  }, [token, statusFilter]);
+  }, [token, statusFilter, actionFilter]);
 
   useEffect(() => {
     maxIdRef.current = 0;
     fetchLogs(0);
-  }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusFilter, actionFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setActionFilter(initialAction || '');
+  }, [initialAction]);
 
   useEffect(() => {
     if (!listening) return undefined;
@@ -91,36 +99,19 @@ const WebhookListener = () => {
     Object.values(timersRef.current).forEach(clearTimeout);
   }, []);
 
-  const handleTest = async () => {
-    if (!testForm.proposal_code.trim() && !testForm.contact_code.trim()) {
-      setToast({ message: 'Nhập mã đề xuất hoặc mã contact', type: 'error' });
-      return;
-    }
-    setTesting(true);
-    try {
-      const res = await webhookConfigService.testSend({
-        event: testForm.event,
-        proposal_code: testForm.proposal_code.trim() || undefined,
-        contact_code: testForm.contact_code.trim() || undefined,
-        note: testForm.note.trim() || undefined
-      }, token);
-      if (res.success) {
-        setToast({ message: 'Đã bắn thử, xem dòng mới trong log', type: 'success' });
-        fetchLogs(maxIdRef.current);
-      } else {
-        setToast({ message: res.message || 'Bắn thử thất bại', type: 'error' });
-      }
-    } catch {
-      setToast({ message: 'Lỗi kết nối server', type: 'error' });
-    }
-    setTesting(false);
-  };
-
   const parseBody = (row) => {
     try {
       const b = typeof row.request_payload === 'string' ? JSON.parse(row.request_payload) : (row.request_payload || {});
       return b;
     } catch { return {}; }
+  };
+
+  const describeRow = (row, body) => {
+    if (body.event) return { badge: body.event, code: body.proposal_code || body.contact_code || `#${row.entity_id || ''}` };
+    const id = body.ID ?? body.id ?? body.postId ?? '';
+    const pid = body.project_id ?? body.projectId ?? '';
+    if (id !== '' || pid !== '') return { badge: row.action === 'work_process_update' ? 'work/update' : 'work/move', code: `ID ${id} → dự án ${pid}` };
+    return { badge: row.action || '—', code: `#${row.entity_id || ''}` };
   };
 
   return (
@@ -133,9 +124,12 @@ const WebhookListener = () => {
               {listening && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-60" />}
               <span className={`relative inline-flex rounded-full h-3 w-3 ${listening ? 'bg-success' : 'bg-base-300'}`} />
             </span>
-            Lắng nghe webhook 1Office
+            Log webhook 1Office
           </h3>
           <div className="ml-auto flex items-center gap-2">
+            <select className="select select-bordered select-sm" value={actionFilter} onChange={e => setActionFilter(e.target.value)} title="Lọc theo loại webhook">
+              {ACTION_FILTERS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+            </select>
             <select className="select select-bordered select-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="">Tất cả</option>
               <option value="completed">Thành công</option>
@@ -150,30 +144,6 @@ const WebhookListener = () => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2 mb-3 p-3 bg-base-200 rounded-lg">
-          <div className="form-control">
-            <label className="label py-0"><span className="label-text text-xs">Event</span></label>
-            <select className="select select-bordered select-sm" value={testForm.event} onChange={e => setTestForm(prev => ({ ...prev, event: e.target.value }))}>
-              {EVENTS.map(ev => <option key={ev} value={ev}>{ev}</option>)}
-            </select>
-          </div>
-          <div className="form-control">
-            <label className="label py-0"><span className="label-text text-xs">Mã đề xuất</span></label>
-            <input type="text" className="input input-bordered input-sm" value={testForm.proposal_code} onChange={e => setTestForm(prev => ({ ...prev, proposal_code: e.target.value }))} />
-          </div>
-          <div className="form-control">
-            <label className="label py-0"><span className="label-text text-xs">Mã contact</span></label>
-            <input type="text" className="input input-bordered input-sm" value={testForm.contact_code} onChange={e => setTestForm(prev => ({ ...prev, contact_code: e.target.value }))} />
-          </div>
-          <div className="form-control flex-1 min-w-[140px]">
-            <label className="label py-0"><span className="label-text text-xs">Ghi chú</span></label>
-            <input type="text" className="input input-bordered input-sm" value={testForm.note} onChange={e => setTestForm(prev => ({ ...prev, note: e.target.value }))} />
-          </div>
-          <button className="btn btn-success btn-sm gap-1" disabled={testing} onClick={handleTest}>
-            <Send size={14} /> {testing ? 'Đang bắn...' : 'Bắn thử'}
-          </button>
-        </div>
-
         {rows.length === 0 ? (
           <div className="text-center py-6 text-base-content/50 text-sm">
             {listening ? 'Đang lắng nghe... 1Office bắn sang sẽ hiện ngay tại đây.' : 'Đã tạm dừng. Bấm Tiếp tục để lắng nghe.'}
@@ -185,8 +155,8 @@ const WebhookListener = () => {
                 <tr className="bg-base-200">
                   <th className="w-14">ID</th>
                   <th>Thời gian</th>
-                  <th>Event</th>
-                  <th>Mã</th>
+                  <th>Sự kiện</th>
+                  <th>Mã / Quy trình</th>
                   <th>Trạng thái</th>
                   <th className="w-12" />
                 </tr>
@@ -194,15 +164,15 @@ const WebhookListener = () => {
               <tbody>
                 {rows.map(r => {
                   const b = parseBody(r);
-                  const code = b.proposal_code || b.contact_code || `#${r.entity_id || ''}`;
+                  const desc = describeRow(r, b);
                   const isFresh = freshIds.has(r.id);
                   return (
-                    <>
-                      <tr key={r.id} className={`hover ${isFresh ? 'bg-success/10' : ''}`}>
+                    <Fragment key={r.id}>
+                      <tr className={`hover ${isFresh ? 'bg-success/10' : ''}`}>
                         <td className="font-mono text-xs">{r.id}</td>
                         <td className="text-xs">{fmtTime(r.created_at)}</td>
-                        <td><span className="badge badge-sm badge-outline whitespace-nowrap">{b.event || r.action}</span></td>
-                        <td className="text-xs font-medium">{code}</td>
+                        <td><span className="badge badge-sm badge-outline whitespace-nowrap">{desc.badge}</span></td>
+                        <td className="text-xs font-medium">{desc.code}</td>
                         <td>
                           <span className={`badge badge-sm whitespace-nowrap ${r.status === 'completed' ? 'badge-success' : 'badge-error'}`}>
                             {r.status === 'completed' ? 'Thành công' : 'Thất bại'}
@@ -215,7 +185,7 @@ const WebhookListener = () => {
                         </td>
                       </tr>
                       {expanded === r.id && (
-                        <tr key={`${r.id}-x`}>
+                        <tr>
                           <td colSpan={6}>
                             <div className="grid md:grid-cols-2 gap-2">
                               <div>
@@ -230,7 +200,7 @@ const WebhookListener = () => {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

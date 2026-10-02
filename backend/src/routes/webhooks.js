@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const webhookController = require('../controllers/webhookController');
+const workProcessWebhookController = require('../controllers/workProcessWebhookController');
 const { webhookLimiter } = require('../middlewares/rateLimits');
 
 /**
@@ -51,5 +52,61 @@ const { webhookLimiter } = require('../middlewares/rateLimits');
  *         description: Không tìm thấy đề xuất theo mã
  */
 router.post('/oneoffice/proposal-status', webhookLimiter, webhookController.proposalStatus);
+
+/**
+ * @swagger
+ * /api/webhooks/oneoffice/work-process/move-to-project:
+ *   post:
+ *     tags: [Webhooks - 1Office]
+ *     summary: Nhận ID/project_id/access_token từ 1Office, cập nhật quy trình vào dự án rồi forward nguyên response 1Office
+ *     description: Xác thực bằng header `X-1Office-Signature` (ONEOFFICE_WORK_SIGNATURE, fallback secret webhook cũ). Token ưu tiên từ body/query, fallback api_configs. Forward nguyên status + JSON `{error, preventDefault, mode, postId, data}` để BPA đi nhánh như gọi trực tiếp.
+ *     parameters:
+ *       - in: header
+ *         name: X-1Office-Signature
+ *         schema:
+ *           type: string
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ID, project_id]
+ *             properties:
+ *               ID:
+ *                 type: string
+ *                 description: ID quy trình 1Office (postId)
+ *               project_id:
+ *                 type: string
+ *                 description: ID dự án đích (lưu ý: dự án "mã 2" có ID=3)
+ *               access_token:
+ *                 type: string
+ *                 description: Token 1Office gửi kèm; thiếu thì dùng token lưu sẵn
+ *               base_url:
+ *                 type: string
+ *                 description: Mặc định https://egr.1office.vn, chỉ cho host *.1office.vn
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             required: [ID, project_id]
+ *             properties:
+ *               ID:
+ *                 type: string
+ *               project_id:
+ *                 type: string
+ *               access_token:
+ *                 type: string
+ *               base_url:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Forward nguyên JSON 1Office {error:false, preventDefault, mode, postId, data}
+ *       400:
+ *         description: Thiếu ID/project_id/access_token hoặc base_url ngoài whitelist {error:true}
+ *       401:
+ *         description: Chữ ký webhook không hợp lệ {error:true}
+ */
+router.post('/oneoffice/work-process/move-to-project', webhookLimiter, workProcessWebhookController.moveToProject);
 
 module.exports = router;

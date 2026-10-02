@@ -144,6 +144,34 @@ router.post('/test-send', requireAuth, requireSuperAdmin, webhookConfigControlle
 
 /**
  * @swagger
+ * /api/admin/webhook-configs/test-send-work:
+ *   post:
+ *     tags: [Webhook Configs]
+ *     summary: Gọi thật work/process/update sang 1Office (dùng token lưu sẵn) để test webhook đẩy quy trình vào dự án
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ID, project_id]
+ *             properties:
+ *               ID:
+ *                 type: string
+ *                 description: ID quy trình 1Office
+ *               project_id:
+ *                 type: string
+ *                 description: ID dự án đích (dự án "mã 2" có ID=3)
+ *     responses:
+ *       200:
+ *         description: JSON gốc từ 1Office {error:false, preventDefault, mode, postId, data}
+ */
+router.post('/test-send-work', requireAuth, requireSuperAdmin, webhookConfigController.testSendWork);
+
+/**
+ * @swagger
  * /api/admin/webhook-configs/inbound-logs:
  *   get:
  *     tags: [Webhook Configs]
