@@ -5,11 +5,19 @@ const documentService = require('../services/documentService');
 const scopeFor = async (req) => {
   if (req.user.role !== 'SALES') return { role: req.user.role };
   const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
-  return { role: 'SALES', branchIds };
+  return { role: 'SALES', branchIds, userId: req.user.id };
+};
+
+const isAssignee = (proposal, userId) => {
+  if (!proposal || !userId) return false;
+  return Number(proposal.nguoi_phu_trach_id) === Number(userId)
+    || Number(proposal.sales_quan_ly_id) === Number(userId);
 };
 
 const denyOutsideBranch = (proposal, scope) => {
-  return scope.role === 'SALES' && !scope.branchIds.includes(Number(proposal.user_id));
+  if (scope.role !== 'SALES') return false;
+  if (scope.branchIds.includes(Number(proposal.user_id))) return false;
+  return !isAssignee(proposal, scope.userId);
 };
 
 exports.duplicates = async (req, res) => {
@@ -307,7 +315,7 @@ exports.exportReports = async (req, res) => {
     for (const pid of proposalIds) {
       const light = await adminProposalService.getProposalById(pid);
       if (!light) { denied.push(pid); continue; }
-      if (denyOutsideBranch({ user_id: light.user_id }, scope)) { denied.push(pid); continue; }
+      if (denyOutsideBranch(light, scope)) { denied.push(pid); continue; }
       allowed.push(pid);
     }
     if (allowed.length === 0) {

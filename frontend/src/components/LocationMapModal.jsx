@@ -7,6 +7,7 @@ import { getMarkerColor } from '../utils/mapHelpers';
 import { getStatusLabel, getStationStatuses, getProposalStatuses } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
+import { getProposalDisplayName, getProposalDisplayPhone } from '../utils/proposalDisplay';
 import { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
@@ -116,8 +117,8 @@ function createNearbyPopup(title, item, status, entity) {
     addRow('SĐT chủ trạm', item.sdt_chu_tram);
   } else {
     addRow('Mã đề xuất', item.ma_de_xuat);
-    addRow('Người đề xuất', item.owner_name);
-    addRow('SĐT người đề xuất', item.owner_phone);
+    addRow('Người đề xuất', getProposalDisplayName(item));
+    addRow('SĐT người đề xuất', getProposalDisplayPhone(item));
   }
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');

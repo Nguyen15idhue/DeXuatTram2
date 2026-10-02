@@ -10,6 +10,11 @@ exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
+            u.role AS owner_role,
+            gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone,
+            ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone,
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.ma_de_xuat')) AS ma_de_xuat,
@@ -19,6 +24,8 @@ exports.getAllProposals = async () => {
             JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
+     LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
+     LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
      ORDER BY p.created_at DESC
      LIMIT 20000`
   );
@@ -29,6 +36,11 @@ exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
+            u.role AS owner_role,
+            gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone,
+            ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone,
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) AS loai_uu_tien,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.ma_de_xuat')) AS ma_de_xuat,
@@ -38,6 +50,8 @@ exports.getProposalById = async (id) => {
             JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
      FROM station_proposals p
      LEFT JOIN users u ON p.user_id = u.id
+     LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
+     LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
      WHERE p.id = ?`,
     [id]
   );

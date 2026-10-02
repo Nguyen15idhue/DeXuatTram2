@@ -19,11 +19,19 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   const params = [];
 
   if (scope.role === 'SALES' && scope.branchIds) {
-    if (scope.branchIds.length === 0) {
+    if (scope.branchIds.length === 0 && !scope.userId) {
       return { proposals: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
-    where.push(`p.user_id IN (${scope.branchIds.map(() => '?').join(',')})`);
-    params.push(...scope.branchIds);
+    const ors = [];
+    if (scope.branchIds.length > 0) {
+      ors.push(`p.user_id IN (${scope.branchIds.map(() => '?').join(',')})`);
+      params.push(...scope.branchIds);
+    }
+    if (scope.userId) {
+      ors.push(`(CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) = ?)`);
+      params.push(Number(scope.userId), Number(scope.userId));
+    }
+    where.push('(' + ors.join(' OR ') + ')');
   }
 
   if (status) {
@@ -95,7 +103,11 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
 };
 
 exports.getProposalById = async (id) => {
-  const [proposals] = await pool.query('SELECT id, user_id FROM station_proposals WHERE id = ?', [id]);
+  const [proposals] = await pool.query(
+    `SELECT id, user_id,
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id
+     FROM station_proposals WHERE id = ?`, [id]);
   return proposals.length > 0 ? proposals[0] : null;
 };
 
@@ -108,6 +120,15 @@ exports.getProposalWithUser = async (id) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const merged = dynamicUtils.mergeData(proposals[0], fieldDefs);
   return dynamicUtils.enrichUserFields(merged, fieldDefs);
+};
+
+const userFieldId = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v === 'object') {
+    const id = v.id ?? v.user_id ?? v.value;
+    return id === undefined || id === null || String(id).trim() === '' ? null : Number(id);
+  }
+  return String(v).trim() === '' ? null : Number(v);
 };
 
 exports.deleteProposal = async (id) => {
@@ -143,6 +164,9 @@ exports.updateProposal = async (id, data, opts = {}) => {
     } catch { return false; }
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
+  if (dynamicData.nguoi_phu_trach !== undefined && dynamicData.sales_quan_ly === undefined) {
+    dynamicData.sales_quan_ly = dynamicData.nguoi_phu_trach;
+  }
 
   const [existing] = await pool.query('SELECT user_id, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
@@ -171,6 +195,24 @@ exports.updateProposal = async (id, data, opts = {}) => {
     `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
     [next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
   );
+
+  try {
+    const oldAssignee = userFieldId(current.nguoi_phu_trach) || userFieldId(current.sales_quan_ly);
+    const newAssignee = userFieldId(mergedDynamic.nguoi_phu_trach) || userFieldId(mergedDynamic.sales_quan_ly);
+    if (newAssignee && newAssignee !== oldAssignee) {
+      const code = notificationService.proposalCode(mergedDynamic, id);
+      const actorName = opts.actorId ? await notificationService.getUserName(opts.actorId) : 'Hệ thống';
+      await notificationService.create({
+        userId: newAssignee,
+        type: 'ASSIGNED',
+        title: 'Đề xuất được giao cho bạn',
+        message: `Mã đề xuất: ${code} · Người giao: ${actorName}`,
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: opts.actorId || null
+      });
+    }
+  } catch { /* silent */ }
 
   try {
     const proposalLifecycle = require('./proposalLifecycle');

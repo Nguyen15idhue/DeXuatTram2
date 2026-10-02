@@ -5,7 +5,7 @@ exports.getAll = async (req, res) => {
   try {
     const proposals = await proposalService.getAllProposals();
     if (!req.user) {
-      proposals.forEach((p) => { delete p.owner_name; delete p.owner_phone; });
+      proposals.forEach((p) => { delete p.owner_name; delete p.owner_phone; delete p.gdkv_name; delete p.gdkv_phone; delete p.phu_trach_name; delete p.phu_trach_phone; });
     }
     res.json({ success: true, data: proposals });
   } catch (error) {
@@ -23,6 +23,10 @@ exports.getById = async (req, res) => {
     if (!req.user) {
       delete proposal.owner_name;
       delete proposal.owner_phone;
+      delete proposal.gdkv_name;
+      delete proposal.gdkv_phone;
+      delete proposal.phu_trach_name;
+      delete proposal.phu_trach_phone;
     }
     res.json({ success: true, data: proposal });
   } catch (error) {

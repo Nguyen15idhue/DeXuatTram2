@@ -6,6 +6,7 @@ import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
 import { getStatusLabel } from '../utils/mapStatuses';
+import { getProposalDisplayName, getProposalDisplayPhone, isProposalAssignee } from '../utils/proposalDisplay';
 import { PROVINCES, ISLAND_POINTS, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
 import { buildTileConfig, PROXY_TILE, OSM_ATTRIBUTION } from '../utils/mapTile';
@@ -157,7 +158,7 @@ const canViewProposal = (item, user) => {
   if (!user) return false;
   if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return true;
   if (user.role === 'SALES') {
-    return Number(item.user_id) === Number(user.id) || Number(item.owner_parent_id) === Number(user.id);
+    return Number(item.user_id) === Number(user.id) || Number(item.owner_parent_id) === Number(user.id) || isProposalAssignee(item, user.id);
   }
   return false;
 };
@@ -282,8 +283,8 @@ function createProposalPopupContent(item, user) {
   };
 
   addRow('Mã đề xuất', item.ma_de_xuat);
-  addRow('Người đề xuất', item.owner_name);
-  addRow('SĐT người đề xuất', item.owner_phone);
+  addRow('Người đề xuất', getProposalDisplayName(item));
+  addRow('SĐT người đề xuất', getProposalDisplayPhone(item));
   addRow('Địa chỉ', item.address);
   const statusP = document.createElement('p');
   const statusStrong = document.createElement('strong');
