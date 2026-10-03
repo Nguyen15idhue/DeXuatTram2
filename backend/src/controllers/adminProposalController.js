@@ -126,10 +126,18 @@ exports.delete = async (req, res) => {
 
 exports.updateStatus = async (req, res) => {
   try {
-    const { status, reason } = req.body;
+    const { status, reason, force } = req.body;
     const validStatuses = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ' });
+    }
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const forceOverride = force === true;
+    if (forceOverride && !isSuperAdmin) {
+      return res.status(403).json({ success: false, message: 'Chỉ SUPER_ADMIN được ghi đè trạng thái' });
+    }
+    if (forceOverride && !String(reason || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Ghi đè trạng thái cần nhập lý do' });
     }
     if (status === 'REJECTED' && !String(reason || '').trim()) {
       return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do từ chối' });
@@ -149,7 +157,9 @@ exports.updateStatus = async (req, res) => {
     const result = await adminProposalService.updateStatus(req.params.id, status, {
       reason,
       reviewerId: req.user.id,
-      isSuperAdmin: req.user.role === 'SUPER_ADMIN'
+      actorRole: req.user.role || null,
+      isSuperAdmin,
+      force: forceOverride
     });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
     res.json({ success: true, data: proposal, autoPush: result.autoPush || null, message: 'Cập nhật trạng thái thành công' });

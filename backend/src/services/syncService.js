@@ -162,6 +162,11 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
 
     const contactData = {};
     const warnings = unlinkedWarnings.map(w => `${w.label} (${w.userName}) chưa liên kết 1Office`);
+    const droppedFields = [];
+    const labelOf = (key) => {
+      const d = (fieldDefs || []).find(f => f.key === key);
+      return (d && d.label) || key;
+    };
     const userMapInfo = await fieldMapper.getUserMapInfo(system);
     for (const mapping of pushMappings) {
       const value = proposal[mapping.source_field] || (proposal.custom_data && proposal.custom_data[mapping.source_field]);
@@ -179,8 +184,23 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       const transformed = await fieldMapper.transformPush(value, mapping, system, apiConfigId);
       if (transformed !== null && transformed !== undefined) {
         contactData[mapping.target_field] = transformed;
+      } else if (value !== null && value !== undefined && value !== '') {
+        const label = labelOf(mapping.source_field);
+        droppedFields.push({ label, target: mapping.target_field });
+        warnings.push(`"${label}" có dữ liệu nhưng không đẩy được sang 1Office (sai định dạng/không liên kết)`);
       }
     }
+    try {
+      const fileSyncService = require('./fileSyncService');
+      const files = await fileSyncService.loadFiles(proposalId);
+      const broken = files.filter(f => {
+        try {
+          const st = require('fs').statSync(require('path').join(__dirname, '../../storage/uploads', f.storage_key));
+          return st.size > 10 * 1024 * 1024;
+        } catch { return true; }
+      });
+      broken.forEach(f => warnings.push(`File "${f.original_name}" lỗi/thiếu trên server, sẽ bị bỏ qua khi đẩy`));
+    } catch { /* silent: worker se bao chi tiet */ }
 
     if (!contactData.code) {
       contactData.code = proposal.tracking_code || `DXS_${proposal.id}`;
@@ -224,7 +244,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       created_by: userId
     });
 
-    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData, warnings });
+    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData, warnings, droppedFields });
   }
 
   return results;
@@ -323,6 +343,13 @@ exports.processPull = async (apiConfigId, filter) => {
     }
 
     updated.push({ proposalId: existingProposal.id, contactCode: contact.code, contactId: contact.ID ?? contact.id ?? null });
+    try {
+      const proposalLifecycle = require('./proposalLifecycle');
+      await proposalLifecycle.logActivity({
+        proposalId: existingProposal.id, action: 'sync_pull', source: 'system_auto',
+        changedFields: { contact_code: contact.code, fields_updated: Object.keys(fixedData).concat(Object.keys(dynamicData)).slice(0, 20) }
+      });
+    } catch { /* silent: khong chan pull vi log */ }
   }
 
   const dangling = [];
@@ -466,7 +493,7 @@ async function getRestoreContext(code, apiConfigId) {
   const pullConfig = await apiConfigService.getById(apiConfigId);
   const pullSystem = (pullConfig && pullConfig.system_key) || '1office';
 
-  const proposalData = await buildProposalDataFromContact(contact, restoreMappings, pullSystem, apiConfigId);
+  const proposalData = await buildProposalDataFromContact(contact, pullMappings, pullSystem, apiConfigId);
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', proposalData, fieldDefs);
   const descStats = { parsed: 0, unmatched: [], filledKeys: [], source: 'none' };
   const fillFromParsed = (parsed) => {

@@ -361,8 +361,13 @@ function AdminAuditLogPage() {
     }
   };
 
+  const [expandReq, setExpandReq] = useState(false);
+  const [expandRes, setExpandRes] = useState(false);
+
   const showDetailPopup = async (id) => {
     setDetailLoading(true);
+    setExpandReq(false);
+    setExpandRes(false);
     setShowDetail(null);
     try {
       const res = await queueLogService.getById(id, token);
@@ -379,6 +384,21 @@ function AdminAuditLogPage() {
       const str = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
       return str.length > 500 ? str.slice(0, 500) + '...' : str;
     } catch { return String(obj); }
+  };
+
+  const formatJsonFull = (obj) => {
+    if (!obj) return '—';
+    try {
+      return typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    } catch { return String(obj); }
+  };
+
+  const isTruncated = (obj) => {
+    if (!obj) return false;
+    try {
+      const str = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+      return str.length > 500;
+    } catch { return false; }
   };
 
   const formatDuration = (start, end) => {
@@ -1027,13 +1047,27 @@ function AdminAuditLogPage() {
               )}
 
               <div>
-                <div className="font-medium text-sm mb-1">Request Payload</div>
-                <pre className="bg-base-200 rounded-lg p-3 text-xs whitespace-pre-wrap max-h-60 overflow-auto">{formatJson(showDetail.request_payload)}</pre>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-medium text-sm">Request Payload</div>
+                  {isTruncated(showDetail.request_payload) && (
+                    <button className="btn btn-ghost btn-xs gap-1" onClick={() => setExpandReq(v => !v)}>
+                      <Eye size={12} /> {expandReq ? 'Thu gọn' : 'Xem hết'}
+                    </button>
+                  )}
+                </div>
+                <pre className={`bg-base-200 rounded-lg p-3 text-xs whitespace-pre-wrap overflow-auto ${expandReq ? 'max-h-[70vh]' : 'max-h-60'}`}>{expandReq ? formatJsonFull(showDetail.request_payload) : formatJson(showDetail.request_payload)}</pre>
               </div>
 
               <div>
-                <div className="font-medium text-sm mb-1">Response Payload</div>
-                <pre className="bg-base-200 rounded-lg p-3 text-xs whitespace-pre-wrap max-h-60 overflow-auto">{formatJson(showDetail.response_payload)}</pre>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-medium text-sm">Response Payload</div>
+                  {isTruncated(showDetail.response_payload) && (
+                    <button className="btn btn-ghost btn-xs gap-1" onClick={() => setExpandRes(v => !v)}>
+                      <Eye size={12} /> {expandRes ? 'Thu gọn' : 'Xem hết'}
+                    </button>
+                  )}
+                </div>
+                <pre className={`bg-base-200 rounded-lg p-3 text-xs whitespace-pre-wrap overflow-auto ${expandRes ? 'max-h-[70vh]' : 'max-h-60'}`}>{expandRes ? formatJsonFull(showDetail.response_payload) : formatJson(showDetail.response_payload)}</pre>
               </div>
 
               {showDetail.status === 'failed' && (

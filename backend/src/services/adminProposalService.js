@@ -141,10 +141,12 @@ exports.updateStatus = async (id, status, opts = {}) => {
   return proposalLifecycle.transition(id, status, {
     reason: opts.reason,
     actorId: opts.reviewerId || null,
+    actorRole: opts.actorRole || null,
     source: 'user',
-    manualOverride: false,
+    manualOverride: opts.force === true,
     ip: opts.ip || null,
-    isSuperAdmin: opts.isSuperAdmin === true
+    isSuperAdmin: opts.isSuperAdmin === true,
+    force: opts.force === true
   });
 };
 

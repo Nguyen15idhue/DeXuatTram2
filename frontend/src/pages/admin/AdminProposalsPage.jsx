@@ -20,9 +20,9 @@ import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
+import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info } from 'lucide-react';
 import { oneOfficeSyncService, queueLogService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -81,6 +81,7 @@ const AdminProposalsPage = () => {
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
+  const [forceModal, setForceModal] = useState({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
   const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
   const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
@@ -348,7 +349,9 @@ const AdminProposalsPage = () => {
         } else if (auto && !auto.queued) {
           msg += ` — chưa đẩy được sang 1Office (${auto.reason || 'thiếu cấu hình'}), hãy đẩy thủ công`;
         }
-        setToast({ message: msg, type: auto && auto.queued === false ? 'warning' : 'success' });
+        const preWarns = (auto && auto.warnings) || [];
+        if (preWarns.length > 0) msg += ` — lưu ý: ${preWarns.slice(0, 3).join('; ')}${preWarns.length > 3 ? ` (+${preWarns.length - 3})` : ''}`;
+        setToast({ message: msg, type: (auto && auto.queued === false) || preWarns.length > 0 ? 'warning' : 'success' });
         setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
         notifyBellRefresh();
         loadProposals(pagination.page);
@@ -356,9 +359,12 @@ const AdminProposalsPage = () => {
           pollSyncJobs([auto.jobId], (jobs) => {
             const ok = jobs.filter(j => j.status === 'completed').length;
             const bad = jobs.filter(j => j.status !== 'completed').length;
+            const skipped = collectSkippedFiles(jobs);
+            let doneMsg = ok > 0 ? 'Đẩy sang 1Office thành công' : `Đẩy sang 1Office thất bại (${bad}) — xem Audit Log để Retry`;
+            if (skipped.length > 0) doneMsg += ` — ${skipped.length} file bị bỏ qua: ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''} (xem log đề xuất)`;
             setToast({
-              message: ok > 0 ? 'Đẩy sang 1Office thành công' : `Đẩy sang 1Office thất bại (${bad}) — xem Audit Log để Retry`,
-              type: ok > 0 ? 'success' : 'error'
+              message: doneMsg,
+              type: ok > 0 ? (skipped.length > 0 ? 'warning' : 'success') : 'error'
             });
             loadProposals(pagination.page);
           });
@@ -415,6 +421,26 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
       setReopenModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmForce = async () => {
+    if (!forceModal.status || !forceModal.reason.trim() || !forceModal.ack) return;
+    setForceModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = await adminProposalService.updateStatus(forceModal.id, forceModal.status, token, forceModal.reason.trim(), true);
+      if (res.success) {
+        setToast({ message: 'Đã ghi đè trạng thái (log admin)', type: 'warning' });
+        setForceModal({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Đổi trạng thái thất bại');
+        setForceModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+      setForceModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -707,6 +733,16 @@ const AdminProposalsPage = () => {
     try { return JSON.parse(p); } catch { return {}; }
   };
 
+  const collectSkippedFiles = (jobs) => {
+    const out = [];
+    (jobs || []).forEach(j => {
+      const p = parsePayload(j);
+      const skipped = (p.files && p.files.skipped) || [];
+      skipped.forEach(f => out.push(`#${j.entity_id || '?'}: ${(f && f.name) || f}${f && f.reason ? ` (${f.reason})` : ''}`));
+    });
+    return out;
+  };
+
   const pollSyncJobs = (jobIds, onDone) => {
     if (!jobIds || jobIds.length === 0) return;
     if (syncPollRef.current) clearInterval(syncPollRef.current);
@@ -761,9 +797,10 @@ const AdminProposalsPage = () => {
         if (queuedNew > 0) parts.push(`${queuedNew} đẩy mới`);
         if (queuedUpd > 0) parts.push(`${queuedUpd} cập nhật đã liên kết`);
         if (queued.length > 0) {
+          const preWarns = queued.flatMap(r => (r.warnings || []).map(w => `#${r.proposalId}: ${w}`));
           setToast({
-            message: `Đã tạo ${queued.length} lệnh (${parts.join(', ')}) — theo dõi trong Audit Log${failed.length > 0 ? `; ${failed.length} không đẩy được: ${failed.map(f => `#${f.proposalId}: ${f.error}`).join('; ')}` : ''}`,
-            type: failed.length > 0 ? 'warning' : 'success'
+            message: `Đã tạo ${queued.length} lệnh (${parts.join(', ')}) — theo dõi trong Audit Log${failed.length > 0 ? `; ${failed.length} không đẩy được: ${failed.map(f => `#${f.proposalId}: ${f.error}`).join('; ')}` : ''}${preWarns.length > 0 ? `; lưu ý: ${preWarns.slice(0, 3).join('; ')}${preWarns.length > 3 ? ` (+${preWarns.length - 3})` : ''}` : ''}`,
+            type: (failed.length > 0 || preWarns.length > 0) ? 'warning' : 'success'
           });
           pollSyncJobs(queued.map(r => r.jobId), (jobs) => {
             const ok = jobs.filter(j => j.status === 'completed');
@@ -779,8 +816,9 @@ const AdminProposalsPage = () => {
             if (created > 0) msgParts.push(`${created} tạo mới`);
             if (updated > 0) msgParts.push(`${updated} cập nhật`);
             if (recreated > 0) msgParts.push(`${recreated} tạo lại (contact từng bị xóa bên 1Office)`);
+            const skipped = collectSkippedFiles(jobs);
             if (ok.length > 0) {
-              setToast({ message: `Đẩy xong: ${msgParts.join(', ')}${bad.length > 0 ? `; ${bad.length} thất bại (xem Audit Log)` : ''}`, type: bad.length > 0 ? 'warning' : 'success' });
+              setToast({ message: `Đẩy xong: ${msgParts.join(', ')}${bad.length > 0 ? `; ${bad.length} thất bại (xem Audit Log)` : ''}${skipped.length > 0 ? `; ${skipped.length} file bị bỏ qua: ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}` : ''}`, type: (bad.length > 0 || skipped.length > 0) ? 'warning' : 'success' });
             } else {
               setError(`Đẩy thất bại cả ${bad.length} lệnh (xem Audit Log)`);
             }
@@ -1084,6 +1122,9 @@ const AdminProposalsPage = () => {
     );
     if (isAdmin || isSales) {
       items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
+    }
+    if (isSuperAdmin) {
+      items.push(item('force', <Repeat size={14} />, 'Đổi trạng thái', () => setForceModal({ open: true, id: row.id, status: row.status, reason: '', ack: false, saving: false })));
     }
     items.push(item('log', <History size={14} />, 'Xem log', () => setLogProposalId(row.id)));
     items.push(item('report', <Download size={14} />, 'Xuất báo cáo đề xuất', () => handleExportReports([row.id])));
@@ -1741,6 +1782,73 @@ const AdminProposalsPage = () => {
           <div className="modal-backdrop bg-black/50" />
         </dialog>
       )}
+
+      {forceModal.open && (() => {
+        const forceRow = proposals.find(p => p.id === forceModal.id);
+        const curLabel = forceRow ? (PROPOSAL_STATUSES.find(s => s.value === forceRow.status)?.label || forceRow.status) : '';
+        return (
+          <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+            <div className="modal-box max-w-md">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg">Đổi trạng thái (ghi đè) #{forceModal.id}</h3>
+                <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setForceModal({ open: false, id: null, status: '', reason: '', ack: false, saving: false })}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="alert alert-warning py-2 px-3 text-xs mb-3">
+                <AlertTriangle size={14} />
+                <span>SUPER_ADMIN bỏ qua ma trận luồng. Đang ở <b>{curLabel}</b>. Mọi lần ghi đè đều lưu log.</span>
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Trạng thái mới *</span></label>
+                <select
+                  className="select select-bordered"
+                  value={forceModal.status}
+                  onChange={(e) => setForceModal(prev => ({ ...prev, status: e.target.value }))}
+                >
+                  {PROPOSAL_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              {forceModal.status === 'CONTRACT_SIGNED' && (
+                <div className="alert alert-info py-2 px-3 text-xs mt-3">
+                  <Info size={14} />
+                  <span>Đổi tay sang "Ký thành công" <b>không tạo trạm thật</b> — trạm chỉ sinh bởi worker sau 90 ngày.</span>
+                </div>
+              )}
+              <div className="form-control mt-3">
+                <label className="label"><span className="label-text">Lý do ghi đè *</span></label>
+                <textarea
+                  className="textarea textarea-bordered"
+                  rows={3}
+                  value={forceModal.reason}
+                  onChange={(e) => setForceModal(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Nhập lý do ghi đè trạng thái..."
+                />
+              </div>
+              <label className="label cursor-pointer gap-3 mt-2 justify-start">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm checkbox-warning"
+                  checked={forceModal.ack}
+                  onChange={(e) => setForceModal(prev => ({ ...prev, ack: e.target.checked }))}
+                />
+                <span className="label-text text-xs">Tôi hiểu đây là thao tác ghi đè ngoài luồng</span>
+              </label>
+              <div className="modal-action">
+                <button className="btn btn-ghost btn-sm" onClick={() => setForceModal({ open: false, id: null, status: '', reason: '', ack: false, saving: false })}>Hủy</button>
+                <button
+                  className="btn btn-warning btn-sm"
+                  disabled={!forceModal.status || !forceModal.reason.trim() || !forceModal.ack || forceModal.saving}
+                  onClick={handleConfirmForce}
+                >
+                  {forceModal.saving ? 'Đang đổi...' : 'Xác nhận ghi đè'}
+                </button>
+              </div>
+            </div>
+            <div className="modal-backdrop bg-black/50" />
+          </dialog>
+        );
+      })()}
 
       {rejectModal.open && (
         <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>

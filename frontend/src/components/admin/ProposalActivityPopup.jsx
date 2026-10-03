@@ -26,6 +26,8 @@ const ACTION_LABEL = {
   auto_failed: 'Tự động thất bại',
   info_completed: 'Xác nhận đủ thông tin',
   info_reopened: 'Mở lại bổ sung',
+  sync_push: 'Đồng bộ lên 1Office',
+  sync_pull: 'Lấy dữ liệu từ 1Office',
   deadline_extended: 'Gia hạn bổ sung',
   deadline_expiring: 'Sắp hết hạn bổ sung',
   deadline_overdue: 'Quá hạn bổ sung'
@@ -49,6 +51,10 @@ const fmtTime = (t) => {
 };
 
 const RAW_LABELS = {
+  contact_code: 'Mã liên hệ 1Office',
+  files_sent: 'File đã đẩy',
+  files_skipped: 'File bị bỏ qua',
+  fields_updated: 'Trường đã cập nhật',
   old_deadline: 'Hạn cũ',
   new_deadline: 'Hạn mới',
   days: 'Số ngày gia hạn',

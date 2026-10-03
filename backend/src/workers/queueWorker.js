@@ -57,6 +57,18 @@ const processJob = async (job) => {
         retry_count: newRetryCount
       });
       console.log(`[QueueWorker] Job #${job.id} max retries reached, marking as failed permanently`);
+      try {
+        if ((job.action === 'push' || job.action === 'pull') && job.entity_id) {
+          const proposalLifecycle = require('../services/proposalLifecycle');
+          await proposalLifecycle.logActivity({
+            proposalId: job.entity_id,
+            action: job.action === 'push' ? 'sync_push' : 'sync_pull',
+            source: 'system_auto',
+            actorId: job.created_by || null,
+            changedFields: { error: error.message, final: true }
+          });
+        }
+      } catch { /* silent */ }
     }
 
     return false;
@@ -146,6 +158,14 @@ const processPushJob = async (job) => {
         `UPDATE station_proposals SET contact_1office_id = COALESCE(?, contact_1office_id), contact_1office_code = COALESCE(?, contact_1office_code), sync_status = 'synced', last_synced_at = NOW(), last_synced_data = ?, updated_at = NOW() WHERE id = ?`,
         [contactId, contactCode, JSON.stringify(snapshot), proposal_id]
       );
+      try {
+        const proposalLifecycle = require('../services/proposalLifecycle');
+        await proposalLifecycle.logActivity({
+          proposalId: proposal_id, action: 'sync_push', source: 'system_auto',
+          actorId: job.created_by || null,
+          changedFields: { contact_code: contactCode, files_sent: filesInfo.sent || [], files_skipped: filesInfo.skipped || [] }
+        });
+      } catch { /* silent: khong chan push vi log */ }
       try {
         const [rows] = await pool.query('SELECT custom_data FROM station_proposals WHERE id = ?', [proposal_id]);
         if (rows.length > 0) {

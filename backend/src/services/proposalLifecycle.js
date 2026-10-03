@@ -75,7 +75,7 @@ exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changed
 };
 
 exports.transition = async (id, to, opts = {}) => {
-  const { reason, actorId, actorRole, source = 'user', manualOverride = false, ip, isSuperAdmin = false } = opts;
+  const { reason, actorId, actorRole, source = 'user', manualOverride = false, ip, isSuperAdmin = false, force = false } = opts;
   if (!ALL_STATUSES.includes(to)) {
     throw err('Trạng thái không hợp lệ', 400);
   }
@@ -92,37 +92,45 @@ exports.transition = async (id, to, opts = {}) => {
     return { id, status: to, prevStatus: from, unchanged: true, autoPush: null };
   }
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
-  if (!(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen) {
-    await exports.logActivity({
-      proposalId: id, action: 'status_change_denied',
-      fromStatus: from, toStatus: to,
-      actorId, actorRole, source, ip
-    });
-    throw err(`Không thể chuyển trạng thái từ "${from}" sang "${to}"`, 400);
+  const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
+  if (forceOverride && !String(reason || '').trim()) {
+    throw err('Ghi đè trạng thái cần nhập lý do', 400);
   }
-  const cleanReason = REASON_REQUIRED.includes(to) ? String(reason || '').trim() : null;
-  if (REASON_REQUIRED.includes(to) && !cleanReason) {
-    throw err(to === 'REJECTED' ? 'Vui lòng nhập lý do từ chối' : 'Vui lòng nhập lý do hủy', 400);
-  }
-  if (WEBHOOK_ONLY_TARGETS.includes(to) && source === 'user') {
-    await exports.logActivity({
-      proposalId: id, action: 'status_change_denied',
-      fromStatus: from, toStatus: to,
-      actorId, actorRole, source, ip
-    });
-    throw err('Trạng thái này chỉ được cập nhật tự động từ 1Office', 400);
-  }
-  if (from === 'PENDING' && to === 'REVIEWING' && source === 'user') {
-    const { checkCompleteness } = require('./proposalCompleteness');
-    const check = await checkCompleteness(id);
-    if (!check.complete) {
-      const e = err(`Thông tin chưa đầy đủ, không thể duyệt: ${check.missing[0] || 'thiếu trường bắt buộc'}`, 400);
-      e.details = check.missing;
-      throw e;
+  if (!forceOverride) {
+    if (!(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen) {
+      await exports.logActivity({
+        proposalId: id, action: 'status_change_denied',
+        fromStatus: from, toStatus: to,
+        actorId, actorRole, source, ip
+      });
+      throw err(`Không thể chuyển trạng thái từ "${from}" sang "${to}"`, 400);
+    }
+    if (WEBHOOK_ONLY_TARGETS.includes(to) && source === 'user') {
+      await exports.logActivity({
+        proposalId: id, action: 'status_change_denied',
+        fromStatus: from, toStatus: to,
+        actorId, actorRole, source, ip
+      });
+      throw err('Trạng thái này chỉ được cập nhật tự động từ 1Office', 400);
+    }
+    if (from === 'PENDING' && to === 'REVIEWING' && source === 'user') {
+      const { checkCompleteness } = require('./proposalCompleteness');
+      const check = await checkCompleteness(id);
+      if (!check.complete) {
+        const e = err(`Thông tin chưa đầy đủ, không thể duyệt: ${check.missing[0] || 'thiếu trường bắt buộc'}`, 400);
+        e.details = check.missing;
+        throw e;
+      }
+    }
+    if (isEmergencyReopen && !String(reason || '').trim()) {
+      throw err('Mở lại khẩn cấp cần nhập lý do', 400);
     }
   }
-  if (isEmergencyReopen && !String(reason || '').trim()) {
-    throw err('Mở lại khẩn cấp cần nhập lý do', 400);
+  const cleanReason = forceOverride
+    ? String(reason).trim()
+    : (REASON_REQUIRED.includes(to) ? String(reason || '').trim() : null);
+  if (!forceOverride && REASON_REQUIRED.includes(to) && !cleanReason) {
+    throw err(to === 'REJECTED' ? 'Vui lòng nhập lý do từ chối' : 'Vui lòng nhập lý do hủy', 400);
   }
   const auditReason = cleanReason || (isEmergencyReopen ? String(reason || '').trim() : null);
 
@@ -166,11 +174,12 @@ exports.transition = async (id, to, opts = {}) => {
     });
   }
 
+  const overrideActive = (typeof forceOverride !== 'undefined' && forceOverride) || isEmergencyReopen;
   await exports.logActivity({
     proposalId: id, action: 'status_change',
     fromStatus: from, toStatus: to, reason: auditReason,
-    actorId, actorRole, source: isEmergencyReopen ? 'admin_override' : source,
-    manualOverride: manualOverride || isEmergencyReopen, ip
+    actorId, actorRole, source: overrideActive ? 'admin_override' : source,
+    manualOverride: manualOverride || overrideActive, ip
   });
 
   let autoPush = null;
@@ -194,7 +203,7 @@ async function autoPushOnReview(id, reviewerId) {
     if (!first || !first.success) {
       return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đẩy' };
     }
-    return { queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id };
+    return { queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id, warnings: first.warnings || [], droppedFields: first.droppedFields || [] };
   } catch (e) {
     return { queued: false, reason: e.message || 'Lỗi tạo lệnh đẩy' };
   }

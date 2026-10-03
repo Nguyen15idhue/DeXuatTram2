@@ -282,8 +282,8 @@ export const adminProposalService = {
   getById(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}`, token);
   },
-  updateStatus(id, status, token, reason) {
-    return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason }, token);
+  updateStatus(id, status, token, reason, force) {
+    return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token);
   },
   convertToStation(id, data, token) {
     return api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token);
