@@ -7,6 +7,8 @@ const notificationService = require('../services/notificationService');
 
 const STATION_STATUSES = ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'];
 
+const DEDUP_TTL_HOURS = Math.max(1, parseInt(process.env.WEBHOOK_DEDUP_TTL_HOURS || '24', 10) || 24);
+
 const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
 
 const normVal = (v) => {
@@ -74,9 +76,10 @@ exports.stationUpdate = [
       const [dup] = await pool.query(
         `SELECT response_payload FROM api_queue_logs
          WHERE direction = 'inbound' AND status = 'completed'
+           AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
            AND JSON_UNQUOTE(JSON_EXTRACT(request_payload, '$.event_id')) = ?
          ORDER BY id DESC LIMIT 1`,
-        [event_id]
+        [DEDUP_TTL_HOURS, event_id]
       );
       if (dup.length > 0 && dup[0].response_payload) {
         const prev = typeof dup[0].response_payload === 'string' ? JSON.parse(dup[0].response_payload) : dup[0].response_payload;
