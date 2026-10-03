@@ -23,11 +23,12 @@ exports.getAllProposals = async () => {
             JSON_EXTRACT(p.custom_data, '$.loai_tru_nq') AS loai_tru_nq,
             JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
      FROM station_proposals p
-     LEFT JOIN users u ON p.user_id = u.id
-     LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
-     LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
-     ORDER BY p.created_at DESC
-     LIMIT 20000`
+      LEFT JOIN users u ON p.user_id = u.id
+      LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
+      LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
+      WHERE NOT (p.status = 'CONTRACT_SIGNED' AND p.station_id IS NOT NULL)
+      ORDER BY p.created_at DESC
+      LIMIT 20000`
   );
   return proposals;
 };

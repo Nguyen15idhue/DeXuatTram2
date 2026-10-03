@@ -243,6 +243,12 @@ export const stationService = {
   },
   delete(id, token) {
     return api.deleteWithAuth(`/stations/${id}`, token);
+  },
+  activity(id, token) {
+    return api.getWithAuth(`/stations/${id}/activity`, token);
+  },
+  sourceProposal(id, token) {
+    return api.getWithAuth(`/stations/${id}/proposal`, token);
   }
 };
 

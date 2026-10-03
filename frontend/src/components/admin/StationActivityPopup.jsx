@@ -1,36 +1,22 @@
 import { useState, useEffect } from 'react';
 import { X, History } from 'lucide-react';
-import { proposalLogService } from '../../services/api';
+import { stationService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import useMapStatuses from '../../hooks/useMapStatuses';
 import { getStatusLabel } from '../../utils/mapStatuses';
 
 const STATUS_DOT = {
-  PENDING: '#facc15',
-  REVIEWING: '#3b82f6',
-  APPROVED: '#16a34a',
-  REJECTED: '#dc2626',
-  CANCELLED: '#6b7280',
-  CONTRACT_SIGNED: '#0d9488',
-  CONTRACT_FAILED: '#f59e0b',
-  ARCHIVED: '#8b5cf6',
-  PRINCIPLE_APPROVED: '#6366f1'
+  PLANNING: '#a855f7',
+  ACTIVE: '#22c55e',
+  DEPLOYING: '#eab308',
+  REJECTED: '#b91c1c'
 };
 
 const ACTION_LABEL = {
-  created: 'Tạo đề xuất',
-  updated: 'Cập nhật nội dung',
+  created: 'Tạo trạm',
+  updated: 'Cập nhật thông tin',
   status_change: 'Đổi trạng thái',
   status_change_denied: 'Đổi trạng thái bị chặn',
-  station_created: 'Tạo trạm',
-  auto_failed: 'Tự động thất bại',
-  info_completed: 'Xác nhận đủ thông tin',
-  info_reopened: 'Mở lại bổ sung',
-  sync_push: 'Đồng bộ lên 1Office',
-  sync_pull: 'Lấy dữ liệu từ 1Office',
-  deadline_extended: 'Gia hạn bổ sung',
-  deadline_expiring: 'Sắp hết hạn bổ sung',
-  deadline_overdue: 'Quá hạn bổ sung'
+  station_created: 'Tạo trạm'
 };
 
 const SOURCE_LABEL = {
@@ -51,18 +37,10 @@ const fmtTime = (t) => {
 };
 
 const RAW_LABELS = {
-  contact_code: 'Mã liên hệ 1Office',
-  files_sent: 'File đã đẩy',
-  files_skipped: 'File bị bỏ qua',
-  fields_updated: 'Trường đã cập nhật',
-  old_deadline: 'Hạn cũ',
-  new_deadline: 'Hạn mới',
-  days: 'Số ngày gia hạn',
-  hours: 'Số giờ gia hạn',
-  deadline: 'Hạn bổ sung',
-  attempt: 'Lần thử',
-  final: 'Kết quả cuối',
-  error: 'Lỗi'
+  ma_tram: 'Mã trạm',
+  station_id: 'Trạm',
+  station_name: 'Tên trạm',
+  _inbound: 'Nội dung 1Office'
 };
 
 const fmtRawValue = (key, v) => {
@@ -70,16 +48,11 @@ const fmtRawValue = (key, v) => {
   if (typeof v === 'object') {
     try { return JSON.stringify(v); } catch { return String(v); }
   }
-  if ((/deadline/i).test(key)) {
-    const t = new Date(v);
-    if (!Number.isNaN(t.getTime())) return fmtTime(v);
-  }
   return String(v);
 };
 
-const ProposalActivityPopup = ({ proposalId, onClose }) => {
+const StationActivityPopup = ({ stationId, onClose }) => {
   const { token } = useAuth();
-  useMapStatuses();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -87,7 +60,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    proposalLogService.timeline(proposalId, token)
+    stationService.activity(stationId, token)
       .then(res => {
         if (cancelled) return;
         if (res.success) setItems(res.data || []);
@@ -96,7 +69,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
       .catch(() => { if (!cancelled) setError('Lỗi kết nối server'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [proposalId, token]);
+  }, [stationId, token]);
 
   const renderItem = (it) => {
     const dot = STATUS_DOT[it.to_status] || '#9ca3af';
@@ -114,7 +87,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-sm">{ACTION_LABEL[it.action] || it.action}</span>
             {(it.action === 'status_change' || it.action === 'status_change_denied') && (
-              <span className="text-xs text-base-content/70">{it.from_status ? getStatusLabel(it.from_status, 'proposal') : '—'} → <b>{it.to_status ? getStatusLabel(it.to_status, 'proposal') : '—'}</b></span>
+              <span className="text-xs text-base-content/70">{it.from_status ? getStatusLabel(it.from_status, 'station') : '—'} → <b>{it.to_status ? getStatusLabel(it.to_status, 'station') : '—'}</b></span>
             )}
             <span className="badge badge-ghost badge-xs">{SOURCE_LABEL[it.source] || it.source}</span>
             {it.manual_override ? <span className="badge badge-warning badge-xs">demo/tay</span> : null}
@@ -125,8 +98,8 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
             {it.actor_role ? ` (${it.actor_role})` : ''}
           </div>
           {it.reject_reason && (
-            <div className="alert alert-error py-1.5 px-3 mt-2 text-xs">
-              <span><b>Lý do:</b> {it.reject_reason}</span>
+            <div className="alert alert-info py-1.5 px-3 mt-2 text-xs">
+              <span><b>Ghi chú:</b> {it.reject_reason}</span>
             </div>
           )}
           {changed && Object.keys(changed).length > 0 && (
@@ -168,7 +141,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg flex items-center gap-2">
             <History size={18} className="text-primary" />
-            Hoạt động đề xuất #{proposalId}
+            Hoạt động trạm #{stationId}
           </h3>
           <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
             <X size={18} />
@@ -194,4 +167,4 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
   );
 };
 
-export default ProposalActivityPopup;
+export default StationActivityPopup;

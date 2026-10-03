@@ -129,9 +129,11 @@ exports.getUnlinkedPushUserWarnings = async (proposal, fieldDefs) => {
   return warnings;
 };
 
-exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
+exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
   const config = await apiConfigService.getById(apiConfigId);
   if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
+  const allowedStatuses = ['PENDING', 'REVIEWING', ...((opts && opts.allowStatuses) || [])];
+  const setStatus = opts && opts.setStatus ? String(opts.setStatus) : null;
 
   const mappings = await fieldMappingService.getAllByConfig(apiConfigId);
   const pushMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'push' || m.direction === 'both') && !fieldMapper.isSpecialTarget(m.target_field));
@@ -146,7 +148,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       continue;
     }
 
-    if (!['PENDING', 'REVIEWING'].includes(proposal.status)) {
+    if (!allowedStatuses.includes(proposal.status)) {
       results.push({ proposalId, success: false, error: `Chỉ đẩy được đề xuất ở trạng thái Đang đề xuất hoặc Đang xem xét (hiện tại: ${proposal.status})` });
       continue;
     }
@@ -239,7 +241,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId) => {
       entity_type: 'station_proposals',
       entity_id: proposalId,
       direction: 'push',
-      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId, was_linked: isLinked, previous_contact_id: proposal.contact_1office_id || null },
+      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId, was_linked: isLinked, previous_contact_id: proposal.contact_1office_id || null, set_status: setStatus },
       priority: 0,
       created_by: userId
     });

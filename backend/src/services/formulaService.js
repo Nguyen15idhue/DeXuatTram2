@@ -248,13 +248,16 @@ exports.parseCodeToSeq = (code) => {
 exports.reconcileSequences = async () => {
   const targets = [
     { table: 'station_proposals', key: 'ma_de_xuat' },
-    { table: 'stations', key: 'ma_tram' }
+    { table: 'stations', key: 'ma_tram' },
+    { table: 'station_proposals', column: 'pending_station_code' }
   ];
   const maxByPrefix = {};
   for (const t of targets) {
-    const [rows] = await pool.query(
-      `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) AS code FROM ${t.table} WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) IS NOT NULL`
-    );
+    const [rows] = t.column
+      ? await pool.query(`SELECT DISTINCT \`${t.column}\` AS code FROM ${t.table} WHERE \`${t.column}\` IS NOT NULL`)
+      : await pool.query(
+        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) AS code FROM ${t.table} WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) IS NOT NULL`
+      );
     for (const r of rows) {
       const parsed = exports.parseCodeToSeq(r.code);
       if (!parsed) continue;

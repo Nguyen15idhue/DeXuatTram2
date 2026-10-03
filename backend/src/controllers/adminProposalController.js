@@ -162,7 +162,7 @@ exports.updateStatus = async (req, res) => {
       force: forceOverride
     });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal, autoPush: result.autoPush || null, message: 'Cập nhật trạng thái thành công' });
+    res.json({ success: true, data: proposal, autoPush: result.autoPush || null, autoSync: result.autoSync || null, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message, errors: error.details || undefined });

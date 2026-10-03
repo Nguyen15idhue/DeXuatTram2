@@ -43,7 +43,7 @@ const withDynamicFallback = (entity, defaults) => {
 
 export const getStationStatuses = () => withDynamicFallback('station', STATION_STATUSES);
 export const getProposalStatuses = () => withDynamicFallback('proposal', PROPOSAL_STATUSES);
-export const getProposalLegendStatuses = () => getProposalStatuses().filter((s) => s.show_in_legend !== false);
+export const getProposalLegendStatuses = () => getProposalStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
 
 export const getStatusLabel = (value, entity) => {
   const list = entity === 'station' ? getStationStatuses() : getProposalStatuses();

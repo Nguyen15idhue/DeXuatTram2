@@ -126,7 +126,7 @@ const WebhookManager = ({ onChanged }) => {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="font-bold">Secrets webhook</h3>
-            <p className="text-xs text-base-content/50">Secret dùng chung cho cả 2 webhook ở trên</p>
+            <p className="text-xs text-base-content/50">Secret dùng chung cho cả 3 webhook ở trên</p>
           </div>
           <button className="btn btn-primary btn-sm gap-1" onClick={() => { setFresh(null); setShowCreate(true); }}>
             <Plus size={14} /> Thêm webhook mới

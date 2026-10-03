@@ -129,6 +129,72 @@ const WorkMoveTest = ({ onDone }) => {
   );
 };
 
+const StationUpdateTest = () => {
+  const [form, setForm] = useState({
+    ma_tram: '',
+    status: '',
+    fields: '{\n  "trien_khai_ha_tang": "...",\n  "so_luong_tru": 0\n}',
+    note: ''
+  });
+  const [copiedBody, setCopiedBody] = useState(false);
+  const bodyText = JSON.stringify({
+    event_id: 'evt-' + Date.now(),
+    ...(form.ma_tram.trim() ? { ma_tram: form.ma_tram.trim() } : {}),
+    ...(form.status ? { status: form.status } : {}),
+    fields: (() => { try { return JSON.parse(form.fields || '{}'); } catch { return {}; } })(),
+    ...(form.note.trim() ? { note: form.note.trim() } : {})
+  }, null, 2);
+
+  const copyBody = async () => {
+    try {
+      await navigator.clipboard.writeText(bodyText);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = bodyText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedBody(true);
+    setTimeout(() => setCopiedBody(false), 2000);
+  };
+
+  return (
+    <div className="p-3 bg-base-200 rounded-lg">
+      <div className="text-xs text-base-content/60 mb-2">Điền thông tin rồi copy body sang node HTTP của BPA (không gọi thử để an toàn dữ liệu trạm).</div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="form-control">
+          <label className="label py-0"><span className="label-text text-xs">Mã trạm</span></label>
+          <input type="text" className="input input-bordered input-sm" placeholder="VD: E.BNI0028" value={form.ma_tram} onChange={e => setForm(prev => ({ ...prev, ma_tram: e.target.value }))} />
+        </div>
+        <div className="form-control">
+          <label className="label py-0"><span className="label-text text-xs">Trạng thái (để trống = giữ nguyên)</span></label>
+          <select className="select select-bordered select-sm" value={form.status} onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}>
+            <option value="">— Giữ nguyên —</option>
+            <option value="PLANNING">Quy hoạch</option>
+            <option value="ACTIVE">Hoạt động</option>
+            <option value="DEPLOYING">Đang triển khai</option>
+            <option value="REJECTED">Từ chối/Hủy</option>
+          </select>
+        </div>
+        <div className="form-control flex-1 min-w-[200px]">
+          <label className="label py-0"><span className="label-text text-xs">Ghi chú</span></label>
+          <input type="text" className="input input-bordered input-sm" value={form.note} onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))} />
+        </div>
+      </div>
+      <div className="form-control mt-2">
+        <label className="label py-0"><span className="label-text text-xs">fields (JSON theo key, key lạ bị bỏ qua)</span></label>
+        <textarea className="textarea textarea-bordered textarea-sm font-mono" rows={4} value={form.fields} onChange={e => setForm(prev => ({ ...prev, fields: e.target.value }))} />
+      </div>
+      <pre className="bg-base-100 rounded-lg p-2 text-xs whitespace-pre-wrap max-h-40 overflow-auto mt-2">{bodyText}</pre>
+      <button className="btn btn-sm gap-1 mt-2" onClick={copyBody}>
+        {copiedBody ? <Check size={14} /> : <Copy size={14} />} Copy body JSON
+      </button>
+    </div>
+  );
+};
+
 const EndpointCard = ({ title, badge, badgeClass, path, header, params, logAction, TestForm, onViewLogs }) => {
   const [copied, setCopied] = useState(false);
   const [showTest, setShowTest] = useState(false);
@@ -220,6 +286,17 @@ const WebhookEndpoints = ({ onViewLogs }) => {
         params="ID, project_id, access_token (gửi kèm hoặc dùng token lưu sẵn)"
         logAction="work_process_move"
         TestForm={WorkMoveTest}
+        onViewLogs={goLogs}
+      />
+      <EndpointCard
+        title="Cập nhật thông tin trạm"
+        badge="mới"
+        badgeClass="badge-primary"
+        path="/api/webhooks/oneoffice/station-update"
+        header="X-1Office-Signature hoặc x-webhook-secret"
+        params="event_id, ma_tram, status?, fields{}, note?"
+        logAction="webhook"
+        TestForm={StationUpdateTest}
         onViewLogs={goLogs}
       />
     </div>

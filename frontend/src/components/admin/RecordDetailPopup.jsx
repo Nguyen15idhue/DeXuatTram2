@@ -7,7 +7,8 @@ import DynamicField from '../dynamic/DynamicField';
 import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
-import { MapPinned, History, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import StationActivityPopup from './StationActivityPopup';
+import { MapPinned, History, AlertTriangle, CheckCircle2, Eye } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import ConfirmDialog from '../ConfirmDialog';
 import ExtendDeadlineDialog from './ExtendDeadlineDialog';
@@ -58,6 +59,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [formConfig, setFormConfig] = useState(null);
   const [showMap, setShowMap] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showStationLog, setShowStationLog] = useState(false);
+  const [linkedProposal, setLinkedProposal] = useState(null);
+  const [linkNote, setLinkNote] = useState('');
   const [activeTabs, setActiveTabs] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -125,6 +129,35 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       loadViewConfig(recordProp).finally(() => setLoading(false));
     }
   }, [entity, recordId, recordProp]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLinkedProposal(null);
+    setLinkNote('');
+    if (entity === 'stations' && record && record.id) {
+      stationService.sourceProposal(record.id, token)
+        .then(res => {
+          if (cancelled) return;
+          if (res && res.success && res.data) setLinkedProposal(res.data);
+        })
+        .catch(() => { /* 404 = khong co de xuat nguon */ });
+    }
+    return () => { cancelled = true; };
+  }, [entity, record && record.id]);
+
+  const openLinkedStation = async () => {
+    const sid = record && record.station_id;
+    if (!sid) return;
+    try {
+      const res = await stationService.getById(sid);
+      if (res && res.success && res.data) {
+        navigate(`/admin/stations/view=${sid}`);
+        return;
+      }
+    } catch { /* fallthrough */ }
+    setLinkNote('Trạm đã bị xóa — ghi đè lại trạng thái Ký thành công để tạo trạm mới.');
+    setToast({ message: 'Trạm liên kết đã bị xóa', type: 'warning' });
+  };
 
   useEffect(() => {
     if (mode !== 'edit' || allFields.length === 0) return;
@@ -757,6 +790,24 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                 Xem log
               </button>
             )}
+            {entity === 'station_proposals' && record?.station_id && (
+              <button className="btn btn-sm btn-outline btn-info gap-1" onClick={openLinkedStation} title={`Xem trạm #${record.station_id} được tạo từ đề xuất này`}>
+                <Eye size={14} />
+                Xem trạm #{record.station_id}
+              </button>
+            )}
+            {entity === 'stations' && record?.id && (
+              <button className="btn btn-sm btn-outline gap-1" onClick={() => setShowStationLog(true)} title="Xem lịch sử hoạt động của trạm">
+                <History size={14} />
+                Xem log
+              </button>
+            )}
+            {entity === 'stations' && linkedProposal && linkedProposal.id && (
+              <button className="btn btn-sm btn-outline btn-info gap-1" onClick={() => navigate(`/admin/proposals/view=${linkedProposal.id}`)} title="Xem đề xuất đã tạo ra trạm này">
+                <Eye size={14} />
+                Xem đề xuất #{linkedProposal.id}
+              </button>
+            )}
             <button className="btn-close" onClick={handleClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#6b7280', padding: '4px 8px' }}>✕</button>
           </div>
         </div>
@@ -899,6 +950,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       )}
       {showLog && entity === 'station_proposals' && record?.id && (
         <ProposalActivityPopup proposalId={record.id} onClose={() => setShowLog(false)} />
+      )}
+      {showStationLog && entity === 'stations' && record?.id && (
+        <StationActivityPopup stationId={record.id} onClose={() => setShowStationLog(false)} />
       )}
       <ExtendDeadlineDialog
         isOpen={extendOpen}

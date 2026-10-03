@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, optionalAuth } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager, optionalAuth } = require('../middlewares/auth');
 const { validateCreateStation, validateUpdateStation } = require('../middlewares/validators');
 const stationController = require('../controllers/stationController');
 
@@ -98,6 +98,50 @@ router.get('/', optionalAuth, stationController.getAll);
  *         description: Không tìm thấy trạm
  */
 router.get('/:id', optionalAuth, stationController.getById);
+
+/**
+ * @swagger
+ * /api/stations/{id}/activity:
+ *   get:
+ *     tags: [Stations]
+ *     summary: Timeline hoạt động trạm (đổi trạng thái, đổi trường, nội dung 1Office)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       404:
+ *         description: Không tìm thấy trạm
+ */
+router.get('/:id/activity', requireAuth, requireUserManager, stationController.activity);
+
+/**
+ * @swagger
+ * /api/stations/{id}/proposal:
+ *   get:
+ *     tags: [Stations]
+ *     summary: Đề xuất nguồn đã tạo ra trạm (theo station_id)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       404:
+ *         description: Không tìm thấy trạm hoặc chưa liên kết đề xuất
+ */
+router.get('/:id/proposal', requireAuth, requireUserManager, stationController.sourceProposal);
 
 /**
  * @swagger

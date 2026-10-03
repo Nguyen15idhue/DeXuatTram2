@@ -153,25 +153,52 @@ exports.transition = async (id, to, opts = {}) => {
     } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
   }
 
+  let stationCreated = null;
+  let stationCreateError = null;
+  if (to === 'CONTRACT_SIGNED') {
+    try {
+      const stationService = require('./stationService');
+      const r = await stationService.convertProposalToStation(id, { actorId, actorRole, source, ip, skipNotify: true });
+      if (r.created) stationCreated = r.station;
+    } catch (e) {
+      stationCreateError = e.message || 'Lỗi tạo trạm';
+    }
+  }
+
   if (proposal.user_id) {
     const code = notificationService.proposalCode(proposal.custom_data, id);
     let actorName;
     if (source === 'system_auto') actorName = 'Hệ thống';
     else actorName = (await notificationService.getUserName(actorId)) || (source === 'webhook' ? '1Office' : 'Hệ thống');
-    await notificationService.create({
-      userId: proposal.user_id,
-      type: to,
-      title: notificationService.statusTitle(to),
-      message: notificationService.statusMessage({
+    if (stationCreated) {
+      const createdMaTram = stationCreated.ma_tram || '';
+      await notificationService.create({
+        userId: proposal.user_id,
+        type: to,
+        title: notificationService.statusTitle(to),
+        message: `Mã đề xuất: ${code} · Ký hợp đồng thành công và tạo trạm "${stationCreated.name}"${createdMaTram ? ` (${createdMaTram})` : ''} · Người thực hiện: ${actorName}`,
+        entityType: 'stations',
+        entityId: stationCreated.id,
+        createdBy: actorId || null
+      });
+    } else {
+      let message = notificationService.statusMessage({
         code,
         actorName,
         reason: REASON_REQUIRED.includes(to) ? cleanReason : null,
         status: to
-      }),
-      entityType: 'station_proposals',
-      entityId: id,
-      createdBy: actorId || null
-    });
+      });
+      if (stationCreateError) message += ` · Tạo trạm lỗi: ${stationCreateError}`;
+      await notificationService.create({
+        userId: proposal.user_id,
+        type: to,
+        title: notificationService.statusTitle(to),
+        message,
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: actorId || null
+      });
+    }
   }
 
   const overrideActive = (typeof forceOverride !== 'undefined' && forceOverride) || isEmergencyReopen;
@@ -187,8 +214,88 @@ exports.transition = async (id, to, opts = {}) => {
     autoPush = await autoPushOnReview(id, actorId || null);
   }
 
-  return { id, status: to, prevStatus: from, autoPush };
+  let autoSync = null;
+  if (to === 'CONTRACT_SIGNED' && from !== 'CONTRACT_SIGNED') {
+    autoSync = await autoSyncOnContractSigned(id, actorId || null);
+  }
+
+  if (to === 'PRINCIPLE_APPROVED' && from !== 'PRINCIPLE_APPROVED') {
+    await reservePendingStationCode(id, actorId, actorRole, source, ip).catch(() => {});
+  }
+
+  return {
+    id, status: to, prevStatus: from, autoPush, autoSync,
+    stationCreated: stationCreated ? { id: stationCreated.id, name: stationCreated.name, ma_tram: stationCreated.ma_tram || null } : null,
+    stationCreateError
+  };
 };
+
+async function reservePendingStationCode(id, actorId, actorRole, source, ip) {
+  const [rows] = await pool.query(
+    'SELECT id, custom_data, pending_station_code FROM station_proposals WHERE id = ?',
+    [id]
+  );
+  if (rows.length === 0 || rows[0].pending_station_code) return;
+  let cd = rows[0].custom_data;
+  if (typeof cd === 'string') {
+    try { cd = JSON.parse(cd); } catch { cd = {}; }
+  }
+  const maTinh = cd && cd.ma_tinh ? String(cd.ma_tinh).trim() : '';
+  if (!maTinh) return;
+  const stationCodeService = require('./stationCodeService');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const code = await stationCodeService.generatePendingCode(maTinh);
+    try {
+      await pool.query(
+        'UPDATE station_proposals SET pending_station_code = ? WHERE id = ? AND pending_station_code IS NULL',
+        [code, id]
+      );
+      await exports.logActivity({
+        proposalId: id, action: 'station_code_reserved',
+        changedFields: { pending_station_code: { label: 'Mã trạm chờ', old: '', new: code } },
+        actorId: actorId || null, actorRole: actorRole || null, source: source || 'user', ip: ip || null
+      });
+      return;
+    } catch (e) {
+      if (e && e.code === 'ER_DUP_ENTRY') continue;
+      throw e;
+    }
+  }
+  await exports.logActivity({
+    proposalId: id, action: 'auto_failed',
+    changedFields: { error: 'Không giữ được mã trạm chờ sau 2 lần thử' },
+    actorId: actorId || null, actorRole: actorRole || null, source: 'system_auto', ip: ip || null
+  });
+}
+
+async function autoSyncOnContractSigned(id, actorId) {
+  try {
+    const apiConfigService = require('./apiConfigService');
+    const syncService = require('./syncService');
+    const config = await apiConfigService.getDefaultPushConfig();
+    if (!config) {
+      return { synced: false, queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
+    }
+    const results = await syncService.pushTo1Office([id], config.id, actorId, {
+      allowStatuses: ['CONTRACT_SIGNED'],
+      setStatus: 'Đang triển khai'
+    });
+    const first = results && results[0];
+    if (!first || !first.success) {
+      try {
+        await exports.logActivity({
+          proposalId: id, action: 'sync_push', source: 'system_auto',
+          actorId: actorId || null,
+          changedFields: { error: (first && first.error) || 'Không tạo được lệnh đồng bộ', final: true }
+        });
+      } catch { /* silent */ }
+      return { synced: false, queued: false, reason: (first && first.error) || 'Không tạo được lệnh đồng bộ' };
+    }
+    return { synced: true, queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id, warnings: first.warnings || [], droppedFields: first.droppedFields || [] };
+  } catch (e) {
+    return { synced: false, queued: false, reason: e.message || 'Lỗi tạo lệnh đồng bộ' };
+  }
+}
 
 async function autoPushOnReview(id, reviewerId) {
   try {

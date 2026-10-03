@@ -80,7 +80,7 @@ const processPushJob = async (job) => {
     ? JSON.parse(job.request_payload)
     : job.request_payload;
 
-  const { api_config_id, contact_data, proposal_id, was_linked, previous_contact_id } = requestPayload;
+  const { api_config_id, contact_data, proposal_id, was_linked, previous_contact_id, set_status } = requestPayload;
 
   if (!api_config_id || !contact_data) {
     throw new Error('Missing api_config_id or contact_data in request_payload');
@@ -144,6 +144,29 @@ const processPushJob = async (job) => {
     throw new Error(result.error || `1Office API error: ${result.status}`);
   }
 
+  let statusUpdated = false;
+  let statusUpdateError = null;
+  if (set_status && result.data && !result.data.error) {
+    const codeForStatus = (result.data.data && result.data.data.code) || result.data.code || contact_data.code;
+    if (codeForStatus) {
+      try {
+        const stResult = await oneOfficeService.updateContact(api_config_id, codeForStatus, { status_id: set_status });
+        if (stResult && stResult.success && !(stResult.data && stResult.data.error)) {
+          statusUpdated = true;
+        } else {
+          statusUpdateError = (stResult && (stResult.error || (stResult.data && stResult.data.message))) || 'Không đặt được trạng thái contact';
+        }
+      } catch (e) {
+        statusUpdateError = e.message || 'Không đặt được trạng thái contact';
+      }
+    } else {
+      statusUpdateError = 'Không xác định được mã contact để đặt trạng thái';
+    }
+    if (statusUpdateError) {
+      throw new Error(`Đã đồng bộ liên hệ nhưng chưa đặt được trạng thái "${set_status}": ${statusUpdateError}`);
+    }
+  }
+
   if (proposal_id && result.data && !result.data.error) {
     const contactCode = (result.data.data && result.data.data.code) || result.data.code || contact_data.code;
     const urlMatch = String(result.data.url || '').match(/[?&]ID=(\d+)/i);
@@ -163,7 +186,7 @@ const processPushJob = async (job) => {
         await proposalLifecycle.logActivity({
           proposalId: proposal_id, action: 'sync_push', source: 'system_auto',
           actorId: job.created_by || null,
-          changedFields: { contact_code: contactCode, files_sent: filesInfo.sent || [], files_skipped: filesInfo.skipped || [] }
+          changedFields: { contact_code: contactCode, files_sent: filesInfo.sent || [], files_skipped: filesInfo.skipped || [], ...(set_status ? { contact_status: set_status } : {}) }
         });
       } catch { /* silent: khong chan push vi log */ }
       try {
@@ -191,6 +214,8 @@ const processPushJob = async (job) => {
     contact_recreated: recreated,
     previous_contact_id: recreated ? (previous_contact_id || null) : null,
     files: { sentCount: (filesInfo.sent || []).length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [] },
+    status_updated: statusUpdated,
+    contact_status: statusUpdated ? set_status : null,
     api_response: result.data,
     response_time: result.responseTime
   };

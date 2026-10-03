@@ -117,7 +117,7 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
 
       <div className="map-filter-group">
         <span className="map-filter-label">Trạng thái đề xuất</span>
-        {renderStatusChips(PROPOSAL_STATUSES, 'proposalStatuses', 'proposal')}
+        {renderStatusChips(PROPOSAL_STATUSES.filter(s => s.show_in_legend !== false && s.show_in_legend !== 0), 'proposalStatuses', 'proposal')}
       </div>
 
       <button type="button" className="btn btn-ghost btn-xs w-full" onClick={() => onChange({ ...EMPTY_MAP_FILTERS })}>

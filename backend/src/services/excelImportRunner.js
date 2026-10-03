@@ -140,7 +140,14 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
             `SELECT id FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) = ? LIMIT 1`,
             [code]
           );
-          if (dup.length > 0 || usedCodes.has(code)) throw new Error(`Mã trạm "${code}" đã tồn tại, không cho import`);
+          let pendingDup = [];
+          if (dup.length === 0) {
+            [pendingDup] = await pool.query(
+              'SELECT id FROM station_proposals WHERE pending_station_code = ? LIMIT 1',
+              [code]
+            );
+          }
+          if (dup.length > 0 || pendingDup.length > 0 || usedCodes.has(code)) throw new Error(`Mã trạm "${code}" đã tồn tại, không cho import`);
           usedCodes.add(code);
         }
       }

@@ -430,10 +430,37 @@ const AdminProposalsPage = () => {
     try {
       const res = await adminProposalService.updateStatus(forceModal.id, forceModal.status, token, forceModal.reason.trim(), true);
       if (res.success) {
-        setToast({ message: 'Đã ghi đè trạng thái (log admin)', type: 'warning' });
+        const sync = res.autoSync;
+        let msg = 'Đã ghi đè trạng thái (log admin)';
+        if (sync) {
+          if (sync.queued && sync.jobId) {
+            msg += ' — đã tạo lệnh đồng bộ 1Office + chuyển contact sang Đang triển khai';
+          } else if (!sync.queued) {
+            msg += ` — chưa đồng bộ được sang 1Office (${sync.reason || 'thiếu cấu hình'})`;
+          }
+        }
+        setToast({ message: msg, type: 'warning' });
         setForceModal({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
         notifyBellRefresh();
         loadProposals(pagination.page);
+        if (sync && sync.queued && sync.jobId) {
+          pollSyncJobs([sync.jobId], (jobs) => {
+            const j = jobs[0] || {};
+            let doneMsg = 'Trạng thái đã đồng bộ';
+            if (j.status === 'completed') {
+              const p = parsePayload(j);
+              doneMsg = p.status_updated
+                ? `Đã đồng bộ 1Office + contact chuyển sang ${p.contact_status || 'Đang triển khai'}`
+                : 'Đã đồng bộ 1Office (contact đã có, kiểm tra trạng thái trong Audit Log)';
+            } else {
+              doneMsg = 'Đồng bộ 1Office thất bại — xem Audit Log để Retry';
+            }
+            const skipped = collectSkippedFiles(jobs);
+            if (skipped.length > 0) doneMsg += ` — ${skipped.length} file bị bỏ qua (xem log đề xuất)`;
+            setToast({ message: doneMsg, type: j.status === 'completed' ? 'success' : 'error' });
+            loadProposals(pagination.page);
+          });
+        }
       } else {
         setError(res.message || 'Đổi trạng thái thất bại');
         setForceModal(prev => ({ ...prev, saving: false }));
@@ -1812,7 +1839,7 @@ const AdminProposalsPage = () => {
               {forceModal.status === 'CONTRACT_SIGNED' && (
                 <div className="alert alert-info py-2 px-3 text-xs mt-3">
                   <Info size={14} />
-                  <span>Đổi tay sang "Ký thành công" <b>không tạo trạm thật</b> — trạm chỉ sinh bởi worker sau 90 ngày.</span>
+                  <span>Đổi sang "Ký thành công" sẽ <b>tạo trạm ngay</b> (mã trạm chờ, trạng thái Đang triển khai) nếu đề xuất chưa liên kết trạm nào.</span>
                 </div>
               )}
               <div className="form-control mt-3">

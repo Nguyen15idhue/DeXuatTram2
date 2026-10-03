@@ -20,6 +20,9 @@ const splitSecrets = (val) => {
 
 const resolveSecrets = async () => {
   const secrets = [
+    ...splitSecrets(process.env.ONEOFFICE_WORK_SIGNATURE),
+    ...splitSecrets(process.env.ONEOFFICE_WORK_SIGNATURE_PREV),
+    ...splitSecrets(process.env.ONEOFFICE_WORK_SIGNATURE_STAGING),
     ...splitSecrets(process.env.ONEOFFICE_WEBHOOK_SECRET),
     ...splitSecrets(process.env.ONEOFFICE_WEBHOOK_SECRET_PREV),
     ...splitSecrets(process.env.ONEOFFICE_WEBHOOK_SECRET_STAGING)
@@ -60,7 +63,7 @@ const verifyWebhookSecret = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'IP không được phép gọi webhook' });
     }
   }
-  const provided = bearerOf(req) || req.headers['x-webhook-secret'] || req.query.secret;
+  const provided = bearerOf(req) || req.headers['x-1office-signature'] || req.headers['x-webhook-secret'] || req.query.secret;
   const secrets = await resolveSecrets();
   if (secrets.length === 0) {
     return res.status(503).json({ success: false, message: 'Webhook chưa cấu hình secret (ONEOFFICE_WEBHOOK_SECRET)' });
@@ -70,6 +73,8 @@ const verifyWebhookSecret = async (req, res, next) => {
   }
   next();
 };
+
+exports.verifyWebhookSecret = verifyWebhookSecret;
 
 exports.proposalStatus = [
   verifyWebhookSecret,

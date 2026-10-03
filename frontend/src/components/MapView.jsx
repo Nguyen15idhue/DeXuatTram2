@@ -328,7 +328,7 @@ const MapView = ({
   const markerIconsVersion = useMarkerIcons();
   const { stationStatuses, proposalStatuses, proposalLegendStatuses } = useMapStatuses();
   void markerIconsVersion;
-  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalStatuses };
+  const MAP_LEGEND = { stations: stationStatuses, proposals: proposalLegendStatuses };
   const proposalChunks = [];
   for (let i = 0; i < MAP_LEGEND.proposals.length; i += 5) proposalChunks.push(MAP_LEGEND.proposals.slice(i, i + 5));
   const renderProposalLegendItem = (item) => (
@@ -771,6 +771,7 @@ const MapView = ({
     if (!filters) return proposals;
     if (filters.hideProposals) return [];
     let list = proposals;
+    list = list.filter(p => p.status !== 'CONTRACT_SIGNED');
     const mapSet = new Set((proposalLegendStatuses || []).map(s => s.value));
     if (mapSet.size > 0) {
       list = list.filter(p => mapSet.has(p.status));

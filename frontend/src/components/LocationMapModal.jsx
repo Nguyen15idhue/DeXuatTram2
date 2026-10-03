@@ -341,6 +341,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
     if (filters.hideProposals) {
       nearProposals = [];
     } else {
+      nearProposals = nearProposals.filter((p) => p.status !== 'CONTRACT_SIGNED');
       const mapSet = new Set((proposalLegendStatuses || []).map((s) => s.value));
       if (mapSet.size > 0) {
         nearProposals = nearProposals.filter((p) => mapSet.has(p.status));
@@ -570,7 +571,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, o
                 <div className="map-legend-col map-legend-col-wide">
                   <div className="map-legend-col-title text-center">Đề xuất</div>
                   <div className="map-legend-subcols">
-                    {[0, 1].map((chunk) => allProposalStatuses.slice(chunk * 5, chunk * 5 + 5)).filter((g) => g.length > 0).map((group, gi) => (
+                    {[0, 1].map((chunk) => (proposalLegendStatuses && proposalLegendStatuses.length > 0 ? proposalLegendStatuses : allProposalStatuses).slice(chunk * 5, chunk * 5 + 5)).filter((g) => g.length > 0).map((group, gi) => (
                       <div key={gi} className="map-legend-subcol">
                         {group.map((item) => (
                           <div key={`p-${item.value}`} className="map-legend-item">

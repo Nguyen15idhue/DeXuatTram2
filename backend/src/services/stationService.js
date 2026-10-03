@@ -84,11 +84,20 @@ exports.getStationById = async (id) => {
   return dynamicUtils.mergeData(stations[0], fieldDefs);
 };
 
-exports.createStation = async (data) => {
+exports.createStation = async (data, opts = {}) => {
+  const stationCodeService = require('./stationCodeService');
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('stations');
   const { fixedData, dynamicData } = dynamicUtils.splitData('stations', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
+
+  if (dynamicData.ma_tram === undefined || dynamicData.ma_tram === null || String(dynamicData.ma_tram).trim() === '') {
+    if (dynamicData.ma_tinh !== undefined && dynamicData.ma_tinh !== null && String(dynamicData.ma_tinh).trim() !== '') {
+      dynamicData.ma_tram = await stationCodeService.ensureFreshCode(dynamicData.ma_tinh);
+    }
+  } else {
+    await stationCodeService.assertCodeFree(dynamicData.ma_tram, opts.excludeProposalId);
+  }
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
@@ -105,7 +114,8 @@ exports.createStation = async (data) => {
 
     recordId = result.insertId;
 
-    postResults = await dynamicEngineService.computePostFormulas('stations', recordId, dynamicData, null, null, { connection: conn });
+    const createExclude = (dynamicData.ma_tram !== undefined && dynamicData.ma_tram !== null && String(dynamicData.ma_tram).trim() !== '') ? ['ma_tram'] : [];
+    postResults = await dynamicEngineService.computePostFormulas('stations', recordId, dynamicData, null, null, { connection: conn, excludeKeys: createExclude });
     if (Object.keys(postResults).length > 0) {
       const updatedDynamic = { ...dynamicData, ...postResults };
       const updatedCustomData = JSON.stringify(updatedDynamic);
@@ -166,7 +176,8 @@ exports.updateStation = async (id, data) => {
     [next.name, next.latitude, next.longitude, next.address || '', next.status || 'ACTIVE', next.description || '', customData, id]
   );
 
-  const postResults = await dynamicEngineService.computePostFormulas('stations', id, mergedDynamic, null, null);
+  const updateExclude = (mergedDynamic.ma_tram !== undefined && mergedDynamic.ma_tram !== null && String(mergedDynamic.ma_tram).trim() !== '') ? ['ma_tram'] : [];
+  const postResults = await dynamicEngineService.computePostFormulas('stations', id, mergedDynamic, null, null, { excludeKeys: updateExclude });
   if (Object.keys(postResults).length > 0) {
     const updatedDynamic = { ...mergedDynamic, ...postResults };
     await pool.query('UPDATE stations SET custom_data = ? WHERE id = ?', [JSON.stringify(updatedDynamic), id]);
@@ -198,7 +209,19 @@ exports.convertProposalToStation = async (proposalId, opts = {}) => {
   }
   if (p.station_id) {
     const existing = await exports.getStationById(p.station_id);
-    return { station: existing, created: false };
+    if (existing) {
+      return { station: existing, created: false };
+    }
+    await pool.query('UPDATE station_proposals SET station_id = NULL, updated_at = NOW() WHERE id = ?', [proposalId]);
+    try {
+      const proposalLifecycle = require('./proposalLifecycle');
+      await proposalLifecycle.logActivity({
+        proposalId: p.id, action: 'station_created',
+        changedFields: { station_link: { label: 'Liên kết trạm', old: String(p.station_id), new: 'đã xóa (trạm không còn)' } },
+        actorId: opts.actorId || null, actorRole: opts.actorRole || null,
+        source: opts.source || 'user', manualOverride: false, ip: opts.ip || null
+      });
+    } catch { /* silent */ }
   }
 
   const cd = parseJson(p.custom_data);
@@ -228,6 +251,8 @@ exports.convertProposalToStation = async (proposalId, opts = {}) => {
     throw Object.assign(new Error('Không xác định được Tỉnh/Thành phố của đề xuất, vui lòng bổ sung trước khi tạo trạm'), { statusCode: 400 });
   }
 
+  const pendingCode = p.pending_station_code ? String(p.pending_station_code).trim() : '';
+  const maTram = String(opts.maTram || '').trim() || pendingCode || '';
   const station = await exports.createStation({
     name,
     latitude: p.latitude,
@@ -239,22 +264,33 @@ exports.convertProposalToStation = async (proposalId, opts = {}) => {
     ma_tinh: maTinh,
     vung_mien: vungMien,
     xa_phuong: xaPhuong,
-    mo_hinh_tram: cd.mo_hinh_dau_tu || null
-  });
+    mo_hinh_tram: cd.mo_hinh_dau_tu || null,
+    ...(maTram ? { ma_tram: maTram } : {})
+  }, { excludeProposalId: proposalId });
 
   await pool.query('UPDATE station_proposals SET station_id = ?, updated_at = NOW() WHERE id = ?', [station.id, p.id]);
 
   try {
-    await proposalLifecycle.logActivity({
-      proposalId: p.id, action: 'station_created',
-      fromStatus: 'CONTRACT_SIGNED', toStatus: 'CONTRACT_SIGNED',
-      changedFields: { station_id: { label: 'Trạm', old: '', new: String(station.id) }, station_name: { label: 'Tên trạm', old: '', new: station.name } },
+    const stationActivityService = require('./stationActivityService');
+    await stationActivityService.logActivity({
+      stationId: station.id, action: 'created', toStatus: station.status,
+      changedFields: { proposal_id: { label: 'Đề xuất nguồn', old: '', new: String(p.id) }, ma_tram: { label: 'Mã trạm', old: '', new: station.ma_tram || '' }, station_name: { label: 'Tên trạm', old: '', new: station.name } },
       actorId: opts.actorId || null, actorRole: opts.actorRole || null,
       source: opts.source || 'user', manualOverride: false, ip: opts.ip || null
     });
   } catch { /* silent */ }
 
-  if (p.user_id) {
+  try {
+      await proposalLifecycle.logActivity({
+        proposalId: p.id, action: 'station_created',
+        fromStatus: 'CONTRACT_SIGNED', toStatus: 'CONTRACT_SIGNED',
+        changedFields: { station_id: { label: 'Trạm', old: '', new: String(station.id) }, station_name: { label: 'Tên trạm', old: '', new: station.name }, ma_tram: { label: 'Mã trạm', old: '', new: station.ma_tram || '' } },
+      actorId: opts.actorId || null, actorRole: opts.actorRole || null,
+      source: opts.source || 'user', manualOverride: false, ip: opts.ip || null
+    });
+  } catch { /* silent */ }
+
+  if (p.user_id && !opts.skipNotify) {
     try {
       const actorName = (opts.source === 'system_auto') ? 'Hệ thống' : await notificationService.getUserName(opts.actorId);
       await notificationService.create({
