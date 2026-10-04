@@ -133,9 +133,12 @@ const processPushJob = async (job) => {
   let result;
   let updated = false;
   const recreated = !!was_linked && !existingId;
+  let statusMerged = false;
   if (existingId) {
-    result = await oneOfficeService.updateContact(api_config_id, contact_data.code, contact_data);
+    const mergedPayload = set_status ? { ...contact_data, status_id: set_status } : { ...contact_data };
+    result = await oneOfficeService.updateContact(api_config_id, contact_data.code, mergedPayload);
     updated = true;
+    statusMerged = !!set_status;
   } else {
     result = await oneOfficeService.insertContact(api_config_id, contact_data);
   }
@@ -146,25 +149,33 @@ const processPushJob = async (job) => {
 
   let statusUpdated = false;
   let statusUpdateError = null;
-  if (set_status && result.data && !result.data.error) {
-    const codeForStatus = (result.data.data && result.data.data.code) || result.data.code || contact_data.code;
-    if (codeForStatus) {
-      try {
-        const stResult = await oneOfficeService.updateContact(api_config_id, codeForStatus, { status_id: set_status });
-        if (stResult && stResult.success && !(stResult.data && stResult.data.error)) {
-          statusUpdated = true;
-        } else {
-          statusUpdateError = (stResult && (stResult.error || (stResult.data && stResult.data.message))) || 'Không đặt được trạng thái contact';
-        }
-      } catch (e) {
-        statusUpdateError = e.message || 'Không đặt được trạng thái contact';
+  if (set_status) {
+    if (statusMerged) {
+      if (result.data && !result.data.error) {
+        statusUpdated = true;
+      } else {
+        statusUpdateError = 'Không đặt được trạng thái contact';
       }
-    } else {
-      statusUpdateError = 'Không xác định được mã contact để đặt trạng thái';
+    } else if (result.data && !result.data.error) {
+      const codeForStatus = (result.data.data && result.data.data.code) || result.data.code || contact_data.code;
+      if (codeForStatus) {
+        try {
+          const stResult = await oneOfficeService.updateContact(api_config_id, codeForStatus, { status_id: set_status });
+          if (stResult && stResult.success && !(stResult.data && stResult.data.error)) {
+            statusUpdated = true;
+          } else {
+            statusUpdateError = (stResult && (stResult.error || (stResult.data && stResult.data.message))) || 'Không đặt được trạng thái contact';
+          }
+        } catch (e) {
+          statusUpdateError = e.message || 'Không đặt được trạng thái contact';
+        }
+      } else {
+        statusUpdateError = 'Không xác định được mã contact để đặt trạng thái';
+      }
     }
-    if (statusUpdateError) {
-      throw new Error(`Đã đồng bộ liên hệ nhưng chưa đặt được trạng thái "${set_status}": ${statusUpdateError}`);
-    }
+  }
+  if (statusUpdateError) {
+    throw new Error(`Đã đồng bộ liên hệ nhưng chưa đặt được trạng thái "${set_status}": ${statusUpdateError}`);
   }
 
   if (proposal_id && result.data && !result.data.error) {

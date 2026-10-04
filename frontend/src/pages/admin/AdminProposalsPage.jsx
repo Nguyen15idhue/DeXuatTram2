@@ -820,9 +820,11 @@ const AdminProposalsPage = () => {
         const failed = res.data.filter(r => !r.success);
         const queuedNew = queued.filter(r => !r.isUpdate).length;
         const queuedUpd = queued.filter(r => r.isUpdate).length;
+        const deduped = queued.filter(r => r.deduped).length;
         const parts = [];
         if (queuedNew > 0) parts.push(`${queuedNew} đẩy mới`);
         if (queuedUpd > 0) parts.push(`${queuedUpd} cập nhật đã liên kết`);
+        if (deduped > 0) parts.push(`${deduped} gộp vào lệnh đang chờ`);
         if (queued.length > 0) {
           const preWarns = queued.flatMap(r => (r.warnings || []).map(w => `#${r.proposalId}: ${w}`));
           setToast({

@@ -154,6 +154,18 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
       continue;
     }
 
+    const [pendingJobs] = await pool.query(
+      `SELECT id FROM api_queue_logs
+       WHERE action = 'push' AND entity_type = 'station_proposals' AND entity_id = ?
+         AND api_config_id <=> ? AND status IN ('pending', 'processing')
+       ORDER BY id DESC LIMIT 1`,
+      [proposalId, apiConfigId]
+    );
+    if (pendingJobs.length > 0) {
+      results.push({ proposalId, success: true, jobId: pendingJobs[0].id, deduped: true, isUpdate: !!proposal.contact_1office_code, warnings: [], droppedFields: [] });
+      continue;
+    }
+
     const missingUserFields = await exports.getMissingPushUserFieldLabels(proposal, fieldDefs);
     if (missingUserFields.length > 0) {
       results.push({ proposalId, success: false, error: `Thiếu ${missingUserFields.map(l => `"${l}"`).join(', ')}` });
