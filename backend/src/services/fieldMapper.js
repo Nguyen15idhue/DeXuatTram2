@@ -100,6 +100,7 @@ const ONE_OFFICE_FIELDS = [
   { key: 'manager_user_ids', label: 'Người giao phụ trách', type: 'user', required: false },
   { key: 'trade_ids', label: 'Lĩnh vực', type: 'text', required: false },
   { key: 'tax_number', label: 'Mã số thuế/ĐKKD', type: 'text', required: false },
+  { key: 'cf18', label: 'Mã trạm chờ', type: 'text', required: false },
   { key: 'established_date', label: 'Ngày thành lập', type: 'date', required: false },
   { key: 'gender', label: 'Giới tính', type: 'text', required: false },
   { key: 'websites', label: 'Website', type: 'text', required: false }

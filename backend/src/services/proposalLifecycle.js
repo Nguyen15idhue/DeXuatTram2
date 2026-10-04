@@ -215,8 +215,8 @@ exports.transition = async (id, to, opts = {}) => {
   }
 
   let autoSync = null;
-  if (to === 'CONTRACT_SIGNED' && from !== 'CONTRACT_SIGNED') {
-    autoSync = await autoSyncOnContractSigned(id, actorId || null);
+  if (to === 'APPROVED' && from !== 'APPROVED') {
+    autoSync = await autoSyncOnApproved(id, actorId || null);
   }
 
   if (to === 'PRINCIPLE_APPROVED' && from !== 'PRINCIPLE_APPROVED') {
@@ -268,7 +268,7 @@ async function reservePendingStationCode(id, actorId, actorRole, source, ip) {
   });
 }
 
-async function autoSyncOnContractSigned(id, actorId) {
+async function autoSyncOnApproved(id, actorId) {
   try {
     const apiConfigService = require('./apiConfigService');
     const syncService = require('./syncService');
@@ -277,7 +277,7 @@ async function autoSyncOnContractSigned(id, actorId) {
       return { synced: false, queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
     }
     const results = await syncService.pushTo1Office([id], config.id, actorId, {
-      allowStatuses: ['CONTRACT_SIGNED'],
+      allowStatuses: ['APPROVED'],
       setStatus: 'Đang triển khai'
     });
     const first = results && results[0];

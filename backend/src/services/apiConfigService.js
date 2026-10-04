@@ -208,11 +208,19 @@ exports.mergeFieldMetadata = async (configId, apiFields) => {
   return merged;
 };
 
+const SYSTEM_PROPOSAL_FIELDS = [
+  { key: 'pending_station_code', label: 'Mã trạm chờ', type: 'text', required: false, system: true }
+];
+
 exports.getSelectedFields = async (id) => {
   const config = await exports.getById(id);
   if (!config) return null;
-  if (!config.selected_fields) return null;
-  return typeof config.selected_fields === 'string' ? JSON.parse(config.selected_fields) : config.selected_fields;
+  const list = config.selected_fields
+    ? (typeof config.selected_fields === 'string' ? JSON.parse(config.selected_fields) : config.selected_fields)
+    : [];
+  const keys = new Set((Array.isArray(list) ? list : []).map(f => f && f.key));
+  SYSTEM_PROPOSAL_FIELDS.forEach(f => { if (!keys.has(f.key)) list.push({ ...f }); });
+  return list;
 };
 
 exports.updateSelectedFields = async (id, fields) => {

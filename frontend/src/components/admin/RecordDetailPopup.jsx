@@ -8,7 +8,7 @@ import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
 import StationActivityPopup from './StationActivityPopup';
-import { MapPinned, History, AlertTriangle, CheckCircle2, Eye } from 'lucide-react';
+import { MapPinned, History, AlertTriangle, CheckCircle2, Eye, Hash } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import ConfirmDialog from '../ConfirmDialog';
 import ExtendDeadlineDialog from './ExtendDeadlineDialog';
@@ -815,6 +815,13 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         {error && <div className="error-message">{error}</div>}
 
         <DeadlineCountdown deadline={record.supplement_deadline_at} status={record.status} completedAt={record.info_completed_at} />
+
+        {entity === 'station_proposals' && record?.pending_station_code && (
+          <div className="alert py-2 px-3 text-sm alert-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Hash size={16} />
+            <span>Mã trạm chờ: <b className="font-mono">{record.pending_station_code}</b> (tự động giữ khi duyệt chủ trương)</span>
+          </div>
+        )}
 
         {showInfoConfirm && (
           <div className={`alert py-2 px-3 text-sm ${infoCompleted ? 'alert-success' : 'alert-info'}`} style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
