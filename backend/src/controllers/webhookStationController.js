@@ -60,7 +60,7 @@ exports.stationUpdate = [
   verifyWebhookSecret,
   async (req, res) => {
     const body = req.body || {};
-    const { event_id, ma_tram, station_code, status, fields, note, actor } = body;
+    const { event_id, ma_tram, station_code, status, actor, ten_hanh_dong } = body;
     try {
       if (!event_id || typeof event_id !== 'string' || !event_id.trim()) {
         throw err('Thiếu event_id (idempotency key)', 400);
@@ -104,77 +104,61 @@ exports.stationUpdate = [
         const f = (fieldDefs || []).find(d => d.key === key);
         return (f && f.label) || key;
       };
-      const defKeys = new Set((fieldDefs || []).map(f => f.key));
-      const ignoredKeys = [];
-      const updates = {};
-      if (status !== undefined && status !== null && String(status).trim() !== '') {
-        updates.status = status;
-      }
-      const incoming = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {};
-      for (const k of Object.keys(incoming)) {
-        if (k === 'ma_tram' || !defKeys.has(k)) {
-          ignoredKeys.push(k);
-          continue;
-        }
-        updates[k] = incoming[k];
-      }
+      const title = String(ten_hanh_dong || '').trim().slice(0, 200) || null;
 
-      const statusChanged = updates.status !== undefined && updates.status !== before.status;
-      const fieldKeys = Object.keys(updates).filter(k => k !== 'status');
-      if (!statusChanged && fieldKeys.length === 0) {
-        const result = { event_id, station_id: station.id, updated_fields: [], ignored_keys: ignoredKeys, unchanged: true, logged: [] };
-        const cleanNote = String(note || '').trim();
-        const cleanActor = String(actor || '').trim();
-        if (cleanNote || cleanActor) {
-          await stationActivityService.logActivity({
-            stationId: station.id, action: 'note',
-            fromStatus: before.status, toStatus: before.status,
-            changedFields: { _inbound: { event_id, note: note || null, actor: actor || null, excerpt: excerptOf(body) } },
-            reason: cleanNote || null, actorId: null, actorRole: null,
-            source: 'webhook', ip: req.ip || null
-          });
-          result.logged = ['note'];
-        }
+      const ROUTED_KEYS = new Set(['event_id', 'ma_tram', 'station_code', 'status', 'actor', 'ten_hanh_dong']);
+      const freeKeys = Object.keys(body).filter(k => !ROUTED_KEYS.has(k));
+      if (freeKeys.length > 50) {
+        throw err('Quá nhiều trường tự do (tối đa 50)', 400);
+      }
+      const capValue = (v) => {
+        if (typeof v === 'string' && v.length > 2000) return v.slice(0, 2000) + '…';
+        return v === undefined ? null : v;
+      };
+      const table = freeKeys.map(k => ({ key: k, label: labelOf(k), value: capValue(body[k]) }));
+
+      const statusVal = (status !== undefined && status !== null && String(status).trim() !== '') ? String(status).trim() : null;
+      const statusChanged = !!statusVal && statusVal !== before.status;
+
+      if (!statusChanged && table.length === 0 && !title) {
+        const result = { event_id, station_id: station.id, updated_fields: [], status_changed: false, ignored_keys: [], unchanged: true, logged: [], title: null };
         await logInbound({ body, result, ok: true, stationId: station.id });
         return res.json({ success: true, data: result });
       }
 
-      await stationService.updateStation(station.id, updates);
-      const after = await stationService.getStationById(station.id);
-
-      const diff = {};
-      for (const k of fieldKeys) {
-        const o = normVal(before ? before[k] : '').slice(0, 500);
-        const n = normVal(after ? after[k] : '').slice(0, 500);
-        if (o !== n) diff[k] = { label: labelOf(k), old: o, new: n };
-      }
-      const inboundExcerpt = { event_id, note: note || null, actor: actor || null, excerpt: excerptOf(body) };
+      const titleFields = title ? { _title: title } : {};
       const loggedRows = [];
+      let toStatus = before.status;
       if (statusChanged) {
+        await stationService.updateStation(station.id, { status: statusVal });
+        const after = await stationService.getStationById(station.id);
+        toStatus = after.status;
         await stationActivityService.logActivity({
           stationId: station.id, action: 'status_change',
           fromStatus: before.status, toStatus: after.status,
-          changedFields: { ...diff, _inbound: inboundExcerpt },
-          reason: note || null, actorId: null, actorRole: null, source: 'webhook', ip: req.ip || null
+          changedFields: { ...titleFields },
+          reason: null, actorId: null, actorRole: null, source: 'webhook', ip: req.ip || null
         });
         loggedRows.push('status_change');
       }
-      if (fieldKeys.length > 0) {
+      if (table.length > 0 || (title && !statusChanged)) {
         await stationActivityService.logActivity({
-          stationId: station.id, action: 'updated',
-          fromStatus: before.status, toStatus: after.status,
-          changedFields: { ...diff, _inbound: inboundExcerpt },
-          reason: note || null, actorId: null, actorRole: null, source: 'webhook', ip: req.ip || null
+          stationId: station.id, action: 'note',
+          fromStatus: before.status, toStatus,
+          changedFields: { ...titleFields, _table: table },
+          reason: null, actorId: null, actorRole: null, source: 'webhook', ip: req.ip || null
         });
-        loggedRows.push('updated');
+        loggedRows.push('note');
       }
 
       const result = {
         event_id, station_id: station.id,
-        updated_fields: fieldKeys,
+        updated_fields: [],
         status_changed: statusChanged,
-        ignored_keys: ignoredKeys,
-        logged: loggedRows
+        ignored_keys: [],
+        unchanged: false,
+        logged: loggedRows,
+        title
       };
       await logInbound({ body, result, ok: true, stationId: station.id });
       return res.json({ success: true, data: result });

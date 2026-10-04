@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, History } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, History, ArrowDownUp } from 'lucide-react';
 import { proposalLogService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import useMapStatuses from '../../hooks/useMapStatuses';
@@ -83,6 +83,12 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [oldestFirst, setOldestFirst] = useState(false);
+  const shown = useMemo(() => {
+    const arr = [...items].sort((a, b) =>
+      new Date(a.created_at) - new Date(b.created_at) || (a.id - b.id));
+    return oldestFirst ? arr : arr.reverse();
+  }, [items, oldestFirst]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,9 +176,19 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
             <History size={18} className="text-primary" />
             Hoạt động đề xuất #{proposalId}
           </h3>
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-ghost btn-sm gap-1"
+              title={oldestFirst ? 'Đang xem cũ nhất — bấm để xem mới nhất' : 'Đang xem mới nhất — bấm để xem cũ nhất'}
+              onClick={() => setOldestFirst(v => !v)}
+            >
+              <ArrowDownUp size={14} />
+              {oldestFirst ? 'Cũ nhất' : 'Mới nhất'}
+            </button>
+            <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
         {loading ? (
           <div className="flex justify-center py-8"><span className="loading loading-spinner loading-lg"></span></div>
@@ -182,7 +198,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
           <div className="text-center py-8 text-base-content/50 text-sm">Chưa có hoạt động nào được ghi</div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto pr-1">
-            {items.map(renderItem)}
+            {shown.map(renderItem)}
           </div>
         )}
         <div className="modal-action">

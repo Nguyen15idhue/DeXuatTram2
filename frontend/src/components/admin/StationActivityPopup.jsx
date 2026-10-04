@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, History } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, History, ArrowDownUp } from 'lucide-react';
 import { stationService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { getStatusLabel } from '../../utils/mapStatuses';
@@ -57,6 +57,12 @@ const StationActivityPopup = ({ stationId, onClose }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [oldestFirst, setOldestFirst] = useState(false);
+  const shown = useMemo(() => {
+    const arr = [...items].sort((a, b) =>
+      new Date(a.created_at) - new Date(b.created_at) || (a.id - b.id));
+    return oldestFirst ? arr : arr.reverse();
+  }, [items, oldestFirst]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +84,10 @@ const StationActivityPopup = ({ stationId, onClose }) => {
     try {
       changed = typeof it.changed_fields === 'string' ? JSON.parse(it.changed_fields) : it.changed_fields;
     } catch { changed = null; }
+    const freeTable = changed && Array.isArray(changed._table) ? changed._table : null;
+    const restEntries = changed
+      ? Object.entries(changed).filter(([k]) => k !== '_title' && k !== '_table')
+      : [];
     return (
       <div key={it.id} className="flex gap-3">
         <div className="flex flex-col items-center">
@@ -86,7 +96,7 @@ const StationActivityPopup = ({ stationId, onClose }) => {
         </div>
         <div className="pb-5 flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-sm">{ACTION_LABEL[it.action] || it.action}</span>
+            <span className="font-semibold text-sm">{(changed && changed._title) || ACTION_LABEL[it.action] || it.action}</span>
             {(it.action === 'status_change' || it.action === 'status_change_denied') && (
               <span className="text-xs text-base-content/70">{it.from_status ? getStatusLabel(it.from_status, 'station') : '—'} → <b>{it.to_status ? getStatusLabel(it.to_status, 'station') : '—'}</b></span>
             )}
@@ -103,7 +113,33 @@ const StationActivityPopup = ({ stationId, onClose }) => {
               <span><b>Ghi chú:</b> {it.reject_reason}</span>
             </div>
           )}
-          {changed && Object.keys(changed).length > 0 && (
+          {freeTable && freeTable.length > 0 && (
+            <div className="mt-2 border border-base-300 rounded-lg overflow-hidden">
+              <table className="table table-xs">
+                <thead>
+                  <tr className="bg-base-200">
+                    <th className="w-10">STT</th>
+                    <th>Tên trường</th>
+                    <th>Giá trị</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {freeTable.map((row, i) => {
+                    const label = (row && row.label) || (row && row.key) || `#${i + 1}`;
+                    const newText = fmtRawValue(row && row.key, row ? row.value : null);
+                    return (
+                      <tr key={(row && row.key) || i}>
+                        <td className="text-base-content/50">{i + 1}</td>
+                        <td className="font-medium">{label}</td>
+                        <td className="max-w-[320px] truncate" title={newText}>{newText}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {restEntries.length > 0 && (
             <div className="mt-2 border border-base-300 rounded-lg overflow-hidden">
               <table className="table table-xs">
                 <thead>
@@ -113,7 +149,7 @@ const StationActivityPopup = ({ stationId, onClose }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(changed).map(([k, v]) => {
+                  {restEntries.map(([k, v]) => {
                     const isDiff = v && typeof v === 'object' && ('new' in v || 'old' in v);
                     const label = (isDiff && v.label) || RAW_LABELS[k] || k;
                     const rawNew = isDiff ? v.new : v;
@@ -144,9 +180,19 @@ const StationActivityPopup = ({ stationId, onClose }) => {
             <History size={18} className="text-primary" />
             Hoạt động trạm #{stationId}
           </h3>
-          <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-ghost btn-sm gap-1"
+              title={oldestFirst ? 'Đang xem cũ nhất — bấm để xem mới nhất' : 'Đang xem mới nhất — bấm để xem cũ nhất'}
+              onClick={() => setOldestFirst(v => !v)}
+            >
+              <ArrowDownUp size={14} />
+              {oldestFirst ? 'Cũ nhất' : 'Mới nhất'}
+            </button>
+            <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
         {loading ? (
           <div className="flex justify-center py-8"><span className="loading loading-spinner loading-lg"></span></div>
@@ -156,7 +202,7 @@ const StationActivityPopup = ({ stationId, onClose }) => {
           <div className="text-center py-8 text-base-content/50 text-sm">Chưa có hoạt động nào được ghi</div>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto pr-1">
-            {items.map(renderItem)}
+            {shown.map(renderItem)}
           </div>
         )}
         <div className="modal-action">
