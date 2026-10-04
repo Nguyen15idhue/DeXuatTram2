@@ -39,7 +39,7 @@ git pull && ./update.sh
 | `update.sh` | Cập nhật code: chạy migration mới → build lại → `up -d`. |
 | `scripts/migrate.sh` | Quản lý migration `database/*.sql` (tracking bảng `schema_migrations`). |
 | `scripts/sync-data.sh` | Đồng bộ dữ liệu dev → VPS (chạy trên máy dev). |
-| `docker-compose.simple.yml` | Stack production: `frontend` (Vite, `:5173`), `backend` (`Dockerfile.prod`, `:3000`), `mysql` (`8.0.44-debian`), `caddy` (profile `tls`, tùy chọn). |
+| `docker-compose.simple.yml` | Stack production: `frontend` (nginx `:80`), `backend` (`Dockerfile.prod`, `:3000`), `mysql` (`8.0.44-debian`). |
 | `docker/mysql-datadir.tar.gz` | Datadir MySQL init sẵn (khởi động nhanh, **không chứa bảng app**). |
 | `docker/station_lite_dump.sql` | **Base schema + data cấu hình + 4 user seed** (xem mục 7). |
 | `docker/mysql-init/01-app-user.sh` | Tạo user `station_app` (chỉ chạy khi volume MySQL trống hoàn toàn). |
@@ -97,7 +97,7 @@ Kết thúc script in ra link `http://<IP>:<WEB_PORT>` và tài khoản `admin@s
 4. Khởi động MySQL, chờ `healthy` (tối đa ~6 phút).
 5. Nếu DB **chưa có bảng `users`** → import `docker/station_lite_dump.sql`.
 6. **Áp migration còn thiếu**: đánh dấu các file `database/*.sql` có số **≤ `DUMP_MAX_MIGRATION` (mặc định 44)** là "đã có trong dump", rồi chạy `migrate.sh run` cho phần **> 44** (45→mới nhất). Nhờ vậy DB mới khớp hoàn toàn với mã nguồn.
-7. Chạy backend + frontend (caddy KHÔNG chạy vì nằm trong profile `tls`).
+7. Chạy backend + frontend.
 
 Idempotent: chạy lại không mất dữ liệu và bỏ qua các bước đã làm.
 
@@ -156,6 +156,25 @@ git checkout -- .
 git pull origin ui-redesign
 ./update.sh
 ```
+
+### 4.1 Deploy nhanh fix nhỏ (`scripts/hotfix.sh`)
+
+Fix nhỏ (code JS/CSS thuần đã push, không migration/deps/Docker) không cần `update.sh` (~5 phút):
+
+```bash
+cd ~/DeXuatTram2
+./scripts/hotfix.sh
+```
+
+Script tự: kiểm tra cây sạch → `git pull` → so diff với commit trước → có migration/`package*.json`/Dockerfile/compose/file lạ/file xóa thì **dừng và báo chạy `./update.sh`** → backend: `docker cp` từng file đổi vào container + restart (~10s boot, worker tự requeue job dở) → frontend đổi: rebuild riêng service frontend → verify `/api/test` = 200.
+
+| Trường hợp | Dùng gì |
+|---|---|
+| Sửa `backend/src`, `frontend/src|public` (đã push) | `hotfix.sh` (backend <1 phút; có frontend ~3 phút) |
+| Thêm/sửa `database/*.sql`, `package*.json`, Dockerfile, compose | `update.sh` |
+| VPS có sửa tay chưa commit | Xử lý tay trước (script từ chối chạy) |
+
+Quy tắc: không sửa tay trong container (mất khi recreate); lần `update.sh` sau rebuild image từ git nên container và image đồng nhất lại.
 
 ---
 
@@ -332,9 +351,9 @@ Không có key thì nút chatbot vẫn ẩn (`GET /api/assistant/status` báo ch
 
 ---
 
-## 8. Cloudflare & HTTPS (không dùng Caddy)
+## 8. Cloudflare & HTTPS
 
-`docker-compose.simple.yml` có service `caddy` trong **profile `tls`** nên **không tự chạy** khi `up -d`. Với Cloudflare, bạn **không cần** Caddy.
+Mọi traffic qua Cloudflare bên ngoài; không còn reverse proxy nào khác trên VPS (Caddy đã xóa, xem 12.2).
 
 ### 8.1 Cách khuyến nghị — Cloudflare Tunnel (không mở cổng)
 
@@ -484,17 +503,9 @@ ssh -L 8082:127.0.0.1:8082 root@<IP-VPS>   # rồi mở http://localhost:8082
 ```
 Đăng nhập `root` / `RootPass2026!` (hoặc `station_app` / `AppPass2026!`).
 
-### 12.2 Caddy (tùy chọn — chỉ khi KHÔNG dùng Cloudflare)
+### 12.2 Caddy (đã loại bỏ)
 
-Service `caddy` nằm trong profile `tls`, cần `DOMAIN` trong `.env` và file `Caddyfile` (đã có sẵn):
-
-```bash
-# .env
-DOMAIN=station.yourdomain.com   # Caddyfile dùng biến này
-docker compose -f docker-compose.simple.yml --profile tls up -d
-```
-
-Caddy tự xin Let's Encrypt và forward về `frontend:5173`. Nếu đã dùng Cloudflare Tunnel thì **bỏ qua** mục này.
+Dự án dùng Cloudflare bên ngoài nên Caddy không còn cần thiết: file `Caddyfile` và service `caddy` đã xóa khỏi mọi nhánh (chỉ còn trong lịch sử git); 2 volumes mồ côi (`dexuattram2_caddy_data`, `dexuattram2_caddy_config`) đã xóa trên VPS. Không dùng `--profile tls` nữa.
 
 ### 12.3 Kiến trúc deploy hiện tại
 
