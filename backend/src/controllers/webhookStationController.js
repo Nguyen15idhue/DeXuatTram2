@@ -83,7 +83,15 @@ exports.stationUpdate = [
       );
       if (dup.length > 0 && dup[0].response_payload) {
         const prev = typeof dup[0].response_payload === 'string' ? JSON.parse(dup[0].response_payload) : dup[0].response_payload;
-        return res.json({ success: true, data: { ...prev, duplicate: true } });
+        let liveStatus = null;
+        try {
+          const [live] = await pool.query(
+            `SELECT status FROM stations WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_tram')) = ? LIMIT 1`,
+            [code]
+          );
+          if (live.length > 0) liveStatus = live[0].status || null;
+        } catch { /* silent: giữ nguyên cache khi tra thất bại */ }
+        return res.json({ success: true, data: { ...prev, duplicate: true, ...(liveStatus ? { current_status: liveStatus } : {}) } });
       }
 
       const [srows] = await pool.query(
@@ -121,7 +129,7 @@ exports.stationUpdate = [
       const statusChanged = !!statusVal && statusVal !== before.status;
 
       if (!statusChanged && table.length === 0 && !title) {
-        const result = { event_id, station_id: station.id, updated_fields: [], status_changed: false, ignored_keys: [], unchanged: true, logged: [], title: null };
+        const result = { event_id, station_id: station.id, updated_fields: [], status_changed: false, ignored_keys: [], unchanged: true, logged: [], title: null, current_status: before.status };
         await logInbound({ body, result, ok: true, stationId: station.id });
         return res.json({ success: true, data: result });
       }
@@ -158,7 +166,8 @@ exports.stationUpdate = [
         ignored_keys: [],
         unchanged: false,
         logged: loggedRows,
-        title
+        title,
+        current_status: toStatus
       };
       await logInbound({ body, result, ok: true, stationId: station.id });
       return res.json({ success: true, data: result });

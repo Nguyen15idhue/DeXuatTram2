@@ -52,6 +52,23 @@ const fmtRawValue = (key, v) => {
   return String(v);
 };
 
+const SAFE_HTML_TAGS = new Set(['br', 'p', 'ul', 'ol', 'li', 'b', 'strong', 'i', 'em', 'u', 'span', 'div']);
+const sanitizeBasicHtml = (html) => String(html).replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (m, tag) => {
+  const t = tag.toLowerCase();
+  if (!SAFE_HTML_TAGS.has(t)) return '';
+  if (m.startsWith('</')) return `</${t}>`;
+  if (t === 'br') return '<br/>';
+  return `<${t}>`;
+});
+const looksLikeHtml = (s) => typeof s === 'string' && /<[a-zA-Z][a-zA-Z0-9]*\b[^>]*>/.test(s);
+
+const renderValueCell = (text) => {
+  if (looksLikeHtml(text)) {
+    return <span className="activity-html" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} dangerouslySetInnerHTML={{ __html: sanitizeBasicHtml(text) }} />;
+  }
+  return <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</span>;
+};
+
 const StationActivityPopup = ({ stationId, onClose }) => {
   const { token } = useAuth();
   const [items, setItems] = useState([]);
@@ -131,7 +148,7 @@ const StationActivityPopup = ({ stationId, onClose }) => {
                       <tr key={(row && row.key) || i}>
                         <td className="text-base-content/50">{i + 1}</td>
                         <td className="font-medium">{label}</td>
-                        <td className="max-w-[320px] truncate" title={newText}>{newText}</td>
+                        <td>{renderValueCell(newText)}</td>
                       </tr>
                     );
                   })}
@@ -159,7 +176,7 @@ const StationActivityPopup = ({ stationId, onClose }) => {
                     return (
                       <tr key={k}>
                         <td className="font-medium">{label}</td>
-                        <td className="max-w-[320px] truncate" title={newText}>{newText}</td>
+                        <td>{renderValueCell(newText)}</td>
                       </tr>
                     );
                   })}

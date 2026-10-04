@@ -165,7 +165,7 @@ router.post('/oneoffice/work-process/move-to-project', webhookLimiter, workProce
    *                 description: Người thực hiện bên 1Office (lưu vết trong log inbound)
   *     responses:
   *       200:
-  *         description: Thành công (kể cả event trùng — trả kết quả cũ kèm duplicate=true; có key tự do/tiêu đề nhưng không đổi status → unchanged=false, logged=['note'])
+  *         description: Thành công (kể cả event trùng — trả kết quả cũ kèm duplicate=true + current_status tra live; có key tự do/tiêu đề nhưng không đổi status → unchanged=false, logged=['note']). BPA nên check `data.current_status` thay vì `data.status_changed` để xác nhận trạng thái trạm.
  *       400:
  *         description: Thiếu event_id/mã trạm hoặc status không hợp lệ
  *       401:
