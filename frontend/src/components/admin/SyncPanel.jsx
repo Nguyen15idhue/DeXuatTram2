@@ -44,7 +44,7 @@ const SyncPanel = ({ configId, onClose }) => {
     try {
       const res = await adminProposalService.getAll('', token);
       if (res.success) {
-        const list = (res.data || []).filter(p => !p.contact_1office_code && ['PENDING', 'REVIEWING'].includes(p.status));
+        const list = (res.data || []).filter(p => !p.contact_1office_code);
         setPushState(prev => ({ ...prev, proposals: list, loadingProposals: false }));
       }
     } catch {
@@ -212,7 +212,7 @@ const SyncPanel = ({ configId, onClose }) => {
 
       {activeTab === 'push' && (
         <div>
-          <p className="text-sm text-base-content/60 mb-3">Chọn đề xuất chưa liên kết để gửi sang 1Office</p>
+          <p className="text-sm text-base-content/60 mb-3">Chọn đề xuất chưa liên kết để gửi sang 1Office (mọi trạng thái đều đẩy được)</p>
           <div className="flex gap-2 mb-3">
             <button className="btn btn-outline btn-sm gap-1" onClick={loadProposals} disabled={pushState.loadingProposals}>
               <RefreshCw size={14} className={pushState.loadingProposals ? 'animate-spin' : ''} />

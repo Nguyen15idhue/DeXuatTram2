@@ -11,7 +11,7 @@ const pool = require('../utils/db');
  * /api/admin/1office/push:
  *   post:
  *     tags: [1Office Sync]
- *     summary: Push proposals sang 1Office
+ *     summary: Push proposals sang 1Office (đẩy tay — mọi trạng thái đều được)
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -37,7 +37,7 @@ router.post('/push', requireAuth, async (req, res) => {
     if (!apiConfigId || !proposalIds || !Array.isArray(proposalIds) || proposalIds.length === 0) {
       return res.status(400).json({ success: false, message: 'Thiếu apiConfigId hoặc proposalIds' });
     }
-    const result = await syncService.pushTo1Office(proposalIds, apiConfigId, req.user.id);
+    const result = await syncService.pushTo1Office(proposalIds, apiConfigId, req.user.id, { allowAllStatuses: true });
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(e.statusCode || 500).json({ success: false, message: e.message });

@@ -52,6 +52,14 @@ const { webhookLimiter } = require('../middlewares/rateLimits');
  *       404:
  *         description: Không tìm thấy đề xuất theo mã
  */
+router.use((req, res, next) => {
+  const started = Date.now();
+  res.on('finish', () => {
+    console.log(`[Webhook] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - started}ms)`);
+  });
+  next();
+});
+
 router.post('/oneoffice/proposal-status', webhookLimiter, webhookController.proposalStatus);
 
 /**

@@ -132,6 +132,7 @@ exports.getUnlinkedPushUserWarnings = async (proposal, fieldDefs) => {
 exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
   const config = await apiConfigService.getById(apiConfigId);
   if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
+  const allowAllStatuses = !!(opts && opts.allowAllStatuses);
   const allowedStatuses = ['PENDING', 'REVIEWING', ...((opts && opts.allowStatuses) || [])];
   const setStatus = opts && opts.setStatus ? String(opts.setStatus) : null;
 
@@ -148,7 +149,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
       continue;
     }
 
-    if (!allowedStatuses.includes(proposal.status)) {
+    if (!allowAllStatuses && !allowedStatuses.includes(proposal.status)) {
       results.push({ proposalId, success: false, error: `Chỉ đẩy được đề xuất ở trạng thái Đang đề xuất hoặc Đang xem xét (hiện tại: ${proposal.status})` });
       continue;
     }

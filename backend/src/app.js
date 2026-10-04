@@ -75,6 +75,15 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Body parse lỗi (vd webhook 1Office gửi JSON sai cú pháp) -> trả JSON thay vì trang HTML mặc định của Express
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err && err.status === 400 && (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && 'body' in err))) {
+    return res.status(400).json({ success: false, message: 'Body JSON không hợp lệ' });
+  }
+  next(err);
+});
+
 // 3b. Nén response (giảm mạnh payload lớn như data list)
 app.use(compression());
 
