@@ -159,13 +159,14 @@ router.post('/oneoffice/work-process/move-to-project', webhookLimiter, workProce
  *               fields:
  *                 type: object
  *                 description: Trường động theo key (vd trien_khai_ha_tang, so_luong_tru); key lạ bị bỏ qua, ma_tram bị chặn
- *               note:
- *                 type: string
- *               actor:
- *                 type: string
- *     responses:
- *       200:
- *         description: Thành công (kể cả event trùng — trả kết quả cũ kèm duplicate=true)
+  *               note:
+  *                 type: string
+  *                 description: Ghi chú — được lưu thành dòng log timeline kể cả khi không có thay đổi nào (logged=['note'])
+  *               actor:
+  *                 type: string
+  *     responses:
+  *       200:
+  *         description: Thành công (kể cả event trùng — trả kết quả cũ kèm duplicate=true; không đổi gì nhưng có note → unchanged=true, logged=['note'])
  *       400:
  *         description: Thiếu event_id/mã trạm hoặc status không hợp lệ
  *       401:

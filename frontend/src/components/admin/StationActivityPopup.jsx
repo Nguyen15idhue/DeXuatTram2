@@ -16,7 +16,8 @@ const ACTION_LABEL = {
   updated: 'Cập nhật thông tin',
   status_change: 'Đổi trạng thái',
   status_change_denied: 'Đổi trạng thái bị chặn',
-  station_created: 'Tạo trạm'
+  station_created: 'Tạo trạm',
+  note: 'Ghi chú từ 1Office'
 };
 
 const SOURCE_LABEL = {

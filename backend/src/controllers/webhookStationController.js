@@ -122,7 +122,19 @@ exports.stationUpdate = [
       const statusChanged = updates.status !== undefined && updates.status !== before.status;
       const fieldKeys = Object.keys(updates).filter(k => k !== 'status');
       if (!statusChanged && fieldKeys.length === 0) {
-        const result = { event_id, station_id: station.id, updated_fields: [], ignored_keys: ignoredKeys, unchanged: true };
+        const result = { event_id, station_id: station.id, updated_fields: [], ignored_keys: ignoredKeys, unchanged: true, logged: [] };
+        const cleanNote = String(note || '').trim();
+        const cleanActor = String(actor || '').trim();
+        if (cleanNote || cleanActor) {
+          await stationActivityService.logActivity({
+            stationId: station.id, action: 'note',
+            fromStatus: before.status, toStatus: before.status,
+            changedFields: { _inbound: { event_id, note: note || null, actor: actor || null, excerpt: excerptOf(body) } },
+            reason: cleanNote || null, actorId: null, actorRole: null,
+            source: 'webhook', ip: req.ip || null
+          });
+          result.logged = ['note'];
+        }
         await logInbound({ body, result, ok: true, stationId: station.id });
         return res.json({ success: true, data: result });
       }
