@@ -36,6 +36,26 @@
 .legacy-modal.popup-detail {
   max-width: 1140px;
   width: 96%;
+  height: 96vh;
+  max-height: 96vh;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.legacy-modal.popup-detail .popup-header {
+  flex-shrink: 0;
+}
+
+.legacy-modal.popup-detail .popup-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.legacy-modal.popup-detail .popup-footer {
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
@@ -50,6 +70,9 @@
 
   .legacy-modal.popup-detail {
     max-width: 100%;
-    width: 95%;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
   }
 }

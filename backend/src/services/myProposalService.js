@@ -51,7 +51,8 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.info_completed_at
+            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.info_completed_at,
+            p.pending_station_code
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC
