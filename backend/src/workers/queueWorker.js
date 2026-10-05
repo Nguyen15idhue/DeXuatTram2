@@ -89,8 +89,23 @@ const processPushJob = async (job) => {
   const fileSyncService = require('../services/fileSyncService');
   const pool = require('../utils/db');
 
+  const findExistingId = async () => {
+    const code = contact_data.code;
+    if (!code) return null;
+    try {
+      const detail = await oneOfficeService.getContactDetail(api_config_id, code);
+      if (!detail || !detail.success || !detail.data || detail.data.error) return null;
+      const inner = detail.data.data || detail.data;
+      const id = inner ? (inner.ID ?? inner.id ?? null) : null;
+      return (id !== null && id !== undefined && String(id).match(/^\d+$/)) ? String(id) : null;
+    } catch { return null; }
+  };
+
+  const existingId = await findExistingId();
+  const recreated = !!was_linked && !existingId;
+
   let prevFileNames = [];
-  if (proposal_id) {
+  if (proposal_id && !recreated) {
     try {
       const [rows] = await pool.query('SELECT last_synced_data FROM station_proposals WHERE id = ?', [proposal_id]);
       if (rows.length > 0 && rows[0].last_synced_data) {
@@ -107,7 +122,7 @@ const processPushJob = async (job) => {
   let filesInfo = { sent: [], skipped: [], total: 0 };
   if (proposal_id) {
     try {
-      const built = await fileSyncService.buildFilesArray(proposal_id, { excludeNames: was_linked ? prevFileNames : [] });
+      const built = await fileSyncService.buildFilesArray(proposal_id, { excludeNames: recreated ? [] : prevFileNames });
       const sentNames = built.names;
       contact_data.files = built.files.length > 0 ? JSON.stringify(built.files) : undefined;
       if (contact_data.files === undefined) delete contact_data.files;
@@ -117,22 +132,8 @@ const processPushJob = async (job) => {
     }
   }
 
-  const findExistingId = async () => {
-    const code = contact_data.code;
-    if (!code) return null;
-    try {
-      const detail = await oneOfficeService.getContactDetail(api_config_id, code);
-      if (!detail || !detail.success || !detail.data || detail.data.error) return null;
-      const inner = detail.data.data || detail.data;
-      const id = inner ? (inner.ID ?? inner.id ?? null) : null;
-      return (id !== null && id !== undefined && String(id).match(/^\d+$/)) ? String(id) : null;
-    } catch { return null; }
-  };
-
-  const existingId = await findExistingId();
   let result;
   let updated = false;
-  const recreated = !!was_linked && !existingId;
   let statusMerged = false;
   if (existingId) {
     const mergedPayload = set_status ? { ...contact_data, status_id: set_status } : { ...contact_data };
