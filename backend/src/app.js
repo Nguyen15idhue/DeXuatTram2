@@ -44,6 +44,7 @@ const lifecycleConfigRoutes = require('./routes/lifecycleConfig');
 const helpPublicRoutes = require('./routes/helpPublic');
 const adminHelpRoutes = require('./routes/adminHelp');
 const adminAssistantRoutes = require('./routes/adminAssistant');
+const adminAutomationsRoutes = require('./routes/adminAutomations');
 const adminDocumentsRoutes = require('./routes/adminDocuments');
 const adminHelpVideosRoutes = require('./routes/adminHelpVideos');
 const assistantRoutes = require('./routes/assistant');
@@ -51,7 +52,7 @@ const queueWorker = require('./workers/queueWorker');
 const personnelSyncWorker = require('./workers/personnelSyncWorker');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 const importWorker = require('./workers/importWorker');
-
+const workAutomationWorker = require('./workers/workAutomationWorker');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -156,6 +157,7 @@ app.use('/api/help', helpPublicRoutes);
 app.use('/api/admin/help', adminLimiter, adminHelpRoutes);
 app.use('/api/admin/help/videos', adminLimiter, adminHelpVideosRoutes);
 app.use('/api/admin/assistant', adminLimiter, adminAssistantRoutes);
+app.use('/api/admin/automations', adminLimiter, adminAutomationsRoutes);
 app.use('/api/admin/documents', adminLimiter, adminDocumentsRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/tiles', tilesRoutes);
@@ -180,6 +182,9 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   importWorker.start().catch((err) => {
     console.error('[ImportWorker] start error:', err.message);
+  });
+  workAutomationWorker.start().catch((err) => {
+    console.error('[AutomationWorker] start error:', err.message);
   });
 });
 

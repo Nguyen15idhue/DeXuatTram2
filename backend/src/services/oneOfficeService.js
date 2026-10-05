@@ -219,6 +219,7 @@ const assertWorkBaseUrlAllowed = (baseUrl) => {
 };
 
 exports.updateWorkProcess = async ({ baseUrl, token, ID, project_id }) => {
+  console.warn('[1Office] updateWorkProcess chi dung de test, KHONG dung de gan du an (lam rot khoi Lien quan, xem docs/8/66)');
   const cleanBase = assertWorkBaseUrlAllowed(baseUrl || 'https://egr.1office.vn');
   if (ID === undefined || ID === null || String(ID).trim() === '') {
     throw Object.assign(new Error('Thiếu ID quy trình'), { statusCode: 400 });

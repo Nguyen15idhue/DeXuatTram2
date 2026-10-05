@@ -310,6 +310,20 @@ async function autoPushOnReview(id, reviewerId) {
     if (!first || !first.success) {
       return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đẩy' };
     }
+    if (!first.isUpdate && !first.deduped) {
+      try {
+        const workAutomationService = require('./workAutomationService');
+        const auto = await workAutomationService.getByKey('auto_assign_process');
+        if (auto && auto.enabled) {
+          await workAutomationService.createPendingRun({
+            automationId: auto.id,
+            proposalId: id,
+            proposalCode: (first.contactData && first.contactData.code) || null,
+            trigger: 'auto',
+          });
+        }
+      } catch { /* silent: khong chan luong duyet */ }
+    }
     return { queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id, warnings: first.warnings || [], droppedFields: first.droppedFields || [] };
   } catch (e) {
     return { queued: false, reason: e.message || 'Lỗi tạo lệnh đẩy' };

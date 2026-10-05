@@ -819,6 +819,34 @@ export const webhookConfigService = {
   }
 };
 
+export const automationService = {
+  list(token) {
+    return api.getWithAuth('/admin/automations', token);
+  },
+  get(key, token) {
+    return api.getWithAuth(`/admin/automations/${key}`, token);
+  },
+  update(key, data, token) {
+    return api.putWithAuth(`/admin/automations/${key}`, data, token);
+  },
+  testLogin(key, data, token) {
+    return api.postWithAuth(`/admin/automations/${key}/test-login`, data || {}, token);
+  },
+  runManual(key, proposalCode, token) {
+    return api.postWithAuth(`/admin/automations/${key}/run`, { proposal_code: proposalCode }, token);
+  },
+  runs(key, params, token) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    });
+    return api.getWithAuth(`/admin/automations/${key}/runs?${qs.toString()}`, token);
+  },
+  runDetail(key, id, token) {
+    return api.getWithAuth(`/admin/automations/${key}/runs/${id}`, token);
+  }
+};
+
 export const externalUserService = {
   getAll(system, token) {
     const qs = system ? `?system=${encodeURIComponent(system)}` : '';

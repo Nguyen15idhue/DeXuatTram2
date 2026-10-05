@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiConfigService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code, Webhook, ScrollText } from 'lucide-react';
+import { Settings, Plus, Pencil, Trash2, Wifi, WifiOff, X, ArrowRightLeft, RefreshCw, Code, Webhook, ScrollText, Bot } from 'lucide-react';
 import FieldMappingPanel from '../../components/admin/FieldMappingPanel';
 import SyncPanel from '../../components/admin/SyncPanel';
 import WebhookManager from '../../components/admin/WebhookManager';
@@ -11,6 +12,7 @@ import WebhookEndpoints from '../../components/admin/WebhookEndpoints';
 import WebhookListener from '../../components/admin/WebhookListener';
 import TemplateEditor from '../../components/admin/TemplateEditor';
 import PersonnelSyncPanel from '../../components/admin/PersonnelSyncPanel';
+import AutomationPanel from '../../components/admin/AutomationPanel';
 
 const AUTH_TYPES = [
   { value: 'token', label: 'Token (Bearer)' },
@@ -43,12 +45,15 @@ const AdminApiConfigPage = () => {
   const [syncConfig, setSyncConfig] = useState(null);
   const [templateConfig, setTemplateConfig] = useState(null);
   const [personnelConfig, setPersonnelConfig] = useState(null);
-  const [activeTab, setActiveTab] = useState('api');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'api';
+  const automationId = searchParams.get('id') || null;
+  const goTab = (tab) => setSearchParams(tab === 'api' ? {} : { tab });
   const [logAction, setLogAction] = useState('');
 
   const handleViewLogs = (action) => {
     setLogAction(action || '');
-    setActiveTab('logs');
+    setSearchParams({ tab: 'logs' });
   };
 
   const [form, setForm] = useState({
@@ -331,7 +336,7 @@ const AdminApiConfigPage = () => {
         <button
           role="tab"
           className={`tab ${activeTab === 'api' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('api')}
+          onClick={() => goTab('api')}
         >
           <Settings size={14} className="inline mr-1" />
           API Configs
@@ -339,7 +344,7 @@ const AdminApiConfigPage = () => {
         <button
           role="tab"
           className={`tab ${activeTab === 'webhook' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('webhook')}
+          onClick={() => goTab('webhook')}
         >
           <Webhook size={14} className="inline mr-1" />
           Webhooks
@@ -347,10 +352,18 @@ const AdminApiConfigPage = () => {
         <button
           role="tab"
           className={`tab ${activeTab === 'logs' ? 'tab-active' : ''}`}
-          onClick={() => setActiveTab('logs')}
+          onClick={() => goTab('logs')}
         >
           <ScrollText size={14} className="inline mr-1" />
           Log webhook
+        </button>
+        <button
+          role="tab"
+          className={`tab ${activeTab === 'automation' ? 'tab-active' : ''}`}
+          onClick={() => goTab('automation')}
+        >
+          <Bot size={14} className="inline mr-1" />
+          Automation
         </button>
       </div>
 
@@ -525,6 +538,13 @@ const AdminApiConfigPage = () => {
           <WebhookEndpoints onViewLogs={handleViewLogs} />
           <WebhookManager />
         </>
+      ) : activeTab === 'automation' ? (
+        <AutomationPanel
+          token={token}
+          selectedId={automationId}
+          onSelect={(id) => setSearchParams({ tab: 'automation', id: String(id) })}
+          onBack={() => setSearchParams({ tab: 'automation' })}
+        />
       ) : (
         <WebhookListener initialAction={logAction} />
       )}

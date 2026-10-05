@@ -1,0 +1,340 @@
+const crypto = require('crypto');
+const pool = require('../utils/db');
+const apiConfigService = require('./apiConfigService');
+
+const sessions = new Map();
+
+const secretKey = () => {
+  const raw = [process.env.AUTOMATION_KEY, process.env.JWT_SECRET].filter(Boolean).join('|');
+  if (!raw) throw Object.assign(new Error('Thieu AUTOMATION_KEY/JWT_SECRET'), { statusCode: 500 });
+  return crypto.createHash('sha256').update(raw, 'utf8').digest();
+};
+
+exports.encryptSecret = (plain) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', secretKey(), iv);
+  const data = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  return Buffer.from(JSON.stringify({ iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') })).toString('base64');
+};
+
+exports.decryptSecret = (enc) => {
+  const o = JSON.parse(Buffer.from(String(enc), 'base64').toString('utf8'));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', secretKey(), Buffer.from(o.iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(o.tag, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(o.data, 'base64')), decipher.final()]).toString('utf8');
+};
+
+exports.maskRow = (row) => {
+  if (!row) return row;
+  const out = { ...row };
+  out.password_set = !!out.password_enc;
+  out.api_token_set = !!out.api_token_enc;
+  delete out.password_enc;
+  delete out.api_token_enc;
+  return out;
+};
+
+exports.getByKey = async (key) => {
+  const [rows] = await pool.query('SELECT * FROM work_automations WHERE automation_key = ?', [key]);
+  return rows.length > 0 ? rows[0] : null;
+};
+
+exports.list = async () => {
+  const [rows] = await pool.query('SELECT * FROM work_automations ORDER BY id ASC');
+  return rows.map(exports.maskRow);
+};
+
+exports.updateByKey = async (key, fields) => {
+  const existing = await exports.getByKey(key);
+  if (!existing) throw Object.assign(new Error('Khong tim thay automation'), { statusCode: 404 });
+  const cols = [];
+  const params = [];
+  const allow = { enabled: 1, project_code: 1, project_title: 1, retry_max: 1, retry_interval_s: 1, find_timeout_s: 1, username: 1, note: 1 };
+  for (const [k, v] of Object.entries(fields)) {
+    if (!allow[k]) continue;
+    cols.push(`\`${k}\` = ?`);
+    params.push(v);
+  }
+  if ('password' in fields) {
+    cols.push('password_enc = ?');
+    params.push(fields.password ? exports.encryptSecret(fields.password) : existing.password_enc);
+  }
+  if ('api_token' in fields) {
+    cols.push('api_token_enc = ?');
+    params.push(fields.api_token ? exports.encryptSecret(fields.api_token) : existing.api_token_enc);
+  }
+  if (cols.length === 0) return exports.maskRow(existing);
+  params.push(key);
+  await pool.query(`UPDATE work_automations SET ${cols.join(', ')} WHERE automation_key = ?`, params);
+  sessions.delete(existing.id);
+  const [rows] = await pool.query('SELECT * FROM work_automations WHERE automation_key = ?', [key]);
+  return exports.maskRow(rows[0]);
+};
+
+const webBaseUrl = async () => {
+  try {
+    const cfg = await apiConfigService.getDefaultPushConfig();
+    if (cfg && cfg.base_url) return String(cfg.base_url).replace(/\/$/, '');
+  } catch { /* silent */ }
+  return 'https://egr.1office.vn';
+};
+
+const cookieOf = (jar) => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ');
+
+const doWebLogin = async (base, username, password) => {
+  const jar = {};
+  const store = (res) => {
+    const raw = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
+    for (const c of raw) {
+      const kv = c.split(';')[0];
+      const i = kv.indexOf('=');
+      if (i > 0) jar[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
+    }
+  };
+  let r = await fetch(`${base}/login`, { redirect: 'manual' });
+  store(r);
+  await r.text();
+  r = await fetch(`${base}/login`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Cookie: cookieOf(jar), Referer: `${base}/login` },
+    body: new URLSearchParams({ username: String(username), userpwd: String(password), url_login: `${base}/login`, lang: 'vi' }).toString(),
+  });
+  store(r);
+  await r.text();
+  if (r.status !== 302) throw Object.assign(new Error('Sai tai khoan hoac mat khau 1Office'), { statusCode: 401 });
+  const v = await fetch(`${base}/apps`, { redirect: 'manual', headers: { Cookie: cookieOf(jar) } });
+  const vt = await v.text();
+  if (v.status !== 200 || vt.includes('form-login')) throw Object.assign(new Error('Phien dang nhap 1Office khong hop le'), { statusCode: 401 });
+  return jar;
+};
+
+exports.testLogin = async ({ username, password, apiToken } = {}) => {
+  const base = await webBaseUrl();
+  if (!username || !password) throw Object.assign(new Error('Thieu tai khoan/mat khau'), { statusCode: 400 });
+  const jar = await doWebLogin(base, username, password);
+  let apiOk = null;
+  if (apiToken) {
+    const r = await fetch(`${base}/api/work/process/gets?access_token=${encodeURIComponent(apiToken)}&limit=1&page=1`, { headers: { Cookie: cookieOf(jar) } });
+    const j = await r.json().catch(() => ({}));
+    apiOk = r.ok && j && j.error === false;
+    if (!apiOk) throw Object.assign(new Error('Work API token khong dung duoc (kiem tra quyen object work)'), { statusCode: 401 });
+  }
+  return { ok: true, web: true, api: apiToken ? !!apiOk : null, checked_at: new Date().toISOString() };
+};
+
+const ensureSession = async (auto) => {
+  const base = await webBaseUrl();
+  const hit = sessions.get(auto.id);
+  if (hit && hit.base === base) return { base, jar: hit.jar };
+  if (!auto.username || !auto.password_enc) throw Object.assign(new Error('Automation chua cau hinh tai khoan 1Office'), { statusCode: 400 });
+  const jar = await doWebLogin(base, auto.username, exports.decryptSecret(auto.password_enc));
+  sessions.set(auto.id, { base, jar, at: Date.now() });
+  return { base, jar };
+};
+
+exports.findProcessByCode = async (apiToken, code) => {
+  const base = await webBaseUrl();
+  if (!apiToken) throw Object.assign(new Error('Thieu work API token'), { statusCode: 400 });
+  const r = await fetch(`${base}/api/work/process/gets?access_token=${encodeURIComponent(apiToken)}&limit=50&page=1&filters=${encodeURIComponent(JSON.stringify([{ s: code }]))}`, { signal: AbortSignal.timeout(30000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j || j.error !== false) throw new Error('Khong doc duoc danh sach quy trinh 1Office');
+  const rows = Array.isArray(j.data) ? j.data : [];
+  const roots = rows.filter((d) => !d.parent_id && String(d.title || '').includes(code));
+  if (roots.length > 0) return { id: roots[0].ID, title: roots[0].title, children: rows.filter((d) => d.ID !== roots[0].ID).map((d) => d.ID) };
+  const exact = rows.filter((d) => String(d.title || '').trim().endsWith(code));
+  if (exact.length > 0) return { id: exact[0].ID, title: exact[0].title, children: [] };
+  return null;
+};
+
+exports.getProcessProject = async (apiToken, processId) => {
+  const base = await webBaseUrl();
+  const r = await fetch(`${base}/api/work/process/item?access_token=${encodeURIComponent(apiToken)}&id=${encodeURIComponent(processId)}`, { signal: AbortSignal.timeout(30000) });
+  const j = await r.json().catch(() => ({}));
+  const d = (j && j.data) || {};
+  return { project_code: d.project_code || null, project_title: d.project_title || null };
+};
+
+exports.resolveProjectId = async (apiToken, projectCode) => {
+  const base = await webBaseUrl();
+  const r = await fetch(`${base}/api/work/project/gets?access_token=${encodeURIComponent(apiToken)}&limit=50&page=1`, { signal: AbortSignal.timeout(30000) });
+  const j = await r.json().catch(() => ({}));
+  const rows = j && Array.isArray(j.data) ? j.data : [];
+  const hit = rows.find((p) => String(p.code) === String(projectCode));
+  if (!hit) throw new Error(`Khong tim thay du an ma "${projectCode}" ben 1Office`);
+  return { id: hit.ID, code: hit.code, title: hit.title };
+};
+
+exports.moveProcessToProject = async (auto, processId, projectNumericId, reloginOnce = true) => {
+  const { base, jar } = await ensureSession(auto);
+  const fd = new FormData();
+  fd.append('ID', String(processId));
+  fd.append('project_id', String(projectNumericId));
+  fd.append('parent_id', '');
+  fd.append('', '');
+  fd.append('inlineLogin', '1');
+  const r = await fetch(`${base}/apps/work-task-task/moveprocess?_json=1`, {
+    method: 'POST',
+    headers: { Cookie: cookieOf(jar), Referer: `${base}/`, 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd,
+    signal: AbortSignal.timeout(30000),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (j && j.error_login && reloginOnce) {
+    sessions.delete(auto.id);
+    return exports.moveProcessToProject(auto, processId, projectNumericId, false);
+  }
+  if (!r.ok || !j || j.close !== true) throw new Error((j && (j.message || j.notice)) || '1Office tu choi lenh gán');
+  return { moved: true, notice: j.notice || null };
+};
+
+exports.clearSession = (automationId) => sessions.delete(automationId);
+
+exports.createPendingRun = async ({ automationId, proposalId, proposalCode, contactCode, trigger = 'auto' }) => {
+  const [dup] = await pool.query(
+    `SELECT id FROM work_automation_runs WHERE automation_id = ? AND proposal_id <=> ? AND status IN ('pending','running') LIMIT 1`,
+    [automationId, proposalId]
+  );
+  if (dup.length > 0) return { id: dup[0].id, deduped: true };
+  const [r] = await pool.query(
+    `INSERT INTO work_automation_runs (automation_id, proposal_id, proposal_code, contact_code, \`trigger\`, action, status) VALUES (?, ?, ?, ?, ?, 'move_to_project', 'pending')`,
+    [automationId, proposalId, proposalCode || null, contactCode || null, trigger]
+  );
+  return { id: r.insertId, deduped: false };
+};
+
+const finishRun = async (id, patch) => {
+  const cols = [];
+  const params = [];
+  for (const [k, v] of Object.entries(patch)) {
+    cols.push(`\`${k}\` = ?`);
+    params.push(v === undefined || v === null ? null : (v instanceof Date || typeof v !== 'object' ? v : JSON.stringify(v)));
+  }
+  cols.push('updated_at = NOW()');
+  params.push(id);
+  await pool.query(`UPDATE work_automation_runs SET ${cols.join(', ')} WHERE id = ?`, params);
+};
+
+const notifyFailed = async (run, reason) => {
+  try {
+    const notificationService = require('./notificationService');
+    const [admins] = await pool.query(`SELECT id FROM users WHERE role IN ('SUPER_ADMIN','ADMIN') AND status = 'ACTIVE'`);
+    for (const a of admins) {
+      await notificationService.create({
+        userId: a.id,
+        type: 'AUTOMATION_FAILED',
+        title: 'Automation gán quy trình thất bại',
+        message: `Mã đề xuất: ${run.proposal_code || `#${run.proposal_id}`} · Lý do: ${reason}`,
+        entityType: 'automation_run',
+        entityId: run.id,
+      });
+    }
+  } catch { /* silent */ }
+};
+
+const processOneRun = async (run) => {
+  const auto = await exports.getByKey('auto_assign_process');
+  if (!auto || !auto.enabled) {
+    await finishRun(run.id, { status: 'skipped', error: 'Automation dang tat' });
+    return { id: run.id, status: 'skipped' };
+  }
+  if (!auto.username || !auto.password_enc || !auto.api_token_enc) {
+    await finishRun(run.id, { status: 'failed', error: 'Thieu tai khoan 1Office hoac work API token', finished_at: new Date() });
+    await notifyFailed(run, 'Thieu tai khoan 1Office hoac work API token');
+    return { id: run.id, status: 'failed' };
+  }
+  const attempt = (run.attempt || 0) + 1;
+  const elapsedS = (Date.now() - new Date(run.created_at).getTime()) / 1000;
+  await finishRun(run.id, { status: 'running', attempt, started_at: run.started_at || new Date() });
+  const apiToken = exports.decryptSecret(auto.api_token_enc);
+  let found = null;
+  try {
+    found = await exports.findProcessByCode(apiToken, run.proposal_code);
+  } catch (e) {
+    found = null;
+  }
+  if (!found) {
+    if (elapsedS >= auto.find_timeout_s || attempt >= auto.retry_max) {
+      await finishRun(run.id, { status: 'failed', error: `Qua ${auto.find_timeout_s}s van khong thay quy trinh theo ma ${run.proposal_code}`, finished_at: new Date() });
+      await notifyFailed(run, `Qua ${auto.find_timeout_s}s van khong thay quy trinh theo ma ${run.proposal_code}`);
+      return { id: run.id, status: 'failed' };
+    }
+    await finishRun(run.id, { status: 'pending', error: `Lan ${attempt}: chua thay quy trinh, cho thu lai` });
+    return { id: run.id, status: 'pending' };
+  }
+  try {
+    const proj = await exports.getProcessProject(apiToken, found.id);
+    if (String(proj.project_code) === String(auto.project_code)) {
+      await finishRun(run.id, { status: 'skipped', process_id: found.id, error: 'Quy trinh da o dung du an', finished_at: new Date() });
+      return { id: run.id, status: 'skipped' };
+    }
+    const target = await exports.resolveProjectId(apiToken, auto.project_code);
+    const mv = await exports.moveProcessToProject(auto, found.id, target.id);
+    await pool.query('UPDATE work_automations SET project_title = ? WHERE id = ?', [target.title, auto.id]).catch(() => {});
+    await finishRun(run.id, {
+      status: 'success', process_id: found.id,
+      request_json: { process_id: found.id, project_id: target.id, project_code: target.code },
+      response_json: mv, finished_at: new Date(),
+    });
+    return { id: run.id, status: 'success' };
+  } catch (e) {
+    if (attempt >= auto.retry_max) {
+      await finishRun(run.id, { status: 'failed', process_id: found.id, error: e.message, finished_at: new Date() });
+      await notifyFailed(run, e.message);
+      return { id: run.id, status: 'failed' };
+    }
+    await finishRun(run.id, { status: 'pending', process_id: found.id, error: `Lan ${attempt}: ${e.message}` });
+    return { id: run.id, status: 'pending' };
+  }
+};
+
+exports.processDueRuns = async () => {
+  const [runs] = await pool.query(
+    `SELECT r.* FROM work_automation_runs r JOIN work_automations a ON a.id = r.automation_id
+     WHERE a.automation_key = 'auto_assign_process' AND r.status IN ('pending','running')
+       AND r.updated_at <= DATE_SUB(NOW(), INTERVAL (SELECT retry_interval_s FROM work_automations WHERE automation_key = 'auto_assign_process') SECOND)
+     ORDER BY r.id ASC LIMIT 10`
+  );
+  const out = [];
+  for (const run of runs) {
+    try {
+      out.push(await processOneRun(run));
+    } catch (e) {
+      out.push({ id: run.id, status: 'error', error: e.message });
+    }
+  }
+  return out;
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+exports.runManual = async (proposalCode) => {
+  const auto = await exports.getByKey('auto_assign_process');
+  if (!auto) throw Object.assign(new Error('Khong tim thay automation'), { statusCode: 404 });
+  const code = String(proposalCode || '').trim();
+  if (!code) throw Object.assign(new Error('Thieu ma de xuat'), { statusCode: 400 });
+  const [pRows] = await pool.query('SELECT id FROM station_proposals WHERE tracking_code = ? LIMIT 1', [code]);
+  const { id: runId } = await exports.createPendingRun({
+    automationId: auto.id,
+    proposalId: pRows.length > 0 ? pRows[0].id : null,
+    proposalCode: code,
+    trigger: 'manual',
+  });
+  const deadline = Date.now() + auto.find_timeout_s * 1000;
+  let last = { id: runId, status: 'pending' };
+  for (let i = 0; i < auto.retry_max; i++) {
+    const [rows] = await pool.query('SELECT * FROM work_automation_runs WHERE id = ?', [runId]);
+    if (!rows.length) break;
+    last = await processOneRun(rows[0]);
+    if (['success', 'failed', 'skipped'].includes(last.status)) break;
+    if (Date.now() + auto.retry_interval_s * 1000 > deadline) {
+      await sleep(Math.max(0, deadline - Date.now()));
+      const [r2] = await pool.query('SELECT * FROM work_automation_runs WHERE id = ?', [runId]);
+      if (r2.length) last = await processOneRun(r2[0]);
+      break;
+    }
+    await sleep(auto.retry_interval_s * 1000);
+  }
+  const [final] = await pool.query('SELECT * FROM work_automation_runs WHERE id = ?', [runId]);
+  return final.length > 0 ? final[0] : { id: runId, status: last.status };
+};

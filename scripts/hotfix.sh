@@ -31,9 +31,17 @@ die() { echo "[hotfix] LOI: $1" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || die "chua cai Docker."
 command -v git >/dev/null 2>&1 || die "chua cai git."
 
-# 0. Cay lam viec phai sach (khong sua tay tren VPS)
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-  die "VPS co sua doi chua commit. Xu ly tay xong moi chay (tranh mat code)."
+# 0. Cay lam viec phai sach (khong sua tay tren VPS).
+# Chi tinh thay doi NOI DUNG (numstat != 0 0) — bo qua lech mode bit +x
+# de lenh chmod tay khong tu chan script.
+content_dirty() {
+  git diff --numstat | awk '$1 != 0 || $2 != 0 || $1 == "-" { found=1 } END { exit !found }'
+}
+staged_dirty() {
+  git diff --cached --numstat | awk '$1 != 0 || $2 != 0 || $1 == "-" { found=1 } END { exit !found }'
+}
+if content_dirty || staged_dirty; then
+  die "VPS co sua doi noi dung chua commit. Xu ly tay xong moi chay (tranh mat code)."
 fi
 
 # 1. Pull code moi
