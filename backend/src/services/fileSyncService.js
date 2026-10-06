@@ -58,11 +58,10 @@ exports.splitBatch = (files, maxPerBatch = 5) => {
 };
 
 exports.buildFilesArray = async (proposalId, options = {}) => {
-  const stripExt = (n) => {
-    const s = String(n || 'file').trim();
-    const i = s.lastIndexOf('.');
-    return i > 0 ? s.slice(0, i) : s;
-  };
+  const stripExt = (n) => String(n || 'file').trim()
+    .replace(/\.(jpe?g|png|gif|pdf|docx?|xlsx?|txt)$/i, '')
+    .replace(/\s*\(\d+\)\s*$/, '')
+    .trim();
   const excludeSet = new Set((options.excludeNames || []).filter(Boolean).map(stripExt));
   const files = await exports.loadFiles(proposalId);
   const result = [];
