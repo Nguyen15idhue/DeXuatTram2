@@ -149,7 +149,8 @@ const processPushJob = async (job) => {
   }
 
   if (updated && contact_data.code && contact_data.desc) {
-    const normText = (s) => String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, '');
+    const dec = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0*39;/g, "'");
+    const normText = (s) => dec(String(s || '').replace(/<[^>]*>/g, '')).replace(/\s+/g, '');
     const want = normText(contact_data.desc);
     let ok = false;
     let gotLen = 0;
