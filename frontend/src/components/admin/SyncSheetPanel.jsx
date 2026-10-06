@@ -28,6 +28,8 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   const [form, setForm] = useState({ enabled: false, spreadsheet_id: '', frequency_min: 15, note: '' });
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [versions, setVersions] = useState([]);
+  const [versionsEmpty, setVersionsEmpty] = useState(false);
+  const [refreshingAll, setRefreshingAll] = useState(false);
   const [version, setVersion] = useState('');
   const [tree, setTree] = useState(null);
   const [treeLoading, setTreeLoading] = useState(false);
@@ -76,12 +78,30 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
       const res = await automationService.syncVersions(token);
       if (res.success) {
         setVersions(res.data);
+        setVersionsEmpty(res.data.length === 0);
         if (!version && res.data.length > 0) setVersion(res.data[res.data.length - 1].version);
       }
     } catch {
       showToast('Lỗi tải danh sách version', 'error');
     }
   }, [token]);
+
+  const handleRefreshAll = async () => {
+    try {
+      setRefreshingAll(true);
+      const res = await automationService.syncRefreshAll(token);
+      if (res.success) {
+        showToast(res.message || 'Đã quét version');
+        loadVersions();
+      } else {
+        showToast(res.message || 'Quét thất bại', 'error');
+      }
+    } catch (e) {
+      showToast(e.message || 'Quét thất bại', 'error');
+    } finally {
+      setRefreshingAll(false);
+    }
+  };
 
   useEffect(() => { loadDetail(); loadVersions(); }, [loadDetail, loadVersions]);
 
@@ -439,13 +459,19 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
         <>
           <div className="flex flex-wrap items-center gap-2">
             <select className="select select-bordered select-sm" value={version} onChange={(e) => setVersion(e.target.value)}>
-              <option value="">Chọn version</option>
+              <option value="">{versionsEmpty ? 'Chưa có version — bấm Quét version từ 1Office' : 'Chọn version'}</option>
               {versions.map((v) => <option key={v.version} value={v.version}>{v.template ? `${v.template}[${v.version}]` : `Ver ${v.version}`} ({v.nodes} node)</option>)}
             </select>
             <button className="btn btn-outline btn-sm gap-1" onClick={() => { loadTree(version, true); }} disabled={!version || treeLoading}>
               <RefreshCw size={14} />
               Get mới nhất
             </button>
+            {versionsEmpty && (
+              <button className="btn btn-primary btn-sm gap-1" onClick={handleRefreshAll} disabled={refreshingAll}>
+                {refreshingAll ? <span className="loading loading-spinner loading-xs"></span> : <RefreshCw size={14} />}
+                Quét version từ 1Office
+              </button>
+            )}
             <button className="btn btn-outline btn-sm gap-1" onClick={handleAutoMatch} disabled={!version || autoMatching} title="Tự map bộ trường cần thiết (bỏ qua field đã map)">
               {autoMatching ? <span className="loading loading-spinner loading-xs"></span> : <Sparkles size={14} />}
               Auto-match

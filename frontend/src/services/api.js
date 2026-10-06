@@ -851,6 +851,9 @@ export const automationService = {
   syncVersions(token) {
     return api.getWithAuth('/admin/automations/sync/versions', token);
   },
+  syncRefreshAll(token) {
+    return api.postWithAuth('/admin/automations/sync/refresh-all', {}, token);
+  },
   syncFields(version, refresh, token) {
     return api.getWithAuth(`/admin/automations/sync/fields?version=${encodeURIComponent(version)}${refresh ? '&refresh=1' : ''}`, token);
   },

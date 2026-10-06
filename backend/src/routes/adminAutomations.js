@@ -230,6 +230,20 @@ router.get('/sync/versions', automationController.syncVersions);
 
 /**
  * @swagger
+ * /api/admin/automations/sync/refresh-all:
+ *   post:
+ *     tags: [Admin - Automations]
+ *     summary: Quét lại toàn bộ version từ 1Office (dùng khi cache trống)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.post('/sync/refresh-all', automationController.syncRefreshAll);
+
+/**
+ * @swagger
  * /api/admin/automations/sync/mappings:
  *   get:
  *     tags: [Admin - Automations]

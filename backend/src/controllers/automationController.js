@@ -196,6 +196,17 @@ exports.syncVersions = async (req, res) => {
   }
 };
 
+exports.syncRefreshAll = async (req, res) => {
+  try {
+    const data = await syncService().refreshFieldTrees();
+    res.json({ success: true, data, message: `Đã quét ${data.length} version` });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Refresh field trees error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.syncFields = async (req, res) => {
   try {
     const version = String(req.query.version || '').trim();
