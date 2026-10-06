@@ -89,19 +89,24 @@ const processPushJob = async (job) => {
   const fileSyncService = require('../services/fileSyncService');
   const pool = require('../utils/db');
 
-  const findExistingId = async () => {
+  const fetchContactInfo = async () => {
     const code = contact_data.code;
-    if (!code) return null;
+    if (!code) return { id: null, fileNames: [] };
     try {
       const detail = await oneOfficeService.getContactDetail(api_config_id, code);
-      if (!detail || !detail.success || !detail.data || detail.data.error) return null;
+      if (!detail || !detail.success || !detail.data || detail.data.error) return { id: null, fileNames: [] };
       const inner = detail.data.data || detail.data;
       const id = inner ? (inner.ID ?? inner.id ?? null) : null;
-      return (id !== null && id !== undefined && String(id).match(/^\d+$/)) ? String(id) : null;
-    } catch { return null; }
+      const validId = (id !== null && id !== undefined && String(id).match(/^\d+$/)) ? String(id) : null;
+      const fileNames = Array.isArray(inner && inner.files)
+        ? inner.files.map((f) => String(f.filename || f.title || '')).filter(Boolean)
+        : [];
+      return { id: validId, fileNames };
+    } catch { return { id: null, fileNames: [] }; }
   };
 
-  const existingId = await findExistingId();
+  const contactInfo = await fetchContactInfo();
+  const existingId = contactInfo.id;
   const recreated = !!was_linked && !existingId;
 
   let prevFileNames = [];
@@ -122,11 +127,13 @@ const processPushJob = async (job) => {
   let filesInfo = { sent: [], skipped: [], total: 0 };
   if (proposal_id) {
     try {
-      const built = await fileSyncService.buildFilesArray(proposal_id, { excludeNames: recreated ? [] : prevFileNames });
+      const on1office = contactInfo.fileNames.length > 0 ? contactInfo.fileNames : (recreated ? [] : []);
+      const built = await fileSyncService.buildFilesArray(proposal_id, { excludeNames: on1office });
       const sentNames = built.names;
       contact_data.files = built.files.length > 0 ? JSON.stringify(built.files) : undefined;
       if (contact_data.files === undefined) delete contact_data.files;
-      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative: [...prevFileNames, ...sentNames] };
+      const cumulative = [...contactInfo.fileNames, ...sentNames];
+      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative };
     } catch (err) {
       console.error('[QueueWorker] Build files error:', err.message);
     }

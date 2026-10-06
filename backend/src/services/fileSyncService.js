@@ -58,18 +58,18 @@ exports.splitBatch = (files, maxPerBatch = 5) => {
 };
 
 exports.buildFilesArray = async (proposalId, options = {}) => {
-  const excludeNames = new Set((options.excludeNames || []).filter(Boolean));
+  const stripExt = (n) => {
+    const s = String(n || 'file').trim();
+    const i = s.lastIndexOf('.');
+    return i > 0 ? s.slice(0, i) : s;
+  };
+  const excludeSet = new Set((options.excludeNames || []).filter(Boolean).map(stripExt));
   const files = await exports.loadFiles(proposalId);
   const result = [];
   const names = [];
   const skipped = [];
-  const stripExt = (n) => {
-    const s = String(n || 'file');
-    const i = s.lastIndexOf('.');
-    return i > 0 ? s.slice(0, i) : s;
-  };
   for (const file of files) {
-    if (excludeNames.has(file.original_name)) continue;
+    if (excludeSet.has(stripExt(file.original_name))) continue;
     try {
       const content = await exports.base64Encode(file.storage_key);
       result.push({ name: stripExt(file.original_name), file: content });
