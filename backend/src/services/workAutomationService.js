@@ -49,9 +49,16 @@ exports.updateByKey = async (key, fields) => {
   if (!existing) throw Object.assign(new Error('Khong tim thay automation'), { statusCode: 404 });
   const cols = [];
   const params = [];
-  const allow = { enabled: 1, project_code: 1, project_title: 1, retry_max: 1, retry_interval_s: 1, find_timeout_s: 1, username: 1, note: 1 };
+  const allow = { enabled: 1, project_code: 1, project_title: 1, retry_max: 1, retry_interval_s: 1, find_timeout_s: 1, username: 1, note: 1, spreadsheet_id: 1, sheet_mode: 1, frequency_min: 1, write_mode: 1, sa_email: 1 };
   for (const [k, v] of Object.entries(fields)) {
     if (!allow[k]) continue;
+    if ((k === 'frequency_min') || (k === 'retry_max') || (k === 'retry_interval_s') || (k === 'find_timeout_s')) {
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n) || n < 1) continue;
+      cols.push(`\`${k}\` = ?`);
+      params.push(n);
+      continue;
+    }
     cols.push(`\`${k}\` = ?`);
     params.push(v);
   }

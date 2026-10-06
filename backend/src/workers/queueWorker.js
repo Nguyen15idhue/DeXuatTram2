@@ -148,6 +148,26 @@ const processPushJob = async (job) => {
     throw new Error(result.error || `1Office API error: ${result.status}`);
   }
 
+  if (updated && contact_data.code && contact_data.desc) {
+    const normText = (s) => String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, '');
+    const want = normText(contact_data.desc);
+    let ok = false;
+    let gotLen = 0;
+    for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+      if (attempt > 0) await delay(2000);
+      try {
+        const check = await oneOfficeService.getContactDetail(api_config_id, contact_data.code);
+        const inner = check && check.data ? (check.data.data || check.data) : null;
+        const got = normText(inner && inner.desc);
+        gotLen = got.length;
+        ok = got.length > 0 && got === want;
+      } catch { /* retry once */ }
+    }
+    if (!ok) {
+      throw new Error(`1Office không nhận desc mới (đã gửi ${want.length} ký tự, hiện tại ${gotLen} ký tự)`);
+    }
+  }
+
   let statusUpdated = false;
   let statusUpdateError = null;
   if (set_status) {

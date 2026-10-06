@@ -254,6 +254,7 @@ function render2ColLayout(fields, proposal, fieldMap) {
       html += `${value}</td></tr>`;
       continue;
     }
+    if (getFieldTypeInfo(key, fieldMap) === 'file') continue;
     const raw = getFieldValue(proposal, key);
     const value = formatFieldValue(key, raw, fieldMap) || '<span style="color:#aaa">—</span>';
     html += `<tr><td style="${TD_LABEL}">${escapeHtml(label)}</td><td style="${TD_VALUE}">${value}</td></tr>`;
@@ -419,6 +420,8 @@ function formatFieldValue(fieldKey, value, fieldMap) {
       if (text.length <= 100) return escapeHtml(text);
       return `<div style="line-height:1.6;color:#333">${escapeHtml(text)}</div>`;
     }
+    case 'file':
+      return null;
     case 'user': {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         if (value.label) return escapeHtml(String(value.label));

@@ -844,6 +844,52 @@ export const automationService = {
   },
   runDetail(key, id, token) {
     return api.getWithAuth(`/admin/automations/${key}/runs/${id}`, token);
+  },
+  getByKey(key, token) {
+    return api.getWithAuth(`/admin/automations/${key}`, token);
+  },
+  syncVersions(token) {
+    return api.getWithAuth('/admin/automations/sync/versions', token);
+  },
+  syncFields(version, refresh, token) {
+    return api.getWithAuth(`/admin/automations/sync/fields?version=${encodeURIComponent(version)}${refresh ? '&refresh=1' : ''}`, token);
+  },
+  syncMappingsGet(version, token) {
+    return api.getWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}`, token);
+  },
+  syncMappingsPut(version, items, token) {
+    return api.putWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}`, { items }, token);
+  },
+  syncCopyMap(fromVersion, toVersion, token) {
+    return api.postWithAuth('/admin/automations/sync/copy-map', { from_version: fromVersion, to_version: toVersion }, token);
+  },
+  syncAutoMatch(version, token) {
+    return api.postWithAuth('/admin/automations/sync/auto-match', { version }, token);
+  },
+  syncMappingsDelete(version, token) {
+    return api.deleteWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}`, token);
+  },
+  syncSheetHeaders(tab, token) {
+    return api.getWithAuth(`/admin/automations/sync/sheet-headers?tab=${encodeURIComponent(tab)}`, token);
+  },
+  syncSheetAddColumn(tab, header, token) {
+    return api.postWithAuth('/admin/automations/sync/sheet-column', { tab, header }, token);
+  },
+  syncTest(data, token) {
+    return api.postWithAuth('/admin/automations/sync/test', data || {}, token);
+  },
+  syncRun(version, token) {
+    return api.postWithAuth('/admin/automations/sync/run', version ? { version } : {}, token);
+  },
+  syncRuns(params, token) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    });
+    return api.getWithAuth(`/admin/automations/sync/runs?${qs.toString()}`, token);
+  },
+  syncRunDetail(id, token) {
+    return api.getWithAuth(`/admin/automations/sync/runs/${id}`, token);
   }
 };
 

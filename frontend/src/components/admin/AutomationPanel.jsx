@@ -6,6 +6,7 @@ import ConfirmDialog from '../ConfirmDialog';
 import DataTable from '../ui/DataTable';
 import Pagination from '../ui/Pagination';
 import Dialog from '../ui/Dialog';
+import SyncSheetPanel from './SyncSheetPanel';
 
 const STATUS_BADGE = {
   pending: 'badge-warning',
@@ -32,7 +33,7 @@ const Field = ({ label, hint, children }) => (
   </div>
 );
 
-const AutomationPanel = ({ token, selectedId, onSelect, onBack }) => {
+const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChange }) => {
   const [list, setList] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [autoKey, setAutoKey] = useState(null);
@@ -226,6 +227,7 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack }) => {
                   <div className="flex-1">
                     <div className="font-semibold">{a.name} <span className="badge badge-ghost badge-sm ml-1">ID {a.id}</span></div>
                     <div className="text-sm text-base-content/60 mt-1 flex flex-wrap gap-2">
+                      <span className={`badge ${a.automation_key === 'sync_process_report' ? 'badge-info' : 'badge-primary'} badge-sm`}>{a.automation_key === 'sync_process_report' ? 'Sync Sheet' : 'Gán dự án'}</span>
                       <span className={`badge ${a.enabled ? 'badge-success' : 'badge-ghost'} badge-sm`}>{a.enabled ? 'Đang bật' : 'Đang tắt'}</span>
                       <span className="badge badge-outline badge-sm">Dự án: {a.project_code}</span>
                     </div>
@@ -249,6 +251,25 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack }) => {
           Danh sách automation
         </button>
         <div className="alert alert-error"><span>Không tìm thấy automation ID {selectedId}</span></div>
+      </div>
+    );
+  }
+
+  if (selected.automation_key === 'sync_process_report') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button className="btn btn-ghost btn-sm gap-1" onClick={onBack}>
+            <ArrowLeft size={14} />
+            Danh sách automation
+          </button>
+        </div>
+        <div className="card bg-base-100 shadow-sm border border-base-300">
+          <div className="card-body py-3">
+            <h3 className="font-bold text-lg">{selected.name} <span className="badge badge-ghost badge-sm ml-1">ID {selected.id}</span> <span className="badge badge-info badge-sm ml-1">Sync Sheet</span></h3>
+          </div>
+        </div>
+        <SyncSheetPanel token={token} automation={selected} view={view || 'config'} onViewChange={onViewChange} />
       </div>
     );
   }

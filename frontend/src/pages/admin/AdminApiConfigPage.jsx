@@ -544,6 +544,13 @@ const AdminApiConfigPage = () => {
           selectedId={automationId}
           onSelect={(id) => setSearchParams({ tab: 'automation', id: String(id) })}
           onBack={() => setSearchParams({ tab: 'automation' })}
+          view={searchParams.get('view') || null}
+          onViewChange={(v) => {
+            const next = { tab: 'automation' };
+            if (automationId) next.id = automationId;
+            if (v && v !== 'config') next.view = v;
+            setSearchParams(next);
+          }}
         />
       ) : (
         <WebhookListener initialAction={logAction} />
