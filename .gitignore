@@ -20,3 +20,4 @@ frontend/test-*-results.json
 .kilo/
 # Service Account key Google (PRIVATE - khong bao gio commit)
 test_files/ggsheet/*.json
+secrets/

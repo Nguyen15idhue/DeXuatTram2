@@ -26,6 +26,7 @@ services:
       - TZ=Asia/Ho_Chi_Minh
     volumes:
       - uploads_data:/app/storage/uploads
+      - ./secrets:/app/secrets:ro
     depends_on:
       mysql:
         condition: service_healthy
