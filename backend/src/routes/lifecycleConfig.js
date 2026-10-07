@@ -8,12 +8,12 @@ const lifecycleConfigController = require('../controllers/lifecycleConfigControl
  * /api/admin/lifecycle-config:
  *   get:
  *     tags: [Admin - Lifecycle]
- *     summary: Cấu hình countdown bổ sung thông tin (trạng thái + số ngày + giờ cảnh báo)
+ *     summary: Cấu hình countdown (bổ sung thông tin / chuyển trạng thái) theo trạng thái + giờ cảnh báo
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: '{ warn_hours, rules: [{ status, days, enabled }] }'
+ *         description: '{ warn_hours, rules: [{ status, days, hours, minutes, enabled, type }] } với type = supplement | transition'
  *       401:
  *         description: Chưa xác thực
  */
@@ -42,7 +42,10 @@ router.get('/', requireAuth, lifecycleConfigController.get);
  *                   properties:
  *                     status: { type: string, example: APPROVED }
  *                     days: { type: integer, example: 10 }
+ *                     hours: { type: integer, example: 0 }
+ *                     minutes: { type: integer, example: 0 }
  *                     enabled: { type: boolean, example: true }
+ *                     type: { type: string, enum: [supplement, transition], example: supplement }
  *     responses:
  *       200:
  *         description: Thành công

@@ -4,16 +4,22 @@ import { useAuth } from '../../contexts/AuthContext';
 import { getProposalStatuses } from '../../utils/mapStatuses';
 import { notifyCountdownConfigChanged } from '../../utils/countdownConfig';
 
+const emptyPart = (enabled = false, days = 0) => ({ enabled, days, hours: 0, minutes: 0 });
+
 const DEFAULT_RULES = [
-  { status: 'PENDING', days: 3, hours: 0, minutes: 0, enabled: true },
-  { status: 'REVIEWING', days: 3, hours: 0, minutes: 0, enabled: true },
-  { status: 'PRINCIPLE_APPROVED', days: 15, hours: 0, minutes: 0, enabled: true },
-  { status: 'APPROVED', days: 10, hours: 0, minutes: 0, enabled: false },
-  { status: 'ARCHIVED', days: 10, hours: 0, minutes: 0, enabled: false }
+  { status: 'PENDING', supplement: emptyPart(true, 3), transition: emptyPart(false, 0) },
+  { status: 'REVIEWING', supplement: emptyPart(true, 3), transition: emptyPart(false, 0) },
+  { status: 'PRINCIPLE_APPROVED', supplement: emptyPart(true, 15), transition: emptyPart(false, 0) },
+  { status: 'APPROVED', supplement: emptyPart(false, 10), transition: emptyPart(false, 0) },
+  { status: 'ARCHIVED', supplement: emptyPart(false, 10), transition: emptyPart(false, 0) }
 ];
 
 const MERGED_STATUS_GROUPS = { PENDING: ['PENDING', 'REVIEWING'] };
 const MERGED_LABELS = { PENDING: 'Đang đề xuất / Đang xem xét' };
+const KINDS = [
+  { key: 'supplement', label: 'Bổ sung thông tin', hint: 'Quá hạn chưa xác nhận đủ thông tin → hủy đề xuất' },
+  { key: 'transition', label: 'Chuyển trạng thái', hint: 'Quá hạn chưa chuyển sang trạng thái tiếp theo → hủy đề xuất' }
+];
 
 const buildDisplayRows = (statuses) => {
   const rows = [];
@@ -63,24 +69,25 @@ const CountdownConfigPanel = () => {
     return () => { cancelled = true; };
   }, [open, token]);
 
-  const setRule = (row, patch) => {
-    setRules((prev) => {
-      const next = [...prev];
-      row.statuses.forEach((status) => {
-        const idx = next.findIndex((r) => r.status === status);
-        if (idx >= 0) next[idx] = { ...next[idx], ...patch };
-        else next.push({ status, ...patch });
-      });
-      return next;
-    });
-  };
-
   const ensureRule = (row) => {
     for (const status of row.statuses) {
       const r = rules.find((x) => x.status === status);
       if (r) return r;
     }
-    return { days: 3, hours: 0, minutes: 0, enabled: false };
+    return { status: row.statuses[0], supplement: emptyPart(), transition: emptyPart() };
+  };
+
+  const setPart = (row, kind, patch) => {
+    setRules((prev) => {
+      const next = [...prev];
+      row.statuses.forEach((status) => {
+        const idx = next.findIndex((r) => r.status === status);
+        const base = idx >= 0 ? next[idx] : { status, supplement: emptyPart(), transition: emptyPart() };
+        const updated = { ...base, [kind]: { ...(base[kind] || emptyPart()), ...patch } };
+        if (idx >= 0) next[idx] = updated; else next.push(updated);
+      });
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -93,12 +100,13 @@ const CountdownConfigPanel = () => {
         extend_max_days_per_time: Number(maxDaysPerTime),
         rules: displayRows.flatMap((row) => {
           const r = ensureRule(row);
-          const rule = {
-            days: Number(r.days) || 0,
-            hours: Number(r.hours) || 0,
-            minutes: Number(r.minutes) || 0,
-            enabled: !!r.enabled
-          };
+          const norm = (part) => ({
+            enabled: !!(part && part.enabled),
+            days: Number((part && part.days) || 0),
+            hours: Number((part && part.hours) || 0),
+            minutes: Number((part && part.minutes) || 0)
+          });
+          const rule = { supplement: norm(r.supplement), transition: norm(r.transition) };
           return row.statuses.map((status) => ({ status, ...rule }));
         })
       };
@@ -118,10 +126,53 @@ const CountdownConfigPanel = () => {
     }
   };
 
+  const renderPartCells = (row, rule, kind) => {
+    const part = (rule && rule[kind]) || emptyPart();
+    return (
+      <>
+        <td>
+          <input
+            type="checkbox"
+            className="checkbox checkbox-xs"
+            checked={!!part.enabled}
+            onChange={(e) => setPart(row, kind, { enabled: e.target.checked })}
+          />
+        </td>
+        <td>
+          <input
+            type="number" min={0} max={365}
+            className="input input-bordered input-xs w-16"
+            disabled={!part.enabled}
+            value={part.days ?? 0}
+            onChange={(e) => setPart(row, kind, { days: e.target.value })}
+          />
+        </td>
+        <td>
+          <input
+            type="number" min={0} max={23}
+            className="input input-bordered input-xs w-16"
+            disabled={!part.enabled}
+            value={part.hours ?? 0}
+            onChange={(e) => setPart(row, kind, { hours: e.target.value })}
+          />
+        </td>
+        <td>
+          <input
+            type="number" min={0} max={59}
+            className="input input-bordered input-xs w-16"
+            disabled={!part.enabled}
+            value={part.minutes ?? 0}
+            onChange={(e) => setPart(row, kind, { minutes: e.target.value })}
+          />
+        </td>
+      </>
+    );
+  };
+
   return (
     <div className="card bg-base-100 border border-base-300 mb-3">
       <button type="button" className="flex items-center justify-between px-3 py-2 text-left" onClick={() => setOpen((v) => !v)}>
-        <span className="font-semibold text-sm">Countdown bổ sung thông tin</span>
+        <span className="font-semibold text-sm">Countdown (bổ sung thông tin / chuyển trạng thái)</span>
         <span className="text-xs text-gray-500">{open ? 'Thu gọn ▲' : 'Mở rộng ▼'}</span>
       </button>
       {open && (
@@ -142,13 +193,14 @@ const CountdownConfigPanel = () => {
                 />
                 <span>giờ (mặc định 24)</span>
               </div>
-              <p className="text-xs text-gray-500 mb-1">Đang đề xuất và Đang xem xét dùng chung 1 mốc, không đếm lại khi duyệt &amp; đẩy.</p>
+              <p className="text-xs text-gray-500 mb-1">Đang đề xuất và Đang xem xét dùng chung 1 mốc bổ sung, không đếm lại khi duyệt &amp; đẩy.</p>
+              <p className="text-xs text-gray-500 mb-1">
+                Mỗi trạng thái có thể bật <b>cả hai</b> countdown song song: quá hạn mốc nào (chưa bổ sung đủ thông tin / chưa chuyển trạng thái tiếp theo) thì đề xuất bị hủy.
+              </p>
               <div className="flex items-center gap-2 py-2 text-sm flex-wrap">
                 <span>Gia hạn tối đa</span>
                 <input
-                  type="number"
-                  min={0}
-                  max={99}
+                  type="number" min={0} max={99}
                   className="input input-bordered input-xs w-16"
                   value={maxTimes}
                   onChange={(e) => setMaxTimes(e.target.value)}
@@ -156,9 +208,7 @@ const CountdownConfigPanel = () => {
                 />
                 <span>lần (0 = không giới hạn), mỗi lần tối đa</span>
                 <input
-                  type="number"
-                  min={1}
-                  max={365}
+                  type="number" min={1} max={365}
                   className="input input-bordered input-xs w-16"
                   value={maxDaysPerTime}
                   onChange={(e) => setMaxDaysPerTime(e.target.value)}
@@ -170,6 +220,7 @@ const CountdownConfigPanel = () => {
                 <thead>
                   <tr>
                     <th>Trạng thái</th>
+                    <th>Loại</th>
                     <th className="w-16">Áp dụng</th>
                     <th className="w-20">Ngày</th>
                     <th className="w-20">Giờ</th>
@@ -179,57 +230,22 @@ const CountdownConfigPanel = () => {
                 <tbody>
                   {displayRows.map((s) => {
                     const r = ensureRule(s);
-                    return (
-                      <tr key={s.value}>
-                        <td>
-                          <span className="inline-flex items-center gap-2">
-                            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                            {s.label}
-                          </span>
+                    return KINDS.map((kind, idx) => (
+                      <tr key={`${s.value}-${kind.key}`} className={idx === 0 ? 'border-t border-base-200' : ''}>
+                        {idx === 0 && (
+                          <td rowSpan={KINDS.length} className="align-top">
+                            <span className="inline-flex items-center gap-2">
+                              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                              {s.label}
+                            </span>
+                          </td>
+                        )}
+                        <td title={kind.hint}>
+                          {kind.label}
                         </td>
-                        <td>
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-xs"
-                            checked={!!r.enabled}
-                            onChange={(e) => setRule(s, { enabled: e.target.checked, days: r.days ?? 3, hours: r.hours ?? 0, minutes: r.minutes ?? 0 })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min={0}
-                            max={365}
-                            className="input input-bordered input-xs w-16"
-                            disabled={!r.enabled}
-                            value={r.days ?? 0}
-                            onChange={(e) => setRule(s, { days: e.target.value })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min={0}
-                            max={23}
-                            className="input input-bordered input-xs w-16"
-                            disabled={!r.enabled}
-                            value={r.hours ?? 0}
-                            onChange={(e) => setRule(s, { hours: e.target.value })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min={0}
-                            max={59}
-                            className="input input-bordered input-xs w-16"
-                            disabled={!r.enabled}
-                            value={r.minutes ?? 0}
-                            onChange={(e) => setRule(s, { minutes: e.target.value })}
-                          />
-                        </td>
+                        {renderPartCells(s, r, kind.key)}
                       </tr>
-                    );
+                    ));
                   })}
                 </tbody>
               </table>

@@ -214,20 +214,60 @@ const needSyncAuto = async (key) => {
   return auto;
 };
 
+const assertVersionsAllowed = async (auto, versions) => {
+  const allowed = await syncService().allowedVersionsForAuto(auto);
+  if (allowed === null) return;
+  const set = new Set(allowed.map(String));
+  const bad = (Array.isArray(versions) ? versions : [versions]).map(String).find((v) => !set.has(v));
+  if (bad) throw Object.assign(new Error(`Version ${bad} không thuộc quy trình mẫu đã chọn`), { statusCode: 403 });
+};
+
+const assertVersionAllowed = (auto, version) => assertVersionsAllowed(auto, [version]);
+
 exports.syncVersions = async (req, res) => {
   try {
-    const pool = require('../utils/db');
-    const [rows] = await pool.query('SELECT version, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template")) AS template, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template_id")) AS template_id, fetched_at, JSON_LENGTH(tree_json, "$.nodes") AS nodes FROM automation_field_cache ORDER BY version ASC');
+    const syncService = require('../services/syncReportService');
     const auto = await needSyncAuto(req.query.key).catch(() => null);
-    if (!auto) return res.json({ success: true, data: rows });
-    let ids = [];
-    try {
-      const v = auto.template_process_ids ? (typeof auto.template_process_ids === 'string' ? JSON.parse(auto.template_process_ids) : auto.template_process_ids) : [];
-      ids = (Array.isArray(v) ? v : []).map((x) => String(x)).filter(Boolean);
-    } catch { ids = []; }
-    if (ids.length === 0) return res.json({ success: true, data: rows });
-    const idSet = new Set(ids);
-    res.json({ success: true, data: rows.filter((r) => idSet.has(String(r.template)) || idSet.has(String(r.template_id))) });
+    
+    // Get all versions from cache
+    const pool = require('../utils/db');
+    const [allRows] = await pool.query(
+      'SELECT version, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template")) AS template, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template_id")) AS template_id, fetched_at, JSON_LENGTH(tree_json, "$.nodes") AS nodes FROM automation_field_cache ORDER BY version ASC'
+    );
+    
+    // Filter by template_process_ids if automation has selected templates
+    let filteredRows = allRows;
+    let templateIds = [];
+    if (auto) {
+      try {
+        const v = auto.template_process_ids ? (typeof auto.template_process_ids === 'string' ? JSON.parse(auto.template_process_ids) : auto.template_process_ids) : [];
+        templateIds = (Array.isArray(v) ? v : []).map((x) => String(x)).filter(Boolean);
+      } catch { templateIds = []; }
+      if (templateIds.length > 0) {
+        const idSet = new Set(templateIds);
+        filteredRows = allRows.filter((r) => idSet.has(String(r.template)) || idSet.has(String(r.template_id)));
+      }
+    }
+    
+    // Apply merge logic if there are multiple versions
+    let mergeInfo = [];
+    let finalVersions = filteredRows;
+    
+    if (filteredRows.length > 1 && auto && auto.id) {
+      const { versions, mergeInfo: mi } = await syncService.deduplicateFieldCacheVersions(auto.id, templateIds);
+      mergeInfo = mi;
+      // Filter finalVersions to only keep merged (kept) versions
+      const keptVersions = new Set(versions.map((v) => String(v.version)));
+      finalVersions = filteredRows.filter((r) => keptVersions.has(String(r.version)));
+    }
+    
+    res.json({ 
+      success: true, 
+      data: finalVersions,
+      mergeInfo: mergeInfo.length > 0 ? mergeInfo : undefined,
+      totalOriginal: filteredRows.length,
+      totalAfterMerge: finalVersions.length,
+    });
   } catch (error) {
     console.error('List sync versions error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -251,7 +291,8 @@ exports.syncFields = async (req, res) => {
   try {
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
-    await needSyncAuto(req.query.key);
+    const auto = await needSyncAuto(req.query.key);
+    await assertVersionAllowed(auto, version);
     const data = await syncService().getFieldTree(version, { refresh: req.query.refresh === '1' });
     res.json({ success: true, data });
   } catch (error) {
@@ -266,6 +307,7 @@ exports.syncMappingsGet = async (req, res) => {
     const auto = await needSyncAuto(req.query.key);
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
+    await assertVersionAllowed(auto, version);
     res.json({ success: true, data: await syncService().getMappings(auto.id, version) });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -279,6 +321,7 @@ exports.syncMappingsPut = async (req, res) => {
     const auto = await needSyncAuto(req.query.key);
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
+    await assertVersionAllowed(auto, version);
     const items = Array.isArray(req.body && req.body.items) ? req.body.items : req.body;
     res.json({ success: true, data: await syncService().saveMappings(auto.id, version, items), message: 'Đã lưu mapping' });
   } catch (error) {
@@ -305,6 +348,7 @@ exports.syncAutoMatch = async (req, res) => {
     const auto = await needSyncAuto(req.query.key);
     const { version } = req.body || {};
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
+    await assertVersionAllowed(auto, version);
     const data = await syncService().autoMatch(auto.id, version);
     res.json({ success: true, data, message: `Đã auto-match thêm ${data.added} trường` });
   } catch (error) {
@@ -321,6 +365,7 @@ exports.syncBulkPlan = async (req, res) => {
     if (!from_version || !Array.isArray(to_versions) || to_versions.length === 0) {
       return res.status(400).json({ success: false, message: 'Thiếu from_version/to_versions' });
     }
+    await assertVersionsAllowed(auto, [from_version, ...to_versions]);
     res.json({ success: true, data: await syncService().bulkPlan(auto.id, from_version, to_versions) });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -336,6 +381,7 @@ exports.syncBulkApply = async (req, res) => {
     if (!from_version || !Array.isArray(to_versions) || to_versions.length === 0) {
       return res.status(400).json({ success: false, message: 'Thiếu from_version/to_versions' });
     }
+    await assertVersionsAllowed(auto, [from_version, ...to_versions]);
     const data = await syncService().bulkApply(auto.id, from_version, to_versions, mode || 'merge');
     res.json({ success: true, data, message: 'Đã áp dụng hàng loạt' });
   } catch (error) {

@@ -25,7 +25,7 @@ const SKIP_DIFF_KEYS = new Set([
   'id', 'user_id', 'created_at', 'updated_at', 'custom_data', 'status',
   'submission_source', 'submitter_ip', 'contact_1office_id', 'contact_1office_code',
   'last_synced_at', 'last_synced_data', 'sync_status', 'ma_de_xuat_gen',
-  'reviewed_by', 'reviewed_at', 'reject_reason', 'supplement_deadline_at', 'info_completed_at'
+  'reviewed_by', 'reviewed_at', 'reject_reason', 'supplement_deadline_at', 'transition_deadline_at', 'info_completed_at'
 ]);
 
 const normVal = (v) => {
@@ -80,7 +80,7 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Trạng thái không hợp lệ', 400);
   }
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, contact_1office_code, custom_data, supplement_deadline_at FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, contact_1office_code, custom_data, supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id = ?',
     [id]
   );
   if (rows.length === 0) {
@@ -141,17 +141,34 @@ exports.transition = async (id, to, opts = {}) => {
     [to, cleanReason, actorId || null, id]
   );
 
-  const deadlineMinutes = await exports.getDeadlineMinutes(to);
-  const sameSharedGroup = COUNTDOWN_SHARED_GROUP[from] && COUNTDOWN_SHARED_GROUP[from] === COUNTDOWN_SHARED_GROUP[to];
-  const keepDeadline = sameSharedGroup && proposal.supplement_deadline_at != null;
-  if (deadlineMinutes && !keepDeadline) {
-    try {
+  // Đặt SONG SONG 2 mốc countdown theo rule của trạng thái đích:
+  //   supplement_deadline_at (bổ sung thông tin) + transition_deadline_at (chuyển trạng thái).
+  try {
+    const suppMinutes = await exports.getDeadlineMinutes(to, 'supplement');
+    const transMinutes = await exports.getDeadlineMinutes(to, 'transition');
+    const sameSharedGroup = COUNTDOWN_SHARED_GROUP[from] && COUNTDOWN_SHARED_GROUP[from] === COUNTDOWN_SHARED_GROUP[to];
+    const keepSupplement = sameSharedGroup && proposal.supplement_deadline_at != null;
+
+    const suppSet = suppMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+    const transSet = transMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+    const params = [];
+    if (keepSupplement) {
+      if (transMinutes) params.push(transMinutes);
+      params.push(id);
       await pool.query(
-        'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL WHERE id = ?',
-        [deadlineMinutes, id]
+        `UPDATE station_proposals SET transition_deadline_at = ${transSet} WHERE id = ?`,
+        params
       );
-    } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
-  }
+    } else {
+      if (suppMinutes) params.push(suppMinutes);
+      if (transMinutes) params.push(transMinutes);
+      params.push(id);
+      await pool.query(
+        `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet}, info_completed_at = NULL WHERE id = ?`,
+        params
+      );
+    }
+  } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
 
   let stationCreated = null;
   let stationCreateError = null;
@@ -341,15 +358,27 @@ const LEGACY_DAY_KEYS = {
   ARCHIVED: null
 };
 
+// Mỗi trạng thái có thể cấu hình SONG SONG 2 countdown:
+//   supplement: quá hạn chưa xác nhận đủ thông tin (info_completed_at) -> hủy đề xuất
+//   transition: quá hạn chưa chuyển sang trạng thái tiếp theo -> hủy đề xuất
+const COUNTDOWN_KINDS = ['supplement', 'transition'];
+const COUNTDOWN_TYPE_LABELS = { supplement: 'Bổ sung thông tin', transition: 'Chuyển trạng thái' };
+exports.COUNTDOWN_TYPE_LABELS = COUNTDOWN_TYPE_LABELS;
+
+const DEFAULT_PART = { enabled: false, days: 0, hours: 0, minutes: 0 };
+
 const DEFAULT_COUNTDOWN_RULES = [
-  { status: 'PENDING', days: 3, hours: 0, minutes: 0, enabled: true },
-  { status: 'REVIEWING', days: 3, hours: 0, minutes: 0, enabled: true },
-  { status: 'PRINCIPLE_APPROVED', days: 15, hours: 0, minutes: 0, enabled: true },
-  { status: 'APPROVED', days: 10, hours: 0, minutes: 0, enabled: false },
-  { status: 'ARCHIVED', days: 10, hours: 0, minutes: 0, enabled: false }
+  { status: 'PENDING', supplement: { enabled: true, days: 3, hours: 0, minutes: 0 }, transition: { ...DEFAULT_PART } },
+  { status: 'REVIEWING', supplement: { enabled: true, days: 3, hours: 0, minutes: 0 }, transition: { ...DEFAULT_PART } },
+  { status: 'PRINCIPLE_APPROVED', supplement: { enabled: true, days: 15, hours: 0, minutes: 0 }, transition: { ...DEFAULT_PART } },
+  { status: 'APPROVED', supplement: { enabled: false, days: 10, hours: 0, minutes: 0 }, transition: { ...DEFAULT_PART } },
+  { status: 'ARCHIVED', supplement: { enabled: false, days: 10, hours: 0, minutes: 0 }, transition: { ...DEFAULT_PART } }
 ];
 
-// PENDING va REVIEWING dung chung 1 moc countdown: khi chuyen PENDING -> REVIEWING
+const clonePart = (p) => ({ enabled: !!(p && p.enabled), days: Number((p && p.days) || 0), hours: Number((p && p.hours) || 0), minutes: Number((p && p.minutes) || 0) });
+const cloneRule = (r) => ({ status: r.status, supplement: clonePart(r.supplement), transition: clonePart(r.transition) });
+
+// PENDING va REVIEWING dung chung 1 moc countdown bo sung: khi chuyen PENDING -> REVIEWING
 // KHONG dat lai deadline (giu moc cua PENDING).
 const COUNTDOWN_SHARED_GROUP = { PENDING: 'review', REVIEWING: 'review' };
 
@@ -359,17 +388,26 @@ const clamp = (v, max) => {
   return Math.min(max, n);
 };
 
-const normalizeRule = (r, fallback) => {
-  const days = clamp(r.days, 365);
-  const hours = clamp(r.hours, 23);
-  const minutes = clamp(r.minutes, 59);
+const normalizePart = (src, fallback) => {
+  const f = fallback || DEFAULT_PART;
+  if (!src || typeof src !== 'object') return clonePart(f);
+  const days = clamp(src.days, 365);
+  const hours = clamp(src.hours, 23);
+  const minutes = clamp(src.minutes, 59);
   const hasDuration = days > 0 || hours > 0 || minutes > 0;
+  const enabled = src.enabled !== undefined ? src.enabled !== false : !!f.enabled;
+  return { enabled: !!enabled && hasDuration, days, hours, minutes };
+};
+
+const normalizeRule = (r, fallback) => {
+  const fb = fallback || { supplement: DEFAULT_PART, transition: DEFAULT_PART };
+  // Tương thích cấu hình cũ (flat days/hours/minutes/enabled) -> đưa hết vào supplement
+  const legacySupplement = { enabled: r.enabled, days: r.days, hours: r.hours, minutes: r.minutes };
+  const supplementSrc = r.supplement !== undefined ? r.supplement : legacySupplement;
   return {
     status: r.status,
-    days: hasDuration ? days : fallback.days,
-    hours: hasDuration ? hours : 0,
-    minutes: hasDuration ? minutes : 0,
-    enabled: r.enabled !== false
+    supplement: normalizePart(supplementSrc, fb.supplement),
+    transition: normalizePart(r.transition, fb.transition)
   };
 };
 
@@ -379,7 +417,7 @@ const parseRules = (raw) => {
     if (!r || !ALL_STATUSES.includes(r.status)) return;
     map[r.status] = r;
   });
-  return DEFAULT_COUNTDOWN_RULES.map((d) => (map[d.status] ? normalizeRule(map[d.status], d) : { ...d }));
+  return DEFAULT_COUNTDOWN_RULES.map((d) => (map[d.status] ? normalizeRule(map[d.status], d) : cloneRule(d)));
 };
 
 exports.getCountdownConfig = async () => {
@@ -406,7 +444,9 @@ exports.getCountdownConfig = async () => {
     rules = DEFAULT_COUNTDOWN_RULES.map((d) => {
       const key = LEGACY_DAY_KEYS[d.status];
       const v = key ? Number(legacyMap[key]) : NaN;
-      return { ...d, days: Number.isFinite(v) && v > 0 ? Math.min(365, v) : d.days };
+      const supp = clonePart(d.supplement);
+      if (Number.isFinite(v) && v > 0) supp.days = Math.min(365, v);
+      return { status: d.status, supplement: supp, transition: clonePart(d.transition) };
     });
   }
   return { warn_hours: warnHours, rules, ...(await exports.getExtendLimits()) };
@@ -432,20 +472,47 @@ exports.saveCountdownConfig = async (config) => {
   return { warn_hours: warnHours, rules, ...(limits || await exports.getExtendLimits()) };
 };
 
-exports.getDeadlineParts = async (status) => {
+exports.getDeadlineParts = async (status, kind = 'supplement') => {
   const cfg = await exports.getCountdownConfig();
   const rule = cfg.rules.find((r) => r.status === status);
-  if (!rule || !rule.enabled) return null;
-  const totalMinutes = (Number(rule.days) || 0) * 1440 + (Number(rule.hours) || 0) * 60 + (Number(rule.minutes) || 0);
+  if (!rule) return null;
+  const part = rule[kind] || DEFAULT_PART;
+  if (!part.enabled) return null;
+  const totalMinutes = (Number(part.days) || 0) * 1440 + (Number(part.hours) || 0) * 60 + (Number(part.minutes) || 0);
   if (totalMinutes <= 0) return null;
   return totalMinutes;
 };
 
-exports.getDeadlineMinutes = async (status) => exports.getDeadlineParts(status);
+exports.getDeadlineMinutes = async (status, kind = 'supplement') => exports.getDeadlineParts(status, kind);
+
+const enabledForKind = (rules, kind) => rules.filter((r) => r[kind] && r[kind].enabled).map((r) => r.status);
 
 exports.getEnabledCountdownStatuses = async () => {
   const cfg = await exports.getCountdownConfig();
-  return cfg.rules.filter((r) => r.enabled).map((r) => r.status);
+  const set = new Set([...enabledForKind(cfg.rules, 'supplement'), ...enabledForKind(cfg.rules, 'transition')]);
+  return [...set];
+};
+
+exports.getEnabledSupplementStatuses = async () => {
+  const cfg = await exports.getCountdownConfig();
+  return enabledForKind(cfg.rules, 'supplement');
+};
+
+exports.getEnabledTransitionStatuses = async () => {
+  const cfg = await exports.getCountdownConfig();
+  return enabledForKind(cfg.rules, 'transition');
+};
+
+exports.getCountdownFlags = async () => {
+  const cfg = await exports.getCountdownConfig();
+  const map = {};
+  cfg.rules.forEach((r) => {
+    map[r.status] = {
+      supplement: !!(r.supplement && r.supplement.enabled),
+      transition: !!(r.transition && r.transition.enabled)
+    };
+  });
+  return map;
 };
 
 exports.getCountdownWarnHours = async () => {
@@ -535,7 +602,7 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
     throw err('Vui lòng nhập lý do gia hạn', 400);
   }
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, custom_data, supplement_deadline_at, info_completed_at FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, custom_data, supplement_deadline_at, transition_deadline_at, info_completed_at FROM station_proposals WHERE id = ?',
     [id]
   );
   if (rows.length === 0) {
@@ -543,27 +610,43 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
   }
   const proposal = rows[0];
   const enabled = await exports.getEnabledCountdownStatuses();
-  if (!proposal.supplement_deadline_at || !enabled.includes(proposal.status)) {
-    throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
+  const hasAny = proposal.supplement_deadline_at || proposal.transition_deadline_at;
+  if (!hasAny || !enabled.includes(proposal.status)) {
+    throw err('Đề xuất không trong thời gian countdown', 400);
   }
-  if (new Date(proposal.supplement_deadline_at).getTime() <= Date.now()) {
+  const nowMs = Date.now();
+  const suppPast = proposal.supplement_deadline_at ? new Date(proposal.supplement_deadline_at).getTime() <= nowMs : true;
+  const transPast = proposal.transition_deadline_at ? new Date(proposal.transition_deadline_at).getTime() <= nowMs : true;
+  if (suppPast && transPast) {
     throw err('Đề xuất đã quá hạn, không thể gia hạn', 400);
   }
   const usedExtends = await exports.countDeadlineExtends(id);
   if (maxTimes > 0 && usedExtends >= maxTimes) {
     throw err(`Đề xuất đã gia hạn ${usedExtends}/${maxTimes} lần, không thể gia hạn thêm`, 400);
   }
-  const oldIso = new Date(proposal.supplement_deadline_at).toISOString();
+  const oldSuppIso = proposal.supplement_deadline_at ? new Date(proposal.supplement_deadline_at).toISOString() : null;
+  const oldTransIso = proposal.transition_deadline_at ? new Date(proposal.transition_deadline_at).toISOString() : null;
+  const oldIso = oldSuppIso || oldTransIso;
   await pool.query(
-    'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(supplement_deadline_at, INTERVAL ? MINUTE), info_completed_at = NULL, updated_at = NOW() WHERE id = ?',
-    [totalMinutes, id]
+    `UPDATE station_proposals
+     SET supplement_deadline_at = IF(supplement_deadline_at IS NULL, NULL, DATE_ADD(supplement_deadline_at, INTERVAL ? MINUTE)),
+         transition_deadline_at = IF(transition_deadline_at IS NULL, NULL, DATE_ADD(transition_deadline_at, INTERVAL ? MINUTE)),
+         info_completed_at = NULL, updated_at = NOW()
+     WHERE id = ?`,
+    [totalMinutes, totalMinutes, id]
   );
-  const [after] = await pool.query('SELECT supplement_deadline_at FROM station_proposals WHERE id = ?', [id]);
-  const newIso = new Date(after[0].supplement_deadline_at).toISOString();
+  const [after] = await pool.query('SELECT supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id = ?', [id]);
+  const newIso = after[0].supplement_deadline_at ? new Date(after[0].supplement_deadline_at).toISOString() : (after[0].transition_deadline_at ? new Date(after[0].transition_deadline_at).toISOString() : null);
+  const newSuppIso = after[0].supplement_deadline_at ? new Date(after[0].supplement_deadline_at).toISOString() : null;
+  const newTransIso = after[0].transition_deadline_at ? new Date(after[0].transition_deadline_at).toISOString() : null;
   await exports.logActivity({
     proposalId: id, action: 'deadline_extended',
     fromStatus: proposal.status, toStatus: proposal.status,
-    changedFields: { old_deadline: oldIso, new_deadline: newIso, days: d, hours: h },
+    changedFields: {
+      old_deadline: oldIso, new_deadline: newIso, days: d, hours: h,
+      old_supplement_deadline: oldSuppIso, new_supplement_deadline: newSuppIso,
+      old_transition_deadline: oldTransIso, new_transition_deadline: newTransIso
+    },
     reason: cleanReason, actorId, actorRole, source, ip
   });
   const code = notificationService.proposalCode(proposal.custom_data, id);
@@ -626,8 +709,8 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
     throw err('Không tìm thấy đề xuất', 404);
   }
   const proposal = rows[0];
-  const enabled = await exports.getEnabledCountdownStatuses();
-  if (!proposal.supplement_deadline_at || !enabled.includes(proposal.status)) {
+  const supplementStatuses = await exports.getEnabledSupplementStatuses();
+  if (!proposal.supplement_deadline_at || !supplementStatuses.includes(proposal.status)) {
     throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
   }
   const already = proposal.info_completed_at != null;

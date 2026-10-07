@@ -187,7 +187,6 @@ function renderSection(section, proposal, fieldMap, depth = 0) {
   if (childSections) {
     let childHtml = '';
     for (const child of childSections) {
-      if (!isSectionVisible(child, proposal)) continue;
       childHtml += renderSection(child, proposal, fieldMap, depth + 1);
     }
     if (!childHtml) return '';

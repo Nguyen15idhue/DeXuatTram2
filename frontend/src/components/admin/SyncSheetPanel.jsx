@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Play, RefreshCw, Eye, Plus, Download, X, ChevronRight, Pencil, Trash2, ArrowUp, ArrowDown, Sparkles, ListTodo, Loader2, ChevronDown, Copy } from 'lucide-react';
+import { Save, Play, RefreshCw, Eye, Plus, Download, X, ChevronRight, Pencil, Trash2, ArrowUp, ArrowDown, Sparkles, ListTodo, Loader2, ChevronDown, Copy, Info, ExternalLink } from 'lucide-react';
 import { automationService } from '../../services/api';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
@@ -89,6 +89,9 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [versions, setVersions] = useState([]);
   const [versionsEmpty, setVersionsEmpty] = useState(false);
+  const [mergeInfo, setMergeInfo] = useState([]);
+  const [totalOriginal, setTotalOriginal] = useState(0);
+  const [totalAfterMerge, setTotalAfterMerge] = useState(0);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [version, setVersion] = useState('');
   const [tree, setTree] = useState(null);
@@ -173,11 +176,21 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
       if (res.success) {
         const list = res.data || [];
         setVersions(list);
+        setMergeInfo(res.mergeInfo || []);
+        setTotalOriginal(res.totalOriginal || list.length);
+        setTotalAfterMerge(res.totalAfterMerge || list.length);
         setVersionsEmpty(list.length === 0);
         if (list.length > 0) {
           setVersion((prev) => (list.some((v) => String(v.version) === String(prev)) ? prev : String(list[list.length - 1].version)));
         } else {
           setVersion('');
+        }
+        // Show merge notification if versions were merged
+        if (res.mergeInfo && res.mergeInfo.length > 0) {
+          showToast(
+            `Đã tự động gộp ${res.totalOriginal || list.length} versions → ${res.totalAfterMerge || list.length} versions (giữ bản mới nhất mỗi nhóm)`,
+            'info'
+          );
         }
       }
     } catch {
@@ -384,6 +397,50 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
   });
 
   const emptySlots = searchCol.trim() ? [] : [mappings.length, mappings.length + 1, mappings.length + 2].map((i) => colName(i));
+
+  const renderFieldRow = (f) => (
+    <div
+      key={f.path}
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', f.path); setDragPath(f.path); }}
+      onDragEnd={() => { setDragPath(null); setDropCol(null); }}
+      className={`flex items-center gap-2 p-1.5 rounded-lg border text-xs cursor-grab bg-base-100 hover:border-primary ${mappedPaths.has(f.path) ? 'border-success' : 'border-dashed border-base-300'} ${dragPath === f.path ? 'opacity-50' : ''}`}
+      title={f.path}
+    >
+      <span className="font-mono bg-base-200 px-1 rounded">{f.path.split('.').slice(-1)[0]}</span>
+      <span>{f.label}</span>
+      <span className="ml-auto text-base-content/40">⋮⋮</span>
+    </div>
+  );
+
+  const buildFieldGroups = (fields) => {
+    const root = [];
+    fields.forEach((f) => {
+      const path = Array.isArray(f.group) && f.group.length > 0 ? f.group : null;
+      if (!path) { root.push({ field: f }); return; }
+      let level = root;
+      path.forEach((title, i) => {
+        let node = level.find((x) => x && x.title === title);
+        if (!node) { node = { title, children: [], fields: [] }; level.push(node); }
+        if (i === path.length - 1) node.fields.push(f);
+        else level = node.children;
+      });
+    });
+    return root;
+  };
+
+  const renderFieldTree = (nodes, depth = 0) => nodes.map((node, i) => {
+    if (node.field) return renderFieldRow(node.field);
+    return (
+      <details key={`grp-${depth}-${i}-${node.title}`} className="border border-base-200 rounded-lg px-1.5 py-0.5 bg-base-100">
+        <summary className="cursor-pointer text-xs font-medium text-base-content/80">{node.title}</summary>
+        <div className="pl-2 py-1 space-y-1">
+          {node.fields.map(renderFieldRow)}
+          {renderFieldTree(node.children, depth + 1)}
+        </div>
+      </details>
+    );
+  });
 
   const handleDrop = (colLetter) => {
     if (!dragPath) return;
@@ -694,6 +751,19 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
 
       {view === 'mapping' && (
         <>
+          {/* Merge info banner */}
+          {mergeInfo.length > 0 && (
+            <div className="alert alert-info text-sm mb-2">
+              <Info size={16} className="mr-1" />
+              <span>
+                Đã tự động gộp <strong>{totalOriginal}</strong> versions → <strong>{totalAfterMerge}</strong> version{totalAfterMerge > 1 ? 's' : ''} (giữ bản mới nhất mỗi nhóm).
+                <span className="ml-2 text-info-content/70">
+                  Chi tiết: {mergeInfo.map((m) => `${m.duplicate}→${m.keptAs}`).join(', ')}
+                </span>
+              </span>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <select className="select select-bordered select-sm" value={version} onChange={(e) => setVersion(e.target.value)}>
               <option value="">{versionsEmpty ? 'Chưa có version — bấm Quét version từ 1Office' : 'Chọn version'}</option>
@@ -726,6 +796,19 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
             </button>
             {tree?.stale && <span className="badge badge-warning badge-sm">Cache cũ</span>}
             <div className="flex-1" />
+            <button
+              className="btn btn-outline btn-sm gap-1"
+              onClick={() => {
+                const id = String(form.spreadsheet_id || detail?.spreadsheet_id || '').trim();
+                if (!id) { showToast('Chưa cấu hình Sheet ID', 'error'); return; }
+                window.open(`https://docs.google.com/spreadsheets/d/${id}/edit`, '_blank', 'noopener');
+              }}
+              disabled={!(form.spreadsheet_id || detail?.spreadsheet_id)}
+              title="Mở Google Sheet"
+            >
+              <ExternalLink size={14} />
+              Google Sheet
+            </button>
             <button className="btn btn-outline btn-sm gap-1" onClick={handleSampleExcel} disabled={!version || mappings.length === 0}>
               <Download size={14} />
               Xuất Excel mẫu
@@ -753,20 +836,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
                       <details key={n.id} className="border border-base-300 rounded-lg px-2 py-1 bg-base-50">
                         <summary className="cursor-pointer text-sm font-medium">{n.title || `[${n.id}]`} <code className="text-xs">({n.id})</code></summary>
                         <div className="pl-3 py-1 space-y-1">
-                          {(n.fields || []).map((f) => (
-                            <div
-                              key={f.path}
-                              draggable
-                              onDragStart={(e) => { e.dataTransfer.setData('text/plain', f.path); setDragPath(f.path); }}
-                              onDragEnd={() => { setDragPath(null); setDropCol(null); }}
-                              className={`flex items-center gap-2 p-1.5 rounded-lg border text-xs cursor-grab bg-base-100 hover:border-primary ${mappedPaths.has(f.path) ? 'border-success' : 'border-dashed border-base-300'} ${dragPath === f.path ? 'opacity-50' : ''}`}
-                              title={f.path}
-                            >
-                              <span className="font-mono bg-base-200 px-1 rounded">{f.path.split('.').slice(-1)[0]}</span>
-                              <span>{f.label}</span>
-                              <span className="ml-auto text-base-content/40">⋮⋮</span>
-                            </div>
-                          ))}
+                          {renderFieldTree(buildFieldGroups(n.fields || []))}
                         </div>
                       </details>
                     ))}

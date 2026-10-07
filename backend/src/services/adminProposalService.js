@@ -82,7 +82,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status, p.station_id,
-            p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.info_completed_at,
+            p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.pending_station_code,
             u.full_name as user_name, u.email as user_email
     FROM station_proposals p

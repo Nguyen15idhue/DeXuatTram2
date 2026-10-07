@@ -31,7 +31,7 @@ const { webhookLimiter } = require('../middlewares/rateLimits');
  *                 description: Idempotency key (BPA retry cùng id không đẻ log kép)
  *               event:
  *                 type: string
-                 *                 enum: [PRINCIPLE_APPROVED, APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
+ *                 enum: [PRINCIPLE_APPROVED, APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
  *               proposal_code:
  *                 type: string
  *                 description: tracking_code | ma_de_xuat_gen | custom_data.ma_de_xuat
@@ -88,7 +88,7 @@ router.post('/oneoffice/proposal-status', webhookLimiter, webhookController.prop
  *                 description: ID quy trình 1Office (postId)
  *               project_id:
  *                 type: string
- *                 description: ID dự án đích (lưu ý: dự án "mã 2" có ID=3)
+ *                 description: "ID dự án đích (lưu ý: dự án 'mã 2' có ID=3)"
  *               access_token:
  *                 type: string
  *                 description: Token 1Office gửi kèm; thiếu thì dùng token lưu sẵn
@@ -123,7 +123,7 @@ router.post('/oneoffice/work-process/move-to-project', webhookLimiter, workProce
  * /api/webhooks/oneoffice/station-update:
  *   post:
  *     tags: [Webhooks - 1Office]
-  *     summary: 1Office ghi log timeline trạm (BPA HTTP node gọi sang)
+ *     summary: 1Office ghi log timeline trạm (BPA HTTP node gọi sang)
   *     description: Xác thực bằng header `X-1Office-Signature` hoặc `x-webhook-secret` (ONEOFFICE_WORK_SIGNATURE / ONEOFFICE_WEBHOOK_SECRET). Tìm trạm theo mã trạm, đổi trạng thái (nếu khác) + ghi dòng log timeline. Mọi key ngoài event_id/ma_tram/station_code/status/actor/ten_hanh_dong đều là dữ liệu tự do (tối đa 50 key, mỗi giá trị tối đa 2000 ký tự) — chỉ ghi log dạng bảng, KHÔNG cập nhật cột trạm. Trả kết quả đồng bộ, BPA đi tiếp theo Success path `$.success = true`.
  *     parameters:
  *       - in: header
@@ -153,16 +153,16 @@ router.post('/oneoffice/work-process/move-to-project', webhookLimiter, workProce
  *               station_code:
  *                 type: string
  *                 description: Bí danh của ma_tram
-  *               status:
-  *                 type: string
-  *                 enum: [PLANNING, ACTIVE, DEPLOYING, REJECTED]
-  *                 description: Đổi trạng thái trạm (ghi log status_change); trùng trạng thái hiện tại thì bỏ qua
-  *               ten_hanh_dong:
-  *                 type: string
-  *                 description: Tiêu đề dòng log timeline (tối đa 200 ký tự); trống thì dùng nhãn mặc định
-   *               actor:
-   *                 type: string
-   *                 description: Người thực hiện bên 1Office (lưu vết trong log inbound)
+ *               status:
+ *                 type: string
+ *                 enum: [PLANNING, ACTIVE, DEPLOYING, REJECTED]
+ *                 description: Đổi trạng thái trạm (ghi log status_change); trùng trạng thái hiện tại thì bỏ qua
+ *               ten_hanh_dong:
+ *                 type: string
+ *                 description: Tiêu đề dòng log timeline (tối đa 200 ký tự); trống thì dùng nhãn mặc định
+ *               actor:
+ *                 type: string
+ *                 description: Người thực hiện bên 1Office (lưu vết trong log inbound)
   *     responses:
   *       200:
   *         description: Thành công (kể cả event trùng — trả kết quả cũ kèm duplicate=true + current_status tra live; có key tự do/tiêu đề nhưng không đổi status → unchanged=false, logged=['note']). BPA nên check `data.current_status` thay vì `data.status_changed` để xác nhận trạng thái trạm.

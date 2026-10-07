@@ -414,7 +414,12 @@ const TemplateEditor = ({ configId, onClose }) => {
         (fs.tabs || []).forEach(tab => {
           (tab.sectionRefs || []).forEach(refId => {
             const ref = sectionMap[refId];
-            if (ref) childSections.push(buildSection(ref, visibleWhen));
+            if (ref) {
+              const child = buildSection(ref, visibleWhen);
+              child.condition = null;
+              child.always_show = true;
+              childSections.push(child);
+            }
           });
         });
         return {

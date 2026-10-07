@@ -372,7 +372,7 @@ router.post('/restore/preview', requireAuth, requireUserManager, async (req, res
  *                 description: Bổ sung trường bắt buộc còn thiếu (latitude, longitude, owner_name, province...)
  *               fileAssignments:
  *                 type: object
- *                 description: Gán tay file chưa xác định được ô {ten_file: ma_o_file}
+ *                 description: "Gán tay file chưa xác định được ô {ten_file: ma_o_file}"
  *     responses:
  *       200:
  *         description: Đã khôi phục (trả proposalId)

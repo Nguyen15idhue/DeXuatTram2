@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Wifi, Eye, Play, RefreshCw, Bot, ChevronRight, ArrowLeft, Plus, X } from 'lucide-react';
+import { Save, Wifi, Eye, Play, RefreshCw, Bot, ChevronRight, ArrowLeft, Plus, X, ExternalLink } from 'lucide-react';
 import { automationService } from '../../services/api';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
@@ -272,10 +272,13 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
                     {group.items.map((a) => (
-                      <button
+                      <div
                         key={a.id}
-                        className="card bg-base-100 shadow-sm border border-base-300 hover:border-primary text-left"
+                        role="button"
+                        tabIndex={0}
+                        className="card bg-base-100 shadow-sm border border-base-300 hover:border-primary text-left cursor-pointer"
                         onClick={() => onSelect && onSelect(a.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect && onSelect(a.id); } }}
                       >
                         <div className="card-body flex flex-row items-center gap-3 py-4">
                           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${a.enabled ? 'bg-success/10' : 'bg-base-300'}`}>
@@ -289,9 +292,23 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
                               {a.project_code && <span className="badge badge-outline badge-sm">Dự án: {a.project_code}</span>}
                             </div>
                           </div>
+                          {a.automation_type === 'sync_sheet' && a.spreadsheet_id && (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm gap-1"
+                              title="Mở Google Sheet"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`https://docs.google.com/spreadsheets/d/${a.spreadsheet_id}/edit`, '_blank', 'noopener');
+                              }}
+                            >
+                              <ExternalLink size={14} />
+                              Google Sheet
+                            </button>
+                          )}
                           <ChevronRight size={18} className="text-base-content/40" />
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}

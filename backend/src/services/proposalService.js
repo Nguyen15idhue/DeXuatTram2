@@ -11,8 +11,8 @@ exports.getAllProposals = async () => {
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
             u.role AS owner_role,
-            gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone,
-            ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone,
+            gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone, gdkv.chuc_vu AS gdkv_chuc_vu,
+            ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone, ptr.chuc_vu AS ptr_chuc_vu,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
@@ -22,13 +22,13 @@ exports.getAllProposals = async () => {
             JSON_EXTRACT(p.custom_data, '$.tdt_tru') AS tdt_tru,
             JSON_EXTRACT(p.custom_data, '$.loai_tru_nq') AS loai_tru_nq,
             JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
-     FROM station_proposals p
-      LEFT JOIN users u ON p.user_id = u.id
-      LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
-      LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
-      WHERE NOT (p.status = 'CONTRACT_SIGNED' AND p.station_id IS NOT NULL)
-      ORDER BY p.created_at DESC
-      LIMIT 20000`
+      FROM station_proposals p
+       LEFT JOIN users u ON p.user_id = u.id
+       LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
+       LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
+       WHERE NOT (p.status = 'CONTRACT_SIGNED' AND p.station_id IS NOT NULL)
+       ORDER BY p.created_at DESC
+       LIMIT 20000`
   );
   return proposals;
 };
@@ -38,8 +38,8 @@ exports.getProposalById = async (id) => {
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
             u.role AS owner_role,
-            gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone,
-            ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone,
+            gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone, gdkv.chuc_vu AS gdkv_chuc_vu,
+            ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone, ptr.chuc_vu AS ptr_chuc_vu,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
@@ -49,11 +49,11 @@ exports.getProposalById = async (id) => {
             JSON_EXTRACT(p.custom_data, '$.tdt_tru') AS tdt_tru,
             JSON_EXTRACT(p.custom_data, '$.loai_tru_nq') AS loai_tru_nq,
             JSON_EXTRACT(p.custom_data, '$.loai_tru_lk') AS loai_tru_lk
-     FROM station_proposals p
-     LEFT JOIN users u ON p.user_id = u.id
-     LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
-     LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
-     WHERE p.id = ?`,
+      FROM station_proposals p
+      LEFT JOIN users u ON p.user_id = u.id
+      LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
+      LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
+      WHERE p.id = ?`,
     [id]
   );
   if (proposals.length === 0) return null;
@@ -86,10 +86,13 @@ exports.createProposal = async (userId, data, opts = {}) => {
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
 
   let supplementMinutes = 4320;
+  let transitionMinutes = null;
   try {
     const proposalLifecycle = require('./proposalLifecycle');
-    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
+    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING', 'supplement');
     supplementMinutes = Math.max(1, Number(configured) || 4320);
+    const tConf = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
+    transitionMinutes = tConf ? Math.max(1, Number(tConf)) : null;
   } catch { /* silent */ }
 
   const conn = await pool.getConnection();
@@ -99,9 +102,9 @@ exports.createProposal = async (userId, data, opts = {}) => {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at)
-       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
-      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, supplementMinutes]
+      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at, transition_deadline_at)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, supplementMinutes, transitionMinutes]
     );
 
     recordId = result.insertId;
@@ -327,10 +330,13 @@ exports.createGuestProposal = async (data, ip) => {
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
   let guestSupplementMinutes = 4320;
+  let guestTransitionMinutes = null;
   try {
     const proposalLifecycle = require('./proposalLifecycle');
-    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
+    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING', 'supplement');
     guestSupplementMinutes = Math.max(1, Number(configured) || 4320);
+    const tConf = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
+    guestTransitionMinutes = tConf ? Math.max(1, Number(tConf)) : null;
   } catch { /* silent */ }
 
   const conn = await pool.getConnection();
@@ -340,9 +346,9 @@ exports.createGuestProposal = async (data, ip) => {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip, supplement_deadline_at)
-       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
-      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, guestSupplementMinutes]
+      `INSERT INTO station_proposals (user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip, supplement_deadline_at, transition_deadline_at)
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, guestSupplementMinutes, guestTransitionMinutes]
     );
 
     recordId = result.insertId;

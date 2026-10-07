@@ -2,16 +2,81 @@ const pool = require('../utils/db');
 const apiConfigService = require('./apiConfigService');
 const workAutomationService = require('./workAutomationService');
 const googleSheetService = require('./googleSheetService');
-const fieldMapper = require('./fieldMapper');
+const dynamicUtils = require('./dynamicUtils');
+const formService = require('./formService');
 
 const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const versionOfCache = new Map();
 let userMapCache = { at: 0, map: {} };
-const contactCache = new Map();
-const CONTACT_CACHE_TTL_MS = 10 * 60 * 1000;
+const proposalCache = new Map();
+const PROPOSAL_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const ACTION_NODE_TYPES = new Set(['taskaction', 'tasksign']);
 const CONTACT_NODE_ID = 'contact';
+const CONTACT_SKIP_TYPES = new Set(['password']);
+
+const GENERIC_ACTION_TITLES = new Set(['chấm điểm và đánh giá', 'duyệt', 'không duyệt', 'xác nhận', 'thỏa mãn', 'không thỏa mãn']);
+const GENERIC_FORM_TITLES = new Set(['điểm số', 'đánh giá chi tiết', 'ghi chú', 'lý do', 'phòng ban', 'nội dung']);
+const ROLE_PREFIXES = ['admin', 'gđkv', 'gđttkd', 'gdttkd', 'p.tckt', 'tgđ', 'tgdkd', 'gđtt', 'chủ tịch'];
+const VERDICT_KEYWORD_RE = /bcđx|đề xuất|hồ sơ|chủ trương|layout|nghiệm thu/i;
+
+const nodeCenter = (n) => ({
+  x: (Number(n.x) || 0) + (Number(n.w) || 0) / 2,
+  y: (Number(n.y) || 0) + (Number(n.h) || 0) / 2,
+});
+
+const stripRolePrefix = (s) => {
+  let t = String(s || '').trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const r of ROLE_PREFIXES) {
+      const re = new RegExp(`^${r.replace('.', '\\.')}\\s+`, 'i');
+      if (re.test(t)) { t = t.replace(re, '').trim(); changed = true; }
+    }
+  }
+  return t;
+};
+
+const cleanContextName = (s) => String(s || '').replace(/\{[^}]*\}/g, ' ').replace(/\s+/g, ' ').trim();
+
+const computeActionContext = (node, tasks) => {
+  const title = cleanContextName(node.title);
+  if (!title) return '';
+  if (!GENERIC_ACTION_TITLES.has(title.toLowerCase())) return title;
+  if (!Array.isArray(tasks) || tasks.length === 0) return title;
+  if (![node.x, node.y, node.w, node.h].some((v) => Number.isFinite(Number(v)))) return title;
+  const c = nodeCenter(node);
+  let best = null;
+  let bestD = Infinity;
+  for (const t of tasks) {
+    const tc = nodeCenter(t);
+    const d = Math.abs(c.x - tc.x) + Math.abs(c.y - tc.y);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  if (!best) return title;
+  const tTitle = cleanContextName(best.title);
+  const low = title.toLowerCase();
+  if (['duyệt', 'không duyệt', 'thỏa mãn', 'không thỏa mãn'].includes(low)) {
+    let obj = stripRolePrefix(tTitle).replace(/^(phê\s+)?duyệt\s+/i, '').replace(/\s+duyệt$/i, '').trim();
+    if (obj && VERDICT_KEYWORD_RE.test(obj) && obj.split(/\s+/).length <= 5) return `${title} ${obj}`;
+    return title;
+  }
+  return tTitle || title;
+};
+
+const actionFieldLabel = (node, rest, fieldTitle) => {
+  const ctx = String(node.context || node.title || '').trim();
+  if (rest === 'status') return ctx ? `Trạng thái ${ctx}` : 'Trạng thái';
+  if (rest === 'end_plan') return ctx ? `Deadline ${ctx} dự kiến` : 'Deadline dự kiến';
+  if (rest === 'end_real') return ctx ? `Deadline ${ctx} thực tế` : 'Deadline thực tế';
+  if (rest.startsWith('form.')) {
+    const ft = String(fieldTitle || '').trim();
+    if (!ft) return ctx || 'Trường';
+    return GENERIC_FORM_TITLES.has(ft.toLowerCase()) && ctx ? `${ft} ${ctx}` : ft;
+  }
+  return fieldTitle || rest;
+};
 
 const stripHtml = (s) => String(s == null ? '' : s)
   .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li|ul|ol)>/gi, '\n')
@@ -175,6 +240,7 @@ exports.versionOf = async (auto, processId) => {
 const slimNode = (n) => {
   const d = n.data || {};
   const o = { id: n.id, type: n.type, title: d.title || '' };
+  o.x = n.x; o.y = n.y; o.w = n.w; o.h = n.h;
   o.user_ids = d.user_ids; o.users = d.users; o.userId = d.userId;
   o.period = d.period; o.period_time = d.period_time; o.desc = d.desc;
   o.start_plan = d.start_plan; o.end_plan = d.end_plan;
@@ -218,37 +284,156 @@ const buildTree = (nodes) => nodes.filter((n) => n.type !== 'connector').map((n)
     fields.push({ path: `node.${s.id}.end_plan`, label: 'Thời gian kết thúc dự kiến' });
     fields.push({ path: `node.${s.id}.end_real`, label: 'Thời gian kết thúc thực tế (suy từ lịch sử)' });
   }
-  return { id: s.id, type: s.type, title: s.title, fields, raw: s };
+  return { id: s.id, type: s.type, title: s.title, x: s.x, y: s.y, w: s.w, h: s.h, fields, raw: s };
 });
 
-const buildContactNode = () => ({
-  id: CONTACT_NODE_ID,
-  type: CONTACT_NODE_ID,
-  title: 'Liên hệ gắn với quy trình',
-  fields: (fieldMapper.ONE_OFFICE_FIELDS || []).map((f) => ({
-    path: `${CONTACT_NODE_ID}.${f.key}`,
-    label: `${f.label || f.key} (Liên hệ)`,
-  })),
-});
+const withActionContexts = (nodes) => {
+  const tasks = nodes.filter((n) => n && n.type === 'task');
+  for (const n of nodes) {
+    if (n && ACTION_NODE_TYPES.has(n.type)) n.context = computeActionContext(n, tasks);
+  }
+  return nodes;
+};
 
-const ensureVirtualFields = (tree) => {
-  if (!tree || !Array.isArray(tree.nodes)) return tree;
-  for (const n of tree.nodes) {
-    if (n && Array.isArray(n.fields)) {
-      for (const f of n.fields) {
-        if (f && typeof f.path === 'string' && f.path === `node.${n.id}.status` && f.label === 'Trạng thái node (suy từ lịch sử)') {
-          f.label = 'Trạng thái (suy ra: đúng/quá hạn, nhánh)';
-        }
-      }
+const parseJsonSafe = (v) => {
+  if (v === undefined || v === null) return null;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return null; }
+};
+
+const parseFormFieldConfig = (f) => {
+  const cfg = f && f.config ? parseJsonSafe(f.config) : null;
+  return cfg && typeof cfg === 'object' ? cfg : {};
+};
+
+const buildContactGroups = (form, fields) => {
+  const layout = form ? parseJsonSafe(form.layout_config) : null;
+  const sections = layout && Array.isArray(layout.sections) ? layout.sections.filter(Boolean) : [];
+  const sectionMap = {};
+  sections.forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
+  const referenced = new Set();
+  sections.forEach((s) => {
+    if (s && (s.type === 'tabs' || Array.isArray(s.tabs))) {
+      (s.tabs || []).forEach((t) => (t && Array.isArray(t.sectionRefs) ? t.sectionRefs : []).forEach((r) => referenced.add(r)));
     }
-    if (!n || !ACTION_NODE_TYPES.has(n.type) || !Array.isArray(n.fields)) continue;
+  });
+  const fieldsOfSection = (sec) => {
+    if (!sec || !Array.isArray(sec.rows)) return [];
+    const rowIds = sec.rows.map((r) => r && r.id).filter(Boolean);
+    return fields
+      .filter((f) => rowIds.includes(f.rowId))
+      .sort((a, b) => (a.rowIndex || 0) - (b.rowIndex || 0) || (a.colIndex || 0) - (b.colIndex || 0));
+  };
+  const out = [];
+  const seen = new Set();
+  const pushSection = (sec, groupPath) => {
+    fieldsOfSection(sec).forEach((f) => {
+      if (!f.key || seen.has(f.key) || CONTACT_SKIP_TYPES.has(f.type)) return;
+      seen.add(f.key);
+      out.push({ key: f.key, label: f.label, group: groupPath });
+    });
+  };
+  sections.forEach((sec) => {
+    if (!sec || !sec.id) return;
+    if (sec.type === 'tabs' || Array.isArray(sec.tabs)) {
+      (sec.tabs || []).forEach((tab) => {
+        if (!tab) return;
+        (Array.isArray(tab.sectionRefs) ? tab.sectionRefs : []).forEach((refId) => {
+          const ref = sectionMap[refId];
+          if (ref) pushSection(ref, [sec.title || sec.id, tab.title || tab.id]);
+        });
+      });
+    } else {
+      if (referenced.has(sec.id)) return;
+      pushSection(sec, [sec.title || sec.id]);
+    }
+  });
+  const leftover = fields.filter((f) => f.key && !seen.has(f.key) && !CONTACT_SKIP_TYPES.has(f.type));
+  if (leftover.length > 0) {
+    leftover.forEach((f) => {
+      if (seen.has(f.key)) return;
+      seen.add(f.key);
+      out.push({ key: f.key, label: f.label, group: ['Khác'] });
+    });
+  }
+  return out;
+};
+
+const buildContactNode = async () => {
+  const node = {
+    id: CONTACT_NODE_ID,
+    type: CONTACT_NODE_ID,
+    title: 'Liên hệ gắn với quy trình',
+    fields: [],
+  };
+  try {
+    const form = await formService.getFormByEntityAndPurpose('station_proposals', 'view');
+    if (!form) return node;
+    const full = await formService.getFormById(form.id);
+    const rawFields = full && Array.isArray(full.fields) ? full.fields : [];
+    const fields = rawFields
+      .map((f) => {
+        const cfg = parseFormFieldConfig(f);
+        return {
+          key: f.key || f.field_key,
+          label: f.label || f.field_label || f.key || f.field_key,
+          type: f.type || f.field_type || 'text',
+          rowId: cfg.rowId,
+          rowIndex: cfg.rowIndex,
+          colIndex: cfg.colIndex,
+        };
+      })
+      .filter((f) => f.key);
+    const grouped = buildContactGroups(form, fields);
+    node.fields = grouped.map((f) => ({
+      path: `${CONTACT_NODE_ID}.${f.key}`,
+      label: f.label,
+      group: f.group,
+    }));
+    const virtual = [
+      { key: '__tru_tdt', label: 'Số lượng trụ TDT' },
+      { key: '__tru_nq', label: 'Số lượng trụ NQ' },
+      { key: '__tru_lk', label: 'Số lượng trụ LK' },
+      { key: '__tru_total', label: 'Tổng số lượng trụ' },
+    ];
+    const existing = new Set(node.fields.map((f) => f.path));
+    for (const v of virtual) {
+      const path = `${CONTACT_NODE_ID}.${v.key}`;
+      if (existing.has(path)) continue;
+      node.fields.push({ path, label: v.label, group: ['Số lượng trụ'] });
+    }
+  } catch (e) {
+    console.warn('[syncReport] build contact node loi:', e.message);
+  }
+  return node;
+};
+
+const ensureVirtualFields = async (tree) => {
+  if (!tree || !Array.isArray(tree.nodes)) return tree;
+  const taskNodes = tree.nodes.filter((n) => n && n.type === 'task');
+  for (const n of tree.nodes) {
+    if (!n || !ACTION_NODE_TYPES.has(n.type)) continue;
+    n.context = computeActionContext(n, taskNodes);
+    if (!Array.isArray(n.fields)) continue;
     const paths = new Set(n.fields.map((f) => f.path));
     if (!paths.has(`node.${n.id}.end_plan`)) n.fields.push({ path: `node.${n.id}.end_plan`, label: 'Thời gian kết thúc dự kiến' });
     if (!paths.has(`node.${n.id}.end_real`)) n.fields.push({ path: `node.${n.id}.end_real`, label: 'Thời gian kết thúc thực tế (suy từ lịch sử)' });
+    for (const f of n.fields) {
+      if (!f || typeof f.path !== 'string' || !f.path.startsWith(`node.${n.id}.`)) continue;
+      const rest = f.path.slice(`node.${n.id}.`.length);
+      if (rest === 'status') { f.label = actionFieldLabel(n, 'status'); continue; }
+      if (rest === 'end_plan') { f.label = actionFieldLabel(n, 'end_plan'); continue; }
+      if (rest === 'end_real') { f.label = actionFieldLabel(n, 'end_real'); continue; }
+      if (rest.startsWith('form.')) {
+        const fieldTitle = String(f.label || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+        f.label = actionFieldLabel(n, rest, fieldTitle);
+      }
+    }
   }
-  if (!tree.nodes.some((n) => n && (n.id === CONTACT_NODE_ID || n.type === CONTACT_NODE_ID))) {
-    tree.nodes.push(buildContactNode());
-  }
+  const contactNode = await buildContactNode();
+  const idx = tree.nodes.findIndex((n) => n && (n.id === CONTACT_NODE_ID || n.type === CONTACT_NODE_ID));
+  if (idx >= 0) tree.nodes[idx] = contactNode;
+  else tree.nodes.unshift(contactNode);
   return tree;
 };
 
@@ -301,7 +486,7 @@ exports.refreshFieldTrees = async (targetAuto, templateNames) => {
     const ids = byVersion[v];
     try {
       const { values, nodes } = await require('./workAutomationDialog').fetchTaskprocess(auto, ids[0]);
-      const tree = buildTree(nodes);
+      const tree = withActionContexts(buildTree(nodes));
       const templateTitle = values.process_type_title || '';
       const templateId = pidToType.get(String(ids[0])) || '';
       await pool.query(
@@ -327,19 +512,42 @@ exports.refreshFieldTrees = async (targetAuto, templateNames) => {
   return [...existingOut, ...out];
 };
 
+exports.rebuildFieldTree = async (version) => {
+  const [rows] = await pool.query('SELECT tree_json FROM automation_field_cache WHERE version = ?', [String(version)]);
+  if (!rows.length) return null;
+  const t = typeof rows[0].tree_json === 'string' ? JSON.parse(rows[0].tree_json) : rows[0].tree_json;
+  const ids = t.process_ids || [];
+  if (!ids.length) return null;
+  let auto = await exports.getSyncAutomation();
+  if (!auto || !auto.username || !auto.password_enc) {
+    const main = await workAutomationService.getFirstByType('assign_process');
+    if (main && main.username && main.password_enc) auto = { ...(auto || {}), username: main.username, password_enc: main.password_enc };
+  }
+  if (!auto || !auto.username || !auto.password_enc) throw Object.assign(new Error('Chua cau hinh tai khoan 1Office'), { statusCode: 400 });
+  const { nodes } = await require('./workAutomationDialog').fetchTaskprocess(auto, ids[0]);
+  const tree = withActionContexts(buildTree(nodes));
+  await pool.query(
+    'UPDATE automation_field_cache SET tree_json = ?, fetched_at = NOW() WHERE version = ?',
+    [JSON.stringify({ ...t, nodes: tree, sample_process_id: ids[0] }), String(version)]
+  );
+  return tree;
+};
+
 exports.getFieldTree = async (version, { refresh = false } = {}) => {
-  if (refresh) await exports.refreshFieldTrees();
+  if (refresh) {
+    try { await exports.rebuildFieldTree(version); } catch (e) { console.warn('[syncReport] rebuild tree loi:', e.message); }
+  }
   const [rows] = await pool.query('SELECT tree_json, fetched_at FROM automation_field_cache WHERE version = ?', [String(version)]);
   if (!rows.length) {
     await exports.refreshFieldTrees();
     const [r2] = await pool.query('SELECT tree_json, fetched_at FROM automation_field_cache WHERE version = ?', [String(version)]);
     if (!r2.length) throw Object.assign(new Error(`Khong tim thay cay field version ${version} (hay nhan Get)`), { statusCode: 404 });
     const t = typeof r2[0].tree_json === 'string' ? JSON.parse(r2[0].tree_json) : r2[0].tree_json;
-    return { ...ensureVirtualFields(t), cached_at: r2[0].fetched_at, stale: true };
+    return { ...(await ensureVirtualFields(t)), cached_at: r2[0].fetched_at, stale: true };
   }
   const t = typeof rows[0].tree_json === 'string' ? JSON.parse(rows[0].tree_json) : rows[0].tree_json;
   const stale = Date.now() - new Date(rows[0].fetched_at).getTime() > FIELD_CACHE_TTL_MS;
-  return { ...ensureVirtualFields(t), cached_at: rows[0].fetched_at, stale };
+  return { ...(await ensureVirtualFields(t)), cached_at: rows[0].fetched_at, stale };
 };
 
 exports.getUserMap = async () => {
@@ -425,12 +633,28 @@ const formatContactVal = (v) => {
   if (Array.isArray(v)) {
     return v.map((x) => {
       if (x === undefined || x === null) return '';
-      if (typeof x === 'object') return String(x.phone || x.email || x.value || x.name || x.title || x.code || '').trim();
+      if (typeof x === 'object') return String(x.original_name || x.label || x.name || x.phone || x.email || x.value || x.title || x.code || '').trim();
       return String(x).trim();
     }).filter(Boolean).join(', ');
   }
-  if (typeof v === 'object') return '';
+  if (typeof v === 'object') return cleanVal(v.original_name || v.label || v.name || v.value || v.title || v.code || '');
   return cleanVal(v);
+};
+
+const sumTableQty = (arr) => {
+  if (!Array.isArray(arr)) return 0;
+  return arr.reduce((s, r) => s + (Number(r && r.so_luong) || 0), 0);
+};
+
+const contactTruCount = (contact, key) => {
+  const tdt = sumTableQty(contact.tdt_tru);
+  const nq = sumTableQty(contact.nq_tru) + sumTableQty(contact.loai_tru_nq) + sumTableQty(contact.loai_tru_nq_cs);
+  const lk = sumTableQty(contact.lk_tru) + sumTableQty(contact.loai_tru_lk);
+  if (key === '__tru_tdt') return tdt;
+  if (key === '__tru_nq') return nq;
+  if (key === '__tru_lk') return lk;
+  if (key === '__tru_total') return tdt + nq + lk;
+  return '';
 };
 
 exports.resolveRow = async (proc, mappings, userMap) => {
@@ -453,6 +677,7 @@ exports.resolveRow = async (proc, mappings, userMap) => {
     if (path === CONTACT_NODE_ID || path.startsWith(`${CONTACT_NODE_ID}.`)) {
       const k = path === CONTACT_NODE_ID ? '' : path.slice(CONTACT_NODE_ID.length + 1);
       if (!k) return contact.code ?? contact.ID ?? contact.id ?? '';
+      if (k.startsWith('__tru_')) return contactTruCount(contact, k);
       return formatContactVal(contact[k]);
     }
     const m = path.match(/^node\.([^.]+)\.(.+)$/);
@@ -509,42 +734,72 @@ exports.resolveRow = async (proc, mappings, userMap) => {
 
 const FINISH_TIME_KEYS = ['finished_at', 'finish_at', 'end_at', 'completed_at', 'complete_at', 'done_at', 'closed_at', 'updated_at', 'modified_at', 'created_at'];
 
-const resolveLinkedContact = async (item, withContact) => {
-  if (!withContact) return {};
-  if (item && typeof item === 'object') {
-    for (const k of ['contact', 'customer', 'object']) {
-      const v = item[k];
-      if (v && typeof v === 'object' && !Array.isArray(v)) return v;
-    }
-  }
+const PROPOSAL_CODE_RE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_\d{4}\b/g;
+
+const extractContactCodes = (item) => {
   const codes = [];
   if (item && typeof item === 'object') {
     for (const k of ['contact_code', 'customer_code', 'code', 'contactCode', 'object_code']) {
       const v = item[k];
       if (v !== undefined && v !== null && String(v).trim() !== '') codes.push(String(v).trim());
     }
-  }
-  if (codes.length === 0) return {};
-  let cfg = null;
-  try { cfg = await apiConfigService.getDefaultPushConfig(); } catch { cfg = null; }
-  if (!cfg) return {};
-  let oneOfficeService = null;
-  try { oneOfficeService = require('./oneOfficeService'); } catch { return {}; }
-  for (const code of [...new Set(codes)].slice(0, 2)) {
-    const hit = contactCache.get(code);
-    if (hit && Date.now() - hit.at < CONTACT_CACHE_TTL_MS) return hit.data;
-    try {
-      const d = await oneOfficeService.getContactDetail(cfg.id, code);
-      const payload = d && d.data ? d.data : null;
-      const inner = payload && payload.data !== undefined ? payload.data : payload;
-      const obj = Array.isArray(inner) ? inner[0] : inner;
-      if (obj && typeof obj === 'object' && !obj.error) {
-        const contact = { ...obj, code: obj.code || code };
-        contactCache.set(code, { at: Date.now(), data: contact });
-        if (contactCache.size > 500) contactCache.delete(contactCache.keys().next().value);
-        return contact;
+    for (const k of ['contact', 'customer', 'object']) {
+      const v = item[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        for (const kk of ['code', 'contact_code']) {
+          if (v[kk] !== undefined && v[kk] !== null && String(v[kk]).trim() !== '') codes.push(String(v[kk]).trim());
+        }
       }
-    } catch { /* thu code tiep theo, thieu lien ket thi de trong */ }
+    }
+    for (const k of ['title', 'process_name', 'name', 'desc']) {
+      const v = item[k];
+      if (v === undefined || v === null) continue;
+      const found = String(v).match(PROPOSAL_CODE_RE);
+      if (found) found.forEach((x) => codes.push(x));
+    }
+  }
+  return [...new Set(codes)];
+};
+
+const findProposalByCode = async (code) => {
+  const clean = String(code || '').trim();
+  if (!clean) return null;
+  const [rows] = await pool.query(
+    `SELECT * FROM station_proposals
+     WHERE contact_1office_code = ? OR tracking_code = ?
+        OR JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_de_xuat')) = ?
+     LIMIT 1`,
+    [clean, clean, clean]
+  );
+  return rows.length > 0 ? rows[0] : null;
+};
+
+const buildWebContact = async (proposal, code) => {
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  let merged = dynamicUtils.mergeData(proposal, fieldDefs);
+  try { merged = await dynamicUtils.enrichUserFields(merged, fieldDefs); } catch { /* silent */ }
+  const resolvedCode = code || merged.tracking_code || merged.ma_de_xuat
+    || (merged.custom_data && merged.custom_data.ma_de_xuat) || '';
+  merged.code = resolvedCode;
+  return merged;
+};
+
+const resolveWebProposalContact = async (item, withContact) => {
+  if (!withContact) return {};
+  const codes = extractContactCodes(item);
+  if (codes.length === 0) return {};
+  for (const code of codes.slice(0, 3)) {
+    const hit = proposalCache.get(code);
+    if (hit && Date.now() - hit.at < PROPOSAL_CACHE_TTL_MS) return hit.data;
+    try {
+      const proposal = await findProposalByCode(code);
+      if (proposal) {
+        const data = await buildWebContact(proposal, code);
+        proposalCache.set(code, { at: Date.now(), data });
+        if (proposalCache.size > 500) proposalCache.delete(proposalCache.keys().next().value);
+        return data;
+      }
+    } catch { /* thu code tiep theo */ }
   }
   return {};
 };
@@ -580,7 +835,7 @@ exports.collectProcess = async (token, processId, tree, opts = {}) => {
   for (const n of (tree.nodes || [])) nodeById[n.id] = n.raw || n;
   const item = itemJ.data || {};
   let contact = {};
-  try { contact = await resolveLinkedContact(item, !!opts.withContact); } catch { contact = {}; }
+  try { contact = await resolveWebProposalContact(item, !!opts.withContact); } catch { contact = {}; }
   return { item, filled, nodeStatus, nodeFinished, nodeSchedule, contact, tree, rawNodes: nodeById };
 };
 
@@ -639,27 +894,56 @@ exports.autoMatch = async (automationId, version) => {
     while (n >= 0) { s = String.fromCharCode((n % 26) + 65) + s; n = Math.floor(n / 26) - 1; }
     return s;
   };
-  const items = [...existing.map((m) => ({ source_path: m.source_path, sheet_col: m.sheet_col, label: m.label }))];
+  const labelOf = new Map();
+  labelOf.set('process.ID', 'Process ID');
+  labelOf.set('process.title', 'Tên quy trình');
+  const formTitle = (label) => String(label || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+  for (const n of (tree.nodes || [])) {
+    if (!n || !ACTION_NODE_TYPES.has(n.type)) continue;
+    labelOf.set(`node.${n.id}.status`, actionFieldLabel(n, 'status'));
+    labelOf.set(`node.${n.id}.end_plan`, actionFieldLabel(n, 'end_plan'));
+    labelOf.set(`node.${n.id}.end_real`, actionFieldLabel(n, 'end_real'));
+    for (const f of (n.fields || [])) {
+      if (!f.path.startsWith(`node.${n.id}.form.`)) continue;
+      labelOf.set(f.path, actionFieldLabel(n, `form.${f.path.split('.form.')[1]}`, formTitle(f.label)));
+    }
+  }
+  const CONTACT_AUTOMATCH = [
+    ['contact.doi_tac', 'Tên liên hệ'],
+    ['contact.owner_phone', 'Số điện thoại'],
+    ['contact.vi_tri_lap_tru', 'Vị trí lắp đặt'],
+    ['contact.mo_hinh_dau_tu', 'Mô hình đầu tư'],
+    ['contact.__tru_tdt', 'Số lượng trụ TDT'],
+    ['contact.__tru_nq', 'Số lượng trụ NQ'],
+    ['contact.__tru_lk', 'Số lượng trụ LK'],
+    ['contact.__tru_total', 'Tổng số lượng trụ'],
+  ];
+  for (const [p, l] of CONTACT_AUTOMATCH) labelOf.set(p, l);
+
+  const items = existing.map((m) => ({
+    source_path: m.source_path,
+    sheet_col: m.sheet_col,
+    label: labelOf.get(m.source_path) || m.label,
+  }));
   const add = (source_path, label) => {
     if (have.has(source_path)) return;
     have.add(source_path);
     maxIdx++;
     items.push({ source_path, sheet_col: colLetterOf(maxIdx), label });
   };
-  add('process.ID', 'Process ID');
-  add('process.title', 'Tên quy trình');
+  add('process.ID', labelOf.get('process.ID'));
+  add('process.title', labelOf.get('process.title'));
   for (const n of (tree.nodes || [])) {
     if (!n || !ACTION_NODE_TYPES.has(n.type)) continue;
-    const short = (n.title || n.id || '').slice(0, 30);
-    add(`node.${n.id}.status`, `Trạng thái (${short})`);
-    add(`node.${n.id}.end_plan`, `Thời gian kết thúc dự kiến (${short})`);
-    add(`node.${n.id}.end_real`, `Thời gian kết thúc thực tế (${short})`);
+    add(`node.${n.id}.status`, labelOf.get(`node.${n.id}.status`));
+    add(`node.${n.id}.end_plan`, labelOf.get(`node.${n.id}.end_plan`));
+    add(`node.${n.id}.end_real`, labelOf.get(`node.${n.id}.end_real`));
     for (const f of (n.fields || [])) {
       if (!f.path.startsWith(`node.${n.id}.form.`)) continue;
-      const fl = (f.label || '').split(' (')[0];
-      add(f.path, `${fl} (${short})`);
+      add(f.path, labelOf.get(f.path));
     }
   }
+  for (const [p, l] of CONTACT_AUTOMATCH) add(p, l);
   await exports.saveMappings(automationId, v, items);
   return { version: v, total: items.length, added: items.length - existing.length };
 };
@@ -814,21 +1098,324 @@ const colToIndex = (col) => {
   return n - 1;
 };
 
+// ── Merge duplicate versions ───────────────────────────────────────
+// Các version có ≥95% source_paths giống nhau → connected component
+// Mỗi component giữ duy nhất newest representative
+// Trả về danh sách đại diện duy nhất cho mỗi nhóm
+const MERGE_SIMILARITY_THRESHOLD = 0.95;
+
+const deduplicateVersions = async (automationId) => {
+  // 1. Lấy tất cả mappings theo version, kèm timestamp mới nhất
+  const [mappings] = await pool.query(
+    `SELECT m.version, m.source_path, MAX(m.updated_at) AS max_updated_at
+     FROM automation_sheet_mappings m
+     WHERE m.automation_id = ?
+     GROUP BY m.version, m.source_path
+     ORDER BY m.version`,
+    [automationId]
+  );
+
+  if (!mappings.length) return [];
+
+  // 2. Group theo version: tập hợp unique source_paths + max_updated_at
+  const versionMap = new Map(); // version → { paths: Set, updatedAt }
+  for (const row of mappings) {
+    const v = String(row.version);
+    if (!versionMap.has(v)) {
+      versionMap.set(v, { paths: new Set(), updatedAt: new Date(row.max_updated_at) });
+    }
+    versionMap.get(v).paths.add(row.source_path);
+  }
+
+  const versions = [...versionMap.keys()];
+  if (versions.length <= 1) return versions;
+
+  // 3. Connected components: edges giữa các version có Jaccard ≥ threshold
+  // Union-Find đơn giản
+  const parent = {};
+  versions.forEach((v) => { parent[v] = v; });
+
+  const find = (v) => {
+    while (parent[v] !== v) { parent[v] = parent[parent[v]]; v = parent[v]; }
+    return v;
+  };
+
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) {
+      // Luôn attach vào root có updatedAt lớn hơn → root giữ newest
+      if (versionMap.get(rb).updatedAt > versionMap.get(ra).updatedAt) {
+        parent[ra] = rb;
+      } else {
+        parent[rb] = ra;
+      }
+    }
+  };
+
+  // Tính Jaccard pairwise và build edges
+  let mergePairs = 0;
+  for (let i = 0; i < versions.length; i++) {
+    const pathsA = versionMap.get(versions[i]).paths;
+    for (let j = i + 1; j < versions.length; j++) {
+      const pathsB = versionMap.get(versions[j]).paths;
+      let inter = 0;
+      for (const p of pathsA) { if (pathsB.has(p)) inter++; }
+      const unionSize = pathsA.size + pathsB.size - inter;
+      const jaccard = unionSize > 0 ? inter / unionSize : 0;
+      if (jaccard >= MERGE_SIMILARITY_THRESHOLD) {
+        union(versions[i], versions[j]);
+        mergePairs++;
+      }
+    }
+  }
+
+  // 4. Gather components bằng root map
+  const components = new Map(); // root → [versions]
+  for (const v of versions) {
+    const root = find(v);
+    if (!components.has(root)) components.set(root, []);
+    components.get(root).push(v);
+  }
+
+  // 5. Mỗi component → chọn newest representative (root đã là newest do union logic)
+  const result = [];
+  const dupesRemoved = [];
+  for (const [root, group] of components) {
+    if (group.length === 1) {
+      result.push(root);
+      continue;
+    }
+    // Root từ union-find đã là newest nhất
+    result.push(root);
+    for (const v of group) {
+      if (v !== root) {
+        dupesRemoved.push({ dupe: v, replacedBy: root, nodeCount: versionMap.get(v).paths.size });
+      }
+    }
+  }
+
+  // Log duplicate info
+  if (dupesRemoved.length > 0) {
+    console.log('[merge-dedup] Automation', automationId, 'gộp', mergePairs, 'cặp ≥' + (MERGE_SIMILARITY_THRESHOLD * 100) + '% → ',
+      dupesRemoved.map((d) => `${d.dupe}→${d.replacedBy}`).join(', '));
+    const byVersion = {};
+    for (const d of dupesRemoved) {
+      byVersion[d.replacedBy] = byVersion[d.replacedBy] || [];
+      byVersion[d.replacedBy].push(d.dupe);
+    }
+    for (const [by, reps] of Object.entries(byVersion)) {
+      console.log(`  [merge-dedup] Ver ${by}: giữ, loại ${reps.join(', ')}`);
+    }
+  }
+
+  return result;
+};
+
+// ── Merge duplicate versions from field cache (for UI dropdown) ────
+// So sánh tree_json (node IDs) giữa các versions → gộp các version giống nhau
+// Trả về list versions đã merge + thông tin merge info
+// Optional: filter theo template_ids (array)
+const deduplicateFieldCacheVersions = async (automationId, templateIds = null) => {
+  // 1. Lấy tất cả versions từ cache với template info
+  const [cached] = await pool.query(
+    `SELECT version, tree_json, fetched_at,
+            JSON_UNQUOTE(JSON_EXTRACT(tree_json, '$.template')) AS template,
+            JSON_UNQUOTE(JSON_EXTRACT(tree_json, '$.template_id')) AS template_id,
+            JSON_LENGTH(tree_json, '$.nodes') AS node_count
+     FROM automation_field_cache
+     ORDER BY fetched_at DESC`,
+    []
+  );
+
+  if (!cached.length) return { versions: [], mergeInfo: [] };
+
+  // 2. Filter theo template_ids nếu được truyền
+  let filtered = cached;
+  if (templateIds && templateIds.length > 0) {
+    const idSet = new Set(templateIds.map(String));
+    filtered = cached.filter((r) => idSet.has(String(r.template)) || idSet.has(String(r.template_id)));
+  }
+
+  if (!filtered.length) return { versions: [], mergeInfo: [] };
+
+  // 3. Parse tree và extract unique NODE IDs per version (không so sánh field paths)
+  const versionMap = new Map(); // version → { nodeIds: Set, info: {...} }
+  for (const row of filtered) {
+    const v = String(row.version);
+    const tree = typeof row.tree_json === 'string' ? JSON.parse(row.tree_json) : row.tree_json;
+    const nodeIds = new Set();
+
+    // Extract only node IDs (not field paths)
+    const nodes = tree.nodes || [];
+    for (const node of nodes) {
+      if (node && node.id) {
+        nodeIds.add('node.' + node.id); // Only node ID, no wildcard
+      }
+    }
+
+    versionMap.set(v, {
+      nodeIds,
+      info: {
+        version: v,
+        template: row.template || '',
+        template_id: row.template_id || '',
+        node_count: row.node_count || 0,
+        fetched_at: row.fetched_at,
+      }
+    });
+  }
+
+  const versions = [...versionMap.keys()];
+  if (versions.length <= 1) {
+    return { versions: filtered.map((r) => ({ version: r.version, template: r.template, template_id: r.template_id, nodes: r.node_count })), mergeInfo: [] };
+  }
+
+  // 4. Connected components via union-find on Jaccard similarity (node IDs only)
+  const parent = {};
+  versions.forEach((v) => { parent[v] = v; });
+
+  const find = (v) => {
+    while (parent[v] !== v) { parent[v] = parent[parent[v]]; v = parent[v]; }
+    return v;
+  };
+
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) {
+      // Attach to root with newer fetched_at
+      const ta = new Date(versionMap.get(ra).info.fetched_at);
+      const tb = new Date(versionMap.get(rb).info.fetched_at);
+      if (tb > ta) { parent[ra] = rb; } else { parent[rb] = ra; }
+    }
+  };
+
+  let mergePairs = 0;
+  for (let i = 0; i < versions.length; i++) {
+    const idsA = versionMap.get(versions[i]).nodeIds;
+    const countA = versionMap.get(versions[i]).info.node_count;
+    for (let j = i + 1; j < versions.length; j++) {
+      const idsB = versionMap.get(versions[j]).nodeIds;
+      const countB = versionMap.get(versions[j]).info.node_count;
+
+      // ONLY merge if same node count (requirement: 56 and 57 nodes cannot merge)
+      if (countA !== countB) continue;
+
+      let inter = 0;
+      for (const p of idsA) { if (idsB.has(p)) inter++; }
+      const unionSize = idsA.size + idsB.size - inter;
+      const jaccard = unionSize > 0 ? inter / unionSize : 0;
+      if (jaccard >= MERGE_SIMILARITY_THRESHOLD) {
+        union(versions[i], versions[j]);
+        mergePairs++;
+      }
+    }
+  }
+
+  // 5. Gather components
+  const components = new Map();
+  for (const v of versions) {
+    const root = find(v);
+    if (!components.has(root)) components.set(root, []);
+    components.get(root).push(v);
+  }
+
+  // 6. Build result: keep newest representative per component
+  const resultVersions = [];
+  const mergeInfo = [];
+
+  for (const [root, group] of components) {
+    // Sort group by fetched_at descending to get newest first
+    group.sort((a, b) => new Date(versionMap.get(b).info.fetched_at) - new Date(versionMap.get(a).info.fetched_at));
+    const leader = group[0];
+
+    if (group.length === 1) {
+      resultVersions.push(versionMap.get(leader).info);
+    } else {
+      resultVersions.push(versionMap.get(leader).info);
+      for (const v of group.slice(1)) {
+        mergeInfo.push({
+          duplicate: v,
+          keptAs: leader,
+          reason: 'similar_structure',
+          similarity: '≥95%',
+          duplicateNodes: versionMap.get(v).info.node_count,
+          keptNodes: versionMap.get(leader).info.node_count,
+        });
+      }
+    }
+  }
+
+  // Log merge info
+  if (mergeInfo.length > 0) {
+    console.log('[merge-cache] Gộp', mergeInfo.length, 'versions giống nhau → giữ', resultVersions.length, 'versions duy nhất');
+    const byVersion = {};
+    for (const m of mergeInfo) {
+      byVersion[m.keptAs] = byVersion[m.keptAs] || [];
+      byVersion[m.keptAs].push(m.duplicate);
+    }
+    for (const [kept, dups] of Object.entries(byVersion)) {
+      console.log(`  [merge-cache] Ver ${kept}: giữ, loại ${dups.join(', ')}`);
+    }
+  }
+
+  return { versions: resultVersions, mergeInfo };
+};
+
 const versionsWithMappings = async (automationId, onlyVersion, auto) => {
-  const [rows] = await pool.query('SELECT DISTINCT version FROM automation_sheet_mappings WHERE automation_id = ?', [automationId]);
-  let all = rows.map((r) => String(r.version));
+  // 1. Lấy tất cả versions từ cache
+  const [cachedRows] = await pool.query(
+    'SELECT DISTINCT version FROM automation_field_cache ORDER BY version'
+  );
+  let all = cachedRows.map((r) => String(r.version));
+
+  // 2. Filter theo allowed versions (template_process_ids)
+  let allowedVersions = all;
   if (auto) {
     const allowed = await allowedVersionsForAuto(auto);
     if (allowed !== null) {
       const allowedSet = new Set(allowed.map(String));
-      all = all.filter((v) => allowedSet.has(String(v)));
+      allowedVersions = all.filter((v) => allowedSet.has(String(v)));
     }
   }
+
+  // 3. Nếu chỉ định 1 version cụ thể, trả về ngay
   if (onlyVersion) {
-    if (!all.includes(String(onlyVersion))) throw Object.assign(new Error(`Version ${onlyVersion} chua co mapping (hoac khong thuoc quy trinh mau da chon)`), { statusCode: 400 });
+    if (!allowedVersions.includes(String(onlyVersion))) throw Object.assign(new Error(`Version ${onlyVersion} chua co mapping (hoac khong thuoc quy trinh mau da chon)`), { statusCode: 400 });
     return [String(onlyVersion)];
   }
-  return all;
+
+  // 4. Merge các version giống nhau (chỉ trong nhóm allowedVersions)
+  // Lấy data từ cache đã filter
+  const [filteredCache] = await pool.query(
+    `SELECT version, tree_json, fetched_at,
+            JSON_UNQUOTE(JSON_EXTRACT(tree_json, '$.template')) AS template,
+            JSON_UNQUOTE(JSON_EXTRACT(tree_json, '$.template_id')) AS template_id,
+            JSON_LENGTH(tree_json, '$.nodes') AS node_count
+     FROM automation_field_cache
+     WHERE version IN (${allowedVersions.map((v) => `'${v}'`).join(',')})
+     ORDER BY fetched_at DESC`
+  );
+
+  // Call deduplicateFieldCacheVersions với filtered data
+  const { versions: mergedVersions, mergeInfo } = await exports.deduplicateFieldCacheVersionsFromFiltered(automationId, filteredCache, allowedVersions);
+
+  // 5. Filter: chỉ giữ các version đã được merge (newest representative)
+  const mergedSet = new Set(mergedVersions.map((v) => String(v.version)));
+  const filtered = allowedVersions.filter((v) => mergedSet.has(v));
+
+  // Log merge info
+  console.log(`[versionsWithMappings] Automation ${automationId}:`);
+  console.log(`  Total in cache: ${all.length}`);
+  console.log(`  After template filter: ${allowedVersions.length}`);
+  console.log(`  After merge: ${filtered.length} (kept versions: ${filtered.join(', ')})`);
+  if (mergeInfo && mergeInfo.length > 0) {
+    console.log(`  Merged: ${mergeInfo.length} versions`);
+    for (const m of mergeInfo) {
+      console.log(`    V${m.duplicate} → V${m.keptAs} (${m.duplicateNodes}→${m.keptNodes} nodes)`);
+    }
+  }
+
+  return filtered.length > 0 ? filtered : allowedVersions;
 };
 
 const buildVersionRows = async (auto, token, userMap, version, mappings, processIds, limit = 0) => {
@@ -868,6 +1455,61 @@ const insertRun = async (automationId, patch) => {
   return r.insertId;
 };
 
+// Lấy mappings effective cho một version (nếu version không có mappings, dùng mappings của version cha trong merge group)
+const getEffectiveMappings = async (automationId, version, templateIds = null) => {
+  const mappings = await exports.getMappings(automationId, version);
+  if (mappings.length > 0) return mappings;
+
+  // Chỉ xét các version thuộc quy trình mẫu đã chọn (templateIds)
+  const { versions: mergedVersions, mergeInfo } = await exports.deduplicateFieldCacheVersions(automationId, templateIds);
+
+  // Version không có mappings → lấy mappings của version cùng nhóm merge (nếu có)
+  const dups = mergeInfo.filter((m) => String(m.keptAs) === String(version)).map((m) => m.duplicate);
+  for (const dup of dups) {
+    const dupMappings = await exports.getMappings(automationId, dup);
+    if (dupMappings.length > 0) return dupMappings;
+  }
+
+  // Vẫn không có → dùng mappings của version khác TRONG CÙNG lựa chọn
+  for (const v of mergedVersions) {
+    if (String(v.version) !== String(version)) {
+      const vMappings = await exports.getMappings(automationId, v.version);
+      if (vMappings.length > 0) return vMappings;
+    }
+  }
+
+  return mappings; // trả về empty array nếu không tìm thấy
+};
+
+// Lấy danh sách process IDs cho một version (bao gồm cả các version đã merge vào nó)
+const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, templateIds = null } = {}) => {
+  const ids = [];
+  // Chỉ merge trong phạm vi quy trình mẫu đã chọn (templateIds)
+  const { mergeInfo } = await exports.deduplicateFieldCacheVersions(auto.id, templateIds);
+
+  // Tìm tất cả versions đã merge vào targetVersion
+  const relatedVersions = new Set([String(targetVersion)]);
+  for (const m of mergeInfo) {
+    if (String(m.keptAs) === String(targetVersion)) {
+      relatedVersions.add(String(m.duplicate));
+    }
+  }
+
+  // Lấy processes cho tất cả related versions
+  for (const r of roots) {
+    try {
+      const procVersion = String(await exports.versionOf(auto, r.ID));
+      if (relatedVersions.has(procVersion)) {
+        ids.push(r.ID);
+      }
+    } catch { /* silent */ }
+    if (limit > 0 && ids.length >= limit) break;
+    await new Promise((x) => setTimeout(x, 300));
+  }
+
+  return ids;
+};
+
 exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
   if (!auto.spreadsheet_id) throw Object.assign(new Error('Chua cau hinh Sheet ID'), { statusCode: 400 });
   const fresh = await workAutomationService.getByKey(auto.automation_key).catch(() => null);
@@ -893,39 +1535,40 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
   }
   for (const v of targetVersions) {
     try {
-      const mappings = await exports.getMappings(auto.id, v);
-    const ids = [];
-    for (const r of roots) {
-      try {
-        if (String(await exports.versionOf(auto, r.ID)) === String(v)) ids.push(r.ID);
-      } catch { /* silent */ }
-      await new Promise((x) => setTimeout(x, 300));
-    }
-    const tab = `Ver ${v}`;
-    const mapSig = JSON.stringify(mappings.map((m) => [m.source_path, m.sheet_col, m.label || '']));
-    const [stRows] = await pool.query('SELECT mapping_json FROM automation_sync_state WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
-    const prevSig = !stRows.length ? null : (typeof stRows[0].mapping_json === 'string' ? stRows[0].mapping_json : JSON.stringify(stRows[0].mapping_json));
-    const structureChanged = prevSig !== mapSig;
-    await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [auto.id]);
-    const { headers, rows, unmapped } = await buildVersionRows(auto, token, userMap, v, mappings, ids);
-    result.unmapped.push(...unmapped);
-    if (rows.length === 0) {
-      result.versions[v] = { processes: 0, note: 'Khong tim thay quy trinh' };
-      continue;
-    }
-    const minCols = Math.max(headers.length, ...mappings.map((m) => colToIndex(m.sheet_col) + 1));
-    const created = await googleSheetService.ensureTab(auto.spreadsheet_id, tab, minCols);
-    const colA = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
-    const sheetEmpty = colA.length === 0 || colA.every((v) => !v);
-    if (structureChanged || sheetEmpty) {
-      await googleSheetService.clearTab(auto.spreadsheet_id, tab);
-      const wr = await googleSheetService.upsertRows(auto.spreadsheet_id, tab, headers, rows);
-      await pool.query(
-        `INSERT INTO automation_sync_state (automation_id, version, mapping_json) VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE mapping_json = VALUES(mapping_json)`,
-        [auto.id, String(v), mapSig]
-      );
-      await pool.query('DELETE FROM automation_sync_snapshots WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
+      // Lấy mappings effective (chỉ trong phạm vi quy trình mẫu đã chọn)
+      const mappings = await getEffectiveMappings(effAuto.id, v, tplIds);
+      if (!mappings.length) {
+        console.log(`[runSync] Version ${v} khong co mapping, skip`);
+        result.versions[v] = { processes: 0, note: 'Khong tim thay mapping' };
+        continue;
+      }
+      // Lấy process IDs (bao gồm cả các version đã merge vào version này, trong lựa chọn)
+      const ids = await getProcessIdsForVersion(effAuto, v, roots, { templateIds: tplIds });
+      const tab = `Ver ${v}`;
+      const mapSig = JSON.stringify(mappings.map((m) => [m.source_path, m.sheet_col, m.label || '']));
+      const [stRows] = await pool.query('SELECT mapping_json FROM automation_sync_state WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
+      const prevSig = !stRows.length ? null : (typeof stRows[0].mapping_json === 'string' ? stRows[0].mapping_json : JSON.stringify(stRows[0].mapping_json));
+      const structureChanged = prevSig !== mapSig;
+      await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [auto.id]);
+      const { headers, rows, unmapped } = await buildVersionRows(auto, token, userMap, v, mappings, ids);
+      result.unmapped.push(...unmapped);
+      if (rows.length === 0) {
+        result.versions[v] = { processes: 0, note: 'Khong tim thay quy trinh' };
+        continue;
+      }
+      const minCols = Math.max(headers.length, ...mappings.map((m) => colToIndex(m.sheet_col) + 1));
+      const created = await googleSheetService.ensureTab(auto.spreadsheet_id, tab, minCols);
+      const colA = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
+      const sheetEmpty = colA.length === 0 || colA.every((v) => !v);
+      if (structureChanged || sheetEmpty) {
+        await googleSheetService.clearTab(auto.spreadsheet_id, tab);
+        const wr = await googleSheetService.upsertRows(auto.spreadsheet_id, tab, headers, rows);
+        await pool.query(
+          `INSERT INTO automation_sync_state (automation_id, version, mapping_json) VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE mapping_json = VALUES(mapping_json)`,
+          [auto.id, String(v), mapSig]
+        );
+        await pool.query('DELETE FROM automation_sync_snapshots WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
       for (const row of rows) {
         const cells = {};
         row.forEach((val, i) => { cells[i] = String(val ?? ''); });
@@ -938,8 +1581,28 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
       result.versions[v] = { processes: rows.length, tab, tab_created: created.created, full_overwrite: true, ...wr };
       continue;
     }
+    // Fetch snapshot để sớm kiểm tra thay đổi
     const [snaps] = await pool.query('SELECT process_id, cells_json FROM automation_sync_snapshots WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
     const prev = new Map(snaps.map((s) => [String(s.process_id), typeof s.cells_json === 'string' ? JSON.parse(s.cells_json) : s.cells_json]));
+    // Early-exit: structure không đổi + tất cả row giống snapshot → bỏ qua hết
+    let anyChanged = false;
+    if (!structureChanged) {
+      for (const row of rows) {
+        const pid = String(row[0]);
+        const oldSnap = prev.get(pid);
+        if (!oldSnap) { anyChanged = true; break; }
+        const match = row.every((val, i) => String(val ?? '') === (oldSnap[String(i)] ?? ''));
+        if (!match) { anyChanged = true; break; }
+      }
+      if (!anyChanged) {
+        result.versions[v] = {
+          processes: rows.length, tab, tab_created: false,
+          inserted: 0, cells_written: 0, changed_cells: 0,
+          note: 'khong thay doi', changed_sample: [],
+        };
+        continue;
+      }
+    }
     const colAData = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
     const rowOf = new Map();
     colAData.forEach((val, i) => { if (val && !rowOf.has(String(val))) rowOf.set(String(val), i + 1); });
@@ -955,9 +1618,9 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
     };
     for (const row of rows) {
       const pid = String(row[0]);
-      const old = prev.get(pid);
       const rowNum = rowOf.get(pid);
-      if (!old || !rowNum) {
+      const oldSnap = prev.get(pid);
+      if (!oldSnap || !rowNum) {
         const at = rowNum || nextRow++;
         row.forEach((val, i) => {
           updates.push({ range: `${tab}!${colLetterOf(i)}${at}`, values: [[String(val ?? '')]] });
@@ -968,10 +1631,10 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
       }
       row.forEach((val, i) => {
         const cur = String(val ?? '');
-        if ((old[String(i)] ?? '') !== cur) {
+        if ((oldSnap[String(i)] ?? '') !== cur) {
           const col = colLetterOf(i);
           updates.push({ range: `${tab}!${col}${rowNum}`, values: [[cur]] });
-          if (changed.length < 50) changed.push({ process_id: pid, row: rowNum, col, old: old[String(i)] ?? '', new: cur });
+          if (changed.length < 50) changed.push({ process_id: pid, row: rowNum, col, old: oldSnap[String(i)] ?? '', new: cur });
         }
       });
     }
@@ -1023,16 +1686,11 @@ exports.dryRun = async (auto, { version, limit = 3 } = {}) => {
   }
   const preview = {};
   for (const v of await versionsWithMappings(effAuto.id, version, effAuto)) {
-    const mappings = await exports.getMappings(auto.id, v);
-    const ids = [];
-    for (const r of roots) {
-      try {
-        if (String(await exports.versionOf(auto, r.ID)) === String(v)) ids.push(r.ID);
-      } catch { /* silent */ }
-      if (ids.length >= limit) break;
-      await new Promise((x) => setTimeout(x, 300));
-    }
-    const { headers, rows } = await buildVersionRows(auto, token, userMap, v, mappings, ids, limit);
+    // Dùng CÙNG logic với runSync để bản xem trước khớp thật
+    const mappings = await getEffectiveMappings(effAuto.id, v, tplIds);
+    if (!mappings.length) { preview[v] = { tab: `Ver ${v}`, headers: [], rows: [], note: 'Khong tim thay mapping' }; continue; }
+    const ids = await getProcessIdsForVersion(effAuto, v, roots, { limit, templateIds: tplIds });
+    const { headers, rows } = await buildVersionRows(effAuto, token, userMap, v, mappings, ids, limit);
     preview[v] = { tab: `Ver ${v}`, headers, rows };
   }
   return { dry_run: true, preview };
@@ -1051,17 +1709,10 @@ exports.sampleExcel = async (auto, version) => {
     roots = roots.filter((r) => nameSet.has(String(r.process_type_id)));
   }
   await versionsWithMappings(effAuto.id, version, effAuto);
-  const mappings = await exports.getMappings(effAuto.id, version);
+  const mappings = await getEffectiveMappings(effAuto.id, version, tplIds);
   if (!mappings.length) throw Object.assign(new Error(`Version ${version} chua co mapping`), { statusCode: 400 });
-  const ids = [];
-  for (const r of roots) {
-    try {
-      if (String(await exports.versionOf(auto, r.ID)) === String(version)) ids.push(r.ID);
-    } catch { /* silent */ }
-    if (ids.length >= 3) break;
-    await new Promise((x) => setTimeout(x, 300));
-  }
-  const { headers, rows } = await buildVersionRows(auto, token, userMap, version, mappings, ids, 3);
+  const ids = await getProcessIdsForVersion(effAuto, version, roots, { limit: 3, templateIds: tplIds });
+  const { headers, rows } = await buildVersionRows(effAuto, token, userMap, version, mappings, ids, 3);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(`Ver ${version} mau`);
   ws.columns = headers.map((h, i) => ({ header: h || `Cot ${i + 1}`, key: `c${i}`, width: i === 0 ? 12 : 30 }));
@@ -1072,3 +1723,122 @@ exports.sampleExcel = async (auto, version) => {
   }
   return wb.xlsx.writeBuffer();
 };
+
+// Version của deduplicateFieldCacheVersions nhận data đã filter sẵn
+const deduplicateFieldCacheVersionsFromFiltered = async (automationId, filteredCache, allowedVersions) => {
+  if (!filteredCache.length) return { versions: [], mergeInfo: [] };
+
+  // Parse tree và extract unique NODE IDs per version
+  const versionMap = new Map();
+  for (const row of filteredCache) {
+    const v = String(row.version);
+    const tree = typeof row.tree_json === 'string' ? JSON.parse(row.tree_json) : row.tree_json;
+    const nodeIds = new Set();
+
+    const nodes = tree.nodes || [];
+    for (const node of nodes) {
+      if (node && node.id) {
+        nodeIds.add('node.' + node.id);
+      }
+    }
+
+    versionMap.set(v, {
+      nodeIds,
+      info: {
+        version: v,
+        template: row.template || '',
+        template_id: row.template_id || '',
+        node_count: row.node_count || 0,
+        fetched_at: row.fetched_at,
+      }
+    });
+  }
+
+  const versions = [...versionMap.keys()];
+  if (versions.length <= 1) {
+    return { versions: filteredCache.map((r) => ({ version: r.version, template: r.template, template_id: r.template_id, nodes: r.node_count })), mergeInfo: [] };
+  }
+
+  // Connected components via union-find on Jaccard similarity (node IDs only)
+  const parent = {};
+  versions.forEach((v) => { parent[v] = v; });
+
+  const find = (v) => {
+    while (parent[v] !== v) { parent[v] = parent[parent[v]]; v = parent[v]; }
+    return v;
+  };
+
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) {
+      const ta = new Date(versionMap.get(ra).info.fetched_at);
+      const tb = new Date(versionMap.get(rb).info.fetched_at);
+      if (tb > ta) { parent[ra] = rb; } else { parent[rb] = ra; }
+    }
+  };
+
+  let mergePairs = 0;
+  for (let i = 0; i < versions.length; i++) {
+    const idsA = versionMap.get(versions[i]).nodeIds;
+    const countA = versionMap.get(versions[i]).info.node_count;
+    for (let j = i + 1; j < versions.length; j++) {
+      const idsB = versionMap.get(versions[j]).nodeIds;
+      const countB = versionMap.get(versions[j]).info.node_count;
+
+      // ONLY merge if same node count
+      if (countA !== countB) continue;
+
+      let inter = 0;
+      for (const p of idsA) { if (idsB.has(p)) inter++; }
+      const unionSize = idsA.size + idsB.size - inter;
+      const jaccard = unionSize > 0 ? inter / unionSize : 0;
+      if (jaccard >= MERGE_SIMILARITY_THRESHOLD) {
+        union(versions[i], versions[j]);
+        mergePairs++;
+      }
+    }
+  }
+
+  // Gather components
+  const components = new Map();
+  for (const v of versions) {
+    const root = find(v);
+    if (!components.has(root)) components.set(root, []);
+    components.get(root).push(v);
+  }
+
+  // Build result: keep newest representative per component
+  const resultVersions = [];
+  const mergeInfo = [];
+
+  for (const [root, group] of components) {
+    group.sort((a, b) => new Date(versionMap.get(b).info.fetched_at) - new Date(versionMap.get(a).info.fetched_at));
+    const leader = group[0];
+
+    if (group.length === 1) {
+      resultVersions.push(versionMap.get(leader).info);
+    } else {
+      resultVersions.push(versionMap.get(leader).info);
+      for (const v of group.slice(1)) {
+        mergeInfo.push({
+          duplicate: v,
+          keptAs: leader,
+          reason: 'similar_structure',
+          similarity: '≥95%',
+          duplicateNodes: versionMap.get(v).info.node_count,
+          keptNodes: versionMap.get(leader).info.node_count,
+        });
+      }
+    }
+  }
+
+  if (mergeInfo.length > 0) {
+    console.log(`[deduplicateFieldCacheVersionsFromFiltered] Automation ${automationId}: Gộp ${mergeInfo.length} versions → giữ ${resultVersions.length} versions`);
+  }
+
+  return { versions: resultVersions, mergeInfo };
+};
+
+exports.deduplicateVersions = deduplicateVersions;
+exports.deduplicateFieldCacheVersions = deduplicateFieldCacheVersions;
+exports.deduplicateFieldCacheVersionsFromFiltered = deduplicateFieldCacheVersionsFromFiltered;

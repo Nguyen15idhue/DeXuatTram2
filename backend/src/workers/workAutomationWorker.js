@@ -16,7 +16,7 @@ const tickSync = async () => {
   if (!rows.length) return;
   for (const auto of rows) {
     if (syncRunning.has(auto.id)) continue;
-    const freqMs = Math.max(5, parseInt(auto.frequency_min, 10) || 15) * 60 * 1000;
+    const freqMs = Math.max(1, parseInt(auto.frequency_min, 10) || 15) * 60 * 1000;
     if (auto.last_run_at && Date.now() - new Date(auto.last_run_at).getTime() < freqMs) continue;
     syncRunning.add(auto.id);
     try {

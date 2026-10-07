@@ -188,7 +188,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  * /api/admin/proposals/{id}:
  *   put:
  *     tags: [Admin - Proposals]
-  *   summary: Admin cập nhật đề xuất (ADMIN/SUPER_ADMIN tất cả; SALES trong nhánh; đổi trạng thái qua /status)
+ *     summary: Admin cập nhật đề xuất (ADMIN/SUPER_ADMIN tất cả; SALES trong nhánh; đổi trạng thái qua /status)
  *     security:
  *       - bearerAuth: []
  *     parameters:

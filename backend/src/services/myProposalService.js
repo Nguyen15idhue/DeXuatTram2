@@ -51,7 +51,7 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.info_completed_at,
+            p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.pending_station_code
     FROM station_proposals p
     ${whereClause}
@@ -121,21 +121,24 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const reviewerId = existing.length > 0 ? existing[0].reviewed_by : null;
 
   let resetDeadlineMinutes = null;
+  let resetTransitionMinutes = null;
   if (wasRejected) {
     try {
       const proposalLifecycle = require('./proposalLifecycle');
-      const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
+      const configured = await proposalLifecycle.getDeadlineMinutes('PENDING', 'supplement');
       resetDeadlineMinutes = Math.max(1, Number(configured) || 4320);
+      const tConf = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
+      resetTransitionMinutes = tConf ? Math.max(1, Number(tConf)) : null;
     } catch { resetDeadlineMinutes = 4320; }
   }
 
   await pool.query(
     `UPDATE station_proposals
      SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
-     ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
+     ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
      WHERE id = ? AND user_id = ?`,
     resetDeadlineMinutes
-      ? [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, id, userId]
+      ? [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
       : [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
   );
 

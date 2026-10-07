@@ -12,7 +12,7 @@ import { MapPinned, History, AlertTriangle, CheckCircle2, Eye, Hash } from 'luci
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import ConfirmDialog from '../ConfirmDialog';
 import ExtendDeadlineDialog from './ExtendDeadlineDialog';
-import { loadCountdownConfig, getCountdownStatuses, COUNTDOWN_CONFIG_EVENT, FALLBACK_COUNTDOWN_STATUSES } from '../../utils/countdownConfig';
+import { loadCountdownConfig, getSupplementStatuses, COUNTDOWN_CONFIG_EVENT, FALLBACK_SUPPLEMENT_STATUSES } from '../../utils/countdownConfig';
 import useDataListMap from '../../hooks/useDataListMap';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import DeadlineCountdown from '../DeadlineCountdown';
@@ -65,7 +65,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [activeTabs, setActiveTabs] = useState({});
   const [formErrors, setFormErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [confirmStatuses, setConfirmStatuses] = useState(FALLBACK_COUNTDOWN_STATUSES);
+  const [confirmStatuses, setConfirmStatuses] = useState(FALLBACK_SUPPLEMENT_STATUSES);
   const [confirmDialog, setConfirmDialog] = useState({ open: false, action: null });
   const [confirming, setConfirming] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
@@ -112,9 +112,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   useEffect(() => {
     let cancelled = false;
-    loadCountdownConfig().then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getCountdownStatuses(cfg)); });
+    loadCountdownConfig().then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getSupplementStatuses(cfg)); });
     const refresh = () => {
-      loadCountdownConfig(true).then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getCountdownStatuses(cfg)); });
+      loadCountdownConfig(true).then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getSupplementStatuses(cfg)); });
     };
     window.addEventListener(COUNTDOWN_CONFIG_EVENT, refresh);
     return () => { cancelled = true; window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refresh); };
@@ -815,7 +815,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         <div className="popup-body">
           {error && <div className="error-message">{error}</div>}
 
-          <DeadlineCountdown deadline={record.supplement_deadline_at} status={record.status} completedAt={record.info_completed_at} />
+          <DeadlineCountdown deadline={record.supplement_deadline_at} transitionDeadline={record.transition_deadline_at} status={record.status} completedAt={record.info_completed_at} />
 
           {entity === 'station_proposals' && record?.pending_station_code && (
           <div className="alert py-2 px-3 text-sm alert-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -174,52 +174,88 @@ const notifyChain = async (proposal, type, title, message) => {
 };
 
 const INFO_AUTO_CANCEL_REASON = 'Chưa cập nhật đầy đủ thông tin';
+const TRANSITION_AUTO_CANCEL_REASON = 'Chưa chuyển trạng thái tiếp theo';
 
 const processDeadlines = async (maxRetries = 5) => {
   const enabledStatuses = await proposalLifecycle.getEnabledCountdownStatuses();
   if (enabledStatuses.length === 0) return 0;
+  const flags = await proposalLifecycle.getCountdownFlags();
   const warnHours = await proposalLifecycle.getCountdownWarnHours();
   const placeholders = enabledStatuses.map(() => '?').join(', ');
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, supplement_deadline_at, info_completed_at, custom_data FROM station_proposals
+    `SELECT id, user_id, status, supplement_deadline_at, transition_deadline_at, info_completed_at, custom_data FROM station_proposals
       WHERE status IN (${placeholders})
-        AND supplement_deadline_at IS NOT NULL
-        AND info_completed_at IS NULL`,
+        AND (supplement_deadline_at IS NOT NULL OR transition_deadline_at IS NOT NULL)`,
     enabledStatuses
   );
   let acted = 0;
   const now = Date.now();
+  const warnMs = warnHours * 3600 * 1000;
+
+  const cancel = async (p, reason, kindLabel) => {
+    try {
+      await proposalLifecycle.transition(p.id, 'CANCELLED', { reason, source: 'system_auto' });
+      console.log(`[LifecycleWorker] auto-cancel overdue proposal #${p.id} (${kindLabel})`);
+      acted++;
+      return true;
+    } catch (tErr) {
+      console.error(`[LifecycleWorker] auto-cancel overdue #${p.id} loi: ${tErr.message}`);
+      try { await recordAutoFail(p, p.status, 'CANCELLED', tErr, maxRetries, 'hủy quá hạn'); } catch (e) {
+        console.error(`[LifecycleWorker] recordAutoFail #${p.id} loi: ${e.message}`);
+      }
+      return false;
+    }
+  };
+
   for (const p of rows) {
     try {
-      const deadline = new Date(p.supplement_deadline_at).getTime();
-      if (Number.isNaN(deadline)) continue;
-      const iso = new Date(deadline).toISOString();
-      const diff = deadline - now;
-      if (diff > 0 && diff <= warnHours * 3600 * 1000) {
-        if (await deadlineNotified(p.id, 'deadline_expiring', iso)) continue;
-        const left = Math.ceil(diff / 3600000);
-        await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
-          `Còn khoảng ${left} giờ để bổ sung thông tin · Người thực hiện: Hệ thống`);
-        await proposalLifecycle.logActivity({
-          proposalId: p.id, action: 'deadline_expiring',
-          fromStatus: p.status, toStatus: p.status,
-          changedFields: { deadline: iso }, source: 'system_auto'
-        });
-        acted++;
-      } else if (diff <= 0) {
-        try {
-          await proposalLifecycle.transition(p.id, 'CANCELLED', {
-            reason: INFO_AUTO_CANCEL_REASON,
-            source: 'system_auto'
-          });
-          console.log(`[LifecycleWorker] auto-cancel overdue proposal #${p.id}`);
-          acted++;
-        } catch (tErr) {
-          console.error(`[LifecycleWorker] auto-cancel overdue #${p.id} loi: ${tErr.message}`);
-          try {
-            await recordAutoFail(p, p.status, 'CANCELLED', tErr, maxRetries, 'hủy quá hạn');
-          } catch (e) {
-            console.error(`[LifecycleWorker] recordAutoFail #${p.id} loi: ${e.message}`);
+      const flag = flags[p.status] || {};
+      let cancelled = false;
+
+      // 1) Countdown bổ sung thông tin (chỉ khi chưa xác nhận)
+      if (flag.supplement && p.supplement_deadline_at && p.info_completed_at == null) {
+        const t = new Date(p.supplement_deadline_at).getTime();
+        if (!Number.isNaN(t)) {
+          const iso = new Date(t).toISOString();
+          const diff = t - now;
+          if (diff > 0 && diff <= warnMs) {
+            if (!(await deadlineNotified(p.id, 'deadline_expiring', iso))) {
+              const left = Math.ceil(diff / 3600000);
+              await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
+                `Còn khoảng ${left} giờ để bổ sung thông tin · Người thực hiện: Hệ thống`);
+              await proposalLifecycle.logActivity({
+                proposalId: p.id, action: 'deadline_expiring',
+                fromStatus: p.status, toStatus: p.status,
+                changedFields: { deadline: iso, kind: 'supplement' }, source: 'system_auto'
+              });
+              acted++;
+            }
+          } else if (diff <= 0) {
+            cancelled = await cancel(p, INFO_AUTO_CANCEL_REASON, 'supplement');
+          }
+        }
+      }
+
+      // 2) Countdown chuyển trạng thái (không có xác nhận tay)
+      if (!cancelled && flag.transition && p.transition_deadline_at) {
+        const t = new Date(p.transition_deadline_at).getTime();
+        if (!Number.isNaN(t)) {
+          const iso = new Date(t).toISOString();
+          const diff = t - now;
+          if (diff > 0 && diff <= warnMs) {
+            if (!(await deadlineNotified(p.id, 'transition_deadline_expiring', iso))) {
+              const left = Math.ceil(diff / 3600000);
+              await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
+                `Còn khoảng ${left} giờ để chuyển trạng thái tiếp theo · Người thực hiện: Hệ thống`);
+              await proposalLifecycle.logActivity({
+                proposalId: p.id, action: 'transition_deadline_expiring',
+                fromStatus: p.status, toStatus: p.status,
+                changedFields: { deadline: iso, kind: 'transition' }, source: 'system_auto'
+              });
+              acted++;
+            }
+          } else if (diff <= 0) {
+            cancelled = await cancel(p, TRANSITION_AUTO_CANCEL_REASON, 'transition');
           }
         }
       }

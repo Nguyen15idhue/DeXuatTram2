@@ -26,6 +26,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/storage/uploads:/app/storage/uploads
+      - ./test_files/ggsheet/egreen-510714-2480e9fde603.json:/app/secrets/ggsheet-sa.json:ro
     environment:
       - PORT=3000
       - DB_HOST=mysql
@@ -45,6 +46,7 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-google/gemini-2.0-flash-001}
+      - GGSA_KEY_PATH=/app/secrets/ggsheet-sa.json
     depends_on:
       mysql:
         condition: service_healthy

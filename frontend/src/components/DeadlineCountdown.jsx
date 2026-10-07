@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { loadCountdownConfig, getCountdownStatuses, COUNTDOWN_CONFIG_EVENT, FALLBACK_COUNTDOWN_STATUSES } from '../utils/countdownConfig';
+import { loadCountdownConfig, getCountdownFlags, COUNTDOWN_CONFIG_EVENT, FALLBACK_SUPPLEMENT_STATUSES } from '../utils/countdownConfig';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -18,50 +18,66 @@ export const formatCountdown = (deadline) => {
   return { overdue: false, text: `${pad(d)} ngày ${pad(h)}:${pad(m)}:${pad(s)}`, under24h: diff <= 86400000 };
 };
 
-const DeadlineCountdown = ({ deadline, status, compact = false, enabledStatuses = null, completedAt = null }) => {
+const FALLBACK_FLAGS = { supplement: true, transition: false };
+
+const DeadlineCountdown = ({ deadline, transitionDeadline = null, status, compact = false, completedAt = null }) => {
   const [, setNow] = useState(Date.now());
-  const [enabled, setEnabled] = useState(enabledStatuses || null);
+  const [flags, setFlags] = useState(null);
 
   useEffect(() => {
-    if (enabledStatuses) { setEnabled(enabledStatuses); return undefined; }
     let cancelled = false;
-    const refresh = () => {
-      loadCountdownConfig(true).then((cfg) => { if (!cancelled) setEnabled(getCountdownStatuses(cfg)); });
-    };
-    loadCountdownConfig().then((cfg) => { if (!cancelled && cfg) setEnabled(getCountdownStatuses(cfg)); });
+    const apply = (cfg) => { if (!cancelled && cfg) setFlags(getCountdownFlags(cfg)); };
+    loadCountdownConfig().then(apply);
+    const refresh = () => { loadCountdownConfig(true).then(apply); };
     window.addEventListener(COUNTDOWN_CONFIG_EVENT, refresh);
     return () => { cancelled = true; window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refresh); };
-  }, [enabledStatuses]);
+  }, []);
 
   useEffect(() => {
-    if (!deadline) return undefined;
-    if (new Date(deadline).getTime() <= Date.now()) return undefined;
+    const hasFuture = [deadline, transitionDeadline].some((d) => d && new Date(d).getTime() > Date.now());
+    if (!hasFuture) return undefined;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [deadline]);
+  }, [deadline, transitionDeadline]);
 
-  const statuses = enabled || FALLBACK_COUNTDOWN_STATUSES;
-  if (completedAt) return null;
-  if (!deadline || !statuses.includes(status)) return null;
-  const c = formatCountdown(deadline);
-  if (!c) return null;
-  if (c.overdue) {
-    if (compact) {
-      return <span className="badge badge-xs gap-1 whitespace-nowrap" style={ZERO_BADGE_STYLE}>Còn {c.text}</span>;
-    }
+  const flag = (flags && flags[status]) || FALLBACK_FLAGS;
+  const items = [];
+  if (flag.supplement && deadline && !completedAt) items.push({ kind: 'supplement', deadline, label: 'bổ sung thông tin' });
+  if (flag.transition && transitionDeadline) items.push({ kind: 'transition', deadline: transitionDeadline, label: 'chuyển trạng thái tiếp theo' });
+  if (items.length === 0) return null;
+
+  const rendered = items.map((it) => ({ ...it, c: formatCountdown(it.deadline) })).filter((it) => it.c);
+  if (rendered.length === 0) return null;
+
+  if (compact) {
     return (
-      <div className="alert py-2 px-3 text-sm" style={{ marginBottom: 12 }}>
-        <span>Còn {c.text} để bổ sung thông tin</span>
-      </div>
+      <span className="inline-flex flex-wrap gap-1">
+        {rendered.map((it) => (
+          <span
+            key={it.kind}
+            className={`badge ${it.c.overdue ? '' : (it.c.under24h ? 'badge-warning' : 'badge-info')} badge-xs gap-1 whitespace-nowrap`}
+            style={it.c.overdue ? ZERO_BADGE_STYLE : TABULAR_STYLE}
+            title={`Còn ${it.c.text} để ${it.label}`}
+          >
+            {it.kind === 'transition' ? 'Chuyển TT' : 'Bổ sung'}: {it.c.text}
+          </span>
+        ))}
+      </span>
     );
   }
-  if (compact) {
-    return <span className={`badge ${c.under24h ? 'badge-warning' : 'badge-info'} badge-xs gap-1 whitespace-nowrap`} style={TABULAR_STYLE}>Còn {c.text}</span>;
-  }
+
   return (
-    <div className={`alert ${c.under24h ? 'alert-warning' : 'alert-info'} py-2 px-3 text-sm`} style={{ marginBottom: 12 }}>
-      <span>Còn {c.text} để bổ sung thông tin</span>
-    </div>
+    <>
+      {rendered.map((it) => (
+        <div
+          key={it.kind}
+          className={`alert ${it.c.overdue ? '' : (it.c.under24h ? 'alert-warning' : 'alert-info')} py-2 px-3 text-sm`}
+          style={{ marginBottom: 12 }}
+        >
+          <span>Còn {it.c.text} để {it.label}</span>
+        </div>
+      ))}
+    </>
   );
 };
 
