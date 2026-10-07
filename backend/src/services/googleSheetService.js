@@ -60,12 +60,30 @@ exports.appendColumn = async (spreadsheetId, tab, header) => {
   return { col: colLetter(idx), index: idx };
 };
 
-exports.ensureTab = async (spreadsheetId, tab) => {
+exports.ensureTab = async (spreadsheetId, tab, minCols) => {
   const tabs = await exports.getTabs(spreadsheetId);
-  if (tabs.includes(tab)) return { created: false };
+  if (tabs.includes(tab)) {
+    if (minCols && minCols > 26) await exports.expandColumns(spreadsheetId, tab, minCols);
+    return { created: false };
+  }
   const s = await sheets();
-  await s.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] } });
+  const sheetProps = { title: tab };
+  if (minCols && minCols > 26) sheetProps.gridProperties = { columnCount: minCols };
+  const addRequest = { addSheet: { properties: sheetProps } };
+  await s.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [addRequest] } });
   return { created: true };
+};
+
+exports.expandColumns = async (spreadsheetId, tab, minCols) => {
+  const s = await sheets();
+  const meta = await s.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const sheet = (meta.data.sheets || []).find((sh) => sh.properties.title === tab);
+  if (!sheet) return;
+  const curCols = (sheet.properties.gridProperties || {}).columnCount || 26;
+  if (curCols >= minCols) return;
+  const updateProps = { sheetId: sheet.properties.sheetId, gridProperties: { columnCount: minCols } };
+  const updateReq = { updateSheetProperties: { properties: updateProps, fields: 'gridProperties.columnCount' } };
+  await s.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [updateReq] } });
 };
 
 exports.updateCells = async (spreadsheetId, updates) => {

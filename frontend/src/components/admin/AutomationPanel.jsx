@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Wifi, Eye, Play, RefreshCw, Bot, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Save, Wifi, Eye, Play, RefreshCw, Bot, ChevronRight, ArrowLeft, Plus, X } from 'lucide-react';
 import { automationService } from '../../services/api';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
@@ -24,6 +24,21 @@ const STATUS_LABEL = {
   skipped: 'Bỏ qua',
 };
 
+const AUTOMATION_TYPES = [
+  { value: 'assign_process', label: 'Tự động gán công việc quy trình vào dự án' },
+  { value: 'sync_sheet', label: 'Đồng bộ dữ liệu sang Google Sheet' },
+];
+
+const TYPE_LABEL = {
+  assign_process: 'Gán dự án',
+  sync_sheet: 'Sync Sheet',
+};
+
+const TYPE_BADGE = {
+  assign_process: 'badge-primary',
+  sync_sheet: 'badge-info',
+};
+
 const Field = ({ label, hint, children }) => (
   <div className="form-control mb-3">
     <label className="label">
@@ -41,7 +56,7 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [form, setForm] = useState({ enabled: false, project_code: '2', retry_max: 3, retry_interval_s: 20, find_timeout_s: 60, username: '', password: '', api_token: '', note: '' });
+  const [form, setForm] = useState({ name: '', enabled: false, project_code: '2', retry_max: 3, retry_interval_s: 20, find_timeout_s: 60, username: '', password: '', api_token: '', note: '' });
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [runs, setRuns] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0 });
@@ -51,6 +66,9 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
   const [manualCode, setManualCode] = useState('');
   const [manualRunning, setManualRunning] = useState(false);
   const [confirmRun, setConfirmRun] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ automation_type: 'assign_process', name: '', enabled: false });
+  const [createError, setCreateError] = useState('');
 
   const showToast = (message, type = 'success') => setToast({ message, type });
 
@@ -74,6 +92,24 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
     setAutoKey(hit ? hit.automation_key : null);
   }, [selectedId, list]);
 
+  const handleCreate = async () => {
+    setCreateError('');
+    if (!createForm.name.trim()) { setCreateError('Tên automation không được để trống'); return; }
+    try {
+      const res = await automationService.create(createForm, token);
+      if (res.success) {
+        showToast('Tạo automation thành công');
+        setShowCreateModal(false);
+        setCreateForm({ automation_type: 'assign_process', name: '', enabled: false });
+        loadList();
+      } else {
+        setCreateError(res.message || 'Tạo thất bại');
+      }
+    } catch (e) {
+      setCreateError(e.message || 'Tạo thất bại');
+    }
+  };
+
   const loadDetail = useCallback(async () => {
     if (!autoKey) return;
     try {
@@ -82,6 +118,7 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
       if (res.success) {
         setDetail(res.data);
         setForm({
+          name: res.data.name || '',
           enabled: !!res.data.enabled,
           project_code: res.data.project_code || '2',
           retry_max: res.data.retry_max ?? 3,
@@ -124,6 +161,7 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
     try {
       setSaving(true);
       const payload = {
+        name: form.name.trim(),
         enabled: form.enabled,
         project_code: form.project_code.trim(),
         retry_max: Number(form.retry_max),
@@ -198,6 +236,11 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
 
   const fmtDate = (v) => (v ? new Date(v).toLocaleString('vi-VN') : '--');
 
+  const groupedList = AUTOMATION_TYPES.map((type) => ({
+    ...type,
+    items: list.filter((a) => a.automation_type === type.value),
+  }));
+
   if (listLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -210,32 +253,109 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
     return (
       <div className="space-y-4">
         <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Danh sách Automation</h2>
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => setShowCreateModal(true)}>
+            <Plus size={16} />
+            Thêm mới
+          </button>
+        </div>
         {list.length === 0 ? (
           <div className="text-center py-12 text-base-content/50">Chưa có automation nào</div>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {list.map((a) => (
-              <button
-                key={a.id}
-                className="card bg-base-100 shadow-sm border border-base-300 hover:border-primary text-left"
-                onClick={() => onSelect && onSelect(a.id)}
-              >
-                <div className="card-body flex flex-row items-center gap-3 py-4">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${a.enabled ? 'bg-success/10' : 'bg-base-300'}`}>
-                    <Bot size={20} className={a.enabled ? 'text-success' : 'text-base-content/40'} />
+          <div className="space-y-6">
+            {groupedList.map((group) => (
+              <div key={group.value}>
+                <h3 className="text-sm font-semibold text-base-content/60 uppercase tracking-wide mb-2">{group.label}</h3>
+                {group.items.length === 0 ? (
+                  <div className="text-sm text-base-content/40 py-2">Chưa có automation nào trong nhóm này</div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {group.items.map((a) => (
+                      <button
+                        key={a.id}
+                        className="card bg-base-100 shadow-sm border border-base-300 hover:border-primary text-left"
+                        onClick={() => onSelect && onSelect(a.id)}
+                      >
+                        <div className="card-body flex flex-row items-center gap-3 py-4">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${a.enabled ? 'bg-success/10' : 'bg-base-300'}`}>
+                            <Bot size={20} className={a.enabled ? 'text-success' : 'text-base-content/40'} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-semibold">{a.name} <span className="badge badge-ghost badge-sm ml-1">ID {a.id}</span></div>
+                            <div className="text-sm text-base-content/60 mt-1 flex flex-wrap gap-2">
+                              <span className={`badge ${TYPE_BADGE[a.automation_type] || 'badge-ghost'} badge-sm`}>{TYPE_LABEL[a.automation_type] || a.automation_type}</span>
+                              <span className={`badge ${a.enabled ? 'badge-success' : 'badge-ghost'} badge-sm`}>{a.enabled ? 'Đang bật' : 'Đang tắt'}</span>
+                              {a.project_code && <span className="badge badge-outline badge-sm">Dự án: {a.project_code}</span>}
+                            </div>
+                          </div>
+                          <ChevronRight size={18} className="text-base-content/40" />
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex-1">
-                    <div className="font-semibold">{a.name} <span className="badge badge-ghost badge-sm ml-1">ID {a.id}</span></div>
-                    <div className="text-sm text-base-content/60 mt-1 flex flex-wrap gap-2">
-                      <span className={`badge ${a.automation_key === 'sync_process_report' ? 'badge-info' : 'badge-primary'} badge-sm`}>{a.automation_key === 'sync_process_report' ? 'Sync Sheet' : 'Gán dự án'}</span>
-                      <span className={`badge ${a.enabled ? 'badge-success' : 'badge-ghost'} badge-sm`}>{a.enabled ? 'Đang bật' : 'Đang tắt'}</span>
-                      <span className="badge badge-outline badge-sm">Dự án: {a.project_code}</span>
-                    </div>
-                  </div>
-                  <ChevronRight size={18} className="text-base-content/40" />
-                </div>
-              </button>
+                )}
+              </div>
             ))}
+          </div>
+        )}
+
+        {showCreateModal && (
+          <div className="modal modal-open">
+            <div className="modal-box max-w-lg">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg">Tạo Automation mới</h3>
+                <button className="btn btn-ghost btn-sm btn-circle" onClick={() => { setShowCreateModal(false); setCreateForm({ automation_type: 'assign_process', name: '', enabled: false }); setCreateError(''); }}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              {createError && (
+                <div className="alert alert-error mb-3">
+                  <span className="text-sm">{createError}</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Loại automation *</span></label>
+                  <select
+                    className="select select-bordered select-sm"
+                    value={createForm.automation_type}
+                    onChange={(e) => setCreateForm({ ...createForm, automation_type: e.target.value })}
+                  >
+                    {AUTOMATION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Tên automation *</span></label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm"
+                    value={createForm.name}
+                    onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                    placeholder="VD: Đồng bộ Sheet đầu tư trạm"
+                  />
+                </div>
+
+                <div className="form-control">
+                  <label className="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" className="toggle toggle-primary" checked={createForm.enabled} onChange={(e) => setCreateForm({ ...createForm, enabled: e.target.checked })} />
+                    <span className="label-text">Bật ngay sau khi tạo</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="modal-action">
+                <button className="btn btn-ghost btn-sm" onClick={() => { setShowCreateModal(false); setCreateForm({ automation_type: 'assign_process', name: '', enabled: false }); setCreateError(''); }}>Hủy</button>
+                <button className="btn btn-primary btn-sm gap-1" onClick={handleCreate}>
+                  <Save size={14} />
+                  Tạo mới
+                </button>
+              </div>
+            </div>
+            <div className="modal-backdrop bg-black/50" />
           </div>
         )}
       </div>
@@ -255,7 +375,7 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
     );
   }
 
-  if (selected.automation_key === 'sync_process_report') {
+  if (selected.automation_type === 'sync_sheet') {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -269,7 +389,7 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
             <h3 className="font-bold text-lg">{selected.name} <span className="badge badge-ghost badge-sm ml-1">ID {selected.id}</span> <span className="badge badge-info badge-sm ml-1">Sync Sheet</span></h3>
           </div>
         </div>
-        <SyncSheetPanel token={token} automation={selected} view={view || 'config'} onViewChange={onViewChange} />
+        <SyncSheetPanel token={token} automationKey={selected.automation_key} view={view || 'config'} onViewChange={onViewChange} />
       </div>
     );
   }
@@ -294,7 +414,10 @@ const AutomationPanel = ({ token, selectedId, onSelect, onBack, view, onViewChan
 
       <div className="card bg-base-100 shadow-sm border border-base-300">
         <div className="card-body">
-          <h3 className="font-bold text-lg mb-1">{selected.name} <span className="badge badge-ghost badge-sm ml-1">ID {selected.id}</span></h3>
+          <div className="flex items-center gap-2 mb-1">
+            <input className="input input-bordered input-sm font-bold text-lg flex-1 max-w-md" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Tên automation" />
+            <span className="badge badge-ghost badge-sm">ID {selected.id}</span>
+          </div>
           <p className="text-sm text-base-content/60 mb-4">Sau khi duyệt &amp; đẩy đề xuất sang 1Office, tìm quy trình theo mã đề xuất rồi gán vào dự án qua session web (giữ khối Liên quan).</p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

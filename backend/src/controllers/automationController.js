@@ -1,10 +1,9 @@
 const workAutomationService = require('../services/workAutomationService');
 const pool = require('../utils/db');
 
-const AUTOMATION_KEY = 'auto_assign_process';
-
 const cleanUpdate = (body) => {
   const out = {};
+  if ('name' in body) out.name = String(body.name || '').trim().slice(0, 255) || undefined;
   if ('enabled' in body) out.enabled = body.enabled ? 1 : 0;
   if ('project_code' in body) {
     const v = String(body.project_code || '').trim();
@@ -27,8 +26,25 @@ const cleanUpdate = (body) => {
   if ('write_mode' in body) out.write_mode = String(body.write_mode || 'upsert').slice(0, 16);
   if ('frequency_min' in body) {
     const n = parseInt(body.frequency_min, 10);
-    if (!Number.isFinite(n) || n < 5 || n > 1440) throw Object.assign(new Error('frequency_min phai tu 5 den 1440'), { statusCode: 400 });
+    if (!Number.isFinite(n) || n < 1) throw Object.assign(new Error('frequency_min phai lon hon 0'), { statusCode: 400 });
     out.frequency_min = n;
+  }
+  if ('template_scan_hours' in body) {
+    const n = parseInt(body.template_scan_hours, 10);
+    if (!Number.isFinite(n) || n < 1) throw Object.assign(new Error('template_scan_hours phai lon hon 0'), { statusCode: 400 });
+    out.template_scan_hours = n;
+  }
+  if ('template_process_ids' in body) {
+    const v = body.template_process_ids;
+    if (Array.isArray(v)) out.template_process_ids = v.map((x) => String(x)).filter(Boolean);
+    else if (typeof v === 'string' && v.trim() !== '') {
+      try {
+        const p = JSON.parse(v);
+        out.template_process_ids = Array.isArray(p) ? p.map((x) => String(x)) : [];
+      } catch { out.template_process_ids = []; }
+    } else {
+      out.template_process_ids = [];
+    }
   }
   if ('password' in body && body.password !== undefined && body.password !== null && String(body.password) !== '') {
     out.password = String(body.password);
@@ -37,6 +53,17 @@ const cleanUpdate = (body) => {
     out.api_token = String(body.api_token);
   }
   return out;
+};
+
+exports.create = async (req, res) => {
+  try {
+    const data = await workAutomationService.create(req.body || {});
+    res.json({ success: true, data, message: 'Tạo automation thành công' });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Create automation error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
 };
 
 exports.list = async (req, res) => {
@@ -48,13 +75,9 @@ exports.list = async (req, res) => {
   }
 };
 
-exports.get = async (req, res) => getByKey(AUTOMATION_KEY, req, res);
+exports.get = async (req, res) => getByKey(req.params.key, req, res);
 
-exports.getByKeyRoute = async (req, res) => {
-  const key = String(req.params.key || '');
-  if (!ALLOWED_KEYS.includes(key)) return res.status(404).json({ success: false, message: 'Không hỗ trợ automation này' });
-  return getByKey(key, req, res);
-};
+exports.getByKeyRoute = async (req, res) => getByKey(req.params.key, req, res);
 
 async function getByKey(key, req, res) {
   try {
@@ -69,7 +92,7 @@ async function getByKey(key, req, res) {
 
 exports.update = async (req, res) => {
   try {
-    const data = await workAutomationService.updateByKey(AUTOMATION_KEY, cleanUpdate(req.body || {}));
+    const data = await workAutomationService.updateByKey(req.params.key, cleanUpdate(req.body || {}));
     res.json({ success: true, data, message: 'Đã lưu cấu hình' });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -78,13 +101,9 @@ exports.update = async (req, res) => {
   }
 };
 
-const ALLOWED_KEYS = ['auto_assign_process', 'sync_process_report'];
-
 exports.updateByKey = async (req, res) => {
   try {
-    const key = String(req.params.key || '');
-    if (!ALLOWED_KEYS.includes(key)) return res.status(404).json({ success: false, message: 'Không hỗ trợ automation này' });
-    const data = await workAutomationService.updateByKey(key, cleanUpdate(req.body || {}));
+    const data = await workAutomationService.updateByKey(req.params.key, cleanUpdate(req.body || {}));
     res.json({ success: true, data, message: 'Đã lưu cấu hình' });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -100,7 +119,7 @@ exports.testLogin = async (req, res) => {
     let p = password;
     let t = api_token;
     if ((!u || !p) || !t) {
-      const saved = await workAutomationService.getByKey(AUTOMATION_KEY);
+      const saved = await workAutomationService.getByKey(req.params.key);
       if (!saved) return res.status(404).json({ success: false, message: 'Không tìm thấy automation' });
       if (!u && saved.username) u = saved.username;
       if ((!p || String(p) === '') && saved.password_enc) p = workAutomationService.decryptSecret(saved.password_enc);
@@ -119,7 +138,7 @@ exports.testLogin = async (req, res) => {
 exports.runManual = async (req, res) => {
   try {
     const { proposal_code } = req.body || {};
-    const run = await workAutomationService.runManual(proposal_code);
+    const run = await workAutomationService.runManual(proposal_code, req.params.key);
     res.json({ success: true, data: run });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -128,13 +147,23 @@ exports.runManual = async (req, res) => {
   }
 };
 
-exports.runs = async (req, res) => runsByKey(AUTOMATION_KEY, req, res);
+exports.runs = async (req, res) => runsByKey(req.params.key, req, res);
 
-exports.runDetail = async (req, res) => runDetailByKey(AUTOMATION_KEY, req, res);
+exports.runDetail = async (req, res) => runDetailByKey(req.params.key, req, res);
 
-exports.syncRuns = async (req, res) => runsByKey(SYNC_KEY, req, res);
+exports.syncRuns = async (req, res) => {
+  const key = req.query.key ? String(req.query.key) : null;
+  const auto = key ? await workAutomationService.getByKey(key) : await workAutomationService.getFirstByType('sync_sheet');
+  if (!auto) return res.status(404).json({ success: false, message: 'Không tìm thấy automation sync' });
+  return runsByKey(auto.automation_key, req, res);
+};
 
-exports.syncRunDetail = async (req, res) => runDetailByKey(SYNC_KEY, req, res);
+exports.syncRunDetail = async (req, res) => {
+  const key = req.query.key ? String(req.query.key) : null;
+  const auto = key ? await workAutomationService.getByKey(key) : await workAutomationService.getFirstByType('sync_sheet');
+  if (!auto) return res.status(404).json({ success: false, message: 'Không tìm thấy automation sync' });
+  return runDetailByKey(auto.automation_key, req, res);
+};
 
 async function runsByKey(key, req, res) {
   try {
@@ -179,8 +208,8 @@ const SYNC_KEY = 'sync_process_report';
 const syncService = () => require('../services/syncReportService');
 const sheetService = () => require('../services/googleSheetService');
 
-const needSyncAuto = async () => {
-  const auto = await syncService().getSyncAutomation();
+const needSyncAuto = async (key) => {
+  const auto = key ? await syncService().getSyncAutomation(key) : await syncService().getSyncAutomation();
   if (!auto) throw Object.assign(new Error('Không tìm thấy automation sync'), { statusCode: 404 });
   return auto;
 };
@@ -188,8 +217,17 @@ const needSyncAuto = async () => {
 exports.syncVersions = async (req, res) => {
   try {
     const pool = require('../utils/db');
-    const [rows] = await pool.query('SELECT version, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template")) AS template, fetched_at, JSON_LENGTH(tree_json, "$.nodes") AS nodes FROM automation_field_cache ORDER BY version ASC');
-    res.json({ success: true, data: rows });
+    const [rows] = await pool.query('SELECT version, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template")) AS template, JSON_UNQUOTE(JSON_EXTRACT(tree_json, "$.template_id")) AS template_id, fetched_at, JSON_LENGTH(tree_json, "$.nodes") AS nodes FROM automation_field_cache ORDER BY version ASC');
+    const auto = await needSyncAuto(req.query.key).catch(() => null);
+    if (!auto) return res.json({ success: true, data: rows });
+    let ids = [];
+    try {
+      const v = auto.template_process_ids ? (typeof auto.template_process_ids === 'string' ? JSON.parse(auto.template_process_ids) : auto.template_process_ids) : [];
+      ids = (Array.isArray(v) ? v : []).map((x) => String(x)).filter(Boolean);
+    } catch { ids = []; }
+    if (ids.length === 0) return res.json({ success: true, data: rows });
+    const idSet = new Set(ids);
+    res.json({ success: true, data: rows.filter((r) => idSet.has(String(r.template)) || idSet.has(String(r.template_id))) });
   } catch (error) {
     console.error('List sync versions error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -198,7 +236,9 @@ exports.syncVersions = async (req, res) => {
 
 exports.syncRefreshAll = async (req, res) => {
   try {
-    const data = await syncService().refreshFieldTrees();
+    const auto = await needSyncAuto(req.query.key);
+    const templateNames = req.body && Array.isArray(req.body.template_names) ? req.body.template_names : null;
+    const data = await syncService().refreshFieldTrees(auto, templateNames);
     res.json({ success: true, data, message: `Đã quét ${data.length} version` });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -211,6 +251,7 @@ exports.syncFields = async (req, res) => {
   try {
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
+    await needSyncAuto(req.query.key);
     const data = await syncService().getFieldTree(version, { refresh: req.query.refresh === '1' });
     res.json({ success: true, data });
   } catch (error) {
@@ -222,7 +263,7 @@ exports.syncFields = async (req, res) => {
 
 exports.syncMappingsGet = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
     res.json({ success: true, data: await syncService().getMappings(auto.id, version) });
@@ -235,7 +276,7 @@ exports.syncMappingsGet = async (req, res) => {
 
 exports.syncMappingsPut = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
     const items = Array.isArray(req.body && req.body.items) ? req.body.items : req.body;
@@ -248,7 +289,7 @@ exports.syncMappingsPut = async (req, res) => {
 };
 
 exports.syncCopyMap = async (req, res) => {  try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const { from_version, to_version } = req.body || {};
     if (!from_version || !to_version) return res.status(400).json({ success: false, message: 'Thiếu from_version/to_version' });
     res.json({ success: true, data: await syncService().copyMappings(auto.id, from_version, to_version), message: 'Đã copy mapping' });
@@ -261,7 +302,7 @@ exports.syncCopyMap = async (req, res) => {  try {
 
 exports.syncAutoMatch = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const { version } = req.body || {};
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
     const data = await syncService().autoMatch(auto.id, version);
@@ -273,9 +314,40 @@ exports.syncAutoMatch = async (req, res) => {
   }
 };
 
+exports.syncBulkPlan = async (req, res) => {
+  try {
+    const auto = await needSyncAuto(req.query.key);
+    const { from_version, to_versions } = req.body || {};
+    if (!from_version || !Array.isArray(to_versions) || to_versions.length === 0) {
+      return res.status(400).json({ success: false, message: 'Thiếu from_version/to_versions' });
+    }
+    res.json({ success: true, data: await syncService().bulkPlan(auto.id, from_version, to_versions) });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Bulk plan error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncBulkApply = async (req, res) => {
+  try {
+    const auto = await needSyncAuto(req.query.key);
+    const { from_version, to_versions, mode } = req.body || {};
+    if (!from_version || !Array.isArray(to_versions) || to_versions.length === 0) {
+      return res.status(400).json({ success: false, message: 'Thiếu from_version/to_versions' });
+    }
+    const data = await syncService().bulkApply(auto.id, from_version, to_versions, mode || 'merge');
+    res.json({ success: true, data, message: 'Đã áp dụng hàng loạt' });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Bulk apply error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.syncMappingsDelete = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const version = String(req.query.version || '').trim();
     const pool = require('../utils/db');
     if (version && version !== 'all') {
@@ -291,7 +363,7 @@ exports.syncMappingsDelete = async (req, res) => {
 };
 
 exports.syncSheetHeaders = async (req, res) => {  try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     if (!auto.spreadsheet_id) return res.status(400).json({ success: false, message: 'Chưa cấu hình Sheet ID' });
     const tab = String(req.query.tab || '').trim();
     if (!tab) return res.status(400).json({ success: false, message: 'Thiếu tab' });
@@ -305,7 +377,7 @@ exports.syncSheetHeaders = async (req, res) => {  try {
 
 exports.syncSheetAddColumn = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     if (!auto.spreadsheet_id) return res.status(400).json({ success: false, message: 'Chưa cấu hình Sheet ID' });
     const { tab, header } = req.body || {};
     if (!tab || !String(header || '').trim()) return res.status(400).json({ success: false, message: 'Thiếu tab/header' });
@@ -319,7 +391,7 @@ exports.syncSheetAddColumn = async (req, res) => {
 
 exports.syncTest = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const { version, limit } = req.body || {};
     const data = await syncService().dryRun(auto, { version, limit: Math.min(5, Math.max(1, parseInt(limit, 10) || 3)) });
     res.json({ success: true, data });
@@ -332,7 +404,7 @@ exports.syncTest = async (req, res) => {
 
 exports.syncRun = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const { version } = req.body || {};
     const data = await syncService().runSync(auto, { version, trigger: 'manual' });
     res.json({ success: true, data });
@@ -345,7 +417,7 @@ exports.syncRun = async (req, res) => {
 
 exports.syncSampleExcel = async (req, res) => {
   try {
-    const auto = await needSyncAuto();
+    const auto = await needSyncAuto(req.query.key);
     const version = String(req.query.version || '').trim();
     if (!version) return res.status(400).json({ success: false, message: 'Thiếu version' });
     const buf = await syncService().sampleExcel(auto, version);
@@ -355,6 +427,46 @@ exports.syncSampleExcel = async (req, res) => {
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
     console.error('Sample excel error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncListTemplates = async (req, res) => {
+  try {
+    const auto = await needSyncAuto(req.query.key).catch(() => null);
+    const templates = await syncService().listTemplateProcesses(auto);
+    res.json({ success: true, data: templates });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('List template processes error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncGetTemplateVersions = async (req, res) => {
+  try {
+    const { process_ids } = req.body || {};
+    if (!Array.isArray(process_ids) || process_ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'Thiếu process_ids' });
+    }
+    const auto = await needSyncAuto(req.query.key).catch(() => null);
+    const versions = await syncService().getTemplateProcessVersions(process_ids);
+    res.json({ success: true, data: versions });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Get template versions error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.listByType = async (req, res) => {
+  try {
+    const type = String(req.params.type || '');
+    if (!type) return res.status(400).json({ success: false, message: 'Thiếu type' });
+    const data = await workAutomationService.getByType(type);
+    res.json({ success: true, data: data.map(workAutomationService.maskRow) });
+  } catch (error) {
+    console.error('List automations by type error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

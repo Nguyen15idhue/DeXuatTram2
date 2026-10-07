@@ -313,8 +313,9 @@ async function autoPushOnReview(id, reviewerId) {
     if (!first.isUpdate && !first.deduped) {
       try {
         const workAutomationService = require('./workAutomationService');
-        const auto = await workAutomationService.getByKey('auto_assign_process');
-        if (auto && auto.enabled) {
+        const autos = await workAutomationService.getByType('assign_process');
+        for (const auto of autos) {
+          if (!auto.enabled) continue;
           await workAutomationService.createPendingRun({
             automationId: auto.id,
             proposalId: id,

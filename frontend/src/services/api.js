@@ -823,6 +823,12 @@ export const automationService = {
   list(token) {
     return api.getWithAuth('/admin/automations', token);
   },
+  listByType(type, token) {
+    return api.getWithAuth(`/admin/automations/type/${type}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/automations', data, token);
+  },
   get(key, token) {
     return api.getWithAuth(`/admin/automations/${key}`, token);
   },
@@ -848,51 +854,87 @@ export const automationService = {
   getByKey(key, token) {
     return api.getWithAuth(`/admin/automations/${key}`, token);
   },
-  syncVersions(token) {
-    return api.getWithAuth('/admin/automations/sync/versions', token);
+  syncVersions(key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.getWithAuth(`/admin/automations/sync/versions${qs}`, token);
   },
-  syncRefreshAll(token) {
-    return api.postWithAuth('/admin/automations/sync/refresh-all', {}, token);
+  syncRefreshAll(key, templateNames, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    const body = templateNames && templateNames.length > 0 ? { template_names: templateNames } : {};
+    return api.postWithAuth(`/admin/automations/sync/refresh-all${qs}`, body, token);
   },
-  syncFields(version, refresh, token) {
-    return api.getWithAuth(`/admin/automations/sync/fields?version=${encodeURIComponent(version)}${refresh ? '&refresh=1' : ''}`, token);
+  syncFields(version, refresh, key, token) {
+    let qs = `?version=${encodeURIComponent(version)}`;
+    if (refresh) qs += '&refresh=1';
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.getWithAuth(`/admin/automations/sync/fields${qs}`, token);
   },
-  syncMappingsGet(version, token) {
-    return api.getWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}`, token);
+  syncMappingsGet(version, key, token) {
+    let qs = `?version=${encodeURIComponent(version)}`;
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.getWithAuth(`/admin/automations/sync/mappings${qs}`, token);
   },
-  syncMappingsPut(version, items, token) {
-    return api.putWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}`, { items }, token);
+  syncMappingsPut(version, items, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.putWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}${key ? `&key=${encodeURIComponent(key)}` : ''}`, { items }, token);
   },
-  syncCopyMap(fromVersion, toVersion, token) {
-    return api.postWithAuth('/admin/automations/sync/copy-map', { from_version: fromVersion, to_version: toVersion }, token);
+  syncCopyMap(fromVersion, toVersion, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/copy-map${qs}`, { from_version: fromVersion, to_version: toVersion }, token);
   },
-  syncAutoMatch(version, token) {
-    return api.postWithAuth('/admin/automations/sync/auto-match', { version }, token);
+  syncAutoMatch(version, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/auto-match${qs}`, { version }, token);
   },
-  syncMappingsDelete(version, token) {
-    return api.deleteWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}`, token);
+  syncBulkPlan(fromVersion, toVersions, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/bulk-plan${qs}`, { from_version: fromVersion, to_versions: toVersions }, token);
   },
-  syncSheetHeaders(tab, token) {
-    return api.getWithAuth(`/admin/automations/sync/sheet-headers?tab=${encodeURIComponent(tab)}`, token);
+  syncBulkApply(fromVersion, toVersions, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/bulk-apply${qs}`, { from_version: fromVersion, to_versions: toVersions, mode: 'merge' }, token);
   },
-  syncSheetAddColumn(tab, header, token) {
-    return api.postWithAuth('/admin/automations/sync/sheet-column', { tab, header }, token);
+  syncMappingsDelete(version, key, token) {
+    let qs = `?version=${encodeURIComponent(version)}`;
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.deleteWithAuth(`/admin/automations/sync/mappings${qs}`, token);
   },
-  syncTest(data, token) {
-    return api.postWithAuth('/admin/automations/sync/test', data || {}, token);
+  syncSheetHeaders(tab, key, token) {
+    let qs = `?tab=${encodeURIComponent(tab)}`;
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.getWithAuth(`/admin/automations/sync/sheet-headers${qs}`, token);
   },
-  syncRun(version, token) {
-    return api.postWithAuth('/admin/automations/sync/run', version ? { version } : {}, token);
+  syncSheetAddColumn(tab, header, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/sheet-column${qs}`, { tab, header }, token);
   },
-  syncRuns(params, token) {
+  syncTest(data, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/test${qs}`, data || {}, token);
+  },
+  syncRun(version, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/run${qs}`, version ? { version } : {}, token);
+  },
+  syncRuns(params, key, token) {
     const qs = new URLSearchParams();
     Object.entries(params || {}).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== '') qs.set(k, v);
     });
+    if (key) qs.set('key', key);
     return api.getWithAuth(`/admin/automations/sync/runs?${qs.toString()}`, token);
   },
-  syncRunDetail(id, token) {
-    return api.getWithAuth(`/admin/automations/sync/runs/${id}`, token);
+  syncRunDetail(id, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.getWithAuth(`/admin/automations/sync/runs/${id}${qs}`, token);
+  },
+  syncListTemplates(key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.getWithAuth(`/admin/automations/sync/templates${qs}`, token);
+  },
+  syncGetTemplateVersions(processIds, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/template-versions${qs}`, { process_ids: processIds }, token);
   }
 };
 

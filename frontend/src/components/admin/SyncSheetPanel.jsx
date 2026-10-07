@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Save, Play, RefreshCw, Eye, Plus, Download, X, ChevronRight, Pencil, Trash2, ArrowUp, ArrowDown, Sparkles } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Save, Play, RefreshCw, Eye, Plus, Download, X, ChevronRight, Pencil, Trash2, ArrowUp, ArrowDown, Sparkles, ListTodo, Loader2, ChevronDown, Copy } from 'lucide-react';
 import { automationService } from '../../services/api';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
@@ -8,7 +8,7 @@ import Pagination from '../ui/Pagination';
 import Dialog from '../ui/Dialog';
 
 const STATUS_BADGE = { pending: 'badge-warning', running: 'badge-info', success: 'badge-success', failed: 'badge-error', skipped: 'badge-ghost' };
-const STATUS_LABEL = { pending: 'Đang chờ', running: 'Đang chạy', success: 'Thành công', failed: 'Thất bại', skipped: 'Bỏ qua' };
+const STATUS_LABEL = { pending: 'Đang chờ', running: 'Đang thực hiện', success: 'Thành công', failed: 'Thất bại', skipped: 'Bỏ qua' };
 const HIDDEN_NODE_TYPES = new Set(['start', 'manualstart', 'taskstart', 'eventstart', 'taskwait', 'taskcompleted', 'decision', 'notify']);
 
 const colName = (i) => {
@@ -21,11 +21,71 @@ const colName = (i) => {
   return s;
 };
 
-const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
-  const [detail, setDetail] = useState(automation);
+const MultiSelectDropdown = ({ options, selected, onChange, loading, onRefresh, placeholder }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const toggle = (val) => {
+    const next = selected.includes(val) ? selected.filter((v) => v !== val) : [...selected, val];
+    onChange(next);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex gap-2">
+        <div
+          className="input input-bordered w-full flex-1 min-h-[42px] cursor-pointer flex items-center gap-2 py-1"
+          onClick={() => setOpen(!open)}
+        >
+          <span className={selected.length > 0 ? 'text-sm font-medium' : 'text-base-content/40 text-sm'}>
+            {selected.length > 0 ? `Đã chọn ${selected.length} quy trình mẫu` : (placeholder || 'Chọn quy trình mẫu...')}
+          </span>
+          <ChevronDown size={14} className="ml-auto text-base-content/40" />
+        </div>
+        <button
+          className="btn btn-outline btn-sm gap-1"
+          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+          disabled={loading}
+          title="Lấy lại danh sách quy trình mẫu từ 1Office"
+        >
+          {loading ? <span className="loading loading-spinner loading-xs"></span> : <Loader2 size={14} />}
+          Get
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {options.length === 0 ? (
+            <div className="p-3 text-sm text-base-content/50 text-center">{loading ? 'Đang tải...' : 'Không có dữ liệu'}</div>
+          ) : (
+            options.map((item) => {
+              const val = String(item.ID);
+              const isChecked = selected.includes(val);
+              return (
+                <label key={item.ID} className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-200 ${isChecked ? 'bg-primary/5' : ''}`}>
+                  <input type="checkbox" className="checkbox checkbox-xs checkbox-primary" checked={isChecked} onChange={() => toggle(val)} />
+                  <span className="text-sm flex-1">{item.title}</span>
+                  <span className="badge badge-ghost badge-sm">{item.count} CT</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
+  const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ enabled: false, spreadsheet_id: '', frequency_min: 15, note: '' });
+  const [form, setForm] = useState({ name: '', enabled: false, spreadsheet_id: '', frequency_min: 15, template_scan_hours: 24, note: '', template_process_ids: [] });
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [versions, setVersions] = useState([]);
   const [versionsEmpty, setVersionsEmpty] = useState(false);
@@ -56,43 +116,92 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   const [confirmDeleteCol, setConfirmDeleteCol] = useState(null);
   const [confirmClearVersion, setConfirmClearVersion] = useState(false);
   const [dragCol, setDragCol] = useState(null);
+  const [templateProcesses, setTemplateProcesses] = useState([]);
+  const [templateProcessesLoading, setTemplateProcessesLoading] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkSrc, setBulkSrc] = useState('');
+  const [bulkTargets, setBulkTargets] = useState([]);
+  const [bulkPreview, setBulkPreview] = useState(null);
+  const [bulkPlanning, setBulkPlanning] = useState(false);
+  const [bulkApplying, setBulkApplying] = useState(false);
+
+  const key = automationKey;
 
   const showToast = (message, type = 'success') => setToast({ message, type });
 
   const loadDetail = useCallback(async () => {
     try {
-      const res = await automationService.getByKey('sync_process_report', token);
+      const res = await automationService.getByKey(key, token);
       if (res.success) {
         setDetail(res.data);
-        setForm({ enabled: !!res.data.enabled, spreadsheet_id: res.data.spreadsheet_id || '', frequency_min: res.data.frequency_min ?? 15, note: res.data.note || '' });
+        setForm({
+          name: res.data.name || '',
+          enabled: !!res.data.enabled,
+          spreadsheet_id: res.data.spreadsheet_id || '',
+          frequency_min: res.data.frequency_min ?? 15,
+          template_scan_hours: res.data.template_scan_hours ?? 24,
+          note: res.data.note || '',
+          template_process_ids: res.data.template_process_ids ? (Array.isArray(res.data.template_process_ids) ? res.data.template_process_ids.map(String) : JSON.parse(res.data.template_process_ids).map(String)) : []
+        });
       }
     } catch {
       showToast('Lỗi tải cấu hình sync', 'error');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, key]);
+
+  const loadTemplateProcesses = useCallback(async () => {
+    try {
+      setTemplateProcessesLoading(true);
+      const res = await automationService.syncListTemplates(key, token);
+      if (res.success) {
+        setTemplateProcesses(res.data);
+      } else {
+        showToast(res.message || 'Lỗi tải danh sách quy trình mẫu', 'error');
+      }
+    } catch (e) {
+      showToast(e.message || 'Lỗi tải danh sách quy trình mẫu', 'error');
+    } finally {
+      setTemplateProcessesLoading(false);
+    }
+  }, [token, key]);
 
   const loadVersions = useCallback(async () => {
     try {
-      const res = await automationService.syncVersions(token);
+      const res = await automationService.syncVersions(key, token);
       if (res.success) {
-        setVersions(res.data);
-        setVersionsEmpty(res.data.length === 0);
-        if (!version && res.data.length > 0) setVersion(res.data[res.data.length - 1].version);
+        const list = res.data || [];
+        setVersions(list);
+        setVersionsEmpty(list.length === 0);
+        if (list.length > 0) {
+          setVersion((prev) => (list.some((v) => String(v.version) === String(prev)) ? prev : String(list[list.length - 1].version)));
+        } else {
+          setVersion('');
+        }
       }
     } catch {
       showToast('Lỗi tải danh sách version', 'error');
     }
-  }, [token]);
+  }, [token, key]);
 
   const handleRefreshAll = async () => {
     try {
       setRefreshingAll(true);
-      const res = await automationService.syncRefreshAll(token);
+      const templateNames = form.template_process_ids && form.template_process_ids.length > 0 ? form.template_process_ids : null;
+      const res = await automationService.syncRefreshAll(key, templateNames, token);
       if (res.success) {
-        showToast(res.message || 'Đã quét version');
-        loadVersions();
+        const scanned = (res.data || []).map((v) => ({ version: String(v.version), template: v.template || '', template_id: v.template_id || '', nodes: v.nodes || 0 }));
+        if (scanned.length > 0) {
+          setVersions(scanned);
+          setVersionsEmpty(false);
+          if (!scanned.some((v) => String(v.version) === String(version))) {
+            setVersion(scanned[0].version);
+          }
+        } else {
+          await loadVersions();
+        }
+        showToast(res.message || `Đã quét ${scanned.length} version`);
       } else {
         showToast(res.message || 'Quét thất bại', 'error');
       }
@@ -103,13 +212,13 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
     }
   };
 
-  useEffect(() => { loadDetail(); loadVersions(); }, [loadDetail, loadVersions]);
+  useEffect(() => { loadDetail(); loadVersions(); loadTemplateProcesses(); }, [loadDetail, loadVersions, loadTemplateProcesses]);
 
   const loadTree = useCallback(async (v, refresh = false) => {
     if (!v) return;
     try {
       setTreeLoading(true);
-      const res = await automationService.syncFields(v, refresh, token);
+      const res = await automationService.syncFields(v, refresh, key, token);
       if (res.success) {
         setTree(res.data);
         setSheetTab(`Ver ${v}`);
@@ -119,27 +228,27 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
     } finally {
       setTreeLoading(false);
     }
-  }, [token]);
+  }, [token, key]);
 
   const loadMappings = useCallback(async (v) => {
     if (!v) return;
     try {
-      const res = await automationService.syncMappingsGet(v, token);
+      const res = await automationService.syncMappingsGet(v, key, token);
       if (res.success) setMappings(normalizeMappings(res.data));
     } catch {
       showToast('Lỗi tải mapping', 'error');
     }
-  }, [token]);
+  }, [token, key]);
 
   const loadHeaders = useCallback(async (tab) => {
     if (!tab) return;
     try {
-      const res = await automationService.syncSheetHeaders(tab, token);
+      const res = await automationService.syncSheetHeaders(tab, key, token);
       if (res.success) setSheetHeaders(res.data);
     } catch (e) {
       showToast(e.message || 'Lỗi đọc header Sheet', 'error');
     }
-  }, [token]);
+  }, [token, key]);
 
   useEffect(() => {
     if (view === 'mapping' && version) {
@@ -155,7 +264,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   const loadRuns = useCallback(async (page = 1, status = statusFilter) => {
     try {
       setRunsLoading(true);
-      const res = await automationService.syncRuns({ page, limit: pagination.limit, status }, token);
+      const res = await automationService.syncRuns({ page, limit: pagination.limit, status }, key, token);
       if (res.success) {
         setRuns(res.data);
         setPagination(res.pagination);
@@ -165,22 +274,44 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
     } finally {
       setRunsLoading(false);
     }
-  }, [token, pagination.limit, statusFilter]);
+  }, [token, pagination.limit, statusFilter, key]);
 
   useEffect(() => { if (view === 'history') loadRuns(1); }, [view, statusFilter]);
 
   const handleSaveConfig = async () => {
     try {
       setSaving(true);
-      const res = await automationService.update('sync_process_report', {
+      const res = await automationService.update(key, {
+        name: form.name.trim(),
         enabled: form.enabled,
         spreadsheet_id: form.spreadsheet_id.trim(),
         frequency_min: Number(form.frequency_min),
+        template_scan_hours: Number(form.template_scan_hours),
         note: form.note.trim(),
+        template_process_ids: form.template_process_ids || []
       }, token);
       if (res.success) {
         setDetail(res.data);
         showToast('Đã lưu cấu hình');
+        const savedTpl = res.data.template_process_ids
+          ? (Array.isArray(res.data.template_process_ids) ? res.data.template_process_ids.map(String) : [])
+          : (form.template_process_ids || []).map(String);
+        try {
+          const vRes = await automationService.syncVersions(key, token);
+          if (vRes.success) {
+            const list = vRes.data || [];
+            setVersions(list);
+            setVersionsEmpty(list.length === 0);
+            if (list.length > 0) {
+              setVersion(String(list[0].version));
+              onViewChange('mapping');
+            } else if (savedTpl.length > 0) {
+              showToast('Đã lưu quy trình mẫu. Chưa có version trong cache — bấm "Quét version từ 1Office".', 'error');
+            }
+          }
+        } catch (e) {
+          console.error('Lỗi tải version sau khi lưu:', e);
+        }
       } else {
         showToast(res.message || 'Lưu thất bại', 'error');
       }
@@ -194,7 +325,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   const handleDryRun = async () => {
     try {
       setDryRunning(true);
-      const res = await automationService.syncTest({ version: version || undefined, limit: 3 }, token);
+      const res = await automationService.syncTest({ version: version || undefined, limit: 3 }, key, token);
       if (res.success) setDryPreview(res.data);
       else showToast(res.message || 'Test thất bại', 'error');
     } catch (e) {
@@ -207,10 +338,11 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   const handleManualSync = async () => {
     try {
       setSyncing(true);
-      const res = await automationService.syncRun(version || undefined, token);
+      const res = await automationService.syncRun(undefined, key, token);
       if (res.success) {
-        showToast('Đồng bộ xong');
-        if (view === 'history') loadRuns(1);
+        showToast('Đã tạo lệnh đồng bộ');
+        onViewChange('history');
+        loadRuns(1);
       } else {
         showToast(res.message || 'Thất bại', 'error');
       }
@@ -218,7 +350,6 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
       showToast(e.message || 'Thất bại', 'error');
     } finally {
       setSyncing(false);
-      setConfirmSync(false);
     }
   };
 
@@ -294,7 +425,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
 
   const confirmClearMappings = async () => {
     try {
-      const res = await automationService.syncMappingsDelete(version, token);
+      const res = await automationService.syncMappingsDelete(version, key, token);
       if (res.success) {
         setMappings([]);
         showToast(res.message || 'Đã xóa hết mapping');
@@ -310,7 +441,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
 
   const handleSaveMapping = async () => {
     try {
-      const res = await automationService.syncMappingsPut(version, mappings.map((m) => ({ source_path: m.source_path, sheet_col: m.sheet_col, label: m.label })), token);
+      const res = await automationService.syncMappingsPut(version, mappings.map((m) => ({ source_path: m.source_path, sheet_col: m.sheet_col, label: m.label })), key, token);
       if (res.success) {
         setMappings(normalizeMappings(res.data));
         showToast('Đã lưu mapping');
@@ -325,7 +456,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   const handleAutoMatch = async () => {
     try {
       setAutoMatching(true);
-      const res = await automationService.syncAutoMatch(version, token);
+      const res = await automationService.syncAutoMatch(version, key, token);
       if (res.success) {
         showToast(`Auto-match thêm ${res.data.added} trường (tổng ${res.data.total})`);
         loadMappings(version);
@@ -339,9 +470,45 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
     }
   };
 
+  const handleBulkPlan = async () => {
+    if (!bulkSrc || bulkTargets.length === 0) { showToast('Chọn version nguồn và ít nhất 1 version đích', 'error'); return; }
+    try {
+      setBulkPlanning(true);
+      setBulkPreview(null);
+      const res = await automationService.syncBulkPlan(bulkSrc, bulkTargets, key, token);
+      if (res.success) setBulkPreview(res.data);
+      else showToast(res.message || 'Xem trước thất bại', 'error');
+    } catch (e) {
+      showToast(e.message || 'Xem trước thất bại', 'error');
+    } finally {
+      setBulkPlanning(false);
+    }
+  };
+
+  const handleBulkApply = async () => {
+    if (!bulkPreview) { showToast('Bấm "Xem trước" trước khi áp dụng', 'error'); return; }
+    try {
+      setBulkApplying(true);
+      const res = await automationService.syncBulkApply(bulkSrc, bulkTargets, key, token);
+      if (res.success) {
+        const lines = (res.data.results || []).map((r) => r.error ? `Ver ${r.version}: lỗi ${r.error}` : `Ver ${r.version}: thêm ${r.added}, giữ ${r.kept}, ${r.unmatched} chưa khớp`);
+        showToast(lines.join(' · ') || 'Đã áp dụng');
+        setShowBulk(false);
+        setBulkPreview(null);
+        if (version) loadMappings(version);
+      } else {
+        showToast(res.message || 'Áp dụng thất bại', 'error');
+      }
+    } catch (e) {
+      showToast(e.message || 'Áp dụng thất bại', 'error');
+    } finally {
+      setBulkApplying(false);
+    }
+  };
+
   const handleAddColumn = async () => {
     if (!newColName.trim()) { showToast('Nhập tên header', 'error'); return; }    try {
-      const res = await automationService.syncSheetAddColumn(sheetTab, newColName.trim(), token);
+      const res = await automationService.syncSheetAddColumn(sheetTab, newColName.trim(), key, token);
       if (res.success) {
         setNewColName('');
         setShowAddCol(false);
@@ -356,7 +523,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
   };
 
   const handleSampleExcel = async () => {    try {
-      const r = await fetch(`/api/admin/automations/sync/sample-excel?version=${encodeURIComponent(version)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`/api/admin/automations/sync/sample-excel?version=${encodeURIComponent(version)}${key ? `&key=${encodeURIComponent(key)}` : ''}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) throw new Error('Tải thất bại');
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
@@ -401,6 +568,10 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
       {view === 'config' && (
         <div className="card bg-base-100 shadow-sm border border-base-300">
           <div className="card-body">
+            <div className="form-control mb-4">
+              <label className="label"><span className="label-text font-semibold">Tên automation</span></label>
+              <input className="input input-bordered w-full max-w-md" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Tên automation" />
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div>
                 <div className="form-control mb-3">
@@ -411,11 +582,27 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
                 </div>
                 <div className="form-control mb-3">
                   <label className="label"><span className="label-text">Tần suất (phút)</span></label>
-                  <select className="select select-bordered w-full" value={form.frequency_min} onChange={(e) => setForm({ ...form, frequency_min: e.target.value })}>
-                    <option value={15}>15 phút</option>
-                    <option value={30}>30 phút</option>
-                    <option value={60}>60 phút</option>
-                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    className="input input-bordered w-full"
+                    value={form.frequency_min}
+                    onChange={(e) => setForm({ ...form, frequency_min: e.target.value })}
+                    placeholder="VD: 15"
+                  />
+                  <p className="text-xs text-base-content/50 mt-1">Nhập số phút bất kỳ lớn hơn 0 (mặc định 15)</p>
+                </div>
+                <div className="form-control mb-3">
+                  <label className="label"><span className="label-text">Cron quét quy trình mẫu (giờ)</span></label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="input input-bordered w-full"
+                    value={form.template_scan_hours}
+                    onChange={(e) => setForm({ ...form, template_scan_hours: e.target.value })}
+                    placeholder="VD: 24"
+                  />
+                  <p className="text-xs text-base-content/50 mt-1">Tần suất tự động quét lại quy trình mẫu từ 1Office (mặc định 24 giờ)</p>
                 </div>
                 <div className="form-control mb-3">
                   <label className="label"><span className="label-text">Chế độ ghi</span></label>
@@ -432,6 +619,56 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
                   <input className="input input-bordered w-full" value={detail?.sa_email || 'egreen-sync@egreen-510714.iam.gserviceaccount.com'} disabled />
                 </div>
                 <div className="form-control mb-3">
+                  <label className="label"><span className="label-text">Quy trình mẫu để đồng bộ</span></label>
+                  <MultiSelectDropdown
+                    options={templateProcesses}
+                    selected={form.template_process_ids || []}
+                    onChange={(val) => setForm({ ...form, template_process_ids: val })}
+                    loading={templateProcessesLoading}
+                    onRefresh={loadTemplateProcesses}
+                    placeholder="Chọn quy trình mẫu..."
+                  />
+                  {form.template_process_ids && form.template_process_ids.length > 0 && (
+                    <div className="mt-2 border border-base-300 rounded-lg overflow-hidden">
+                      <table className="table table-xs">
+                        <thead>
+                          <tr className="bg-base-200">
+                            <th className="w-8">#</th>
+                            <th>Quy trình mẫu</th>
+                            <th className="w-16 text-center">Số lượng</th>
+                            <th className="w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {form.template_process_ids.map((id, idx) => {
+                            const item = templateProcesses.find((t) => String(t.ID) === id);
+                            return (
+                              <tr key={id}>
+                                <td>{idx + 1}</td>
+                                <td className="text-sm">{item ? item.title : id}</td>
+                                <td className="text-center">{item?.count || '--'}</td>
+                                <td>
+                                  <button
+                                    className="btn btn-ghost btn-xs text-error"
+                                    onClick={() => setForm({ ...form, template_process_ids: form.template_process_ids.filter((v) => v !== id) })}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <p className="text-xs text-base-content/50 mt-1">
+                    {form.template_process_ids && form.template_process_ids.length > 0
+                      ? `Đã chọn ${form.template_process_ids.length} quy trình mẫu. Lưu cấu hình sẽ tự tìm version.`
+                      : 'Để trống = đồng bộ tất cả quy trình mẫu.'}
+                  </p>
+                </div>
+                <div className="form-control mb-3">
                   <label className="label"><span className="label-text">Ghi chú</span></label>
                   <input className="input input-bordered w-full" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
                 </div>
@@ -442,7 +679,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
                 {dryRunning ? <span className="loading loading-spinner loading-xs"></span> : <Eye size={14} />}
                 Test đồng bộ
               </button>
-              <button className="btn btn-secondary btn-sm gap-1" onClick={() => setConfirmSync(true)} disabled={syncing}>
+              <button className="btn btn-secondary btn-sm gap-1" onClick={handleManualSync} disabled={syncing}>
                 {syncing ? <span className="loading loading-spinner loading-xs"></span> : <Play size={14} />}
                 Đồng bộ tay
               </button>
@@ -466,15 +703,22 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
               <RefreshCw size={14} />
               Get mới nhất
             </button>
-            {versionsEmpty && (
-              <button className="btn btn-primary btn-sm gap-1" onClick={handleRefreshAll} disabled={refreshingAll}>
-                {refreshingAll ? <span className="loading loading-spinner loading-xs"></span> : <RefreshCw size={14} />}
-                Quét version từ 1Office
-              </button>
-            )}
+            <button className="btn btn-outline btn-sm gap-1" onClick={handleRefreshAll} disabled={refreshingAll}>
+              {refreshingAll ? <span className="loading loading-spinner loading-xs"></span> : <RefreshCw size={14} />}
+              Quét version từ 1Office
+            </button>
             <button className="btn btn-outline btn-sm gap-1" onClick={handleAutoMatch} disabled={!version || autoMatching} title="Tự map bộ trường cần thiết (bỏ qua field đã map)">
               {autoMatching ? <span className="loading loading-spinner loading-xs"></span> : <Sparkles size={14} />}
               Auto-match
+            </button>
+            <button
+              className="btn btn-outline btn-sm gap-1"
+              onClick={() => { setBulkSrc(version || ''); setBulkTargets(versions.filter((v) => String(v.version) !== String(version)).map((v) => String(v.version))); setBulkPreview(null); setShowBulk(true); }}
+              disabled={versions.length < 2}
+              title="Copy mapping sang nhiều version (giữ cột riêng của đích, field đổi tên tự ghép)"
+            >
+              <Copy size={14} />
+              Áp dụng hàng loạt
             </button>
             <button className="btn btn-outline btn-sm gap-1 text-error" onClick={() => setConfirmClearVersion(true)} disabled={!version || mappings.length === 0} title="Xóa hết mapping của version này">
               <Trash2 size={14} />
@@ -655,6 +899,8 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
               <div className="flex gap-2">
                 <select className="select select-bordered select-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                   <option value="">Tất cả</option>
+                  <option value="pending">Đang chờ</option>
+                  <option value="running">Đang thực hiện</option>
                   <option value="success">Thành công</option>
                   <option value="failed">Thất bại</option>
                 </select>
@@ -711,13 +957,86 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
         ))}
       </Dialog>
 
-      <ConfirmDialog
-        isOpen={confirmSync}
-        title="Đồng bộ tay lên Sheet?"
-        message="Ghi dữ liệu các version đã map lên Google Sheet (upsert theo Process ID). Tiếp tục?"
-        onConfirm={handleManualSync}
-        onCancel={() => setConfirmSync(false)}
-      />
+      <Dialog isOpen={showBulk} onClose={() => { setShowBulk(false); setBulkPreview(null); }} title="Áp dụng mapping hàng loạt">
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="form-control">
+              <label className="label"><span className="label-text font-medium">Version nguồn</span></label>
+              <select className="select select-bordered select-sm w-full" value={bulkSrc} onChange={(e) => { setBulkSrc(e.target.value); setBulkPreview(null); }}>
+                <option value="">Chọn version nguồn</option>
+                {versions.map((v) => <option key={v.version} value={v.version}>{v.template ? `${v.template}[${v.version}]` : `Ver ${v.version}`}</option>)}
+              </select>
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text font-medium">Version đích ({bulkTargets.length})</span></label>
+              <div className="border border-base-300 rounded-lg max-h-40 overflow-y-auto p-1">
+                {versions.filter((v) => String(v.version) !== String(bulkSrc)).map((v) => (
+                  <label key={v.version} className="flex items-center gap-2 px-2 py-1 hover:bg-base-200 rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-xs checkbox-primary"
+                      checked={bulkTargets.includes(String(v.version))}
+                      onChange={() => setBulkTargets((prev) => prev.includes(String(v.version)) ? prev.filter((x) => x !== String(v.version)) : [...prev, String(v.version)])}
+                    />
+                    <span className="flex-1">{v.template ? `${v.template}[${v.version}]` : `Ver ${v.version}`}</span>
+                  </label>
+                ))}
+                {versions.filter((v) => String(v.version) !== String(bulkSrc)).length === 0 && <div className="p-2 text-base-content/50 text-center">Không còn version khác</div>}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-base-content/60">Chế độ merge: giữ cột riêng của đích, chỉ thêm cột còn thiếu (giữ nguyên chữ cột nguồn). Field đổi tên (cùng node) tự ghép theo label. Sheet chỉ đổi ở lượt sync tới.</p>
+          <div className="flex gap-2">
+            <button className="btn btn-outline btn-sm gap-1" onClick={handleBulkPlan} disabled={bulkPlanning || !bulkSrc || bulkTargets.length === 0}>
+              {bulkPlanning ? <span className="loading loading-spinner loading-xs"></span> : <Eye size={14} />}
+              Xem trước
+            </button>
+            <button className="btn btn-primary btn-sm gap-1" onClick={handleBulkApply} disabled={bulkApplying || !bulkPreview}>
+              {bulkApplying ? <span className="loading loading-spinner loading-xs"></span> : <Copy size={14} />}
+              Áp dụng
+            </button>
+          </div>
+          {bulkPreview && (bulkPreview.targets || []).map((t) => (
+            <div key={t.version} className="border border-base-300 rounded-lg p-2">
+              <div className="font-medium mb-1">
+                Ver {t.version}
+                {t.error
+                  ? <span className="badge badge-error badge-sm ml-2">{t.error}</span>
+                  : <span className="text-xs text-base-content/60 ml-2">khớp {(t.matched || []).length} · chưa khớp {(t.unmatched || []).length} · giữ lại {(t.dest_only || []).length}</span>}
+              </div>
+              {!t.error && (
+                <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                  <table className="table table-xs w-full">
+                    <thead>
+                      <tr><th>Cột</th><th>Header</th><th>Nguồn</th><th>Đích</th><th>Cách</th></tr>
+                    </thead>
+                    <tbody>
+                      {(t.matched || []).map((m, i) => (
+                        <tr key={`m-${i}`}>
+                          <td className="font-mono">{m.sheet_col}</td>
+                          <td>{m.label}</td>
+                          <td className="font-mono text-xs break-all">{m.src_path}</td>
+                          <td className="font-mono text-xs break-all">{m.dst_path}</td>
+                          <td>{m.how === 'exact' ? <span className="badge badge-success badge-xs">exact</span> : <span className="badge badge-warning badge-xs" title={m.dst_label || ''}>smart{m.smart_score ? ` ${m.smart_score}` : ''}</span>}</td>
+                        </tr>
+                      ))}
+                      {(t.unmatched || []).map((m, i) => (
+                        <tr key={`u-${i}`} className="bg-error/5">
+                          <td className="font-mono">{m.sheet_col}</td>
+                          <td>{m.label}</td>
+                          <td className="font-mono text-xs break-all">{m.src_path}</td>
+                          <td><i className="text-base-content/50">map tay</i></td>
+                          <td><span className="badge badge-error badge-xs">chưa khớp</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Dialog>
 
       <ConfirmDialog
         isOpen={!!confirmDeleteCol}
@@ -739,7 +1058,7 @@ const SyncSheetPanel = ({ token, automation, view, onViewChange }) => {
 
   async function openRunDetail(row) {
     try {
-      const res = await automationService.syncRunDetail(row.id, token);
+      const res = await automationService.syncRunDetail(row.id, key, token);
       if (res.success) setViewRun(res.data);
     } catch {
       showToast('Lỗi tải chi tiết', 'error');

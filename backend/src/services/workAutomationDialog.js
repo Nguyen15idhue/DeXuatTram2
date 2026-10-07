@@ -1,3 +1,5 @@
+const https = require('https');
+const { URL } = require('url');
 const apiConfigService = require('./apiConfigService');
 
 const sessions = new Map();
@@ -12,6 +14,35 @@ const webBaseUrl = async () => {
 
 const cookieOf = (jar) => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ');
 
+const httpsRequest = (urlStr, { method = 'GET', headers = {}, body = null, timeout = 15000 } = {}) => new Promise((resolve, reject) => {
+  const u = new URL(urlStr);
+  const opts = {
+    hostname: u.hostname, port: 443, path: u.pathname + u.search, method,
+    headers: { ...headers, 'User-Agent': 'StationBot/1.0' },
+    timeout,
+  };
+  const req = https.request(opts, (res) => {
+    const chunks = [];
+    res.on('data', (c) => chunks.push(c));
+    res.on('end', () => {
+      const rawHeaders = res.rawHeaders || [];
+      const setCookie = [];
+      for (let i = 0; i < rawHeaders.length; i += 2) {
+        if (rawHeaders[i].toLowerCase() === 'set-cookie') setCookie.push(rawHeaders[i + 1]);
+      }
+      resolve({
+        status: res.statusCode,
+        headers: { get: (k) => (k.toLowerCase() === 'set-cookie' ? setCookie : res.headers[k.toLowerCase()]) || null, getSetCookie: () => setCookie },
+        body: Buffer.concat(chunks).toString('utf8'),
+      });
+    });
+  });
+  req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+  req.on('error', reject);
+  if (body) req.write(body);
+  req.end();
+});
+
 const doWebLogin = async (base, username, password) => {
   const jar = {};
   const store = (res) => {
@@ -22,17 +53,14 @@ const doWebLogin = async (base, username, password) => {
       if (i > 0) jar[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
     }
   };
-  let r = await fetch(`${base}/login`, { redirect: 'manual' });
+  let r = await httpsRequest(`${base}/login`);
   store(r);
-  await r.text();
-  r = await fetch(`${base}/login`, {
+  r = await httpsRequest(`${base}/login`, {
     method: 'POST',
-    redirect: 'manual',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Cookie: cookieOf(jar), Referer: `${base}/login` },
     body: new URLSearchParams({ username: String(username), userpwd: String(password), url_login: `${base}/login`, lang: 'vi' }).toString(),
   });
   store(r);
-  await r.text();
   if (r.status !== 302) throw Object.assign(new Error('Sai tai khoan hoac mat khau 1Office'), { statusCode: 401 });
   return jar;
 };
@@ -43,7 +71,7 @@ exports.fetchDialogValues = async (auto, processId) => {
   let passwordEnc = auto.password_enc;
   if (!username || !passwordEnc) {
     const workAutomationService = require('./workAutomationService');
-    const main = await workAutomationService.getByKey('auto_assign_process');
+    const main = await workAutomationService.getFirstByType('assign_process');
     if (main && main.username && main.password_enc) {
       username = main.username;
       passwordEnc = main.password_enc;
@@ -53,24 +81,24 @@ exports.fetchDialogValues = async (auto, processId) => {
   const workAutomationService = require('./workAutomationService');
   const password = workAutomationService.decryptSecret(passwordEnc);
   let jar = sessions.get(auto.id);
-  const get = async (j) => fetch(    `${base}/apps/work-task-task/moveprocess?ID=${processId}&app_ctx=list&_json=1&reloadCsrfToken=1&inlineLogin=1&_=${Date.now()}`,
-    { headers: { Cookie: cookieOf(j), Referer: `${base}/`, 'X-Requested-With': 'XMLHttpRequest' }, signal: AbortSignal.timeout(30000) }
+  const get = async (j) => httpsRequest(
+    `${base}/apps/work-task-task/moveprocess?ID=${processId}&app_ctx=list&_json=1&reloadCsrfToken=1&inlineLogin=1&_=${Date.now()}`,
+    { headers: { Cookie: cookieOf(j || {}), Referer: `${base}/`, 'X-Requested-With': 'XMLHttpRequest' } }
   );
-  let d = await get(jar || {});
+  let d = await get(jar);
   if (d.status === 200) {
-    const t = await d.text();
-    if (!t.includes('error_login')) {
-      if (jar) return parseValues(t);
+    if (!d.body.includes('error_login')) {
+      if (jar) return parseValues(d.body);
       jar = await doWebLogin(base, auto.username, password);
       sessions.set(auto.id, jar);
       d = await get(jar);
-      return parseValues(await d.text());
+      return parseValues(d.body);
     }
   }
   jar = await doWebLogin(base, username, password);
   sessions.set(auto.id, jar);
   d = await get(jar);
-  return parseValues(await d.text());
+  return parseValues(d.body);
 };
 
 const parseValues = (t) => {

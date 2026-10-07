@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const https = require('https');
+const { URL } = require('url');
 const pool = require('../utils/db');
 const apiConfigService = require('./apiConfigService');
 
@@ -29,6 +31,9 @@ exports.maskRow = (row) => {
   const out = { ...row };
   out.password_set = !!out.password_enc;
   out.api_token_set = !!out.api_token_enc;
+  if (out.template_process_ids && typeof out.template_process_ids === 'string') {
+    try { out.template_process_ids = JSON.parse(out.template_process_ids); } catch { out.template_process_ids = []; }
+  }
   delete out.password_enc;
   delete out.api_token_enc;
   return out;
@@ -40,8 +45,66 @@ exports.getByKey = async (key) => {
 };
 
 exports.list = async () => {
-  const [rows] = await pool.query('SELECT * FROM work_automations ORDER BY id ASC');
+  const [rows] = await pool.query('SELECT * FROM work_automations ORDER BY automation_type ASC, id ASC');
   return rows.map(exports.maskRow);
+};
+
+exports.getByType = async (type) => {
+  const [rows] = await pool.query('SELECT * FROM work_automations WHERE automation_type = ? ORDER BY id ASC', [type]);
+  return rows;
+};
+
+exports.getFirstByType = async (type) => {
+  const [rows] = await pool.query('SELECT * FROM work_automations WHERE automation_type = ? ORDER BY enabled DESC, id ASC LIMIT 1', [type]);
+  return rows.length > 0 ? rows[0] : null;
+};
+
+const AUTOMATION_TYPES = ['assign_process', 'sync_sheet'];
+const AUTOMATION_KEY_TYPE = { auto_assign_process: 'assign_process', sync_process_report: 'sync_sheet' };
+
+const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+
+exports.create = async (fields) => {
+  const {
+    automation_key, automation_type, name, enabled = 0,
+    project_code = '2', project_title, retry_max = 3, retry_interval_s = 20, find_timeout_s = 60,
+    username, note, spreadsheet_id = null, sheet_mode = 'per_version', frequency_min = 15, write_mode = 'upsert', sa_email,
+  } = fields;
+
+  if (!name || !String(name).trim()) throw Object.assign(new Error('Tên automation là bắt buộc'), { statusCode: 400 });
+
+  let type = automation_type;
+  if (!type) {
+    // Auto-detect from provided key or default to first type
+    if (automation_key) {
+      const keyType = AUTOMATION_KEY_TYPE[automation_key];
+      if (keyType) type = keyType;
+    }
+    if (!type) type = 'sync_sheet'; // default type for new automation
+  }
+  if (!AUTOMATION_TYPES.includes(type)) throw Object.assign(new Error('automation_type không hợp lệ'), { statusCode: 400 });
+
+  // Always generate a unique key; if user provided key that already exists as a seed type,
+  // suffix it to avoid collision and create new row
+  let key = automation_key || `${type}_${slug(name) || 'auto'}`;
+  const [dup] = await pool.query('SELECT id FROM work_automations WHERE automation_key = ?', [key]);
+  if (dup.length > 0) {
+    // If the key matches a known seed type, suffix to create new row
+    const seedKeys = ['auto_assign_process', 'sync_process_report'];
+    if (seedKeys.includes(key)) {
+      key = `${key}_${Date.now().toString(36)}`;
+    } else {
+      // For custom keys, still make unique via counter-style suffix
+      key = `${key}_${Date.now().toString(36)}`;
+    }
+  }
+
+  const cols = ['automation_key', 'automation_type', 'name', 'enabled', 'project_code', 'project_title', 'retry_max', 'retry_interval_s', 'find_timeout_s', 'username', 'note', 'spreadsheet_id', 'sheet_mode', 'frequency_min', 'template_scan_hours', 'write_mode', 'sa_email'];
+  const params = [key, type, String(name).trim(), enabled ? 1 : 0, project_code, project_title || null, retry_max, retry_interval_s, find_timeout_s, username || null, note || null, spreadsheet_id || null, sheet_mode, frequency_min, fields.template_scan_hours || 24, write_mode, sa_email || null];
+
+  const [r] = await pool.query(`INSERT INTO work_automations (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, params);
+  const [rows] = await pool.query('SELECT * FROM work_automations WHERE id = ?', [r.insertId]);
+  return exports.maskRow(rows[0]);
 };
 
 exports.updateByKey = async (key, fields) => {
@@ -49,14 +112,19 @@ exports.updateByKey = async (key, fields) => {
   if (!existing) throw Object.assign(new Error('Khong tim thay automation'), { statusCode: 404 });
   const cols = [];
   const params = [];
-  const allow = { enabled: 1, project_code: 1, project_title: 1, retry_max: 1, retry_interval_s: 1, find_timeout_s: 1, username: 1, note: 1, spreadsheet_id: 1, sheet_mode: 1, frequency_min: 1, write_mode: 1, sa_email: 1 };
+  const allow = { name: 1, enabled: 1, project_code: 1, project_title: 1, retry_max: 1, retry_interval_s: 1, find_timeout_s: 1, username: 1, note: 1, spreadsheet_id: 1, sheet_mode: 1, frequency_min: 1, template_scan_hours: 1, write_mode: 1, sa_email: 1, template_process_ids: 1 };
   for (const [k, v] of Object.entries(fields)) {
     if (!allow[k]) continue;
-    if ((k === 'frequency_min') || (k === 'retry_max') || (k === 'retry_interval_s') || (k === 'find_timeout_s')) {
+    if ((k === 'frequency_min') || (k === 'retry_max') || (k === 'retry_interval_s') || (k === 'find_timeout_s') || (k === 'template_scan_hours')) {
       const n = parseInt(v, 10);
       if (!Number.isFinite(n) || n < 1) continue;
       cols.push(`\`${k}\` = ?`);
       params.push(n);
+      continue;
+    }
+    if (k === 'template_process_ids') {
+      cols.push('`template_process_ids` = ?');
+      params.push(Array.isArray(v) ? JSON.stringify(v) : (v || null));
       continue;
     }
     cols.push(`\`${k}\` = ?`);
@@ -88,6 +156,35 @@ const webBaseUrl = async () => {
 
 const cookieOf = (jar) => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ');
 
+const httpsRequest = (urlStr, { method = 'GET', headers = {}, body = null, timeout = 15000 } = {}) => new Promise((resolve, reject) => {
+  const u = new URL(urlStr);
+  const opts = {
+    hostname: u.hostname, port: 443, path: u.pathname + u.search, method,
+    headers: { ...headers, 'User-Agent': 'StationBot/1.0' },
+    timeout,
+  };
+  const req = https.request(opts, (res) => {
+    const chunks = [];
+    res.on('data', (c) => chunks.push(c));
+    res.on('end', () => {
+      const rawHeaders = res.rawHeaders || [];
+      const setCookie = [];
+      for (let i = 0; i < rawHeaders.length; i += 2) {
+        if (rawHeaders[i].toLowerCase() === 'set-cookie') setCookie.push(rawHeaders[i + 1]);
+      }
+      resolve({
+        status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300,
+        headers: { get: (k) => (k.toLowerCase() === 'set-cookie' ? setCookie : res.headers[k.toLowerCase()]) || null, getSetCookie: () => setCookie },
+        body: Buffer.concat(chunks).toString('utf8'),
+      });
+    });
+  });
+  req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+  req.on('error', reject);
+  if (body) req.write(body);
+  req.end();
+});
+
 const doWebLogin = async (base, username, password) => {
   const jar = {};
   const store = (res) => {
@@ -98,21 +195,17 @@ const doWebLogin = async (base, username, password) => {
       if (i > 0) jar[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
     }
   };
-  let r = await fetch(`${base}/login`, { redirect: 'manual' });
+  let r = await httpsRequest(`${base}/login`);
   store(r);
-  await r.text();
-  r = await fetch(`${base}/login`, {
+  r = await httpsRequest(`${base}/login`, {
     method: 'POST',
-    redirect: 'manual',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Cookie: cookieOf(jar), Referer: `${base}/login` },
     body: new URLSearchParams({ username: String(username), userpwd: String(password), url_login: `${base}/login`, lang: 'vi' }).toString(),
   });
   store(r);
-  await r.text();
   if (r.status !== 302) throw Object.assign(new Error('Sai tai khoan hoac mat khau 1Office'), { statusCode: 401 });
-  const v = await fetch(`${base}/apps`, { redirect: 'manual', headers: { Cookie: cookieOf(jar) } });
-  const vt = await v.text();
-  if (v.status !== 200 || vt.includes('form-login')) throw Object.assign(new Error('Phien dang nhap 1Office khong hop le'), { statusCode: 401 });
+  const v = await httpsRequest(`${base}/apps`, { headers: { Cookie: cookieOf(jar) } });
+  if (v.status !== 200 || v.body.includes('form-login')) throw Object.assign(new Error('Phien dang nhap 1Office khong hop le'), { statusCode: 401 });
   return jar;
 };
 
@@ -122,8 +215,8 @@ exports.testLogin = async ({ username, password, apiToken } = {}) => {
   const jar = await doWebLogin(base, username, password);
   let apiOk = null;
   if (apiToken) {
-    const r = await fetch(`${base}/api/work/process/gets?access_token=${encodeURIComponent(apiToken)}&limit=1&page=1`, { headers: { Cookie: cookieOf(jar) } });
-    const j = await r.json().catch(() => ({}));
+    const r = await httpsRequest(`${base}/api/work/process/gets?access_token=${encodeURIComponent(apiToken)}&limit=1&page=1`, { headers: { Cookie: cookieOf(jar) } });
+    const j = JSON.parse(r.body || '{}');
     apiOk = r.ok && j && j.error === false;
     if (!apiOk) throw Object.assign(new Error('Work API token khong dung duoc (kiem tra quyen object work)'), { statusCode: 401 });
   }
@@ -174,19 +267,13 @@ exports.resolveProjectId = async (apiToken, projectCode) => {
 
 exports.moveProcessToProject = async (auto, processId, projectNumericId, reloginOnce = true) => {
   const { base, jar } = await ensureSession(auto);
-  const fd = new FormData();
-  fd.append('ID', String(processId));
-  fd.append('project_id', String(projectNumericId));
-  fd.append('parent_id', '');
-  fd.append('', '');
-  fd.append('inlineLogin', '1');
-  const r = await fetch(`${base}/apps/work-task-task/moveprocess?_json=1`, {
+  const body = new URLSearchParams({ ID: String(processId), project_id: String(projectNumericId), parent_id: '', inlineLogin: '1' }).toString();
+  const r = await httpsRequest(`${base}/apps/work-task-task/moveprocess?_json=1`, {
     method: 'POST',
-    headers: { Cookie: cookieOf(jar), Referer: `${base}/`, 'X-Requested-With': 'XMLHttpRequest' },
-    body: fd,
-    signal: AbortSignal.timeout(30000),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Cookie: cookieOf(jar), Referer: `${base}/`, 'X-Requested-With': 'XMLHttpRequest' },
+    body,
   });
-  const j = await r.json().catch(() => ({}));
+  const j = JSON.parse(r.body || '{}');
   if (j && j.error_login && reloginOnce) {
     sessions.delete(auto.id);
     return exports.moveProcessToProject(auto, processId, projectNumericId, false);
@@ -240,7 +327,8 @@ const notifyFailed = async (run, reason) => {
 };
 
 const processOneRun = async (run) => {
-  const auto = await exports.getByKey('auto_assign_process');
+  const [arows] = await pool.query('SELECT * FROM work_automations WHERE id = ?', [run.automation_id]);
+  const auto = arows.length ? arows[0] : null;
   if (!auto || !auto.enabled) {
     await finishRun(run.id, { status: 'skipped', error: 'Automation dang tat' });
     return { id: run.id, status: 'skipped' };
@@ -298,8 +386,8 @@ const processOneRun = async (run) => {
 exports.processDueRuns = async () => {
   const [runs] = await pool.query(
     `SELECT r.* FROM work_automation_runs r JOIN work_automations a ON a.id = r.automation_id
-     WHERE a.automation_key = 'auto_assign_process' AND r.status IN ('pending','running')
-       AND r.updated_at <= DATE_SUB(NOW(), INTERVAL (SELECT retry_interval_s FROM work_automations WHERE automation_key = 'auto_assign_process') SECOND)
+     WHERE a.automation_type = 'assign_process' AND a.enabled = 1 AND r.status IN ('pending','running')
+       AND r.updated_at <= DATE_SUB(NOW(), INTERVAL a.retry_interval_s SECOND)
      ORDER BY r.id ASC LIMIT 10`
   );
   const out = [];
@@ -315,8 +403,10 @@ exports.processDueRuns = async () => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-exports.runManual = async (proposalCode) => {
-  const auto = await exports.getByKey('auto_assign_process');
+exports.runManual = async (proposalCode, key) => {
+  let auto;
+  if (key) auto = await exports.getByKey(key);
+  if (!auto) auto = await exports.getFirstByType('assign_process');
   if (!auto) throw Object.assign(new Error('Khong tim thay automation'), { statusCode: 404 });
   const code = String(proposalCode || '').trim();
   if (!code) throw Object.assign(new Error('Thieu ma de xuat'), { statusCode: 400 });
