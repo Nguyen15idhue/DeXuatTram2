@@ -89,13 +89,16 @@ exports.update = async (req, res) => {
       });
     } catch { /* silent */ }
     try {
+      const journeySyncService = require('../services/journeySyncService');
+      const actorArgs = {
+        actorId: req.user ? req.user.id : null, actorRole: req.user ? req.user.role : null,
+        source: 'user', ip: req.ip || null
+      };
       if (existing.status !== station.status) {
-        const journeySyncService = require('../services/journeySyncService');
-        await journeySyncService.onStationStatus(id, {
-          from: existing.status, to: station.status,
-          actorId: req.user ? req.user.id : null, actorRole: req.user ? req.user.role : null,
-          source: 'user', ip: req.ip || null
-        });
+        await journeySyncService.onStationStatus(id, { from: existing.status, to: station.status, ...actorArgs });
+      } else {
+        const keys = Object.keys(req.body || {});
+        if (keys.length > 0) await journeySyncService.onStationUpdated(id, { changedFields: { keys }, ...actorArgs });
       }
     } catch { /* silent */ }
     res.json({ success: true, data: station, message: 'Cập nhật trạm thành công' });

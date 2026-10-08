@@ -185,6 +185,11 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
         actorId: userId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
+      const journeySyncService = require('./journeySyncService');
+      await journeySyncService.onProposalUpdated(id, {
+        changedFields: diff, actorId: userId, actorRole: opts.actorRole || null,
+        source: 'user', ip: opts.ip || null
+      });
     }
     if (wasRejected) {
       await proposalLifecycle.logActivity({

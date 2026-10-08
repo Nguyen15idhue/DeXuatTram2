@@ -73,6 +73,26 @@ exports.onProposalTransition = async (proposalId, { from, to, actorId, actorRole
   } catch { return null; }
 };
 
+exports.onProposalUpdated = async (proposalId, { changedFields, actorId, actorRole, source, ip } = {}) => {
+  try {
+    const [rows] = await pool.query('SELECT journey_id FROM station_proposals WHERE id = ? LIMIT 1', [proposalId]);
+    const journeyId = rows[0] && rows[0].journey_id;
+    if (!journeyId) return null;
+    await journeyActivityService.log({
+      journey_id: journeyId,
+      entity_type: 'proposal',
+      entity_id: proposalId,
+      action: 'proposal_updated',
+      changed_fields: changedFields || null,
+      actor_id: actorId || null,
+      actor_role: actorRole || null,
+      source: source || 'user',
+      ip: ip || null,
+    });
+    return journeyId;
+  } catch { return null; }
+};
+
 const findJourneyByStation = async (stationId, conn = pool) => {
   const [rows] = await conn.query(
     'SELECT journey_id FROM station_proposals WHERE station_id = ? AND journey_id IS NOT NULL ORDER BY id ASC LIMIT 1',
@@ -129,6 +149,25 @@ exports.onStationStatus = async (stationId, { from, to, actorId, actorRole, sour
       }
     }
     return await exports.recomputeStage(journeyId);
+  } catch { return null; }
+};
+
+exports.onStationUpdated = async (stationId, { changedFields, actorId, actorRole, source, ip } = {}) => {
+  try {
+    const journeyId = await findJourneyByStation(stationId);
+    if (!journeyId) return null;
+    await journeyActivityService.log({
+      journey_id: journeyId,
+      entity_type: 'station',
+      entity_id: stationId,
+      action: 'station_updated',
+      changed_fields: changedFields || null,
+      actor_id: actorId || null,
+      actor_role: actorRole || null,
+      source: source || 'user',
+      ip: ip || null,
+    });
+    return journeyId;
   } catch { return null; }
 };
 

@@ -8,8 +8,10 @@ const ACTION_LABEL = {
   classification_changed: 'Đổi phân loại',
   stage_changed: 'Đổi giai đoạn',
   proposal_created: 'Tạo đề xuất',
+  proposal_updated: 'Cập nhật đề xuất',
   proposal_status_changed: 'Đổi trạng thái đề xuất',
   station_created: 'Tạo trạm',
+  station_updated: 'Cập nhật trạm',
   station_status_changed: 'Đổi trạng thái trạm'
 };
 
@@ -20,8 +22,10 @@ const ACTION_COLOR = {
   classification_changed: '#14b8a6',
   stage_changed: '#8b5cf6',
   proposal_created: '#22c55e',
+  proposal_updated: '#2563eb',
   proposal_status_changed: '#3b82f6',
   station_created: '#0d9488',
+  station_updated: '#0891b2',
   station_status_changed: '#16a34a'
 };
 

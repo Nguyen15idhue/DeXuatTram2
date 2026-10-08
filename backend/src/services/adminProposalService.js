@@ -290,6 +290,11 @@ exports.updateProposal = async (id, data, opts = {}) => {
         actorId: opts.actorId || null, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
+      const journeySyncService = require('./journeySyncService');
+      await journeySyncService.onProposalUpdated(id, {
+        changedFields: diff, actorId: opts.actorId || null, actorRole: opts.actorRole || null,
+        source: 'user', ip: opts.ip || null
+      });
     }
   } catch { /* silent: khong chan luu vi log */ }
 

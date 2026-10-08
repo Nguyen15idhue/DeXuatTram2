@@ -424,6 +424,16 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     }
   });
 
+  const beforeCd = parseCustomData(lead.custom_data);
+  const afterCd = parseCustomData(after.custom_data);
+  ['cskh_history', 'cskh_note', 'tvbh_history', 'tvbh_note'].forEach((k) => {
+    const b = beforeCd[k] ?? null;
+    const a = afterCd[k] ?? null;
+    if (JSON.stringify(b) !== JSON.stringify(a)) {
+      changed[k] = { from: b, to: a };
+    }
+  });
+
   const assigneeChanged = patch.assigned_user_id !== undefined &&
     Number(patch.assigned_user_id || 0) !== Number(lead.assigned_user_id || 0);
   if (assigneeChanged) {

@@ -41,6 +41,7 @@ const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage')
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'];
+const DASHBOARD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 const HIDE_ASSISTANT_PATHS = ['/login', '/register', '/map'];
 
 import './App.css';
@@ -77,7 +78,7 @@ function App() {
           </Route>
 
           <Route element={<AdminLayout />}>
-            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin" element={<RoleRoute allowed={DASHBOARD_ROLES} redirectTo="/admin/leads"><AdminDashboard /></RoleRoute>} />
             <Route path="/admin/leads" element={<RoleRoute allowed={LEAD_ROLES}><AdminLeadsPage /></RoleRoute>} />
             <Route path="/admin/leads/*" element={<RoleRoute allowed={LEAD_ROLES}><AdminLeadsPage /></RoleRoute>} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
