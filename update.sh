@@ -22,25 +22,23 @@ if ! docker compose -f "$COMPOSE_FILE" build; then
   COMPOSE_BAKE=false DOCKER_BUILDKIT=0 docker compose -f "$COMPOSE_FILE" build
 fi
 
-echo "[update] Khoi dong lai..."
+echo "[update] Khoi dong lai (backend, frontend, mysql)..."
 docker compose -f "$COMPOSE_FILE" up -d
 
-echo "[update] Seed template bao cao BCX (best-effort, bo qua neu da co)..."
-sleep 5
-docker compose -f "$COMPOSE_FILE" exec -T backend node scripts/seed-document-templates.js \
-  || echo "[update] Canh bao: seed template BCX that bai (bo qua)."
+# Cac buoc phu (seed template BCX + index kho tri thuc chatbot) MAC DINH TAT.
+# Bat khi can: RUN_EXTRAS=1 ./update.sh
+if [ "${RUN_EXTRAS:-0}" = "1" ]; then
+  echo "[update] Seed template bao cao BCX (best-effort, bo qua neu da co)..."
+  sleep 5
+  docker compose -f "$COMPOSE_FILE" exec -T backend node scripts/seed-document-templates.js \
+    || echo "[update] Canh bao: seed template BCX that bai (bo qua)."
 
-if [ "${SKIP_INDEX:-0}" = "1" ]; then
-  echo "[update] Bo qua index chatbot (SKIP_INDEX=1)."
-else
   echo "[update] Index kho tri thuc chatbot (best-effort, toi da ${INDEX_TIMEOUT:-600}s/script)..."
   INDEX_TIMEOUT="${INDEX_TIMEOUT:-600}"
   if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
     (cd backend && echo "[update] > index-knowledge.js ..." && timeout "$INDEX_TIMEOUT" node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai/qua han (bo qua)."
     (cd backend && echo "[update] > index-code-knowledge.js ..." && timeout "$INDEX_TIMEOUT" node scripts/index-code-knowledge.js) || echo "[update] Canh bao: index-code-knowledge that bai/qua han (bo qua)."
   elif docker compose -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
-    # VPS: host khong co node_modules -> chay trong container backend (co san node_modules),
-    # mount ca repo de script thay AGENTS.md + docs/ + frontend/src.
     echo "[update] Chay index trong container backend (mount repo)..."
     run_index() {
       local script="$1"
@@ -55,6 +53,8 @@ else
   else
     echo "[update] Bo qua index chatbot (khong co node host va khong chay duoc container)."
   fi
+else
+  echo "[update] Bo qua seed template + index chatbot (dat RUN_EXTRAS=1 de chay)."
 fi
 
 echo "Da cap nhat. Log: docker compose -f $COMPOSE_FILE logs -f"
