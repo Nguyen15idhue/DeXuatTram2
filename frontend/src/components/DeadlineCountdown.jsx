@@ -18,7 +18,8 @@ export const formatCountdown = (deadline) => {
   return { overdue: false, text: `${pad(d)} ngày ${pad(h)}:${pad(m)}:${pad(s)}`, under24h: diff <= 86400000 };
 };
 
-const FALLBACK_FLAGS = { supplement: true, transition: false };
+const FALLBACK_FLAGS = { supplement: false, transition: true };
+const DISABLED_FLAGS = { supplement: false, transition: false };
 
 const DeadlineCountdown = ({ deadline, transitionDeadline = null, status, compact = false, completedAt = null }) => {
   const [, setNow] = useState(Date.now());
@@ -40,7 +41,7 @@ const DeadlineCountdown = ({ deadline, transitionDeadline = null, status, compac
     return () => clearInterval(t);
   }, [deadline, transitionDeadline]);
 
-  const flag = (flags && flags[status]) || FALLBACK_FLAGS;
+  const flag = flags ? (flags[status] || DISABLED_FLAGS) : FALLBACK_FLAGS;
   const items = [];
   if (flag.supplement && deadline && !completedAt) items.push({ kind: 'supplement', deadline, label: 'bổ sung thông tin' });
   if (flag.transition && transitionDeadline) items.push({ kind: 'transition', deadline: transitionDeadline, label: 'chuyển trạng thái tiếp theo' });

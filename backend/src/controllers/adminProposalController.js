@@ -184,18 +184,30 @@ exports.update = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
-    await adminProposalService.updateProposal(id, req.body, {
+    const updated = await adminProposalService.updateProposal(id, req.body, {
       actorId: req.user.id,
       actorRole: req.user.role || null,
       ip: req.ip || null
     });
     const proposal = await adminProposalService.getProposalWithUser(id);
-    res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
+    res.json({ success: true, data: proposal, autoPush: (updated && updated.autoPush) || null, infoCompleted: (updated && updated.infoCompleted) || null, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
     console.error('Admin update proposal error:', error);
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });
     }
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.confirmInfoBatch = async (req, res) => {
+  try {
+    const raw = parseInt(req.body && req.body.limit, 10);
+    const limit = Math.min(Math.max(Number.isFinite(raw) ? raw : 500, 1), 2000);
+    const report = await adminProposalService.batchAutoConfirm({ limit, actorId: req.user.id });
+    res.json({ success: true, data: report, message: 'Đã quét xác nhận đủ thông tin' });
+  } catch (error) {
+    console.error('Admin confirm-info batch error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

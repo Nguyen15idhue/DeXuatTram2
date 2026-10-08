@@ -40,12 +40,12 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING hoặc Duyệt chủ trương' });
     }
 
-    await myProposalService.updateProposal(id, req.user.id, req.body, {
+    const updated = await myProposalService.updateProposal(id, req.user.id, req.body, {
       actorRole: req.user.role || null,
       ip: req.ip || null
     });
     const proposal = await myProposalService.getProposalById(id);
-    res.json({ success: true, data: proposal, message: 'Cập nhật đề xuất thành công' });
+    res.json({ success: true, data: proposal, autoPush: (updated && updated.autoPush) || null, infoCompleted: (updated && updated.infoCompleted) || null, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
     console.error('Update my proposal error:', error);
     if (error.statusCode) {

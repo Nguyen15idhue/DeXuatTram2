@@ -12,13 +12,14 @@ import { MapPinned, History, AlertTriangle, CheckCircle2, Eye, Hash } from 'luci
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import ConfirmDialog from '../ConfirmDialog';
 import ExtendDeadlineDialog from './ExtendDeadlineDialog';
-import { loadCountdownConfig, getSupplementStatuses, COUNTDOWN_CONFIG_EVENT, FALLBACK_SUPPLEMENT_STATUSES } from '../../utils/countdownConfig';
+import { loadCountdownConfig, getSupplementStatuses, getCountdownFlags, COUNTDOWN_CONFIG_EVENT, FALLBACK_SUPPLEMENT_STATUSES } from '../../utils/countdownConfig';
 import useDataListMap from '../../hooks/useDataListMap';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import DeadlineCountdown from '../DeadlineCountdown';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import Toast from '../Toast';
 import { computeFormulaValue } from '../../utils/formulaEngine';
+import { pollSyncJobs, buildPushDoneMessage } from '../../utils/syncJobPoll';
 
 const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
 
@@ -66,8 +67,10 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [formErrors, setFormErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [confirmStatuses, setConfirmStatuses] = useState(FALLBACK_SUPPLEMENT_STATUSES);
+  const [countdownFlags, setCountdownFlags] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ open: false, action: null });
   const [confirming, setConfirming] = useState(false);
+  const syncPollRef = useRef(null);
   const [extendOpen, setExtendOpen] = useState(false);
   const [extending, setExtending] = useState(false);
   const [extendLimits, setExtendLimits] = useState(null);
@@ -112,9 +115,17 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
 
   useEffect(() => {
     let cancelled = false;
-    loadCountdownConfig().then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getSupplementStatuses(cfg)); });
+    loadCountdownConfig().then((cfg) => {
+      if (cancelled || !cfg) return;
+      setConfirmStatuses(getSupplementStatuses(cfg));
+      setCountdownFlags(getCountdownFlags(cfg));
+    });
     const refresh = () => {
-      loadCountdownConfig(true).then((cfg) => { if (!cancelled && cfg) setConfirmStatuses(getSupplementStatuses(cfg)); });
+      loadCountdownConfig(true).then((cfg) => {
+        if (cancelled || !cfg) return;
+        setConfirmStatuses(getSupplementStatuses(cfg));
+        setCountdownFlags(getCountdownFlags(cfg));
+      });
     };
     window.addEventListener(COUNTDOWN_CONFIG_EVENT, refresh);
     return () => { cancelled = true; window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refresh); };
@@ -289,6 +300,13 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     && confirmStatuses.includes(record.status)
     && allowEdit;
   const infoCompleted = !!(record && record.info_completed_at);
+  // Gia hạn chỉ hiện khi record còn deadline ĐANG bật theo config (extendDeadline BE
+  // cũng chỉ chấp nhận status có countdown) -> tránh bấm ra lỗi 400.
+  const flagNow = record && countdownFlags ? countdownFlags[record.status] : null;
+  const futureMs = (v) => v && !Number.isNaN(new Date(v).getTime()) && new Date(v).getTime() > Date.now();
+  const canExtend = !!flagNow
+    && ((flagNow.supplement && futureMs(record.supplement_deadline_at))
+      || (flagNow.transition && futureMs(record.transition_deadline_at)));
 
   const handleInfoAction = async () => {
     const action = confirmDialog.action;
@@ -390,6 +408,10 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     } catch { return field.options || []; }
   };
 
+  useEffect(() => () => {
+    if (syncPollRef.current) clearInterval(syncPollRef.current);
+  }, []);
+
   const handleSave = async () => {
     try {
       setError('');
@@ -435,11 +457,40 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
             msg = 'Đã lưu nội dung nhưng gửi lại thất bại — hãy thử lại';
           }
         }
-        setToast({ message: msg, type: 'success' });
+        const auto = res.autoPush;
+        let toastMsg = msg;
+        let toastType = 'success';
+        if (auto && auto.queued) {
+          toastMsg += ' — đã tạo lệnh đẩy sang 1Office';
+          const preWarns = auto.warnings || [];
+          if (preWarns.length > 0) {
+            toastMsg += ` — lưu ý: ${preWarns.slice(0, 3).join('; ')}${preWarns.length > 3 ? ` (+${preWarns.length - 3})` : ''}`;
+            toastType = 'warning';
+          }
+        } else if (auto && !auto.queued && auto.reason) {
+          toastMsg += ` — chưa đẩy được sang 1Office (${auto.reason})`;
+          toastType = 'warning';
+        }
+        if (res.infoCompleted && res.infoCompleted.confirmed) {
+          toastMsg += ' · Đã tự xác nhận đủ thông tin';
+        }
+        setToast({ message: toastMsg, type: toastType });
         setRecord({ ...record, ...formData, ...saved });
         setMode('view');
         notifyBellRefresh();
         if (onSaved) onSaved();
+        if (auto && auto.queued && auto.jobId) {
+          if (syncPollRef.current) clearInterval(syncPollRef.current);
+          syncPollRef.current = pollSyncJobs({
+            jobIds: [auto.jobId],
+            token,
+            onDone: (jobs) => {
+              syncPollRef.current = null;
+              const r = buildPushDoneMessage(jobs);
+              setToast({ message: r.msg, type: r.type });
+            }
+          });
+        }
       } else {
         setError(res.message || 'Lỗi cập nhật');
       }
@@ -841,13 +892,15 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                   >
                     Mở lại để bổ sung
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline"
-                    onClick={openExtend}
-                  >
-                    Gia hạn
-                  </button>
+                  {canExtend && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      onClick={openExtend}
+                    >
+                      Gia hạn
+                    </button>
+                  )}
                 </span>
               </>
             ) : (
@@ -862,13 +915,15 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                   >
                     Xác nhận đã đủ thông tin
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline"
-                    onClick={openExtend}
-                  >
-                    Gia hạn
-                  </button>
+                  {canExtend && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      onClick={openExtend}
+                    >
+                      Gia hạn
+                    </button>
+                  )}
                 </span>
               </>
             )}

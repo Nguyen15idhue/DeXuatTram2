@@ -22,11 +22,13 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
   const checkIntraFile = params.checkIntraFile !== false && params.checkIntraFile !== 'false';
 
   let importSupplementMinutes = 4320;
+  let importTransitionMinutes = null;
   if (entity === 'station_proposals') {
     try {
       const proposalLifecycle = require('./proposalLifecycle');
       const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
       importSupplementMinutes = Math.max(1, Number(configured) || 4320);
+      importTransitionMinutes = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
     } catch { /* silent */ }
   }
 
@@ -220,8 +222,8 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
         );
         if (entity === 'station_proposals') {
           await pool.query(
-            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?',
-            [importSupplementMinutes, result.insertId]
+            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)) WHERE id = ?',
+            [importSupplementMinutes, importTransitionMinutes, importTransitionMinutes, result.insertId]
           );
         }
 

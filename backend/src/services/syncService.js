@@ -129,6 +129,97 @@ exports.getUnlinkedPushUserWarnings = async (proposal, fieldDefs) => {
   return warnings;
 };
 
+const buildPushRequestPayload = async (proposal, ctx) => {
+  const { apiConfigId, pushMappings, fieldDefs, system, setStatus } = ctx;
+  const missingUserFields = await exports.getMissingPushUserFieldLabels(proposal, fieldDefs);
+  if (missingUserFields.length > 0) {
+    return { ok: false, error: `Thiếu ${missingUserFields.map(l => `"${l}"`).join(', ')}` };
+  }
+
+  const unlinkedWarnings = await exports.getUnlinkedPushUserWarnings(proposal, fieldDefs);
+  const isLinked = !!proposal.contact_1office_code;
+
+  const contactData = {};
+  const warnings = unlinkedWarnings.map(w => `${w.label} (${w.userName}) chưa liên kết 1Office`);
+  const droppedFields = [];
+  const labelOf = (key) => {
+    const d = (fieldDefs || []).find(f => f.key === key);
+    return (d && d.label) || key;
+  };
+  const userMapInfo = await fieldMapper.getUserMapInfo(system);
+  for (const mapping of pushMappings) {
+    const value = proposal[mapping.source_field] || (proposal.custom_data && proposal.custom_data[mapping.source_field]);
+    if (mapping.target_field_type === 'user' && value !== null && value !== undefined && value !== '') {
+      const internalId = fieldMapper.resolveUserId(value);
+      if (internalId) {
+        try {
+          const ext = await adminUserService.findExternalByUser(internalId, system);
+          if (ext && userMapInfo.noAccount && userMapInfo.noAccount.has(String(ext))) {
+            warnings.push(`${mapping.target_field}: nhân sự (personnel_id ${ext}) chưa có tài khoản 1Office nên 1Office sẽ bỏ qua`);
+          }
+        } catch { /* silent */ }
+      }
+    }
+    const transformed = await fieldMapper.transformPush(value, mapping, system, apiConfigId);
+    if (transformed !== null && transformed !== undefined) {
+      contactData[mapping.target_field] = transformed;
+    } else if (value !== null && value !== undefined && value !== '') {
+      const label = labelOf(mapping.source_field);
+      droppedFields.push({ label, target: mapping.target_field });
+      warnings.push(`"${label}" có dữ liệu nhưng không đẩy được sang 1Office (sai định dạng/không liên kết)`);
+    }
+  }
+  try {
+    const files = await fileSyncService.loadFiles(proposal.id);
+    const broken = files.filter(f => {
+      try {
+        const st = require('fs').statSync(require('path').join(__dirname, '../../storage/uploads', f.storage_key));
+        return st.size > 10 * 1024 * 1024;
+      } catch { return true; }
+    });
+    broken.forEach(f => warnings.push(`File "${f.original_name}" lỗi/thiếu trên server, sẽ bị bỏ qua khi đẩy`));
+  } catch { /* silent: worker se bao chi tiet */ }
+
+  if (!contactData.code) {
+    contactData.code = proposal.tracking_code || `DXS_${proposal.id}`;
+  }
+  if (isLinked) {
+    contactData.code = proposal.contact_1office_code;
+  }
+  if (!contactData.name) {
+    contactData.name = proposal.owner_name || `Đề xuất #${proposal.id}`;
+  }
+  if (!contactData.type) {
+    contactData.type = '0';
+  }
+
+  let descHtml = '';
+  try {
+    descHtml = await templateService.render(proposal, apiConfigId);
+  } catch (err) {
+    console.error('[Sync] Error rendering desc template:', err.message);
+    descHtml = proposal.description || '';
+  }
+  contactData.desc = descHtml;
+
+  const missingRequired = [];
+  if (!contactData.code) missingRequired.push('Mã (code)');
+  if (!contactData.name) missingRequired.push('Tên (name)');
+  if (!contactData.type) missingRequired.push('Loại (type)');
+  if (missingRequired.length > 0) {
+    return { ok: false, error: `Thiếu trường bắt buộc: ${missingRequired.join(', ')}` };
+  }
+
+  return {
+    ok: true,
+    requestPayload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposal.id, was_linked: isLinked, previous_contact_id: proposal.contact_1office_id || null, set_status: setStatus },
+    contactData,
+    warnings,
+    droppedFields,
+    isUpdate: isLinked
+  };
+};
+
 exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
   const config = await apiConfigService.getById(apiConfigId);
   if (!config) throw Object.assign(new Error('Không tìm thấy cấu hình API'), { statusCode: 404 });
@@ -140,6 +231,7 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
   const pushMappings = mappings.filter(m => m.sync_enabled && (m.direction === 'push' || m.direction === 'both') && !fieldMapper.isSpecialTarget(m.target_field));
   const system = (config && config.system_key) || '1office';
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const buildCtx = { apiConfigId, pushMappings, fieldDefs, system, setStatus };
 
   const results = [];
   for (const proposalId of proposalIds) {
@@ -155,96 +247,42 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
     }
 
     const [pendingJobs] = await pool.query(
-      `SELECT id FROM api_queue_logs
+      `SELECT id, status, request_payload FROM api_queue_logs
        WHERE action = 'push' AND entity_type = 'station_proposals' AND entity_id = ?
          AND api_config_id <=> ? AND status IN ('pending', 'processing')
        ORDER BY id DESC LIMIT 1`,
       [proposalId, apiConfigId]
     );
     if (pendingJobs.length > 0) {
-      results.push({ proposalId, success: true, jobId: pendingJobs[0].id, deduped: true, isUpdate: !!proposal.contact_1office_code, warnings: [], droppedFields: [] });
-      continue;
-    }
-
-    const missingUserFields = await exports.getMissingPushUserFieldLabels(proposal, fieldDefs);
-    if (missingUserFields.length > 0) {
-      results.push({ proposalId, success: false, error: `Thiếu ${missingUserFields.map(l => `"${l}"`).join(', ')}` });
-      continue;
-    }
-
-    const unlinkedWarnings = await exports.getUnlinkedPushUserWarnings(proposal, fieldDefs);
-    const isLinked = !!proposal.contact_1office_code;
-
-    const contactData = {};
-    const warnings = unlinkedWarnings.map(w => `${w.label} (${w.userName}) chưa liên kết 1Office`);
-    const droppedFields = [];
-    const labelOf = (key) => {
-      const d = (fieldDefs || []).find(f => f.key === key);
-      return (d && d.label) || key;
-    };
-    const userMapInfo = await fieldMapper.getUserMapInfo(system);
-    for (const mapping of pushMappings) {
-      const value = proposal[mapping.source_field] || (proposal.custom_data && proposal.custom_data[mapping.source_field]);
-      if (mapping.target_field_type === 'user' && value !== null && value !== undefined && value !== '') {
-        const internalId = fieldMapper.resolveUserId(value);
-        if (internalId) {
-          try {
-            const ext = await adminUserService.findExternalByUser(internalId, system);
-            if (ext && userMapInfo.noAccount && userMapInfo.noAccount.has(String(ext))) {
-              warnings.push(`${mapping.target_field}: nhân sự (personnel_id ${ext}) chưa có tài khoản 1Office nên 1Office sẽ bỏ qua`);
+      const pendingJob = pendingJobs[0];
+      let payloadRefreshed = false;
+      if (pendingJob.status === 'pending') {
+        try {
+          const fresh = await buildPushRequestPayload(proposal, buildCtx);
+          if (fresh.ok) {
+            let oldPayload = pendingJob.request_payload;
+            if (typeof oldPayload === 'string') {
+              try { oldPayload = JSON.parse(oldPayload); } catch { oldPayload = null; }
             }
-          } catch { /* silent */ }
+            const payload = { ...fresh.requestPayload };
+            if (!payload.set_status && oldPayload && oldPayload.set_status) payload.set_status = oldPayload.set_status;
+            const [upd] = await pool.query(
+              `UPDATE api_queue_logs SET request_payload = ? WHERE id = ? AND status = 'pending'`,
+              [JSON.stringify(payload), pendingJob.id]
+            );
+            payloadRefreshed = upd.affectedRows > 0;
+          }
+        } catch (e) {
+          console.error('[Sync] Refresh pending push payload error:', e.message);
         }
       }
-      const transformed = await fieldMapper.transformPush(value, mapping, system, apiConfigId);
-      if (transformed !== null && transformed !== undefined) {
-        contactData[mapping.target_field] = transformed;
-      } else if (value !== null && value !== undefined && value !== '') {
-        const label = labelOf(mapping.source_field);
-        droppedFields.push({ label, target: mapping.target_field });
-        warnings.push(`"${label}" có dữ liệu nhưng không đẩy được sang 1Office (sai định dạng/không liên kết)`);
-      }
-    }
-    try {
-      const fileSyncService = require('./fileSyncService');
-      const files = await fileSyncService.loadFiles(proposalId);
-      const broken = files.filter(f => {
-        try {
-          const st = require('fs').statSync(require('path').join(__dirname, '../../storage/uploads', f.storage_key));
-          return st.size > 10 * 1024 * 1024;
-        } catch { return true; }
-      });
-      broken.forEach(f => warnings.push(`File "${f.original_name}" lỗi/thiếu trên server, sẽ bị bỏ qua khi đẩy`));
-    } catch { /* silent: worker se bao chi tiet */ }
-
-    if (!contactData.code) {
-      contactData.code = proposal.tracking_code || `DXS_${proposal.id}`;
-    }
-    if (isLinked) {
-      contactData.code = proposal.contact_1office_code;
-    }
-    if (!contactData.name) {
-      contactData.name = proposal.owner_name || `Đề xuất #${proposal.id}`;
-    }
-    if (!contactData.type) {
-      contactData.type = '0';
+      results.push({ proposalId, success: true, jobId: pendingJob.id, deduped: true, payload_refreshed: payloadRefreshed, isUpdate: !!proposal.contact_1office_code, warnings: [], droppedFields: [] });
+      continue;
     }
 
-    let descHtml = '';
-    try {
-      descHtml = await templateService.render(proposal, apiConfigId);
-    } catch (err) {
-      console.error('[Sync] Error rendering desc template:', err.message);
-      descHtml = proposal.description || '';
-    }
-    contactData.desc = descHtml;
-
-    const missingRequired = [];
-    if (!contactData.code) missingRequired.push('Mã (code)');
-    if (!contactData.name) missingRequired.push('Tên (name)');
-    if (!contactData.type) missingRequired.push('Loại (type)');
-    if (missingRequired.length > 0) {
-      results.push({ proposalId, success: false, error: `Thiếu trường bắt buộc: ${missingRequired.join(', ')}` });
+    const built = await buildPushRequestPayload(proposal, buildCtx);
+    if (!built.ok) {
+      results.push({ proposalId, success: false, error: built.error });
       continue;
     }
 
@@ -254,12 +292,12 @@ exports.pushTo1Office = async (proposalIds, apiConfigId, userId, opts = {}) => {
       entity_type: 'station_proposals',
       entity_id: proposalId,
       direction: 'push',
-      request_payload: { api_config_id: apiConfigId, contact_data: contactData, proposal_id: proposalId, was_linked: isLinked, previous_contact_id: proposal.contact_1office_id || null, set_status: setStatus },
+      request_payload: built.requestPayload,
       priority: 0,
       created_by: userId
     });
 
-    results.push({ proposalId, success: true, jobId: job.id, isUpdate: isLinked, contactData, warnings, droppedFields });
+    results.push({ proposalId, success: true, jobId: job.id, isUpdate: built.isUpdate, contactData: built.contactData, warnings: built.warnings, droppedFields: built.droppedFields });
   }
 
   return results;
@@ -391,7 +429,7 @@ exports.processPull = async (apiConfigId, filter) => {
   return { total: contacts.length, created: created.length, updated: updated.length, skipped: skipped.length, dangling: dangling.length, details: { created, updated, skipped, dangling } };
 };
 
-exports.linkProposal = async (proposalId, contactCode, apiConfigId) => {
+exports.linkProposal = async (proposalId, contactCode, apiConfigId, actorId = null) => {
   const proposal = await proposalService.getProposalFullById(proposalId);
   if (!proposal) throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
 
@@ -399,26 +437,66 @@ exports.linkProposal = async (proposalId, contactCode, apiConfigId) => {
     throw Object.assign(new Error('Đề xuất đã được liên kết'), { statusCode: 400 });
   }
 
-  await pool.query(
-    `UPDATE station_proposals SET contact_1office_code = ?, sync_status = 'synced', last_synced_at = NOW(), updated_at = NOW() WHERE id = ?`,
-    [contactCode, proposalId]
-  );
-
-  if (apiConfigId) {
-    try {
-      const detail = await oneOfficeService.getContactDetail(apiConfigId, contactCode);
-      const d = detail && detail.data ? detail.data : null;
-      const inner = d && d.data ? d.data : d;
-      const numericId = inner ? (inner.ID ?? inner.id ?? null) : null;
-      if (numericId !== null && numericId !== undefined && String(numericId).match(/^\d+$/)) {
-        await pool.query('UPDATE station_proposals SET contact_1office_id = ? WHERE id = ?', [String(numericId), proposalId]);
-      }
-    } catch { /* silent */ }
+  const cleanCode = String(contactCode || '').trim();
+  if (!cleanCode) {
+    throw Object.assign(new Error('Thiếu mã liên hệ'), { statusCode: 400 });
   }
+
+  let cfgId = apiConfigId;
+  if (!cfgId) {
+    const cfg = await apiConfigService.getDefaultPushConfig();
+    cfgId = cfg && cfg.id;
+  }
+  if (!cfgId) {
+    throw Object.assign(new Error('Chưa có cấu hình API 1Office đang hoạt động'), { statusCode: 400 });
+  }
+
+  // D1 — validate code tồn tại trên 1Office
+  let numericId = null;
+  let found = false;
+  try {
+    const detail = await oneOfficeService.getContactDetail(cfgId, cleanCode);
+    const outer = detail && detail.data;
+    const inner = outer && (outer.data || outer);
+    const apiError = outer && outer.error;
+    if (detail && detail.success && inner && !apiError && (inner.ID || inner.id || inner.code)) {
+      found = true;
+      const idVal = inner.ID ?? inner.id;
+      if (idVal !== null && idVal !== undefined && String(idVal).match(/^\d+$/)) {
+        numericId = String(idVal);
+      }
+    }
+  } catch { found = false; }
+  if (!found) {
+    throw Object.assign(new Error('Mã liên hệ không tồn tại trên 1Office'), { statusCode: 400 });
+  }
+
+  // D2 — chống trùng code giữa các proposal
+  const dup = await findProposalByContactCode(cleanCode);
+  if (dup && Number(dup.id) !== Number(proposalId)) {
+    throw Object.assign(new Error(`Mã này đã liên kết với đề xuất #${dup.id}`), { statusCode: 409 });
+  }
+
+  // D3 — lưu link với sync_status='pending' rồi tự push (worker set 'synced' khi xong)
+  await pool.query(
+    `UPDATE station_proposals
+     SET contact_1office_code = ?,
+         contact_1office_id = COALESCE(?, contact_1office_id),
+         sync_status = 'pending',
+         updated_at = NOW()
+     WHERE id = ?`,
+    [cleanCode, numericId, proposalId]
+  );
 
   await refreshId1Office(proposalId);
 
-  return { proposalId, contactCode, linked: true };
+  let autoPush = null;
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    autoPush = await proposalLifecycle.autoPushOnUpdate(proposalId, actorId);
+  } catch { autoPush = null; }
+
+  return { proposalId, contactCode: cleanCode, contactId: numericId, linked: true, sync_status: 'pending', autoPush };
 };
 
 exports.unlinkProposal = async (proposalId) => {
@@ -622,22 +700,25 @@ exports.confirmRestoreFrom1Office = async (code, apiConfigId, userId, overrides 
   dynamicData.ma_de_xuat = contact.code;
 
   let importSupplementMinutes = 4320;
+  let importTransitionMinutes = null;
   try {
     const proposalLifecycle = require('./proposalLifecycle');
     const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
     importSupplementMinutes = Math.max(1, Number(configured) || 4320);
+    importTransitionMinutes = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
   } catch { /* silent */ }
 
   const customDataObj = { ...dynamicData };
   const [result] = await pool.query(
-    `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at, contact_1office_code, contact_1office_id, sync_status, last_synced_at, last_synced_data)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), ?, ?, 'synced', NOW(), ?)`,
+    `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at, transition_deadline_at, contact_1office_code, contact_1office_id, sync_status, last_synced_at, last_synced_data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)), ?, ?, 'synced', NOW(), ?)`,
     [
       userId, contact.code,
       fixedData.latitude, fixedData.longitude,
       fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '',
       fixedData.area || '', fixedData.land_type || '', fixedData.description || '',
       JSON.stringify(customDataObj), importSupplementMinutes,
+      importTransitionMinutes, importTransitionMinutes,
       contact.code, contact.ID ? String(contact.ID) : null,
       JSON.stringify({ contact: { code: contact.code, id: contact.ID }, restored_at: new Date().toISOString(), source: 'restore' })
     ]

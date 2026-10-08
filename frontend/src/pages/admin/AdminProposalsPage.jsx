@@ -22,9 +22,10 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info } from 'lucide-react';
-import { oneOfficeSyncService, queueLogService } from '../../services/api';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw } from 'lucide-react';
+import { oneOfficeSyncService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
+import { pollSyncJobs as startSyncJobPoll, parseJobPayload as parsePayload, collectSkippedFiles, buildPushDoneMessage } from '../../utils/syncJobPoll';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
@@ -78,6 +79,8 @@ const AdminProposalsPage = () => {
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
   const [restoreModal, setRestoreModal] = useState({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [confirmInfoBatchOpen, setConfirmInfoBatchOpen] = useState(false);
+  const [batchConfirmLoading, setBatchConfirmLoading] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
@@ -752,52 +755,15 @@ const AdminProposalsPage = () => {
     }
   };
 
-  const parsePayload = (job) => {
-    if (!job) return {};
-    const p = job.response_payload;
-    if (!p) return {};
-    if (typeof p === 'object') return p;
-    try { return JSON.parse(p); } catch { return {}; }
-  };
-
-  const collectSkippedFiles = (jobs) => {
-    const out = [];
-    (jobs || []).forEach(j => {
-      const p = parsePayload(j);
-      const skipped = (p.files && p.files.skipped) || [];
-      skipped.forEach(f => out.push(`#${j.entity_id || '?'}: ${(f && f.name) || f}${f && f.reason ? ` (${f.reason})` : ''}`));
-    });
-    return out;
-  };
-
   const pollSyncJobs = (jobIds, onDone) => {
     if (!jobIds || jobIds.length === 0) return;
     if (syncPollRef.current) clearInterval(syncPollRef.current);
-    let attempts = 0;
-    const timer = setInterval(async () => {
-      attempts++;
-      try {
-        const jobs = [];
-        for (const jid of jobIds) {
-          const r = await queueLogService.getById(jid, token);
-          if (r.success && r.data) jobs.push(r.data);
-        }
-        const done = jobs.length === jobIds.length && jobs.every(j => ['completed', 'failed', 'cancelled'].includes(j.status));
-        if (done) {
-          clearInterval(timer);
-          syncPollRef.current = null;
-          onDone(jobs);
-        } else if (attempts >= 30) {
-          clearInterval(timer);
-          syncPollRef.current = null;
-          setToast({ message: 'Lệnh vẫn đang xử lý — theo dõi trong Audit Log', type: 'info' });
-        }
-      } catch {
-        clearInterval(timer);
-        syncPollRef.current = null;
-      }
-    }, 3000);
-    syncPollRef.current = timer;
+    syncPollRef.current = startSyncJobPoll({
+      jobIds,
+      token,
+      onDone,
+      onTimeout: () => setToast({ message: 'Lệnh vẫn đang xử lý — theo dõi trong Audit Log', type: 'info' })
+    });
   };
 
   const openPushConfirm = () => {
@@ -906,9 +872,26 @@ const AdminProposalsPage = () => {
     try {
       const res = await oneOfficeSyncService.link({ proposalId: linkModal.proposalId, contactCode: linkModal.code.trim(), apiConfigId: 3 }, token);
       if (res.success) {
-        setToast({ message: `Đã liên kết đề xuất #${linkModal.proposalId} với mã ${linkModal.code.trim()}`, type: 'success' });
+        const data = res.data || {};
+        const auto = data.autoPush;
+        let msg = `Đã liên kết đề xuất #${linkModal.proposalId} với mã ${data.contactCode || linkModal.code.trim()}`;
+        let type = 'success';
+        if (auto && auto.queued) {
+          msg += ' — đã tạo lệnh đồng bộ sang 1Office';
+        } else if (auto && auto.reason) {
+          msg += ` — chưa đẩy được sang 1Office (${auto.reason})`;
+          type = 'warning';
+        }
+        setToast({ message: msg, type });
         setLinkModal({ open: false, proposalId: null, code: '' });
         loadProposals(pagination.page);
+        if (auto && auto.queued && auto.jobId) {
+          pollSyncJobs([auto.jobId], (jobs) => {
+            const r = buildPushDoneMessage(jobs);
+            setToast({ message: r.msg, type: r.type });
+            loadProposals(pagination.page);
+          });
+        }
       } else {
         setError(res.message || 'Liên kết thất bại');
       }
@@ -983,6 +966,25 @@ const AdminProposalsPage = () => {
       }
     } catch (err) {
       setRestoreModal(prev => ({ ...prev, loading: false, error: (err && err.message) || 'Lỗi khi khôi phục' }));
+    }
+  };
+
+  const handleConfirmInfoBatch = async () => {
+    setBatchConfirmLoading(true);
+    try {
+      const res = await adminProposalService.confirmInfoBatch(token, 500);
+      const d = (res && res.data) || {};
+      const parts = [`Đã tự xác nhận ${d.confirmed || 0}/${d.checked || 0} đề xuất`];
+      if (d.incomplete) parts.push(`${d.incomplete} chưa đủ trường`);
+      if (d.failed) parts.push(`${d.failed} lỗi`);
+      if (d.hasMore) parts.push('còn lại — bấm Cập nhật lần nữa');
+      setToast({ message: parts.join(' · '), type: d.failed ? 'warning' : 'success' });
+      loadProposals(pagination.page);
+    } catch {
+      setToast({ message: 'Lỗi khi quét xác nhận đủ thông tin', type: 'error' });
+    } finally {
+      setBatchConfirmLoading(false);
+      setConfirmInfoBatchOpen(false);
     }
   };
 
@@ -1405,6 +1407,16 @@ const AdminProposalsPage = () => {
                 Import
               </button>
           </>
+          {isSuperAdmin && (
+            <button
+              className="btn btn-ghost btn-sm gap-1"
+              onClick={() => setConfirmInfoBatchOpen(true)}
+              title="Quét và tự xác nhận đủ thông tin cho đề xuất hiện có"
+            >
+              <RefreshCw size={14} />
+              <span className="hidden sm:inline">Cập nhật</span>
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset} title="Đặt lại bộ lọc">
             <RotateCcw size={14} />
             <span className="hidden sm:inline">Đặt lại</span>
@@ -1608,6 +1620,15 @@ const AdminProposalsPage = () => {
         onCancel={() => setConfirmBulkDelete(false)}
         confirmText="Xóa"
         type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmInfoBatchOpen}
+        title="Cập nhật xác nhận đủ thông tin?"
+        message="Hệ thống sẽ quét các đề xuất đủ trường và tự chuyển sang 'Đã xác nhận đủ thông tin'? Chạy tối đa 500 đề xuất/lần."
+        onConfirm={handleConfirmInfoBatch}
+        onCancel={() => setConfirmInfoBatchOpen(false)}
+        confirmText={batchConfirmLoading ? 'Đang quét...' : 'Chạy'}
       />
 
       {pushConfirm.open && (

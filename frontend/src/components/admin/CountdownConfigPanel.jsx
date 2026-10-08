@@ -7,36 +7,20 @@ import { notifyCountdownConfigChanged } from '../../utils/countdownConfig';
 const emptyPart = (enabled = false, days = 0) => ({ enabled, days, hours: 0, minutes: 0 });
 
 const DEFAULT_RULES = [
-  { status: 'PENDING', supplement: emptyPart(true, 3), transition: emptyPart(false, 0) },
-  { status: 'REVIEWING', supplement: emptyPart(true, 3), transition: emptyPart(false, 0) },
-  { status: 'PRINCIPLE_APPROVED', supplement: emptyPart(true, 15), transition: emptyPart(false, 0) },
-  { status: 'APPROVED', supplement: emptyPart(false, 10), transition: emptyPart(false, 0) },
-  { status: 'ARCHIVED', supplement: emptyPart(false, 10), transition: emptyPart(false, 0) }
+  { status: 'PENDING', supplement: emptyPart(false, 0), transition: emptyPart(true, 3) },
+  { status: 'REVIEWING', supplement: emptyPart(false, 0), transition: emptyPart(false, 0) },
+  { status: 'PRINCIPLE_APPROVED', supplement: emptyPart(false, 0), transition: emptyPart(false, 0) },
+  { status: 'APPROVED', supplement: emptyPart(false, 0), transition: emptyPart(true, 15) },
+  { status: 'ARCHIVED', supplement: emptyPart(false, 0), transition: emptyPart(false, 0) }
 ];
 
-const MERGED_STATUS_GROUPS = { PENDING: ['PENDING', 'REVIEWING'] };
-const MERGED_LABELS = { PENDING: 'Đang đề xuất / Đang xem xét' };
 const KINDS = [
   { key: 'supplement', label: 'Bổ sung thông tin', hint: 'Quá hạn chưa xác nhận đủ thông tin → hủy đề xuất' },
   { key: 'transition', label: 'Chuyển trạng thái', hint: 'Quá hạn chưa chuyển sang trạng thái tiếp theo → hủy đề xuất' }
 ];
 
-const buildDisplayRows = (statuses) => {
-  const rows = [];
-  const consumed = new Set();
-  statuses.forEach((s) => {
-    if (consumed.has(s.value)) return;
-    const group = MERGED_STATUS_GROUPS[s.value];
-    if (group && group.length > 1) {
-      group.forEach((v) => consumed.add(v));
-      rows.push({ value: s.value, label: MERGED_LABELS[s.value] || s.label, color: s.color, statuses: group });
-    } else {
-      consumed.add(s.value);
-      rows.push({ value: s.value, label: s.label, color: s.color, statuses: [s.value] });
-    }
-  });
-  return rows;
-};
+const buildDisplayRows = (statuses) =>
+  statuses.map((s) => ({ value: s.value, label: s.label, color: s.color, statuses: [s.value] }));
 
 const CountdownConfigPanel = () => {
   const { token } = useAuth();
@@ -48,6 +32,7 @@ const CountdownConfigPanel = () => {
   const [rules, setRules] = useState(DEFAULT_RULES);
   const [maxTimes, setMaxTimes] = useState(3);
   const [maxDaysPerTime, setMaxDaysPerTime] = useState(30);
+  const [autoPush, setAutoPush] = useState(true);
 
   const statuses = getProposalStatuses();
   const displayRows = buildDisplayRows(statuses);
@@ -63,6 +48,7 @@ const CountdownConfigPanel = () => {
         setRules(Array.isArray(res.data.rules) && res.data.rules.length > 0 ? res.data.rules : DEFAULT_RULES);
         if (res.data.maxTimes !== undefined) setMaxTimes(res.data.maxTimes);
         if (res.data.maxDaysPerTime !== undefined) setMaxDaysPerTime(res.data.maxDaysPerTime);
+        if (res.data.auto_push_on_update !== undefined) setAutoPush(!!res.data.auto_push_on_update);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -98,6 +84,7 @@ const CountdownConfigPanel = () => {
         warn_hours: Number(warnHours) || 24,
         extend_max_times: Number(maxTimes),
         extend_max_days_per_time: Number(maxDaysPerTime),
+        auto_push_on_update: !!autoPush,
         rules: displayRows.flatMap((row) => {
           const r = ensureRule(row);
           const norm = (part) => ({
@@ -193,7 +180,6 @@ const CountdownConfigPanel = () => {
                 />
                 <span>giờ (mặc định 24)</span>
               </div>
-              <p className="text-xs text-gray-500 mb-1">Đang đề xuất và Đang xem xét dùng chung 1 mốc bổ sung, không đếm lại khi duyệt &amp; đẩy.</p>
               <p className="text-xs text-gray-500 mb-1">
                 Mỗi trạng thái có thể bật <b>cả hai</b> countdown song song: quá hạn mốc nào (chưa bổ sung đủ thông tin / chưa chuyển trạng thái tiếp theo) thì đề xuất bị hủy.
               </p>
@@ -216,6 +202,16 @@ const CountdownConfigPanel = () => {
                 />
                 <span>ngày</span>
               </div>
+              <label className="flex items-center gap-2 py-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-xs"
+                  checked={autoPush}
+                  onChange={(e) => setAutoPush(e.target.checked)}
+                />
+                <span>Tự động đẩy sang 1Office khi lưu đề xuất</span>
+                <span className="text-xs text-gray-500">(bỏ qua khi đề xuất chưa liên kết 1Office)</span>
+              </label>
               <table className="table table-xs w-full">
                 <thead>
                   <tr>

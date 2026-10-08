@@ -132,7 +132,13 @@ const SyncPanel = ({ configId, onClose }) => {
         apiConfigId: configId
       }, token);
       if (res.success) {
-        setToast({ message: 'Liên kết thành công', type: 'success' });
+        const data = res.data || {};
+        const auto = data.autoPush;
+        let msg = 'Liên kết thành công';
+        let type = 'success';
+        if (auto && auto.queued) msg += ' — đã tạo lệnh đồng bộ sang 1Office';
+        else if (auto && auto.reason) { msg += ` — chưa đẩy được sang 1Office (${auto.reason})`; type = 'warning'; }
+        setToast({ message: msg, type });
         setLinkState(prev => ({ ...prev, selectedContact: null, linkingProposalId: '', linking: false, query: '', results: [] }));
       } else {
         setToast({ message: res.message || 'Lỗi link', type: 'error' });

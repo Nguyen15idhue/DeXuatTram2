@@ -146,28 +146,16 @@ exports.transition = async (id, to, opts = {}) => {
   try {
     const suppMinutes = await exports.getDeadlineMinutes(to, 'supplement');
     const transMinutes = await exports.getDeadlineMinutes(to, 'transition');
-    const sameSharedGroup = COUNTDOWN_SHARED_GROUP[from] && COUNTDOWN_SHARED_GROUP[from] === COUNTDOWN_SHARED_GROUP[to];
-    const keepSupplement = sameSharedGroup && proposal.supplement_deadline_at != null;
-
     const suppSet = suppMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
     const transSet = transMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
     const params = [];
-    if (keepSupplement) {
-      if (transMinutes) params.push(transMinutes);
-      params.push(id);
-      await pool.query(
-        `UPDATE station_proposals SET transition_deadline_at = ${transSet} WHERE id = ?`,
-        params
-      );
-    } else {
-      if (suppMinutes) params.push(suppMinutes);
-      if (transMinutes) params.push(transMinutes);
-      params.push(id);
-      await pool.query(
-        `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet}, info_completed_at = NULL WHERE id = ?`,
-        params
-      );
-    }
+    if (suppMinutes) params.push(suppMinutes);
+    if (transMinutes) params.push(transMinutes);
+    params.push(id);
+    await pool.query(
+      `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet}, info_completed_at = NULL WHERE id = ?`,
+      params
+    );
   } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
 
   let stationCreated = null;
@@ -348,6 +336,155 @@ async function autoPushOnReview(id, reviewerId) {
   }
 }
 
+const AUTO_PUSH_ON_UPDATE_KEY = 'auto_push_on_update';
+const AUTO_PUSH_EXCLUDED_STATUSES = ['CANCELLED'];
+
+exports.isAutoPushOnUpdateEnabled = async () => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
+      [AUTO_PUSH_ON_UPDATE_KEY]
+    );
+    if (!rows[0] || rows[0].value === null || rows[0].value === undefined || rows[0].value === '') return true;
+    return !['0', 'false', 'off', 'no'].includes(String(rows[0].value).toLowerCase());
+  } catch { return true; }
+};
+
+exports.saveAutoPushOnUpdate = async (enabled) => {
+  const value = enabled ? '1' : '0';
+  await pool.query(
+    'INSERT INTO proposal_lifecycle_configs (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = CURRENT_TIMESTAMP',
+    [AUTO_PUSH_ON_UPDATE_KEY, value]
+  );
+  return { auto_push_on_update: enabled === true };
+};
+
+async function autoPushOnUpdate(id, actorId) {
+  try {
+    if (!(await exports.isAutoPushOnUpdateEnabled())) {
+      return { queued: false, skipped: 'config_off' };
+    }
+    const apiConfigService = require('./apiConfigService');
+    const syncService = require('./syncService');
+    const config = await apiConfigService.getDefaultPushConfig();
+    if (!config) {
+      return { queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
+    }
+    const [rows] = await pool.query('SELECT status, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return { queued: false, skipped: 'not_found' };
+    }
+    if (!rows[0].contact_1office_code) {
+      return { queued: false, skipped: 'not_linked' };
+    }
+    if (AUTO_PUSH_EXCLUDED_STATUSES.includes(rows[0].status)) {
+      return { queued: false, skipped: 'status_excluded' };
+    }
+    const results = await syncService.pushTo1Office([id], config.id, actorId, { allowAllStatuses: true });
+    const first = results && results[0];
+    if (!first || !first.success) {
+      try {
+        await exports.logActivity({
+          proposalId: id, action: 'sync_push', source: 'system_auto',
+          actorId: actorId || null,
+          changedFields: { error: (first && first.error) || 'Không tạo được lệnh đồng bộ', final: true }
+        });
+      } catch { /* silent */ }
+      return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đồng bộ' };
+    }
+    return {
+      queued: true, jobId: first.jobId, deduped: !!first.deduped, payloadRefreshed: !!first.payload_refreshed,
+      isUpdate: !!first.isUpdate, apiConfigId: config.id,
+      warnings: first.warnings || [], droppedFields: first.droppedFields || []
+    };
+  } catch (e) {
+    return { queued: false, reason: e.message || 'Lỗi tạo lệnh đồng bộ' };
+  }
+}
+
+exports.autoPushOnUpdate = autoPushOnUpdate;
+
+// ===== Kế hoạch 71 (F) — Tự xác nhận "đủ thông tin" =====
+
+const parseCfg = (cfg) => {
+  if (!cfg) return {};
+  if (typeof cfg === 'string') { try { return JSON.parse(cfg); } catch { return {}; } }
+  return cfg;
+};
+
+const isAutoUserField = (fieldDef) => {
+  const cfg = parseCfg(fieldDef && fieldDef.source_config);
+  return ['area_director', 'center_director'].includes(cfg.auto_user);
+};
+
+const isEmptyValue = (v) => v === undefined || v === null || v === ''
+  || (Array.isArray(v) && v.length === 0);
+
+// F1 — kiểm tra "đủ thông tin" theo đúng luật form đang dùng (purpose/formId)
+exports.checkInfoComplete = async (flatData, opts = {}) => {
+  const { purpose = 'view', formId = null } = opts || {};
+  const dynamicUtils = require('./dynamicUtils');
+  const validators = require('../middlewares/validators');
+  const fieldMapper = require('./fieldMapper');
+
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const labelOf = (key) => (fieldDefs.find((f) => f.key === key) || {}).label || key;
+
+  let applicable = new Set();
+  try {
+    applicable = await validators.getApplicableFieldKeys('station_proposals', flatData, purpose, formId);
+  } catch { applicable = new Set(); }
+
+  const missing = new Set();
+  for (const f of fieldDefs) {
+    if (f.key === 'latitude' || f.key === 'longitude') {
+      if (isEmptyValue(flatData[f.key])) missing.add(labelOf(f.key));
+      continue;
+    }
+    const special = isAutoUserField(f);
+    if (!f.required && !special) continue;
+    if (!special && applicable.size > 0 && !applicable.has(f.key)) continue;
+    if (special || f.type === 'user') {
+      if (fieldMapper.resolveUserId(flatData[f.key]) === null) missing.add(labelOf(f.key));
+    } else if (isEmptyValue(flatData[f.key])) {
+      missing.add(labelOf(f.key));
+    }
+  }
+  return { complete: missing.size === 0, missing: [...missing] };
+};
+
+// F2 — tự xác nhận khi đủ trường (không throw; dùng cho hook lưu + batch G)
+exports.maybeAutoConfirmInfo = async (id, opts = {}) => {
+  try {
+    const { actorId = null, purpose = 'view', formId = null, ip = null } = opts || {};
+    const [rows] = await pool.query(
+      'SELECT * FROM station_proposals WHERE id = ?',
+      [id]
+    );
+    if (rows.length === 0) return { confirmed: false, skipped: 'not_found' };
+    const row = rows[0];
+    if (!row.supplement_deadline_at) return { confirmed: false, skipped: 'not_in_supplement' };
+    const suppStatuses = await exports.getEnabledSupplementStatuses();
+    if (!suppStatuses.includes(row.status)) return { confirmed: false, skipped: 'not_in_supplement' };
+    if (row.info_completed_at != null) return { confirmed: false, already: true };
+
+    const dynamicUtils = require('./dynamicUtils');
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+    const flat = dynamicUtils.mergeData(row, fieldDefs);
+    const { complete, missing } = await exports.checkInfoComplete(flat, { purpose, formId });
+    if (!complete) return { confirmed: false, missing };
+
+    try {
+      await exports.setInfoCompleted(id, true, { actorId, source: 'system_auto', ip });
+    } catch (e) {
+      return { confirmed: false, missing: [], error: e.message };
+    }
+    return { confirmed: true };
+  } catch (e) {
+    return { confirmed: false, missing: [], error: e.message };
+  }
+};
+
 const COUNTDOWN_CONFIG_KEY = 'supplement_countdown_config';
 
 const LEGACY_DAY_KEYS = {
@@ -377,10 +514,6 @@ const DEFAULT_COUNTDOWN_RULES = [
 
 const clonePart = (p) => ({ enabled: !!(p && p.enabled), days: Number((p && p.days) || 0), hours: Number((p && p.hours) || 0), minutes: Number((p && p.minutes) || 0) });
 const cloneRule = (r) => ({ status: r.status, supplement: clonePart(r.supplement), transition: clonePart(r.transition) });
-
-// PENDING va REVIEWING dung chung 1 moc countdown bo sung: khi chuyen PENDING -> REVIEWING
-// KHONG dat lai deadline (giu moc cua PENDING).
-const COUNTDOWN_SHARED_GROUP = { PENDING: 'review', REVIEWING: 'review' };
 
 const clamp = (v, max) => {
   const n = Math.floor(Number(v));
@@ -449,7 +582,7 @@ exports.getCountdownConfig = async () => {
       return { status: d.status, supplement: supp, transition: clonePart(d.transition) };
     });
   }
-  return { warn_hours: warnHours, rules, ...(await exports.getExtendLimits()) };
+  return { warn_hours: warnHours, rules, auto_push_on_update: await exports.isAutoPushOnUpdateEnabled(), ...(await exports.getExtendLimits()) };
 };
 
 exports.saveCountdownConfig = async (config) => {
@@ -469,7 +602,10 @@ exports.saveCountdownConfig = async (config) => {
       maxDaysPerTime: config.extend_max_days_per_time !== undefined ? config.extend_max_days_per_time : current.maxDaysPerTime
     });
   }
-  return { warn_hours: warnHours, rules, ...(limits || await exports.getExtendLimits()) };
+  if (config && config.auto_push_on_update !== undefined) {
+    await exports.saveAutoPushOnUpdate(!!config.auto_push_on_update);
+  }
+  return { warn_hours: warnHours, rules, auto_push_on_update: await exports.isAutoPushOnUpdateEnabled(), ...(limits || await exports.getExtendLimits()) };
 };
 
 exports.getDeadlineParts = async (status, kind = 'supplement') => {
@@ -487,15 +623,24 @@ exports.getDeadlineMinutes = async (status, kind = 'supplement') => exports.getD
 
 const enabledForKind = (rules, kind) => rules.filter((r) => r[kind] && r[kind].enabled).map((r) => r.status);
 
+// Danh muc status duoc xac nhan/hoan tat thong tin (muc nghiep vu, doc lap voi
+// config countdown): PENDING / REVIEWING / PRINCIPLE_APPROVED.
+const CONFIRM_STATUSES = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED'];
+exports.getConfirmStatuses = () => CONFIRM_STATUSES;
+
 exports.getEnabledCountdownStatuses = async () => {
   const cfg = await exports.getCountdownConfig();
   const set = new Set([...enabledForKind(cfg.rules, 'supplement'), ...enabledForKind(cfg.rules, 'transition')]);
   return [...set];
 };
 
+// Chi danh cho kiem tra "xac nhan du thong tin" (setInfoCompleted + ke hoach 71.F/G).
+// Neu config tat toan bo countdown bo sung -> fallback ve CONFIRM_STATUSES de tinh
+// nang xac nhan van hoat dong. KHONG dung ham nay cho worker/extend deadline.
 exports.getEnabledSupplementStatuses = async () => {
   const cfg = await exports.getCountdownConfig();
-  return enabledForKind(cfg.rules, 'supplement');
+  const list = enabledForKind(cfg.rules, 'supplement');
+  return list.length > 0 ? list : CONFIRM_STATUSES;
 };
 
 exports.getEnabledTransitionStatuses = async () => {

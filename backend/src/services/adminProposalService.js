@@ -151,6 +151,49 @@ exports.updateStatus = async (id, status, opts = {}) => {
   });
 };
 
+exports.batchAutoConfirm = async ({ limit = 500, actorId = null } = {}) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  const suppStatuses = await proposalLifecycle.getEnabledSupplementStatuses();
+  const report = { checked: 0, confirmed: 0, incomplete: 0, already: 0, failed: 0, hasMore: false, missingSamples: [] };
+  if (!suppStatuses || suppStatuses.length === 0) return report;
+
+  const placeholders = suppStatuses.map(() => '?').join(', ');
+  const [countRows] = await pool.query(
+    `SELECT COUNT(*) AS n FROM station_proposals
+     WHERE info_completed_at IS NULL AND supplement_deadline_at IS NOT NULL
+       AND status IN (${placeholders})`,
+    suppStatuses
+  );
+  const total = countRows[0] ? countRows[0].n : 0;
+
+  const [rows] = await pool.query(
+    `SELECT id, ma_de_xuat_gen AS code FROM station_proposals
+     WHERE info_completed_at IS NULL AND supplement_deadline_at IS NOT NULL
+       AND status IN (${placeholders})
+     ORDER BY id ASC LIMIT ?`,
+    [...suppStatuses, limit]
+  );
+
+  report.checked = rows.length;
+  report.hasMore = total > rows.length;
+
+  for (const r of rows) {
+    try {
+      const res = await proposalLifecycle.maybeAutoConfirmInfo(r.id, { actorId, purpose: 'view' });
+      if (res.confirmed) report.confirmed++;
+      else if (res.already) report.already++;
+      else if (res.error) report.failed++;
+      else {
+        report.incomplete++;
+        if (report.missingSamples.length < 10) {
+          report.missingSamples.push({ id: r.id, code: r.code || null, missing: res.missing || [] });
+        }
+      }
+    } catch { report.failed++; }
+  }
+  return report;
+};
+
 exports.updateProposal = async (id, data, opts = {}) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
@@ -257,4 +300,19 @@ exports.updateProposal = async (id, data, opts = {}) => {
   } else if (filesRenamed > 0) {
     await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
   }
+
+  let infoCompleted = null;
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
+      actorId: opts.actorId || null, purpose: 'view', ip: opts.ip || null
+    });
+  } catch { infoCompleted = null; }
+
+  let autoPush = null;
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    autoPush = await proposalLifecycle.autoPushOnUpdate(id, opts.actorId || null);
+  } catch { autoPush = null; }
+  return { autoPush, infoCompleted };
 };

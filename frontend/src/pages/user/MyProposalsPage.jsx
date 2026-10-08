@@ -276,10 +276,14 @@ const MyProposalsPage = () => {
     const res = await myProposalService.create(submitData, token, createFormId);
     if (res.success) {
       const warns = res.warnings || [];
+      let message = warns.length > 0
+        ? `Tạo đề xuất thành công! Lưu ý: ${warns.join('; ')}`
+        : 'Tạo đề xuất thành công';
+      if (res.infoCompleted && res.infoCompleted.confirmed) {
+        message += ' · Đã tự xác nhận đủ thông tin';
+      }
       setToast({
-        message: warns.length > 0
-          ? `Tạo đề xuất thành công! Lưu ý: ${warns.join('; ')}`
-          : 'Tạo đề xuất thành công',
+        message,
         type: warns.length > 0 ? 'warning' : 'success'
       });
       setShowCreateForm(false);

@@ -58,6 +58,12 @@ const processJob = async (job) => {
       });
       console.log(`[QueueWorker] Job #${job.id} max retries reached, marking as failed permanently`);
       try {
+        if (job.action === 'push' && job.entity_type === 'station_proposals' && job.entity_id) {
+          const pool = require('../utils/db');
+          await pool.query("UPDATE station_proposals SET sync_status = 'error', updated_at = NOW() WHERE id = ?", [job.entity_id]);
+        }
+      } catch { /* silent: khong chan xu ly job vi sync_status */ }
+      try {
         if ((job.action === 'push' || job.action === 'pull') && job.entity_id) {
           const proposalLifecycle = require('../services/proposalLifecycle');
           await proposalLifecycle.logActivity({
@@ -109,7 +115,7 @@ const processPushJob = async (job) => {
   const existingId = contactInfo.id;
   const recreated = !!was_linked && !existingId;
 
-  let prevFileNames = [];
+  let prevFileIds = [];
   if (proposal_id && !recreated) {
     try {
       const [rows] = await pool.query('SELECT last_synced_data FROM station_proposals WHERE id = ?', [proposal_id]);
@@ -117,23 +123,35 @@ const processPushJob = async (job) => {
         const snap = typeof rows[0].last_synced_data === 'string'
           ? JSON.parse(rows[0].last_synced_data)
           : rows[0].last_synced_data;
-        prevFileNames = (snap && snap.files_result && snap.files_result.fileNames) || [];
+        const fr = snap && snap.files_result;
+        prevFileIds = (fr && fr.fileIds) || [];
       }
     } catch (err) {
       console.error('[QueueWorker] Read snapshot error:', err.message);
     }
   }
 
-  let filesInfo = { sent: [], skipped: [], total: 0 };
+  const stripFileName = (n) => String(n || '').trim()
+    .replace(/\.(jpe?g|png|gif|pdf|docx?|xlsx?|txt)$/i, '')
+    .replace(/\s*\(\d+\)\s*$/, '')
+    .trim();
+
+  let filesInfo = { sent: [], skipped: [], total: 0, stale: [] };
   if (proposal_id) {
     try {
-      const on1office = contactInfo.fileNames.length > 0 ? contactInfo.fileNames : (recreated ? [] : []);
-      const built = await fileSyncService.buildFilesArray(proposal_id, { excludeNames: on1office });
+      const on1office = recreated ? [] : contactInfo.fileNames;
+      const built = await fileSyncService.buildFilesArray(proposal_id, {
+        excludeNames: on1office,
+        excludeIds: recreated ? [] : prevFileIds
+      });
       const sentNames = built.names;
       contact_data.files = built.files.length > 0 ? JSON.stringify(built.files) : undefined;
       if (contact_data.files === undefined) delete contact_data.files;
       const cumulative = [...contactInfo.fileNames, ...sentNames];
-      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative };
+      const cumulativeIds = [...new Set([...prevFileIds, ...(built.ids || [])])];
+      const activeNames = new Set((await fileSyncService.loadFiles(proposal_id)).map((f) => stripFileName(f.original_name)));
+      const stale = recreated ? [] : contactInfo.fileNames.filter((n) => !activeNames.has(stripFileName(n)));
+      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative, cumulativeIds, stale };
     } catch (err) {
       console.error('[QueueWorker] Build files error:', err.message);
     }
@@ -214,7 +232,7 @@ const processPushJob = async (job) => {
     if (contactCode || contactId) {
       const cumulative = filesInfo.cumulative || filesInfo.sent || [];
       const snapshot = {
-        files_result: { fileNames: cumulative, totalFiles: cumulative.length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [] },
+        files_result: { fileNames: cumulative, fileIds: filesInfo.cumulativeIds || [], totalFiles: cumulative.length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [] },
         synced_at: new Date().toISOString()
       };
       await pool.query(
@@ -226,7 +244,7 @@ const processPushJob = async (job) => {
         await proposalLifecycle.logActivity({
           proposalId: proposal_id, action: 'sync_push', source: 'system_auto',
           actorId: job.created_by || null,
-          changedFields: { contact_code: contactCode, files_sent: filesInfo.sent || [], files_skipped: filesInfo.skipped || [], ...(set_status ? { contact_status: set_status } : {}) }
+          changedFields: { contact_code: contactCode, files_sent: filesInfo.sent || [], files_skipped: filesInfo.skipped || [], ...((filesInfo.stale && filesInfo.stale.length) ? { files_stale: filesInfo.stale } : {}), ...(set_status ? { contact_status: set_status } : {}) }
         });
       } catch { /* silent: khong chan push vi log */ }
       try {
@@ -253,7 +271,7 @@ const processPushJob = async (job) => {
     contact_updated: updated,
     contact_recreated: recreated,
     previous_contact_id: recreated ? (previous_contact_id || null) : null,
-    files: { sentCount: (filesInfo.sent || []).length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [] },
+    files: { sentCount: (filesInfo.sent || []).length, sent: filesInfo.sent || [], skipped: filesInfo.skipped || [], stale: filesInfo.stale || [] },
     status_updated: statusUpdated,
     contact_status: statusUpdated ? set_status : null,
     api_response: result.data,

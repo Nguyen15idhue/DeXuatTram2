@@ -40,11 +40,14 @@ exports.getById = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const user_id = req.user.id;
+    const formId = req.query.formId ? parseInt(req.query.formId, 10) : null;
     const proposal = await proposalService.createProposal(user_id, req.body, {
       actorRole: req.user.role || null,
-      ip: req.ip || null
+      ip: req.ip || null,
+      formId
     });
-    res.status(201).json({ success: true, data: proposal, message: 'Tạo đề xuất thành công' });
+    const { autoInfoCompleted, ...data } = proposal;
+    res.status(201).json({ success: true, data, infoCompleted: autoInfoCompleted || null, message: 'Tạo đề xuất thành công' });
   } catch (error) {
     console.error('Create proposal error:', error);
     if (error.statusCode) {
@@ -68,7 +71,8 @@ exports.createGuest = async (req, res) => {
   try {
     const ip = req.ip || req.connection?.remoteAddress || null;
     const { proposal, warnings } = await proposalService.createGuestProposal(req.body, ip);
-    res.status(201).json({ success: true, data: proposal, warnings: warnings || [], message: 'Gửi đề xuất thành công' });
+    const { autoInfoCompleted, ...data } = proposal;
+    res.status(201).json({ success: true, data, infoCompleted: autoInfoCompleted || null, warnings: warnings || [], message: 'Gửi đề xuất thành công' });
   } catch (error) {
     console.error('Create guest proposal error:', error);
     if (error.statusCode) {

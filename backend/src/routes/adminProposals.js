@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager } = require('../middlewares/auth');
 const { validateUpdateProposal } = require('../middlewares/validators');
 const adminProposalController = require('../controllers/adminProposalController');
 
@@ -48,6 +48,32 @@ const adminProposalController = require('../controllers/adminProposalController'
   *         description: Không có quyền Admin
   */
 router.get('/', requireAuth, requireUserManager, adminProposalController.getAll);
+
+/**
+ * @swagger
+ * /api/admin/proposals/confirm-info-batch:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Batch tự xác nhận "đủ thông tin" cho đề xuất hiện có (SUPER_ADMIN)
+ *     description: Quét tối đa `limit` đề xuất thỏa điều kiện (chưa xác nhận, còn hạn bổ sung, status đang bật countdown bổ sung) và tự xác nhận nếu đủ trường. Chỉ SUPER_ADMIN.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               limit:
+ *                 type: integer
+ *                 default: 500
+ *     responses:
+ *       200:
+ *         description: Báo cáo batch
+ *       403:
+ *         description: Không phải SUPER_ADMIN
+ */
+router.post('/confirm-info-batch', requireAuth, requireSuperAdmin, adminProposalController.confirmInfoBatch);
 
 /**
  * @swagger

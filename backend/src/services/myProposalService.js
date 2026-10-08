@@ -213,6 +213,21 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   } else if (filesRenamed > 0) {
     await pool.query('UPDATE station_proposals SET custom_data = ? WHERE id = ?', [JSON.stringify(finalDynamic), id]);
   }
+
+  let infoCompleted = null;
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
+      actorId: userId, purpose: 'view', ip: opts.ip || null
+    });
+  } catch { infoCompleted = null; }
+
+  let autoPush = null;
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    autoPush = await proposalLifecycle.autoPushOnUpdate(id, userId);
+  } catch { autoPush = null; }
+  return { autoPush, infoCompleted };
 };
 
 exports.deleteProposal = async (id, userId) => {

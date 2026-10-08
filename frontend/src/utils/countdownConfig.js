@@ -5,7 +5,7 @@ export const COUNTDOWN_CONFIG_EVENT = 'countdown:refresh';
 let cache = null;
 let inflight = null;
 
-export const FALLBACK_COUNTDOWN_STATUSES = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED'];
+export const FALLBACK_COUNTDOWN_STATUSES = ['PENDING', 'APPROVED'];
 export const FALLBACK_SUPPLEMENT_STATUSES = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED'];
 
 export async function loadCountdownConfig(force = false) {
@@ -41,7 +41,8 @@ export function getCountdownStatuses(config) {
 export function getSupplementStatuses(config) {
   const rules = config && Array.isArray(config.rules) ? config.rules : null;
   if (!rules) return FALLBACK_SUPPLEMENT_STATUSES;
-  return rules.filter((r) => r && r.status && partEnabled(r.supplement)).map((r) => r.status);
+  const enabled = rules.filter((r) => r && r.status && partEnabled(r.supplement)).map((r) => r.status);
+  return enabled.length > 0 ? enabled : FALLBACK_SUPPLEMENT_STATUSES;
 }
 
 // Trả về { [status]: { supplement: bool, transition: bool } }

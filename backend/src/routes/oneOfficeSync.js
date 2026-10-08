@@ -111,7 +111,7 @@ router.post('/link', requireAuth, requireAdmin, async (req, res) => {
     if (!proposalId || !contactCode) {
       return res.status(400).json({ success: false, message: 'Thiếu proposalId hoặc contactCode' });
     }
-    const result = await syncService.linkProposal(proposalId, contactCode, apiConfigId);
+    const result = await syncService.linkProposal(proposalId, contactCode, apiConfigId, req.user.id);
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(e.statusCode || 500).json({ success: false, message: e.message });

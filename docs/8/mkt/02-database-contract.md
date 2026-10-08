@@ -9,7 +9,7 @@
 |---|---|---|---|
 | `id` | BIGINT/BIGINT UNSIGNED | PK AUTO_INCREMENT | theo convention hiện có |
 | `journey_code` | CHAR(36) | UNIQUE NOT NULL | UUID, hiển thị/hiển thị API |
-| `current_stage` | VARCHAR/ENUM | NOT NULL, default `LEAD` | enum: LEAD, CSKH, TVBH, PROPOSAL, STATION, ON (+ terminal theo 05) |
+| `current_stage` | VARCHAR/ENUM | NOT NULL, default `NEW` | stage theo **05** (nguồn sự thật): NEW → ASSIGNED → CSKH → QUALIFIED → TVBH → PROPOSAL → STATION → ON (+ terminal UNQUALIFIED/LOST). Migration 134 dùng `NEW`. |
 | `status` | VARCHAR | | ACTIVE/CLOSED theo 05 |
 | `started_at` / `completed_at` | DATETIME NULL | | |
 | `created_at` / `updated_at` | DATETIME | | convention mọi bảng |
@@ -104,4 +104,5 @@ Mỗi migration ghi câu rollback (bỏ index/cột nullable) trong comment đ�
 
 | Version | Ngày | Thay đổi |
 |---|---|---|
+| 0.3 | 2026-10-08 | Đồng bộ `business_journeys.current_stage` với contract **05** (default `NEW`, stage list NEW→…→ON + terminal UNQUALIFIED/LOST); sửa mâu thuẫn 02↔05 (Issue #8 doc 70). |
 | 0.2 | 2026-10-07 | áp dụng C0 decisions; vẫn DRAFT |

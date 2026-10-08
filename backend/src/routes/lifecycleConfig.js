@@ -13,7 +13,7 @@ const lifecycleConfigController = require('../controllers/lifecycleConfigControl
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: '{ warn_hours, rules: [{ status, days, hours, minutes, enabled, type }] } với type = supplement | transition'
+ *         description: '{ warn_hours, rules: [{ status, days, hours, minutes, enabled, type }], auto_push_on_update, maxTimes, maxDaysPerTime } với type = supplement | transition'
  *       401:
  *         description: Chưa xác thực
  */
@@ -35,6 +35,9 @@ router.get('/', requireAuth, lifecycleConfigController.get);
  *             type: object
  *             properties:
  *               warn_hours: { type: integer, example: 24 }
+ *               extend_max_times: { type: integer, example: 3 }
+ *               extend_max_days_per_time: { type: integer, example: 30 }
+ *               auto_push_on_update: { type: boolean, example: true, description: Tu dong tao lenh day 1Office khi luu de xuat }
  *               rules:
  *                 type: array
  *                 items:

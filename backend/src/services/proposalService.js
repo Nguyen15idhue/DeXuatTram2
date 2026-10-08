@@ -171,6 +171,13 @@ exports.createProposal = async (userId, data, opts = {}) => {
     }
   } catch { /* silent */ }
 
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    finalData.autoInfoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(recordId, {
+      actorId: userId, purpose: 'create', formId: opts.formId || null, ip: opts.ip || null
+    });
+  } catch { finalData.autoInfoCompleted = null; }
+
   return finalData;
 };
 
@@ -386,6 +393,12 @@ exports.createGuestProposal = async (data, ip) => {
       source: 'user', manualOverride: false, ip: ip || null
     });
   } catch { /* silent: khong chan tao de xuat vi log */ }
+  try {
+    const proposalLifecycle = require('./proposalLifecycle');
+    finalData.autoInfoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(recordId, {
+      actorId: null, purpose: 'create', ip: ip || null
+    });
+  } catch { finalData.autoInfoCompleted = null; }
   return { proposal: finalData, warnings };
 };
 

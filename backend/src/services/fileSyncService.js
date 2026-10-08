@@ -63,21 +63,27 @@ exports.buildFilesArray = async (proposalId, options = {}) => {
     .replace(/\s*\(\d+\)\s*$/, '')
     .trim();
   const excludeSet = new Set((options.excludeNames || []).filter(Boolean).map(stripExt));
+  const excludeIdSet = new Set(
+    (options.excludeIds || []).filter((v) => v !== null && v !== undefined && String(v) !== '').map(String)
+  );
   const files = await exports.loadFiles(proposalId);
   const result = [];
   const names = [];
+  const ids = [];
   const skipped = [];
   for (const file of files) {
+    if (file.id !== undefined && file.id !== null && excludeIdSet.has(String(file.id))) continue;
     if (excludeSet.has(stripExt(file.original_name))) continue;
     try {
       const content = await exports.base64Encode(file.storage_key);
       result.push({ name: stripExt(file.original_name), file: content });
       names.push(file.original_name);
+      if (file.id !== undefined && file.id !== null) ids.push(file.id);
     } catch (err) {
       skipped.push({ name: file.original_name, reason: err.message });
     }
   }
-  return { files: result, names, skipped, totalLoaded: files.length };
+  return { files: result, names, ids, skipped, totalLoaded: files.length };
 };
 
 exports.uploadFiles = async (proposalId, apiConfigId) => {
