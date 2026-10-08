@@ -326,6 +326,8 @@ Từ mốc **104** trở đi, schema có thêm nhiều bảng mới (hướng d�
 | 133 | `proposal-transition-deadline` | ✅ migration |
 | 134–137 | Leads/Journey (`business_journeys`, `leads`, `lead_assignments`, liên kết activity↔proposal) | ✅ migration |
 | 138–139 | seed options MKT + role `MKT` | ✅ migration |
+| 140–141 | **KHÔNG phải Leads** — thuộc kế hoạch 71/72: countdown 2 mốc + auto-push on update | ✅ migration |
+| 142–148 | Lead fields/forms/views, `leads.custom_data`, `customer_type`/`source` nullable, `created_at`/`updated_at` (read-only), công thức Tỉnh→Phường/Xã, `lead_code` UNIQUE + read-only (MKT pipeline) | ✅ migration |
 
 **Riêng `document_templates` cần thêm file `.docx` mẫu** — migration chỉ tạo bảng, không tạo template. `deploy.sh` tự chạy bước **seed best-effort** sau khi `up -d`; **`update.sh` không còn chạy mặc định** (chạy `RUN_EXTRAS=1 ./update.sh`, hoặc chạy tay):
 
