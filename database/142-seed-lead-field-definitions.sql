@@ -7,7 +7,13 @@
 -- Idempotent. Khong sua field cua entity khac.
 
 SET @tinh_dl = (SELECT id FROM data_lists WHERE name IN ('Tỉnh', 'dm_tinh') ORDER BY (name = 'Tỉnh') DESC, id ASC LIMIT 1);
-SET @xa_dl = (SELECT id FROM data_lists WHERE name = 'Danh mục Phường Xã' ORDER BY id ASC LIMIT 1);
+SET @xa_dl = (
+  SELECT id FROM data_lists
+  WHERE name IN ('Danh mục Phường Xã', 'Danh muc Phuong Xa', 'Xã', 'dm_xa')
+    AND JSON_SEARCH(columns_config, 'one', 'tinh') IS NOT NULL
+  ORDER BY FIELD(name, 'Danh mục Phường Xã', 'Danh muc Phuong Xa', 'Xã', 'dm_xa'), id ASC
+  LIMIT 1
+);
 SET @ctype_dl = (SELECT id FROM data_lists WHERE name = 'MKT Lead Customer Type' LIMIT 1);
 SET @source_dl = (SELECT id FROM data_lists WHERE name = 'MKT Lead Source' LIMIT 1);
 SET @class_dl = (SELECT id FROM data_lists WHERE name = 'MKT Lead Customer Classification' LIMIT 1);
