@@ -16,10 +16,25 @@ if [ -f scripts/migrate.sh ]; then
   fi
 fi
 
-echo "[update] Build images..."
-if ! COMPOSE_BAKE=false docker compose -f "$COMPOSE_FILE" build; then
-  echo "[update] Build loi (co the DeadlineExceeded). Thu lai voi legacy builder..."
-  COMPOSE_BAKE=false DOCKER_BUILDKIT=0 docker compose -f "$COMPOSE_FILE" build
+# Build truc tiep bang BuildKit + tat provenance de tranh loi
+# "DeadlineExceeded: context deadline exceeded" cua docker compose build (bake) tren VPS cham.
+echo "[update] Build images (BuildKit, --provenance=false)..."
+IMAGES="$(docker compose -f "$COMPOSE_FILE" config --images 2>/dev/null || true)"
+FE_IMAGE="$(printf '%s\n' "$IMAGES" | grep -i 'frontend' | head -n1 || true)"
+BE_IMAGE="$(printf '%s\n' "$IMAGES" | grep -i 'backend' | head -n1 || true)"
+FE_IMAGE="${FE_IMAGE:-dexuattram2-frontend}"
+BE_IMAGE="${BE_IMAGE:-dexuattram2-backend}"
+
+build_images() {
+  echo "[update] > frontend -> $FE_IMAGE"
+  DOCKER_BUILDKIT=1 docker build --provenance=false -f frontend/Dockerfile.prod -t "$FE_IMAGE" frontend
+  echo "[update] > backend -> $BE_IMAGE"
+  DOCKER_BUILDKIT=1 docker build --provenance=false -f backend/Dockerfile.prod -t "$BE_IMAGE" backend
+}
+
+if ! build_images; then
+  echo "[update] Build truc tiep loi -> thu docker compose build..."
+  COMPOSE_BAKE=false docker compose -f "$COMPOSE_FILE" build
 fi
 
 echo "[update] Khoi dong lai (backend, frontend, mysql)..."
