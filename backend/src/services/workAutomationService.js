@@ -290,11 +290,34 @@ exports.createPendingRun = async ({ automationId, proposalId, proposalCode, cont
     [automationId, proposalId]
   );
   if (dup.length > 0) return { id: dup[0].id, deduped: true };
-  const [r] = await pool.query(
+  const [r] =   await pool.query(
     `INSERT INTO work_automation_runs (automation_id, proposal_id, proposal_code, contact_code, \`trigger\`, action, status) VALUES (?, ?, ?, ?, ?, 'move_to_project', 'pending')`,
     [automationId, proposalId, proposalCode || null, contactCode || null, trigger]
   );
   return { id: r.insertId, deduped: false };
+};
+
+exports.createSyncRun = async ({ automationId, trigger = 'manual', version = null }) => {
+  const [r] = await pool.query(
+    `INSERT INTO work_automation_runs (automation_id, \`trigger\`, action, status, request_json) VALUES (?, ?, 'sync_to_sheet', 'pending', ?)`,
+    [automationId, trigger, JSON.stringify({ version: version || 'all' })]
+  );
+  return { id: r.insertId };
+};
+
+exports.hasActiveSyncRun = async (automationId) => {
+  const [rows] = await pool.query(
+    `SELECT id FROM work_automation_runs WHERE automation_id = ? AND action = 'sync_to_sheet' AND status IN ('pending','running') LIMIT 1`,
+    [automationId]
+  );
+  return rows.length > 0;
+};
+
+exports.resetStaleSyncRuns = async () => {
+  const [r] = await pool.query(
+    `UPDATE work_automation_runs SET status = 'failed', error = 'Bi ngat khi khoi dong lai', finished_at = NOW() WHERE action = 'sync_to_sheet' AND status = 'running'`
+  );
+  return r.affectedRows;
 };
 
 const finishRun = async (id, patch) => {
@@ -308,6 +331,7 @@ const finishRun = async (id, patch) => {
   params.push(id);
   await pool.query(`UPDATE work_automation_runs SET ${cols.join(', ')} WHERE id = ?`, params);
 };
+exports.finishRun = finishRun;
 
 const notifyFailed = async (run, reason) => {
   try {

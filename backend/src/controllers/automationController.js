@@ -180,7 +180,7 @@ async function runsByKey(key, req, res) {
     }
     const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM work_automation_runs WHERE ${where.join(' AND ')}`, params);
     const [rows] = await pool.query(
-      `SELECT id, automation_id, proposal_id, proposal_code, contact_code, process_id, \`trigger\`, action, status, attempt, error, started_at, finished_at, created_at
+      `SELECT id, automation_id, proposal_id, proposal_code, contact_code, process_id, \`trigger\`, action, status, attempt, error, request_json, response_json, started_at, finished_at, created_at
        FROM work_automation_runs WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, limit, (page - 1) * limit]
     );
@@ -467,8 +467,8 @@ exports.syncRun = async (req, res) => {
   try {
     const auto = await needSyncAuto(req.query.key);
     const { version } = req.body || {};
-    const data = await syncService().runSync(auto, { version, trigger: 'manual' });
-    res.json({ success: true, data });
+    const { id } = await workAutomationService.createSyncRun({ automationId: auto.id, trigger: 'manual', version: version || null });
+    res.json({ success: true, data: { run_id: id, status: 'pending', queued: true }, message: 'Đã xếp hàng đồng bộ' });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
     console.error('Manual sync error:', error);

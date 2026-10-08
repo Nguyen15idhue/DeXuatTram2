@@ -293,6 +293,14 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
 
   useEffect(() => { if (view === 'history') loadRuns(1); }, [view, statusFilter]);
 
+  useEffect(() => {
+    if (view !== 'history') return undefined;
+    const active = (runs || []).some((r) => r.status === 'pending' || r.status === 'running');
+    if (!active) return undefined;
+    const t = setInterval(() => loadRuns(pagination.page), 4000);
+    return () => clearInterval(t);
+  }, [view, runs, pagination.page]);
+
   const handleSaveConfig = async () => {
     try {
       setSaving(true);
@@ -355,7 +363,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
       setSyncing(true);
       const res = await automationService.syncRun(undefined, key, token);
       if (res.success) {
-        showToast('Đã tạo lệnh đồng bộ');
+        showToast('Đã xếp hàng đồng bộ — chạy nền như đồng bộ tự động');
         onViewChange('history');
         loadRuns(1);
       } else {

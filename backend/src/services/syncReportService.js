@@ -1512,7 +1512,7 @@ const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, 
   return ids;
 };
 
-exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
+exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) => {
   if (!auto.spreadsheet_id) throw Object.assign(new Error('Chua cau hinh Sheet ID'), { statusCode: 400 });
   const fresh = await workAutomationService.getByKey(auto.automation_key).catch(() => null);
   const effAuto = fresh || auto;
@@ -1529,11 +1529,17 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
   const result = { versions: {}, unmapped: [], failed: [] };
   const targetVersions = await versionsWithMappings(effAuto.id, version, effAuto);
   if (targetVersions.length === 0) {
-    const runId = await insertRun(effAuto.id, {
-      proposal_code: null, trigger, action: 'sync_to_sheet', status: 'success',
-      request_json: { version: version || 'all' }, response_json: { versions: {}, note: 'Khong co version nao thuoc quy trinh mau da chon (hoac chua co mapping)' }, finished_at: new Date(),
-    });
-    return { run_id: runId, ...result, note: 'Khong co version nao thuoc quy trinh mau da chon (hoac chua co mapping)' };
+    const note = 'Khong co version nao thuoc quy trinh mau da chon (hoac chua co mapping)';
+    const payload = { versions: {}, note };
+    if (runId) {
+      await pool.query('UPDATE work_automation_runs SET status = ?, error = NULL, response_json = ?, finished_at = NOW() WHERE id = ?', ['success', JSON.stringify(payload), runId]);
+    } else {
+      runId = await insertRun(effAuto.id, {
+        proposal_code: null, trigger, action: 'sync_to_sheet', status: 'success',
+        request_json: { version: version || 'all' }, response_json: payload, finished_at: new Date(),
+      });
+    }
+    return { run_id: runId, ...result, note };
   }
   for (const v of targetVersions) {
     try {
@@ -1667,10 +1673,17 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
       result.versions[v] = { processes: 0, status: 'failed', error: e.message || 'Loi khong xac dinh' };
     }
   }
-  const runId = await insertRun(effAuto.id, {
-    proposal_code: null, trigger, action: 'sync_to_sheet', status: 'success',
-    request_json: { version: version || 'all' }, response_json: result, finished_at: new Date(),
-  });
+  const failedCount = (result.failed || []).length;
+  const status = failedCount > 0 ? 'failed' : 'success';
+  const errorMsg = failedCount > 0 ? result.failed.map((f) => `Ver ${f.version}: ${f.error}`).join('; ').slice(0, 1000) : null;
+  if (runId) {
+    await pool.query('UPDATE work_automation_runs SET status = ?, error = ?, response_json = ?, finished_at = NOW() WHERE id = ?', [status, errorMsg, JSON.stringify(result), runId]);
+  } else {
+    runId = await insertRun(effAuto.id, {
+      proposal_code: null, trigger, action: 'sync_to_sheet', status,
+      request_json: { version: version || 'all' }, response_json: result, finished_at: new Date(),
+    });
+  }
   return { run_id: runId, ...result };
 };
 
