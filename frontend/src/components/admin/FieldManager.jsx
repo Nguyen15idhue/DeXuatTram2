@@ -18,7 +18,7 @@ import { formatNumber } from '../../utils/formatNumber';
 import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
 
 const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
-const ENTITIES = ['stations', 'station_proposals', 'users'];
+const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
 const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
 

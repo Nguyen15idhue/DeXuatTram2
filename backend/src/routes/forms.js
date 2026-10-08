@@ -17,7 +17,7 @@ const formController = require('../controllers/formController');
  *         name: entity
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *       - in: query
  *         name: status
  *         schema:
@@ -61,7 +61,7 @@ router.get('/', requireAuth, requireSuperAdmin, formController.getAll);
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *       - in: query
  *         name: purpose
  *         required: true
@@ -93,7 +93,7 @@ router.get('/by-entity-purpose', formController.getByEntityAndPurpose);
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *     responses:
  *       200:
  *         description: Thành công (data = null nếu chưa cấu hình form tạo nhanh)
@@ -212,7 +212,7 @@ router.get('/:id', formController.getById);
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, station_proposals, users]
+ *                 enum: [stations, station_proposals, users, leads]
  *               name:
  *                 type: string
  *               description:

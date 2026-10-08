@@ -7,7 +7,7 @@ import DragDropList from './DragDropList';
 import { Search } from 'lucide-react';
 import { filterFieldsBySearch } from '../../utils/searchText';
 
-const ENTITIES = ['stations', 'station_proposals', 'users'];
+const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
 
 const ViewBuilder = ({ viewId, onSaved }) => {
   const { token } = useAuth();

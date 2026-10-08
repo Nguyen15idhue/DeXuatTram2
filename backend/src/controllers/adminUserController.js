@@ -12,9 +12,11 @@ const parseCustomData = (val) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', all = '' } = req.query;
+    const { page = 1, limit = 10, search = '', all = '', role, status, department, chuc_vu, parent_id, date_from, date_to, date_field } = req.query;
     const scope = { role: req.user.role, userId: req.user.id, all: all === '1' };
-    const result = await adminUserService.getAllUsers(search, parseInt(page), parseInt(limit), scope);
+    const result = await adminUserService.getAllUsers(search, parseInt(page), parseInt(limit), scope, {
+      role, status, department, chucVu: chuc_vu, parentId: parent_id, dateFrom: date_from, dateTo: date_to, dateField: date_field
+    });
     res.json({ success: true, data: result.users, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get users error:', error);

@@ -8,7 +8,8 @@ import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
 import StationActivityPopup from './StationActivityPopup';
-import { MapPinned, History, AlertTriangle, CheckCircle2, Eye, Hash } from 'lucide-react';
+import LeadJourneyPopup from './LeadJourneyPopup';
+import { MapPinned, History, AlertTriangle, CheckCircle2, Eye, Hash, Route } from 'lucide-react';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import ConfirmDialog from '../ConfirmDialog';
 import ExtendDeadlineDialog from './ExtendDeadlineDialog';
@@ -42,7 +43,7 @@ const ENTITY_SERVICES = {
   station_proposals: adminProposalService
 };
 
-const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8 };
+const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8, leads: 0 };
 
 const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null, beforeActions = null }) => {
   const { token, user: authUser } = useAuth();
@@ -61,6 +62,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [showMap, setShowMap] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showStationLog, setShowStationLog] = useState(false);
+  const [showLeadJourney, setShowLeadJourney] = useState(false);
   const [linkedProposal, setLinkedProposal] = useState(null);
   const [linkNote, setLinkNote] = useState('');
   const [activeTabs, setActiveTabs] = useState({});
@@ -835,6 +837,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                 Xem bản đồ
               </button>
             )}
+            {entity === 'station_proposals' && record?.lead_id && (
+              <button className="btn btn-sm btn-outline gap-1" onClick={() => setShowLeadJourney(true)} title={`Đề xuất này xuất phát từ Lead ${record.lead_code || `#${record.lead_id}`}`}>
+                <Route size={14} />
+                Xem leads
+              </button>
+            )}
             {entity === 'station_proposals' && record?.id && (
               <button className="btn btn-sm btn-outline gap-1" onClick={() => setShowLog(true)} title="Xem lịch sử hoạt động của đề xuất">
                 <History size={14} />
@@ -1012,6 +1020,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       )}
       {showLog && entity === 'station_proposals' && record?.id && (
         <ProposalActivityPopup proposalId={record.id} onClose={() => setShowLog(false)} />
+      )}
+      {showLeadJourney && record?.lead_id && (
+        <LeadJourneyPopup leadId={record.lead_id} onClose={() => setShowLeadJourney(false)} />
       )}
       {showStationLog && entity === 'stations' && record?.id && (
         <StationActivityPopup stationId={record.id} onClose={() => setShowStationLog(false)} />

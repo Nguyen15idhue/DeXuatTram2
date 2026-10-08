@@ -719,13 +719,20 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     const displayPlaceholder = field.placeholderOverride || '';
     const isRequired = field.required;
 
+    let scReadonly = false;
+    try {
+      const sc = field.source_config;
+      const obj = typeof sc === 'string' ? JSON.parse(sc) : sc;
+      scReadonly = !!(obj && obj.readonly);
+    } catch { scReadonly = false; }
+
     const fieldForRender = {
       ...field,
       label: displayLabel,
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || !!field.autoLocked
+      readonly: field.readonly || !!field.autoLocked || scReadonly
     };
 
     if (field.type === 'formula') {

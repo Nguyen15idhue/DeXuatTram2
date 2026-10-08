@@ -10,7 +10,7 @@ exports.getAllProposals = async () => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
-            u.role AS owner_role,
+            u.role AS owner_role, u.full_name AS user_name, u.phone AS user_phone,
             gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone, JSON_UNQUOTE(JSON_EXTRACT(gdkv.custom_data, '$.chuc_vu')) AS gdkv_chuc_vu,
             ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone, JSON_UNQUOTE(JSON_EXTRACT(ptr.custom_data, '$.chuc_vu')) AS ptr_chuc_vu,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
@@ -37,7 +37,7 @@ exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.address, p.status, p.owner_name, p.owner_phone,
             p.created_at, p.user_id, u.parent_id AS owner_parent_id,
-            u.role AS owner_role,
+            u.role AS owner_role, u.full_name AS user_name, u.phone AS user_phone,
             gdkv.full_name AS gdkv_name, gdkv.phone AS gdkv_phone, JSON_UNQUOTE(JSON_EXTRACT(gdkv.custom_data, '$.chuc_vu')) AS gdkv_chuc_vu,
             ptr.full_name AS phu_trach_name, ptr.phone AS phu_trach_phone, JSON_UNQUOTE(JSON_EXTRACT(ptr.custom_data, '$.chuc_vu')) AS ptr_chuc_vu,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,

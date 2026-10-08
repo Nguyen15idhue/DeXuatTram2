@@ -28,7 +28,7 @@ const getFileIcon = (file) => {
   return File;
 };
 
-const VIEW_MAP = { stations: 6, users: 7, station_proposals: 8 };
+const VIEW_MAP = { stations: 6, users: 7, station_proposals: 8, leads: 0 };
 
 const AdminRecordFilesPage = () => {
   const { token, isAdmin } = useAuth();

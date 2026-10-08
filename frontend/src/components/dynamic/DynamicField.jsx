@@ -62,11 +62,25 @@ const MemoryHints = ({ memory, onPick }) => {
     <div className="flex flex-wrap items-center gap-1 mt-1">
       <span className="text-[11px] text-base-content/50">Đã nhập:</span>
       {memory.suggestions.map((s, i) => (
-        <button key={i} type="button" className="badge badge-ghost badge-sm" style={{ cursor: 'pointer' }} onClick={() => onPick(s)} title="Dùng lại giá trị này">
+        <button
+          key={i}
+          type="button"
+          className="badge badge-ghost badge-sm"
+          style={{ cursor: 'pointer' }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onPick(s)}
+          title="Dùng lại giá trị này"
+        >
           {s.length > 40 ? s.slice(0, 40) + '…' : s}
         </button>
       ))}
-      <button type="button" className="text-[11px] text-base-content/40 hover:text-error px-1" onClick={memory.onClear} title="Xóa lịch sử ô này">✕</button>
+      <button
+        type="button"
+        className="text-[11px] text-base-content/40 hover:text-error px-1"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={memory.onClear}
+        title="Xóa lịch sử ô này"
+      >✕</button>
     </div>
   );
 };
@@ -227,6 +241,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
   const [focusedCell, setFocusedCell] = useState(null);
   const [selectSearch, setSelectSearch] = useState('');
   const [highlightIndex, setHighlightIndex] = useState(0);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -544,6 +559,9 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     }
   };
 
+  const renderMemory = () => (memoryOpen ? <MemoryHints memory={memory} onPick={onChange} /> : null);
+
+  const fieldContent = (() => {
   switch (field.type) {
     case 'textarea':
       return (
@@ -556,7 +574,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             disabled={disabled}
             rows={3}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -572,7 +590,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             disabled={disabled}
             step={step || 'any'}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -587,7 +605,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             placeholder={field.placeholder || ''}
             disabled={disabled}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -602,7 +620,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             placeholder={field.placeholder || ''}
             disabled={disabled}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -630,7 +648,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             placeholder={field.placeholder || ''}
             disabled={disabled}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -644,7 +662,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             onChange={handleChange}
             disabled={disabled}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -658,7 +676,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             onChange={handleChange}
             disabled={disabled}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
 
@@ -853,6 +871,21 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       const minRows = tc.min_rows || 0;
       const maxRows = tc.max_rows || 10;
 
+      const nowLocalInput = () => {
+        const d = new Date();
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+      };
+      const isNowDefault = (col) => typeof col.default_formula === 'string' && col.default_formula.trim().toUpperCase() === 'NOW()';
+      const fillNowDefaults = (row) => {
+        columns.forEach(col => {
+          if (isNowDefault(col) && (row[col.key] === '' || row[col.key] === null || row[col.key] === undefined)) {
+            row[col.key] = nowLocalInput();
+          }
+        });
+        return row;
+      };
+
       const addRow = () => {
         if (disabled) return;
         if (rows.length >= maxRows) return;
@@ -862,7 +895,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           if (col.formula) r[col.key] = computeFormula(col.formula, r);
           return r;
         }, newRow);
-        onChange([...rows, computedRow]);
+        onChange([...rows, fillNowDefaults(computedRow)]);
       };
 
       const removeRow = (idx) => {
@@ -936,7 +969,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           }
           return r;
         }, updatedRow);
-        const next = rows.map((r, i) => i === rowIdx ? recomputedRow : r);
+        const next = rows.map((r, i) => i === rowIdx ? fillNowDefaults(recomputedRow) : r);
         onChange(next);
       };
 
@@ -1072,10 +1105,17 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             placeholder={field.placeholder || ''}
             disabled={disabled}
           />
-          <MemoryHints memory={memory} onPick={onChange} />
+          {renderMemory()}
         </>
       );
   }
+  })();
+
+  return (
+    <div className="dynamic-field-control" onFocus={() => setMemoryOpen(true)} onBlur={() => setMemoryOpen(false)}>
+      {fieldContent}
+    </div>
+  );
 };
 
 export default DynamicField;

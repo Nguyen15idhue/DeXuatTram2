@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager, requireLeadManager } = require('../middlewares/auth');
 const { adminLimiter, excelLimiter } = require('../middlewares/rateLimits');
 const excelService = require('../services/excelService');
 
@@ -135,6 +135,33 @@ router.get('/export/users', requireAuth, requireAdmin, adminLimiter, excelLimite
 
 /**
  * @swagger
+ * /api/admin/excel/export/leads:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất danh sách Lead ra Excel (theo view, scope theo role)
+ *     description: ADMIN/SUPER xuất tất cả; MKT theo Lead mình tạo; SALES theo scope (GĐTT phòng ban, GĐKV được giao).
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: viewId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: usage
+ *         schema:
+ *           type: string
+ *           enum: [table, excel_full, excel_basic]
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/export/leads', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.exportLeads);
+
+/**
+ * @swagger
  * /api/admin/excel/export/station_proposals/by-model:
  *   get:
  *     tags: [Admin - Excel]
@@ -178,7 +205,7 @@ router.get('/export/station_proposals/by-model', requireAuth, requireUserManager
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, users, station_proposals]
+ *           enum: [stations, users, station_proposals, leads]
  *         description: Entity name
  *       - in: query
  *         name: viewId
@@ -206,7 +233,7 @@ router.get('/export/station_proposals/by-model', requireAuth, requireUserManager
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/template', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.getTemplate);
+router.get('/template', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.getTemplate);
 
 /**
  * @swagger
@@ -251,7 +278,7 @@ router.get('/template/by-model', requireAuth, requireUserManager, adminLimiter, 
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, users, station_proposals]
+ *           enum: [stations, users, station_proposals, leads]
  *     responses:
  *       200:
  *         description: Thành công
@@ -260,7 +287,7 @@ router.get('/template/by-model', requireAuth, requireUserManager, adminLimiter, 
  *       403:
  *         description: Không có quyền
  */
-router.get('/views', requireAuth, requireUserManager, excelService.getViewsForEntity);
+router.get('/views', requireAuth, requireLeadManager, excelService.getViewsForEntity);
 
 /**
  * @swagger
@@ -277,7 +304,7 @@ router.get('/views', requireAuth, requireUserManager, excelService.getViewsForEn
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, users, station_proposals]
+ *           enum: [stations, users, station_proposals, leads]
  *         description: Entity name
  *       - in: query
  *         name: viewId
@@ -311,7 +338,7 @@ router.get('/views', requireAuth, requireUserManager, excelService.getViewsForEn
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/import/preview', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.uploadMiddleware, excelService.importPreview);
+router.post('/import/preview', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.uploadMiddleware, excelService.importPreview);
 
 /**
  * @swagger
@@ -332,7 +359,7 @@ router.post('/import/preview', requireAuth, requireUserManager, adminLimiter, ex
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, users, station_proposals]
+ *                 enum: [stations, users, station_proposals, leads]
  *               rows:
  *                 type: array
  *               viewId:
@@ -355,7 +382,7 @@ router.post('/import/preview', requireAuth, requireUserManager, adminLimiter, ex
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/import/confirm', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.importConfirm);
+router.post('/import/confirm', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.importConfirm);
 
 /**
  * @swagger
@@ -379,7 +406,7 @@ router.post('/import/confirm', requireAuth, requireUserManager, adminLimiter, ex
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/import/progress/:jobId', requireAuth, requireUserManager, adminLimiter, excelService.getImportProgress);
+router.get('/import/progress/:jobId', requireAuth, requireLeadManager, adminLimiter, excelService.getImportProgress);
 
 /**
  * @swagger
@@ -424,7 +451,7 @@ router.get('/import/progress/:jobId', requireAuth, requireUserManager, adminLimi
  *       200:
  *         description: Thành công
  */
-router.get('/import/jobs', requireAuth, requireUserManager, adminLimiter, excelService.listImportJobs);
+router.get('/import/jobs', requireAuth, requireLeadManager, adminLimiter, excelService.listImportJobs);
 
 /**
  * @swagger
@@ -448,7 +475,7 @@ router.get('/import/jobs', requireAuth, requireUserManager, adminLimiter, excelS
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/import/jobs/:id', requireAuth, requireUserManager, adminLimiter, excelService.getImportJob);
+router.get('/import/jobs/:id', requireAuth, requireLeadManager, adminLimiter, excelService.getImportJob);
 
 /**
  * @swagger
@@ -468,7 +495,7 @@ router.get('/import/jobs/:id', requireAuth, requireUserManager, adminLimiter, ex
  *       200:
  *         description: Đã hủy
  */
-router.post('/import/jobs/:id/cancel', requireAuth, requireUserManager, adminLimiter, excelService.cancelImportJob);
+router.post('/import/jobs/:id/cancel', requireAuth, requireLeadManager, adminLimiter, excelService.cancelImportJob);
 
 /**
  * @swagger
@@ -488,7 +515,7 @@ router.post('/import/jobs/:id/cancel', requireAuth, requireUserManager, adminLim
  *       200:
  *         description: File Excel
  */
-router.get('/import/jobs/:id/export-success', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.exportImportSuccess);
+router.get('/import/jobs/:id/export-success', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.exportImportSuccess);
 
 /**
  * @swagger
@@ -508,7 +535,7 @@ router.get('/import/jobs/:id/export-success', requireAuth, requireUserManager, a
  *       200:
  *         description: File Excel
  */
-router.get('/import/jobs/:id/export-failed', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.exportImportFailed);
+router.get('/import/jobs/:id/export-failed', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.exportImportFailed);
 
 /**
  * @swagger

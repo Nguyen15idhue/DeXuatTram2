@@ -13,8 +13,10 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, search, page = 1, limit = 10, filters } = req.query;
-    const result = await myProposalService.getUserProposals(req.user.id, status, search, parseInt(page), parseInt(limit), filters);
+    const { status, search, page = 1, limit = 10, filters, uu_tien, date_from, date_to, date_field } = req.query;
+    const result = await myProposalService.getUserProposals(req.user.id, status, search, parseInt(page), parseInt(limit), filters, {
+      uuTien: uu_tien, dateFrom: date_from, dateTo: date_to, dateField: date_field
+    });
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Get my proposals error:', error);

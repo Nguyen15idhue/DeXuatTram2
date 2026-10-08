@@ -166,3 +166,12 @@
     background: #eef2ff !important;
   }
 }
+
+/* Giữ chỗ thanh cuộn để bố cục không nhảy khi danh sách dài/ngắn đổi (lọc, chuyển trang) */
+html {
+  scrollbar-gutter: stable;
+}
+
+.dynamic-table-container .overflow-x-auto {
+  scrollbar-gutter: stable;
+}

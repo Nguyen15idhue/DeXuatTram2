@@ -17,6 +17,9 @@ import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
+import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
 import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap, Link2, MapPinned } from 'lucide-react';
 
@@ -28,11 +31,17 @@ const MyProposalsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
   const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [filterUuTien, setFilterUuTien] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [dateField, setDateField] = useState('created_at');
+  const [showFilter, setShowFilter] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
@@ -99,9 +108,15 @@ const MyProposalsPage = () => {
       const params = new URLSearchParams({ page, limit: pageSize });
       const f = overrides.filter !== undefined ? overrides.filter : filter;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
+      const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
+      const df = overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
+      const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
+      const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (f) params.append('status', f);
+      if (ut) params.append('uu_tien', ut);
       if (s) params.append('search', s);
+      if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
         const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
         params.append('filters', JSON.stringify(active));
@@ -116,7 +131,7 @@ const MyProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedSearch, columnFilters, token, pageSize]);
+  }, [filter, filterUuTien, dateFrom, dateTo, dateField, debouncedSearch, columnFilters, token, pageSize]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -413,12 +428,16 @@ const MyProposalsPage = () => {
   const handleReset = () => {
     setSearch('');
     setFilter('');
+    setFilterUuTien('');
+    setDateFrom('');
+    setDateTo('');
+    setDateField('created_at');
     setColumnFilters({});
     if (dupRef.current) dupRef.current.reset();
     setDupMode(false);
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadProposals(1, { filter: '', search: '', columnFilters: {} });
+    loadProposals(1, { filter: '', filterUuTien: '', dateFrom: '', dateTo: '', dateField: 'created_at', search: '', columnFilters: {} });
   };
 
   return (
@@ -472,19 +491,37 @@ const MyProposalsPage = () => {
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
         />
-        <select className="select select-bordered select-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="">Tất cả trạng thái</option>
-          {statusOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <button className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
-          <Search size={14} /> Tìm
+        <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
         </button>
-        <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset}>
-          <RotateCcw size={14} /> Reset
-        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filter, filterUuTien, dateFrom, dateTo].filter(Boolean).length} />
       </div>
+
+      <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={handleSearch} onReset={handleReset} title="Bộ lọc đề xuất của tôi">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select className="select select-bordered select-sm w-full" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
+            <option value="">Tất cả loại ưu tiên</option>
+            {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
+            <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+              <option value="created_at">Tạo</option>
+              <option value="updated_at">Cập nhật</option>
+            </select>
+          </div>
+          <input type="date" className="input input-bordered input-sm w-full" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <input type="date" className="input input-bordered input-sm w-full" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="flex items-end gap-2 sm:col-span-2">
+            <button className="btn btn-primary btn-sm flex-1 gap-1" onClick={handleSearch}><Search size={14} /> Áp dụng</button>
+            <button className="btn btn-ghost btn-sm flex-1 gap-1" onClick={handleReset}><RotateCcw size={14} /> Xóa lọc</button>
+          </div>
+        </div>
+      </FilterBody>
 
       <DuplicateCheckPanel
         ref={dupRef}

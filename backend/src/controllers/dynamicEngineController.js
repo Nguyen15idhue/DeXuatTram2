@@ -4,7 +4,7 @@ exports.getFormConfig = async (req, res) => {
   try {
     const { entity, formId } = req.params;
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }
@@ -25,7 +25,7 @@ exports.getViewConfig = async (req, res) => {
   try {
     const { entity, viewId } = req.params;
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }
@@ -47,7 +47,7 @@ exports.validateData = async (req, res) => {
     const { entity } = req.params;
     const { data } = req.body;
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }

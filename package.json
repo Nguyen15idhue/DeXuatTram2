@@ -7,6 +7,8 @@
   },
   "scripts": {
     "test:e2e": "playwright test e2e/FE-01-smoke.spec.js --reporter=list",
+    "test:e2e:leads": "playwright test e2e/FE-02-leads-journey.spec.js --reporter=list",
+    "test:e2e:all": "playwright test --reporter=list",
     "test:e2e:headed": "playwright test --headed"
   },
   "repository": {

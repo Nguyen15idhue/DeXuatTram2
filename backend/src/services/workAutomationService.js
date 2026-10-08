@@ -294,6 +294,10 @@ exports.createPendingRun = async ({ automationId, proposalId, proposalCode, cont
     `INSERT INTO work_automation_runs (automation_id, proposal_id, proposal_code, contact_code, \`trigger\`, action, status) VALUES (?, ?, ?, ?, ?, 'move_to_project', 'pending')`,
     [automationId, proposalId, proposalCode || null, contactCode || null, trigger]
   );
+  try {
+    const journeySyncService = require('./journeySyncService');
+    await journeySyncService.linkAutomationRun({ runId: r.insertId, proposalId });
+  } catch { /* silent */ }
   return { id: r.insertId, deduped: false };
 };
 
@@ -395,6 +399,10 @@ const processOneRun = async (run) => {
       request_json: { process_id: found.id, project_id: target.id, project_code: target.code },
       response_json: mv, finished_at: new Date(),
     });
+    try {
+      const journeySyncService = require('./journeySyncService');
+      await journeySyncService.linkAutomationRun({ runId: run.id, proposalId: run.proposal_id, processId: found.id });
+    } catch { /* silent */ }
     return { id: run.id, status: 'success' };
   } catch (e) {
     if (attempt >= auto.retry_max) {

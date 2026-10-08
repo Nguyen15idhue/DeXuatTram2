@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin, requireLeadManager } = require('../middlewares/auth');
 const viewController = require('../controllers/viewController');
 
 /**
@@ -16,7 +16,7 @@ const viewController = require('../controllers/viewController');
  *         name: entity
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *       - in: query
  *         name: status
  *         schema:
@@ -40,7 +40,7 @@ const viewController = require('../controllers/viewController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireSuperAdmin, viewController.getAll);
+router.get('/', requireAuth, requireLeadManager, viewController.getAll);
 
 /**
  * @swagger
@@ -80,7 +80,7 @@ router.get('/:id', viewController.getById);
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, station_proposals, users]
+ *                 enum: [stations, station_proposals, users, leads]
  *               name:
  *                 type: string
  *               description:

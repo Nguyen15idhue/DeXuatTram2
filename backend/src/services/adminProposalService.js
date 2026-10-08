@@ -13,7 +13,7 @@ exports.getBranchUserIds = async (salesId) => {
   return adminUserService.getBranchIds(salesId);
 };
 
-exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien, columnFilters) => {
+exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien, columnFilters, extra = {}) => {
   const offset = (page - 1) * limit;
   const where = [];
   const params = [];
@@ -69,6 +69,16 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     params.push(...filterParams);
   }
 
+  if (extra.leadLink === 'yes') { where.push('p.journey_id IS NOT NULL'); }
+  else if (extra.leadLink === 'no') { where.push('p.journey_id IS NULL'); }
+  if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?"); params.push(extra.province); }
+  if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
+  if (extra.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) = ?"); params.push(extra.department); }
+  if (extra.ownerUserId) { where.push('p.user_id = ?'); params.push(Number(extra.ownerUserId)); }
+  const dateField = extra.dateField === 'updated_at' ? 'p.updated_at' : 'p.created_at';
+  if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
+  if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }
+
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
   const [countResult] = await pool.query(
@@ -84,9 +94,12 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.contact_1office_code, p.sync_status, p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.pending_station_code,
-            u.full_name as user_name, u.email as user_email
+            u.full_name as user_name, u.email as user_email,
+            p.journey_id,
+            l.id AS lead_id, l.lead_code AS lead_code
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
+    LEFT JOIN leads l ON l.journey_id = p.journey_id AND l.deleted_at IS NULL
     ${whereClause}
     ORDER BY p.created_at DESC
     LIMIT ? OFFSET ?`,
@@ -114,7 +127,12 @@ exports.getProposalById = async (id) => {
 
 exports.getProposalWithUser = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.*, u.full_name as user_name FROM station_proposals p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
+    `SELECT p.*, u.full_name as user_name,
+            l.id AS lead_id, l.lead_code AS lead_code
+       FROM station_proposals p
+       LEFT JOIN users u ON p.user_id = u.id
+       LEFT JOIN leads l ON l.journey_id = p.journey_id AND l.deleted_at IS NULL
+      WHERE p.id = ?`,
     [id]
   );
   if (proposals.length === 0) return null;

@@ -148,6 +148,13 @@ exports.stationUpdate = [
           reason: null, actorId: null, actorRole: null, source: 'webhook', ip: req.ip || null
         });
         loggedRows.push('status_change');
+        try {
+          const journeySyncService = require('../services/journeySyncService');
+          await journeySyncService.onStationStatus(station.id, {
+            from: before.status, to: after.status,
+            actorId: null, actorRole: null, source: 'webhook', ip: req.ip || null
+          });
+        } catch { /* silent */ }
       }
       if (table.length > 0 || (title && !statusChanged)) {
         await stationActivityService.logActivity({

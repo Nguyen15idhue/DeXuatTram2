@@ -36,7 +36,7 @@ exports.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name không được để trống' });
     }
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }
@@ -75,7 +75,7 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name không được để trống' });
     }
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }

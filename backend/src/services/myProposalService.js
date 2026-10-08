@@ -8,7 +8,7 @@ const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
 const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
 
-exports.getUserProposals = async (userId, status, search, page, limit, columnFilters) => {
+exports.getUserProposals = async (userId, status, search, page, limit, columnFilters, extra = {}) => {
   const offset = (page - 1) * limit;
   let where = ['p.user_id = ?'];
   let params = [userId];
@@ -17,6 +17,14 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
     where.push('p.status = ?');
     params.push(status);
   }
+
+  if (extra.uuTien) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) = ?");
+    params.push(String(extra.uuTien));
+  }
+  const dateField = extra.dateField === 'updated_at' ? 'p.updated_at' : 'p.created_at';
+  if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
+  if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }
 
   if (search) {
     const like = `%${search}%`;

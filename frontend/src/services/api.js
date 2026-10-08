@@ -252,6 +252,46 @@ export const stationService = {
   }
 };
 
+export const leadService = {
+  getAllWithParams(queryString, token) {
+    return api.getWithAuth(`/admin/leads?${queryString}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/leads/${id}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/leads', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/leads/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/leads/${id}`, token);
+  },
+  bulkDelete(ids, token) {
+    return api.postWithAuth('/admin/leads/bulk-delete', { ids }, token);
+  },
+  assign(id, assigneeUserId, token, reason) {
+    return api.postWithAuth(`/admin/leads/${id}/assign`, { assignee_user_id: assigneeUserId, reason }, token);
+  },
+  bulkAssign(ids, assigneeUserId, token, reason) {
+    return api.postWithAuth('/admin/leads/bulk-assign', { ids, assignee_user_id: assigneeUserId, reason }, token);
+  },
+  getGdkvOptions(token) {
+    return api.getWithAuth('/admin/users/options/all?pool=gdkv', token);
+  },
+  assignments(id, token) {
+    return api.getWithAuth(`/admin/leads/${id}/assignments`, token);
+  },
+  journey(id, token) {
+    return api.getWithAuth(`/admin/leads/${id}/journey`, token);
+  },
+  createProposal(id, data, token, idempotencyKey) {
+    const body = idempotencyKey ? { ...data, idempotency_key: idempotencyKey } : data;
+    return api.postWithAuth(`/admin/leads/${id}/create-proposal`, body, token);
+  }
+};
+
 export const proposalService = {
   getAll(token) {
     return token ? api.getWithAuth('/proposals', token) : api.get('/proposals');

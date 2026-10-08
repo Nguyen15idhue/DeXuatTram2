@@ -45,6 +45,12 @@ exports.getAllStations = async (search, status, page, limit, mapMode = false, ex
     params.push(...filterParams);
   }
 
+  if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.province')) = ?"); params.push(extra.province); }
+  if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
+  const dateField = extra.dateField === 'updated_at' ? 's.updated_at' : 's.created_at';
+  if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
+  if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }
+
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
   const [countResult] = await pool.query(`SELECT COUNT(*) as total FROM stations s ${whereClause}`, params);
@@ -304,6 +310,14 @@ exports.convertProposalToStation = async (proposalId, opts = {}) => {
       });
     } catch { /* silent */ }
   }
+
+  try {
+    const journeySyncService = require('./journeySyncService');
+    await journeySyncService.onStationCreated(station.id, p.id, {
+      actorId: opts.actorId || null, actorRole: opts.actorRole || null,
+      source: opts.source || 'user', ip: opts.ip || null
+    });
+  } catch { /* silent: khong chan tao tram vi journey */ }
 
   return { station, created: true };
 };

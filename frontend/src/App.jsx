@@ -21,6 +21,7 @@ const HelpPage = lazy(() => import('./pages/HelpPage'));
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminLeadsPage = lazy(() => import('./pages/admin/AdminLeadsPage'));
 const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
 const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
@@ -39,6 +40,7 @@ const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage')
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'];
 const HIDE_ASSISTANT_PATHS = ['/login', '/register', '/map'];
 
 import './App.css';
@@ -76,6 +78,8 @@ function App() {
 
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/leads" element={<RoleRoute allowed={LEAD_ROLES}><AdminLeadsPage /></RoleRoute>} />
+            <Route path="/admin/leads/*" element={<RoleRoute allowed={LEAD_ROLES}><AdminLeadsPage /></RoleRoute>} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/users/*" element={<AdminUsersPage />} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />

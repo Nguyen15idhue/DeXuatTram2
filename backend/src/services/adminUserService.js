@@ -40,7 +40,7 @@ exports.getBranchIds = async (userId) => {
   return ids;
 };
 
-exports.getAllUsers = async (search, page, limit, scope = {}) => {
+exports.getAllUsers = async (search, page, limit, scope = {}, filters = {}) => {
   const where = [];
   const params = [];
   let ancestorSet = null;
@@ -73,6 +73,15 @@ exports.getAllUsers = async (search, page, limit, scope = {}) => {
     where.push('(' + ors.join(' OR ') + ')');
     params.push(...orsParams);
   }
+
+  if (filters.role) { where.push('role = ?'); params.push(filters.role); }
+  if (filters.status) { where.push('status = ?'); params.push(filters.status); }
+  if (filters.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?"); params.push(filters.department); }
+  if (filters.chucVu) { where.push("JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) = ?"); params.push(filters.chucVu); }
+  if (filters.parentId) { where.push('parent_id = ?'); params.push(Number(filters.parentId)); }
+  const dateField = filters.dateField === 'updated_at' ? 'updated_at' : 'created_at';
+  if (filters.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(filters.dateFrom).slice(0, 10)} 00:00:00`); }
+  if (filters.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(filters.dateTo).slice(0, 10)} 23:59:59`); }
 
   const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
@@ -145,7 +154,7 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
   if (poolType === 'gdkv' || poolType === 'gdtt') {
     const group = poolType === 'gdkv' ? 'Giám đốc Khu vực' : 'Giám đốc Trung tâm Kinh doanh';
 
-    if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
+    if (role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'MKT') {
       const roleFilter = role === 'SUPER_ADMIN'
         ? `role IN ('SALES','ADMIN','SUPER_ADMIN')`
         : `role IN ('SALES','ADMIN')`;

@@ -10,7 +10,7 @@ import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFo
 import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
 import { getColumnSource } from '../../utils/tableColumnSource';
 
-const ENTITIES = ['stations', 'station_proposals', 'users'];
+const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
 const PURPOSE_OPTIONS = [
   { value: 'create', label: 'Form nhập liệu' },
   { value: 'view', label: 'Form xem / sửa' },

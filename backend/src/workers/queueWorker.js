@@ -240,6 +240,17 @@ const processPushJob = async (job) => {
         [contactId, contactCode, JSON.stringify(snapshot), proposal_id]
       );
       try {
+        const [jrows] = await pool.query('SELECT journey_id FROM station_proposals WHERE id = ? LIMIT 1', [proposal_id]);
+        const journeyId = jrows[0] && jrows[0].journey_id;
+        if (journeyId && (contactId || contactCode)) {
+          const journeySyncService = require('../services/journeySyncService');
+          await journeySyncService.upsertExternalRef({
+            journeyId, system: '1office', refType: 'contact',
+            externalId: contactId || contactCode, externalCode: contactCode || null
+          });
+        }
+      } catch { /* silent */ }
+      try {
         const proposalLifecycle = require('../services/proposalLifecycle');
         await proposalLifecycle.logActivity({
           proposalId: proposal_id, action: 'sync_push', source: 'system_auto',

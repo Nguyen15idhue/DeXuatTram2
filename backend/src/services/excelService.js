@@ -18,13 +18,15 @@ const importJobService = require('./importJobService');
 const ENTITY_TABLE_MAP = {
   stations: 'stations',
   users: 'users',
-  station_proposals: 'station_proposals'
+  station_proposals: 'station_proposals',
+  leads: 'leads'
 };
 
 const VALID_STATUSES = {
   stations: ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'],
   users: ['ACTIVE', 'LOCKED'],
-  station_proposals: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED']
+  station_proposals: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'],
+  leads: ['NEW', 'ASSIGNED', 'CSKH', 'QUALIFIED', 'TVBH', 'PROPOSAL', 'STATION', 'ON', 'UNQUALIFIED', 'LOST']
 };
 
 const STATUS_LABEL_MAP = {
@@ -60,7 +62,8 @@ exports.getImportProgress = async (req, res) => {
 const DEFAULT_STATUS = {
   stations: 'ACTIVE',
   users: 'ACTIVE',
-  station_proposals: 'PENDING'
+  station_proposals: 'PENDING',
+  leads: 'NEW'
 };
 
 // Do dai toi da cac cot fixed (theo schema) de bao loi o preview thay vi "Data too long" khi confirm
@@ -518,6 +521,18 @@ function getAllData(entity, filters = {}) {
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     return pool.query(`SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at, updated_at FROM users ${whereClause} ORDER BY id DESC`, params);
   }
+  if (entity === 'leads') {
+    const where = ['deleted_at IS NULL'];
+    const params = [];
+    if (search) { where.push('(full_name LIKE ? OR phone LIKE ? OR lead_code LIKE ?)'); params.push(like, like, like); }
+    if (status) { where.push('stage = ?'); params.push(status); }
+    if (filters.scope && filters.scope.sql) {
+      where.push(filters.scope.sql.replace(/\bl\./g, ''));
+      params.push(...(filters.scope.params || []));
+    }
+    const whereClause = 'WHERE ' + where.join(' AND ');
+    return pool.query(`SELECT * FROM leads ${whereClause} ORDER BY id DESC`, params);
+  }
   return pool.query(`SELECT * FROM ${table} ORDER BY id DESC`);
 }
 
@@ -641,7 +656,8 @@ function styleGuideRow(row, colCount) {
 const REQUIRED_HEADERS = {
   station_proposals: ['latitude', 'longitude'],
   stations: ['name', 'latitude', 'longitude'],
-  users: ['full_name', 'email']
+  users: ['full_name', 'email'],
+  leads: ['full_name', 'phone']
 };
 
 function validateHeaders(headerRow, columns, entity) {
@@ -989,7 +1005,12 @@ exports.exportDynamic = async (req, res) => {
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
 
     if (!ENTITY_TABLE_MAP[entity]) {
-      return res.status(400).json({ success: false, message: 'Entity không hợp lệ. Chọn: stations, users, station_proposals' });
+      return res.status(400).json({ success: false, message: 'Entity không hợp lệ. Chọn: stations, users, station_proposals, leads' });
+    }
+
+    let leadScope = null;
+    if (entity === 'leads') {
+      try { leadScope = await require('./leadService').buildScope(req.user); } catch { leadScope = null; }
     }
 
     if (req.query.layout === 'form') {
@@ -1005,7 +1026,7 @@ exports.exportDynamic = async (req, res) => {
           userMap = m.byId;
         } catch { /* silent */ }
       }
-      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
+      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope });
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet(entity);
       sheet.addRow(columns.map(() => null));
@@ -1029,7 +1050,7 @@ exports.exportDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chưa có view bảng cho entity này' });
     }
 
-    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds });
+    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope });
 
     const workbook = new ExcelJS.Workbook();
     const multi = views.length > 1;
@@ -1471,6 +1492,37 @@ exports.importPreviewDynamic = async (req, res) => {
       validRows.push(...keptRows);
     }
 
+    if (entity === 'leads') {
+      const leadService = require('./leadService');
+      const keptRows = [];
+      for (const vr of validRows) {
+        const rowErrors = [];
+        const phoneDigits = String(vr.fixedData.phone || '').replace(/[^\d]/g, '');
+        if (!/^\d{10}$/.test(phoneDigits)) rowErrors.push('Số điện thoại phải có đúng 10 chữ số');
+        const province = String(vr.fixedData.province || '').trim();
+        if (!province) {
+          rowErrors.push('Tỉnh/Thành phố là bắt buộc');
+        } else {
+          const geo = await leadService.lookupProvince(province);
+          if (!geo || geo.notFound) {
+            rowErrors.push(`Tỉnh/Thành phố "${province}" không có trong danh mục`);
+          } else {
+            const ward = String(vr.fixedData.ward || '').trim();
+            if (ward && !(await leadService.checkWard(ward, province))) {
+              rowErrors.push(`Phường/Xã "${ward}" không thuộc "${province}"`);
+            }
+          }
+        }
+        if (rowErrors.length > 0) {
+          errors.push({ row: vr.rowNumber, errors: rowErrors });
+          continue;
+        }
+        keptRows.push(vr);
+      }
+      validRows.length = 0;
+      validRows.push(...keptRows);
+    }
+
     res.json({
       success: true,
       data: {
@@ -1600,12 +1652,18 @@ exports.exportUsers = async (req, res) => {
   return exports.exportDynamic(req, res);
 };
 
+exports.exportLeads = async (req, res) => {
+  req.query.entity = 'leads';
+  if (denyEntityByRole(req, res, 'leads')) return;
+  return exports.exportDynamic(req, res);
+};
+
 // Export de xuat theo mo hinh dau tu: 5 sheet = HDSD + 4 sheet mo hinh (loc du lieu theo mo hinh) + sheet 'Chua ro mo hinh'.
 exports.exportProposalsByModel = async (req, res) => {
   try {
     const { search = '', status = '' } = req.query;
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
-    if (denySalesEntity(req, res, 'station_proposals')) return;
+    if (denyEntityByRole(req, res, 'station_proposals')) return;
 
     let scopeBranchUserIds = req.query.scopeBranchUserIds;
     if (req.user.role === 'SALES') {
@@ -1684,12 +1742,17 @@ exports.exportProposalsByModel = async (req, res) => {
   }
 };
 
-const SALES_ALLOWED_IMPORT_ENTITIES = new Set(['station_proposals']);
+const SALES_ALLOWED_EXCEL_ENTITIES = new Set(['station_proposals', 'leads']);
+const MKT_ALLOWED_EXCEL_ENTITIES = new Set(['leads']);
 
-const denySalesEntity = (req, res, entity) => {
+const denyEntityByRole = (req, res, entity) => {
   const role = req.user && req.user.role;
-  if (role === 'SALES' && !SALES_ALLOWED_IMPORT_ENTITIES.has(entity)) {
-    res.status(403).json({ success: false, message: 'SALES chỉ được Template/Import/Export đề xuất' });
+  if (role === 'SALES' && !SALES_ALLOWED_EXCEL_ENTITIES.has(entity)) {
+    res.status(403).json({ success: false, message: 'SALES chỉ được Template/Import/Export đề xuất/Lead' });
+    return true;
+  }
+  if (role === 'MKT' && !MKT_ALLOWED_EXCEL_ENTITIES.has(entity)) {
+    res.status(403).json({ success: false, message: 'MKT chỉ được Template/Import/Export Lead' });
     return true;
   }
   return false;
@@ -1701,6 +1764,7 @@ exports.getViewsForEntity = async (req, res) => {
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
     }
+    if (denyEntityByRole(req, res, entity)) return;
     const [rows] = await pool.query(
       "SELECT id, name, entity, `usage`, is_locked, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
       [entity]
@@ -1714,7 +1778,7 @@ exports.getViewsForEntity = async (req, res) => {
 
 exports.getTemplate = async (req, res) => {
   if (!req.query.entity) req.query.entity = 'stations';
-  if (denySalesEntity(req, res, req.query.entity)) return;
+  if (denyEntityByRole(req, res, req.query.entity)) return;
   return exports.getTemplateDynamic(req, res);
 };
 
@@ -1896,7 +1960,7 @@ exports.getTemplateByModel = async (req, res) => {
     if (entity !== 'station_proposals') {
       return res.status(400).json({ success: false, message: 'Template theo mô hình đầu tư chỉ hỗ trợ đề xuất' });
     }
-    if (denySalesEntity(req, res, entity)) return;
+    if (denyEntityByRole(req, res, entity)) return;
 
     const [rows] = await pool.query(
       "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = ? AND status = 'active' ORDER BY id",
@@ -1932,12 +1996,12 @@ exports.getTemplateByModel = async (req, res) => {
 
 exports.importPreview = async (req, res) => {
   if (!req.query.entity) req.query.entity = 'stations';
-  if (denySalesEntity(req, res, req.query.entity)) return;
+  if (denyEntityByRole(req, res, req.query.entity)) return;
   return exports.importPreviewDynamic(req, res);
 };
 
 exports.importConfirm = async (req, res) => {
-  if (denySalesEntity(req, res, req.body && req.body.entity)) return;
+  if (denyEntityByRole(req, res, req.body && req.body.entity)) return;
   return exports.importConfirmDynamic(req, res);
 };
 

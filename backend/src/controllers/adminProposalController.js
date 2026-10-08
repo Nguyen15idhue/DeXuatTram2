@@ -37,9 +37,11 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, search, page = 1, limit = 10, uu_tien, filters } = req.query;
+    const { status, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, date_from, date_to, date_field, lead_link } = req.query;
     const scope = await scopeFor(req);
-    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters);
+    const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters, {
+      province, region, department, ownerUserId: owner_user_id, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link
+    });
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);

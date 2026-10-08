@@ -124,6 +124,7 @@ const ALWAYS_REQUIRED = {
   stations: { latitude: 'Vĩ độ', longitude: 'Kinh độ' },
   station_proposals: { latitude: 'Vĩ độ', longitude: 'Kinh độ' },
   users: { full_name: 'Họ tên', email: 'Email', password: 'Mật khẩu' },
+  leads: { full_name: 'Họ tên' },
 };
 const ALWAYS_REQUIRED_UPDATE = {
   users: { email: 'Email' },
@@ -351,6 +352,8 @@ const validateCreateProposal = makeEntityValidator('station_proposals');
 const validateUpdateProposal = makeEntityValidator('station_proposals', { partial: true });
 const validateCreateUser = makeEntityValidator('users');
 const validateUpdateUser = makeEntityValidator('users', { partial: true });
+const validateCreateLead = makeEntityValidator('leads');
+const validateUpdateLead = makeEntityValidator('leads', { partial: true });
 
 module.exports = {
   getApplicableFieldKeys,  validateEmail,
@@ -369,5 +372,7 @@ module.exports = {
   validateCreateProposal,
   validateUpdateProposal,
   validateCreateUser,
-  validateUpdateUser
+  validateUpdateUser,
+  validateCreateLead,
+  validateUpdateLead
 };

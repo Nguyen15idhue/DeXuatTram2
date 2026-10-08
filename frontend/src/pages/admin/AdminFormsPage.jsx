@@ -12,6 +12,7 @@ const ENTITIES = [
   { key: 'stations', label: 'Stations', icon: Zap, desc: 'Quản lý trạm sạc' },
   { key: 'station_proposals', label: 'Proposals', icon: ClipboardList, desc: 'Đề xuất trạm mới' },
   { key: 'users', label: 'Users', icon: Users, desc: 'Quản lý người dùng' },
+  { key: 'leads', label: 'Leads', icon: ClipboardList, desc: 'Quản lý Lead MKT' },
 ];
 
 const PURPOSES = [

@@ -2,14 +2,19 @@ const stationService = require('../services/stationService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { search, status, page = 1, limit, uu_tien, mo_hinh_tram, filters } = req.query;
+    const { search, status, page = 1, limit, uu_tien, mo_hinh_tram, filters, province, region, date_from, date_to, date_field } = req.query;
     const isMapRequest = limit === undefined;
     const parsedLimit = isMapRequest ? 10000 : parseInt(limit);
     const parsedPage = isMapRequest ? 1 : parseInt(page);
     const result = await stationService.getAllStations(search, status, parsedPage, parsedLimit, isMapRequest, {
       uuTien: uu_tien,
       moHinhTram: mo_hinh_tram,
-      columnFilters: filters
+      columnFilters: filters,
+      province,
+      region,
+      dateFrom: date_from,
+      dateTo: date_to,
+      dateField: date_field
     });
     const data = result.stations;
     if (!req.user) {
@@ -82,6 +87,16 @@ exports.update = async (req, res) => {
         actorId: req.user ? req.user.id : null, actorRole: req.user ? req.user.role : null,
         source: 'user', ip: req.ip || null
       });
+    } catch { /* silent */ }
+    try {
+      if (existing.status !== station.status) {
+        const journeySyncService = require('../services/journeySyncService');
+        await journeySyncService.onStationStatus(id, {
+          from: existing.status, to: station.status,
+          actorId: req.user ? req.user.id : null, actorRole: req.user ? req.user.role : null,
+          source: 'user', ip: req.ip || null
+        });
+      }
     } catch { /* silent */ }
     res.json({ success: true, data: station, message: 'Cập nhật trạm thành công' });
   } catch (error) {

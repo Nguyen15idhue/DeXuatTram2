@@ -15,6 +15,8 @@ import ImportViewPanel from '../../components/admin/ImportViewPanel';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2, List, Network } from 'lucide-react';
 import UserTreeView from '../../components/admin/UserTreeView';
 import { isGdkv, isGdtt } from '../../utils/salesRanks';
@@ -226,9 +228,12 @@ const AdminUsersPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const usersViewId = useDefaultViewId('users', USERS_VIEW_ID);
-  const { getSelectOptions } = useFieldOptions('users', ['status', 'role']);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { getSelectOptions } = useFieldOptions('users', ['status', 'role', 'department', 'chuc_vu']);
   const statusOptions = getSelectOptions('status');
   const roleOptions = getSelectOptions('role');
+  const departmentOptions = getSelectOptions('department');
+  const chucVuOptions = getSelectOptions('chuc_vu');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -239,6 +244,14 @@ const AdminUsersPage = () => {
   const [bulkLoading, setBulkLoading] = useState(false);
 const [search, setSearch] = useState('');
 const [filterStatus, setFilterStatus] = useState('');
+const [filterRole, setFilterRole] = useState('');
+const [filterDepartment, setFilterDepartment] = useState('');
+const [filterChucVu, setFilterChucVu] = useState('');
+const [filterParent, setFilterParent] = useState('');
+const [dateFrom, setDateFrom] = useState('');
+const [dateTo, setDateTo] = useState('');
+const [dateField, setDateField] = useState('created_at');
+const [showFilter, setShowFilter] = useState(false);
 const [viewMode, setViewMode] = useState('table');
   const [columnFilters, setColumnFilters] = useState({});
   const tableRef = useRef(null);
@@ -312,7 +325,19 @@ const [viewMode, setViewMode] = useState('table');
       setLoading(true);
       const params = new URLSearchParams({ all: '1' });
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
+      const rl = overrides.filterRole !== undefined ? overrides.filterRole : filterRole;
+      const dp = overrides.filterDepartment !== undefined ? overrides.filterDepartment : filterDepartment;
+      const cv = overrides.filterChucVu !== undefined ? overrides.filterChucVu : filterChucVu;
+      const pn = overrides.filterParent !== undefined ? overrides.filterParent : filterParent;
+      const df = overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
+      const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
+      const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       if (st) params.append('status', st);
+      if (rl) params.append('role', rl);
+      if (dp) params.append('department', dp);
+      if (cv) params.append('chuc_vu', cv);
+      if (pn) params.append('parent_id', pn);
+      if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       const res = await adminUserService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setUsers(res.data);
@@ -322,7 +347,7 @@ const [viewMode, setViewMode] = useState('table');
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, token]);
+  }, [filterStatus, filterRole, filterDepartment, filterChucVu, filterParent, dateFrom, dateTo, dateField, token]);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
@@ -414,11 +439,18 @@ const [viewMode, setViewMode] = useState('table');
   const handleReset = () => {
     setSearch('');
     setFilterStatus('');
+    setFilterRole('');
+    setFilterDepartment('');
+    setFilterChucVu('');
+    setFilterParent('');
+    setDateFrom('');
+    setDateTo('');
+    setDateField('created_at');
     setAppliedSearch('');
     setColumnFilters({});
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadUsers({ filterStatus: '' });
+    loadUsers({ filterStatus: '', filterRole: '', filterDepartment: '', filterChucVu: '', filterParent: '', dateFrom: '', dateTo: '', dateField: 'created_at' });
   };
 
   const handleDeleteClick = (id, name) => {
@@ -789,50 +821,76 @@ const [viewMode, setViewMode] = useState('table');
       />
 
       {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <input
           type="text"
           placeholder="Search theo tên, email, SĐT, mã ngoài..."
-          className="input input-bordered input-sm w-full sm:flex-1 sm:max-w-md"
+          className="input input-bordered input-sm flex-1 min-w-0"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
         />
-        <div className="flex items-center gap-2">
-          <select className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none sm:w-44" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {statusOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <button className="btn btn-primary btn-sm gap-1 flex-1 sm:flex-none" onClick={handleSearch}>
-            <Search size={14} />
-            Tìm
+        <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterRole, filterDepartment, filterChucVu, filterParent, dateFrom, dateTo].filter(Boolean).length} />
+        <div className="join shrink-0">
+          <button
+            type="button"
+            className={`join-item btn btn-sm gap-1 ${viewMode === 'table' ? 'btn-active' : 'btn-ghost'}`}
+            onClick={() => setViewMode('table')}
+            title="Hiển thị dạng bảng"
+          >
+            <List size={14} /> <span className="hidden sm:inline">Bảng</span>
           </button>
-          <button className="btn btn-ghost btn-sm gap-1 flex-1 sm:flex-none" onClick={handleReset}>
-            <RotateCcw size={14} />
-            Reset
+          <button
+            type="button"
+            className={`join-item btn btn-sm gap-1 ${viewMode === 'tree' ? 'btn-active' : 'btn-ghost'}`}
+            onClick={() => setViewMode('tree')}
+            title="Hiển thị dạng cây phòng ban"
+          >
+            <Network size={14} /> <span className="hidden sm:inline">Cây</span>
           </button>
-          <div className="join flex-1 sm:flex-none">
-            <button
-              type="button"
-              className={`join-item btn btn-sm gap-1 ${viewMode === 'table' ? 'btn-active' : 'btn-ghost'}`}
-              onClick={() => setViewMode('table')}
-              title="Hiển thị dạng bảng"
-            >
-              <List size={14} /> Bảng
-            </button>
-            <button
-              type="button"
-              className={`join-item btn btn-sm gap-1 ${viewMode === 'tree' ? 'btn-active' : 'btn-ghost'}`}
-              onClick={() => setViewMode('tree')}
-              title="Hiển thị dạng cây phòng ban"
-            >
-              <Network size={14} /> Cây
-            </button>
-          </div>
         </div>
       </div>
+
+      <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={() => loadUsers()} onReset={handleReset} title="Bộ lọc người dùng">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <select className="select select-bordered select-sm w-full" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
+            <option value="">Tất cả vai trò</option>
+            {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
+            <option value="">Tất cả phòng ban</option>
+            {departmentOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterChucVu} onChange={(e) => setFilterChucVu(e.target.value)}>
+            <option value="">Tất cả chức vụ</option>
+            {chucVuOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterParent} onChange={(e) => setFilterParent(e.target.value)}>
+            <option value="">Tất cả người quản lý</option>
+            {salesList.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
+            <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+              <option value="created_at">Tạo</option>
+              <option value="updated_at">Cập nhật</option>
+            </select>
+          </div>
+          <input type="date" className="input input-bordered input-sm w-full" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <input type="date" className="input input-bordered input-sm w-full" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
+            <button className="btn btn-primary btn-sm flex-1 gap-1" onClick={() => loadUsers()}><Search size={14} /> Áp dụng</button>
+            <button className="btn btn-ghost btn-sm flex-1 gap-1" onClick={handleReset}><RotateCcw size={14} /> Xóa lọc</button>
+          </div>
+        </div>
+      </FilterBody>
 
       {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">

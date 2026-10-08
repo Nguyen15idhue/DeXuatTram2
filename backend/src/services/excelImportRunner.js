@@ -9,7 +9,8 @@ const { validateLatitude, validateLongitude, validatePhone, validateRequired, va
 const ENTITY_TABLE_MAP = {
   stations: 'stations',
   users: 'users',
-  station_proposals: 'station_proposals'
+  station_proposals: 'station_proposals',
+  leads: 'leads'
 };
 
 const PROGRESS_EVERY = 5;
@@ -205,6 +206,70 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
       }
       if (entity === 'stations') {
         if (fixedData.name == null) fixedData.name = '';
+      }
+
+      if (entity === 'leads') {
+        const leadService = require('./leadService');
+        const crypto = require('crypto');
+        const fullName = String(fixedData.full_name || '').trim();
+        if (!fullName) throw new Error('Họ tên là bắt buộc');
+        const phone = String(fixedData.phone || '').replace(/[^\d]/g, '');
+        if (!/^\d{10}$/.test(phone)) throw new Error('Số điện thoại phải có đúng 10 chữ số');
+        const province = String(fixedData.province || '').trim();
+        if (!province) throw new Error('Tỉnh/Thành phố là bắt buộc');
+        const geo = await leadService.lookupProvince(province);
+        if (!geo || geo.notFound) throw new Error(`Tỉnh/Thành phố "${province}" không có trong danh mục`);
+        const ward = String(fixedData.ward || '').trim();
+        if (ward && !(await leadService.checkWard(ward, province))) {
+          throw new Error(`Phường/Xã "${ward}" không thuộc "${province}"`);
+        }
+
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          const [jres] = await conn.query(
+            "INSERT INTO business_journeys (journey_code, current_stage, status, started_at) VALUES (?, 'NEW', 'ACTIVE', NOW())",
+            [crypto.randomUUID()]
+          );
+          const journeyId = jres.insertId;
+          const [lres] = await conn.query(
+            `INSERT INTO leads (journey_id, full_name, phone, email, address, province, ward, province_code, region, customer_type, source, note, stage, customer_classification, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?)`,
+            [
+              journeyId, fullName, phone,
+              fixedData.email ? String(fixedData.email).trim() : null,
+              fixedData.address ? String(fixedData.address).trim() : null,
+              province, ward || null, geo.province_code, geo.region,
+              fixedData.customer_type ? String(fixedData.customer_type).trim() : null,
+              fixedData.source ? String(fixedData.source).trim() : null,
+              fixedData.note ? String(fixedData.note).trim() : null,
+              fixedData.customer_classification ? String(fixedData.customer_classification).trim() : null,
+              user ? user.id : null
+            ]
+          );
+          const newLeadId = lres.insertId;
+          await conn.query('UPDATE leads SET lead_code = ? WHERE id = ?', [`LD-${String(newLeadId).padStart(6, '0')}`, newLeadId]);
+          const journeyActivityService = require('./journeyActivityService');
+          await journeyActivityService.log({
+            journey_id: journeyId, entity_type: 'lead', entity_id: newLeadId,
+            action: 'lead_created', stage_after: 'NEW',
+            actor_id: user ? user.id : null, actor_role: user ? user.role : null,
+            source: 'import', ip: ip || null
+          }, conn);
+          await conn.commit();
+          createdIds.push(newLeadId);
+          imported++;
+          processed++;
+        } catch (e) {
+          try { await conn.rollback(); } catch { /* silent */ }
+          throw e;
+        } finally {
+          conn.release();
+        }
+        if (onProgress && (processed % PROGRESS_EVERY === 0 || processed === rows.length)) {
+          try { await onProgress({ done: processed, imported, failed }); } catch { /* silent */ }
+        }
+        continue;
       }
 
       const fixedCols = Object.keys(fixedData);

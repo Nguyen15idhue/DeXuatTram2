@@ -17,7 +17,7 @@ const fieldDefinitionController = require('../controllers/fieldDefinitionControl
  *         name: entity
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *         description: Filter theo entity
  *       - in: query
  *         name: status
@@ -58,7 +58,7 @@ router.get('/', requireAuth, requireSuperAdmin, fieldDefinitionController.getAll
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *     responses:
  *       200:
  *         description: Thành công
@@ -109,7 +109,7 @@ router.get('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.get
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, station_proposals, users]
+ *                 enum: [stations, station_proposals, users, leads]
  *               key:
  *                 type: string
  *               label:

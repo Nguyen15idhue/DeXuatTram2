@@ -16,6 +16,8 @@ import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { Zap, Download, Upload, Plus, Search, RotateCcw, X, Trash2 } from 'lucide-react';
 
@@ -27,9 +29,12 @@ const AdminStationsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const stationsViewId = useDefaultViewId('stations', STATIONS_VIEW_ID);
-  const { getSelectOptions } = useFieldOptions('stations', ['status', 'mo_hinh_tram']);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { getSelectOptions } = useFieldOptions('stations', ['status', 'mo_hinh_tram', 'province', 'vung_mien']);
   const statusOptions = getSelectOptions('status');
   const moHinhOptions = getSelectOptions('mo_hinh_tram');
+  const provinceOptions = getSelectOptions('province');
+  const regionOptions = getSelectOptions('vung_mien');
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,6 +48,12 @@ const AdminStationsPage = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterUuTien, setFilterUuTien] = useState('');
   const [filterMoHinh, setFilterMoHinh] = useState('');
+  const [filterProvince, setFilterProvince] = useState('');
+  const [filterRegion, setFilterRegion] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [dateField, setDateField] = useState('created_at');
+  const [showFilter, setShowFilter] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [pageSize, setPageSize] = useState(10);
@@ -104,11 +115,19 @@ const AdminStationsPage = () => {
       const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const mh = overrides.filterMoHinh !== undefined ? overrides.filterMoHinh : filterMoHinh;
+      const pr = overrides.filterProvince !== undefined ? overrides.filterProvince : filterProvince;
+      const rg = overrides.filterRegion !== undefined ? overrides.filterRegion : filterRegion;
+      const df = overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
+      const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
+      const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (s) params.append('search', s);
       if (st) params.append('status', st);
       if (ut) params.append('uu_tien', ut);
       if (mh) params.append('mo_hinh_tram', mh);
+      if (pr) params.append('province', pr);
+      if (rg) params.append('region', rg);
+      if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
         const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
         params.append('filters', JSON.stringify(active));
@@ -123,7 +142,7 @@ const AdminStationsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh, columnFilters, pageSize]);
+  }, [debouncedSearch, filterStatus, filterUuTien, filterMoHinh, filterProvince, filterRegion, dateFrom, dateTo, dateField, columnFilters, pageSize]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -138,10 +157,15 @@ const AdminStationsPage = () => {
     setFilterStatus('');
     setFilterUuTien('');
     setFilterMoHinh('');
+    setFilterProvince('');
+    setFilterRegion('');
+    setDateFrom('');
+    setDateTo('');
+    setDateField('created_at');
     setColumnFilters({});
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadStations(1, { search: '', filterStatus: '', filterUuTien: '', filterMoHinh: '', columnFilters: {} });
+    loadStations(1, { search: '', filterStatus: '', filterUuTien: '', filterMoHinh: '', filterProvince: '', filterRegion: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {} });
   };
 
   const openCreate = () => {
@@ -415,42 +439,65 @@ const AdminStationsPage = () => {
         type="danger"
       />
 
-      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <input
           type="text"
           placeholder="Search theo tên, địa chỉ, mã trạm..."
-          className="input input-bordered input-sm w-full sm:flex-1 sm:min-w-[200px] sm:max-w-md"
+          className="input input-bordered input-sm flex-1 min-w-0"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
         />
-        <select className="select select-bordered select-sm w-full sm:w-40" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="">Tất cả trạng thái</option>
-          {statusOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <select className="select select-bordered select-sm w-full sm:w-40" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
-          <option value="">Tất cả loại ưu tiên</option>
-          {PRIORITY_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <select className="select select-bordered select-sm w-full sm:w-40" value={filterMoHinh} onChange={(e) => setFilterMoHinh(e.target.value)}>
-          <option value="">Tất cả mô hình</option>
-          {moHinhOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <div className="flex items-center gap-2">
-          <button className="btn btn-primary btn-sm gap-1 flex-1 sm:flex-none" onClick={handleSearch}>
-            <Search size={14} /> Tìm
-          </button>
-          <button className="btn btn-ghost btn-sm gap-1 flex-1 sm:flex-none" onClick={handleReset}>
-            <RotateCcw size={14} /> Reset
-          </button>
-        </div>
+        <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterUuTien, filterMoHinh, filterProvince, filterRegion, dateFrom, dateTo].filter(Boolean).length} />
       </div>
+
+      <FilterBody
+        open={showFilter}
+        isDesktop={isDesktop}
+        onClose={() => setShowFilter(false)}
+        onApply={handleSearch}
+        onReset={handleReset}
+        title="Bộ lọc trạm"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <select className="select select-bordered select-sm w-full" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
+            <option value="">Tất cả loại ưu tiên</option>
+            {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterMoHinh} onChange={(e) => setFilterMoHinh(e.target.value)}>
+            <option value="">Tất cả mô hình</option>
+            {moHinhOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)}>
+            <option value="">Tất cả tỉnh/thành</option>
+            {provinceOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)}>
+            <option value="">Tất cả vùng miền</option>
+            {regionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
+            <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+              <option value="created_at">Tạo</option>
+              <option value="updated_at">Cập nhật</option>
+            </select>
+          </div>
+          <input type="date" className="input input-bordered input-sm w-full" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <input type="date" className="input input-bordered input-sm w-full" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
+            <button className="btn btn-primary btn-sm flex-1 gap-1" onClick={handleSearch}><Search size={14} /> Áp dụng</button>
+            <button className="btn btn-ghost btn-sm flex-1 gap-1" onClick={handleReset}><RotateCcw size={14} /> Xóa lọc</button>
+          </div>
+        </div>
+      </FilterBody>
 
       {!isSales && selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">

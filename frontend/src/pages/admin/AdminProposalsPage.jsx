@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { adminProposalService, proposalService, excelService, formService, documentService } from '../../services/api';
+import { adminProposalService, proposalService, excelService, formService, documentService, adminUserService, leadService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
@@ -20,6 +20,8 @@ import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw } from 'lucide-react';
@@ -35,12 +37,26 @@ const AdminProposalsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
-  const { getSelectOptions, getFieldLabel } = useFieldOptions('station_proposals', ['status']);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { getSelectOptions, getFieldLabel } = useFieldOptions('station_proposals', ['status', 'province', 'vung_mien']);
   const statusOptions = getSelectOptions('status');
+  const provinceOptions = getSelectOptions('province');
+  const regionOptions = getSelectOptions('vung_mien');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [filterUuTien, setFilterUuTien] = useState('');
+  const [filterProvince, setFilterProvince] = useState('');
+  const [filterRegion, setFilterRegion] = useState('');
+  const [filterDepartment, setFilterDepartment] = useState('');
+  const [filterOwner, setFilterOwner] = useState('');
+  const [filterLeadLink, setFilterLeadLink] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [dateField, setDateField] = useState('created_at');
+  const [showFilter, setShowFilter] = useState(false);
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [ownerOptions, setOwnerOptions] = useState([]);
   const [columnFilters, setColumnFilters] = useState({});
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
@@ -201,6 +217,18 @@ const AdminProposalsPage = () => {
     } catch { /* silent */ }
   };
 
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    leadService.getGdkvOptions(token)
+      .then(res => { if (!cancelled && res && res.success) setDepartmentOptions(Array.from(new Set((res.data || []).map(o => o.department).filter(Boolean))).sort()); })
+      .catch(() => {});
+    adminUserService.getAllWithParams('all=1&limit=1000', token)
+      .then(res => { if (!cancelled && res && res.success) setOwnerOptions(res.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
   const loadProposals = useCallback(async (page = 1, overrides = {}) => {
     try {
       setLoading(true);
@@ -208,10 +236,24 @@ const AdminProposalsPage = () => {
       const f = overrides.filter !== undefined ? overrides.filter : filter;
       const ut = overrides.filterUuTien !== undefined ? overrides.filterUuTien : filterUuTien;
       const s = overrides.search !== undefined ? overrides.search : debouncedSearch;
+      const pr = overrides.filterProvince !== undefined ? overrides.filterProvince : filterProvince;
+      const rg = overrides.filterRegion !== undefined ? overrides.filterRegion : filterRegion;
+      const dp = overrides.filterDepartment !== undefined ? overrides.filterDepartment : filterDepartment;
+      const ow = overrides.filterOwner !== undefined ? overrides.filterOwner : filterOwner;
+      const ll = overrides.filterLeadLink !== undefined ? overrides.filterLeadLink : filterLeadLink;
+      const df = overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
+      const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
+      const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (f) params.append('status', f);
       if (ut) params.append('uu_tien', ut);
       if (s) params.append('search', s);
+      if (pr) params.append('province', pr);
+      if (rg) params.append('region', rg);
+      if (dp) params.append('department', dp);
+      if (ow) params.append('owner_user_id', ow);
+      if (ll) params.append('lead_link', ll);
+      if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
         const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
         params.append('filters', JSON.stringify(active));
@@ -226,7 +268,7 @@ const AdminProposalsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filter, filterUuTien, debouncedSearch, columnFilters, token, pageSize]);
+  }, [filter, filterUuTien, filterProvince, filterRegion, filterDepartment, filterOwner, filterLeadLink, dateFrom, dateTo, dateField, debouncedSearch, columnFilters, token, pageSize]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -579,12 +621,23 @@ const AdminProposalsPage = () => {
     setSearch('');
     setFilter('');
     setFilterUuTien('');
+    setFilterProvince('');
+    setFilterRegion('');
+    setFilterDepartment('');
+    setFilterOwner('');
+    setFilterLeadLink('');
+    setDateFrom('');
+    setDateTo('');
+    setDateField('created_at');
     setColumnFilters({});
     if (dupRef.current) dupRef.current.reset();
     setDupMode(false);
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadProposals(1, { filter: '', filterUuTien: '', search: '', columnFilters: {} });
+    loadProposals(1, {
+      filter: '', filterUuTien: '', search: '', filterProvince: '', filterRegion: '',
+      filterDepartment: '', filterOwner: '', filterLeadLink: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}
+    });
   };
 
   const handleExportProposals = async (viewIds) => {
@@ -1424,30 +1477,67 @@ const AdminProposalsPage = () => {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <input
           type="text"
-          className="input input-bordered input-sm w-full sm:flex-1 sm:max-w-md"
+          className="input input-bordered input-sm flex-1 min-w-0"
           placeholder="Tìm theo tên, địa chỉ, SĐT, mã đề xuất..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && loadProposals(1)}
         />
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none sm:w-44" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {statusOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <select className="select select-bordered select-sm flex-1 min-w-0 sm:flex-none sm:w-44" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
-            <option value="">Tất cả loại ưu tiên</option>
-            {PRIORITY_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
+        <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={() => loadProposals(1)}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filter, filterUuTien, filterProvince, filterRegion, filterDepartment, filterOwner, filterLeadLink, dateFrom, dateTo].filter(Boolean).length} />
       </div>
+
+      <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={() => loadProposals(1)} onReset={handleReset} title="Bộ lọc đề xuất">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <select className="select select-bordered select-sm w-full" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
+            <option value="">Tất cả loại ưu tiên</option>
+            {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)}>
+            <option value="">Tất cả tỉnh/thành</option>
+            {provinceOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)}>
+            <option value="">Tất cả vùng miền</option>
+            {regionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
+            <option value="">Tất cả phòng ban</option>
+            {departmentOptions.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}>
+            <option value="">Tất cả người tạo</option>
+            {ownerOptions.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterLeadLink} onChange={(e) => setFilterLeadLink(e.target.value)}>
+            <option value="">Tất cả (Lead)</option>
+            <option value="yes">Có gắn Lead</option>
+            <option value="no">Không gắn Lead</option>
+          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
+            <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+              <option value="created_at">Tạo</option>
+              <option value="updated_at">Cập nhật</option>
+            </select>
+          </div>
+          <input type="date" className="input input-bordered input-sm w-full" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <input type="date" className="input input-bordered input-sm w-full" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
+            <button className="btn btn-primary btn-sm flex-1 gap-1" onClick={() => loadProposals(1)}><Search size={14} /> Áp dụng</button>
+            <button className="btn btn-ghost btn-sm flex-1 gap-1" onClick={handleReset}><RotateCcw size={14} /> Xóa lọc</button>
+          </div>
+        </div>
+      </FilterBody>
 
       <DuplicateCheckPanel
         ref={dupRef}

@@ -63,7 +63,7 @@ exports.getById = async (id) => {
 exports.getByIdScoped = async (id, user) => {
   const job = await exports.getById(id);
   if (!job) return null;
-  if (user && user.role === 'SALES' && Number(job.created_by) !== Number(user.id)) {
+  if (user && ['SALES', 'MKT'].includes(user.role) && Number(job.created_by) !== Number(user.id)) {
     const err = new Error('Không có quyền xem job này');
     err.statusCode = 403;
     throw err;
@@ -185,7 +185,7 @@ exports.requeueStuck = async () => {
 exports.listScoped = async (filters = {}, page = 1, limit = 20, user) => {
   const where = [];
   const params = [];
-  if (user && user.role === 'SALES') {
+  if (user && ['SALES', 'MKT'].includes(user.role)) {
     where.push('j.created_by = ?');
     params.push(user.id);
   } else if (filters.created_by) {

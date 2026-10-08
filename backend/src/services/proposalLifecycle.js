@@ -80,7 +80,7 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Trạng thái không hợp lệ', 400);
   }
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, contact_1office_code, custom_data, supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, journey_id, contact_1office_code, custom_data, supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id = ?',
     [id]
   );
   if (rows.length === 0) {
@@ -213,6 +213,16 @@ exports.transition = async (id, to, opts = {}) => {
     actorId, actorRole, source: overrideActive ? 'admin_override' : source,
     manualOverride: manualOverride || overrideActive, ip
   });
+
+  try {
+    if (proposal.journey_id) {
+      const journeySyncService = require('./journeySyncService');
+      await journeySyncService.onProposalTransition(id, {
+        from, to, actorId, actorRole,
+        source: overrideActive ? 'admin_override' : source, ip
+      });
+    }
+  } catch { /* silent: khong chan chuyen trang thai vi journey */ }
 
   let autoPush = null;
   if (to === 'REVIEWING' && from !== 'REVIEWING') {

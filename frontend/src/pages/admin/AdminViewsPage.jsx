@@ -11,6 +11,7 @@ const ENTITIES = [
   { key: 'stations', label: 'Stations', icon: Zap, desc: 'Bảng quản lý trạm' },
   { key: 'station_proposals', label: 'Proposals', icon: ClipboardList, desc: 'Bảng đề xuất trạm' },
   { key: 'users', label: 'Users', icon: Users, desc: 'Bảng quản lý người dùng' },
+  { key: 'leads', label: 'Leads', icon: ClipboardList, desc: 'Bảng quản lý Lead' },
 ];
 
 const USAGE_OPTIONS = [
