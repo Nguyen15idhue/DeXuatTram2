@@ -36,7 +36,7 @@ const STATUS_LABEL_MAP = {
   }
 };
 
-const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
+  const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'];
 
 const importJobs = new Map();
 const IMPORT_JOB_TTL_MS = 30 * 60 * 1000;

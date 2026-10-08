@@ -68,7 +68,7 @@ exports.create = async (req, res) => {
     let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
     const creatorRole = req.user.role;
 
-    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'];
     if (role && !validRoles.includes(role)) {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
@@ -251,7 +251,7 @@ exports.delete = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Không thể xóa chính mình' });
     }
 
-    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3, MKT: 3 };
     const deleterRank = RANK[deleterRole] ?? 99;
     const targetRank = RANK[existing.role] ?? 99;
 
@@ -312,7 +312,7 @@ exports.changeRole = async (req, res) => {
     const { id } = req.params;
     const { role } = req.body;
 
-    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
 

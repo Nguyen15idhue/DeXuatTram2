@@ -95,6 +95,39 @@ const requireUserManager = (req, res, next) => {
   next();
 };
 
+// Middleware: Quyen quan ly Lead/Report rieng (contract docs/8/mkt/04) — khong mo rong requireUserManager
+const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MKT', 'SALES'];
+
+const requireLeadManager = (req, res, next) => {
+  if (!LEAD_ROLES.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
+const requireReportViewer = (req, res, next) => {
+  if (!LEAD_ROLES.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
+const requireReportConfigurator = (req, res, next) => {
+  if (req.user.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập tài nguyên này'
+    });
+  }
+  next();
+};
+
 // Optional auth: attach user if token exists, otherwise continue
 const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -115,4 +148,14 @@ const optionalAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager, optionalAuth, JWT_SECRET };
+module.exports = {
+  requireAuth,
+  requireAdmin,
+  requireSuperAdmin,
+  requireUserManager,
+  requireLeadManager,
+  requireReportViewer,
+  requireReportConfigurator,
+  optionalAuth,
+  JWT_SECRET
+};

@@ -21,3 +21,5 @@ frontend/test-*-results.json
 # Service Account key Google (PRIVATE - khong bao gio commit)
 test_files/ggsheet/*.json
 secrets/
+
+.opencode/

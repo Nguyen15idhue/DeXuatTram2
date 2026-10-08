@@ -1,7 +1,7 @@
 const pool = require('../utils/db');
 const ttlCache = require('../utils/ttlCache');
 
-const KNOWN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'guest'];
+  const KNOWN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT', 'guest'];
 const ARTICLE_STATUSES = ['draft', 'published', 'archived'];
 
 function bumpAssistantCache() {
