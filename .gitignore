@@ -22,4 +22,3 @@ frontend/test-*-results.json
 test_files/ggsheet/*.json
 secrets/
 
-.opencode/
