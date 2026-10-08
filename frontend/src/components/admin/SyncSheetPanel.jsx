@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { Save, Play, RefreshCw, Eye, Plus, Download, X, ChevronRight, Pencil, Trash2, ArrowUp, ArrowDown, Sparkles, ListTodo, Loader2, ChevronDown, Copy, Info, ExternalLink } from 'lucide-react';
 import { automationService } from '../../services/api';
 import Toast from '../Toast';
@@ -102,6 +102,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
   const [sheetHeaders, setSheetHeaders] = useState([]);
   const [sheetTab, setSheetTab] = useState('');
   const [dragPath, setDragPath] = useState(null);
+  const [dragLabel, setDragLabel] = useState('');
   const [dropCol, setDropCol] = useState(null);
   const [newColName, setNewColName] = useState('');
   const [showAddCol, setShowAddCol] = useState(false);
@@ -117,6 +118,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
   const [autoMatching, setAutoMatching] = useState(false);
   const [editingLabel, setEditingLabel] = useState(null);
   const [confirmDeleteCol, setConfirmDeleteCol] = useState(null);
+  const [confirmInsertCol, setConfirmInsertCol] = useState(null);
   const [confirmClearVersion, setConfirmClearVersion] = useState(false);
   const [dragCol, setDragCol] = useState(null);
   const [templateProcesses, setTemplateProcesses] = useState([]);
@@ -398,12 +400,85 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
 
   const emptySlots = searchCol.trim() ? [] : [mappings.length, mappings.length + 1, mappings.length + 2].map((i) => colName(i));
 
+  const isBlank = (m) => String((m && m.source_path) || '').startsWith('__blank__');
+
+  const renderInsertBar = (index) => (
+    <div key={`ins-bar-${index}`} className="group/ins relative h-2 flex items-center justify-center">
+      <button
+        type="button"
+        onClick={() => setConfirmInsertCol(index)}
+        title={`Thêm cột mới vào vị trí ${colName(index)}`}
+        className="opacity-0 group-hover/ins:opacity-100 transition-opacity btn btn-primary btn-xs h-5 min-h-0 px-2 rounded-full text-[10px] gap-0.5"
+      >
+        <Plus size={10} /> Thêm cột
+      </button>
+    </div>
+  );
+
+  const persistMappings = async (list) => {
+    const res = await automationService.syncMappingsPut(version, list.map((m) => ({ source_path: m.source_path, sheet_col: m.sheet_col, label: m.label || '' })), key, token);
+    if (res.success) setMappings(normalizeMappings(res.data));
+    return res;
+  };
+
+  const handleGetHeaders = async () => {
+    if (!sheetTab) { showToast('Chưa chọn version / Sheet tab', 'error'); return; }
+    try {
+      showToast('Đang lấy header từ Google Sheet...', 'info');
+      const res = await automationService.syncSheetHeaders(sheetTab, key, token);
+      if (!res.success) { showToast(res.message || 'Lấy header thất bại', 'error'); return; }
+      const headers = res.data || [];
+      setSheetHeaders(headers);
+      let changed = 0;
+      const list = mappings.map((m) => {
+        const h = String(headers[colToIndex(m.sheet_col)] ?? '').trim();
+        if (h && h !== (m.label || '')) { changed++; return { ...m, label: h }; }
+        return m;
+      });
+      for (let i = list.length; i < headers.length; i++) {
+        const h = String(headers[i] ?? '').trim();
+        if (!h) continue;
+        list.push({ source_path: `__blank__${Date.now()}_${i}`, sheet_col: colName(i), label: h });
+        changed++;
+      }
+      const next = reassignLetters(list);
+      setMappings(next);
+      if (version) {
+        const save = await persistMappings(next);
+        if (!save.success) { showToast(save.message || 'Đã lấy header nhưng lưu thất bại', 'error'); return; }
+      }
+      showToast(`Hoàn thành — đã cập nhật ${changed} header từ Google Sheet`);
+    } catch (e) {
+      showToast(e.message || 'Lấy header thất bại', 'error');
+    }
+  };
+
+  const insertColumnAt = async (index) => {
+    if (!version) { showToast('Chọn version trước', 'error'); return; }
+    const tab = sheetTab || `Ver ${version}`;
+    const col = colName(index);
+    try {
+      showToast('Đang thêm cột...', 'info');
+      const list = [...mappings];
+      list.splice(index, 0, { source_path: `__blank__${Date.now()}_${index}`, sheet_col: col, label: '' });
+      const next = reassignLetters(list);
+      setMappings(next);
+      await automationService.syncSheetInsertColumn(tab, index, '', key, token).catch(() => {});
+      const save = await persistMappings(next);
+      await loadHeaders(tab);
+      if (save.success) showToast(`Hoàn thành — đã thêm cột ${col}`);
+      else showToast(save.message || 'Đã thêm cột trên Sheet nhưng lưu mapping thất bại', 'error');
+    } catch (e) {
+      showToast(e.message || 'Thêm cột thất bại', 'error');
+    }
+  };
+
   const renderFieldRow = (f) => (
     <div
       key={f.path}
       draggable
-      onDragStart={(e) => { e.dataTransfer.setData('text/plain', f.path); setDragPath(f.path); }}
-      onDragEnd={() => { setDragPath(null); setDropCol(null); }}
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', f.path); setDragPath(f.path); setDragLabel(f.label || ''); }}
+      onDragEnd={() => { setDragPath(null); setDragLabel(''); setDropCol(null); }}
       className={`flex items-center gap-2 p-1.5 rounded-lg border text-xs cursor-grab bg-base-100 hover:border-primary ${mappedPaths.has(f.path) ? 'border-success' : 'border-dashed border-base-300'} ${dragPath === f.path ? 'opacity-50' : ''}`}
       title={f.path}
     >
@@ -447,10 +522,14 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
     if (mappedPaths.has(dragPath)) {
       showToast('Field đã được map rồi', 'error');
     } else {
-      const label = dragPath.split('.').slice(-1)[0].replace(/[{}]/g, '');
-      setMappings([...mappings.filter((m) => m.sheet_col !== colLetter), { source_path: dragPath, sheet_col: colLetter, label }]);
+      const label = (dragLabel || dragPath.split('.').slice(-1)[0].replace(/[{}]/g, '')).trim();
+      const entry = { source_path: dragPath, sheet_col: colLetter, label };
+      const idx = mappings.findIndex((m) => m.sheet_col === colLetter);
+      const list = idx >= 0 ? mappings.map((m, i) => (i === idx ? entry : m)) : [...mappings, entry];
+      setMappings(reassignLetters(list));
     }
     setDragPath(null);
+    setDragLabel('');
     setDropCol(null);
   };
 
@@ -564,13 +643,20 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
   };
 
   const handleAddColumn = async () => {
-    if (!newColName.trim()) { showToast('Nhập tên header', 'error'); return; }    try {
+    if (!newColName.trim()) { showToast('Nhập tên header', 'error'); return; }
+    try {
+      showToast('Đang thêm cột...', 'info');
       const res = await automationService.syncSheetAddColumn(sheetTab, newColName.trim(), key, token);
       if (res.success) {
+        const header = newColName.trim();
         setNewColName('');
         setShowAddCol(false);
-        loadHeaders(sheetTab);
-        showToast(`Đã thêm cột ${res.data.col}`);
+        const list = [...mappings, { source_path: `__blank__${Date.now()}_${mappings.length}`, sheet_col: res.data.col, label: header }];
+        const next = reassignLetters(list);
+        setMappings(next);
+        if (version) await persistMappings(next);
+        await loadHeaders(sheetTab);
+        showToast(`Hoàn thành — đã thêm cột ${res.data.col}`);
       } else {
         showToast(res.message || 'Thêm thất bại', 'error');
       }
@@ -852,7 +938,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
                   <h4 className="font-semibold">Cột 2 — Cột Google Sheet</h4>
                   <span className="text-xs text-base-content/60">({sheetTab || 'chưa chọn version'})</span>
                   <div className="flex-1" />
-                  <button className="btn btn-ghost btn-xs gap-1" onClick={() => loadHeaders(sheetTab)} title="Get mới nhất">
+                  <button className="btn btn-ghost btn-xs gap-1" onClick={handleGetHeaders} title="Lấy toàn bộ header từ Google Sheet, ghi đè tên header bên dưới">
                     <RefreshCw size={12} />
                     Get
                   </button>
@@ -874,9 +960,11 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
                     const sheetHeader = sheetHeaders[colToIndex(letter)] || '';
                     const mismatch = sheetHeader !== '' && m.label !== '' && sheetHeader !== m.label;
                     const isEditing = editingLabel && editingLabel.path === m.source_path;
+                    const insertIdx = mappings.indexOf(m);
                     return (
+                      <Fragment key={m.source_path}>
+                      {!searchCol.trim() && insertIdx >= 0 && renderInsertBar(insertIdx)}
                       <div
-                        key={m.source_path}
                         data-testid="sheet-col"
                         data-col={letter}
                         draggable
@@ -898,12 +986,18 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
                           <button className="btn btn-ghost btn-xs text-error" title="Xóa cột (dồn vị trí, push sau ghi đè toàn bộ)" onClick={() => setConfirmDeleteCol(m.source_path)}><Trash2 size={12} /></button>
                         </div>
                         <div className="mt-1 text-xs text-base-content/60">Sheet đang là: {sheetHeader !== '' ? sheetHeader : <i>(trống)</i>}</div>
-                        <div className="mt-1 flex items-center gap-1 text-xs bg-success/10 border border-success/30 rounded px-1.5 py-1 font-mono">
-                          <span className="flex-1 truncate">🔗 {m.source_path}</span>
-                          <button className="btn btn-ghost btn-xs" title="Gỡ map" onClick={() => setMappings(mappings.filter((x) => x.source_path !== m.source_path))}>
-                            <X size={12} />
-                          </button>
-                        </div>
+                        {isBlank(m) ? (
+                          <div className="mt-1 flex items-center gap-1 text-xs border border-dashed border-base-300 rounded px-1.5 py-1 text-base-content/50">
+                            <span className="flex-1">Cột trống — thả field vào đây để gán dữ liệu</span>
+                          </div>
+                        ) : (
+                          <div className="mt-1 flex items-center gap-1 text-xs bg-success/10 border border-success/30 rounded px-1.5 py-1 font-mono">
+                            <span className="flex-1 truncate">🔗 {m.source_path}</span>
+                            <button className="btn btn-ghost btn-xs" title="Gỡ map" onClick={() => setMappings(mappings.filter((x) => x.source_path !== m.source_path))}>
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
                         <div className="mt-1 flex items-center gap-1 text-xs">
                           <span className="text-base-content/60">Header:</span>
                           {isEditing ? (
@@ -939,6 +1033,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
                           )}
                         </div>
                       </div>
+                      </Fragment>
                     );
                   })}
                   {emptySlots.map((letter) => (
@@ -1107,6 +1202,16 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
           ))}
         </div>
       </Dialog>
+
+      <ConfirmDialog
+        isOpen={confirmInsertCol !== null}
+        title={`Thêm cột vào vị trí ${colName(confirmInsertCol || 0)}?`}
+        message={`Google Sheet sẽ chèn 1 cột trống tại vị trí ${colName(confirmInsertCol || 0)}; cột ${colName(confirmInsertCol || 0)} hiện tại và các cột sau dịch sang phải. Tiếp tục?`}
+        confirmText="Thêm cột"
+        type="info"
+        onConfirm={() => { const i = confirmInsertCol; setConfirmInsertCol(null); insertColumnAt(i); }}
+        onCancel={() => setConfirmInsertCol(null)}
+      />
 
       <ConfirmDialog
         isOpen={!!confirmDeleteCol}

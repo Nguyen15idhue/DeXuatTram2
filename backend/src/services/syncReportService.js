@@ -1098,6 +1098,8 @@ const colToIndex = (col) => {
   return n - 1;
 };
 
+const a1Range = (tab, ref) => `'${String(tab == null ? '' : tab).replace(/'/g, "''")}'!${ref}`;
+
 // ── Merge duplicate versions ───────────────────────────────────────
 // Các version có ≥95% source_paths giống nhau → connected component
 // Mỗi component giữ duy nhất newest representative
@@ -1623,7 +1625,7 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
       if (!oldSnap || !rowNum) {
         const at = rowNum || nextRow++;
         row.forEach((val, i) => {
-          updates.push({ range: `${tab}!${colLetterOf(i)}${at}`, values: [[String(val ?? '')]] });
+          updates.push({ range: a1Range(tab, `${colLetterOf(i)}${at}`), values: [[String(val ?? '')]] });
         });
         if (!rowNum) { rowOf.set(pid, at); inserted++; }
         changed.push({ process_id: pid, row: at, type: 'new_row' });
@@ -1633,7 +1635,7 @@ exports.runSync = async (auto, { version, trigger = 'manual' } = {}) => {
         const cur = String(val ?? '');
         if ((oldSnap[String(i)] ?? '') !== cur) {
           const col = colLetterOf(i);
-          updates.push({ range: `${tab}!${col}${rowNum}`, values: [[cur]] });
+          updates.push({ range: a1Range(tab, `${col}${rowNum}`), values: [[cur]] });
           if (changed.length < 50) changed.push({ process_id: pid, row: rowNum, col, old: oldSnap[String(i)] ?? '', new: cur });
         }
       });

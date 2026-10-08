@@ -435,6 +435,21 @@ exports.syncSheetAddColumn = async (req, res) => {
   }
 };
 
+exports.syncSheetInsertColumn = async (req, res) => {
+  try {
+    const auto = await needSyncAuto(req.query.key);
+    if (!auto.spreadsheet_id) return res.status(400).json({ success: false, message: 'Chưa cấu hình Sheet ID' });
+    const { tab, index, header } = req.body || {};
+    if (!tab || index === undefined || index === null) return res.status(400).json({ success: false, message: 'Thiếu tab/index' });
+    const idx = Math.max(0, parseInt(index, 10) || 0);
+    res.json({ success: true, data: await sheetService().insertColumn(auto.spreadsheet_id, String(tab), idx, String(header || '').trim()) });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Insert sheet column error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.syncTest = async (req, res) => {
   try {
     const auto = await needSyncAuto(req.query.key);

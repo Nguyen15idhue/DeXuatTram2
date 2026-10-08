@@ -49,6 +49,8 @@ router.get('/sync/sheet-headers', automationController.syncSheetHeaders);
 
 router.post('/sync/sheet-column', automationController.syncSheetAddColumn);
 
+router.post('/sync/sheet-column-insert', automationController.syncSheetInsertColumn);
+
 router.post('/sync/test', automationController.syncTest);
 
 router.post('/sync/run', automationController.syncRun);

@@ -908,6 +908,10 @@ export const automationService = {
     const qs = key ? `?key=${encodeURIComponent(key)}` : '';
     return api.postWithAuth(`/admin/automations/sync/sheet-column${qs}`, { tab, header }, token);
   },
+  syncSheetInsertColumn(tab, index, header, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/sheet-column-insert${qs}`, { tab, index, header }, token);
+  },
   syncTest(data, key, token) {
     const qs = key ? `?key=${encodeURIComponent(key)}` : '';
     return api.postWithAuth(`/admin/automations/sync/test${qs}`, data || {}, token);
