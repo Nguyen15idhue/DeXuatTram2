@@ -1,6 +1,6 @@
 # Hướng dẫn Deploy & Cập nhật trên VPS
 
-> Cập nhật: **14/09/2026**. Đây là tài liệu **chuẩn để vận hành** dự án **TMT-EGREEN (DeXuatTram2)**.
+> Cập nhật: **08/10/2026**. Đây là tài liệu **chuẩn để vận hành** dự án **TMT-EGREEN (DeXuatTram2)**.
 > Các file `Chuanbi_deploy.md` và `Cac_buoc_code_truoc_deploy.md` là **tài liệu lịch sử/quá trình** (còn nhắc `docker-compose.prod.yml`, baseline `01→44` — đã lỗi thời), chỉ dùng tham khảo.
 > Đối tượng: deploy mới hoàn toàn trên VPS + cập nhật code về sau.
 
@@ -23,6 +23,7 @@ chmod +x deploy.sh update.sh scripts/*.sh
 
 # 4) Có code mới
 git pull && ./update.sh
+#    (cần seed template BCĐX / index chatbot thì: RUN_EXTRAS=1 ./update.sh)
 ```
 
 - Mật khẩu mặc định: `admin@station.com / 123456` → **đổi ngay**.
@@ -36,7 +37,7 @@ git pull && ./update.sh
 | File | Vai trò |
 |---|---|
 | `deploy.sh` | Deploy lần đầu: tạo `.env` → build → nạp datadir MySQL → import seed → **áp migration còn thiếu** → chạy 3 service. |
-| `update.sh` | Cập nhật code: chạy migration mới → build lại → `up -d`. |
+| `update.sh` | Cập nhật code: chạy migration mới → build lại (`docker build --provenance=false` cho `frontend/`+`backend/`) → `up -d` (backend, frontend, mysql). Seed BCĐX + index chatbot **mặc định tắt** (bật bằng `RUN_EXTRAS=1`). |
 | `scripts/migrate.sh` | Quản lý migration `database/*.sql` (tracking bảng `schema_migrations`). |
 | `scripts/sync-data.sh` | Đồng bộ dữ liệu dev → VPS (chạy trên máy dev). |
 | `docker-compose.simple.yml` | Stack production: `frontend` (nginx `:80`), `backend` (`Dockerfile.prod`, `:3000`), `mysql` (`8.0.44-debian`). |
@@ -113,7 +114,7 @@ docker exec station-backend date          # phải hiện +07 (TZ Asia/Ho_Chi_Mi
 # API sống
 curl -s -o /dev/null -w "api=%{http_code}\n" http://127.0.0.1:8081/api/test   # mong đợi 200
 
-# DB: kỳ vọng tracked=113, tables=35
+# DB: kỳ vọng tracked=137, tables=48
 docker exec -i station-mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" station_management' <<'SQL'
 SELECT COUNT(*) AS tracked FROM schema_migrations;
 SELECT COUNT(*) AS tables FROM information_schema.tables WHERE table_schema='station_management';
@@ -131,7 +132,8 @@ SELECT COUNT(*) AS has_help_tables FROM information_schema.tables
 SQL
 ```
 
-> `tracked` = số file migration trong `database/` (hiện **113**). `tables` = **35**. Nếu thiếu số nhiều → DB chưa chạy đủ migration, xem mục 7.
+> `tracked` = số file migration trong `database/` (hiện **137**, đánh số 1→139, thiếu 34/51/52). `tables` = **48**. Nếu thiếu số nhiều → DB chưa chạy đủ migration, xem mục 7.
+> Trên VPS đang vận hành, `tracked` có thể là **139** (dư 2 dòng so với số file hiện có — dấu vết các file migration cũ đã đổi tên, không ảnh hưởng).
 
 Sau đó mở web bằng trình duyệt: login, vào `/map`, `/admin/proposals`, chuông thông báo, `/admin/map-config` — đảm bảo không lỗi console.
 
@@ -147,7 +149,10 @@ git pull origin ui-redesign
 ./update.sh
 ```
 
-`update.sh` tự: `migrate.sh run` (áp file migration mới) → build lại → `up -d` → **seed template BCĐX** (best-effort) → index kho tri thức chatbot. Dữ liệu giữ nguyên.
+`update.sh` tự: `migrate.sh run` (áp file migration mới) → build lại → `up -d` (backend, frontend, mysql). Dữ liệu giữ nguyên.
+
+> **Seed template BCĐX + index kho tri thức chatbot đã TẮT mặc định** (update nhanh, ổn định). Khi cần chạy 2 bước này: `RUN_EXTRAS=1 ./update.sh`.
+> **Build**: `update.sh` build trực tiếp bằng `docker build --provenance=false -f frontend/Dockerfile.prod` và `-f backend/Dockerfile.prod` (lấy tên image từ `docker compose config --images`), fallback `COMPOSE_BAKE=false docker compose build`. Cách này tránh lỗi `DeadlineExceeded: context deadline exceeded` của `docker compose build` (bake) hay gặp trên VPS chậm.
 
 Nếu `git pull` báo "local changes would be overwritten":
 
@@ -301,23 +306,31 @@ SQL
 
 Kỳ vọng: `has_deadline_col=1`; `status_enum` chứa `PRINCIPLE_APPROVED`; config `review_supplement_days=3`, `principle_supplement_days=15`, `supplement_webhook_url` (rỗng = tắt).
 
-### 7.3 Tính năng mới theo mã nguồn (migration 104→112) — có cần làm gì thêm?
+### 7.3 Tính năng mới theo mã nguồn (migration 104→139) — có cần làm gì thêm?
 
 Từ mốc **104** trở đi, schema có thêm nhiều bảng mới (hướng dẫn/chatbot, tài liệu BCĐX). Chỉ cần `git pull && ./update.sh` là đủ để **chạy migration + build**, vì:
 
 | Mốc | Thêm gì | `update.sh` tự lo? |
 |---|---|---|
 | 104 | `help_categories` / `help_articles` / `assistant_logs` (+ FULLTEXT) | ✅ chạy migration |
-| 105–106 | `assistant_knowledge` / `assistant_code_knowledge` | ✅ migration + `index-knowledge`/`index-code-knowledge` (best-effort) |
+| 105–106 | `assistant_knowledge` / `assistant_code_knowledge` | ✅ migration (index kho tri thức chỉ chạy khi `RUN_EXTRAS=1 ./update.sh`) |
 | 107–109 | mở role `guest`, `assistant_provider_configs`, `assistant_model_cache` | ✅ migration |
 | 111 | `document_templates` / `document_constants` (Quản lý tài liệu BCĐX) | ✅ migration |
 | 112 | chuẩn hoá hằng số BCĐX (`signer_tgd_*`) | ✅ migration |
 | 113 | `document_template_versions` (lịch sử bố cục Word, rollback) | ✅ migration |
+| 114 | gỡ autofill `chi_phi_lk.so_tien` (nhập tay + footer SUM) | ✅ migration |
+| 115 | xác nhận hoàn thiện thông tin (`info_completed_at`, auto-hủy quá hạn) | ✅ migration |
+| 116 | giới hạn gia hạn (`extend_max_times`/`extend_max_days_per_time`) | ✅ migration |
+| 117–123 | import jobs (`import_jobs`/`import_jobs_rows`), activity station (`station_activity_logs`), trường triển khai trạm, mã trạm chờ (`pending_station_code`) | ✅ migration |
+| 124–132 | automation 1Office (`work_automations`, `work_automation_runs`, `work_automation_queue`/mappings/snapshots, token, template scan) | ✅ migration |
+| 133 | `proposal-transition-deadline` | ✅ migration |
+| 134–137 | Leads/Journey (`business_journeys`, `leads`, `lead_assignments`, liên kết activity↔proposal) | ✅ migration |
+| 138–139 | seed options MKT + role `MKT` | ✅ migration |
 
-**Riêng `document_templates` cần thêm file `.docx` mẫu** — migration chỉ tạo bảng, không tạo template. `update.sh`/`deploy.sh` đã tự chạy bước **seed best-effort** sau khi `up -d`:
+**Riêng `document_templates` cần thêm file `.docx` mẫu** — migration chỉ tạo bảng, không tạo template. `deploy.sh` tự chạy bước **seed best-effort** sau khi `up -d`; **`update.sh` không còn chạy mặc định** (chạy `RUN_EXTRAS=1 ./update.sh`, hoặc chạy tay):
 
 ```bash
-# Chạy tự động trong update.sh/deploy.sh; muốn chạy tay:
+# deploy.sh tự chạy; update.sh cần RUN_EXTRAS=1; hoặc chạy tay:
 docker compose -f docker-compose.simple.yml exec -T backend node scripts/seed-document-templates.js
 ```
 
@@ -475,7 +488,7 @@ docker run --rm -v dexuattram2_uploads_data:/data -v /root/backups:/backup busyb
 | Lỗi `Failed to fetch` khi login | Backend chưa chạy: `docker start station-backend`; xem `docker logs --tail 40 station-backend`. |
 | Backend `Exited` | Thường do DB thiếu bảng/cột. Chạy `scripts/migrate.sh status` và `scripts/migrate.sh run`. |
 | MySQL `unhealthy` / chậm | Chạy lại `./deploy.sh` (tự nạp datadir, chờ tối đa ~6 phút). |
-| Build lỗi `DeadlineExceeded` | `./update.sh` lại; nếu vẫn lỗi: `sudo systemctl restart docker`. |
+| Build lỗi `DeadlineExceeded` | `update.sh` đã dùng `docker build --provenance=false` để tránh lỗi bake/provenance. Nếu vẫn lỗi: chạy lại `./update.sh`; cùng lắm `sudo systemctl restart docker`. |
 | Import kẹt `Waiting for schema metadata lock` | Dừng backend trước khi import: `docker kill station-backend`. |
 | Log MySQL `mbind: Operation not permitted` | Vô hại, bỏ qua. |
 | Đã deploy bản cũ, thiếu bảng (`notifications`, `geocode_configs`...) | Xem **mục 7.1** (unmark 45→67 rồi `migrate.sh run`). |
@@ -515,10 +528,10 @@ Cloudflare (Tunnel/Proxy)
         ▼
 [host] WEB_PORT (mặc định 8081)
         ▼
-container station-frontend (Vite dev server :5173)
-   ├── serve SPA (React)              → proxy /api, /tiles
+container station-frontend (nginx :80 — static build từ Dockerfile.prod)
+   ├── serve SPA (React)              → proxy /api, /tiles (proxy_read_timeout 300s)
    ▼
 container station-backend (:3000)    → container station-mysql (:3306)
 ```
 
-> `docker-compose.simple.yml` dùng `frontend/Dockerfile` (Vite dev server). Repo **có sẵn** `frontend/Dockerfile.prod` + `frontend/nginx.conf` (build static + nginx) nếu sau này muốn chuyển sang phục vụ static cho nhẹ hơn — khi đó đổi `dockerfile: Dockerfile.prod`, map cổng `80`, và thêm proxy `/api`, `/tiles` (đã có trong `nginx.conf`).
+> `docker-compose.simple.yml` dùng `frontend/Dockerfile.prod` (build static bằng Vite + phục vụ bằng **nginx**, map `"${WEB_PORT:-8081}:80"`), kèm `frontend/nginx.conf` proxy `/api`, `/tiles`, `proxy_read_timeout 300s` (đủ cho các request dài như đồng bộ Sheet). `frontend/Dockerfile` (Vite dev server) chỉ dùng khi phát triển local.
