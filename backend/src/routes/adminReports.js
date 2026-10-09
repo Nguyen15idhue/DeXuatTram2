@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireReportViewer } = require('../middlewares/auth');
+const { requireAuth, requireReportViewer, requireReportConfigurator } = require('../middlewares/auth');
 const adminReportController = require('../controllers/adminReportController');
 
 /**
@@ -84,5 +84,80 @@ router.get('/pipeline', requireAuth, requireReportViewer, adminReportController.
  *         description: Không có quyền truy cập
  */
 router.get('/metrics', requireAuth, requireReportViewer, adminReportController.getMetrics);
+
+/**
+ * @swagger
+ * /api/admin/reports/config:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Lấy layout dashboard báo cáo
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: dashboard
+ *         schema:
+ *           type: string
+ *           default: pipeline
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.get('/config', requireAuth, requireReportViewer, adminReportController.getConfig);
+
+/**
+ * @swagger
+ * /api/admin/reports/config:
+ *   put:
+ *     tags: [Reports]
+ *     summary: Lưu layout dashboard báo cáo (chỉ SUPER_ADMIN)
+ *     description: |
+ *       Chỉ cấu hình layout (metric trong registry, thứ tự, kích thước,
+ *       chart type whitelist, tiêu đề). Metric lạ trả 400. Không cấu hình SQL.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: dashboard
+ *         schema:
+ *           type: string
+ *           default: pipeline
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [widgets]
+ *             properties:
+ *               widgets:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [metric]
+ *                   properties:
+ *                     metric:
+ *                       type: string
+ *                     title:
+ *                       type: string
+ *                     chart:
+ *                       type: string
+ *                       enum: [kpi, bar, line, pie, funnel, table]
+ *                     size:
+ *                       type: string
+ *                       enum: [sm, md, lg, full]
+ *                     order:
+ *                       type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Metric/chart/size không hợp lệ
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.put('/config', requireAuth, requireReportConfigurator, adminReportController.updateConfig);
 
 module.exports = router;

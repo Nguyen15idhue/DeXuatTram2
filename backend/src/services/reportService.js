@@ -401,3 +401,53 @@ exports.getPipeline = async (query, user) => {
 
 exports.buildReportScope = buildReportScope;
 exports.proposalScopeClause = proposalScopeClause;
+
+const CHART_WHITELIST = ['kpi', 'bar', 'line', 'pie', 'funnel', 'table'];
+const SIZE_WHITELIST = ['sm', 'md', 'lg', 'full'];
+
+function parseWidgets(input) {
+  if (!Array.isArray(input) || input.length === 0) throw badRequest('widgets phải là mảng không rỗng');
+  if (input.length > 50) throw badRequest('Tối đa 50 widget');
+  return input.map((w, i) => {
+    if (!w || typeof w !== 'object') throw badRequest(`Widget #${i + 1} không hợp lệ`);
+    const metric = String(w.metric || '').trim();
+    if (!METRIC_REGISTRY.includes(metric)) throw badRequest(`Metric không hợp lệ: ${metric || '(trống)'}`);
+    const chart = w.chart === undefined || w.chart === null || w.chart === '' ? 'table' : String(w.chart);
+    if (!CHART_WHITELIST.includes(chart)) throw badRequest(`Chart không hợp lệ: ${chart}`);
+    const size = w.size === undefined || w.size === null || w.size === '' ? 'md' : String(w.size);
+    if (!SIZE_WHITELIST.includes(size)) throw badRequest(`Size không hợp lệ: ${size}`);
+    return {
+      metric,
+      title: w.title !== undefined && w.title !== null && String(w.title) !== '' ? String(w.title).slice(0, 120) : metric,
+      chart,
+      size,
+      order: Number.isFinite(Number(w.order)) ? Number(w.order) : i + 1,
+    };
+  }).sort((a, b) => a.order - b.order);
+}
+
+exports.CHART_WHITELIST = CHART_WHITELIST;
+
+exports.getDashboardConfig = async (key) => {
+  const dashboardKey = key ? String(key).slice(0, 50) : 'pipeline';
+  const [rows] = await pool.query('SELECT dashboard_key, layout_json, updated_by, updated_at FROM report_dashboard_configs WHERE dashboard_key = ? LIMIT 1', [dashboardKey]);
+  if (rows.length === 0) return { dashboard_key: dashboardKey, widgets: [], updated_by: null, updated_at: null };
+  const row = rows[0];
+  let widgets = [];
+  try {
+    widgets = typeof row.layout_json === 'string' ? JSON.parse(row.layout_json) : row.layout_json;
+    if (!Array.isArray(widgets)) widgets = [];
+  } catch { widgets = []; }
+  return { dashboard_key: row.dashboard_key, widgets, updated_by: row.updated_by, updated_at: row.updated_at };
+};
+
+exports.updateDashboardConfig = async (key, widgets, userId) => {
+  const dashboardKey = key ? String(key).slice(0, 50) : 'pipeline';
+  const parsed = parseWidgets(widgets);
+  await pool.query(
+    `INSERT INTO report_dashboard_configs (dashboard_key, layout_json, updated_by) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE layout_json = VALUES(layout_json), updated_by = VALUES(updated_by)`,
+    [dashboardKey, JSON.stringify(parsed), userId || null]
+  );
+  return exports.getDashboardConfig(dashboardKey);
+};
