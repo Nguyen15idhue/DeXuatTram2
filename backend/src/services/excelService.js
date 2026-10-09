@@ -555,7 +555,11 @@ function getAllData(entity, filters = {}) {
     const where = ['deleted_at IS NULL'];
     const params = [];
     if (search) { where.push('(full_name LIKE ? OR phone LIKE ? OR lead_code LIKE ?)'); params.push(like, like, like); }
-    if (status) { where.push('stage = ?'); params.push(status); }
+    // status (param cũ) = stage; + toàn bộ filter của trang Leads (dùng chung helper).
+    const leadQuery = { ...filters.query, stage: filters.query && filters.query.stage ? filters.query.stage : status };
+    try {
+      require('./leadService').applyLeadListFilters(where, params, leadQuery, '');
+    } catch { /* fallback: chỉ stage */ }
     if (filters.scope && filters.scope.sql) {
       where.push(filters.scope.sql.replace(/\bl\./g, ''));
       params.push(...(filters.scope.params || []));
@@ -1004,6 +1008,13 @@ function exportRowToValues(row, columns, idx, token = '', userMap = null) {
       try { return JSON.stringify(value); } catch { return String(value); }
     }
 
+    // Date từ MySQL: format giờ local server (Asia/Ho_Chi_Minh), tránh
+    // JSON.stringify gắn ngoặc kép + đổi sang UTC gây khó đọc.
+    if (value instanceof Date) {
+      const p = (n) => String(n).padStart(2, '0');
+      return `${value.getFullYear()}-${p(value.getMonth() + 1)}-${p(value.getDate())} ${p(value.getHours())}:${p(value.getMinutes())}:${p(value.getSeconds())}`;
+    }
+
     if (typeof value === 'object') {
       try { return JSON.stringify(value); } catch { return String(value); }
     }
@@ -1058,7 +1069,7 @@ exports.exportDynamic = async (req, res) => {
           userMap = m.byId;
         } catch { /* silent */ }
       }
-      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope });
+      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope, query: req.query });
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet(entity);
       sheet.addRow(columns.map(() => null));
@@ -1082,7 +1093,7 @@ exports.exportDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chưa có view bảng cho entity này' });
     }
 
-    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope });
+    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope, query: req.query });
 
     const workbook = new ExcelJS.Workbook();
     const multi = views.length > 1;
@@ -1527,6 +1538,7 @@ exports.importPreviewDynamic = async (req, res) => {
     if (entity === 'leads') {
       const leadService = require('./leadService');
       const keptRows = [];
+      const previewOptionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
       for (const vr of validRows) {
         const rowErrors = [];
         const phoneDigits = String(vr.fixedData.phone || '').replace(/[^\d]/g, '');
@@ -1542,6 +1554,14 @@ exports.importPreviewDynamic = async (req, res) => {
             const ward = String(vr.fixedData.ward || '').trim();
             if (ward && !(await leadService.checkWard(ward, province))) {
               rowErrors.push(`Phường/Xã "${ward}" không thuộc "${province}"`);
+            }
+          }
+        }
+        for (const k of Object.keys(previewOptionLabels)) {
+          const vv = vr.fixedData[k];
+          if (vv !== undefined && vv !== null && String(vv).trim() !== '') {
+            if (!(await leadService.checkFieldOptionValue('leads', k, String(vv).trim()))) {
+              rowErrors.push(`${previewOptionLabels[k]} "${String(vv).trim()}" không thuộc danh mục`);
             }
           }
         }

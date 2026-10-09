@@ -3,6 +3,9 @@ import SearchableSelect from '../ui/SearchableSelect';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const GDKV_GROUP = 'Giám đốc Khu vực';
+const GDTT_GROUP = 'Giám đốc Trung tâm Kinh doanh';
+
 const resolveUserId = (value) => {
   if (value === null || value === undefined || value === '') return '';
   const raw = (typeof value === 'object' && value !== null) ? (value.id ?? value.user_id ?? value.value) : value;
@@ -19,10 +22,20 @@ const parseAutoUser = (field) => {
   try { return JSON.parse(sc).auto_user || null; } catch { return null; }
 };
 
+const parseUserPool = (field) => {
+  if (!field) return null;
+  const sc = field.source_config;
+  if (!sc) return null;
+  if (typeof sc === 'object') return sc.user_pool || null;
+  try { return JSON.parse(sc).user_pool || null; } catch { return null; }
+};
+
 const poolOfField = (field) => {
   const mode = parseAutoUser(field);
   if (mode === 'area_director') return 'gdkv';
   if (mode === 'center_director') return 'gdtt';
+  const pool = parseUserPool(field);
+  if (pool === 'gdkv' || pool === 'gdtt') return pool;
   return null;
 };
 
@@ -45,6 +58,11 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
   const selectedId = resolveUserId(value);
   const selectedUser = options.find(o => Number(o.id) === Number(selectedId));
   const pool = poolOfField(field);
+  // Pool GĐKV/GĐTT: chỉ hiện đúng nhóm (tránh chọn người không đủ điều kiện rồi bị 400).
+  // Giữ lại option đã lưu (fetch bù theo id) để không mất giá trị hiện tại.
+  const visibleOptions = pool
+    ? options.filter(o => o.group === (pool === 'gdkv' ? GDKV_GROUP : GDTT_GROUP) || !o.group || Number(o.id) === Number(selectedId))
+    : options;
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +106,7 @@ const UserField = ({ field, value, onChange, disabled, error }) => {
   return (
     <div className={`dynamic-field-user${error ? ' has-error' : ''}`}>
       <SearchableSelect
-        options={buildOptions(options)}
+        options={buildOptions(visibleOptions)}
         value={selectedId === '' ? '' : String(selectedId)}
         onChange={(v) => onChange(v === '' ? '' : { id: Number(v) })}
         placeholder={loading ? 'Đang tải...' : '-- Chọn người dùng --'}

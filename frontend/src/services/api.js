@@ -699,6 +699,13 @@ export const excelService = {
     if (filters.purpose) params.append('purpose', filters.purpose);
     if (filters.viewId) params.append('viewId', filters.viewId);
     if (filters.viewIds && filters.viewIds.length) params.append('viewIds', filters.viewIds.join(','));
+    // Filter chi tiết trang Leads (backend entity khác bỏ qua param lạ)
+    ['stage', 'source', 'province', 'region', 'customer_classification', 'sales_outcome',
+      'assigned_user_id', 'assigned_department', 'date_from', 'date_to', 'date_field'].forEach((k) => {
+      if (filters[k] !== undefined && filters[k] !== null && String(filters[k]).trim() !== '') {
+        params.append(k, filters[k]);
+      }
+    });
     const query = params.toString() ? `?${params.toString()}` : '';
     await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${fileStamp()}_export_${entity}.xlsx`);
   },

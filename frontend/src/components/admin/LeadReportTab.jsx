@@ -47,16 +47,53 @@ const MilestoneTable = ({ milestones }) => {
   );
 };
 
-const HistoryList = ({ history, note }) => (
-  <div>
-    {history.length === 0 ? <p className="text-xs opacity-60">Chưa có</p> : (
-      <ul className="list-disc ml-5 text-xs space-y-1">
-        {history.map((r, i) => <li key={i}>{JSON.stringify(r)}</li>)}
-      </ul>
-    )}
-    {note ? <p className="text-xs mt-1"><b>Ghi chú:</b> {note}</p> : null}
-  </div>
-);
+const HistoryList = ({ history, note }) => {
+  if (!history || history.length === 0) {
+    return (
+      <div>
+        <p className="text-xs opacity-60">Chưa có</p>
+        {note ? <p className="text-xs mt-1"><b>Ghi chú:</b> {note}</p> : null}
+      </div>
+    );
+  }
+  const keys = [];
+  history.forEach((r) => {
+    if (r && typeof r === 'object' && !Array.isArray(r)) {
+      Object.keys(r).forEach((k) => { if (!keys.includes(k)) keys.push(k); });
+    }
+  });
+  if (keys.length === 0) {
+    return (
+      <div>
+        <ul className="list-disc ml-5 text-xs space-y-1">
+          {history.map((r, i) => <li key={i}>{String(r)}</li>)}
+        </ul>
+        {note ? <p className="text-xs mt-1"><b>Ghi chú:</b> {note}</p> : null}
+      </div>
+    );
+  }
+  const headerLabel = { thoi_gian: 'Thời gian', tinh_trang: 'Tình trạng', ghi_chu: 'Ghi chú' };
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="table table-xs w-full">
+          <thead><tr><th>#</th>{keys.map((k) => <th key={k}>{headerLabel[k] || k}</th>)}</tr></thead>
+          <tbody>
+            {history.map((r, i) => (
+              <tr key={i}>
+                <td>{i + 1}</td>
+                {keys.map((k) => (
+                  <td key={k}>{k === 'thoi_gian' ? fmtDateTime(r[k]) : (r[k] ?? '—')}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {note ? <p className="text-xs mt-1"><b>Ghi chú:</b> {note}</p> : null}
+    </div>
+  );
+};
 
 const MirrorBlock = ({ mirror }) => {
   if (!mirror || mirror.length === 0) return <p className="text-xs opacity-60 mt-1">Chưa join được quy trình 1Office (unlinked)</p>;

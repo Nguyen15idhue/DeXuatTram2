@@ -21,7 +21,7 @@ import useMediaQuery from '../../hooks/useMediaQuery';
 import { Users, Upload, Plus, Search, RotateCcw, X, Trash2, Split, SlidersHorizontal } from 'lucide-react';
 
 const AdminLeadsPage = () => {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const leadsViewId = useDefaultViewId('leads', null);
@@ -73,8 +73,6 @@ const AdminLeadsPage = () => {
   const [importProgress, setImportProgress] = useState(null);
   const [importResult, setImportResult] = useState(null);
   const importPollRef = useRef(null);
-
-  const isRestricted = user?.role === 'SALES' || user?.role === 'MKT';
 
   useEffect(() => {
     if (!token) return undefined;
@@ -287,7 +285,24 @@ const AdminLeadsPage = () => {
 
   const handleExportLeads = async (viewIds) => {
     try {
-      await excelService.exportData('leads', token, { search, status: filterStage, viewIds: viewIds || undefined });
+      // Export đúng tập đang lọc (kể cả filter cột trong bảng)
+      const active = Object.fromEntries(
+        Object.entries(columnFilters).filter(([, v]) => String(v ?? '').trim())
+      );
+      await excelService.exportData('leads', token, {
+        search, status: filterStage, viewIds: viewIds || undefined,
+        stage: filterStage || undefined,
+        source: filterSource || undefined,
+        province: filterProvince || undefined,
+        customer_classification: filterClassification || undefined,
+        sales_outcome: filterSalesOutcome || undefined,
+        assigned_department: filterDepartment || undefined,
+        assigned_user_id: filterAssignee || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        date_field: (dateFrom || dateTo) ? dateField : undefined,
+        ...active,
+      });
       setToast({ message: 'Export Lead thành công', type: 'success' });
     } catch (err) {
       setError(err.message || 'Lỗi export Lead');

@@ -300,8 +300,11 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
       scope[k] = v;
     }
     let result;
+    // Thay {metadata} (vd {base_url}) trước khi evaluate — giống preview.
+    // Không thay thì mathjs coi đó là chữ trong string literal và lưu nguyên văn.
+    const substitutedExpression = formulaService.substituteMetadataPlaceholders(fc.expression, scope);
     try {
-      const node = math.parse(fc.expression);
+      const node = math.parse(substitutedExpression);
       const seqNodes = node.filter(n => n.isFunctionNode && n.fn && (n.fn.name || '').toUpperCase() === 'SEQ');
       if (seqNodes.length > 0) {
         const values = new Map();
@@ -314,7 +317,7 @@ exports.computePostFormulas = async (entity, recordId, recordData, userId, userE
         const transformed = node.transform(n => (values.has(n) ? new math.ConstantNode(values.get(n)) : n));
         result = transformed.compile().evaluate(scope);
       } else {
-        result = math.evaluate(fc.expression, scope);
+        result = math.evaluate(substitutedExpression, scope);
       }
     } catch { result = null; }
     if (result !== null && result !== undefined) {

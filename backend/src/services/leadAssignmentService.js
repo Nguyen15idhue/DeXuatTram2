@@ -2,49 +2,14 @@ const pool = require('../utils/db');
 const { isGdkv, isGdtt } = require('../constants/salesRanks');
 const leadService = require('./leadService');
 
-const CLASSIFICATION_CODES = {
-  'TIEM_NANG': 'TIEM_NANG',
-  'Tiềm năng': 'TIEM_NANG',
-  'QUAN_TAM': 'QUAN_TAM',
-  'Quan tâm': 'QUAN_TAM',
-  'THEO_DOI': 'THEO_DOI',
-  'Theo dõi thêm': 'THEO_DOI',
-  'KHONG_CHAT_LUONG': 'KHONG_CHAT_LUONG',
-  'Không chất lượng': 'KHONG_CHAT_LUONG',
-};
-
-const normalizeClassification = (value) => {
-  if (value === undefined || value === null) return null;
-  const s = String(value).trim();
-  return CLASSIFICATION_CODES[s] || s;
-};
+// Dùng chung từ leadService (một nguồn duy nhất, tránh lệch).
+const normalizeClassification = (...args) => leadService.normalizeClassification(...args);
+const getRoutingDepartment = (...args) => leadService.getRoutingDepartment(...args);
 
 const parseCustomData = (val) => {
   if (!val) return {};
   if (typeof val === 'object') return val;
   try { return JSON.parse(val); } catch { return {}; }
-};
-
-const getRoutingDepartment = async (region, conn = pool) => {
-  if (!region) return null;
-  const [lists] = await conn.query(
-    "SELECT id FROM data_lists WHERE name = 'MKT Lead Routing' LIMIT 1"
-  );
-  if (lists.length === 0) return null;
-  const [rows] = await conn.query(
-    'SELECT `data` FROM data_list_rows WHERE list_id = ?',
-    [lists[0].id]
-  );
-  for (const r of rows) {
-    let d = r.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
-    if (String(d.vung_mien || '').trim() !== String(region).trim()) continue;
-    const active = d.active;
-    const on = active === true || active === 1 || active === '1' || String(active).toLowerCase() === 'true';
-    if (!on) continue;
-    return d.department ? String(d.department).trim() : null;
-  }
-  return null;
 };
 
 const getGdkvCandidates = async (department, conn = pool) => {
@@ -171,6 +136,8 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
     reason: opts.reason ? String(opts.reason).slice(0, 255) : null,
     ip: opts.ip || null,
   }, conn);
+  const journeySyncService = require('./journeySyncService');
+  await journeySyncService.recomputeStage(lead.journey_id, conn);
   return {
     assignment: { id: ares.insertId, lead_id: Number(leadId), assignee_user_id: targetId, assigned_department: department, assignment_type: type },
     lead: await leadService.getLeadById(leadId),

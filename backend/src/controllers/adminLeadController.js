@@ -48,7 +48,7 @@ exports.create = async (req, res) => {
     } catch (routeErr) {
       routing = { routed: false, warning: routeErr.message || 'Auto-routing thất bại' };
     }
-    const finalLead = (routing && routing.lead) || await leadService.getLeadById(lead.id);
+    const finalLead = await leadService.getLeadDetail(lead.id);
     const message = routing && routing.warning
       ? `Tạo Lead thành công. ${routing.warning}`
       : 'Tạo Lead thành công';
@@ -74,7 +74,7 @@ exports.update = async (req, res) => {
         routing = { routed: false, warning: routeErr.message || 'Auto-routing thất bại' };
       }
     }
-    const finalLead = (routing && routing.lead) || lead;
+    const finalLead = await leadService.getLeadDetail(req.params.id);
     const message = routing && routing.warning
       ? `Cập nhật Lead thành công. ${routing.warning}`
       : 'Cập nhật Lead thành công';

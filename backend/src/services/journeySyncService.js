@@ -2,24 +2,24 @@ const pool = require('../utils/db');
 const journeyActivityService = require('./journeyActivityService');
 
 const STAGE_RANKS = {
-  NEW: 0, ASSIGNED: 1, CSKH: 2, QUALIFIED: 2, TVBH: 2,
-  PROPOSAL: 3, STATION: 4, ON: 5,
+  NEW: 0, ASSIGNED: 1, CSKH: 2, QUALIFIED: 3, TVBH: 4,
+  PROPOSAL: 5, STATION: 6, ON: 7,
 };
 
 const LIVE_PROPOSAL_STATUSES = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED'];
 
 const proposalRank = (status, hasStation) => {
-  if (status === 'CONTRACT_SIGNED' || hasStation) return 4;
-  if (LIVE_PROPOSAL_STATUSES.includes(status)) return 3;
+  if (status === 'CONTRACT_SIGNED' || hasStation) return 6;
+  if (LIVE_PROPOSAL_STATUSES.includes(status)) return 5;
   return 0;
 };
 
 const rankToStage = (rank) => {
-  if (rank >= 5) return 'ON';
-  if (rank >= 4) return 'STATION';
-  if (rank >= 3) return 'PROPOSAL';
-  if (rank >= 2) return null;
-  if (rank >= 1) return null;
+  if (rank >= 7) return 'ON';
+  if (rank >= 6) return 'STATION';
+  if (rank >= 5) return 'PROPOSAL';
+  if (rank >= 4) return null;
+  if (rank >= 3) return null;
   return null;
 };
 
@@ -33,20 +33,33 @@ exports.recomputeStage = async (journeyId, conn = pool) => {
   if (current === 'UNQUALIFIED' || current === 'LOST') return current;
   const currentRank = STAGE_RANKS[current] ?? 0;
 
+  // Stage của Lead (ASSIGNED/CSKH/QUALIFIED/TVBH) cũng nâng journey — trước đây
+  // journey giữ NEW cho tới khi có Proposal nên rail hiển thị sai.
+  let leadRank = 0;
+  let leadStage = null;
+  try {
+    const [lrows] = await conn.query('SELECT stage FROM leads WHERE journey_id = ? LIMIT 1', [journeyId]);
+    leadStage = lrows[0] && lrows[0].stage;
+    leadRank = STAGE_RANKS[leadStage] ?? 0;
+  } catch { /* không có lead thì bỏ qua */ }
+
   const [proposals] = await conn.query(
     'SELECT status, station_id FROM station_proposals WHERE journey_id = ?',
     [journeyId]
   );
-  let computed = 0;
+  let pRank = 0;
   for (const p of proposals) {
     const r = proposalRank(p.status, !!p.station_id);
-    if (r > computed) computed = r;
+    if (r > pRank) pRank = r;
   }
-  if (computed <= currentRank) return current;
-  const next = rankToStage(computed);
-  if (!next) return current;
-  await conn.query('UPDATE business_journeys SET current_stage = ? WHERE id = ?', [next, journeyId]);
-  return next;
+  const best = Math.max(pRank, leadRank);
+  if (best <= currentRank) return current;
+  // Proposal thắng → nhãn theo proposal; ngược lại giữ đúng stage của Lead
+  // (tránh rankToStage biến QUALIFIED/TVBH thành PROPOSAL).
+  const label = (pRank >= best && pRank >= 5) ? rankToStage(pRank) : (leadRank > 0 ? leadStage : null);
+  if (!label) return current;
+  await conn.query('UPDATE business_journeys SET current_stage = ? WHERE id = ?', [label, journeyId]);
+  return label;
 };
 
 exports.onProposalTransition = async (proposalId, { from, to, actorId, actorRole, source, ip } = {}) => {

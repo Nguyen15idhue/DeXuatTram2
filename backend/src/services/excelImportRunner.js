@@ -223,6 +223,14 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
         if (ward && !(await leadService.checkWard(ward, province))) {
           throw new Error(`Phường/Xã "${ward}" không thuộc "${province}"`);
         }
+        const importOptionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
+        for (const k of Object.keys(importOptionLabels)) {
+          if (fixedData[k] !== undefined && fixedData[k] !== null && String(fixedData[k]).trim() !== '') {
+            if (!(await leadService.checkFieldOptionValue('leads', k, String(fixedData[k]).trim()))) {
+              throw new Error(`${importOptionLabels[k]} "${String(fixedData[k]).trim()}" không thuộc danh mục`);
+            }
+          }
+        }
 
         const conn = await pool.getConnection();
         try {
@@ -257,6 +265,14 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
             source: 'import', ip: ip || null
           }, conn);
           await conn.commit();
+          // Import cũng áp auto-routing như tạo tay (TIEM_NANG → phòng ban theo vùng).
+          // Best-effort: lỗi routing không làm fail dòng đã tạo.
+          try {
+            const fresh = await leadService.getLeadById(newLeadId);
+            if (fresh && user) {
+              await require('./leadAssignmentService').tryAutoRoute(fresh, user);
+            }
+          } catch { /* silent */ }
           createdIds.push(newLeadId);
           imported++;
           processed++;

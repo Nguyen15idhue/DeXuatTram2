@@ -161,8 +161,7 @@ exports.buildPostScope = (metadata = {}, recordData = {}) => {
 
 const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name', 'id_1office']);
 
-const substituteMetadataPlaceholders = (expression, values) => {
-  const toRaw = (v) => (v === null || v === undefined ? '' : String(v));
+const substituteMetadataPlaceholders = (expression, values) => {  const toRaw = (v) => (v === null || v === undefined ? '' : String(v));
   const toLiteral = (v) => {
     if (v === null || v === undefined) return '';
     if (typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)))) return String(v);
@@ -213,6 +212,8 @@ const substituteMetadataPlaceholders = (expression, values) => {
   }
   return out;
 };
+
+exports.substituteMetadataPlaceholders = substituteMetadataPlaceholders;
 
 exports.getNextSequence = async (prefix, connection) => {
   const p = String(prefix ?? '').slice(0, 20);

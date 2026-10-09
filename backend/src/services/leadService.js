@@ -65,6 +65,111 @@ const FILTER_COLUMNS = {
   sales_outcome: 'l.sales_outcome',
 };
 
+const LEAD_STAGE_RANKS = {
+  NEW: 0, ASSIGNED: 1, CSKH: 2, QUALIFIED: 3, TVBH: 4,
+  PROPOSAL: 5, STATION: 6, ON: 7,
+};
+
+const CLASSIFICATION_CODES = {
+  'TIEM_NANG': 'TIEM_NANG',
+  'Tiềm năng': 'TIEM_NANG',
+  'QUAN_TAM': 'QUAN_TAM',
+  'Quan tâm': 'QUAN_TAM',
+  'THEO_DOI': 'THEO_DOI',
+  'Theo dõi thêm': 'THEO_DOI',
+  'KHONG_CHAT_LUONG': 'KHONG_CHAT_LUONG',
+  'Không chất lượng': 'KHONG_CHAT_LUONG',
+};
+
+const normalizeClassification = (value) => {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  return CLASSIFICATION_CODES[s] || s;
+};
+
+// Chuẩn hóa giá trị query: Express trả mảng khi key lặp lại (panel + column filter
+// cùng field) — lấy giá trị cuối khác rỗng thay vì để mysql escape mảng gây 500.
+const normalizeQueryValue = (v) => {
+  if (Array.isArray(v)) {
+    const last = [...v].reverse().find((x) => x !== undefined && x !== null && String(x).trim() !== '');
+    return last === undefined ? '' : last;
+  }
+  return v;
+};
+
+// Điều kiện lọc danh sách Lead dùng chung cho GET list và Excel export.
+// Hỗ trợ __empty__ (chưa có giá trị) + khoảng ngày. Không ném lỗi với mảng.
+const applyLeadListFilters = (where, params, query, alias = 'l.') => {
+  const q = {};
+  Object.keys(query || {}).forEach((k) => { q[k] = normalizeQueryValue(query[k]); });
+  const EMPTY_FILTER = '__empty__';
+  Object.keys(FILTER_COLUMNS).forEach((key) => {
+    const value = q[key];
+    if (value === undefined || value === null || String(value).trim() === '') return;
+    const col = `${alias}${FILTER_COLUMNS[key].split('.')[1]}`;
+    if (value === EMPTY_FILTER) {
+      if (key === 'assigned_user_id') {
+        where.push(`${col} IS NULL`);
+      } else {
+        where.push(`(${col} IS NULL OR ${col} = '')`);
+      }
+      return;
+    }
+    where.push(`${col} = ?`);
+    params.push(value);
+  });
+  const dateField = q.date_field === 'updated_at' ? `${alias}updated_at` : `${alias}created_at`;
+  if (q.date_from && String(q.date_from).trim()) {
+    where.push(`${dateField} >= ?`);
+    params.push(`${String(q.date_from).slice(0, 10)} 00:00:00`);
+  }
+  if (q.date_to && String(q.date_to).trim()) {
+    where.push(`${dateField} <= ?`);
+    params.push(`${String(q.date_to).slice(0, 10)} 23:59:59`);
+  }
+  return q;
+};
+
+// Kiểm tra giá trị thuộc danh mục (datalist) của field — data-driven, không hard-code.
+// Field không gắn datalist → bỏ qua (trả true).
+const checkFieldOptionValue = async (entity, fieldKey, value, conn = pool) => {
+  if (value === undefined || value === null || String(value).trim() === '') return true;
+  const [defs] = await conn.query(
+    'SELECT data_list_id FROM field_definitions WHERE entity = ? AND `key` = ? LIMIT 1',
+    [entity, fieldKey]
+  );
+  const def = defs[0];
+  if (!def || !def.data_list_id) return true;
+  const [rows] = await conn.query('SELECT `data` FROM data_list_rows WHERE list_id = ?', [def.data_list_id]);
+  const v = String(value).trim();
+  for (const r of rows) {
+    let d = r.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
+    if (String(d.value ?? '') === v || String(d.label ?? '') === v) return true;
+  }
+  return false;
+};
+
+// Tra phòng ban routing theo vùng từ Data List 'MKT Lead Routing' (không hard-code).
+const getRoutingDepartment = async (region, conn = pool) => {
+  if (!region) return null;
+  const [lists] = await conn.query(
+    "SELECT id FROM data_lists WHERE name = 'MKT Lead Routing' LIMIT 1"
+  );
+  if (lists.length === 0) return null;
+  const [rows] = await conn.query('SELECT `data` FROM data_list_rows WHERE list_id = ?', [lists[0].id]);
+  for (const r of rows) {
+    let d = r.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
+    if (String(d.vung_mien || '').trim() !== String(region).trim()) continue;
+    const active = d.active;
+    const on = active === true || active === 1 || active === '1' || String(active).toLowerCase() === 'true';
+    if (!on) continue;
+    return d.department ? String(d.department).trim() : null;
+  }
+  return null;
+};
+
 // Scope Lead theo contract docs/8/mkt/04 §3 — WHERE clause, khong filter FE.
 // Tra ve null (khong gioi han) hoac { sql, params } cho nguoi dung hien tai.
 const buildScope = async (user) => {
@@ -96,7 +201,7 @@ const buildScope = async (user) => {
 exports.getLeads = async (query, user) => {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 10));
-  const search = String(query.search || '').trim();
+  const search = String(normalizeQueryValue(query.search) || '').trim();
 
   const where = ['l.deleted_at IS NULL'];
   const params = [];
@@ -107,32 +212,7 @@ exports.getLeads = async (query, user) => {
     params.push(like, like, like);
   }
 
-  const EMPTY_FILTER = '__empty__';
-  Object.keys(FILTER_COLUMNS).forEach((key) => {
-    const value = query[key];
-    if (value === undefined || value === null || value === '') return;
-    const col = FILTER_COLUMNS[key];
-    if (value === EMPTY_FILTER) {
-      if (key === 'assigned_user_id') {
-        where.push(`${col} IS NULL`);
-      } else {
-        where.push(`(${col} IS NULL OR ${col} = '')`);
-      }
-      return;
-    }
-    where.push(`${col} = ?`);
-    params.push(value);
-  });
-
-  const dateField = query.date_field === 'updated_at' ? 'l.updated_at' : 'l.created_at';
-  if (query.date_from) {
-    where.push(`${dateField} >= ?`);
-    params.push(`${String(query.date_from).slice(0, 10)} 00:00:00`);
-  }
-  if (query.date_to) {
-    where.push(`${dateField} <= ?`);
-    params.push(`${String(query.date_to).slice(0, 10)} 23:59:59`);
-  }
+  applyLeadListFilters(where, params, query, 'l.');
 
   const scope = await buildScope(user);
   if (scope) {
@@ -240,6 +320,16 @@ exports.createLead = async (data, user, opts = {}) => {
       err.statusCode = 400;
       throw err;
     }
+    const optionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
+    for (const k of Object.keys(optionLabels)) {
+      if (data[k] !== undefined && data[k] !== null && String(data[k]).trim() !== '') {
+        if (!(await checkFieldOptionValue('leads', k, String(data[k]).trim(), conn))) {
+          const err = new Error(`${optionLabels[k]} "${String(data[k]).trim()}" không thuộc danh mục`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+    }
 
     const journeyCode = crypto.randomUUID();
     const [jres] = await conn.query(
@@ -330,10 +420,12 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
   const id = lead.id;
 
   const patch = {};
+  // assigned_department KHÔNG nhận trực tiếp từ PUT (đi qua /assign hoặc tự resolve
+  // nội bộ khi đổi người) — tránh ghi phòng ban bừa / NULL gây 500 ở history.
   const updatable = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
     'customer_type', 'source', 'note', 'customer_classification', 'sales_outcome',
     'cskh_note', 'tvbh_note', 'cskh_history', 'tvbh_history',
-    'assigned_user_id', 'assigned_department'];
+    'assigned_user_id'];
   updatable.forEach((k) => {
     if (data[k] !== undefined) patch[k] = data[k];
   });
@@ -361,6 +453,36 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     }
     patch.assigned_user_id = n;
     patch.assigned_at = n ? new Date() : null;
+    const changedAssignee = Number(n || 0) !== Number(lead.assigned_user_id || 0);
+    if (changedAssignee && n) {
+      // Đổi người qua PUT cũng phải đúng luật như /assign: GĐKV đang hoạt động,
+      // phòng ban resolve theo lead → GĐKV → routing (không bao giờ để NULL).
+      const [trows] = await conn.query(
+        'SELECT id, role, status, custom_data FROM users WHERE id = ? LIMIT 1', [n]
+      );
+      const target = trows[0];
+      const tcd = parseCustomData(target && target.custom_data);
+      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || !isGdkv(tcd.chuc_vu, tcd.department || '')) {
+        const err = new Error('Chỉ giao Lead cho Giám đốc Khu vực (GĐKV) đang hoạt động');
+        err.statusCode = 400;
+        throw err;
+      }
+      let dept = lead.assigned_department || null;
+      if (dept && tcd.department && String(tcd.department) !== String(dept)) {
+        const err = new Error(`GĐKV phải thuộc "${dept}" (đổi phòng ban phải dùng Phân chia Leads)`);
+        err.statusCode = 400;
+        throw err;
+      }
+      if (!dept) dept = tcd.department || null;
+      if (!dept && lead.region) dept = await getRoutingDepartment(lead.region, conn);
+      if (!dept) {
+        const err = new Error('Lead chưa có phòng ban (thiếu routing theo vùng)');
+        err.statusCode = 400;
+        throw err;
+      }
+      patch.assigned_department = dept;
+    }
+    if (changedAssignee && !n) patch.assigned_department = lead.assigned_department || null;
   }
 
   const province = patch.province !== undefined ? String(patch.province).trim() : lead.province;
@@ -386,9 +508,42 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     patch.region = geo.region;
   }
 
+  const optionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
+  for (const k of Object.keys(optionLabels)) {
+    if (patch[k] !== undefined && patch[k] !== null && String(patch[k]).trim() !== '') {
+      if (!(await checkFieldOptionValue('leads', k, String(patch[k]).trim(), conn))) {
+        const err = new Error(`${optionLabels[k]} "${String(patch[k]).trim()}" không thuộc danh mục`);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+  }
+
+  // Suy giai đoạn Lead từ dữ liệu (chỉ nâng, không hạ, không đụng UNQUALIFIED/LOST):
+  // được giao → ASSIGNED; có dòng CSKH → CSKH; phân loại Tiềm năng → QUALIFIED;
+  // TVBH SUCCESS → TVBH.
+  {
+    const effOutcome = patch.sales_outcome !== undefined ? patch.sales_outcome : lead.sales_outcome;
+    const effClass = patch.customer_classification !== undefined ? patch.customer_classification : lead.customer_classification;
+    const effAssignee = patch.assigned_user_id !== undefined ? patch.assigned_user_id : lead.assigned_user_id;
+    const leadCd = parseCustomData(lead.custom_data);
+    const effCskh = patch.cskh_history !== undefined ? patch.cskh_history : leadCd.cskh_history;
+    let candidate = null;
+    if (effAssignee) candidate = 'ASSIGNED';
+    if (Array.isArray(effCskh) && effCskh.length > 0) candidate = 'CSKH';
+    if (normalizeClassification(effClass) === 'TIEM_NANG') candidate = 'QUALIFIED';
+    if (effOutcome === 'SUCCESS') candidate = 'TVBH';
+    const cur = lead.stage || 'NEW';
+    if (candidate && (LEAD_STAGE_RANKS[candidate] ?? 0) > (LEAD_STAGE_RANKS[cur] ?? 0)
+      && cur !== 'UNQUALIFIED' && cur !== 'LOST') {
+      patch.stage = candidate;
+    }
+  }
+
   const fixedCols = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
     'province_code', 'region', 'customer_type', 'source', 'note',
-    'customer_classification', 'sales_outcome', 'assigned_user_id', 'assigned_department', 'assigned_at'];
+    'customer_classification', 'sales_outcome', 'stage',
+    'assigned_user_id', 'assigned_department', 'assigned_at'];
   const sets = [];
   const params = [];
   fixedCols.forEach((c) => {
@@ -492,6 +647,8 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
       ip: opts.ip || null,
     }, conn);
   }
+  const journeySyncService = require('./journeySyncService');
+  await journeySyncService.recomputeStage(lead.journey_id, conn);
   return after;
 };
 
@@ -600,3 +757,9 @@ exports.canAccessLead = canAccessLead;
 exports.buildScope = buildScope;
 exports.lookupProvince = lookupProvince;
 exports.checkWard = checkWard;
+exports.normalizeClassification = normalizeClassification;
+exports.normalizeQueryValue = normalizeQueryValue;
+exports.applyLeadListFilters = applyLeadListFilters;
+exports.checkFieldOptionValue = checkFieldOptionValue;
+exports.getRoutingDepartment = getRoutingDepartment;
+exports.LEAD_STAGE_RANKS = LEAD_STAGE_RANKS;
