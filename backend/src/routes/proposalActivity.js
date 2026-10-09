@@ -74,6 +74,69 @@ router.get('/', requireAuth, requireUserManager, proposalActivityController.getA
 
 /**
  * @swagger
+ * /api/admin/proposal-logs/journey:
+ *   get:
+ *     tags: [Proposal Activity]
+ *     summary: Log hành trình (journey_activity_logs) — tab Hành trình trong Audit Log
+ *     description: Phân quyền y hệt lịch sử đồng bộ (ADMIN/SUPER tất cả, SALES theo nhánh).
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: code
+ *         schema:
+ *           type: string
+ *         description: Tìm theo mã Lead / tên Lead
+ *       - in: query
+ *         name: actor
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: action
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: entity_type
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: source
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/journey', requireAuth, requireUserManager, proposalActivityController.getJourney);
+
+/**
+ * @swagger
  * /api/admin/proposal-logs/{proposalId}/timeline:
  *   get:
  *     tags: [Proposal Activity]

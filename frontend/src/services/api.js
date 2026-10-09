@@ -1187,6 +1187,13 @@ export const proposalLogService = {
   },
   timeline(proposalId, token) {
     return api.getWithAuth(`/admin/proposal-logs/${proposalId}/timeline`, token);
+  },
+  journeyLogs(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/proposal-logs/journey?${params.toString()}`, token);
   }
 };
 

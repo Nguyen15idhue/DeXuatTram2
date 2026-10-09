@@ -59,6 +59,39 @@ const ACTIVITY_ACTION_BADGE = {
   deadline_overdue: 'badge-error'
 };
 
+const JOURNEY_ACTIONS = [
+  { value: '', label: 'Tất cả hành động' },
+  { value: 'lead_created', label: 'Tạo Lead' },
+  { value: 'lead_updated', label: 'Cập nhật Lead' },
+  { value: 'assigned', label: 'Giao Lead' },
+  { value: 'classification_changed', label: 'Đổi phân loại' },
+  { value: 'stage_changed', label: 'Đổi giai đoạn' },
+  { value: 'proposal_created', label: 'Tạo đề xuất' },
+  { value: 'proposal_status_changed', label: 'Đổi trạng thái đề xuất' },
+  { value: 'proposal_updated', label: 'Cập nhật đề xuất' },
+  { value: 'station_created', label: 'Tạo trạm' },
+  { value: 'station_status_changed', label: 'Đổi trạng thái trạm' },
+  { value: 'station_updated', label: 'Cập nhật trạm' }
+];
+
+const JOURNEY_ACTION_LABEL = Object.fromEntries(JOURNEY_ACTIONS.filter(o => o.value).map(o => [o.value, o.label]));
+
+const JOURNEY_ACTION_BADGE = {
+  lead_created: 'badge-info',
+  lead_updated: 'badge-ghost',
+  assigned: 'badge-primary',
+  classification_changed: 'badge-accent',
+  stage_changed: 'badge-warning',
+  proposal_created: 'badge-success',
+  proposal_status_changed: 'badge-success',
+  proposal_updated: 'badge-ghost',
+  station_created: 'badge-primary',
+  station_status_changed: 'badge-warning',
+  station_updated: 'badge-ghost'
+};
+
+const ENTITY_TYPE_LABEL = { lead: 'Lead', proposal: 'Đề xuất', station: 'Trạm' };
+
 const IMPORT_STATUS_CONFIG = {
   queued: { label: 'Chờ', color: 'badge-warning', icon: Clock },
   processing: { label: 'Đang chạy', color: 'badge-info', icon: Loader2 },
@@ -135,6 +168,13 @@ function AdminAuditLogPage() {
   const [excelFailPage, setExcelFailPage] = useState(1);
   const [excelPendingPage, setExcelPendingPage] = useState(1);
   const [excelCancelling, setExcelCancelling] = useState(false);
+  const [jlogs, setJlogs] = useState([]);
+  const [jloading, setJloading] = useState(false);
+  const [jpagination, setJpagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const [journeyPageSize, setJourneyPageSize] = useState(20);
+  const journeyPageSizeRef = useRef(20);
+  const [jfilters, setJfilters] = useState({ id: '', code: '', actor: '', action: '', entity_type: '', source: '', date_from: '', date_to: '' });
+  const [jdraft, setJdraft] = useState({ id: '', code: '', actor: '' });
 
   const loadStats = useCallback(async () => {
     try {
@@ -203,6 +243,26 @@ function AdminAuditLogPage() {
     loadExcelWith(efilters, 1, n);
   };
 
+  const loadJourneyWith = useCallback(async (applied, page = 1, limit = journeyPageSizeRef.current) => {
+    setJloading(true);
+    try {
+      const res = await proposalLogService.journeyLogs({ ...applied, page, limit }, token);
+      if (res.success) {
+        setJlogs(res.data || []);
+        setJpagination(res.pagination || { page: 1, limit, total: 0, totalPages: 0 });
+      }
+    } catch (err) {
+      setToast({ message: err.message || 'Lỗi tải log hành trình', type: 'error' });
+    }
+    setJloading(false);
+  }, [token]);
+
+  const changeJourneyPageSize = (n) => {
+    journeyPageSizeRef.current = n;
+    setJourneyPageSize(n);
+    loadJourneyWith(jfilters, 1, n);
+  };
+
   const showExcelDetail = async (id) => {
     setExcelDetailLoading(true);
     setExcelDetail(null);
@@ -246,6 +306,7 @@ function AdminAuditLogPage() {
 
   useEffect(() => { loadLogsWith(filters, 1); loadStats(); }, []);
   useEffect(() => { if (activeTab === 'activity') loadActivityWith(afilters, 1); }, [activeTab]);
+  useEffect(() => { if (activeTab === 'journey') loadJourneyWith(jfilters, 1); }, [activeTab]);
   useEffect(() => { if (activeTab === 'excel') loadExcelWith(efilters, 1); }, [activeTab]);
   useEffect(() => {
     const st = location.state;
@@ -303,6 +364,26 @@ function AdminAuditLogPage() {
     setAfilters(cleared);
     loadActivityWith(cleared, 1);
   };
+  const JTEXT_KEYS = ['id', 'code', 'actor'];
+  const handleJDraftChange = (key, value) => setJdraft(prev => ({ ...prev, [key]: value }));
+  const applyJFilters = () => {
+    const next = { ...jfilters };
+    JTEXT_KEYS.forEach(k => { next[k] = jdraft[k] || ''; });
+    setJfilters(next);
+    loadJourneyWith(next, 1);
+  };
+  const applyJSelectFilter = (key, value) => {
+    const next = { ...jfilters, [key]: value };
+    setJfilters(next);
+    loadJourneyWith(next, 1);
+  };
+  const clearJFilters = () => {
+    const cleared = { id: '', code: '', actor: '', action: '', entity_type: '', source: '', date_from: '', date_to: '' };
+    setJdraft({ id: '', code: '', actor: '' });
+    setJfilters(cleared);
+    loadJourneyWith(cleared, 1);
+  };
+
   const applyESelectFilter = (key, value) => {
     const next = { ...efilters, [key]: value };
     setEfilters(next);
@@ -423,6 +504,9 @@ function AdminAuditLogPage() {
         </button>
         <button className={`tab ${activeTab === 'activity' ? 'tab-active' : ''}`} onClick={() => setActiveTab('activity')}>
           Hoạt động đề xuất
+        </button>
+        <button className={`tab ${activeTab === 'journey' ? 'tab-active' : ''}`} onClick={() => setActiveTab('journey')}>
+          Hành trình
         </button>
         <button className={`tab ${activeTab === 'excel' ? 'tab-active' : ''}`} onClick={() => setActiveTab('excel')}>
           Excel
@@ -709,6 +793,96 @@ function AdminAuditLogPage() {
       )}
       </>
       )}</>)}
+      {activeTab === 'journey' && (<>
+      <div className="bg-base-100 rounded-lg border border-base-300 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Filter size={16} />
+          <span className="text-sm font-medium">Bộ lọc hành trình</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <input type="number" className="input input-bordered input-sm" placeholder="ID log..." value={jdraft.id} onChange={e => handleJDraftChange('id', e.target.value)} onKeyDown={onEnterApply(applyJFilters)} />
+          <input type="text" className="input input-bordered input-sm" placeholder="Mã Lead / tên..." value={jdraft.code} onChange={e => handleJDraftChange('code', e.target.value)} onKeyDown={onEnterApply(applyJFilters)} />
+          <input type="text" className="input input-bordered input-sm" placeholder="Người thực hiện..." value={jdraft.actor} onChange={e => handleJDraftChange('actor', e.target.value)} onKeyDown={onEnterApply(applyJFilters)} />
+          <select className="select select-bordered select-sm" value={jfilters.action} onChange={e => applyJSelectFilter('action', e.target.value)}>
+            {JOURNEY_ACTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm" value={jfilters.entity_type} onChange={e => applyJSelectFilter('entity_type', e.target.value)}>
+            <option value="">Tất cả đối tượng</option>
+            <option value="lead">Lead</option>
+            <option value="proposal">Đề xuất</option>
+            <option value="station">Trạm</option>
+          </select>
+          <select className="select select-bordered select-sm" value={jfilters.source} onChange={e => applyJSelectFilter('source', e.target.value)}>
+            {ACTIVITY_SOURCES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <input type="date" className="input input-bordered input-sm" value={jfilters.date_from} onChange={e => applyJSelectFilter('date_from', e.target.value)} />
+          <input type="date" className="input input-bordered input-sm" value={jfilters.date_to} onChange={e => applyJSelectFilter('date_to', e.target.value)} />
+        </div>
+        <div className="flex gap-2 mt-3">
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => applyJFilters()}><Search size={14} /> Lọc</button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={clearJFilters}><X size={14} /> Xóa bộ lọc</button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => loadJourneyWith(jfilters, jpagination.page)}><RefreshCw size={14} /> Làm mới</button>
+        </div>
+      </div>
+
+      <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
+        <table className="table table-zebra table-sm">
+          <thead>
+            <tr className="bg-base-200">
+              <th className="w-16">ID</th>
+              <th>Thời gian</th>
+              <th>Lead</th>
+              <th>Đối tượng</th>
+              <th>Hành động</th>
+              <th>Chuyển</th>
+              <th>Người thực hiện</th>
+              <th>Nguồn</th>
+            </tr>
+          </thead>
+          <tbody>
+            {jlogs.length === 0 ? (
+              <tr><td colSpan={8} className="text-center py-8 text-base-content/50">{jloading ? 'Đang tải...' : 'Không có logs'}</td></tr>
+            ) : (
+            <>
+            {jloading && (
+              <tr><td colSpan={8} className="text-center text-xs text-base-content/40 py-1">Đang tải...</td></tr>
+            )}
+            {jlogs.map(log => (
+              <tr key={log.id} className="hover">
+                <td className="font-mono text-xs">{log.id}</td>
+                <td className="text-xs">{log.created_at ? new Date(log.created_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
+                <td className="text-xs">{log.lead_code || log.lead_name || `#${log.journey_id}`}</td>
+                <td className="text-xs">{ENTITY_TYPE_LABEL[log.entity_type] || log.entity_type}{log.entity_type !== 'lead' && log.entity_id ? ` #${log.entity_id}` : ''}</td>
+                <td><span className={`badge badge-sm whitespace-nowrap ${JOURNEY_ACTION_BADGE[log.action] || 'badge-outline'}`}>{JOURNEY_ACTION_LABEL[log.action] || log.action}</span></td>
+                <td className="text-xs">{log.status_after ? getStatusLabel(log.status_after, 'proposal') : (log.stage_after || '—')}</td>
+                <td className="text-xs">{log.actor_name || '—'}</td>
+                <td><span className="text-xs">{ACTIVITY_SOURCE_LABEL[log.source] || log.source}</span></td>
+              </tr>
+            ))}
+            </>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {jpagination.total > 0 && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-base-content/60">
+            Trang {jpagination.page}/{jpagination.totalPages} — Tổng {jpagination.total} bản ghi
+          </span>
+          <div className="flex items-center gap-2">
+            <select className="select select-bordered select-sm w-28" value={journeyPageSize} onChange={(e) => changeJourneyPageSize(Number(e.target.value))}>
+              {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n} / trang</option>)}
+            </select>
+            <div className="join">
+              <button className="join-item btn btn-sm" disabled={jpagination.page <= 1} onClick={() => loadJourneyWith(jfilters, jpagination.page - 1)}><ChevronLeft size={14} /></button>
+              <button className="join-item btn btn-sm" disabled={jpagination.page >= jpagination.totalPages} onClick={() => loadJourneyWith(jfilters, jpagination.page + 1)}><ChevronRight size={14} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>)}
+
       {activeTab === 'activity' && (<>
       <div className="bg-base-100 rounded-lg border border-base-300 p-4">
         <div className="flex items-center gap-2 mb-3">

@@ -30,6 +30,29 @@ exports.getAll = async (req, res) => {
   }
 };
 
+exports.getJourney = async (req, res) => {
+  try {
+    const scope = await scopeFor(req);
+    const result = await proposalActivityService.listJourney({
+      id: req.query.id,
+      code: req.query.code,
+      actor: req.query.actor,
+      action: req.query.action,
+      entityType: req.query.entity_type,
+      source: req.query.source,
+      dateFrom: req.query.date_from,
+      dateTo: req.query.date_to,
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 20,
+      scope
+    });
+    res.json({ success: true, data: result.items, pagination: result.pagination });
+  } catch (error) {
+    console.error('Get journey activity error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.timeline = async (req, res) => {
   try {
     const light = await adminProposalService.getProposalById(req.params.proposalId);

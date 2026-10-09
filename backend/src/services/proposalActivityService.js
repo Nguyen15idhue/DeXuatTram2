@@ -86,3 +86,48 @@ exports.timeline = async (proposalId) => {
   );
   return rows;
 };
+
+exports.listJourney = async ({ id, code, actor, action, entityType, source, dateFrom, dateTo, page = 1, limit = 20, scope = {} }) => {
+  const where = [];
+  const params = [];
+  const joins = `LEFT JOIN leads l ON l.journey_id = j.journey_id
+    LEFT JOIN users u ON u.id = j.actor_id`;
+
+  if (scope.role === 'SALES' && scope.branchIds) {
+    if (scope.branchIds.length === 0) {
+      return { items: [], pagination: { page, limit, total: 0, totalPages: 0 } };
+    }
+    where.push(`l.assigned_user_id IN (${scope.branchIds.map(() => '?').join(',')})`);
+    params.push(...scope.branchIds);
+  }
+
+  if (id) { where.push('j.id = ?'); params.push(Number(id)); }
+  if (code) { where.push('(l.lead_code LIKE ? OR l.full_name LIKE ?)'); params.push(`%${code}%`, `%${code}%`); }
+  if (actor) { where.push('u.full_name LIKE ?'); params.push(`%${actor}%`); }
+  if (action) { where.push('j.action = ?'); params.push(action); }
+  if (entityType) { where.push('j.entity_type = ?'); params.push(entityType); }
+  if (source) { where.push('j.source = ?'); params.push(source); }
+  if (dateFrom) { where.push('j.created_at >= ?'); params.push(`${dateFrom} 00:00:00`); }
+  if (dateTo) { where.push('j.created_at <= ?'); params.push(`${dateTo} 23:59:59`); }
+
+  const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+  const offset = (Math.max(1, page) - 1) * limit;
+
+  const [countRows] = await pool.query(
+    `SELECT COUNT(*) AS total FROM journey_activity_logs j ${joins} ${whereClause}`,
+    params
+  );
+
+  const [rows] = await pool.query(
+    `SELECT j.*, l.lead_code, l.full_name AS lead_name, l.journey_id,
+            u.full_name AS actor_name
+     FROM journey_activity_logs j
+     ${joins}
+     ${whereClause}
+     ORDER BY j.created_at DESC, j.id DESC
+     LIMIT ? OFFSET ?`,
+    [...params, Number(limit), offset]
+  );
+
+  return { items: rows, pagination: { page, limit, total: countRows[0].total, totalPages: Math.ceil(countRows[0].total / limit) } };
+};
