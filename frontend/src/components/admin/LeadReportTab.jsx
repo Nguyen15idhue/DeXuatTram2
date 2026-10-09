@@ -5,6 +5,7 @@ import Loading from '../Loading';
 import ErrorMessage from '../ErrorMessage';
 import EmptyState from '../EmptyState';
 import ProcessTimeline from './ProcessTimeline';
+import { Download } from 'lucide-react';
 
 const fmtDateTime = (v) => {
   if (!v) return '—';
@@ -207,7 +208,17 @@ const LeadReportTab = ({ leadId, onClose }) => {
       <div className="modal-box max-w-5xl">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-lg">Báo cáo 360 — {h ? `${h.lead_code} · ${h.full_name}` : `Lead #${leadId}`}</h3>
-          <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Đóng">✕</button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-outline btn-sm gap-1"
+              onClick={() => window.open(`/api/admin/reports/export/lead/${leadId}?token=${encodeURIComponent(token)}`, '_blank')}
+              title="Xuất CSV báo cáo 360"
+            >
+              <Download size={14} /> CSV
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Đóng">✕</button>
+          </div>
         </div>
 
         {loading && <Loading message="Đang tải báo cáo..." />}

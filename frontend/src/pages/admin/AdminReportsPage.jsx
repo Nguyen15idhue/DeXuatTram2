@@ -180,6 +180,29 @@ const AdminReportsPage = () => {
     }
   };
 
+  const exportWidgetCsv = async (w) => {
+    try {
+      const res = await fetch('/api/admin/reports/builder/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ widget: w }),
+      });
+      if (!res.ok) {
+        setToast({ message: 'Xuất CSV thất bại', type: 'error' });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(w.title || w.metric || 'widget').replace(/[^\w\-]+/g, '_')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setToast({ message: 'Lỗi xuất CSV', type: 'error' });
+    }
+  };
+
   const widgetData = (w) => {
     if (w.dataset) {
       const rows = previewMap[sig(w)];
@@ -277,6 +300,7 @@ const AdminReportsPage = () => {
             onChange={updateWidget}
             onDelete={() => deleteWidget(selected)}
             onClose={() => setPanelOpen(false)}
+            onExport={() => exportWidgetCsv(draft[selected])}
           />
         </div>
       )}

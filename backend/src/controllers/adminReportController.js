@@ -35,6 +35,28 @@ exports.getLead360 = async (req, res) => {
   }
 };
 
+exports.exportLead360 = async (req, res) => {
+  try {
+    const data = await reportService.lead360Csv(req.params.id, req.user);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${data.filename}"`);
+    res.send(data.csv);
+  } catch (error) {
+    sendErr(res, error, 'Report lead360 export error:');
+  }
+};
+
+exports.exportBuilderWidget = async (req, res) => {
+  try {
+    const data = await reportService.builderCsv(req.body && req.body.widget, req.user);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${data.filename}"`);
+    res.send(data.csv);
+  } catch (error) {
+    sendErr(res, error, 'Report builder export error:');
+  }
+};
+
 exports.getBuilderDatasets = async (req, res) => {
   res.json({ success: true, data: reportBuilderService.getCatalog(), message: 'Danh sách dataset builder' });
 };

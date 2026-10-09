@@ -115,6 +115,56 @@ router.get('/lead/:id', requireAuth, requireReportViewer, adminReportController.
 
 /**
  * @swagger
+ * /api/admin/reports/export/lead/{id}:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Xuất CSV báo cáo Lead 360 (scope theo role)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: File CSV
+ *       403:
+ *         description: Ngoài scope
+ */
+router.get('/export/lead/:id', requireAuth, requireReportViewer, adminReportController.exportLead360);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/export:
+ *   post:
+ *     tags: [Reports]
+ *     summary: Xuất CSV dữ liệu 1 widget builder (scope theo role)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [widget]
+ *             properties:
+ *               widget:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: File CSV
+ *       400:
+ *         description: Widget ngoài catalog
+ *       403:
+ *         description: Không có quyền
+ */
+router.post('/builder/export', requireAuth, requireReportViewer, adminReportController.exportBuilderWidget);
+
+/**
+ * @swagger
  * /api/admin/reports/config:
  *   get:
  *     tags: [Reports]

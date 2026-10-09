@@ -819,6 +819,70 @@ exports.getLead360 = async (leadId, user) => {
   };
 };
 
+function csvCell(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function toCsv(headers, rows) {
+  const lines = [headers.map(csvCell).join(',')];
+  rows.forEach((r) => lines.push(headers.map((h) => csvCell(r[h])).join(',')));
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+exports.lead360Csv = async (leadId, user) => {
+  const d = await exports.getLead360(leadId, user);
+  const headers = [
+    'lead_code', 'full_name', 'phone', 'province', 'region', 'stage', 'current_stage',
+    'customer_classification', 'sales_outcome', 'assigned_user_name', 'assigned_department',
+    'duration_new_to_assigned_days', 'duration_assigned_to_proposal_days', 'duration_proposal_to_contract_days',
+    'duration_contract_to_station_days', 'duration_station_to_on_days',
+    'cskh_count', 'tvbh_count',
+    'proposal_code', 'proposal_status', 'station_name', 'station_status', 'on',
+    'mirror_kinds', 'mirror_synced_at',
+  ];
+  const base = {
+    lead_code: d.header.lead_code,
+    full_name: d.header.full_name,
+    phone: d.header.phone,
+    province: d.header.province,
+    region: d.header.region,
+    stage: d.header.stage,
+    current_stage: d.header.current_stage,
+    customer_classification: d.header.customer_classification,
+    sales_outcome: d.header.sales_outcome,
+    assigned_user_name: d.header.assigned_user_name,
+    assigned_department: d.header.assigned_department,
+    duration_new_to_assigned_days: d.durations.new_to_assigned_days,
+    duration_assigned_to_proposal_days: d.durations.assigned_to_proposal_days,
+    duration_proposal_to_contract_days: d.durations.proposal_to_contract_days,
+    duration_contract_to_station_days: d.durations.contract_to_station_days,
+    duration_station_to_on_days: d.durations.station_to_on_days,
+    cskh_count: d.cskh.count,
+    tvbh_count: d.tvbh.count,
+    on: d.counts.on ? 'YES' : 'NO',
+    mirror_synced_at: d.syncHealth.mirror_synced_at || '',
+  };
+  const rows = d.proposals.length === 0 ? [{ ...base }] : d.proposals.map((p) => ({
+    ...base,
+    proposal_code: p.code,
+    proposal_status: p.status,
+    station_name: p.station ? p.station.name : '',
+    station_status: p.station ? p.station.status : '',
+    mirror_kinds: (p.mirror || []).map((m) => `${m.kind}#${m.process_id}`).join(' | '),
+  }));
+  return { filename: `lead360_${d.header.lead_code || leadId}.csv`, csv: toCsv(headers, rows) };
+};
+
+exports.builderCsv = async (widget, user) => {
+  const reportBuilderService = require('./reportBuilderService');
+  const out = await reportBuilderService.compileWidget(widget, user);
+  const csv = toCsv(['dim', 'value'], out.rows);
+  const name = (out.widget.title || `${out.widget.metric}_theo_${out.widget.dimension}`).replace(/[^\w\-]+/g, '_').slice(0, 60);
+  return { filename: `${name}.csv`, csv };
+};
+
 exports.leadWhereClause = leadWhere;
 exports.proposalWhereClause = proposalWhere;
 exports.stationWhereClause = stationWhere;

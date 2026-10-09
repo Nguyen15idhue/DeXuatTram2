@@ -29,7 +29,7 @@ export const OPS = ['=', '!=', '>', '>=', '<', '<=', 'LIKE'];
 
 const isSysWidget = (w) => !w.dataset;
 
-const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onClose }) => {
+const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onClose, onExport }) => {
   const [subTab, setSubTab] = useState('setup');
 
   if (!widget) return null;
@@ -159,6 +159,9 @@ const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onCl
       </div>
 
       <div className="report-panel-foot">
+        {widget.dataset && onExport && (
+          <button className="btn btn-outline btn-sm" onClick={onExport}>Xuất CSV</button>
+        )}
         <button className="btn btn-error btn-outline btn-sm" onClick={onDelete}>Xóa phần tử</button>
       </div>
     </div>
