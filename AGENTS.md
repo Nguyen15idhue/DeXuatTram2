@@ -30,7 +30,7 @@ Swagger UI:  http://localhost:3000/api-docs
 ## 3. Business Entities
 
 ### User
-- Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV`, `NPP` (file 25, thay `USER`/`ADMIN` cũ; `NPP` thêm ở migration `77` — **hoạt động y hệt `CTV`**, không có RBAC riêng)
+- Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV`, `NPP`, `MKT` (file 25, thay `USER`/`ADMIN` cũ; `NPP` thêm ở migration `77` — **hoạt động y hệt `CTV`**, không có RBAC riêng; `MKT` thêm ở migration `139` — quản lý Leads qua `requireLeadManager`, xem báo cáo qua `requireReportViewer`, KHÔNG vào Dashboard)
 - Cây 2 tầng: `CTV`/`NPP.parent_id` → `SALES` (GĐKV) → `SALES` (GĐTT cùng Trung tâm) — migration 90–92 + script `seed-sales-tree.js`. Gán cây: form **tạo user tự gợi ý parent** theo phòng ban + chức vụ (GĐKV mới → GĐTT cùng trung tâm; CTV/NPP → GĐKV cùng phòng ban, tự chọn khi duy nhất; vẫn sửa tay được); popup view/edit user cũng có mục Phân nhánh cho target GĐKV. Scope nhánh **đệ quy** (`adminUserService.getBranchIds`): GĐTT thấy mình + GĐKV + CTV dưới quyền; GĐKV thấy mình + CTV trực tiếp. **Xem ngược lên**: SALES được `GET /admin/users/:id` của cấp trên trong chuỗi `parent_id` (`getAncestorIds`, chỉ xem — `PUT` ngoài nhánh vẫn 403, trả `_scope: 'branch'|'ancestor'`); danh sách user của SALES (`getAllUsers`) gồm nhánh + cấp trên (cây hiện GĐTT phía trên; nút Sửa/Khóa/Xóa vẫn gate theo rank nên cấp trên chỉ Xem); options user (`/options/all`) của SALES = nhánh + cấp trên, của CTV/NPP = mình + cấp trên (để field `user` như GĐTTKD hiện tên ở form edit; `UserField` tự fetch bù user theo id khi vắng trong options)
 - `external_id` map hệ ngoài (unique, = Mã NV 1Office)
 - Field `department` (Phòng ban) + `chuc_vu` (Chức vụ): select options thủ công từ Excel nhân sự (10 PB / 16 CD); `chuc_vu` dùng phân biệt GĐTT/GĐKV trong hiển thị
@@ -52,6 +52,14 @@ Swagger UI:  http://localhost:3000/api-docs
 - `ma_de_xuat_gen` là cột generated từ `custom_data`
 - `land_type` (Loại đất) là field `fixed` type `select`, 6 lựa chọn (Đất thương mại dịch vụ / khu công nghiệp / giao thông-Bến bãi-Điểm dừng nghỉ / ở / nông nghiệp / khác-chưa xác định) — migration `75`
 - Liên hệ chủ trạm: `chu_tram` (text/json) + `sdt_chu_tram` (phone/json) — migration `103`; map-mode + `GET /stations` trả khi đã đăng nhập (`optionalAuth`), ẩn khi public
+
+### Lead & Journey (MKT, migration 134–148, xem docs/8/68–69)
+- `business_journeys`: `journey_code` UUID unique (mã chung Lead↔Proposal↔Station), `current_stage` (NEW→ASSIGNED→…→PROPOSAL→STATION→ON, chỉ nâng không hạ; terminal UNQUALIFIED/LOST không bị ghi đè)
+- `leads`: `lead_code` tuần tự `LD-%06d` (UNIQUE + read-only, migration 148), stage/classification/sales_outcome (`sales_outcome=SUCCESS` mới được tạo đề xuất), `assigned_user_id`/`assigned_department`, `custom_data` (bảng `cskh_history`/`tvbh_history` + note), soft delete (`deleted_at`); tạo Lead tự tạo journey + log `lead_created`
+- `lead_assignments`: lịch sử phân chia (đóng cũ bằng `ended_at`, không ghi đè); auto-routing theo Data List `MKT Lead Routing` (vùng→phòng ban) khi classification `TIEM_NANG`
+- `journey_activity_logs`: timeline hợp nhất Lead/Proposal/Station (`lead_created/updated/assigned/classification_changed/stage_changed/proposal_created/proposal_status_changed/proposal_updated/station_created/station_status_changed/station_updated`)
+- `journey_external_refs`: map journey ↔ 1Office (`system/ref_type/external_id` unique, `external_code`)
+- Proposal từ Lead: `POST /api/admin/leads/:id/create-proposal` (prefill 8 field, idempotency key); `station_proposals.journey_id` NULLABLE (migration 137)
 
 ### Dynamic config entities
 - **Field Definition**: 13 types chuẩn (`text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`) + type `user`. `source` = `fixed` (cột DB) hoặc `json` (trong `custom_data`)
@@ -75,6 +83,8 @@ Swagger UI:  http://localhost:3000/api-docs
 7. Route `/admin/audit-log` cho `ADMIN` + `SALES` (sales chỉ thấy log của mình); `/admin/:entity/:id/files` bọc `RoleRoute` ADMIN_AND_SALES (chặn entity `users` với non-admin)
 8. Nút Retry/Cancel queue chỉ render cho `SUPER_ADMIN`
 9. Tạo trạm từ đề xuất `POST /admin/proposals/:id/convert-to-station` là `requireAdmin` (chỉ `ADMIN`/`SUPER_ADMIN`); tab "Hoạt động đề xuất" (`GET /api/admin/proposal-logs`) phân quyền y hệt lịch sử đồng bộ 1Office
+10. MKT (`requireLeadManager` = SUPER_ADMIN/ADMIN/MKT/SALES): CRUD Leads + phân chia + Excel leads; CTV/NPP gọi `/admin/leads` → 403. MKT vào `/admin` → redirect `/admin/leads` (không thấy Dashboard). Cấu hình báo cáo chỉ SUPER_ADMIN (`requireReportConfigurator`)
+11. Báo cáo (`/api/admin/reports/*`): aggregate 1 call + scope theo role (SALES theo nhánh được giao; ngoài scope 403, không 404); metric whitelist trong registry (lạ → 400); báo cáo Lead 360 đọc gương 1Office `automation_sync_snapshots` (không đọc live), UI hiện badge giờ sync
 
 ### 4.2. Proposal Lifecycle & Notification
 - Từ chối/hủy đề xuất: **bắt buộc** `reason` (`reject_reason`); lưu `reviewed_by`, `reviewed_at` (`proposalLifecycle.transition`)
@@ -203,7 +213,8 @@ frontend/src/
 │   ├── dynamic/    DynamicForm, DynamicTable, DynamicField, FieldRenderer, FileUpload,
 │   │               FileViewer, FileListPopup, DynamicFilter, FormulaEditor, UserChip, UserField
 │   ├── admin/      FieldManager, FormBuilder, ViewBuilder, DragDropList, DataListManager,
-│   │               DataListEditor, RecordDetailPopup, FieldMappingPanel, TemplateEditor,
+│   │               DataListEditor, RecordDetailPopup, LeadDetailPopup, LeadJourneyPopup,
+│   │               ProcessTimeline, LeadAssignDialog, LeadReportTab, FieldMappingPanel, TemplateEditor,
 │   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel,
 │   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo,
 │   │               HelpEditor (TipTap), HelpGuideBoard, AssistantConfigPanel,
@@ -224,7 +235,8 @@ frontend/src/
 │                   AdminFieldsPage, AdminFormsPage, AdminFormBuilderPage, AdminViewsPage,
 │                   AdminViewBuilderPage, AdminDataListsPage, AdminRecordFilesPage,
 │                   AdminMapConfigPage, AdminRolesPage, AdminApiConfigPage, AdminAuditLogPage,
-│                   AdminHelpPage, RecordDetailPage, AdminDocumentsPage
+│                   AdminHelpPage, RecordDetailPage, AdminDocumentsPage, AdminLeadsPage,
+│                   AdminReportsPage
 ├── services/       api.js (all API calls), helpApi.js (help + adminHelpApi)
 ├── hooks/          useFieldOptions, useDataList, useDataListMap, useMapConfig,
 │                   useDebouncedValue, useMediaQuery
@@ -242,7 +254,7 @@ backend/src/
 ├── app.js              entry point + middleware stack
 ├── config/             swagger.js
 ├── middlewares/        auth.js (JWT), rateLimits.js, validators.js
-├── routes/             auth, stations, proposals, myProposals, adminProposals, adminUsers,
+├── routes/             auth, stations, proposals, myProposals, adminProposals, adminUsers, adminLeads, adminReports,
 │                       dashboard, excel, mapUtils, mapConfigs, tiles, geocode, adminGeocodeConfig,
 │                       fieldDefinitions, forms, formFields, views, viewFields, dynamicEngine,
 │                       files, dataLists, dataListsPublic, formulas, apiConfigs, fieldMappings,
@@ -250,7 +262,9 @@ backend/src/
 │                       helpPublic, adminHelp, adminHelpVideos, adminAssistant, assistant,
 │                       adminDocuments
 ├── controllers/        (matching routes)
-├── services/           auth, station, proposal, myProposal, adminProposal, adminUser, dashboard,
+├── services/           auth, station, proposal, myProposal, adminProposal, adminUser, dashboard, leadService,
+│                       leadAssignmentService, journeyActivityService, journeySyncService, leadProposalService,
+│                       reportService, reportMirrorService, reportBuilderService,
 │                       map, mapConfig, proximity, fieldDefinition, form, formField, view,
 │                       viewField, dynamicEngine, dynamicUtils, file, fileSync, excel, dataList,
 │                       formula, apiConfig, fieldMapper, fieldMapping, oneOffice, sync,
@@ -279,7 +293,7 @@ backend/src/
 - Schema = file SQL thủ công trong `database/` (đánh số); áp dụng qua `scripts/migrate.sh` có tracking `schema_migrations`; chỉ viết script tiến tới, idempotent
 - **DB mới**: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động
 
-### Database Tables (28 bảng)
+### Database Tables (34 bảng)
 
 | Bảng | Mô tả |
 |------|-------|
@@ -303,6 +317,11 @@ backend/src/
 | `api_queue_logs` | Queue push/pull + inbound webhook + audit log |
 | `proposal_activity_logs` | Log hoạt động đề xuất (created/updated/status_change/denied/station_created/auto_failed) |
 | `proposal_lifecycle_configs` | Config vòng đời (90/30 ngày auto, max retries, cron, countdown rules, giới hạn gia hạn `extend_max_times`/`extend_max_days_per_time`) |
+| `business_journeys` | Hành trình Lead (`journey_code` UUID unique, `current_stage`, `status`) — migration `134` |
+| `leads` | Lead MKT (`lead_code` UNIQUE + read-only, stage/classification/outcome, `assigned_*`, `custom_data` CSKH/TVBH, `deleted_at`) — migration `134`/`144`/`145`/`148` |
+| `lead_assignments` | Lịch sử phân chia lead (đóng cũ bằng `ended_at`) — migration `136` |
+| `journey_activity_logs` | Timeline hợp nhất Lead/Proposal/Station — migration `137` |
+| `journey_external_refs` | Map journey ↔ 1Office (`system`/`ref_type`/`external_id` unique) — migration `137` |
 | `help_categories` / `help_articles` | Hướng dẫn (TIP `/admin/help`): bài viết TipTap (`content_json`/`content_html`), `videos`/`images` JSON, `roles`, `status` draft/published/archived, FULLTEXT tìm kiếm (migration `104`) |
 | `assistant_logs` | Log chatbot hướng dẫn (`question`, `answer`, `sources`, `provider`, `latency_ms`, `fallback_reason`, `user_id`, + `tool`, `prompt_tokens`, `completion_tokens`, `has_attachment`, `attachment_types`, `cached`) — migration `104` + `106` |
 | `assistant_knowledge` | Kho tri thức tài liệu nội bộ (`source_path`, `heading`, `content`, FULLTEXT) — index từ `AGENTS.md`+`docs/**/*.md`, migration `105` |
@@ -313,7 +332,7 @@ backend/src/
 | `document_template_versions` | Lịch sử bố cục template (snapshot `file_id` + `mapping` mỗi lần sửa Bố cục Word) để rollback — migration `113` |
 | `schema_migrations` | Tracking migration đã chạy |
 
-Migrations nằm ở `database/` (01→116). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT), `106` kho tri thức code/schema (`assistant_code_knowledge` + cột log token/file), `107` mở `'guest'` cho bài/chuyên mục chung, `108` cấu hình provider/model/fallback chatbot (`assistant_provider_configs`), `109` cache danh sách model thực tế (`assistant_model_cache`), `110` đổi tên view Excel `excel_basic` của đề xuất thành "Excel Đề xuất - Tạo nhanh", `111` quản lý tài liệu BCĐX (`document_templates`/`document_constants`), `112` chuẩn hoá hằng số BCĐX, `113` lịch sử bố cục template (`document_template_versions`), `114` gỡ autofill `chi_phi_lk.so_tien` (nhập tay + footer SUM), `115` xác nhận hoàn thiện thông tin (`info_completed_at`, auto-hủy quá hạn), `116` giới hạn gia hạn (`extend_max_times`/`extend_max_days_per_time`), `140` chính sách countdown 2 mốc chuyển trạng thái (PENDING 3 ngày / APPROVED 15 ngày, tắt hết countdown bổ sung — kế hoạch 72).
+Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdown/auto-push 140–141; 150 gương báo cáo xem docs/8/69-Z). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT), `106` kho tri thức code/schema (`assistant_code_knowledge` + cột log token/file), `107` mở `'guest'` cho bài/chuyên mục chung, `108` cấu hình provider/model/fallback chatbot (`assistant_provider_configs`), `109` cache danh sách model thực tế (`assistant_model_cache`), `110` đổi tên view Excel `excel_basic` của đề xuất thành "Excel Đề xuất - Tạo nhanh", `111` quản lý tài liệu BCĐX (`document_templates`/`document_constants`), `112` chuẩn hoá hằng số BCĐX, `113` lịch sử bố cục template (`document_template_versions`), `114` gỡ autofill `chi_phi_lk.so_tien` (nhập tay + footer SUM), `115` xác nhận hoàn thiện thông tin (`info_completed_at`, auto-hủy quá hạn), `116` giới hạn gia hạn (`extend_max_times`/`extend_max_days_per_time`), `140` chính sách countdown 2 mốc chuyển trạng thái (PENDING 3 ngày / APPROVED 15 ngày, tắt hết countdown bổ sung — kế hoạch 72).
 
 ## 9. Swagger & Documentation
 
@@ -326,7 +345,7 @@ Migrations nằm ở `database/` (01→116). Một số mốc quan trọng: Mộ
   - `docs/3/` — Bug fixes
   - `docs/4/` — Thiết kế tính năng (Formula Pre/Post, Excel theo View, Cascading Select, Dynamic Form/View)
    - `docs/5/` — Kế hoạch & triển khai các mốc lớn (tìm kiếm, stress test, guest form, RBAC, 1Office, bản đồ, reverse geocode, MapLibre 35–36, self-host PMTiles 37)
-   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời), 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban), 48–52 (webhook, ARCHIVED, cải tiến đề xuất, map/popup, nginx prod), **53 (hệ thống hướng dẫn mới: viewer DB + `/admin/help` + video + chatbot)**, **54 (nâng cấp chatbot: markdown/nguồn có ảnh, nút chat toàn cục, kho tri thức tài liệu, tối ưu Vite + fix lazy-load vỡ layout)**, **55 (tối ưu truy hồi & chi phí chatbot)**, **57 (cải tiến chatbot toàn diện: guard phạm vi, kho code/schema SUPER-only, multimodal ảnh/tài liệu)**, **58 (quản lý tài liệu BCĐX: template .docx động, loop đa nguồn stack trong 1 ô, bố cục Word thêm/xóa/căn trường + rollback)**, **60 (marker phẳng/tròn theo trạng thái + fullscreen bản đồ lân cận + badge ưu tiên quy hoạch + giới hạn gia hạn + field link Google Map)**  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
+   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời), 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban), 48–52 (webhook, ARCHIVED, cải tiến đề xuất, map/popup, nginx prod), **53 (hệ thống hướng dẫn mới: viewer DB + `/admin/help` + video + chatbot)**, **54 (nâng cấp chatbot: markdown/nguồn có ảnh, nút chat toàn cục, kho tri thức tài liệu, tối ưu Vite + fix lazy-load vỡ layout)**, **55 (tối ưu truy hồi & chi phí chatbot)**, **57 (cải tiến chatbot toàn diện: guard phạm vi, kho code/schema SUPER-only, multimodal ảnh/tài liệu)**, **58 (quản lý tài liệu BCĐX: template .docx động, loop đa nguồn stack trong 1 ô, bố cục Word thêm/xóa/căn trường + rollback)**, **60 (marker phẳng/tròn theo trạng thái + fullscreen bản đồ lân cận + badge ưu tiên quy hoạch + giới hạn gia hạn + field link Google Map)**, **61 (mở rộng cây GĐKV/GĐTT)**, **66 (automation gán quy trình vào dự án)**, **67 (đồng bộ báo cáo quy trình Google Sheet)**, **68 (MKT Leads kế hoạch)**, **69 (MKT Leads các bước)**, **71 (auto-push khi lưu)**, **72 (countdown 2 mốc)**  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
   - `docs/7/` — Review toàn mã nguồn (P0/P1/P2 + chuẩn hóa UIUX + kế hoạch test frontend). Nguồn chính xác nhất về bug đã/chưa fix.
 
 ## 10. Docker & Deploy
@@ -358,6 +377,8 @@ Migrations nằm ở `database/` (01→116). Một số mốc quan trọng: Mộ
 - FormBuilder: drag & drop fields, visibility + colSpan; section có nút ▲▼ di chuyển + điều kiện hiển thị (`section.visibleWhen = { field, value }` trong `layout_config`)
 - ViewBuilder: drag & drop columns, visibility + width + sortable + filterable
 - **Bỏ hardcode `VIEW_ID`**: hook `useDefaultViewId(entity, fallbackId)` tra view `usage='table' & status='active'` (cache module-level + fallback hằng số) cho `AdminProposalsPage`/`AdminStationsPage`/`AdminUsersPage`/`MyProposalsPage`
+- **Tạo view có cấu hình** (dialog Tên/Loại/Mô tả/Kích hoạt/Nối-thêm-field): chọn `excel_basic` tự tắt nối-thêm; view exact (`views.include_rest=0`, migration `149`) chỉ dùng đúng cột trong view, `include_rest=1` nối thêm field còn lại (thay ngữ nghĩa ngầm `usage==='excel_basic'`); view exact mới tự seed cột (clone view `excel_basic` chuẩn, không có thì lấy field `required=1`)
+- **HDSD Excel theo cột**: `view_fields.config.guide_text` (ô nhập trong ViewBuilder); `buildColumnGuide` ưu tiên custom, fallback auto
 
 ### Tab lồng trong layout (`layout_config.type:'tabs'`) — migration 76
 - `layout_config.sections[]` có 2 loại phần tử: section thường (`rows`) và **tab-group** (`type:'tabs'`, `tabs[]`, bắt buộc `rows: []`).
