@@ -4,6 +4,7 @@ const workAutomationService = require('./workAutomationService');
 const googleSheetService = require('./googleSheetService');
 const dynamicUtils = require('./dynamicUtils');
 const formService = require('./formService');
+const reportMirrorService = require('./reportMirrorService');
 
 const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const versionOfCache = new Map();
@@ -1580,10 +1581,11 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
       for (const row of rows) {
         const cells = {};
         row.forEach((val, i) => { cells[i] = String(val ?? ''); });
+        const codes = reportMirrorService.decodeRowCodes(mappings, cells);
         await pool.query(
-          `INSERT INTO automation_sync_snapshots (automation_id, version, process_id, cells_json) VALUES (?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE cells_json = VALUES(cells_json)`,
-          [auto.id, String(v), String(row[0]), JSON.stringify(cells)]
+          `INSERT INTO automation_sync_snapshots (automation_id, version, process_id, cells_json, proposal_code, contact_code) VALUES (?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE cells_json = VALUES(cells_json), proposal_code = VALUES(proposal_code), contact_code = VALUES(contact_code)`,
+          [auto.id, String(v), String(row[0]), JSON.stringify(cells), codes.proposal_code, codes.contact_code]
         );
       }
       result.versions[v] = { processes: rows.length, tab, tab_created: created.created, full_overwrite: true, ...wr };
@@ -1651,10 +1653,11 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
     for (const row of rows) {
       const cells = {};
       row.forEach((val, i) => { cells[i] = String(val ?? ''); });
+      const codes = reportMirrorService.decodeRowCodes(mappings, cells);
       await pool.query(
-        `INSERT INTO automation_sync_snapshots (automation_id, version, process_id, cells_json) VALUES (?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE cells_json = VALUES(cells_json)`,
-        [auto.id, String(v), String(row[0]), JSON.stringify(cells)]
+        `INSERT INTO automation_sync_snapshots (automation_id, version, process_id, cells_json, proposal_code, contact_code) VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE cells_json = VALUES(cells_json), proposal_code = VALUES(proposal_code), contact_code = VALUES(contact_code)`,
+        [auto.id, String(v), String(row[0]), JSON.stringify(cells), codes.proposal_code, codes.contact_code]
       );
     }
     await pool.query(
