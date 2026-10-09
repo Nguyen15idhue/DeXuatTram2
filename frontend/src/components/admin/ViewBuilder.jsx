@@ -278,6 +278,16 @@ const ViewBuilder = ({ viewId, onSaved }) => {
                         <input type="checkbox" checked={item.filterable} onChange={(e) => handleFieldConfigChange(item.fieldId, 'filterable', e.target.checked)} />
                         Lọc
                       </label>
+                      <label style={{ flexBasis: '100%' }}>
+                        HDSD Excel:
+                        <input
+                          type="text"
+                          value={(item.config && item.config.guide_text) || ''}
+                          onChange={(e) => handleFieldConfigChange(item.fieldId, 'config', { ...(item.config || {}), guide_text: e.target.value })}
+                          placeholder="Để trống = tự sinh theo loại field"
+                          style={{ width: '100%' }}
+                        />
+                      </label>
                     </div>
                   </div>
                 )}

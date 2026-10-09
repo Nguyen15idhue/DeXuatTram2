@@ -123,20 +123,20 @@ const buildFileName = (entity, kind, views, withStamp = false) => {
 async function resolveView(entity, viewId, usage) {
   if (viewId) {
     const [rows] = await pool.query(
-      'SELECT id, entity, name, `usage`, status FROM views WHERE id = ? AND entity = ? LIMIT 1',
+      'SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE id = ? AND entity = ? LIMIT 1',
       [viewId, entity]
     );
     if (rows.length > 0) return rows[0];
   }
   if (usage) {
     const [rows] = await pool.query(
-      "SELECT id, entity, name, `usage`, status FROM views WHERE entity = ? AND `usage` = ? AND status = 'active' ORDER BY id LIMIT 1",
+      "SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE entity = ? AND `usage` = ? AND status = 'active' ORDER BY id LIMIT 1",
       [entity, usage]
     );
     if (rows.length > 0) return rows[0];
   }
   const [rows] = await pool.query(
-    "SELECT id, entity, name, `usage`, status FROM views WHERE entity = ? AND `usage` = 'table' AND status = 'active' ORDER BY id LIMIT 1",
+    "SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE entity = ? AND `usage` = 'table' AND status = 'active' ORDER BY id LIMIT 1",
     [entity]
   );
   return rows[0] || null;
@@ -178,7 +178,7 @@ async function resolveExportViews(entity, query) {
 
 async function getViewFields(viewId) {
   const [rows] = await pool.query(
-    `SELECT vf.order_index, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config, fd.\`options\`,
+    `SELECT vf.order_index, vf.config AS view_config, fd.\`key\`, fd.label, fd.type, fd.source_type, fd.required, fd.formula_config, fd.\`options\`,
             fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.source_config, fd.placeholder, fd.help_text
      FROM view_fields vf
      JOIN field_definitions fd ON vf.field_id = fd.id
@@ -187,6 +187,23 @@ async function getViewFields(viewId) {
     [viewId]
   );
   return rows;
+}
+
+function parseGuideText(viewConfig) {
+  if (!viewConfig) return null;
+  try {
+    const cfg = typeof viewConfig === 'string' ? JSON.parse(viewConfig) : viewConfig;
+    const t = cfg && cfg.guide_text != null ? String(cfg.guide_text).trim() : '';
+    return t || null;
+  } catch { return null; }
+}
+
+// View chi dung dung cot trong view (khong noi them field con lai) khi include_rest = 0.
+// Cu: usage === 'excel_basic'. Moi: co include_rest (fallback usage de tuong thich).
+function isExactView(view) {
+  if (!view) return false;
+  if (view.include_rest !== undefined && view.include_rest !== null) return Number(view.include_rest) === 0;
+  return view.usage === 'excel_basic';
 }
 
 async function buildExportColumns(entity, view) {
@@ -200,8 +217,8 @@ async function buildExportColumns(entity, view) {
     columns.push({ key: f.key, label: f.label, type: f.type, source_type: f.source_type });
   });
 
-  // View 'tạo nhanh' = CHỈ các cột trong view (không nối thêm field còn lại)
-  if (view.usage === 'excel_basic') return columns;
+  // View exact (mac dinh: excel_basic) = CHỈ các cột trong view (không nối thêm field còn lại)
+  if (isExactView(view)) return columns;
 
   const allFieldsResult = await pool.query(
     `SELECT \`key\`, label, type, source_type FROM field_definitions WHERE entity = ? AND status = 'active'`,
@@ -411,21 +428,33 @@ function autoWidthColumnsForm(sheet, columns) {
 }
 
 async function getFieldDefsForView(entity, view) {
-  if (view && view.usage === 'excel_basic') {
+  if (isExactView(view)) {
     const rows = await getViewFields(view.id);
     return rows.map(r => ({
       key: r.key, label: r.label, type: r.type, source_type: r.source_type,
       required: r.required, formula_config: r.formula_config, options: r.options || null,
       data_list_id: r.data_list_id || null, data_list_column: r.data_list_column || null,
       data_list_label_column: r.data_list_label_column || null, source_config: r.source_config || null,
-      placeholder: r.placeholder || null, help_text: r.help_text || null
+      placeholder: r.placeholder || null, help_text: r.help_text || null,
+      guide_text: parseGuideText(r.view_config)
     }));
   }
   const [rows] = await pool.query(
     "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = ? AND status = 'active' ORDER BY id",
     [entity]
   );
-  return rows;
+  // Phu guide_text da cau hinh rieng tren chinh view nay (neu co)
+  let guideByKey = {};
+  if (view && view.id) {
+    try {
+      const [vfRows] = await pool.query(
+        'SELECT fd.`key`, vf.config FROM view_fields vf JOIN field_definitions fd ON vf.field_id = fd.id WHERE vf.view_id = ?',
+        [view.id]
+      );
+      vfRows.forEach(r => { guideByKey[r.key] = parseGuideText(r.config); });
+    } catch { /* silent */ }
+  }
+  return rows.map(r => ({ ...r, guide_text: guideByKey[r.key] || null }));
 }
 
 
@@ -453,7 +482,8 @@ function buildImportColumns(entity, fieldDefs) {
       data_list_label_column: f.data_list_label_column || null,
       source_config: f.source_config || null,
       placeholder: f.placeholder || null,
-      help_text: f.help_text || null
+      help_text: f.help_text || null,
+      guide_text: f.guide_text != null ? String(f.guide_text) : null
     });
   });
 
@@ -602,6 +632,8 @@ function acceptedList(values, options) {
 
 function buildColumnGuide(col, entity) {
   if (col.key === '_stt') return `${GUIDE_MARKER} – Dòng hướng dẫn, không nhập vào đây`;
+  const customGuide = col.guide_text != null ? String(col.guide_text).trim() : '';
+  if (customGuide) return customGuide;
   if (entity === 'station_proposals' && (col.key === 'ma_tinh' || col.key === 'vung_mien')) {
     return 'Bỏ trống – hệ thống tự suy từ Tỉnh/Thành';
   }
@@ -1229,7 +1261,7 @@ async function computeViewStats(entity, view, rawFileLabels) {
 
 async function detectViewForFile(entity, fileLabels) {
   const [views] = await pool.query(
-    "SELECT id, entity, name, `usage`, status FROM views WHERE entity = ? AND status = 'active' ORDER BY id",
+    "SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE entity = ? AND status = 'active' ORDER BY id",
     [entity]
   );
   const excelViews = views.filter(v => v.usage === 'excel_full' || v.usage === 'excel_basic');
@@ -1766,7 +1798,7 @@ exports.getViewsForEntity = async (req, res) => {
     }
     if (denyEntityByRole(req, res, entity)) return;
     const [rows] = await pool.query(
-      "SELECT id, name, entity, `usage`, is_locked, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
+      "SELECT id, name, entity, `usage`, include_rest, is_locked, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
       [entity]
     );
     res.json({ success: true, data: rows });

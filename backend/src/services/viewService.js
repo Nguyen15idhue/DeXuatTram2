@@ -60,11 +60,19 @@ exports.getViewById = async (id) => {
   return { ...view, fields };
 };
 
+const normalizeIncludeRest = (v, fallbackUsage) => {
+  if (v === undefined || v === null || v === '') {
+    return fallbackUsage === 'excel_basic' ? 0 : 1;
+  }
+  return Number(v) ? 1 : 0;
+};
+
 exports.createView = async (data) => {
   const { entity, name, description, status, usage } = data;
+  const finalUsage = usage || 'table';
   const [result] = await pool.query(
-    'INSERT INTO views (entity, name, description, status, `usage`) VALUES (?, ?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active', usage || 'table']
+    'INSERT INTO views (entity, name, description, status, `usage`, include_rest) VALUES (?, ?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', finalUsage, normalizeIncludeRest(data.include_rest, finalUsage)]
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [result.insertId]);
   return rows[0];
@@ -81,11 +89,14 @@ exports.updateView = async (id, data) => {
     name: data.name !== undefined ? data.name : prev.name,
     description: data.description !== undefined ? data.description : prev.description,
     status: data.status !== undefined ? data.status : prev.status,
-    usage: data.usage !== undefined && data.usage ? data.usage : prev.usage
+    usage: data.usage !== undefined && data.usage ? data.usage : prev.usage,
+    include_rest: data.include_rest !== undefined && data.include_rest !== null && data.include_rest !== ''
+      ? (Number(data.include_rest) ? 1 : 0)
+      : (prev.include_rest !== undefined && prev.include_rest !== null ? Number(prev.include_rest) : normalizeIncludeRest(undefined, data.usage !== undefined && data.usage ? data.usage : prev.usage))
   };
   await pool.query(
-    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, updated_at = NOW() WHERE id = ?',
-    [next.entity, next.name, next.description, next.status, next.usage, id]
+    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, include_rest = ?, updated_at = NOW() WHERE id = ?',
+    [next.entity, next.name, next.description, next.status, next.usage, next.include_rest, id]
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [id]);
   return rows[0];

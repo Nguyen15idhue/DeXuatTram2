@@ -26,7 +26,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { entity, name, description, status, usage } = req.body;
+    const { entity, name, description, status, usage, include_rest } = req.body;
 
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
@@ -45,7 +45,8 @@ exports.create = async (req, res) => {
       name: name.trim(),
       description,
       status,
-      usage
+      usage,
+      include_rest
     });
 
     res.status(201).json({ success: true, data: view, message: 'Tạo view thành công' });
@@ -58,7 +59,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { entity, name, description, status, usage } = req.body;
+    const { entity, name, description, status, usage, include_rest } = req.body;
 
     const existing = await viewService.getViewById(id);
     if (!existing) {
@@ -82,7 +83,8 @@ exports.update = async (req, res) => {
       name: name.trim(),
       description,
       status,
-      usage
+      usage,
+      include_rest
     });
 
     res.json({ success: true, data: view, message: 'Cập nhật view thành công' });

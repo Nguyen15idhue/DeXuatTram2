@@ -30,6 +30,14 @@ const AdminViewsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createEntity, setCreateEntity] = useState('stations');
+  const [createName, setCreateName] = useState('');
+  const [createUsage, setCreateUsage] = useState('table');
+  const [createDesc, setCreateDesc] = useState('');
+  const [createStatus, setCreateStatus] = useState('active');
+  const [createIncludeRest, setCreateIncludeRest] = useState(true);
+  const [creating, setCreating] = useState(false);
 
   const loadViews = async () => {
     try {
@@ -49,23 +57,44 @@ const AdminViewsPage = () => {
 
   const viewsForEntity = (entity) => views.filter(v => v.entity === entity).sort((a, b) => a.id - b.id);
 
-  const handleCreate = async (entity) => {
+  const openCreate = (entity) => {
     setError('');
+    setCreateEntity(entity);
+    setCreateName(`View ${entity} ${viewsForEntity(entity).length + 1}`);
+    setCreateUsage('table');
+    setCreateDesc('');
+    setCreateStatus('active');
+    setCreateIncludeRest(true);
+    setCreateOpen(true);
+  };
+
+  const handleCreate = async () => {
+    if (!createName.trim()) {
+      setError('Vui lòng nhập tên view');
+      return;
+    }
+    setError('');
+    setCreating(true);
     try {
       const res = await viewService.create({
-        entity,
-        name: `View ${entity} ${viewsForEntity(entity).length + 1}`,
-        description: '',
-        usage: 'table',
+        entity: createEntity,
+        name: createName.trim(),
+        description: createDesc.trim(),
+        status: createStatus,
+        usage: createUsage,
+        include_rest: createIncludeRest ? 1 : 0,
       }, token);
       if (res.success) {
-        setToast({ message: `Tạo view ${entity} thành công`, type: 'success' });
+        setCreateOpen(false);
+        setToast({ message: `Tạo view ${createEntity} thành công`, type: 'success' });
         navigate(`/admin/views/${res.data.id}/edit`);
       } else {
         setError(res.message || 'Tạo view thất bại');
       }
     } catch {
       setError('Lỗi kết nối server');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -150,7 +179,7 @@ const AdminViewsPage = () => {
                       <h3 className="card-title text-base">{ent.label}</h3>
                       <span className="text-xs text-base-content/50">{ent.key} · {list.length} view</span>
                     </div>
-                    <button className="btn btn-primary btn-xs gap-1 ml-auto" onClick={() => handleCreate(ent.key)}>
+                    <button className="btn btn-primary btn-xs gap-1 ml-auto" onClick={() => openCreate(ent.key)}>
                       <Plus size={12} />
                       Thêm view
                     </button>
@@ -198,6 +227,15 @@ const AdminViewsPage = () => {
                                 onChange={(e) => patchView(v, { status: e.target.checked ? 'active' : 'inactive' })}
                               />
                             </label>
+                            <label className="label cursor-pointer gap-2 py-0" title="Bật: template/export/import dùng cột trong view + nối thêm field còn lại. Tắt: chỉ đúng cột trong view.">
+                              <span className="text-xs">Nối thêm field</span>
+                              <input
+                                type="checkbox"
+                                className="toggle toggle-xs toggle-info"
+                                checked={Number(v.include_rest ?? (v.usage === 'excel_basic' ? 0 : 1)) === 1}
+                                onChange={(e) => patchView(v, { include_rest: e.target.checked ? 1 : 0 })}
+                              />
+                            </label>
                             <div className="ml-auto flex items-center gap-1">
                               <button className="btn btn-primary btn-xs gap-1" onClick={() => navigate(`/admin/views/${v.id}/edit`)}>
                                 <Pencil size={12} />
@@ -223,6 +261,77 @@ const AdminViewsPage = () => {
             );
           })}
         </div>
+      )}
+
+      {createOpen && (
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+          <div className="modal-box max-w-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Thêm view mới</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setCreateOpen(false)} aria-label="Đóng">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div className="form-control">
+                <label className="label"><span className="label-text">Entity</span></label>
+                <input type="text" className="input input-bordered w-full" value={createEntity} disabled />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Tên view *</span></label>
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="VD: Excel Đề xuất - Rút gọn"
+                />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Loại view</span></label>
+                <select className="select select-bordered w-full" value={createUsage} onChange={(e) => setCreateUsage(e.target.value)}>
+                  {USAGE_OPTIONS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                </select>
+                <label className="label"><span className="label-text-alt">Bảng danh sách: hiển thị bảng. Excel: dùng cho Template/Import/Export.</span></label>
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Mô tả</span></label>
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  value={createDesc}
+                  onChange={(e) => setCreateDesc(e.target.value)}
+                  placeholder="Mô tả ngắn (tùy chọn)"
+                />
+              </div>
+              <div className="flex items-center gap-6">
+                <label className="label cursor-pointer gap-2">
+                  <span className="label-text">Kích hoạt</span>
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-success"
+                    checked={createStatus === 'active'}
+                    onChange={(e) => setCreateStatus(e.target.checked ? 'active' : 'inactive')}
+                  />
+                </label>
+                <label className="label cursor-pointer gap-2" title="Bật: template/export/import dùng cột trong view + nối thêm field còn lại. Tắt: chỉ đúng cột trong view.">
+                  <span className="label-text">Nối thêm field còn lại</span>
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-info"
+                    checked={createIncludeRest}
+                    onChange={(e) => setCreateIncludeRest(e.target.checked)}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost" onClick={() => setCreateOpen(false)}>Hủy</button>
+              <button className="btn btn-primary" onClick={handleCreate} disabled={creating || !createName.trim()}>
+                {creating ? 'Đang tạo...' : 'Tạo & cấu hình cột'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" />
+        </dialog>
       )}
     </div>
   );
