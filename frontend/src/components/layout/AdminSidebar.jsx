@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useState, useEffect } from 'react';
 import {
-  BarChart3, Users, Zap, ClipboardList, Settings, Target, PieChart, SlidersHorizontal,
+  BarChart3, Users, Zap, ClipboardList, Settings, Target, PieChart,
   FileText, File, LayoutGrid, List, Map, MapPin, LogOut, ShieldCheck, History, BookOpen, ChevronDown
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
@@ -14,7 +14,6 @@ const mainItems = [
   { path: '/admin/proposals', label: 'Quản lý Đề xuất', icon: ClipboardList, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
   { path: '/admin/leads', label: 'Quản lý Leads', icon: Target, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'] },
   { path: '/admin/reports', label: 'Báo cáo', icon: PieChart, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'] },
-  { path: '/admin/reports/builder', label: 'Dựng báo cáo', icon: SlidersHorizontal, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'] },
   { path: '/admin/audit-log', label: 'Audit Log', icon: History, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES'] },
 ];
 

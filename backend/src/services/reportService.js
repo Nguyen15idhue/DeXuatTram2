@@ -565,19 +565,37 @@ function parseWidgets(input) {
   if (input.length > 50) throw badRequest('Tối đa 50 widget');
   return input.map((w, i) => {
     if (!w || typeof w !== 'object') throw badRequest(`Widget #${i + 1} không hợp lệ`);
-    const metric = String(w.metric || '').trim();
-    if (!METRIC_REGISTRY.includes(metric)) throw badRequest(`Metric không hợp lệ: ${metric || '(trống)'}`);
     const chart = w.chart === undefined || w.chart === null || w.chart === '' ? 'table' : String(w.chart);
     if (!CHART_WHITELIST.includes(chart)) throw badRequest(`Chart không hợp lệ: ${chart}`);
     const size = w.size === undefined || w.size === null || w.size === '' ? 'md' : String(w.size);
     if (!SIZE_WHITELIST.includes(size)) throw badRequest(`Size không hợp lệ: ${size}`);
-    return {
-      metric,
-      title: w.title !== undefined && w.title !== null && String(w.title) !== '' ? String(w.title).slice(0, 120) : metric,
-      chart,
-      size,
-      order: Number.isFinite(Number(w.order)) ? Number(w.order) : i + 1,
-    };
+    const order = Number.isFinite(Number(w.order)) ? Number(w.order) : i + 1;
+    const title = w.title !== undefined && w.title !== null && String(w.title) !== '' ? String(w.title).slice(0, 120) : null;
+
+    if (w.dataset !== undefined && w.dataset !== null && String(w.dataset) !== '') {
+      const filters = Array.isArray(w.filters) ? w.filters.slice(0, 10).map((f) => ({
+        key: String((f && f.key) || '').slice(0, 60),
+        op: String((f && f.op) || '=').slice(0, 10),
+        value: f && f.value !== undefined && f.value !== null ? String(f.value).slice(0, 100) : '',
+      })) : [];
+      return {
+        dataset: String(w.dataset).slice(0, 40),
+        dimension: String(w.dimension || '').slice(0, 60),
+        metric: String(w.metric || '').slice(0, 60),
+        agg: String(w.agg || 'count').slice(0, 20),
+        filters,
+        sort: String(w.sort || 'value_desc').slice(0, 20),
+        limit: Math.min(Math.max(Number(w.limit) || 20, 1), 200),
+        chart,
+        size,
+        title: title || '',
+        order,
+      };
+    }
+
+    const metric = String(w.metric || '').trim();
+    if (!METRIC_REGISTRY.includes(metric)) throw badRequest(`Metric không hợp lệ: ${metric || '(trống)'}`);
+    return { metric, title: title || metric, chart, size, order };
   }).sort((a, b) => a.order - b.order);
 }
 

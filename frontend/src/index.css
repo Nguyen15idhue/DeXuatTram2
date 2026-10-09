@@ -175,3 +175,108 @@ html {
 .dynamic-table-container .overflow-x-auto {
   scrollbar-gutter: stable;
 }
+
+/* Report edit mode (mini Looker Studio) */
+.report-edit-layout {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.report-canvas {
+  flex: 1 1 auto;
+  min-width: 0;
+  transition: padding-right 0.2s ease;
+}
+.report-widget-wrap {
+  position: relative;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  padding: 2px;
+}
+.report-widget-wrap:hover { border-color: #c7d2fe; }
+.report-widget-wrap.selected { border-color: #4f46e5; }
+.report-widget-badge {
+  position: absolute;
+  top: -10px;
+  left: 10px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  z-index: 2;
+}
+.report-widget-del {
+  position: absolute;
+  top: -10px;
+  right: 10px;
+  z-index: 3;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+.report-widget-wrap.selected .report-widget-del { display: flex; }
+.report-panel {
+  position: sticky;
+  top: 8px;
+  width: 320px;
+  flex: 0 0 320px;
+  align-self: flex-start;
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  background: var(--fallback-b1, #fff);
+  border: 1px solid var(--fallback-b3, #e5e7eb);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+.report-panel.closed { display: none; }
+.report-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fallback-b3, #e5e7eb);
+}
+.report-panel-head .tabs { margin-left: auto; }
+.report-panel-body { padding: 10px; overflow-y: auto; flex: 1 1 auto; }
+.report-panel-foot {
+  padding: 8px 10px;
+  border-top: 1px solid var(--fallback-b3, #e5e7eb);
+  display: flex;
+  justify-content: flex-end;
+}
+.report-panel-handle {
+  position: sticky;
+  top: 8px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border: 1px solid var(--fallback-b3, #e5e7eb);
+  border-radius: 10px;
+  background: var(--fallback-b1, #fff);
+  cursor: pointer;
+}
+.report-panel-handle span {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+@media (max-width: 768px) {
+  .report-edit-layout { flex-direction: column; }
+  .report-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 60; width: 300px; flex-basis: 300px; max-height: 100vh; border-radius: 0; }
+  .report-panel-handle { position: fixed; right: 0; top: 40%; z-index: 50; }
+}

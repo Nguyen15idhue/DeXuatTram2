@@ -580,6 +580,9 @@ export const reportService = {
   getLead360(id, token) {
     return api.getWithAuth(`/admin/reports/lead/${id}`, token);
   },
+  updateConfig(widgets, token) {
+    return api.putWithAuth('/admin/reports/config', { widgets }, token);
+  },
   getLead360Config(token) {
     return api.getWithAuth('/admin/reports/config?dashboard=lead360', token);
   },

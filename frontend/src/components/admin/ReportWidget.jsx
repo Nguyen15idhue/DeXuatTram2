@@ -226,11 +226,14 @@ export const renderWidgetBody = (widget, dataset) => {
   }
 };
 
-const ReportWidget = ({ widget, data }) => (
-  <div className={`card bg-base-100 shadow p-4 ${SIZE_CLASS[widget.size] || SIZE_CLASS.md}`}>
-    <h3 className="font-semibold mb-2">{widget.title || widget.metric || widget.dataset}</h3>
-    {renderWidgetBody(widget, data)}
-  </div>
-);
+const ReportWidget = ({ widget, data, bare = false }) => {
+  if (bare) return <>{renderWidgetBody(widget, data)}</>;
+  return (
+    <div className={`card bg-base-100 shadow p-4 ${SIZE_CLASS[widget.size] || SIZE_CLASS.md}`}>
+      <h3 className="font-semibold mb-2">{widget.title || widget.metric || widget.dataset}</h3>
+      {renderWidgetBody(widget, data)}
+    </div>
+  );
+};
 
 export default ReportWidget;

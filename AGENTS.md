@@ -85,6 +85,7 @@ Swagger UI:  http://localhost:3000/api-docs
 9. Tạo trạm từ đề xuất `POST /admin/proposals/:id/convert-to-station` là `requireAdmin` (chỉ `ADMIN`/`SUPER_ADMIN`); tab "Hoạt động đề xuất" (`GET /api/admin/proposal-logs`) phân quyền y hệt lịch sử đồng bộ 1Office
 10. MKT (`requireLeadManager` = SUPER_ADMIN/ADMIN/MKT/SALES): CRUD Leads + phân chia + Excel leads; CTV/NPP gọi `/admin/leads` → 403. MKT vào `/admin` → redirect `/admin/leads` (không thấy Dashboard). Cấu hình báo cáo chỉ SUPER_ADMIN (`requireReportConfigurator`)
 11. Báo cáo (`/api/admin/reports/*`): aggregate 1 call + scope theo role (SALES theo nhánh được giao; ngoài scope 403, không 404); metric whitelist trong registry (lạ → 400); báo cáo Lead 360 đọc gương 1Office `automation_sync_snapshots` (không đọc live), UI hiện badge giờ sync
+12. `/admin/reports` có 2 phần: **Biểu đồ dữ liệu** (nút "Cài đặt" → chuyển trang sang **edit mode tại chỗ** kiểu Looker Studio: click/chuột phải chọn phần tử, panel Thuộc tính bên phải mặc định thu gọn [tab Thiết lập/Style], thêm/xóa/sửa + lưu/hủy; widget có `dataset`=builder, không có `dataset`=chỉ số hệ thống) và **Hành trình leads** (chọn Lead → `LeadJourneyPopup` inline, không popup). Sửa layout chỉ `SUPER_ADMIN` (`requireReportConfigurator`). Không còn trang `/admin/reports/builder`; mini-builder engine ở `reportBuilderService` (`/builder/datasets|preview`)
 
 ### 4.2. Proposal Lifecycle & Notification
 - Từ chối/hủy đề xuất: **bắt buộc** `reason` (`reject_reason`); lưu `reviewed_by`, `reviewed_at` (`proposalLifecycle.transition`)
@@ -214,7 +215,8 @@ frontend/src/
 │   │               FileViewer, FileListPopup, DynamicFilter, FormulaEditor, UserChip, UserField
 │   ├── admin/      FieldManager, FormBuilder, ViewBuilder, DragDropList, DataListManager,
 │   │               DataListEditor, RecordDetailPopup, LeadDetailPopup, LeadJourneyPopup,
-│   │               ProcessTimeline, LeadAssignDialog, LeadReportTab, FieldMappingPanel, TemplateEditor,
+│   │               ProcessTimeline, LeadAssignDialog, LeadReportTab, ReportWidget,
+│   │               ReportPropertiesPanel, FieldMappingPanel, TemplateEditor,
 │   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel,
 │   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo,
 │   │               HelpEditor (TipTap), HelpGuideBoard, AssistantConfigPanel,
