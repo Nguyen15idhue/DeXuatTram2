@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
 import UserField from './UserField';
 import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../utils/formatNumber';
+import { formatDate, formatDateTime, toDateInputValue, toDateTimeLocalValue } from '../../utils/formatDateTime';
 import { resolveColumnDatalist, getColumnSource } from '../../utils/tableColumnSource';
 import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
 import { create, all } from 'mathjs';
@@ -456,22 +457,28 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
           />
         );
       case 'date':
+        if (disabledCell) {
+          return <span style={{ fontSize: 13 }}>{cellVal ? formatDate(cellVal) : ''}</span>;
+        }
         return (
           <input
             type="date"
             className={cellClass}
-            value={cellVal || ''}
+            value={toDateInputValue(cellVal)}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
             style={cellStyle}
           />
         );
       case 'datetime':
+        if (disabledCell) {
+          return <span style={{ fontSize: 13 }}>{cellVal ? formatDateTime(cellVal) : ''}</span>;
+        }
         return (
           <input
             type="datetime-local"
             className={cellClass}
-            value={cellVal || ''}
+            value={toDateTimeLocalValue(cellVal)}
             onChange={(e) => onChangeCell(e.target.value)}
             disabled={disabledCell}
             style={cellStyle}
@@ -653,12 +660,23 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       );
 
     case 'date':
+      if (disabled) {
+        return (
+          <input
+            type="text"
+            className={baseClass}
+            value={value ? formatDate(value) : ''}
+            readOnly
+            disabled
+          />
+        );
+      }
       return (
         <>
           <input
             type="date"
             className={baseClass}
-            value={value || ''}
+            value={toDateInputValue(value)}
             onChange={handleChange}
             disabled={disabled}
           />
@@ -667,12 +685,23 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       );
 
     case 'datetime':
+      if (disabled) {
+        return (
+          <input
+            type="text"
+            className={baseClass}
+            value={value ? formatDateTime(value) : ''}
+            readOnly
+            disabled
+          />
+        );
+      }
       return (
         <>
           <input
             type="datetime-local"
             className={baseClass}
-            value={value || ''}
+            value={toDateTimeLocalValue(value)}
             onChange={handleChange}
             disabled={disabled}
           />

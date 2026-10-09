@@ -88,6 +88,11 @@ router.get('/:id', viewController.getById);
  *               status:
  *                 type: string
  *                 enum: [active, inactive]
+ *               frozen_columns:
+ *                 type: integer
+ *                 minimum: 0
+ *                 default: 2
+ *                 description: Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)
  *     responses:
  *       201:
  *         description: Tạo thành công
@@ -130,6 +135,10 @@ router.post('/', requireAuth, requireSuperAdmin, viewController.create);
  *                 type: string
  *               status:
  *                 type: string
+ *               frozen_columns:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)
  *     responses:
  *       200:
  *         description: Cập nhật thành công

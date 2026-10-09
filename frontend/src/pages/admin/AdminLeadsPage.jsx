@@ -18,10 +18,12 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
+import { leadFocusSectionForRole } from '../../utils/leadSectionPerms';
 import { Users, Upload, Plus, Search, RotateCcw, X, Trash2, Split, SlidersHorizontal } from 'lucide-react';
 
 const AdminLeadsPage = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const role = (user && user.role) || '';
   const navigate = useNavigate();
   const location = useLocation();
   const leadsViewId = useDefaultViewId('leads', null);
@@ -303,9 +305,9 @@ const AdminLeadsPage = () => {
         date_field: (dateFrom || dateTo) ? dateField : undefined,
         ...active,
       });
-      setToast({ message: 'Export Lead thành công', type: 'success' });
+      setToast({ message: 'Xuất Excel Lead thành công', type: 'success' });
     } catch (err) {
-      setError(err.message || 'Lỗi export Lead');
+      setError(err.message || 'Lỗi xuất Excel Lead');
     }
   };
 
@@ -367,7 +369,7 @@ const AdminLeadsPage = () => {
   };
 
   const handleConfirmImport = async () => {
-    if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để nhập'); return; }
     const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     setImportProgress({ done: 0, total: importPreview.rows.length });
     setImportResult(null);
@@ -379,16 +381,16 @@ const AdminLeadsPage = () => {
       setImportLoading(false);
       setImportResult(data);
       if (data.status === 'done') {
-        setToast({ message: `Import thành công: ${data.imported} Lead`, type: 'success' });
+        setToast({ message: `Nhập thành công: ${data.imported} Lead`, type: 'success' });
         loadLeads(1);
       } else if (data.status === 'partial') {
-        setToast({ message: `Import một phần: ${data.imported}/${data.total} thành công — xem tab Excel`, type: 'warning' });
+        setToast({ message: `Nhập một phần: ${data.imported}/${data.total} thành công — xem tab Excel`, type: 'warning' });
         loadLeads(1);
       } else if (data.status === 'cancelled') {
-        setToast({ message: `Đã hủy import: ${data.imported} đã tạo`, type: 'warning' });
+        setToast({ message: `Đã hủy nhập: ${data.imported} đã tạo`, type: 'warning' });
         loadLeads(1);
       } else {
-        setError(data.error || 'Import thất bại');
+        setError(data.error || 'Nhập thất bại');
       }
     };
     importPollRef.current = setInterval(async () => {
@@ -410,12 +412,12 @@ const AdminLeadsPage = () => {
         setImportProgress(null);
         setImportLoading(false);
         setImportFailures((res.data && res.data.failDetails) || []);
-        setError(res.message || 'Lỗi import');
+        setError(res.message || 'Lỗi nhập file');
       } else {
         setShowImport(false);
         setImportLoading(false);
         setImportProgress(null);
-        setToast({ message: `Đang xử lý import ${importPreview.rows.length} dòng — xong sẽ báo tại đây.`, type: 'info', duration: 5000 });
+        setToast({ message: `Đang xử lý nhập ${importPreview.rows.length} dòng — xong sẽ báo tại đây.`, type: 'info', duration: 5000 });
       }
     } catch (err) {
       stopPoll();
@@ -423,6 +425,20 @@ const AdminLeadsPage = () => {
       setImportLoading(false);
       setError((err && err.message) || 'Lỗi kết nối server');
     }
+  };
+
+  const renderUpdateAction = (row) => {
+    const focus = leadFocusSectionForRole(role);
+    const focusLabel = focus === 'tvbh' ? 'TVBH' : focus === 'marketing' ? 'Marketing/CSKH' : '';
+    return (
+      <button
+        className="btn btn-sm btn-info"
+        title={focusLabel ? `Cập nhật section ${focusLabel}` : 'Cập nhật Lead'}
+        onClick={() => navigate(`/admin/leads/edit=${row.id}`, focus ? { state: { focusSection: focus } } : undefined)}
+      >
+        Cập nhật
+      </button>
+    );
   };
 
   const renderActions = (row) => (
@@ -446,10 +462,10 @@ const AdminLeadsPage = () => {
           <button className="btn btn-primary btn-sm gap-1" onClick={() => { setShowCreateForm(true); setError(''); }}>
             <Plus size={14} /> Thêm Lead
           </button>
-          <ViewPickerMenu label="Template" views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
-          <ViewPickerMenu label="Export" views={excelViews} onPick={handleExportLeads} title="Chọn bộ cột để export" />
+          <ViewPickerMenu label="File mẫu" views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
+          <ViewPickerMenu label="Xuất Excel" views={excelViews} onPick={handleExportLeads} title="Chọn bộ cột để export" />
           <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
-            <Upload size={14} /> Import
+            <Upload size={14} /> Nhập Excel
           </button>
         </div>
       </div>
@@ -479,7 +495,7 @@ const AdminLeadsPage = () => {
       <div className="flex items-center gap-2 mb-3">
         <input
           type="text"
-          placeholder="Search theo tên, SĐT, mã Lead..."
+          placeholder="Tìm kiếm theo tên, SĐT, mã Lead..."
           className="input input-bordered input-sm flex-1 min-w-0"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -538,7 +554,7 @@ const AdminLeadsPage = () => {
         <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Import Leads từ Excel</h3>
+              <h3 className="font-bold text-lg">Nhập Lead từ Excel</h3>
               <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowImport(false)} aria-label="Close">
                 <X size={18} />
               </button>
@@ -584,7 +600,7 @@ const AdminLeadsPage = () => {
                 {importLoading && importProgress && (
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs">
-                      <span>Đang import...</span>
+                      <span>Đang nhập...</span>
                       <span>{importProgress.done}/{importProgress.total} dòng</span>
                     </div>
                     <progress className="progress progress-primary w-full" value={importProgress.done} max={Math.max(importProgress.total, 1)}></progress>
@@ -593,10 +609,10 @@ const AdminLeadsPage = () => {
                 {importResult && (
                   <div className={`alert ${importResult.status === 'done' ? 'alert-success' : importResult.status === 'partial' || importResult.status === 'cancelled' ? 'alert-warning' : 'alert-error'} text-sm`}>
                     <span>
-                      {importResult.status === 'done' && `Import thành công: ${importResult.imported} Lead.`}
-                      {importResult.status === 'partial' && `Import một phần: ${importResult.imported}/${importResult.total} thành công, ${importResult.failed} lỗi.`}
-                      {importResult.status === 'cancelled' && `Đã hủy import: ${importResult.imported} đã tạo, ${importResult.pending} chưa xử lý.`}
-                      {importResult.status === 'failed' && `Import thất bại${importResult.error ? `: ${importResult.error}` : '.'}`}
+                      {importResult.status === 'done' && `Nhập thành công: ${importResult.imported} Lead.`}
+                      {importResult.status === 'partial' && `Nhập một phần: ${importResult.imported}/${importResult.total} thành công, ${importResult.failed} lỗi.`}
+                      {importResult.status === 'cancelled' && `Đã hủy nhập: ${importResult.imported} đã tạo, ${importResult.pending} chưa xử lý.`}
+                      {importResult.status === 'failed' && `Nhập thất bại${importResult.error ? `: ${importResult.error}` : '.'}`}
                     </span>
                   </div>
                 )}
@@ -605,7 +621,7 @@ const AdminLeadsPage = () => {
                   <button className="btn btn-ghost" onClick={() => { setShowImport(false); setImportResult(null); }}>Hủy</button>
                   <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
                     {importLoading && <span className="loading loading-spinner loading-xs"></span>}
-                    {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} Lead`}
+                    {importLoading ? 'Đang nhập...' : `Nhập ${importPreview.validRows} Lead`}
                   </button>
                 </div>
               </div>
@@ -660,6 +676,8 @@ const AdminLeadsPage = () => {
           viewId={leadsViewId}
           data={leads}
           actions={renderActions}
+          leadingAction={renderUpdateAction}
+          leadingActionTitle="Cập nhật thông tin"
           startIndex={(pagination.page - 1) * pagination.limit}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}

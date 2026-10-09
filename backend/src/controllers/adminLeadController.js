@@ -32,7 +32,7 @@ exports.getById = async (req, res) => {
     if (!(await leadService.canAccessLead(lead, req.user))) {
       return res.status(403).json({ success: false, message: 'Không có quyền xem Lead này' });
     }
-    const detail = await leadService.getLeadDetail(req.params.id);
+    const detail = await leadService.getLeadDetail(req.params.id, req.user);
     res.json({ success: true, data: detail, message: 'Lấy chi tiết Lead thành công' });
   } catch (error) {
     sendError(res, error);

@@ -420,6 +420,17 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
   const id = lead.id;
 
   const patch = {};
+  // Quyền sửa theo section (chỉ chặn sửa, vẫn xem bình thường):
+  // section có cấu hình permissions.edit riêng thì tuân theo đó
+  // (role/phòng ban/chức vụ/đích danh user); thiếu thì fallback mặc định:
+  // - Thông tin Marketing + CSKH: MKT, ADMIN, SUPER_ADMIN
+  // - Tư vấn bán hàng TVBH: SALES, ADMIN, SUPER_ADMIN
+  try {
+    const sectionPermService = require('./sectionPermService');
+    await sectionPermService.enforceLeadEdit(user, data, conn, lead);
+  } catch (err) {
+    if (err.statusCode) throw err;
+  }
   // assigned_department KHÔNG nhận trực tiếp từ PUT (đi qua /assign hoặc tự resolve
   // nội bộ khi đổi người) — tránh ghi phòng ban bừa / NULL gây 500 ở history.
   const updatable = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
@@ -448,6 +459,13 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     const n = normalizeUserValue(patch.assigned_user_id);
     if (patch.assigned_user_id !== null && patch.assigned_user_id !== '' && n === null) {
       const err = new Error('Người phụ trách không hợp lệ');
+      err.statusCode = 400;
+      throw err;
+    }
+    const effClassForAssign = patch.customer_classification !== undefined
+      ? patch.customer_classification : lead.customer_classification;
+    if (n && normalizeClassification(effClassForAssign) !== 'TIEM_NANG') {
+      const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
       err.statusCode = 400;
       throw err;
     }
@@ -728,13 +746,21 @@ exports.bulkDeleteLeads = async (ids, user) => {
   }
 };
 
-exports.getLeadDetail = async (id) => {
+exports.getLeadDetail = async (id, user = null) => {
   const row = await getLeadRow(id);
   if (!row) return null;
   const dynamicUtils = require('./dynamicUtils');
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('leads');
   const merged = dynamicUtils.mergeData(row, fieldDefs);
-  try { return await dynamicUtils.enrichUserFields(merged, fieldDefs); } catch { return merged; }
+  let out = merged;
+  try { out = await dynamicUtils.enrichUserFields(merged, fieldDefs); } catch { out = merged; }
+  if (user) {
+    try {
+      const sectionPermService = require('./sectionPermService');
+      out = await sectionPermService.stripLeadView(out, user);
+    } catch { /* silent */ }
+  }
+  return out;
 };
 
 exports.getJourneyProposals = async (journeyId) => {

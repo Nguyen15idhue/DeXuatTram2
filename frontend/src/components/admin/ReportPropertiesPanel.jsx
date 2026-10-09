@@ -75,7 +75,7 @@ const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onCl
                 </select>
               </label>
               <label className="form-control">
-                <span className="label-text text-xs">Nhóm theo (dimension)</span>
+                <span className="label-text text-xs">Nhóm theo</span>
                 <select className={selectCls} value={widget.dimension || ''} onChange={(e) => set({ dimension: e.target.value })}>
                   <option value="">— Chọn —</option>
                   {dims.map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
@@ -83,7 +83,7 @@ const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onCl
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="form-control">
-                  <span className="label-text text-xs">Chỉ số (metric)</span>
+                  <span className="label-text text-xs">Chỉ số</span>
                   <select className={selectCls} value={widget.metric || ''} onChange={(e) => {
                     const m = ds && ds.metrics[e.target.value];
                     set({ metric: e.target.value, agg: m && m.aggs.includes(widget.agg) ? widget.agg : (m ? m.aggs[0] : 'count') });

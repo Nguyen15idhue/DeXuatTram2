@@ -244,7 +244,7 @@ const AdminReportsPage = () => {
       {!editMode && (
         <div className="tabs tabs-boxed mb-4 w-fit">
           <button className={`tab ${tab === 'charts' ? 'tab-active' : ''}`} onClick={() => setTab('charts')}>Biểu đồ dữ liệu</button>
-          <button className={`tab ${tab === 'journey' ? 'tab-active' : ''}`} onClick={() => setTab('journey')}>Hành trình leads</button>
+          <button className={`tab ${tab === 'journey' ? 'tab-active' : ''}`} onClick={() => setTab('journey')}>Hành trình Lead</button>
         </div>
       )}
 
@@ -253,7 +253,7 @@ const AdminReportsPage = () => {
           <div className={`report-canvas ${panelOpen ? 'with-panel' : ''}`}>
             {activeWidgets.length === 0 && (
               <div className="text-sm opacity-60 border border-dashed border-base-300 rounded p-6 text-center">
-                Canvas trống. Bấm <b>Thêm biểu đồ</b> để thêm phần tử.
+                Khung vẽ trống. Bấm <b>Thêm biểu đồ</b> để thêm phần tử.
               </div>
             )}
             <div className="grid grid-cols-12 gap-4">
@@ -314,7 +314,7 @@ const AdminReportsPage = () => {
               {filterField('Vùng miền', 'region')}
               {filterField('Phòng ban', 'department')}
               {filterField('Nguồn', 'source')}
-              {filterField('Stage', 'stage')}
+              {filterField('Giai đoạn', 'stage')}
               {filterField('Tỉnh/Thành', 'province')}
               {filterField('Người phụ trách (ID)', 'assigned_user_id', 'number')}
               <button className="btn btn-primary btn-sm" onClick={() => setApplied({ ...filters })}>Áp dụng</button>
@@ -392,7 +392,7 @@ const AdminReportsPage = () => {
       <ConfirmDialog
         isOpen={confirmCancel}
         title="Hủy chỉnh sửa?"
-        message="Bỏ các thay đổi chưa lưu trên canvas?"
+        message="Bỏ các thay đổi chưa lưu trên khung vẽ?"
         onConfirm={() => { setConfirmCancel(false); exitEdit(); }}
         onCancel={() => setConfirmCancel(false)}
       />

@@ -9,6 +9,72 @@ import { filterFieldsBySearch } from '../../utils/searchText';
 import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
 import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
 import { getColumnSource } from '../../utils/tableColumnSource';
+import { SECTION_PERM_ROLES, normalizePermRule, isPermRuleEmpty, permRuleSummary } from '../../utils/formSectionPerms';
+
+const ruleToText = (rule, key) => normalizePermRule(rule)[key].join(', ');
+
+const PermRuleEditor = ({ label, rule, onChange }) => {
+  const n = normalizePermRule(rule);
+  const set = (patch) => onChange({ roles: n.roles, departments: n.departments, positions: n.positions, user_ids: n.user_ids, ...patch });
+  const toggleRole = (r) => {
+    const has = n.roles.includes(r);
+    set({ roles: has ? n.roles.filter((x) => x !== r) : [...n.roles, r] });
+  };
+  const textToList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+  return (
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 8, background: '#fff' }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+        {SECTION_PERM_ROLES.map((r) => (
+          <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={n.roles.includes(r)} onChange={() => toggleRole(r)} />
+            <span>{r}</span>
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+        <input
+          type="text" className="input input-bordered input-xs" placeholder="Phòng ban (a, b...)"
+          title="Phòng ban được quyền, cách nhau dấu phẩy"
+          value={ruleToText(rule, 'departments')}
+          onChange={(e) => set({ departments: textToList(e.target.value) })}
+        />
+        <input
+          type="text" className="input input-bordered input-xs" placeholder="Chức vụ (a, b...)"
+          title="Chức vụ được quyền, cách nhau dấu phẩy"
+          value={ruleToText(rule, 'positions')}
+          onChange={(e) => set({ positions: textToList(e.target.value) })}
+        />
+        <input
+          type="text" className="input input-bordered input-xs" placeholder="Đích danh user (id, ...)"
+          title="ID user được quyền, cách nhau dấu phẩy (VD: 3, 7)"
+          value={ruleToText(rule, 'user_ids')}
+          onChange={(e) => set({ user_ids: textToList(e.target.value) })}
+        />
+      </div>
+      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>Đang áp dụng: {permRuleSummary(rule)}</div>
+    </div>
+  );
+};
+
+const SectionPermEditor = ({ section, onChange }) => {
+  const perms = (section.permissions && typeof section.permissions === 'object') ? section.permissions : {};
+  const setRule = (key, rule) => onChange({ ...(perms || {}), [key]: rule });
+  const clearAll = () => onChange(null);
+  return (
+    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+      <div style={{ fontSize: 12, color: '#374151' }}>
+        Giới hạn ai được <b>xem</b> / <b>sửa</b> section này (theo vai trò, phòng ban, chức vụ, đích danh user).
+        Bỏ trống = mọi người. Trong 1 khung chỉ cần khớp <b>1 điều kiện</b>.
+      </div>
+      <PermRuleEditor label="Được xem" rule={perms.view} onChange={(r) => setRule('view', r)} />
+      <PermRuleEditor label="Được sửa" rule={perms.edit} onChange={(r) => setRule('edit', r)} />
+      <div>
+        <button className="btn btn-ghost btn-xs" onClick={clearAll}>Xóa giới hạn quyền</button>
+      </div>
+    </div>
+  );
+};
 
 const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
 const PURPOSE_OPTIONS = [
@@ -658,6 +724,7 @@ const FormBuilder = ({ formId, onSaved }) => {
           collapsible: !!s.collapsible,
           rows: [],
           visibleWhen: s.visibleWhen || null,
+          permissions: s.permissions || null,
           tabs
         };
       }
@@ -1092,6 +1159,17 @@ const FormBuilder = ({ formId, onSaved }) => {
                         {section.visibleWhen.field} = {section.visibleWhen.value || '...'}
                       </span>
                     )}
+                    {section.permissions && (!isPermRuleEmpty(section.permissions.view) || !isPermRuleEmpty(section.permissions.edit)) && (
+                      <span
+                        style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                          background: '#e0e7ff', color: '#3730a3', border: '1px solid #6366f1'
+                        }}
+                        title={`Xem: ${permRuleSummary(section.permissions.view)} | Sửa: ${permRuleSummary(section.permissions.edit)}`}
+                      >
+                        Quyền xem/sửa
+                      </span>
+                    )}
                     <button
                       className="btn btn-xs btn-ghost"
                       onClick={() => toggleSectionCollapsible(section.id)}
@@ -1170,6 +1248,10 @@ const FormBuilder = ({ formId, onSaved }) => {
                           })()}
                         </div>
                       )}
+                      <SectionPermEditor
+                        section={section}
+                        onChange={(permissions) => updateSection(section.id, { permissions })}
+                      />
                     </div>
                   )}
 

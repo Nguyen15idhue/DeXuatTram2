@@ -57,6 +57,11 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
     err.statusCode = 400;
     throw err;
   }
+  if (normalizeClassification(lead.customer_classification) !== 'TIEM_NANG') {
+    const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
+    err.statusCode = 400;
+    throw err;
+  }
   const [trows] = await pool.query(
     'SELECT id, full_name, role, status, custom_data FROM users WHERE id = ? LIMIT 1',
     [targetId]

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ArrowDownUp } from 'lucide-react';
+import { formatDateTime } from '../../utils/formatDateTime';
 
 const ACTION_LABEL = {
   lead_created: 'Tạo Lead',
@@ -40,13 +41,7 @@ const SOURCE_LABEL = {
   import: 'Nhập Excel'
 };
 
-const fmtTime = (t) => {
-  if (!t) return '—';
-  return new Date(t).toLocaleString('vi-VN', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
-};
+const fmtTime = (t) => formatDateTime(t);
 
 const parseChanged = (v) => {
   if (!v) return null;

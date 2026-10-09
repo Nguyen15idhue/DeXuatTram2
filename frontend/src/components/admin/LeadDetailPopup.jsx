@@ -1,17 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import { leadService, dynamicService, formService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicForm from '../dynamic/DynamicForm';
 import LeadJourneyPopup from './LeadJourneyPopup';
 import LeadAssignDialog from './LeadAssignDialog';
 import LeadReportTab from './LeadReportTab';
 import Toast from '../Toast';
-import { X, Pencil, Save, MapPinned, FilePlus2, FileBarChart, Route, Split } from 'lucide-react';
+import { X, Pencil, Save, MapPinned, MapPin, Link2, FilePlus2, FileBarChart, Route, Split } from 'lucide-react';
 import useDataListMap from '../../hooks/useDataListMap';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
+import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
+import { getLeadSectionKind, leadReadOnlyKeysForRole, leadFocusSectionForRole, leadSectionNotice, canViewLeadSection } from '../../utils/leadSectionPerms';
 
 const parseJson = (v, fallback) => {
   if (v === null || v === undefined) return fallback;
@@ -29,8 +31,20 @@ const getFieldValue = (rec, field) => {
 };
 
 const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, onSwitchMode }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const role = (user && user.role) || '';
+  const readOnlyKeys = useMemo(() => leadReadOnlyKeysForRole(role), [role]);
+  const focusFromNav = (location && location.state && location.state.focusSection) || null;
+  const focusFromQuery = useMemo(() => {
+    try {
+      const q = new URLSearchParams((location && location.search) || '');
+      return q.get('focusSection');
+    } catch { return null; }
+  }, [location && location.search]);
+  const focusSection = focusFromNav || focusFromQuery || leadFocusSectionForRole(role);
+  const sectionNotice = leadSectionNotice(role);
   const leadsViewId = useDefaultViewId('leads', null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -46,8 +60,52 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   const [showJourney, setShowJourney] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [quickFormId, setQuickFormId] = useState(null);
+  const [mapLink, setMapLink] = useState('');
+  const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
+  const [linkError, setLinkError] = useState('');
+  const [resolvingLink, setResolvingLink] = useState(false);
 
   useEffect(() => { setMode(modeProp); }, [modeProp]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    formService.getQuickCreate('station_proposals', token)
+      .then(res => { if (!cancelled && res && res.success) setQuickFormId(res.data ? res.data.id : null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const openCreateProposal = () => {
+    setMapLink('');
+    setMapCoords({ latitude: '', longitude: '' });
+    setLinkError('');
+    setShowCreateProposal(true);
+  };
+
+  const handleGoogleMapLink = async () => {
+    const url = mapLink.trim();
+    if (!url) return;
+    setLinkError('');
+    setResolvingLink(true);
+    try {
+      let coords = parseGoogleMapsLink(url);
+      if (coords && coords.needResolve) {
+        coords = await resolveGoogleMapsShortUrl(coords.url);
+      }
+      if (coords && coords.lat != null && coords.lng != null) {
+        setMapCoords({ latitude: Number(coords.lat).toFixed(6), longitude: Number(coords.lng).toFixed(6) });
+        setMapLink('');
+      } else {
+        setLinkError('Không đọc được tọa độ từ link Google Maps');
+      }
+    } catch {
+      setLinkError('Không đọc được tọa độ từ link Google Maps');
+    } finally {
+      setResolvingLink(false);
+    }
+  };
 
   const dataListIds = useMemo(() => {
     const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
@@ -158,7 +216,9 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
     province: record.province || '',
     xa_phuong: record.ward || '',
     ma_tinh: record.province_code || '',
-    vung_mien: record.region || ''
+    vung_mien: record.region || '',
+    latitude: mapCoords.latitude || '',
+    longitude: mapCoords.longitude || ''
   } : {};
 
   const handleCreateProposal = async (formData) => {
@@ -226,7 +286,7 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
               <FileBarChart size={14} /> <span className="hidden sm:inline">Báo cáo 360</span>
             </button>
             <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => setShowAssign(true)} title="Phân chia Lead cho Giám đốc Khu vực">
-              <Split size={14} /> <span className="hidden sm:inline">Phân chia Leads</span>
+              <Split size={14} /> <span className="hidden sm:inline">Phân chia Lead</span>
             </button>
             <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Đóng">
               <X size={18} />
@@ -239,8 +299,10 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
           {!loading && error && <div className="alert alert-error">{error}</div>}
           {!loading && !error && record && mode === 'view' && (
             layout ? (
-              layout.sections.map(sec => (
-                <fieldset key={sec.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+              layout.sections
+                .filter(sec => canViewLeadSection(sec, user))
+                .map(sec => (
+                <fieldset key={sec.id} className="form-section" data-lead-section={getLeadSectionKind(sec.title) || undefined} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
                   {sec.title && <legend className="form-section-title" style={{ fontWeight: 600, padding: '0 6px' }}>{sec.title}</legend>}
                   {renderRows(sec)}
                 </fieldset>
@@ -259,21 +321,26 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
             )
           )}
           {!loading && !error && record && mode === 'edit' && (
-            <DynamicForm
-              entity="leads"
-              purpose="view"
-              initialData={record}
-              onSubmit={handleSave}
-              hideActions
-              htmlId="lead-edit-form"
-            />
+            <>
+              {sectionNotice && <div className="alert alert-info text-sm py-2 mb-3">{sectionNotice}</div>}
+              <DynamicForm
+                entity="leads"
+                purpose="view"
+                initialData={record}
+                onSubmit={handleSave}
+                hideActions
+                htmlId="lead-edit-form"
+                readOnlyKeys={readOnlyKeys}
+                focusSection={focusSection}
+              />
+            </>
           )}
         </div>
 
         <div className="popup-footer" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', padding: 12, borderTop: '1px solid #e2e8f0' }}>
           {mode === 'view' && (
             <>
-              <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => { setShowCreateProposal(true); }} disabled={!canCreateProposal} title={canCreateProposal ? 'Tạo đề xuất từ Lead' : 'Lead chưa TVBH thành công'}>
+              <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={openCreateProposal} disabled={!canCreateProposal} title={canCreateProposal ? 'Tạo nhanh đề xuất từ Lead' : 'Lead chưa TVBH thành công'}>
                 <FilePlus2 size={14} /> Tạo đề xuất
               </button>
               <button type="button" className="btn btn-sm btn-warning gap-1" onClick={() => { setMode('edit'); if (onSwitchMode) onSwitchMode('edit'); }}>
@@ -320,17 +387,50 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
         <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
           <div className="modal-box max-w-3xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Tạo đề xuất từ Lead #{record.id}</h3>
+              <h3 className="font-bold text-lg">Tạo nhanh đề xuất từ Lead #{record.id}</h3>
               <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateProposal(false)} aria-label="Close">
                 <X size={18} />
               </button>
             </div>
-            <div className="flex items-center gap-2 mb-2 text-xs text-base-content/60">
-              <MapPinned size={12} /> Tọa độ (Vĩ độ/Kinh độ) là bắt buộc — nhập trực tiếp trong form.
+            <div className="border border-base-300 rounded-lg p-3 mb-4">
+              <label className="text-sm font-medium block mb-2">Lấy tọa độ từ link Google Maps</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Dán link Google Maps vào đây..."
+                  className="input input-bordered input-sm flex-1"
+                  value={mapLink}
+                  onChange={(e) => { setMapLink(e.target.value); if (linkError) setLinkError(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleGoogleMapLink(); }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm gap-1"
+                  onClick={handleGoogleMapLink}
+                  disabled={resolvingLink || !mapLink.trim()}
+                >
+                  <Link2 size={14} />
+                  {resolvingLink ? '...' : 'Lấy tọa độ'}
+                </button>
+              </div>
+              {linkError && <div className="alert alert-error text-sm mt-2">{linkError}</div>}
+              {mapCoords.latitude && mapCoords.longitude && (
+                <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
+                  <MapPin size={14} />
+                  Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
+                </div>
+              )}
+              {!mapCoords.latitude && (
+                <div className="flex items-center gap-2 mt-2 text-xs text-base-content/60">
+                  <MapPinned size={12} /> Tọa độ (Vĩ độ/Kinh độ) là bắt buộc — dán link ở trên hoặc nhập trực tiếp trong form.
+                </div>
+              )}
             </div>
             <DynamicForm
+              key={`lead-proposal-${record.id}-${mapCoords.latitude}-${mapCoords.longitude}-${quickFormId || 'full'}`}
               entity="station_proposals"
               purpose="create"
+              formId={quickFormId || undefined}
               initialData={prefillProposal}
               onSubmit={handleCreateProposal}
             >

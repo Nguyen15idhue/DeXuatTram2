@@ -120,7 +120,9 @@ exports.getViewConfig = async (entity, viewId) => {
       entity: view.entity,
       name: view.name,
       description: view.description,
-      status: view.status
+      status: view.status,
+      frozen_columns: view.frozen_columns !== undefined && view.frozen_columns !== null
+        ? Number(view.frozen_columns) : 2
     },
     fields: fields.map(f => ({
       field_id: f.field_id,

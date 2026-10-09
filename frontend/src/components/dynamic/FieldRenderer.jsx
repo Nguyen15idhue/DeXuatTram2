@@ -3,6 +3,7 @@ import UserChip from './UserChip';
 import { create, all } from 'mathjs';
 import { Zap } from 'lucide-react';
 import { formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
+import { formatDate, formatDateTime } from '../../utils/formatDateTime';
 import { getDataListLabelFromMap } from '../../utils/dataListLabel';
 import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
 
@@ -25,6 +26,22 @@ const customFunctions = {
 math.import(customFunctions, { override: false });
 
 const FileListPopup = lazy(() => import('./FileListPopup'));
+
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T|\s)\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const formatTableCellValue = (col, v) => {
+  if (v === null || v === undefined || v === '') return '-';
+  const colType = col && col.type;
+  if (colType === 'datetime') return formatDateTime(v);
+  if (colType === 'date') return formatDate(v);
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (ISO_DATETIME_RE.test(s)) return formatDateTime(s);
+    if (ISO_DATE_RE.test(s)) return formatDate(s);
+  }
+  return v;
+};
 
 const getFileUrl = (file, entity, entityId) => {
   if (!file) return '';
@@ -200,8 +217,9 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
         const year = d.getFullYear();
         const hours = String(d.getHours()).padStart(2, '0');
         const mins = String(d.getMinutes()).padStart(2, '0');
+        const secs = String(d.getSeconds()).padStart(2, '0');
         const datePart = fmt.replace('DD', day).replace('MM', month).replace('YYYY', year);
-        return <span>{datePart} {hours}:{mins}</span>;
+        return <span>{datePart} {hours}:{mins}:{secs}</span>;
       } catch {
         return <span>{value}</span>;
       }
@@ -256,7 +274,7 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
         if (col.formula) {
           try { return math.evaluate(col.formula, row); } catch { return '#ERR'; }
         }
-        return row[col.key] ?? '-';
+        return formatTableCellValue(col, row[col.key]);
       };
       const tableEl = (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

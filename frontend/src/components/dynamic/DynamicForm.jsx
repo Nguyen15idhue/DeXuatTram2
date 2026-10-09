@@ -8,6 +8,9 @@ import { getDataListLabel } from '../../utils/dataListLabel';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import { fetchDataList } from '../../utils/dataListCache';
 import { getSuggestions, rememberFormValues, clearFieldMemory, isMemorableField } from '../../utils/formMemory';
+import { getLeadSectionKind } from '../../utils/leadSectionPerms';
+import { canViewSection, canEditSectionExplicit, userCtxFromAuthUser } from '../../utils/formSectionPerms';
+import { canViewLeadSection, canEditLeadSection } from '../../utils/leadSectionPerms';
 
 const math = create(all);
 const customFunctions = {
@@ -160,7 +163,7 @@ const findTabForRow = (layoutConfig, rowId) => {
   return null;
 };
 
-const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null, beforeActions = null }) => {
+const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null, beforeActions = null, readOnlyKeys = [], focusSection = null }) => {
   const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -202,6 +205,54 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   useEffect(() => {
     if (resolvedFormId) loadFormConfig();
   }, [resolvedFormId, authUser?.id, authUser?.parent_id]);
+
+  useEffect(() => {
+    if (!focusSection || fields.length === 0) return;
+    const t = setTimeout(() => {
+      const el = formRef.current && formRef.current.querySelector(`[data-lead-section="${focusSection}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [focusSection, fields.length]);
+
+  const userCtx = useMemo(() => userCtxFromAuthUser(authUser), [authUser]);
+  const sectionVisible = useCallback((section) => {
+    if (entity === 'leads') return canViewLeadSection(section, authUser);
+    return canViewSection(section, userCtx);
+  }, [entity, authUser, userCtx]);
+  const sectionEditable = useCallback((section) => {
+    if (!section) return true;
+    if (entity === 'leads') return canEditLeadSection(section, authUser);
+    const ex = canEditSectionExplicit(section, userCtx);
+    return ex === null ? true : ex;
+  }, [entity, authUser, userCtx]);
+  const fieldSectionMap = useMemo(() => {
+    const map = {};
+    const lc = formConfig?.layout_config
+      ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+      : null;
+    if (!lc || !lc.sections) return map;
+    const secMap = buildSectionMap(lc);
+    const rowToSec = {};
+    (lc.sections || []).forEach((s) => {
+      if (!s) return;
+      if (s.type === 'tabs' || Array.isArray(s.tabs)) {
+        (s.tabs || []).forEach((t) => {
+          (t.sectionRefs || []).forEach((id) => {
+            const rs = secMap[id];
+            if (rs) (rs.rows || []).forEach((r) => { rowToSec[r.id] = rs; });
+          });
+        });
+      } else {
+        (s.rows || []).forEach((r) => { rowToSec[r.id] = s; });
+      }
+    });
+    fields.forEach((f) => {
+      const rid = f.config && f.config.rowId;
+      if (rid !== undefined && rid !== null && rowToSec[rid]) map[f.key] = rowToSec[rid];
+    });
+    return map;
+  }, [formConfig, fields]);
 
   const loadFormConfig = async () => {
     try {
@@ -732,7 +783,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || !!field.autoLocked || scReadonly
+      readonly: field.readonly || !!field.autoLocked || scReadonly || (readOnlyKeys || []).includes(field.key)
+        || !sectionEditable(fieldSectionMap[field.key])
     };
 
     if (field.type === 'formula') {
@@ -851,8 +903,10 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
     const renderSectionContent = (section) => (section.rows || []).map((row) => renderRow(row));
 
-    const renderSectionBlock = (section) => (
-      <fieldset key={section.id} className="form-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+    const renderSectionBlock = (section) => {
+      if (!sectionVisible(section)) return null;
+      return (
+      <fieldset key={section.id} className="form-section" data-lead-section={getLeadSectionKind(section.title) || undefined} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
         {section.title && (
           <legend className="form-section-title">
             {section.title}
@@ -867,11 +921,13 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
           renderSectionContent(section)
         )}
       </fieldset>
-    );
+      );
+    };
 
     const renderTabGroup = (node, path, depth) => {
       if (!node || depth > MAX_TAB_DEPTH) return null;
       if (!evalVisibleWhen(node, formData)) return null;
+      if (!sectionVisible(node)) return null;
       const tabs = (node.tabs || []).filter(Boolean);
       if (tabs.length === 0) return null;
       const activeId = activeTabs[path] || tabs[0].id;

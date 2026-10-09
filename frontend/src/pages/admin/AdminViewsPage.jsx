@@ -39,6 +39,7 @@ const AdminViewsPage = () => {
   const [createDesc, setCreateDesc] = useState('');
   const [createStatus, setCreateStatus] = useState('active');
   const [createIncludeRest, setCreateIncludeRest] = useState(true);
+  const [createFrozen, setCreateFrozen] = useState(2);
   const [creating, setCreating] = useState(false);
 
   const loadViews = async () => {
@@ -67,6 +68,7 @@ const AdminViewsPage = () => {
     setCreateDesc('');
     setCreateStatus('active');
     setCreateIncludeRest(defaultIncludeRest('table'));
+    setCreateFrozen(2);
     setCreateOpen(true);
   };
 
@@ -85,6 +87,7 @@ const AdminViewsPage = () => {
         status: createStatus,
         usage: createUsage,
         include_rest: createIncludeRest ? 1 : 0,
+        frozen_columns: createFrozen,
       }, token);
       if (res.success) {
         setCreateOpen(false);
@@ -207,6 +210,9 @@ const AdminViewsPage = () => {
                               </span>
                             )}
                             <span className="text-xs text-base-content/50 ml-auto">{v.field_count || 0} cột</span>
+                            <span className="badge badge-ghost badge-xs" title="Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)">
+                              Đóng băng {v.frozen_columns ?? 2}
+                            </span>
                           </div>
 
                           {v.description && <p className="text-xs text-base-content/60 mt-1">{v.description}</p>}
@@ -227,6 +233,17 @@ const AdminViewsPage = () => {
                                 className="toggle toggle-xs toggle-success"
                                 checked={v.status === 'active'}
                                 onChange={(e) => patchView(v, { status: e.target.checked ? 'active' : 'inactive' })}
+                              />
+                            </label>
+                            <label className="label cursor-pointer gap-2 py-0" title="Số cột đầu đóng băng khi cuộn ngang (đã gồm cột STT). 0 = tắt.">
+                              <span className="text-xs">Đóng băng</span>
+                              <input
+                                type="number"
+                                className="input input-bordered input-xs w-16"
+                                min="0"
+                                max="20"
+                                value={v.frozen_columns ?? 2}
+                                onChange={(e) => patchView(v, { frozen_columns: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
                               />
                             </label>
                             <label className="label cursor-pointer gap-2 py-0" title="Bật: template/export/import dùng cột trong view + nối thêm field còn lại. Tắt: chỉ đúng cột trong view.">
@@ -325,6 +342,17 @@ const AdminViewsPage = () => {
                     className="toggle toggle-info"
                     checked={createIncludeRest}
                     onChange={(e) => setCreateIncludeRest(e.target.checked)}
+                  />
+                </label>
+                <label className="label gap-2" title="Số cột đầu đóng băng khi cuộn ngang (đã gồm cột STT). 0 = tắt.">
+                  <span className="label-text">Đóng băng (cột)</span>
+                  <input
+                    type="number"
+                    className="input input-bordered w-20"
+                    min="0"
+                    max="20"
+                    value={createFrozen}
+                    onChange={(e) => setCreateFrozen(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
                   />
                 </label>
               </div>

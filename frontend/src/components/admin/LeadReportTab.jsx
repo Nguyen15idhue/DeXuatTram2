@@ -6,15 +6,7 @@ import ErrorMessage from '../ErrorMessage';
 import EmptyState from '../EmptyState';
 import ProcessTimeline from './ProcessTimeline';
 import { Download } from 'lucide-react';
-
-const fmtDateTime = (v) => {
-  if (!v) return '—';
-  try {
-    return new Date(v).toLocaleString('vi-VN', { hour12: false });
-  } catch {
-    return String(v);
-  }
-};
+import { formatDateTime as fmtDateTime } from '../../utils/formatDateTime';
 
 const Section = ({ title, right, children }) => (
   <div className="card bg-base-100 shadow p-4 mb-3">
@@ -27,7 +19,7 @@ const Section = ({ title, right, children }) => (
 );
 
 const MilestoneTable = ({ milestones }) => {
-  if (!milestones || milestones.length === 0) return <p className="text-xs opacity-60">Chưa có dữ liệu node 1Office</p>;
+  if (!milestones || milestones.length === 0) return <p className="text-xs opacity-60">Chưa có dữ liệu mốc 1Office</p>;
   return (
     <div className="overflow-x-auto">
       <table className="table table-xs w-full">
@@ -96,13 +88,13 @@ const HistoryList = ({ history, note }) => {
 };
 
 const MirrorBlock = ({ mirror }) => {
-  if (!mirror || mirror.length === 0) return <p className="text-xs opacity-60 mt-1">Chưa join được quy trình 1Office (unlinked)</p>;
+  if (!mirror || mirror.length === 0) return <p className="text-xs opacity-60 mt-1">Chưa khớp được quy trình 1Office (chưa liên kết)</p>;
   return mirror.map((m, i) => (
     <div key={i} className="mt-2">
       <div className="flex items-center gap-2 text-xs flex-wrap">
         <span className="badge badge-xs badge-info">{m.kind === 'on_station' ? 'Quy trình ON trạm' : m.kind === 'proposal' ? 'Quy trình đề xuất' : 'Quy trình khác'}</span>
-        <span className="opacity-60">Process #{m.process_id} · Ver {m.version}</span>
-        {m.drift ? <span className="badge badge-xs badge-warning">lệch mapping</span> : null}
+        <span className="opacity-60">Quy trình #{m.process_id} · Bản {m.version}</span>
+        {m.drift ? <span className="badge badge-xs badge-warning">lệch ánh xạ</span> : null}
       </div>
       <MilestoneTable milestones={m.milestones} />
     </div>
@@ -227,10 +219,10 @@ const LeadReportTab = ({ leadId, onClose }) => {
         right={data.syncHealth.mirror_synced_at ? <span className="badge badge-xs badge-ghost">Gương lúc {fmtDateTime(data.syncHealth.mirror_synced_at)}</span> : null}
       >
         <div className="text-xs space-y-1">
-          <p>Snapshot đã join lead này: <b>{data.syncHealth.matched_snapshots}</b></p>
+          <p>Bản chụp đã khớp lead này: <b>{data.syncHealth.matched_snapshots}</b></p>
           {(data.syncHealth.automations || []).map((a, i) => (
             <p key={i} className="opacity-70">
-              {a.automation_key} · Ver {a.version}: {a.total} process ({a.linked} đã join, {a.unlinked} chưa) · sync {a.last_synced_at ? fmtDateTime(a.last_synced_at) : '—'}
+              {a.automation_key} · Bản {a.version}: {a.total} quy trình ({a.linked} đã khớp, {a.unlinked} chưa) · đồng bộ {a.last_synced_at ? fmtDateTime(a.last_synced_at) : '—'}
             </p>
           ))}
         </div>

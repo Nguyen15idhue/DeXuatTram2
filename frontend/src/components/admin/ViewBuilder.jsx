@@ -18,6 +18,7 @@ const ViewBuilder = ({ viewId, onSaved }) => {
   const [entity, setEntity] = useState('stations');
   const [viewName, setViewName] = useState('');
   const [viewDesc, setViewDesc] = useState('');
+  const [viewFrozen, setViewFrozen] = useState(2);
   const [availableFields, setAvailableFields] = useState([]);
   const [assignedFields, setAssignedFields] = useState([]);
   const [availableSearch, setAvailableSearch] = useState('');
@@ -35,6 +36,8 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         setEntity(viewRes.data.entity);
         setViewName(viewRes.data.name);
         setViewDesc(viewRes.data.description || '');
+        setViewFrozen(viewRes.data.frozen_columns !== undefined && viewRes.data.frozen_columns !== null
+          ? Number(viewRes.data.frozen_columns) : 2);
         await loadAvailableFields(viewRes.data.entity);
         const fieldsRes = await viewFieldService.getByView(viewId);
         if (fieldsRes.success) {
@@ -119,9 +122,9 @@ const ViewBuilder = ({ viewId, onSaved }) => {
     try {
       let res;
       if (viewId) {
-        res = await viewService.update(viewId, { entity, name: viewName, description: viewDesc }, token);
+        res = await viewService.update(viewId, { entity, name: viewName, description: viewDesc, frozen_columns: viewFrozen }, token);
       } else {
-        res = await viewService.create({ entity, name: viewName, description: viewDesc }, token);
+        res = await viewService.create({ entity, name: viewName, description: viewDesc, frozen_columns: viewFrozen }, token);
       }
       if (!res.success) {
         setError(res.message || 'Lỗi lưu view');
@@ -200,6 +203,18 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         <div className="form-group">
           <label>Mô tả</label>
           <input type="text" value={viewDesc} onChange={(e) => setViewDesc(e.target.value)} placeholder="Mô tả ngắn" />
+        </div>
+        <div className="form-group">
+          <label>Đóng băng cột đầu</label>
+          <input
+            type="number"
+            min="0"
+            max="20"
+            value={viewFrozen}
+            onChange={(e) => setViewFrozen(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+            title="Số cột đầu đóng băng khi cuộn ngang (đã gồm cột STT). Mặc định 2. Đặt 0 để tắt."
+          />
+          <div className="field-help">Số cột đầu đóng băng khi cuộn ngang (đã gồm STT, mặc định 2; 0 = tắt).</div>
         </div>
       </div>
 

@@ -81,6 +81,8 @@ exports.login = async (req, res) => {
           role: user.role,
           status: user.status,
           parent_id: user.parent_id || null,
+          department: loginCd.department || null,
+          chuc_vu: loginCd.chuc_vu || null,
           avatar
         },
         token
@@ -113,7 +115,7 @@ exports.getMe = async (req, res) => {
 
     res.json({
       success: true,
-      data: { user: { ...user, avatar, custom_data: undefined } }
+      data: { user: { ...user, department: cd.department || null, chuc_vu: cd.chuc_vu || null, avatar, custom_data: undefined } }
     });
   } catch (error) {
     console.error('Get me error:', error);

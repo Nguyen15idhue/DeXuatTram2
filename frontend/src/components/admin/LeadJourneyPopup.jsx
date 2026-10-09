@@ -8,8 +8,8 @@ const STAGE_RAIL = [
   { key: 'LEAD', label: 'Lead', match: ['NEW', 'ASSIGNED'] },
   { key: 'CSKH', label: 'CSKH', match: ['CSKH'] },
   { key: 'TVBH', label: 'TVBH', match: ['QUALIFIED', 'TVBH'] },
-  { key: 'PROPOSAL', label: 'Proposal', match: ['PROPOSAL'] },
-  { key: 'STATION', label: 'Station', match: ['STATION'] },
+  { key: 'PROPOSAL', label: 'Đề xuất', match: ['PROPOSAL'] },
+  { key: 'STATION', label: 'Trạm', match: ['STATION'] },
   { key: 'ON', label: 'ON', match: ['ON'] }
 ];
 
@@ -123,7 +123,7 @@ const LeadJourneyPopup = ({ leadId, onClose, embedded = false }) => {
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
             <div><span className="text-base-content/60">Lead:</span> <b>{lead?.lead_code || `#${lead?.id}`}</b></div>
-            <div className="truncate" title={journey?.journey_code}><span className="text-base-content/60">Journey:</span> <b>{journey?.journey_code ? journey.journey_code.slice(0, 8) : '—'}</b></div>
+            <div className="truncate" title={journey?.journey_code}><span className="text-base-content/60">Hành trình:</span> <b>{journey?.journey_code ? journey.journey_code.slice(0, 8) : '—'}</b></div>
             <div><span className="text-base-content/60">Giai đoạn:</span> <b>{currentStage}</b></div>
             <div><span className="text-base-content/60">Đề xuất:</span> <b>{proposals.length}</b></div>
             <div><span className="text-base-content/60">Trạm:</span> <b>{stationCount}</b></div>

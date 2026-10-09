@@ -69,6 +69,11 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
 
   if (!open) return null;
 
+  const nonPotential = (leads || []).filter(l => {
+    const c = String(l.customer_classification || '').trim();
+    return c !== 'TIEM_NANG' && c !== 'Tiềm năng';
+  });
+
   const handleConfirm = async () => {
     if (!assignee) { setError('Vui lòng chọn Giám đốc Khu vực'); return; }
     setSubmitting(true);
@@ -97,12 +102,19 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg flex items-center gap-2">
             <Split size={18} className="text-primary" />
-            Phân chia Leads {leads.length > 1 ? `(${leads.length})` : ''}
+            Phân chia Lead {leads.length > 1 ? `(${leads.length})` : ''}
           </h3>
           <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
 
         {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
+
+        {nonPotential.length > 0 && (
+          <div className="alert alert-warning text-sm mb-3">
+            Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban.
+            {` Có ${nonPotential.length} Lead chưa đủ điều kiện sẽ bị bỏ qua/báo lỗi.`}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -113,7 +125,7 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
               ) : leads.map(l => (
                 <div key={l.id} className="px-3 py-2 border-b border-base-200 last:border-b-0 text-sm">
                   <div className="font-medium truncate">{l.lead_code || `#${l.id}`} · {l.full_name}</div>
-                  <div className="text-xs text-base-content/60">{l.assigned_department || 'Chưa rõ phòng ban'}</div>
+                  <div className="text-xs text-base-content/60">{l.assigned_department || 'Chưa rõ phòng ban'} · Phân loại: {l.customer_classification || 'Chưa phân loại'}</div>
                 </div>
               ))}
             </div>

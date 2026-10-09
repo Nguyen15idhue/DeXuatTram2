@@ -110,13 +110,19 @@ const seedExactViewFields = async (viewId, entity) => {
   return reqFields.length;
 };
 
+const normalizeFrozen = (v) => {
+  if (v === undefined || v === null || v === '') return 2;
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) ? Math.max(0, n) : 2;
+};
+
 exports.createView = async (data) => {
   const { entity, name, description, status, usage } = data;
   const finalUsage = usage || 'table';
   const includeRest = normalizeIncludeRest(data.include_rest, finalUsage);
   const [result] = await pool.query(
-    'INSERT INTO views (entity, name, description, status, `usage`, include_rest) VALUES (?, ?, ?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active', finalUsage, includeRest]
+    'INSERT INTO views (entity, name, description, status, `usage`, include_rest, frozen_columns) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', finalUsage, includeRest, normalizeFrozen(data.frozen_columns)]
   );
   const viewId = result.insertId;
   // Chi seed cho view Excel "dung dung cot trong view" (include_rest = 0) de template khong rong.
@@ -141,11 +147,14 @@ exports.updateView = async (id, data) => {
     usage: data.usage !== undefined && data.usage ? data.usage : prev.usage,
     include_rest: data.include_rest !== undefined && data.include_rest !== null && data.include_rest !== ''
       ? (Number(data.include_rest) ? 1 : 0)
-      : (prev.include_rest !== undefined && prev.include_rest !== null ? Number(prev.include_rest) : normalizeIncludeRest(undefined, data.usage !== undefined && data.usage ? data.usage : prev.usage))
+      : (prev.include_rest !== undefined && prev.include_rest !== null ? Number(prev.include_rest) : normalizeIncludeRest(undefined, data.usage !== undefined && data.usage ? data.usage : prev.usage)),
+    frozen_columns: data.frozen_columns !== undefined && data.frozen_columns !== null && data.frozen_columns !== ''
+      ? normalizeFrozen(data.frozen_columns)
+      : (prev.frozen_columns !== undefined && prev.frozen_columns !== null ? Number(prev.frozen_columns) : 2)
   };
   await pool.query(
-    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, include_rest = ?, updated_at = NOW() WHERE id = ?',
-    [next.entity, next.name, next.description, next.status, next.usage, next.include_rest, id]
+    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, include_rest = ?, frozen_columns = ?, updated_at = NOW() WHERE id = ?',
+    [next.entity, next.name, next.description, next.status, next.usage, next.include_rest, next.frozen_columns, id]
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [id]);
   return rows[0];
