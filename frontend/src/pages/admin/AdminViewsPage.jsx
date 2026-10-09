@@ -22,6 +22,8 @@ const USAGE_OPTIONS = [
 
 const usageMeta = (usage) => USAGE_OPTIONS.find(u => u.value === usage) || { value: usage, label: usage, badge: 'badge-ghost' };
 
+const defaultIncludeRest = (usage) => usage !== 'excel_basic';
+
 const AdminViewsPage = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
@@ -64,7 +66,7 @@ const AdminViewsPage = () => {
     setCreateUsage('table');
     setCreateDesc('');
     setCreateStatus('active');
-    setCreateIncludeRest(true);
+    setCreateIncludeRest(defaultIncludeRest('table'));
     setCreateOpen(true);
   };
 
@@ -287,7 +289,11 @@ const AdminViewsPage = () => {
               </div>
               <div className="form-control">
                 <label className="label"><span className="label-text">Loại view</span></label>
-                <select className="select select-bordered w-full" value={createUsage} onChange={(e) => setCreateUsage(e.target.value)}>
+                <select
+                  className="select select-bordered w-full"
+                  value={createUsage}
+                  onChange={(e) => { setCreateUsage(e.target.value); setCreateIncludeRest(defaultIncludeRest(e.target.value)); }}
+                >
                   {USAGE_OPTIONS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
                 </select>
                 <label className="label"><span className="label-text-alt">Bảng danh sách: hiển thị bảng. Excel: dùng cho Template/Import/Export.</span></label>
@@ -322,6 +328,11 @@ const AdminViewsPage = () => {
                   />
                 </label>
               </div>
+              <p className="text-xs text-base-content/60">
+                {createIncludeRest
+                  ? 'Template/Export/Import sẽ gồm cột trong view + toàn bộ field còn lại.'
+                  : 'Template/Export/Import chỉ gồm đúng các cột trong view. View mới sẽ được thêm sẵn cột cốt lõi (hoặc trường bắt buộc) — chỉnh tiếp ở trang cấu hình.'}
+              </p>
             </div>
             <div className="modal-action">
               <button className="btn btn-ghost" onClick={() => setCreateOpen(false)}>Hủy</button>

@@ -67,14 +67,63 @@ const normalizeIncludeRest = (v, fallbackUsage) => {
   return Number(v) ? 1 : 0;
 };
 
+const normConfig = (cfg) => {
+  if (cfg === undefined) return null;
+  if (cfg === null) return null;
+  if (typeof cfg === 'string') return cfg.length ? cfg : null;
+  return JSON.stringify(cfg);
+};
+
+// Seed cot cho view Excel "chi dung cot trong view" (include_rest = 0) de template khong bi rong.
+// Uu tien sao chep tu view excel_basic chuan cua entity (neu co); neu khong thi lay cac truong bat buoc.
+const seedExactViewFields = async (viewId, entity) => {
+  const [std] = await pool.query(
+    "SELECT id FROM views WHERE entity = ? AND `usage` = 'excel_basic' AND status = 'active' AND id <> ? ORDER BY id LIMIT 1",
+    [entity, viewId]
+  );
+  if (std.length > 0) {
+    const [srcFields] = await pool.query(
+      'SELECT field_id, order_index, visible, width, sortable, filterable, config FROM view_fields WHERE view_id = ? ORDER BY order_index, id',
+      [std[0].id]
+    );
+    if (srcFields.length > 0) {
+      for (const f of srcFields) {
+        await pool.query(
+          'INSERT INTO view_fields (view_id, field_id, order_index, visible, width, sortable, filterable, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [viewId, f.field_id, f.order_index, f.visible, f.width, f.sortable, f.filterable, normConfig(f.config)]
+        );
+      }
+      return srcFields.length;
+    }
+  }
+  const [reqFields] = await pool.query(
+    "SELECT id FROM field_definitions WHERE entity = ? AND status = 'active' AND `required` = 1 AND type <> 'password' ORDER BY id",
+    [entity]
+  );
+  let idx = 0;
+  for (const f of reqFields) {
+    await pool.query(
+      'INSERT INTO view_fields (view_id, field_id, order_index, visible, width, sortable, filterable, config) VALUES (?, ?, ?, 1, NULL, 1, 0, NULL)',
+      [viewId, f.id, idx++]
+    );
+  }
+  return reqFields.length;
+};
+
 exports.createView = async (data) => {
   const { entity, name, description, status, usage } = data;
   const finalUsage = usage || 'table';
+  const includeRest = normalizeIncludeRest(data.include_rest, finalUsage);
   const [result] = await pool.query(
     'INSERT INTO views (entity, name, description, status, `usage`, include_rest) VALUES (?, ?, ?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active', finalUsage, normalizeIncludeRest(data.include_rest, finalUsage)]
+    [entity, name, description || null, status || 'active', finalUsage, includeRest]
   );
-  const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [result.insertId]);
+  const viewId = result.insertId;
+  // Chi seed cho view Excel "dung dung cot trong view" (include_rest = 0) de template khong rong.
+  if (includeRest === 0 && /^excel/.test(finalUsage)) {
+    try { await seedExactViewFields(viewId, entity); } catch (e) { console.error('seedExactViewFields error:', e.message); }
+  }
+  const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [viewId]);
   return rows[0];
 };
 
