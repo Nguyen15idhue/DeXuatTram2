@@ -577,6 +577,9 @@ export const reportService = {
     const qs = params ? new URLSearchParams(params).toString() : '';
     return api.getWithAuth(`/admin/reports/pipeline${qs ? `?${qs}` : ''}`, token);
   },
+  getLead360(id, token) {
+    return api.getWithAuth(`/admin/reports/lead/${id}`, token);
+  },
   getConfig(token) {
     return api.getWithAuth('/admin/reports/config', token);
   },

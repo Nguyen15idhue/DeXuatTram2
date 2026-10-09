@@ -451,3 +451,172 @@ exports.updateDashboardConfig = async (key, widgets, userId) => {
   );
   return exports.getDashboardConfig(dashboardKey);
 };
+
+function parseCustomTables(customData) {
+  let cd = customData;
+  try {
+    if (typeof cd === 'string') cd = JSON.parse(cd);
+  } catch { cd = {}; }
+  if (!cd || typeof cd !== 'object') cd = {};
+  const asArray = (v) => (Array.isArray(v) ? v : []);
+  return {
+    cskh_history: asArray(cd.cskh_history),
+    cskh_note: cd.cskh_note || '',
+    tvbh_history: asArray(cd.tvbh_history),
+    tvbh_note: cd.tvbh_note || '',
+  };
+}
+
+function dayDiff(a, b) {
+  if (!a || !b) return null;
+  const ms = new Date(b) - new Date(a);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.round((ms / 86400000) * 10) / 10;
+}
+
+exports.getLead360 = async (leadId, user) => {
+  const id = Number(leadId);
+  if (!Number.isFinite(id)) throw badRequest('Lead không hợp lệ');
+  const [lrows] = await pool.query(
+    `SELECT l.*, j.journey_code, j.current_stage, j.status AS journey_status
+     FROM leads l LEFT JOIN business_journeys j ON j.id = l.journey_id
+     WHERE l.id = ? LIMIT 1`,
+    [id]
+  );
+  if (lrows.length === 0 || lrows[0].deleted_at) {
+    throw Object.assign(new Error('Không tìm thấy Lead'), { statusCode: 404 });
+  }
+  const lead = lrows[0];
+  if (!(await leadService.canAccessLead(lead, user))) {
+    throw Object.assign(new Error('Không có quyền truy cập'), { statusCode: 403 });
+  }
+
+  const [[assignee]] = await pool.query('SELECT full_name FROM users WHERE id = ? LIMIT 1', [lead.assigned_user_id || 0]);
+  const tables = parseCustomTables(lead.custom_data);
+
+  const [logs] = await pool.query(
+    `SELECT id, action, status_after, actor_id, actor_role, source, created_at
+     FROM journey_activity_logs WHERE journey_id = ? ORDER BY created_at ASC, id ASC`,
+    [lead.journey_id]
+  );
+  const first = (pred) => {
+    const l = logs.find(pred);
+    return l ? l.created_at : null;
+  };
+  const tCreated = first((l) => l.action === 'lead_created') || lead.created_at;
+  const tAssigned = first((l) => l.action === 'assigned') || lead.assigned_at;
+  const tProposed = first((l) => l.action === 'proposal_created');
+  const tContract = first((l) => l.action === 'proposal_status_changed' && l.status_after === 'CONTRACT_SIGNED');
+  const tStation = first((l) => l.action === 'station_created');
+  const tOn = first((l) => l.action === 'station_status_changed' && l.status_after === 'ACTIVE');
+
+  const timeline = logs.map((l) => ({
+    id: l.id,
+    entity_type: 'lead',
+    entity_id: lead.id,
+    action: l.action,
+    stage_before: null,
+    stage_after: null,
+    status_before: null,
+    status_after: l.status_after,
+    actor_id: l.actor_id,
+    actor_role: l.actor_role,
+    source: l.source,
+    created_at: l.created_at,
+  }));
+
+  const proposals = await leadService.getJourneyProposals(lead.journey_id);
+  const codes = [...new Set(proposals.map((p) => String(p.ma_de_xuat || '').trim()).filter(Boolean))];
+  const reportMirrorService = require('./reportMirrorService');
+  const mirrorRows = codes.length > 0 ? await reportMirrorService.getSnapshotsByProposalCodes(codes) : [];
+  const mirrorByCode = new Map();
+  mirrorRows.forEach((m) => {
+    if (!m.proposal_code) return;
+    if (!mirrorByCode.has(m.proposal_code)) mirrorByCode.set(m.proposal_code, []);
+    mirrorByCode.get(m.proposal_code).push({
+      automation_key: m.automation_key,
+      kind: m.kind,
+      version: m.version,
+      process_id: m.process_id,
+      contact_code: m.contact_code,
+      drift: m.drift,
+      synced_at: m.synced_at,
+      milestones: m.milestones,
+    });
+  });
+
+  const proposalBlocks = proposals.map((p) => ({
+    id: p.id,
+    code: p.ma_de_xuat,
+    status: p.status,
+    created_at: p.created_at,
+    station: p.station_id_resolved ? {
+      id: p.station_id_resolved,
+      name: p.station_name,
+      status: p.station_status,
+      code: p.station_code,
+    } : null,
+    mirror: mirrorByCode.get(String(p.ma_de_xuat || '').trim()) || [],
+  }));
+
+  const stationBlocks = [];
+  proposalBlocks.forEach((p) => {
+    if (!p.station) return;
+    stationBlocks.push({
+      ...p.station,
+      proposal_code: p.code,
+      on_mirror: (p.mirror || []).filter((m) => m.kind === 'on_station'),
+    });
+  });
+
+  const stats = await reportMirrorService.getMirrorStats();
+  const matched = mirrorRows.length;
+  const mirrorSyncedAt = mirrorRows.reduce((mx, m) => {
+    if (!m.synced_at) return mx;
+    return !mx || new Date(m.synced_at) > new Date(mx) ? m.synced_at : mx;
+  }, null);
+
+  return {
+    header: {
+      id: lead.id,
+      lead_code: lead.lead_code,
+      journey_code: lead.journey_code,
+      full_name: lead.full_name,
+      phone: lead.phone,
+      email: lead.email,
+      province: lead.province,
+      region: lead.region,
+      stage: lead.stage,
+      current_stage: lead.current_stage,
+      customer_classification: lead.customer_classification,
+      sales_outcome: lead.sales_outcome,
+      assigned_user_id: lead.assigned_user_id,
+      assigned_user_name: assignee && assignee.full_name ? assignee.full_name : null,
+      assigned_department: lead.assigned_department,
+      created_at: lead.created_at,
+    },
+    durations: {
+      new_to_assigned_days: dayDiff(tCreated, tAssigned),
+      assigned_to_proposal_days: dayDiff(tAssigned, tProposed),
+      proposal_to_contract_days: dayDiff(tProposed, tContract),
+      contract_to_station_days: dayDiff(tContract, tStation),
+      station_to_on_days: dayDiff(tStation, tOn),
+    },
+    cskh: { count: tables.cskh_history.length, history: tables.cskh_history, note: tables.cskh_note },
+    tvbh: { count: tables.tvbh_history.length, history: tables.tvbh_history, note: tables.tvbh_note },
+    proposals: proposalBlocks,
+    stations: stationBlocks,
+    timeline,
+    syncHealth: {
+      automations: stats,
+      matched_snapshots: matched,
+      mirror_synced_at: mirrorSyncedAt,
+    },
+    counts: {
+      proposals: proposalBlocks.length,
+      stations: stationBlocks.length,
+      on: lead.current_stage === 'ON',
+    },
+    generated_at: new Date().toISOString(),
+  };
+};

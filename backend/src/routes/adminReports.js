@@ -87,6 +87,34 @@ router.get('/metrics', requireAuth, requireReportViewer, adminReportController.g
 
 /**
  * @swagger
+ * /api/admin/reports/lead/{id}:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Báo cáo chi tiết 1 Lead (Lead 360)
+ *     description: |
+ *       Một API call trả header, durations, CSKH/TVBH, proposals kèm gương
+ *       process 1Office, stations kèm gương ON trạm, timeline, syncHealth,
+ *       counts. Ngoài scope Lead → 403 (không 404 để chống oracle IDOR).
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền truy cập
+ *       404:
+ *         description: Không tìm thấy Lead
+ */
+router.get('/lead/:id', requireAuth, requireReportViewer, adminReportController.getLead360);
+
+/**
+ * @swagger
  * /api/admin/reports/config:
  *   get:
  *     tags: [Reports]

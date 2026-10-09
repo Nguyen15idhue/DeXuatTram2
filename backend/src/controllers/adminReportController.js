@@ -17,6 +17,19 @@ exports.getMetrics = async (req, res) => {
   res.json({ success: true, data: reportService.METRIC_REGISTRY, message: 'Danh sách metric báo cáo' });
 };
 
+exports.getLead360 = async (req, res) => {
+  try {
+    const data = await reportService.getLead360(req.params.id, req.user);
+    res.json({ success: true, data, message: 'Lấy báo cáo chi tiết Lead thành công' });
+  } catch (error) {
+    if (error && error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Report lead360 error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server khi lấy báo cáo Lead' });
+  }
+};
+
 exports.getConfig = async (req, res) => {
   try {
     const data = await reportService.getDashboardConfig(req.query.dashboard);

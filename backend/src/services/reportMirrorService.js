@@ -138,6 +138,103 @@ async function backfillIdentifiers(options) {
   return { scanned: rows.length, updated, unlinked };
 }
 
+function normLower(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+}
+
+async function getAutomation(automationId) {
+  const [rows] = await pool.query(
+    'SELECT id, automation_key, name, template_process_ids FROM work_automations WHERE id = ? LIMIT 1',
+    [automationId]
+  );
+  if (rows.length === 0) return null;
+  const a = rows[0];
+  let tpl = [];
+  try {
+    tpl = typeof a.template_process_ids === 'string' ? JSON.parse(a.template_process_ids) : (a.template_process_ids || []);
+    if (!Array.isArray(tpl)) tpl = [];
+  } catch { tpl = []; }
+  return { id: a.id, automation_key: a.automation_key, name: a.name, template_process_ids: tpl };
+}
+
+function classifyAutomation(auto) {
+  if (!auto) return 'other';
+  const s = normLower([...(auto.template_process_ids || []), auto.name || '', auto.automation_key || ''].join(' '));
+  if (/(on tram|trien khai)/.test(s)) return 'on_station';
+  if (/(danh gia|de xuat|dau tu)/.test(s)) return 'proposal';
+  return 'other';
+}
+
+function getMilestonesWithMappings(mappings, cells) {
+  const c = toCellsObject(cells);
+  const byLabel = new Map();
+  (mappings || []).forEach((m) => {
+    if (!m || !m.label) return;
+    const idx = colLetterToIndex(m.sheet_col);
+    if (idx >= 0 && !byLabel.has(String(m.label))) byLabel.set(String(m.label), idx);
+  });
+  const out = [];
+  for (const [label] of byLabel) {
+    const mt = /^Trạng thái (.+)$/.exec(label);
+    if (!mt) continue;
+    const title = mt[1];
+    const statusIdx = byLabel.get(label);
+    const planIdx = byLabel.get(`Deadline ${title} dự kiến`);
+    const realIdx = byLabel.get(`${title} thực tế`);
+    out.push({
+      title,
+      status: cellAt(c, statusIdx),
+      plan: planIdx === undefined ? null : cellAt(c, planIdx),
+      real: realIdx === undefined ? null : cellAt(c, realIdx),
+    });
+  }
+  return out;
+}
+
+async function getMilestones(automationId, version, cells) {
+  const mappings = await getMappings(automationId, version);
+  return getMilestonesWithMappings(mappings, cells);
+}
+
+async function enrichSnapshots(rows) {
+  const mapCache = new Map();
+  const autoCache = new Map();
+  const out = [];
+  for (const r of rows) {
+    const mk = `${r.automation_id}:${r.version}`;
+    if (!mapCache.has(mk)) mapCache.set(mk, await getMappings(r.automation_id, r.version));
+    if (!autoCache.has(r.automation_id)) autoCache.set(r.automation_id, await getAutomation(r.automation_id));
+    const mappings = mapCache.get(mk);
+    const auto = autoCache.get(r.automation_id);
+    let cells = r.cells_json;
+    try {
+      if (typeof cells === 'string') cells = JSON.parse(cells);
+    } catch { cells = {}; }
+    const codes = decodeRowCodes(mappings, cells);
+    const proposalCode = r.proposal_code || codes.proposal_code;
+    const contactCode = r.contact_code || codes.contact_code;
+    let stationCode = r.station_code || codes.station_code;
+    if (!stationCode && proposalCode) {
+      try { stationCode = await resolveStationCode(proposalCode); } catch { stationCode = null; }
+    }
+    out.push({
+      automation_id: r.automation_id,
+      automation_key: auto ? auto.automation_key : null,
+      kind: classifyAutomation(auto),
+      version: String(r.version),
+      process_id: r.process_id,
+      cells: toCellsObject(cells),
+      proposal_code: proposalCode,
+      contact_code: contactCode,
+      station_code: stationCode,
+      drift: !codes.has_identifier_mapping,
+      synced_at: r.updated_at || null,
+      milestones: getMilestonesWithMappings(mappings, cells),
+    });
+  }
+  return out;
+}
+
 async function getSnapshotsByProposalCodes(codes, options) {
   const list = [...new Set((codes || []).map((c) => String(c || '').trim()).filter(Boolean))];
   if (list.length === 0) return [];
@@ -153,9 +250,7 @@ async function getSnapshotsByProposalCodes(codes, options) {
      FROM automation_sync_snapshots WHERE ${where.join(' AND ')} ORDER BY updated_at DESC LIMIT 500`,
     params
   );
-  const out = [];
-  for (const r of rows) out.push(await decodeSnapshot(r.automation_id, r.version, r));
-  return out;
+  return enrichSnapshots(rows);
 }
 
 async function getSnapshotsByStationCodes(codes, options) {
@@ -173,9 +268,7 @@ async function getSnapshotsByStationCodes(codes, options) {
      FROM automation_sync_snapshots WHERE ${where.join(' AND ')} ORDER BY updated_at DESC LIMIT 500`,
     params
   );
-  const out = [];
-  for (const r of rows) out.push(await decodeSnapshot(r.automation_id, r.version, r));
-  return out;
+  return enrichSnapshots(rows);
 }
 
 async function getMirrorStats() {
@@ -211,6 +304,11 @@ module.exports = {
   getSnapshotsByProposalCodes,
   getSnapshotsByStationCodes,
   getMirrorStats,
+  getMilestones,
+  getMilestonesWithMappings,
+  getAutomation,
+  classifyAutomation,
+  enrichSnapshots,
   findProposalByCode,
   resolveStationCode,
 };

@@ -6,8 +6,9 @@ import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicForm from '../dynamic/DynamicForm';
 import LeadJourneyPopup from './LeadJourneyPopup';
 import LeadAssignDialog from './LeadAssignDialog';
+import LeadReportTab from './LeadReportTab';
 import Toast from '../Toast';
-import { X, Pencil, Save, MapPinned, FilePlus2, Route, Split } from 'lucide-react';
+import { X, Pencil, Save, MapPinned, FilePlus2, FileBarChart, Route, Split } from 'lucide-react';
 import useDataListMap from '../../hooks/useDataListMap';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
@@ -44,6 +45,7 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [showJourney, setShowJourney] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => { setMode(modeProp); }, [modeProp]);
 
@@ -220,6 +222,9 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
             <button type="button" className="btn btn-sm btn-outline gap-1" onClick={() => setShowJourney(true)} title="Xem hành trình Lead">
               <Route size={14} /> <span className="hidden sm:inline">Hành trình</span>
             </button>
+            <button type="button" className="btn btn-sm btn-outline btn-accent gap-1" onClick={() => setShowReport(true)} title="Báo cáo 360 của Lead">
+              <FileBarChart size={14} /> <span className="hidden sm:inline">Báo cáo 360</span>
+            </button>
             <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => setShowAssign(true)} title="Phân chia Lead cho Giám đốc Khu vực">
               <Split size={14} /> <span className="hidden sm:inline">Phân chia Leads</span>
             </button>
@@ -290,6 +295,10 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
 
       {showJourney && record && (
         <LeadJourneyPopup leadId={record.id} onClose={() => setShowJourney(false)} />
+      )}
+
+      {showReport && record && (
+        <LeadReportTab leadId={record.id} onClose={() => setShowReport(false)} />
       )}
 
       <LeadAssignDialog
