@@ -188,4 +188,168 @@ router.get('/config', requireAuth, requireReportViewer, adminReportController.ge
  */
 router.put('/config', requireAuth, requireReportConfigurator, adminReportController.updateConfig);
 
+/**
+ * @swagger
+ * /api/admin/reports/builder/datasets:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Catalog dataset cho mini-builder (dimension/metric whitelist)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.get('/builder/datasets', requireAuth, requireReportViewer, adminReportController.getBuilderDatasets);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/preview:
+ *   post:
+ *     tags: [Reports]
+ *     summary: Xem trước widget (biên dịch thành SQL mẫu whitelist + scope)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [widget]
+ *             properties:
+ *               widget:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Dataset/dimension/metric/filter ngoài catalog
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.post('/builder/preview', requireAuth, requireReportViewer, adminReportController.previewBuilderWidget);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/dashboards:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Danh sách dashboard tự dựng
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get('/builder/dashboards', requireAuth, requireReportViewer, adminReportController.listBuilderDashboards);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/dashboards:
+ *   post:
+ *     tags: [Reports]
+ *     summary: Tạo dashboard tự dựng (chỉ SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, widgets]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               widgets:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Widget ngoài catalog
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.post('/builder/dashboards', requireAuth, requireReportConfigurator, adminReportController.createBuilderDashboard);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/dashboards/{id}:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Chi tiết dashboard tự dựng
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       404:
+ *         description: Không tìm thấy
+ */
+router.get('/builder/dashboards/:id', requireAuth, requireReportViewer, adminReportController.getBuilderDashboard);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/dashboards/{id}:
+ *   put:
+ *     tags: [Reports]
+ *     summary: Sửa dashboard tự dựng (chỉ SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Widget ngoài catalog
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.put('/builder/dashboards/:id', requireAuth, requireReportConfigurator, adminReportController.updateBuilderDashboard);
+
+/**
+ * @swagger
+ * /api/admin/reports/builder/dashboards/{id}:
+ *   delete:
+ *     tags: [Reports]
+ *     summary: Xóa dashboard tự dựng (chỉ SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.delete('/builder/dashboards/:id', requireAuth, requireReportConfigurator, adminReportController.deleteBuilderDashboard);
+
 module.exports = router;

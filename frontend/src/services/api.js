@@ -580,11 +580,41 @@ export const reportService = {
   getLead360(id, token) {
     return api.getWithAuth(`/admin/reports/lead/${id}`, token);
   },
+  getLead360Config(token) {
+    return api.getWithAuth('/admin/reports/config?dashboard=lead360', token);
+  },
+  updateLead360Config(sections, token) {
+    return api.putWithAuth('/admin/reports/config?dashboard=lead360', { sections }, token);
+  },
   getConfig(token) {
     return api.getWithAuth('/admin/reports/config', token);
   },
   getMetrics(token) {
     return api.getWithAuth('/admin/reports/metrics', token);
+  },
+};
+
+export const builderService = {
+  getDatasets(token) {
+    return api.getWithAuth('/admin/reports/builder/datasets', token);
+  },
+  previewWidget(widget, token) {
+    return api.postWithAuth('/admin/reports/builder/preview', { widget }, token);
+  },
+  listDashboards(token) {
+    return api.getWithAuth('/admin/reports/builder/dashboards', token);
+  },
+  createDashboard(body, token) {
+    return api.postWithAuth('/admin/reports/builder/dashboards', body, token);
+  },
+  getDashboard(id, token) {
+    return api.getWithAuth(`/admin/reports/builder/dashboards/${id}`, token);
+  },
+  updateDashboard(id, body, token) {
+    return api.putWithAuth(`/admin/reports/builder/dashboards/${id}`, body, token);
+  },
+  deleteDashboard(id, token) {
+    return api.deleteWithAuth(`/admin/reports/builder/dashboards/${id}`, token);
   },
 };
 

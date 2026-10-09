@@ -75,7 +75,7 @@ async function leadWhere(user, f) {
   if (f.department) { where.push('l.assigned_department = ?'); params.push(f.department); }
   if (f.source) { where.push('l.source = ?'); params.push(f.source); }
   if (f.stage) { where.push('l.stage = ?'); params.push(f.stage); }
-  if (f.assigned_user_id !== null) { where.push('l.assigned_user_id = ?'); params.push(f.assigned_user_id); }
+  if (f.assigned_user_id !== null && f.assigned_user_id !== undefined) { where.push('l.assigned_user_id = ?'); params.push(f.assigned_user_id); }
   if (f.province) { where.push('l.province = ?'); params.push(f.province); }
   const scope = await leadService.buildScope(user);
   if (scope) {
@@ -126,7 +126,7 @@ function proposalFilters(f, alias) {
     where.push(`${alias}.user_id IN (SELECT u.id FROM users u WHERE JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) = ?)`);
     params.push(f.department);
   }
-  if (f.assigned_user_id !== null) {
+  if (f.assigned_user_id !== null && f.assigned_user_id !== undefined) {
     const a = assigneeJsonClause(alias, f.assigned_user_id);
     where.push(a.sql);
     params.push(...a.params);
@@ -588,16 +588,41 @@ exports.getDashboardConfig = async (key) => {
   const [rows] = await pool.query('SELECT dashboard_key, layout_json, updated_by, updated_at FROM report_dashboard_configs WHERE dashboard_key = ? LIMIT 1', [dashboardKey]);
   if (rows.length === 0) return { dashboard_key: dashboardKey, widgets: [], updated_by: null, updated_at: null };
   const row = rows[0];
-  let widgets = [];
+  let layout = null;
   try {
-    widgets = typeof row.layout_json === 'string' ? JSON.parse(row.layout_json) : row.layout_json;
-    if (!Array.isArray(widgets)) widgets = [];
-  } catch { widgets = []; }
-  return { dashboard_key: row.dashboard_key, widgets, updated_by: row.updated_by, updated_at: row.updated_at };
+    layout = typeof row.layout_json === 'string' ? JSON.parse(row.layout_json) : row.layout_json;
+  } catch { layout = null; }
+  const widgets = Array.isArray(layout) ? layout : [];
+  return { dashboard_key: row.dashboard_key, widgets, layout, updated_by: row.updated_by, updated_at: row.updated_at };
 };
 
-exports.updateDashboardConfig = async (key, widgets, userId) => {
+function parseSections(input) {
+  if (!Array.isArray(input) || input.length === 0) throw badRequest('sections phải là mảng không rỗng');
+  const keys = new Set(exports.LEAD360_KEYS || []);
+  return input.map((s, i) => {
+    if (!s || typeof s !== 'object') throw badRequest(`Section #${i + 1} không hợp lệ`);
+    const key = String(s.key || '').trim();
+    if (!keys.has(key)) throw badRequest(`Section không hợp lệ: ${key || '(trống)'}`);
+    return {
+      key,
+      title: s.title !== undefined && s.title !== null && String(s.title) !== '' ? String(s.title).slice(0, 120) : key,
+      visible: s.visible === undefined || s.visible === null ? true : !!s.visible,
+      order: Number.isFinite(Number(s.order)) ? Number(s.order) : i + 1,
+    };
+  }).sort((a, b) => a.order - b.order);
+}
+
+exports.updateDashboardConfig = async (key, widgets, userId, body) => {
   const dashboardKey = key ? String(key).slice(0, 50) : 'pipeline';
+  if ((!widgets || (Array.isArray(widgets) && widgets.length === 0)) && body && Array.isArray(body.sections)) {
+    const parsed = parseSections(body.sections);
+    await pool.query(
+      `INSERT INTO report_dashboard_configs (dashboard_key, layout_json, updated_by) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE layout_json = VALUES(layout_json), updated_by = VALUES(updated_by)`,
+      [dashboardKey, JSON.stringify({ sections: parsed }), userId || null]
+    );
+    return exports.getDashboardConfig(dashboardKey);
+  }
   const parsed = parseWidgets(widgets);
   await pool.query(
     `INSERT INTO report_dashboard_configs (dashboard_key, layout_json, updated_by) VALUES (?, ?, ?)
@@ -775,3 +800,11 @@ exports.getLead360 = async (leadId, user) => {
     generated_at: new Date().toISOString(),
   };
 };
+
+exports.leadWhereClause = leadWhere;
+exports.proposalWhereClause = proposalWhere;
+exports.stationWhereClause = stationWhere;
+exports.inScopeProposalCodes = inScopeProposalCodes;
+exports.SIZE_WHITELIST = SIZE_WHITELIST;
+exports.LEAD360_KEYS = LEAD360_DEFAULT_SECTIONS.map((s) => s.key);
+exports.LEAD360_DEFAULT_SECTIONS = LEAD360_DEFAULT_SECTIONS;
