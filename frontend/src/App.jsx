@@ -22,6 +22,7 @@ const HelpPage = lazy(() => import('./pages/HelpPage'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
 const AdminLeadsPage = lazy(() => import('./pages/admin/AdminLeadsPage'));
+const AdminReportsPage = lazy(() => import('./pages/admin/AdminReportsPage'));
 const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
 const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
@@ -81,6 +82,7 @@ function App() {
             <Route path="/admin" element={<RoleRoute allowed={DASHBOARD_ROLES} redirectTo="/admin/leads"><AdminDashboard /></RoleRoute>} />
             <Route path="/admin/leads" element={<RoleRoute allowed={LEAD_ROLES}><AdminLeadsPage /></RoleRoute>} />
             <Route path="/admin/leads/*" element={<RoleRoute allowed={LEAD_ROLES}><AdminLeadsPage /></RoleRoute>} />
+            <Route path="/admin/reports" element={<RoleRoute allowed={LEAD_ROLES}><AdminReportsPage /></RoleRoute>} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/users/*" element={<AdminUsersPage />} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />

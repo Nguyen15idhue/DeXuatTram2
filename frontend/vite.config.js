@@ -47,7 +47,7 @@ export default defineConfig({
       'react', 'react-dom', 'react-router-dom',
       'lucide-react',
       'leaflet', 'react-leaflet',
-      'mathjs', 'xlsx', 'mammoth', 'jszip', 'file-saver',
+      'mathjs', 'xlsx', 'mammoth', 'jszip', 'file-saver', 'recharts',
       '@tiptap/react', '@tiptap/starter-kit', '@tiptap/extension-link',
       '@tiptap/extension-image', '@tiptap/extension-table',
       '@tiptap/extension-youtube', '@tiptap/extension-placeholder',
@@ -93,6 +93,7 @@ export default defineConfig({
           if (p.includes('/node_modules/mathjs/')) return 'mathjs'
           if (p.includes('/node_modules/xlsx/')) return 'xlsx'
           if (p.includes('/node_modules/mammoth/')) return 'mammoth'
+          if (p.includes('/node_modules/recharts/')) return 'recharts'
           if (p.includes('/node_modules/jszip/') || p.includes('/node_modules/file-saver/')) return 'excel-io'
           if (p.includes('/node_modules/lucide-react/')) return 'icons'
           return undefined

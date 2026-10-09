@@ -572,6 +572,19 @@ export const viewService = {
   }
 };
 
+export const reportService = {
+  getPipeline(params, token) {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return api.getWithAuth(`/admin/reports/pipeline${qs ? `?${qs}` : ''}`, token);
+  },
+  getConfig(token) {
+    return api.getWithAuth('/admin/reports/config', token);
+  },
+  getMetrics(token) {
+    return api.getWithAuth('/admin/reports/metrics', token);
+  },
+};
+
 export const viewFieldService = {
   getByView(viewId) {
     return api.get(`/views/${viewId}/fields`);
