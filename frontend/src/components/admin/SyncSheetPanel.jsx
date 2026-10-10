@@ -3,6 +3,7 @@ import { Save, Play, RefreshCw, Eye, Plus, Download, X, ChevronRight, Pencil, Tr
 import { automationService } from '../../services/api';
 import Toast from '../Toast';
 import ConfirmDialog from '../ConfirmDialog';
+import SpecialNodesPanel from './SpecialNodesPanel';
 import DataTable from '../ui/DataTable';
 import Pagination from '../ui/Pagination';
 import Dialog from '../ui/Dialog';
@@ -690,6 +691,29 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
 
   const fmtDate = (v) => (v ? new Date(v).toLocaleString('vi-VN') : '--');
 
+  const fmtDuration = (row) => {
+    if (!row) return '—';
+    const end = row.finished_at ? new Date(row.finished_at).getTime() : NaN;
+    if (!Number.isFinite(end)) return row.status === 'running' || row.status === 'pending' ? 'Đang chạy…' : '—';
+    let start = row.started_at ? new Date(row.started_at).getTime() : NaN;
+    if (!Number.isFinite(start)) {
+      const c = row.created_at ? new Date(row.created_at).getTime() : NaN;
+      if (!Number.isFinite(c)) return '—';
+      start = c;
+    }
+    const s = Math.max(0, Math.round((end - start) / 1000));
+    if (s < 60) return `${s} giây`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}p ${s % 60}s`;
+    return `${Math.floor(m / 60)}g ${m % 60}p`;
+  };
+
+  const durationTitle = (row) => {
+    if (!row) return '';
+    const f = (v) => (v ? new Date(v).toLocaleString('vi-VN') : '—');
+    return `Bắt đầu: ${f(row.started_at || row.created_at)} · Kết thúc: ${f(row.finished_at)}`;
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -701,6 +725,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
   const tabs = [
     { key: 'config', label: 'Cấu hình chung' },
     { key: 'mapping', label: 'Mapping 2 cột' },
+    { key: 'special-nodes', label: 'Cấu hình node đặc biệt' },
     { key: 'history', label: 'Lịch sử đồng bộ' },
   ];
 
@@ -1064,6 +1089,10 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
         </>
       )}
 
+      {view === 'special-nodes' && (
+        <SpecialNodesPanel tree={tree} template={tree?.template} />
+      )}
+
       {view === 'history' && (
         <div className="card bg-base-100 shadow-sm border border-base-300">
           <div className="card-body">
@@ -1085,6 +1114,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
             <DataTable
               columns={[
                 { key: 'created_at', label: 'Thời gian', render: (v) => fmtDate(v) },
+                { key: 'finished_at', label: 'Thời gian thực hiện', render: (v, row) => <span title={durationTitle(row)}>{fmtDuration(row)}</span> },
                 { key: 'trigger', label: 'Nội dung', render: (v, row) => `${v === 'manual' ? 'Chạy tay' : 'Tự động'}${row.response_json ? `: ${Object.keys(typeof row.response_json === 'string' ? JSON.parse(row.response_json).versions || {} : row.response_json.versions || {}).length} version` : ''}` },
                 { key: 'status', label: 'Trạng thái', render: (v) => <span className={`badge ${STATUS_BADGE[v] || ''}`}>{STATUS_LABEL[v] || v}</span> },
                 { key: 'error', label: 'Ghi chú', render: (v) => <span className="text-sm text-base-content/70">{v ? String(v).slice(0, 80) : '--'}</span> },
@@ -1109,6 +1139,7 @@ const SyncSheetPanel = ({ token, automationKey, view, onViewChange }) => {
         {viewRun && (
           <div className="space-y-2 text-sm">
             <div><b>Kích hoạt:</b> {viewRun.trigger === 'manual' ? 'Chạy tay' : 'Tự động'} · <b>Kết quả:</b> {STATUS_LABEL[viewRun.status] || viewRun.status}</div>
+            <div><b>Bắt đầu:</b> {fmtDate(viewRun.started_at || viewRun.created_at)} · <b>Kết thúc:</b> {fmtDate(viewRun.finished_at)} · <b>Thời gian thực hiện:</b> {fmtDuration(viewRun)}</div>
             {viewRun.error && <div><b>Lỗi:</b> <span className="text-error">{viewRun.error}</span></div>}
             <div><b>Request:</b><pre className="bg-base-200 rounded p-2 mt-1 overflow-x-auto text-xs">{JSON.stringify(viewRun.request_json || {}, null, 2)}</pre></div>
             <div><b>Response:</b><pre className="bg-base-200 rounded p-2 mt-1 overflow-x-auto text-xs">{JSON.stringify(viewRun.response_json || {}, null, 2)}</pre></div>

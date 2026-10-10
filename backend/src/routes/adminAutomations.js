@@ -65,6 +65,60 @@ router.get('/sync/runs', automationController.syncRuns);
 
 router.get('/sync/runs/:id', automationController.syncRunDetail);
 
+/**
+ * @swagger
+ * /api/admin/automations/special-nodes:
+ *   get:
+ *     summary: Danh sách node đặc biệt (global, dùng cho mọi automation sync)
+ *     tags: [Automations]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get('/special-nodes', automationController.specialNodesList);
+
+/**
+ * @swagger
+ * /api/admin/automations/special-nodes:
+ *   post:
+ *     summary: Tạo node đặc biệt tự tạo (key tự sinh custom_*)
+ *     tags: [Automations]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, fields]
+ *             properties:
+ *               title:
+ *                 type: string
+ *               fields:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ */
+router.post('/special-nodes', automationController.specialNodesCreate);
+
+/**
+ * @swagger
+ * /api/admin/automations/special-nodes/{key}:
+ *   put:
+ *     summary: Sửa node đặc biệt (node mặc định chỉ sửa tên + nhóm latest)
+ *     tags: [Automations]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.put('/special-nodes/:key', automationController.specialNodesUpdate);
+
+/**
+ * @swagger
+ * /api/admin/automations/special-nodes/{key}:
+ *   delete:
+ *     summary: Xóa node đặc biệt tự tạo (node mặc định không xóa được)
+ *     tags: [Automations]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.delete('/special-nodes/:key', automationController.specialNodesDelete);
+
 router.get('/:key', automationController.get);
 
 router.put('/:key', automationController.update);

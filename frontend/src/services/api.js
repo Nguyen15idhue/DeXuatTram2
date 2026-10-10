@@ -985,6 +985,18 @@ export const automationService = {
     const qs = key ? `?key=${encodeURIComponent(key)}` : '';
     return api.postWithAuth(`/admin/automations/sync/auto-match${qs}`, { version }, token);
   },
+  specialNodesList(token) {
+    return api.getWithAuth('/admin/automations/special-nodes', token);
+  },
+  specialNodesCreate(data, token) {
+    return api.postWithAuth('/admin/automations/special-nodes', data, token);
+  },
+  specialNodesUpdate(key, data, token) {
+    return api.putWithAuth(`/admin/automations/special-nodes/${encodeURIComponent(key)}`, data, token);
+  },
+  specialNodesDelete(key, token) {
+    return api.deleteWithAuth(`/admin/automations/special-nodes/${encodeURIComponent(key)}`, token);
+  },
   syncBulkPlan(fromVersion, toVersions, key, token) {
     const qs = key ? `?key=${encodeURIComponent(key)}` : '';
     return api.postWithAuth(`/admin/automations/sync/bulk-plan${qs}`, { from_version: fromVersion, to_versions: toVersions }, token);

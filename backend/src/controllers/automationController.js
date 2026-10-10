@@ -1,4 +1,5 @@
 const workAutomationService = require('../services/workAutomationService');
+const specialNodeService = require('../services/specialNodeService');
 const pool = require('../utils/db');
 
 const cleanUpdate = (body) => {
@@ -528,6 +529,50 @@ exports.listByType = async (req, res) => {
     res.json({ success: true, data: data.map(workAutomationService.maskRow) });
   } catch (error) {
     console.error('List automations by type error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.specialNodesList = async (req, res) => {
+  try {
+    const data = await specialNodeService.list();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('List special nodes error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.specialNodesCreate = async (req, res) => {
+  try {
+    const data = await specialNodeService.create(req.body || {});
+    res.status(201).json({ success: true, data, message: 'Tạo node đặc biệt thành công' });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Create special node error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.specialNodesUpdate = async (req, res) => {
+  try {
+    const data = await specialNodeService.update(req.params.key, req.body || {});
+    res.json({ success: true, data, message: 'Cập nhật node đặc biệt thành công' });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Update special node error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.specialNodesDelete = async (req, res) => {
+  try {
+    const data = await specialNodeService.remove(req.params.key);
+    res.json({ success: true, data, message: 'Xóa node đặc biệt thành công' });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
+    console.error('Delete special node error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

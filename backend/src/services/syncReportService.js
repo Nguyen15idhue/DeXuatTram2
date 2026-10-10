@@ -7,6 +7,11 @@ const formService = require('./formService');
 const reportMirrorService = require('./reportMirrorService');
 
 const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// Toc do dong bo: truoc day sleep 1s/process (123 process ~ 2 phut, 90% la cho chet).
+// Nay fetch song song co gioi han + throttle chung work API 500ms (chong 429)
+// + contact API rieng 600ms + ton trong retry_after.
+const SYNC_PROC_CONCURRENCY = 3;
+const SYNC_PROC_DELAY_MS = 200;
 const versionOfCache = new Map();
 let userMapCache = { at: 0, map: {} };
 const proposalCache = new Map();
@@ -14,6 +19,9 @@ const PROPOSAL_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const ACTION_NODE_TYPES = new Set(['taskaction', 'tasksign']);
 const CONTACT_NODE_ID = 'contact';
+const LATEST_NODE_ID = 'latest_status';
+const LATEST_FIELD_PATH = `${LATEST_NODE_ID}.value`;
+const LATEST_FIELD_LABEL = 'Trạng thái cuối cùng';
 const CONTACT_SKIP_TYPES = new Set(['password']);
 
 const GENERIC_ACTION_TITLES = new Set(['chấm điểm và đánh giá', 'duyệt', 'không duyệt', 'xác nhận', 'thỏa mãn', 'không thỏa mãn']);
@@ -116,20 +124,69 @@ const apiGet = async (token, path, { timeoutMs = 30000, retries = 2 } = {}) => {
   const base = await webBaseUrl();
   let lastErr = null;
   for (let i = 0; i <= retries; i++) {
+    await throttleWorkApi();
     try {
       const r = await fetch(`${base}${path}${path.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(timeoutMs) });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j || j.error !== false) throw new Error('1Office tra loi: ' + JSON.stringify(j).slice(0, 200));
+      if (!r.ok || !j || j.error !== false) {
+        if (isRateLimited(r.status, j) && i < retries) {
+          await backoffWorkApi(rateLimitWaitMs(j) || (2000 * (i + 1)));
+          continue;
+        }
+        throw new Error('1Office tra loi: ' + JSON.stringify(j).slice(0, 200));
+      }
+      relaxWorkApi();
       return j;
     } catch (e) {
       lastErr = e;
-      if (i < retries) await new Promise((x) => setTimeout(x, 2000 * (i + 1)));
+      if (i < retries) await sleep(2000 * (i + 1));
     }
   }
   if (lastErr && (lastErr.name === 'TimeoutError' || /aborted|timeout/i.test(lastErr.message || ''))) {
     throw Object.assign(new Error('1Office phan hoi cham (qua 30s), thu lai sau'), { statusCode: 504 });
   }
   throw lastErr;
+};
+
+// Work API (process/item, process/log) khong co throttle chung nhu contact API:
+// burst nhieu worker gay 429 rate_limit_exceeded, retry mu cang tac.
+// Throttle thich ung: khoang cach toi thieu, gap 429 thi lui (co ton trong
+// retry_after), thanh cong thi giam dan. Trang thai chung cho moi worker.
+const workGap = { ms: 350, at: 0 };
+const throttleWorkApi = async () => {
+  const now = Date.now();
+  const wait = workGap.ms - (now - workGap.at);
+  if (wait > 0) await new Promise((x) => setTimeout(x, wait));
+  workGap.at = Date.now();
+};
+const backoffWorkApi = async (waitMs) => {
+  workGap.ms = Math.min(2000, Math.max(workGap.ms * 2, waitMs || 0));
+  if (waitMs > 0) await new Promise((x) => setTimeout(x, Math.min(30000, waitMs)));
+};
+const relaxWorkApi = () => {
+  workGap.ms = Math.max(250, workGap.ms - 25);
+};
+
+const sleep = (ms) => new Promise((x) => setTimeout(x, ms));
+
+const rateLimitPayload = (j) => {
+  if (!j || typeof j !== 'object') return null;
+  if (j.code === 'rate_limit_exceeded' || j.retry_after !== undefined) return j;
+  if (j.data && typeof j.data === 'object') return j.data;
+  return null;
+};
+
+const isRateLimited = (httpStatus, j) => {
+  if (httpStatus === 429) return true;
+  const p = rateLimitPayload(j);
+  return !!p && p.code === 'rate_limit_exceeded';
+};
+
+const rateLimitWaitMs = (j) => {
+  const p = rateLimitPayload(j);
+  const ra = Number(p && (p.retry_after ?? p.retryAfter));
+  if (Number.isFinite(ra) && ra > 0) return Math.min(30000, Math.floor(ra * 1000) + 500);
+  return 0;
 };
 
 const sessionDialog = async (auto, processId) => {
@@ -360,11 +417,11 @@ const buildContactGroups = (form, fields) => {
   return out;
 };
 
-const buildContactNode = async () => {
+const buildContactNode = async (title) => {
   const node = {
     id: CONTACT_NODE_ID,
     type: CONTACT_NODE_ID,
-    title: 'Liên hệ gắn với quy trình',
+    title: title || 'Liên hệ gắn với quy trình',
     fields: [],
   };
   try {
@@ -431,12 +488,60 @@ const ensureVirtualFields = async (tree) => {
       }
     }
   }
-  const contactNode = await buildContactNode();
+  let defs = null;
+  try {
+    const specialNodeService = require('./specialNodeService');
+    const list = await specialNodeService.list();
+    if (Array.isArray(list) && list.length > 0) {
+      defs = {};
+      list.forEach((d) => { defs[d.node_key] = d; });
+    }
+  } catch { defs = null; }
+  const contactTitle = (defs && defs[CONTACT_NODE_ID] && defs[CONTACT_NODE_ID].title) || 'Liên hệ gắn với quy trình';
+  const contactNode = await buildContactNode(contactTitle);
   const idx = tree.nodes.findIndex((n) => n && (n.id === CONTACT_NODE_ID || n.type === CONTACT_NODE_ID));
   if (idx >= 0) tree.nodes[idx] = contactNode;
   else tree.nodes.unshift(contactNode);
+  const latestDef = defs && defs[LATEST_NODE_ID];
+  const latestNode = buildLatestStatusNode(latestDef && latestDef.title);
+  const storedFields = latestDef && Array.isArray(latestDef.fields) && latestDef.fields.length > 0
+    ? latestDef.fields.filter((f) => f && f.path).map((f) => ({ path: String(f.path), label: String(f.label || f.path) }))
+    : null;
+  if (storedFields) latestNode.fields = storedFields;
+  const cIdx = tree.nodes.findIndex((n) => n && (n.id === CONTACT_NODE_ID || n.type === CONTACT_NODE_ID));
+  const lIdx = tree.nodes.findIndex((n) => n && (n.id === LATEST_NODE_ID || n.type === LATEST_NODE_ID));
+  if (lIdx >= 0) tree.nodes[lIdx] = latestNode;
+  else if (cIdx >= 0) tree.nodes.splice(cIdx + 1, 0, latestNode);
+  else tree.nodes.unshift(latestNode);
+  if (defs) {
+    for (const key of Object.keys(defs)) {
+      if (key === CONTACT_NODE_ID || key === LATEST_NODE_ID) continue;
+      const d = defs[key];
+      if (!d || !Array.isArray(d.fields) || d.fields.length === 0) continue;
+      const node = {
+        id: key,
+        type: 'custom',
+        custom: true,
+        title: d.title,
+        fields: d.fields.filter((f) => f && f.path).map((f) => ({ path: String(f.path), label: String(f.label || f.path) })),
+      };
+      const eIdx = tree.nodes.findIndex((n) => n && (n.id === key || n.type === key));
+      if (eIdx >= 0) tree.nodes[eIdx] = node;
+      else tree.nodes.push(node);
+    }
+  }
   return tree;
 };
+
+// Node dac biet dung ngay duoi node Lien he: 1 truong duy nhat cho biet
+// quy trinh dang dung o buoc trang thai nao (quet ca node song song,
+// chi lay node co moc thoi gian moi nhat).
+const buildLatestStatusNode = (title) => ({
+  id: LATEST_NODE_ID,
+  type: LATEST_NODE_ID,
+  title: title || 'Trạng thái mới nhất',
+  fields: [{ path: LATEST_FIELD_PATH, label: LATEST_FIELD_LABEL }],
+});
 
 exports.refreshFieldTrees = async (targetAuto, templateNames) => {
   let auto = targetAuto || await exports.getSyncAutomation();
@@ -629,6 +734,148 @@ const deriveNodeStatus = ({ rawStatus, endPlanRaw, endRealRaw, isOverdue, now = 
 };
 exports.deriveNodeStatus = deriveNodeStatus;
 
+// Trang thai moi nhat cua quy trinh theo cau hinh node dac biet latest_status:
+// moi nhom hanh dong liet ke node (kieu exclude de loai), trong nhom uu tien
+// muc do TIEU CUC (that bai > qua han > dang cho > hoan thanh), giua cac nhom
+// nhom chua node hoat dong moi nhat thang. Tra ve "Ten hanh dong - Trang thai".
+// Thieu cau hinh -> fallback hanh vi cu (cot *.status da map, lay moi nhat).
+const LATEST_SEVERITY = [
+  ['thất bại', 5],
+  ['quá hạn chưa hoàn thành', 4],
+  ['hoàn thành quá hạn', 3],
+  ['đang chờ thực hiện', 2],
+  ['hoàn thành đúng hạn', 1],
+  ['hoàn thành', 1],
+  ['không cần thực hiện', 0],
+];
+
+const latestSeverityOf = (status) => {
+  const s = String(status || '').trim().toLowerCase();
+  if (!s) return -1;
+  for (const [key, rank] of LATEST_SEVERITY) {
+    if (s.includes(key)) return rank;
+  }
+  return 0;
+};
+
+const templateMatches = (pattern, template) => {
+  if (!pattern) return true;
+  const p = String(pattern).trim().toLowerCase();
+  const t = String(template || '').trim().toLowerCase();
+  if (!p || !t) return !p;
+  return t === p || t.startsWith(p) || t.includes(p);
+};
+
+const latestNodeTime = (proc, nid) => {
+  const nodeSchedule = (proc && proc.nodeSchedule) || {};
+  const nodeFinished = (proc && proc.nodeFinished) || {};
+  const s = nodeSchedule[nid] || {};
+  let best = 0;
+  for (const c of [nodeFinished[nid], s.acted, s.arrived]) {
+    if (c === undefined || c === null || String(c).trim() === '') continue;
+    const d = parseRealDate(c);
+    if (d && d.getTime() > best) best = d.getTime();
+  }
+  return best;
+};
+
+const latestNodeStatus = (proc, nid) => {
+  const nodeStatus = (proc && proc.nodeStatus) || {};
+  const nodeFinished = (proc && proc.nodeFinished) || {};
+  const nodeSchedule = (proc && proc.nodeSchedule) || {};
+  const rawNodes = (proc && proc.rawNodes) || {};
+  const raw = rawNodes[nid] || {};
+  const s = nodeSchedule[nid] || {};
+  return deriveNodeStatus({
+    rawStatus: nodeStatus[nid],
+    endPlanRaw: s.deadline || raw.end_plan || raw.period_time || raw.period || '',
+    endRealRaw: s.acted || nodeFinished[nid] || '',
+    isOverdue: s.isOverdue,
+  });
+};
+
+const latestGroupsOf = (proc) => {
+  const defs = (proc && proc.specialDefs) || null;
+  const def = defs && defs.find((d) => d.node_key === LATEST_NODE_ID);
+  const cfg = def && def.config;
+  if (cfg && Array.isArray(cfg.groups) && cfg.groups.length > 0) return cfg.groups;
+  return null;
+};
+
+const resolveLatestStatusLegacy = (proc, mappings) => {
+  const { tree } = proc || {};
+  const nodeById = {};
+  for (const n of ((tree && tree.nodes) || [])) nodeById[n.id] = n;
+  let pick = null;
+  let pickT = 0;
+  for (const mp of (mappings || [])) {
+    const src = mp && mp.source_path;
+    if (!src) continue;
+    const m = String(src).match(/^node\.([^.]+)\.status$/);
+    if (!m) continue;
+    const nid = m[1];
+    if (!nodeById[nid]) continue;
+    const t = latestNodeTime(proc, nid);
+    if (t > pickT) {
+      pickT = t;
+      pick = { nid, label: (mp.label || src) };
+    }
+  }
+  if (!pick || pickT <= 0) return '';
+  return `${pick.label} - ${latestNodeStatus(proc, pick.nid)}`;
+};
+
+const membersOf = (g) => {
+  if (g && Array.isArray(g.members) && g.members.length > 0) {
+    return g.members
+      .filter((m) => m && String(m.node || '').trim() !== '')
+      .map((m) => ({ node: String(m.node).trim(), field: String(m.field || 'status').trim() || 'status' }));
+  }
+  return ((g && g.nodes) || []).map((n) => ({ node: String(n), field: 'status' }));
+};
+
+const resolveLatestStatus = (proc, mappings, resolvePath) => {
+  const groups = latestGroupsOf(proc);
+  if (!groups) return resolveLatestStatusLegacy(proc, mappings);
+  const template = (proc && proc.tree && proc.tree.template) || '';
+  const usable = groups.filter((g) => g && membersOf(g).length > 0 && templateMatches(g.template, template));
+  if (usable.length === 0) return resolveLatestStatusLegacy(proc, mappings);
+  const dispOf = (nid, field) => {
+    if (typeof resolvePath === 'function') {
+      const v = resolvePath(`node.${nid}.${field}`);
+      return v === undefined || v === null ? '' : v;
+    }
+    return field === 'status' ? latestNodeStatus(proc, nid) : '';
+  };
+  let win = null;
+  for (const g of usable) {
+    const excluded = new Set((g.exclude || []).map(String));
+    let gTime = 0;
+    let gPick = null;
+    let gRank = -1;
+    for (const m of membersOf(g)) {
+      if (excluded.has(m.node)) continue;
+      const t = latestNodeTime(proc, m.node);
+      if (t <= 0) continue;
+      const rank = latestSeverityOf(latestNodeStatus(proc, m.node));
+      if (rank > gRank) {
+        gRank = rank;
+        gPick = m;
+        gTime = t;
+      } else if (rank === gRank && t > gTime) {
+        gPick = m;
+        gTime = t;
+      }
+    }
+    if (!gPick) continue;
+    if (!win || gTime > win.time) {
+      win = { group: g, member: gPick, rank: gRank, time: gTime };
+    }
+  }
+  if (!win) return '';
+  return `${win.group.action} - ${dispOf(win.member.node, win.member.field)}`;
+};
+
 const formatContactVal = (v) => {
   if (v === undefined || v === null) return '';
   if (Array.isArray(v)) {
@@ -680,6 +927,33 @@ exports.resolveRow = async (proc, mappings, userMap) => {
       if (!k) return contact.code ?? contact.ID ?? contact.id ?? '';
       if (k.startsWith('__tru_')) return contactTruCount(contact, k);
       return formatContactVal(contact[k]);
+    }
+    if (path === LATEST_NODE_ID || path.startsWith(`${LATEST_NODE_ID}.`)) {
+      return resolveLatestStatus(proc, mappings, (p) => valOf(p));
+    }
+    const seg = String(path).split('.')[0];
+    const restCustom = String(path).slice(seg.length + 1);
+    if (seg && restCustom) {
+      const defs = (proc && proc.specialDefs) || [];
+      const def = defs.find((d) => d && d.deletable && d.node_key === seg);
+      if (def) {
+        const field = (def.fields || []).find((f) => f && f.key === restCustom);
+        if (!field) return '';
+        if (field.kind === 'static') return field.text ?? '';
+        if (field.kind === 'process') return item[field.ref] ?? '';
+        if (field.kind === 'contact') {
+          const k = field.ref;
+          if (!k) return '';
+          if (k.startsWith('__tru_')) return contactTruCount(contact, k);
+          return formatContactVal(contact[k]);
+        }
+        if (field.kind === 'node' && field.ref) {
+          if (/custom_/i.test(field.ref)) return '';
+          const refVal = valOf(field.ref);
+          return refVal === undefined || refVal === null ? '' : refVal;
+        }
+        return '';
+      }
     }
     const m = path.match(/^node\.([^.]+)\.(.+)$/);
     if (!m) return '';
@@ -767,10 +1041,10 @@ const findProposalByCode = async (code) => {
   if (!clean) return null;
   const [rows] = await pool.query(
     `SELECT * FROM station_proposals
-     WHERE contact_1office_code = ? OR tracking_code = ?
+     WHERE contact_1office_code = ? OR tracking_code = ? OR ma_de_xuat_gen = ?
         OR JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.ma_de_xuat')) = ?
      LIMIT 1`,
-    [clean, clean, clean]
+    [clean, clean, clean, clean]
   );
   return rows.length > 0 ? rows[0] : null;
 };
@@ -785,10 +1059,15 @@ const buildWebContact = async (proposal, code) => {
   return merged;
 };
 
-const resolveWebProposalContact = async (item, withContact) => {
+const resolveWebProposalContact = async (item, withContact, tree = null) => {
   if (!withContact) return {};
   const codes = extractContactCodes(item);
   if (codes.length === 0) return {};
+  const cachePut = (code, data) => {
+    proposalCache.set(code, { at: Date.now(), data });
+    if (proposalCache.size > 500) proposalCache.delete(proposalCache.keys().next().value);
+  };
+  // Co che 1: ma trong ten quy trinh -> de xuat tren web.
   for (const code of codes.slice(0, 3)) {
     const hit = proposalCache.get(code);
     if (hit && Date.now() - hit.at < PROPOSAL_CACHE_TTL_MS) return hit.data;
@@ -796,13 +1075,251 @@ const resolveWebProposalContact = async (item, withContact) => {
       const proposal = await findProposalByCode(code);
       if (proposal) {
         const data = await buildWebContact(proposal, code);
-        proposalCache.set(code, { at: Date.now(), data });
-        if (proposalCache.size > 500) proposalCache.delete(proposalCache.keys().next().value);
+        cachePut(code, data);
+        return data;
+      }
+    } catch { /* thu code tiep theo */ }
+  }
+  // Co che 2: lay lien he tren 1Office theo ma (khoi doi tuong lien quan
+  // customer-contact-contact cua node eventstart), doi chieu voi de xuat web
+  // (theo ID lien he / SDT); khong co de xuat thi dung du lieu lien he 1Office.
+  // Neu tree co node eventstart khai bao object + filter thi contact phai khop.
+  const trigger = findTriggerObjectNode(tree);
+  for (const code of codes.slice(0, 3)) {
+    try {
+      const contact = await fetchOneOfficeContact(code);
+      if (!contact) continue;
+      if (trigger && trigger.object) {
+        if (!String(trigger.object).toLowerCase().includes('contact')) continue;
+        if (!matchTriggerFilter(trigger.filter, contact)) continue;
+      }
+      const matched = await findLocalProposalByContact(contact);
+      if (matched) {
+        const data = await buildWebContact(matched.proposal, code);
+        cachePut(code, data);
+        return data;
+      }
+      const data = await buildOneOfficeContact(contact, code);
+      if (data) {
+        cachePut(code, data);
         return data;
       }
     } catch { /* thu code tiep theo */ }
   }
   return {};
+};
+
+// Khoi doi tuong lien quan: node eventstart trong tree khai bao object
+// (vd customer-contact-contact) + filter. Tra ve null neu tree khong co.
+const findTriggerObjectNode = (tree) => {
+  const nodes = (tree && Array.isArray(tree.nodes)) ? tree.nodes : [];
+  for (const n of nodes) {
+    if (!n || n.type !== 'eventstart') continue;
+    const raw = (n.raw && typeof n.raw === 'object') ? n.raw : {};
+    const object = n.object || raw.object || null;
+    if (!object) continue;
+    return {
+      id: n.id,
+      object: String(object),
+      event: n.event || raw.event || null,
+      filter: n.filter || raw.filter || null,
+    };
+  }
+  return null;
+};
+
+// Kiem tra contact co khop filter cua node eventstart khong.
+// filter dang {"ors":[[{"f":"cf8","o":"like","p":"1Office"}]]} (ORS cac nhom AND).
+const matchTriggerFilter = (filter, contact) => {
+  if (filter === undefined || filter === null || filter === '') return true;
+  let f = filter;
+  if (typeof f === 'string') { try { f = JSON.parse(f); } catch { return true; } }
+  if (!f || typeof f !== 'object') return true;
+  const groups = Array.isArray(f.ors) ? f.ors : (Array.isArray(f.ands) ? [f.ands] : []);
+  if (groups.length === 0) return true;
+  const getVal = (c, field) => {
+    if (!c || typeof c !== 'object') return undefined;
+    if (c[field] !== undefined) return c[field];
+    const low = String(field).toLowerCase();
+    for (const k of Object.keys(c)) { if (String(k).toLowerCase() === low) return c[k]; }
+    return undefined;
+  };
+  const testCond = (cond) => {
+    if (!cond || typeof cond !== 'object') return true;
+    const op = String(cond.o || cond.op || '=').toLowerCase();
+    const actual = getVal(contact, cond.f || cond.field);
+    const expect = cond.p !== undefined ? cond.p : cond.value;
+    const a = actual === undefined || actual === null ? '' : String(actual);
+    const e = expect === undefined || expect === null ? '' : String(expect);
+    if (op === 'like') return a.toLowerCase().includes(e.toLowerCase());
+    if (op === 'not_like' || op === 'notlike' || op === 'unlike') return !a.toLowerCase().includes(e.toLowerCase());
+    if (op === '!=' || op === '<>') return a !== e;
+    if (op === 'in') return Array.isArray(expect) ? expect.map(String).includes(a) : a === e;
+    if (op === 'not_in') return Array.isArray(expect) ? !expect.map(String).includes(a) : a !== e;
+    return a === e;
+  };
+  return groups.some((g) => (Array.isArray(g) ? g.every(testCond) : testCond(g)));
+};
+const fetchOneOfficeContact = async (code) => {
+  const clean = String(code || '').trim();
+  if (!clean) return null;
+  const inner = await fetchContactDetail(clean);
+  if (!inner) return null;
+  const cfgId = (await getContactApiMeta().catch(() => null)) || {};
+  return {
+    ...inner,
+    code: inner.code || clean,
+    ID: inner.ID ?? inner.id ?? null,
+    _apiConfigId: cfgId.id || null,
+    _system: '1office',
+  };
+};
+
+// Contact API rieng (customer scope) chua tung 429: dung throttle thich ung
+// nhe hon throttle chung 1500ms cua oneOfficeService, + ton trong retry_after.
+// Ket hop cache DB 6h (oneoffice_contact_cache) de luot chay lap lai khoi fetch.
+const contactGap = { ms: 700, at: 0 };
+const CONTACT_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const throttleContactApi = async () => {
+  const now = Date.now();
+  const wait = contactGap.ms - (now - contactGap.at);
+  if (wait > 0) await sleep(wait);
+  contactGap.at = Date.now();
+};
+
+let cachedContactApi = { at: 0, base: null, token: null };
+const getContactApiMeta = async () => {
+  if (cachedContactApi.token && Date.now() - cachedContactApi.at < 5 * 60 * 1000) return cachedContactApi;
+  const cfg = await apiConfigService.getDefaultPushConfig().catch(() => null);
+  if (!cfg) return null;
+  const auth = cfg.auth_config && typeof cfg.auth_config === 'object' ? cfg.auth_config : JSON.parse(cfg.auth_config || '{}');
+  const token = auth.token || auth.access_token || '';
+  if (!token) return null;
+  cachedContactApi = {
+    at: Date.now(),
+    id: cfg.id,
+    base: String(cfg.base_url || 'https://egr.1office.vn').replace(/\/$/, ''),
+    token,
+  };
+  return cachedContactApi;
+};
+
+const fetchContactDetail = async (code) => {
+  const clean = String(code || '').trim();
+  if (!clean) return null;
+  try {
+    const [cached] = await pool.query(
+      'SELECT contact_json FROM oneoffice_contact_cache WHERE code = ? AND fetched_at >= NOW() - INTERVAL 6 HOUR LIMIT 1',
+      [clean]
+    );
+    if (cached.length > 0) {
+      const raw = cached[0].contact_json;
+      const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj;
+    }
+  } catch { /* cache miss -> fetch */ }
+  const meta = await getContactApiMeta().catch(() => null);
+  if (!meta || !meta.token) return null;
+  for (let i = 0; i <= 2; i++) {
+    await throttleContactApi();
+    try {
+      const t0 = Date.now();
+      const r = await fetch(`${meta.base}/api/customer/contact/item?code=${encodeURIComponent(clean)}&access_token=${encodeURIComponent(meta.token)}`, { signal: AbortSignal.timeout(30000) });
+      const j = await r.json().catch(() => ({}));
+      console.log(`[1Office] GET contact/item?code=${clean} → ${r.status} (${Date.now() - t0}ms)`);
+      if (isRateLimited(r.status, j)) {
+        contactGap.ms = Math.min(3000, Math.max(contactGap.ms * 2, rateLimitWaitMs(j) || 2000));
+        if (i < 2) { await sleep(rateLimitWaitMs(j) || 2000); continue; }
+        return null;
+      }
+      contactGap.ms = Math.max(400, contactGap.ms - 25);
+      const d = j && !j.error ? j.data : null;
+      const inner = d && d.data ? d.data : d;
+      if (!inner || typeof inner !== 'object' || Array.isArray(inner)) return null;
+      try {
+        await pool.query(
+          `INSERT INTO oneoffice_contact_cache (code, contact_json, fetched_at) VALUES (?, ?, NOW())
+           ON DUPLICATE KEY UPDATE contact_json = VALUES(contact_json), fetched_at = NOW()`,
+          [clean, JSON.stringify(inner)]
+        );
+        pool.query('DELETE FROM oneoffice_contact_cache WHERE fetched_at < NOW() - INTERVAL 7 DAY').catch(() => {});
+      } catch { /* cache ghi that bai -> bo qua */ }
+      return inner;
+    } catch {
+      if (i < 2) await sleep(2000 * (i + 1));
+    }
+  }
+  return null;
+};
+
+const digitsOf = (v) => String(v || '').replace(/\D/g, '');
+
+const findLocalProposalByContact = async (contact) => {
+  if (contact.ID !== undefined && contact.ID !== null && String(contact.ID).trim() !== '') {
+    const [rows] = await pool.query('SELECT * FROM station_proposals WHERE contact_1office_id = ? LIMIT 1', [String(contact.ID)]);
+    if (rows.length > 0) return { proposal: rows[0], via: 'contact_id' };
+  }
+  const phones = new Set();
+  const pushDigits = (v) => {
+    if (v === undefined || v === null) return;
+    if (Array.isArray(v)) { v.forEach(pushDigits); return; }
+    if (typeof v === 'object') {
+      ['phone', 'mobile', 'number', 'value'].forEach((k) => pushDigits(v[k]));
+      return;
+    }
+    const m = digitsOf(v).match(/0\d{9}$/);
+    if (m) phones.add(m[0]);
+  };
+  pushDigits(contact.phones);
+  pushDigits(contact.phone);
+  pushDigits(contact.mobile);
+  (String(contact.desc || '').match(/0\d{9}/g) || []).forEach((p) => phones.add(p));
+  for (const ph of phones) {
+    const [rows] = await pool.query(
+      `SELECT * FROM station_proposals
+        WHERE REPLACE(REPLACE(REPLACE(REPLACE(owner_phone, ' ', ''), '.', ''), '-', ''), '+', '') LIKE ?
+        ORDER BY id DESC LIMIT 1`,
+      [`%${ph}`]
+    );
+    if (rows.length > 0) return { proposal: rows[0], via: 'phone' };
+  }
+  return null;
+};
+
+const buildOneOfficeContact = async (contact, code) => {
+  const out = {};
+  try {
+    const fieldMappingService = require('./fieldMappingService');
+    const fieldMapper = require('./fieldMapper');
+    const mappings = await fieldMappingService.getAllByConfig(contact._apiConfigId).catch(() => []);
+    const pullMappings = (mappings || []).filter((m) => m.sync_enabled && (m.direction === 'pull' || m.direction === 'both') && !fieldMapper.isSpecialTarget(m.target_field));
+    for (const m of pullMappings) {
+      try {
+        const v = await fieldMapper.transformPull(contact[m.target_field], m, contact._system, contact._apiConfigId);
+        if (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)) out[m.source_field] = v;
+      } catch { /* bo qua mapping loi */ }
+    }
+  } catch { /* silent */ }
+  try {
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+    const descRestoreService = require('./descRestoreService');
+    const parsed = await descRestoreService.parseDescToFields(contact.desc, fieldDefs);
+    for (const [k, v] of Object.entries((parsed && parsed.values) || {})) {
+      if (out[k] === undefined) out[k] = v;
+    }
+  } catch { /* silent */ }
+  const put = (k, v) => {
+    if (out[k] === undefined && v !== undefined && v !== null && String(v).trim() !== '') out[k] = v;
+  };
+  put('doi_tac', contact.name || contact.formal_name);
+  const descPhone = String(contact.desc || '').match(/0\d{9}/);
+  put('owner_phone', descPhone ? descPhone[0] : null);
+  put('owner_name', contact.name || contact.formal_name);
+  put('address', contact.place_of_address || contact.address);
+  put('vi_tri_lap_tru', contact.place_of_address || contact.address);
+  const data = { ...out, code: contact.code || code, ID: contact.ID ?? null, custom_data: { ...out } };
+  data._source = 'oneoffice';
+  return data;
 };
 
 exports.collectProcess = async (token, processId, tree, opts = {}) => {
@@ -829,6 +1346,8 @@ exports.collectProcess = async (token, processId, tree, opts = {}) => {
       if (deadline !== undefined) schedOf(h.node_id).deadline = String(deadline);
       const acted = [time.acted].find((v) => v !== undefined && v !== null && String(v).trim() !== '');
       if (acted !== undefined) schedOf(h.node_id).acted = String(acted);
+      const arrived = [time.arrived, task.arrived].find((v) => v !== undefined && v !== null && String(v).trim() !== '');
+      if (arrived !== undefined) schedOf(h.node_id).arrived = String(arrived);
       if (typeof time.is_overdue === 'boolean') schedOf(h.node_id).isOverdue = time.is_overdue;
     }
   }
@@ -836,8 +1355,13 @@ exports.collectProcess = async (token, processId, tree, opts = {}) => {
   for (const n of (tree.nodes || [])) nodeById[n.id] = n.raw || n;
   const item = itemJ.data || {};
   let contact = {};
-  try { contact = await resolveWebProposalContact(item, !!opts.withContact); } catch { contact = {}; }
-  return { item, filled, nodeStatus, nodeFinished, nodeSchedule, contact, tree, rawNodes: nodeById };
+  try { contact = await resolveWebProposalContact(item, !!opts.withContact, tree); } catch { contact = {}; }
+  let specialDefs = [];
+  try {
+    const specialNodeService = require('./specialNodeService');
+    specialDefs = await specialNodeService.list();
+  } catch { specialDefs = []; }
+  return { item, filled, nodeStatus, nodeFinished, nodeSchedule, contact, tree, rawNodes: nodeById, specialDefs };
 };
 
 exports.getMappings = async (automationId, version) => {
@@ -934,6 +1458,8 @@ exports.autoMatch = async (automationId, version) => {
   };
   add('process.ID', labelOf.get('process.ID'));
   add('process.title', labelOf.get('process.title'));
+  // Truong lien he gan voi de xuat dung ngay sau cot A, B (truoc cac node).
+  for (const [p, l] of CONTACT_AUTOMATCH) add(p, l);
   for (const n of (tree.nodes || [])) {
     if (!n || !ACTION_NODE_TYPES.has(n.type)) continue;
     add(`node.${n.id}.status`, labelOf.get(`node.${n.id}.status`));
@@ -944,7 +1470,15 @@ exports.autoMatch = async (automationId, version) => {
       add(f.path, labelOf.get(f.path));
     }
   }
-  for (const [p, l] of CONTACT_AUTOMATCH) add(p, l);
+  // Truong trang thai cuoi cung dung o cot cuoi cung.
+  for (const n of (tree.nodes || [])) {
+    if (!n || (n.id !== LATEST_NODE_ID && n.type !== LATEST_NODE_ID)) continue;
+    for (const f of (n.fields || [])) {
+      if (!f.path) continue;
+      if (!labelOf.has(f.path)) labelOf.set(f.path, f.label || LATEST_FIELD_LABEL);
+      add(f.path, labelOf.get(f.path));
+    }
+  }
   await exports.saveMappings(automationId, v, items);
   return { version: v, total: items.length, added: items.length - existing.length };
 };
@@ -971,6 +1505,7 @@ const jaccardTokens = (a, b) => {
 const parseBulkPath = (p) => {
   if (!p) return null;
   if (p === CONTACT_NODE_ID || p.startsWith(`${CONTACT_NODE_ID}.`)) return { scope: 'contact', nodeId: CONTACT_NODE_ID, kind: 'field' };
+  if (p === LATEST_NODE_ID || p.startsWith(`${LATEST_NODE_ID}.`)) return { scope: 'latest', nodeId: LATEST_NODE_ID, kind: 'field' };
   if (p.startsWith('process.')) return { scope: 'process', nodeId: '', kind: 'field' };
   const m = String(p).match(/^node\.([^.]+)\.(.+)$/);
   if (!m) return null;
@@ -1019,7 +1554,7 @@ exports.bulkPlan = async (automationId, fromVersion, toVersions) => {
       const sp = m.source_path;
       const base = { sheet_col: m.sheet_col, label: m.label, src_path: sp };
       const parsedEarly = parseBulkPath(sp);
-      if (parsedEarly && (parsedEarly.scope === 'process' || parsedEarly.scope === 'contact')) {
+      if (parsedEarly && (parsedEarly.scope === 'process' || parsedEarly.scope === 'contact' || parsedEarly.scope === 'latest')) {
         matched.push({ ...base, dst_path: sp, how: 'exact' });
         continue;
       }
@@ -1431,20 +1966,49 @@ const buildVersionRows = async (auto, token, userMap, version, mappings, process
   const rows = [];
   const unmapped = new Set();
   const withContact = mappings.some((mp) => mp && mp.source_path && (mp.source_path === CONTACT_NODE_ID || mp.source_path.startsWith(`${CONTACT_NODE_ID}.`)));
-  for (const pid of ids) {
-    try {
+  const settled = await mapWithConcurrency(
+    ids,
+    SYNC_PROC_CONCURRENCY,
+    async (pid) => {
       const proc = await exports.collectProcess(token, pid, tree, { withContact });
       const vals = await exports.resolveRow(proc, order, userMap);
-      const row = [String(pid)];
-      order.forEach((mp, i) => { row[colToIndex(mp.sheet_col)] = vals[i] ?? ''; });
-      for (let i = 0; i < headers.length; i++) if (row[i] === undefined) row[i] = '';
-      rows.push(row);
-    } catch (e) {
-      unmapped.add(`${pid}: ${e.message}`);
+      await new Promise((x) => setTimeout(x, SYNC_PROC_DELAY_MS));
+      return vals;
     }
-    await new Promise((x) => setTimeout(x, 1000));
+  );
+  for (let i = 0; i < settled.length; i++) {
+    const pid = ids[i];
+    const st = settled[i];
+    if (!st || st.error) {
+      unmapped.add(`${pid}: ${(st && st.error) || 'unknown'}`);
+      continue;
+    }
+    const row = [String(pid)];
+    order.forEach((mp, j) => { row[colToIndex(mp.sheet_col)] = st.vals[j] ?? ''; });
+    for (let j = 0; j < headers.length; j++) if (row[j] === undefined) row[j] = '';
+    rows.push(row);
   }
   return { headers, rows, unmapped: [...unmapped] };
+};
+
+// Chay song song gioi han: giu nguyen thu tu ket qua, khong dung som khi 1 item loi.
+const mapWithConcurrency = async (list, concurrency, fn) => {
+  const out = new Array(list.length);
+  let cursor = 0;
+  const n = Math.max(1, Math.min(concurrency || 1, list.length));
+  const worker = async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= list.length) return;
+      try {
+        out[i] = { vals: await fn(list[i], i) };
+      } catch (e) {
+        out[i] = { error: (e && e.message) || 'Loi khong xac dinh' };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return out;
 };
 
 const insertRun = async (automationId, patch) => {
@@ -1486,7 +2050,6 @@ const getEffectiveMappings = async (automationId, version, templateIds = null) =
 
 // Lấy danh sách process IDs cho một version (bao gồm cả các version đã merge vào nó)
 const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, templateIds = null } = {}) => {
-  const ids = [];
   // Chỉ merge trong phạm vi quy trình mẫu đã chọn (templateIds)
   const { mergeInfo } = await exports.deduplicateFieldCacheVersions(auto.id, templateIds);
 
@@ -1498,19 +2061,22 @@ const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, 
     }
   }
 
-  // Lấy processes cho tất cả related versions
-  for (const r of roots) {
-    try {
-      const procVersion = String(await exports.versionOf(auto, r.ID));
-      if (relatedVersions.has(procVersion)) {
-        ids.push(r.ID);
-      }
-    } catch { /* silent */ }
-    if (limit > 0 && ids.length >= limit) break;
-    await new Promise((x) => setTimeout(x, 300));
+  // Lấy processes cho tất cả related versions (resolve version song song
+  // theo cum de van dung khi co limit).
+  const matched = [];
+  const CHUNK = 8;
+  for (let s = 0; s < roots.length && !(limit > 0 && matched.length >= limit); s += CHUNK) {
+    const chunk = roots.slice(s, s + CHUNK);
+    const out = await mapWithConcurrency(chunk, 4, async (r) => {
+      try {
+        const procVersion = String(await exports.versionOf(auto, r.ID));
+        return relatedVersions.has(procVersion) ? r.ID : null;
+      } catch { return null; }
+    });
+    out.forEach((o) => { if (o && o.vals) matched.push(o.vals); });
   }
 
-  return ids;
+  return limit > 0 ? matched.slice(0, limit) : matched;
 };
 
 exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) => {
