@@ -834,6 +834,14 @@ const membersOf = (g) => {
   return ((g && g.nodes) || []).map((n) => ({ node: String(n), field: 'status' }));
 };
 
+const latestNodeTitle = (proc, nid) => {
+  const nodes = ((proc && proc.tree && proc.tree.nodes) || []);
+  const found = nodes.find((n) => n && String(n.id) === String(nid));
+  const rawNodes = (proc && proc.rawNodes) || {};
+  const raw = rawNodes[nid] || {};
+  return String((found && found.title) || raw.title || nid).trim();
+};
+
 const resolveLatestStatus = (proc, mappings, resolvePath) => {
   const groups = latestGroupsOf(proc);
   if (!groups) return resolveLatestStatusLegacy(proc, mappings);
@@ -847,13 +855,11 @@ const resolveLatestStatus = (proc, mappings, resolvePath) => {
     }
     return field === 'status' ? latestNodeStatus(proc, nid) : '';
   };
-  let win = null;
-  for (const g of usable) {
-    const excluded = new Set((g.exclude || []).map(String));
+  const pickNegative = (members, excluded) => {
     let gTime = 0;
     let gPick = null;
     let gRank = -1;
-    for (const m of membersOf(g)) {
+    for (const m of members) {
       if (excluded.has(m.node)) continue;
       const t = latestNodeTime(proc, m.node);
       if (t <= 0) continue;
@@ -867,12 +873,35 @@ const resolveLatestStatus = (proc, mappings, resolvePath) => {
         gTime = t;
       }
     }
-    if (!gPick) continue;
-    if (!win || gTime > win.time) {
-      win = { group: g, member: gPick, rank: gRank, time: gTime };
+    return gPick ? { member: gPick, time: gTime } : null;
+  };
+  const pickLatest = (members, excluded) => {
+    let best = null;
+    let bestT = 0;
+    for (const m of members) {
+      if (excluded.has(m.node)) continue;
+      const t = latestNodeTime(proc, m.node);
+      if (t > bestT) {
+        bestT = t;
+        best = m;
+      }
+    }
+    return best ? { member: best, time: bestT } : null;
+  };
+  let win = null;
+  for (const g of usable) {
+    const excluded = new Set((g.exclude || []).map(String));
+    const members = membersOf(g);
+    const hit = (g.mode === 'latest' ? pickLatest : pickNegative)(members, excluded);
+    if (!hit) continue;
+    if (!win || hit.time > win.time) {
+      win = { group: g, member: hit.member, time: hit.time };
     }
   }
   if (!win) return '';
+  if (win.group.mode === 'latest') {
+    return `${win.group.action} - ${latestNodeTitle(proc, win.member.node)}`;
+  }
   return `${win.group.action} - ${dispOf(win.member.node, win.member.field)}`;
 };
 

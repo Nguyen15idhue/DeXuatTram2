@@ -66,9 +66,14 @@ const validateGroups = (groups) => {
     if (!g || typeof g !== 'object') throw Object.assign(new Error(`Nhóm #${i + 1} không hợp lệ`), { statusCode: 400 });
     const action = String(g.action || '').trim();
     if (!action) throw Object.assign(new Error(`Nhóm #${i + 1} thiếu tên hành động`), { statusCode: 400 });
+    const mode = String(g.mode || 'negative').trim().toLowerCase();
+    if (!['negative', 'latest'].includes(mode)) {
+      throw Object.assign(new Error(`Nhóm "${action}" có mode không hợp lệ (negative/latest)`), { statusCode: 400 });
+    }
     return {
       action,
       template: String(g.template || '').trim() || null,
+      mode,
       members: validateMembers(g.members, g.nodes),
       exclude: normList(g.exclude),
     };

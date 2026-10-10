@@ -29,7 +29,7 @@ SELECT 'latest_status', 'Trạng thái mới nhất',
     JSON_OBJECT('action', 'Lập BCĐX', 'template', '[EGR] Quy trình đánh giá đầu tư', 'members', JSON_ARRAY(JSON_OBJECT('node', 'n41', 'field', 'status')), 'exclude', JSON_ARRAY()),
     JSON_OBJECT('action', 'Duyệt BCĐX', 'template', '[EGR] Quy trình đánh giá đầu tư', 'members', JSON_ARRAY(JSON_OBJECT('node', 'n43', 'field', 'status')), 'exclude', JSON_ARRAY()),
     JSON_OBJECT('action', 'Trình và ký', 'template', '[EGR] Quy trình đánh giá đầu tư', 'members', JSON_ARRAY(JSON_OBJECT('node', 'n47', 'field', 'status'), JSON_OBJECT('node', 'n48', 'field', 'status'), JSON_OBJECT('node', 'n49', 'field', 'status'), JSON_OBJECT('node', 'n50', 'field', 'status')), 'exclude', JSON_ARRAY()),
-    JSON_OBJECT('action', 'Trạng thái cuối', 'template', '[EGR] Quy trình đánh giá đầu tư', 'members', JSON_ARRAY(JSON_OBJECT('node', 'n58', 'field', 'status'), JSON_OBJECT('node', 'n60', 'field', 'status'), JSON_OBJECT('node', 'n59', 'field', 'status')), 'exclude', JSON_ARRAY())
+    JSON_OBJECT('action', 'Trạng thái cuối', 'template', '[EGR] Quy trình đánh giá đầu tư', 'mode', 'latest', 'members', JSON_ARRAY(JSON_OBJECT('node', 'n58', 'field', 'status'), JSON_OBJECT('node', 'n60', 'field', 'status'), JSON_OBJECT('node', 'n59', 'field', 'status')), 'exclude', JSON_ARRAY())
   )),
   1, 0 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM automation_special_nodes WHERE node_key = 'latest_status');

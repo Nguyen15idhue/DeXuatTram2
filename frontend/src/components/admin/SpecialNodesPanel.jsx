@@ -20,7 +20,7 @@ const slugKey = (title) => {
 };
 
 const emptyField = () => ({ key: '', label: '', kind: 'static', ref: '', text: '' });
-const emptyGroup = (template) => ({ action: '', template: template || '', members: [], exclude: [] });
+const emptyGroup = (template) => ({ action: '', template: template || '', mode: 'negative', members: [], exclude: [] });
 
 const SpecialNodesPanel = ({ tree, template }) => {
   const { token } = useAuth();
@@ -84,7 +84,8 @@ const SpecialNodesPanel = ({ tree, template }) => {
     const members = Array.isArray(g.members) && g.members.length > 0
       ? g.members.filter((m) => m && m.node).map((m) => ({ node: String(m.node), field: String(m.field || 'status') || 'status' }))
       : (g.nodes || []).map((n) => ({ node: String(n), field: 'status' }));
-    return { action: g.action || '', template: g.template || '', members, exclude: [...(g.exclude || [])] };
+    const mode = g.mode === 'latest' ? 'latest' : 'negative';
+    return { action: g.action || '', template: g.template || '', mode, members, exclude: [...(g.exclude || [])] };
   });
 
   const nodeOptions = useMemo(
@@ -196,7 +197,7 @@ const SpecialNodesPanel = ({ tree, template }) => {
 
   const renderGroupEditor = (nodeKey, gi, g) => (
     <div key={gi} className="border border-base-300 rounded-lg p-2 space-y-2 bg-base-50">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <label className="form-control">
           <span className="label-text text-xs">Tên hành động *</span>
           <input
@@ -214,6 +215,18 @@ const SpecialNodesPanel = ({ tree, template }) => {
             onChange={(e) => setGroup(nodeKey, gi, { template: e.target.value })}
             placeholder={template || '[EGR] Quy trình đánh giá đầu tư'}
           />
+        </label>
+        <label className="form-control">
+          <span className="label-text text-xs">Cách chọn trong nhóm</span>
+          <select
+            className="select select-bordered select-sm w-full"
+            value={g.mode === 'latest' ? 'latest' : 'negative'}
+            onChange={(e) => setGroup(nodeKey, gi, { mode: e.target.value })}
+            title="Tiêu cực: lấy trạng thái xấu nhất. Mới chạy: lấy node chạy gần nhất và hiện tên node."
+          >
+            <option value="negative">Ưu tiên tiêu cực</option>
+            <option value="latest">Node mới chạy</option>
+          </select>
         </label>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -394,7 +407,7 @@ const SpecialNodesPanel = ({ tree, template }) => {
                   </div>
                   {open && n.node_key === 'latest_status' && (
                     <div className="px-3 pb-3 space-y-2">
-                      <div className="text-xs font-medium">Nhóm hành động ({(d.groups || []).length}) — trong nhóm lấy trạng thái tiêu cực nhất, giữa các nhóm lấy nhóm có node mới nhất</div>
+                      <div className="text-xs font-medium">Nhóm hành động ({(d.groups || []).length}) — chế độ "tiêu cực": lấy trạng thái xấu nhất trong nhóm; "mới chạy": lấy node chạy gần nhất và hiện tên node</div>
                       {(d.groups || []).map((g, gi) => renderGroupEditor(n.node_key, gi, g))}
                       <button
                         type="button"
