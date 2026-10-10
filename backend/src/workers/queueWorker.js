@@ -136,13 +136,34 @@ const processPushJob = async (job) => {
     .replace(/\s*\(\d+\)\s*$/, '')
     .trim();
 
-  let filesInfo = { sent: [], skipped: [], total: 0, stale: [] };
+  let filesInfo = { sent: [], skipped: [], total: 0, stale: [], resent: [] };
   if (proposal_id) {
     try {
       const on1office = recreated ? [] : contactInfo.fileNames;
+      // File tung bao "da gui" (snapshot) nhung khong con tren 1Office
+      // (lien he bi xoa/rong ben ngoai) -> gui lai, tranh truong hop chi
+      // dong bo chu ma file mai khong sang.
+      let resendIds = [];
+      if (proposal_id && !recreated && existingId) {
+        try {
+          const localFiles = await fileSyncService.loadFiles(proposal_id);
+          const remoteNames = new Set((contactInfo.fileNames || []).map(stripFileName));
+          const prevSet = new Set((prevFileIds || []).map(String));
+          resendIds = localFiles
+            .filter((f) => f.id !== undefined && f.id !== null && prevSet.has(String(f.id)) && !remoteNames.has(stripFileName(f.original_name)))
+            .map((f) => f.id);
+          if (resendIds.length > 0) {
+            console.log(`[QueueWorker] Resend ${resendIds.length} file(s) missing on 1Office (proposal #${proposal_id}): ${resendIds.join(',')}`);
+          }
+        } catch (err) {
+          console.error('[QueueWorker] Resend check error:', err.message);
+        }
+      }
+      const resendSet = new Set(resendIds.map(String));
+      const effectiveExcludeIds = (recreated ? [] : prevFileIds).filter((id) => !resendSet.has(String(id)));
       const built = await fileSyncService.buildFilesArray(proposal_id, {
         excludeNames: on1office,
-        excludeIds: recreated ? [] : prevFileIds
+        excludeIds: effectiveExcludeIds
       });
       const sentNames = built.names;
       contact_data.files = built.files.length > 0 ? JSON.stringify(built.files) : undefined;
@@ -151,7 +172,7 @@ const processPushJob = async (job) => {
       const cumulativeIds = [...new Set([...prevFileIds, ...(built.ids || [])])];
       const activeNames = new Set((await fileSyncService.loadFiles(proposal_id)).map((f) => stripFileName(f.original_name)));
       const stale = recreated ? [] : contactInfo.fileNames.filter((n) => !activeNames.has(stripFileName(n)));
-      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative, cumulativeIds, stale };
+      filesInfo = { sent: sentNames, skipped: built.skipped, total: built.files.length, cumulative, cumulativeIds, stale, resent: resendIds };
     } catch (err) {
       console.error('[QueueWorker] Build files error:', err.message);
     }
