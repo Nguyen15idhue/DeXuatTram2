@@ -131,8 +131,16 @@ const DATASETS = {
   },
 };
 
+Object.values(DATASETS).forEach((ds) => {
+  Object.values(ds.metrics).forEach((m) => {
+    if (m.aggs) m.aggs = ['count', 'count_distinct', 'sum', 'avg', 'min', 'max'];
+  });
+});
+
 const FILTER_OPS = ['=', '!=', '>', '>=', '<', '<=', 'LIKE'];
 const SORTS = ['value_desc', 'value_asc', 'dim_asc', 'dim_desc'];
+const V2_CHARTS = ['bar', 'barH', 'line', 'pie', 'donut', 'table', 'kpi'];
+const V2_TYPES = ['chart', 'table', 'kpi', 'text', 'control', 'detail'];
 
 function validateWidget(input, rowCap) {
   if (!input || typeof input !== 'object') throw badRequest('Widget không hợp lệ');
@@ -233,22 +241,113 @@ function getCatalog() {
   return out;
 }
 
-async function validateDashboardBody(body) {
+function normalizeLayoutV2(input) {
+  if (!input || typeof input !== 'object') return null;
+  const n = (v) => Number(v);
+  if (![input.x, input.y, input.w, input.h].every((v) => Number.isFinite(n(v)))) return null;
+  return {
+    x: Math.min(11, Math.max(0, Math.floor(n(input.x)))),
+    y: Math.min(9999, Math.max(0, Math.floor(n(input.y)))),
+    w: Math.min(12, Math.max(1, Math.floor(n(input.w)))),
+    h: Math.min(40, Math.max(1, Math.floor(n(input.h)))),
+  };
+}
+
+function normalizeWidgetV2(input) {
+  if (!input || typeof input !== 'object') throw badRequest('Widget không hợp lệ');
+  const type = V2_TYPES.includes(input.type) ? input.type : 'chart';
+  const id = input.id !== undefined && input.id !== null && String(input.id) !== '' ? String(input.id).slice(0, 50) : null;
+  const title = input.title !== undefined && input.title !== null ? String(input.title).slice(0, 200) : '';
+  const layout = normalizeLayoutV2(input.layout);
+  const base = { id, type, title, layout, version: 2 };
+
+  if (type === 'control') {
+    return {
+      ...base,
+      controlType: input.controlType === 'dateRange' ? 'dateRange' : 'select',
+      dataSourceId: input.dataSourceId ? String(input.dataSourceId).slice(0, 40) : null,
+      field: input.field !== undefined && input.field !== null ? String(input.field).slice(0, 60) : null,
+      defaultValue: input.defaultValue === undefined || input.defaultValue === null ? null : String(input.defaultValue).slice(0, 200),
+    };
+  }
+  if (type === 'text') {
+    const vc = input.visualConfig && typeof input.visualConfig === 'object' ? input.visualConfig : {};
+    return {
+      ...base,
+      visualConfig: {
+        text: String(vc.text || '').slice(0, 1000),
+        align: ['left', 'center', 'right'].includes(vc.align) ? vc.align : 'left',
+        fontSize: Math.min(72, Math.max(8, Math.floor(Number(vc.fontSize) || 18))),
+      },
+    };
+  }
+  if (type === 'detail') return base;
+
+  const dsKey = String(input.dataSourceId || '').trim();
+  const ds = DATASETS[dsKey];
+  if (!ds) throw badRequest(`Nguồn dữ liệu không hợp lệ: ${dsKey || '(trống)'}`);
+  const dc = input.dataConfig && typeof input.dataConfig === 'object' ? input.dataConfig : {};
+  const dimKey = String(dc.dimension || '').trim();
+  if (!ds.dimensions[dimKey]) throw badRequest(`Phương diện không hợp lệ: ${dimKey || '(trống)'}`);
+  const metricKey = String(dc.metric || '').trim();
+  const metric = ds.metrics[metricKey];
+  if (!metric) throw badRequest(`Chỉ số không hợp lệ: ${metricKey || '(trống)'}`);
+  const agg = String(dc.agg || 'count').trim();
+  if (!metric.aggs.includes(agg)) throw badRequest(`Phép gộp không hợp lệ: ${agg}`);
+  const sort = SORTS.includes(dc.sort) ? dc.sort : 'value_desc';
+  let limit = Number(dc.limit) || 20;
+  limit = Math.min(Math.max(Math.round(limit), 1), 200);
+
+  const filters = [];
+  const raw = Array.isArray(dc.filters) ? dc.filters : [];
+  if (raw.length > MAX_FILTERS) throw badRequest(`Tối đa ${MAX_FILTERS} filter`);
+  raw.forEach((fl, i) => {
+    if (!fl || typeof fl !== 'object') throw badRequest(`Filter #${i + 1} không hợp lệ`);
+    const fk = String(fl.key || '').trim();
+    if (!ds.dimensions[fk]) throw badRequest(`Filter field không hợp lệ: ${fk || '(trống)'}`);
+    const op = String(fl.op || '=').trim().toUpperCase();
+    if (!FILTER_OPS.includes(op)) throw badRequest(`Filter op không hợp lệ: ${op}`);
+    const val = fl.value === undefined || fl.value === null ? '' : String(fl.value).slice(0, 100);
+    filters.push({ key: fk, op, value: op === 'LIKE' ? `%${val}%` : val });
+  });
+
+  const vc = input.visualConfig && typeof input.visualConfig === 'object' ? input.visualConfig : {};
+  const chartType = V2_CHARTS.includes(vc.chartType) ? vc.chartType : 'bar';
+  return {
+    ...base,
+    dataSourceId: dsKey,
+    dataConfig: { dimension: dimKey, metric: metricKey, agg, filters, sort, limit },
+    visualConfig: {
+      chartType,
+      palette: vc.palette ? String(vc.palette).slice(0, 20) : 'default',
+      showLegend: !!vc.showLegend,
+      showLabels: !!vc.showLabels,
+      numberFormat: ['plain', 'comma', 'dot'].includes(vc.numberFormat) ? vc.numberFormat : 'plain',
+      innerRadius: Math.min(80, Math.max(0, Math.floor(Number(vc.innerRadius) || 0))),
+      groupOthers: !!vc.groupOthers,
+    },
+  };
+}
+
+function parseDashboardBody(body) {
   if (!body || typeof body !== 'object') throw badRequest('Body không hợp lệ');
   const name = body.name !== undefined && body.name !== null ? String(body.name).trim().slice(0, 120) : '';
   if (!name) throw badRequest('Tên dashboard là bắt buộc');
   const rawWidgets = Array.isArray(body.widgets) ? body.widgets : [];
   if (rawWidgets.length === 0) throw badRequest('Dashboard cần ít nhất 1 widget');
-  if (rawWidgets.length > 20) throw badRequest('Tối đa 20 widget');
-  return { name, widgets: rawWidgets.map(validateWidget) };
+  if (rawWidgets.length > 50) throw badRequest('Tối đa 50 widget');
+  const page = body.page && typeof body.page === 'object'
+    ? { title: String(body.page.title || name).slice(0, 120), columns: 12, rowHeight: Math.min(160, Math.max(40, Math.floor(Number(body.page.rowHeight) || 80))) }
+    : { title: name, columns: 12, rowHeight: 80 };
+  return { name, version: 2, page, widgets: rawWidgets.map(normalizeWidgetV2) };
 }
 
 async function createDashboard(body, userId) {
-  const { name, widgets } = await validateDashboardBody(body);
+  const parsed = parseDashboardBody(body);
   try {
     const [r] = await pool.query(
       'INSERT INTO report_builder_dashboards (name, layout_json, created_by, updated_by) VALUES (?, ?, ?, ?)',
-      [name, JSON.stringify({ widgets }), userId || null, userId || null]
+      [parsed.name, JSON.stringify(parsed), userId || null, userId || null]
     );
     return getDashboard(r.insertId);
   } catch (e) {
@@ -274,10 +373,13 @@ async function getDashboard(id) {
   try {
     layout = typeof row.layout_json === 'string' ? JSON.parse(row.layout_json) : row.layout_json;
   } catch { layout = null; }
+  const widgets = layout && Array.isArray(layout.widgets) ? layout.widgets : [];
   return {
     id: row.id,
     name: row.name,
-    widgets: layout && Array.isArray(layout.widgets) ? layout.widgets : [],
+    version: layout && layout.version ? layout.version : 1,
+    page: layout && layout.page ? layout.page : { title: row.name, columns: 12, rowHeight: 80 },
+    widgets,
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,
@@ -287,16 +389,12 @@ async function getDashboard(id) {
 
 async function updateDashboard(id, body, userId) {
   const current = await getDashboard(id);
-  const name = body.name !== undefined && body.name !== null ? String(body.name).trim().slice(0, 120) : current.name;
-  if (!name) throw badRequest('Tên dashboard là bắt buộc');
-  const widgets = body.widgets !== undefined ? (Array.isArray(body.widgets) ? body.widgets : []) : current.widgets;
-  if (widgets.length === 0) throw badRequest('Dashboard cần ít nhất 1 widget');
-  if (widgets.length > 20) throw badRequest('Tối đa 20 widget');
-  const parsed = widgets.map(validateWidget);
+  const merged = { name: current.name, version: 2, page: current.page, widgets: current.widgets, ...body };
+  const parsed = parseDashboardBody(merged);
   try {
     await pool.query(
       'UPDATE report_builder_dashboards SET name = ?, layout_json = ?, updated_by = ? WHERE id = ?',
-      [name, JSON.stringify({ widgets: parsed }), userId || null, current.id]
+      [parsed.name, JSON.stringify(parsed), userId || null, current.id]
     );
   } catch (e) {
     if (e && e.code === 'ER_DUP_ENTRY') throw badRequest('Tên dashboard đã tồn tại');

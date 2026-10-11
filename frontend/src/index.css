@@ -344,6 +344,11 @@ html {
 .re-control select, .re-control input { border: 1px solid #d1d5db; border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 12.5px; background: #fff; }
 .re-control .row { display: flex; gap: 6px; }
 .re-placeholder { height: 100%; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 12.5px; }
+.re-tablewrap { height: 100%; overflow: auto; }
+.re-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.re-table th { text-align: left; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; padding: 5px 6px; position: sticky; top: 0; background: #fff; }
+.re-table td { padding: 5px 6px; border-bottom: 1px solid #f1f5f9; }
+.re-table td.num, .re-table th.num { text-align: right; }
 
 .re-panel { width: 360px; flex: 0 0 360px; background: #fff; border-left: 1px solid #e5e7eb; display: flex; min-width: 0; }
 .re-ptabs { width: 54px; flex: 0 0 54px; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding-top: 8px; gap: 4px; background: #fbfbfc; }

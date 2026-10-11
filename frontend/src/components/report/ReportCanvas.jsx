@@ -9,7 +9,7 @@ import WidgetRenderer from './widgets/WidgetRenderer';
 const ResponsiveGrid = WidthProvider(Responsive);
 
 export default function ReportCanvas({
-  widgets, selectedId, viewMode, showGrid = true, onSelect, onLayoutChange, onLayoutCommit, onDelete, controls, onControlChange,
+  widgets, selectedId, viewMode, showGrid = true, onSelect, onLayoutChange, onLayoutCommit, onDelete, controls, onControlChange, previews, token,
 }) {
   const wrapRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -85,7 +85,14 @@ export default function ReportCanvas({
                     )}
                   </div>
                   <div className="re-widget-body" style={{ height: Math.max(0, contentHeight(w.layout)) }}>
-                    <WidgetRenderer widget={w} controls={controls} onControlChange={onControlChange} />
+                    <WidgetRenderer
+                      widget={w}
+                      data={previews && previews[w.id] ? previews[w.id].rows : null}
+                      options={previews && previews[w.id] && previews[w.id].options ? previews[w.id].options : []}
+                      controls={controls}
+                      onControlChange={onControlChange}
+                      token={token}
+                    />
                   </div>
                 </div>
               );

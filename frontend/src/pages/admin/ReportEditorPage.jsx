@@ -4,6 +4,7 @@ import { Database, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { builderService } from '../../services/api';
 import useReportEditor from '../../hooks/useReportEditor';
+import useReportPreviews from '../../hooks/useReportPreviews';
 import ReportToolbar from '../../components/report/ReportToolbar';
 import ReportTabs from '../../components/report/ReportTabs';
 import ReportCanvas from '../../components/report/ReportCanvas';
@@ -18,6 +19,7 @@ export default function ReportEditorPage() {
   const navigate = useNavigate();
   const isSuperAdmin = (user && user.role) === 'SUPER_ADMIN';
   const ed = useReportEditor(token);
+  const previews = useReportPreviews(ed.widgets, ed.controlValues, token);
   const [panelTab, setPanelTab] = useState('config');
   const [showGrid, setShowGrid] = useState(true);
   const [toast, setToast] = useState({ message: '', type: 'success' });
@@ -105,6 +107,8 @@ export default function ReportEditorPage() {
           onDelete={(id) => ed.deleteWidget(id)}
           controls={ed.controlValues}
           onControlChange={ed.setControlValue}
+          previews={previews}
+          token={token}
         />
 
         {edit && (
