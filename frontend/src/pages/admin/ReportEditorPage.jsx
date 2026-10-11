@@ -28,6 +28,14 @@ export default function ReportEditorPage() {
     if (user && !isSuperAdmin && ed.viewMode !== 'view') ed.setViewMode('view');
   }, [user, isSuperAdmin, ed]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (ed.saveState === 'dirty' || ed.saveState === 'error') { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [ed.saveState]);
+
   const edit = ed.viewMode === 'edit' && isSuperAdmin;
   const selected = ed.widgets.find((w) => w.id === ed.selectedId) || null;
 
@@ -42,8 +50,21 @@ export default function ReportEditorPage() {
     setToast({ message: `Đã gán ${type === 'metric' ? 'chỉ số' : 'chiều'}: ${key}`, type: 'success' });
   };
 
-  const onSave = () => setToast({ message: 'Lưu báo cáo hoàn thiện ở bước E4', type: 'success' });
-  const onAddReport = () => setToast({ message: 'Thêm báo cáo hoàn thiện ở bước E4', type: 'success' });
+  const onSave = async () => {
+    const r = await ed.save();
+    if (r.stale) return;
+    setToast(r.ok ? { message: 'Đã lưu báo cáo', type: 'success' } : { message: r.error || 'Lưu thất bại', type: 'error' });
+  };
+
+  const onAddReport = async () => {
+    try {
+      await ed.createReport('Báo cáo mới');
+      setPanelTab('config');
+      setToast({ message: 'Đã tạo báo cáo mới', type: 'success' });
+    } catch (e) {
+      setToast({ message: e.message || 'Tạo báo cáo thất bại', type: 'error' });
+    }
+  };
 
   const onRemoveReport = async (id) => {
     try {

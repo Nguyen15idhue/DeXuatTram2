@@ -13,21 +13,62 @@ export default function useReportEditor(token) {
   const [selectedId, setSelectedId] = useState(null);
   const [viewMode, setViewMode] = useState('edit');
   const [saveState, setSaveState] = useState('saved');
+  const [saveError, setSaveError] = useState('');
   const [controlValues, setControlValues] = useState({});
   const [catalog, setCatalog] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const past = useRef([]);
-  const future = useRef([]);
+  const [past, setPast] = useState([]);
+  const [future, setFuture] = useState([]);
+  const saveReq = useRef(0);
 
-  const markDirty = useCallback(() => setSaveState('dirty'), []);
-
-  const pushHistory = useCallback((snapshot) => {
-    past.current.push(snapshot);
-    if (past.current.length > 80) past.current.shift();
-    future.current = [];
+  const markDirty = useCallback(() => setSaveState((s) => (s === 'saving' ? s : 'dirty')), []);
+  const snapshot = useCallback(() => clone({ name, widgets, page, controlValues }), [name, widgets, page, controlValues]);
+  const pushHistory = useCallback((snap) => {
+    setPast((p) => [...p.slice(-79), snap]);
+    setFuture([]);
   }, []);
+
+  const restore = (snap) => {
+    setName(snap.name);
+    setWidgets(snap.widgets);
+    setPage(snap.page);
+    setControlValues(snap.controlValues || {});
+    setSelectedId(null);
+  };
+
+  const undo = useCallback(() => {
+    setPast((p) => {
+      if (p.length === 0) return p;
+      const snap = p[p.length - 1];
+      setFuture((f) => [snapshot(), ...f]);
+      restore(snap);
+      markDirty();
+      return p.slice(0, -1);
+    });
+  }, [snapshot, markDirty]);
+
+  const redo = useCallback(() => {
+    setFuture((f) => {
+      if (f.length === 0) return f;
+      const snap = f[0];
+      setPast((p) => [...p, snapshot()]);
+      restore(snap);
+      markDirty();
+      return f.slice(1);
+    });
+  }, [snapshot, markDirty]);
+
+  const commitLayout = useCallback(() => { pushHistory(snapshot()); markDirty(); }, [pushHistory, snapshot, markDirty]);
+  const commit = useCallback(() => { pushHistory(snapshot()); }, [pushHistory, snapshot]);
+
+  const refreshList = useCallback(async () => {
+    try {
+      const res = await builderService.listDashboards(token);
+      if (res.success) setReports(res.data || []);
+    } catch { /* ignore */ }
+  }, [token]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -35,6 +76,28 @@ export default function useReportEditor(token) {
       if (res.success) setCatalog(res.data || {});
     } catch { /* ignore */ }
   }, [token]);
+
+  const applyReport = useCallback((rep) => {
+    setActiveId(rep.id);
+    setName(rep.name);
+    setWidgets(rep.widgets);
+    setPage(rep.page);
+    setSelectedId(null);
+    setSaveState('saved');
+    setSaveError('');
+    setPast([]);
+    setFuture([]);
+  }, []);
+
+  const openReport = useCallback(async (id) => {
+    try {
+      const res = await builderService.getDashboard(id, token);
+      if (!res.success) throw new Error(res.message || 'Lỗi mở báo cáo');
+      applyReport(normalizeReport(res.data));
+    } catch (e) {
+      setError(e.message || 'Lỗi mở báo cáo');
+    }
+  }, [token, applyReport]);
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -46,81 +109,27 @@ export default function useReportEditor(token) {
       setReports(list);
       if (list.length > 0) {
         const res2 = await builderService.getDashboard(list[0].id, token);
-        if (res2.success) {
-          const rep = normalizeReport(res2.data);
-          setActiveId(rep.id);
-          setName(rep.name);
-          setWidgets(rep.widgets);
-          setPage(rep.page);
-        }
+        if (res2.success) applyReport(normalizeReport(res2.data));
+      } else {
+        setLoading(false);
       }
     } catch (e) {
       setError(e.message || 'Lỗi tải báo cáo');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, applyReport]);
 
   useEffect(() => { if (token) { loadReports(); loadCatalog(); } }, [token, loadReports, loadCatalog]);
 
-  const snapshot = useCallback(() => clone({ name, widgets, page, controlValues }), [name, widgets, page, controlValues]);
-
-  const commit = useCallback(() => {
-    pushHistory(snapshot());
-    markDirty();
-  }, [pushHistory, snapshot, markDirty]);
-
-  const restore = (snap) => {
-    setName(snap.name);
-    setWidgets(snap.widgets);
-    setPage(snap.page);
-    setControlValues(snap.controlValues || {});
-  };
-
-  const undo = useCallback(() => {
-    if (past.current.length === 0) return;
-    future.current.push(snapshot());
-    restore(past.current.pop());
-    setSelectedId(null);
-    markDirty();
-  }, [snapshot, markDirty]);
-
-  const redo = useCallback(() => {
-    if (future.current.length === 0) return;
-    past.current.push(snapshot());
-    restore(future.current.pop());
-    setSelectedId(null);
-    markDirty();
-  }, [snapshot, markDirty]);
-
-  const openReport = useCallback(async (id) => {
-    try {
-      const res = await builderService.getDashboard(id, token);
-      if (!res.success) throw new Error(res.message || 'Lỗi mở báo cáo');
-      const rep = normalizeReport(res.data);
-      setActiveId(rep.id);
-      setName(rep.name);
-      setWidgets(rep.widgets);
-      setPage(rep.page);
-      setSelectedId(null);
-      setSaveState('saved');
-      past.current = [];
-      future.current = [];
-    } catch (e) {
-      setError(e.message || 'Lỗi mở báo cáo');
-    }
-  }, [token]);
-
   const addWidget = useCallback((type) => {
     const w = defaultWidget(type);
-    setWidgets((prev) => {
-      w.layout = { ...w.layout, y: nextLayoutY(prev) };
-      pushHistory(clone({ name, widgets: prev, page, controlValues }));
-      return [...prev, w];
-    });
+    const next = [...widgets, { ...w, layout: { ...w.layout, y: nextLayoutY(widgets) } }];
+    pushHistory(snapshot());
+    setWidgets(next);
     setSelectedId(w.id);
     markDirty();
-  }, [name, page, controlValues, pushHistory, markDirty]);
+  }, [widgets, snapshot, pushHistory, markDirty]);
 
   const updateWidget = useCallback((id, patch) => {
     setWidgets((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
@@ -138,30 +147,32 @@ export default function useReportEditor(token) {
   }, [markDirty]);
 
   const deleteWidget = useCallback((id) => {
-    setWidgets((prev) => {
-      pushHistory(clone({ name, widgets: prev, page, controlValues }));
-      return prev.filter((w) => w.id !== id);
-    });
+    pushHistory(snapshot());
+    setWidgets((prev) => prev.filter((w) => w.id !== id));
     setSelectedId(null);
     markDirty();
-  }, [name, page, controlValues, pushHistory, markDirty]);
+  }, [snapshot, pushHistory, markDirty]);
 
   const duplicateWidget = useCallback((id) => {
-    setWidgets((prev) => {
-      const src = prev.find((w) => w.id === id);
-      if (!src) return prev;
-      pushHistory(clone({ name, widgets: prev, page, controlValues }));
-      const copy = clone(src);
-      copy.id = defaultWidget('chart').id;
-      copy.layout = { ...copy.layout, y: nextLayoutY(prev) };
-      return [...prev, copy];
-    });
+    const src = widgets.find((w) => w.id === id);
+    if (!src) return;
+    pushHistory(snapshot());
+    const copy = clone(src);
+    copy.id = defaultWidget('chart').id;
+    copy.layout = { ...copy.layout, y: nextLayoutY(widgets) };
+    setWidgets((prev) => [...prev, copy]);
     markDirty();
-  }, [name, page, controlValues, pushHistory, markDirty]);
+  }, [widgets, snapshot, pushHistory, markDirty]);
 
   const setLayout = useCallback((grid) => {
     setWidgets((prev) => applyGridLayout(prev, grid));
   }, []);
+
+  const restoreLayout = useCallback(() => {
+    pushHistory(snapshot());
+    setWidgets((prev) => packLayout(prev));
+    markDirty();
+  }, [snapshot, pushHistory, markDirty]);
 
   const setControlValue = useCallback((id, val) => {
     setControlValues((prev) => ({ ...prev, [id]: val }));
@@ -169,22 +180,45 @@ export default function useReportEditor(token) {
 
   const renameActive = useCallback((v) => { setName(v); markDirty(); }, [markDirty]);
 
-  const commitLayout = useCallback(() => { pushHistory(snapshot()); markDirty(); }, [pushHistory, snapshot, markDirty]);
+  const save = useCallback(async () => {
+    const rid = ++saveReq.current;
+    setSaveState('saving');
+    setSaveError('');
+    const payload = { name, version: 2, page, widgets };
+    try {
+      const res = activeId
+        ? await builderService.updateDashboard(activeId, payload, token)
+        : await builderService.createDashboard(payload, token);
+      if (rid !== saveReq.current) return { stale: true };
+      if (!res.success) throw new Error(res.message || 'Lưu thất bại');
+      if (!activeId) setActiveId(res.data.id);
+      setSaveState('saved');
+      await refreshList();
+      return { ok: true };
+    } catch (e) {
+      if (rid !== saveReq.current) return { stale: true };
+      setSaveState('error');
+      setSaveError(e.message || 'Lỗi lưu');
+      return { ok: false, error: e.message || 'Lỗi lưu' };
+    }
+  }, [activeId, name, page, widgets, token, refreshList]);
 
-  const restoreLayout = useCallback(() => {
-    setWidgets((prev) => {
-      pushHistory(clone({ name, widgets: prev, page, controlValues }));
-      return packLayout(prev);
-    });
-    markDirty();
-  }, [name, page, controlValues, pushHistory, markDirty]);
+  const createReport = useCallback(async (reportName) => {
+    const w = defaultWidget('chart');
+    const payload = { name: reportName || 'Báo cáo mới', version: 2, page: { title: reportName || 'Báo cáo mới', rowHeight: 80 }, widgets: [{ ...w, title: 'Lead theo stage' }] };
+    const res = await builderService.createDashboard(payload, token);
+    if (!res.success) throw new Error(res.message || 'Tạo báo cáo thất bại');
+    await refreshList();
+    await openReport(res.data.id);
+    return res.data.id;
+  }, [token, refreshList, openReport]);
 
   return {
-    reports, activeId, name, widgets, page, selectedId, viewMode, saveState, controlValues, catalog, loading, error,
-    canUndo: past.current.length > 0, canRedo: future.current.length > 0,
+    reports, activeId, name, widgets, page, selectedId, viewMode, saveState, saveError, controlValues, catalog, loading, error,
+    canUndo: past.length > 0, canRedo: future.length > 0,
     setActiveId, setViewMode, setSelectedId, setPage, setSaveState,
     setName: renameActive, openReport, addWidget, updateWidget, updateWidgetData, updateVisual,
     deleteWidget, duplicateWidget, setLayout, setControlValue, undo, redo, commit, commitLayout,
-    restoreLayout, reload: loadReports,
+    restoreLayout, reload: loadReports, refreshList, save, createReport,
   };
 }
