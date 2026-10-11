@@ -132,8 +132,8 @@ export const defaultWidget = (type) => {
   if (type === 'table') return { id: widgetId(), type: 'table', title: 'Bảng dữ liệu', dataSourceId: 'leads', dataConfig: { dimension: 'stage', metric: 'id', agg: 'count', filters: [], sort: 'value_desc', limit: 20 }, visualConfig: { chartType: 'table' }, layout, version: 2 };
   if (type === 'detail') return { id: widgetId(), type: 'detail', title: 'Bảng chi tiết Lead → ON', layout: { ...layout, w: 12 }, version: 2 };
   if (type === 'text') return { id: widgetId(), type: 'text', title: 'Tiêu đề', visualConfig: { text: 'TIÊU ĐỀ MỚI', align: 'left', fontSize: 18 }, layout: { ...layout, h: 2 }, version: 2 };
-  if (type === 'controlDate') return { id: widgetId(), type: 'control', controlType: 'dateRange', title: 'Khoảng thời gian', layout: { ...layout, w: 4, h: 2 }, version: 2 };
-  if (type === 'controlSelect') return { id: widgetId(), type: 'control', controlType: 'select', title: 'Danh mục', field: 'region', layout: { ...layout, w: 4, h: 2 }, version: 2 };
+  if (type === 'controlDate') return { id: widgetId(), type: 'control', controlType: 'dateRange', title: 'Khoảng thời gian', dataSourceId: 'leads', field: 'created_date', layout: { ...layout, w: 4, h: 2 }, version: 2 };
+  if (type === 'controlSelect') return { id: widgetId(), type: 'control', controlType: 'select', title: 'Danh mục', dataSourceId: 'leads', field: 'region', layout: { ...layout, w: 4, h: 2 }, version: 2 };
   return { id: widgetId(), type: 'chart', title: 'Biểu đồ mới', dataSourceId: 'leads', dataConfig: { dimension: 'stage', metric: 'id', agg: 'count', filters: [], sort: 'value_desc', limit: 20 }, visualConfig: { chartType: 'bar', showLegend: false, showLabels: false, numberFormat: 'plain' }, layout: { ...layout, h: 5 }, version: 2 };
 };
 
@@ -152,7 +152,8 @@ export const mergeControlFilters = (widget, widgets, controlValues) => {
   const base = (widget.dataConfig && widget.dataConfig.filters) || [];
   const extra = [];
   (widgets || []).forEach((c) => {
-    if (c.type !== 'control' || c.dataSourceId !== widget.dataSourceId) return;
+    if (c.type !== 'control') return;
+    if (c.dataSourceId && c.dataSourceId !== widget.dataSourceId) return;
     const val = controlValues ? controlValues[c.id] : null;
     if (val === null || val === undefined || val === '') return;
     if (c.controlType === 'select') extra.push({ key: c.field, op: '=', value: String(val) });
