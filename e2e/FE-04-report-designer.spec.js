@@ -79,6 +79,41 @@ test.describe('FE-04 report designer (RGL)', () => {
     }
   });
 
+  test('FE: thêm bảng chi tiết, dữ liệu đúng scope + filter, xuất Excel', async ({ page, request }) => {
+    const token = await login(request, 'admin@station.com', '123456');
+    const auth = { Authorization: `Bearer ${token}` };
+    const before = await (await request.get(`${API}/api/admin/reports/config`, { headers: auth })).json();
+    const detail = await (await request.get(`${API}/api/admin/reports/lead-details?limit=10`, { headers: auth })).json();
+    try {
+      await setToken(page, token);
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(String(e)));
+      await page.goto(`${FE}/admin/reports`);
+      await page.getByRole('button', { name: 'Cài đặt' }).click();
+      await page.getByRole('button', { name: 'Thêm bảng chi tiết' }).click();
+      await page.getByRole('button', { name: 'Lưu' }).click();
+      await expect(page.getByText('Đã lưu giao diện báo cáo')).toBeVisible({ timeout: 15000 });
+
+      const table = page.getByTestId('detail-table');
+      await expect(table).toBeVisible({ timeout: 15000 });
+      expect(await table.locator('tbody tr').count(), 'số dòng = page size trùng API').toBe(detail.data.items.length);
+      await expect(page.getByTestId('detail-page')).toContainText(`${detail.data.pagination.total} dòng`);
+
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Xuất Excel' }).first().click(),
+      ]);
+      expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+
+      await page.getByPlaceholder('Tỉnh/Thành').fill('Tỉnh Không Tồn Tại 999');
+      await page.getByRole('button', { name: 'Áp dụng' }).click();
+      await expect(page.getByText('Không có dữ liệu')).toBeVisible({ timeout: 15000 });
+      expect(errors, `pageerror: ${errors.join('; ')}`).toEqual([]);
+    } finally {
+      await request.put(`${API}/api/admin/reports/config`, { headers: auth, data: { widgets: before.data.widgets } });
+    }
+  });
+
   test('FE: MKT xem được, không có nút Cài đặt; mobile không tràn ngang', async ({ page, request }) => {
     const token = await login(request, 'mkt.test@station.com');
     await setToken(page, token);

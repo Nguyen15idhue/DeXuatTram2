@@ -9,6 +9,7 @@ import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ReportWidget from '../../components/admin/ReportWidget';
 import ReportPropertiesPanel from '../../components/admin/ReportPropertiesPanel';
+import ReportDetailTable from '../../components/admin/ReportDetailTable';
 import LeadJourneyPopup from '../../components/admin/LeadJourneyPopup';
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 import 'react-grid-layout/css/styles.css';
@@ -163,6 +164,16 @@ const AdminReportsPage = () => {
     window.dispatchEvent(new Event('resize'));
   };
 
+  const addDetailWidget = () => {
+    setDraft((prev) => {
+      const w = { id: newWidgetId(), kind: 'detail', chart: 'table', size: 'full', title: 'Bảng chi tiết Lead', layout: { x: 0, y: nextLayoutY(prev), w: 12, h: 6 } };
+      const next = [...prev, w];
+      setSelected(next.length - 1);
+      return next;
+    });
+    setPanelOpen(true);
+  };
+
   const updateWidget = (patch) => {
     setDraft((prev) => prev.map((w, i) => (i === selected ? { ...w, ...patch } : w)));
   };
@@ -246,6 +257,7 @@ const AdminReportsPage = () => {
           editMode ? (
             <div className="flex gap-2">
               <button className="btn btn-outline btn-sm gap-1" onClick={addWidget}><Plus size={14} /> Thêm biểu đồ</button>
+              <button className="btn btn-outline btn-sm gap-1" onClick={addDetailWidget}><Plus size={14} /> Thêm bảng chi tiết</button>
               <button className="btn btn-ghost btn-sm gap-1" onClick={() => setConfirmCancel(true)}><XCircle size={14} /> Hủy</button>
               <button className="btn btn-primary btn-sm gap-1" onClick={saveEdit} disabled={saving}><Save size={14} /> {saving ? 'Đang lưu...' : 'Lưu'}</button>
             </div>
@@ -293,7 +305,7 @@ const AdminReportsPage = () => {
                     onClick={(e) => { e.stopPropagation(); selectWidget(i); }}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); selectWidget(i); }}
                   >
-                    <div className="report-widget-badge">{w.chart}{w.dataset ? '' : ' · hệ thống'}</div>
+                    <div className="report-widget-badge">{w.kind === 'detail' ? 'bảng chi tiết' : w.chart}{(w.dataset || w.kind === 'detail') ? '' : ' · hệ thống'}</div>
                     <button
                       type="button"
                       className="report-widget-del"
@@ -302,14 +314,16 @@ const AdminReportsPage = () => {
                     >
                       <Trash2 size={13} />
                     </button>
-                    <div className="card bg-base-100 shadow p-4 h-full overflow-auto">
-                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <div className="card bg-base-100 shadow p-4 h-full min-h-0 flex flex-col">
+                      <h3 className="font-semibold mb-2 flex items-center gap-2 shrink-0">
                         <span className="report-widget-drag" title="Kéo để di chuyển" style={{ cursor: 'move', display: 'inline-flex' }}>
                           <GripVertical size={14} />
                         </span>
-                        {w.title || w.metric || w.dataset}
+                        {w.title || w.metric || w.dataset || 'Bảng chi tiết'}
                       </h3>
-                      {data ? <ReportWidget widget={{ ...w, size: 'full' }} data={data} bare /> : <p className="text-sm opacity-50">Đang tải dữ liệu…</p>}
+                      {w.kind === 'detail'
+                        ? <ReportDetailTable filters={applied} token={token} pageSize={5} />
+                        : (data ? <ReportWidget widget={{ ...w, size: 'full' }} data={data} bare /> : <p className="text-sm opacity-50">Đang tải dữ liệu…</p>)}
                     </div>
                   </div>
                 );
@@ -373,9 +387,11 @@ const AdminReportsPage = () => {
                   const data = widgetData(w);
                   return (
                     <div key={w.id || i}>
-                      <div className="card bg-base-100 shadow p-4 h-full overflow-auto">
-                        <h3 className="font-semibold mb-2">{w.title || w.metric}</h3>
-                        {data ? <ReportWidget widget={{ ...w, size: 'full' }} data={data} bare /> : <p className="text-sm opacity-50">Đang tải dữ liệu…</p>}
+                      <div className="card bg-base-100 shadow p-4 h-full min-h-0 flex flex-col">
+                        <h3 className="font-semibold mb-2 shrink-0">{w.title || w.metric || 'Bảng chi tiết'}</h3>
+                        {w.kind === 'detail'
+                          ? <ReportDetailTable filters={applied} token={token} pageSize={10} showExport />
+                          : (data ? <ReportWidget widget={{ ...w, size: 'full' }} data={data} bare /> : <p className="text-sm opacity-50">Đang tải dữ liệu…</p>)}
                       </div>
                     </div>
                   );

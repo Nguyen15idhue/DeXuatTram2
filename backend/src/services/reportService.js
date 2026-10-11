@@ -850,6 +850,10 @@ function parseWidgets(input) {
     const id = w.id !== undefined && w.id !== null && String(w.id) !== '' ? String(w.id).slice(0, 40) : `w${i + 1}`;
     const layout = parseWidgetLayout(w.layout);
 
+    if (w.kind === 'detail') {
+      return { kind: 'detail', id, title: title || 'Bảng chi tiết Lead', chart, size, order, layout };
+    }
+
     if (w.dataset !== undefined && w.dataset !== null && String(w.dataset) !== '') {
       const filters = Array.isArray(w.filters) ? w.filters.slice(0, 10).map((f) => ({
         key: String((f && f.key) || '').slice(0, 60),

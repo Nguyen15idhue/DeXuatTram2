@@ -59,7 +59,13 @@ const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onCl
 
       <div className="report-panel-body">
         {subTab === 'setup' && (
-          isSysWidget(widget) ? (
+          widget.kind === 'detail' ? (
+            <div className="text-xs space-y-2">
+              <div className="alert alert-info py-2">
+                Bảng chi tiết Lead (từ tạo đến ON trạm) dùng bộ lọc chung ở đầu trang. Sửa tiêu đề ở tab Hiển thị.
+              </div>
+            </div>
+          ) : isSysWidget(widget) ? (
             <div className="text-xs space-y-2">
               <div className="alert alert-info py-2">
                 Biểu đồ hệ thống dùng chỉ số tổng hợp có sẵn, không đổi được nguồn dữ liệu.
@@ -144,12 +150,14 @@ const ReportPropertiesPanel = ({ open, widget, catalog, onChange, onDelete, onCl
               <span className="label-text text-xs">Tiêu đề</span>
               <input className={inputCls} value={widget.title || ''} onChange={(e) => set({ title: e.target.value })} />
             </label>
-            <label className="form-control">
-              <span className="label-text text-xs">Dạng biểu đồ</span>
-              <select className={selectCls} value={widget.chart || 'bar'} onChange={(e) => set({ chart: e.target.value })}>
-                {CHARTS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </label>
+            {widget.kind !== 'detail' && (
+              <label className="form-control">
+                <span className="label-text text-xs">Dạng biểu đồ</span>
+                <select className={selectCls} value={widget.chart || 'bar'} onChange={(e) => set({ chart: e.target.value })}>
+                  {CHARTS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </label>
+            )}
             <label className="form-control">
               <span className="label-text text-xs">Kích thước</span>
               <select className={selectCls} value={widget.size || 'md'} onChange={(e) => set({ size: e.target.value })}>

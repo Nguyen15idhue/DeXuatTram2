@@ -595,6 +595,14 @@ export const reportService = {
   getMetrics(token) {
     return api.getWithAuth('/admin/reports/metrics', token);
   },
+  getLeadDetails(params, token) {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return api.getWithAuth(`/admin/reports/lead-details${qs ? `?${qs}` : ''}`, token);
+  },
+  getStageDurations(params, token) {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return api.getWithAuth(`/admin/reports/stage-durations${qs ? `?${qs}` : ''}`, token);
+  },
 };
 
 export const builderService = {
