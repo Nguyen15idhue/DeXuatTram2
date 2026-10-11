@@ -26,6 +26,24 @@ exports.getMetrics = async (req, res) => {
   res.json({ success: true, data: reportService.METRIC_REGISTRY, message: 'Danh sách metric báo cáo' });
 };
 
+exports.getLeadDetails = async (req, res) => {
+  try {
+    const data = await reportService.getLeadDetails(req.query || {}, req.user);
+    res.json({ success: true, data, message: 'Lấy báo cáo chi tiết Lead thành công' });
+  } catch (error) {
+    sendErr(res, error, 'Report lead-details error:');
+  }
+};
+
+exports.getStageDurations = async (req, res) => {
+  try {
+    const data = await reportService.getStageDurations(req.query || {}, req.user);
+    res.json({ success: true, data, message: 'Lấy thời gian từng chặng thành công' });
+  } catch (error) {
+    sendErr(res, error, 'Report stage-durations error:');
+  }
+};
+
 exports.getLead360 = async (req, res) => {
   try {
     const data = await reportService.getLead360(req.params.id, req.user);

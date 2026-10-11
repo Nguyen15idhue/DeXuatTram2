@@ -409,6 +409,188 @@ exports.getPipeline = async (query, user) => {
   return { ...result, cached: false };
 };
 
+const DETAIL_MAX_LIMIT = 200;
+
+function parsePaging(query) {
+  let page = parseInt(query && query.page, 10);
+  if (!Number.isFinite(page) || page < 1) page = 1;
+  let limit = parseInt(query && query.limit, 10);
+  if (!Number.isFinite(limit)) limit = 20;
+  limit = Math.min(Math.max(limit, 1), DETAIL_MAX_LIMIT);
+  return { page, limit };
+}
+
+const STAGE_DEFS = [
+  { key: 'new_to_assigned', label: 'Tạo → Giao' },
+  { key: 'assigned_to_proposal', label: 'Giao → Đề xuất' },
+  { key: 'proposal_to_contract', label: 'Đề xuất → Ký' },
+  { key: 'contract_to_station', label: 'Ký → Trạm' },
+  { key: 'station_to_on', label: 'Trạm → ON' },
+];
+
+function parseLeadCustomData(v) {
+  if (!v) return {};
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return {}; }
+}
+
+function journeyMilestones(logs, lead) {
+  const first = (pred) => {
+    const l = (logs || []).find(pred);
+    return l ? l.created_at : null;
+  };
+  return {
+    tCreated: first((l) => l.action === 'lead_created') || lead.created_at || null,
+    tAssigned: first((l) => l.action === 'assigned') || lead.assigned_at || null,
+    tProposed: first((l) => l.action === 'proposal_created'),
+    tContract: first((l) => l.action === 'proposal_status_changed' && l.status_after === 'CONTRACT_SIGNED'),
+    tStation: first((l) => l.action === 'station_created'),
+    tOn: first((l) => l.action === 'station_status_changed' && l.status_after === 'ACTIVE'),
+  };
+}
+
+function journeyDurations(m) {
+  return {
+    new_to_assigned_days: dayDiff(m.tCreated, m.tAssigned),
+    assigned_to_proposal_days: dayDiff(m.tAssigned, m.tProposed),
+    proposal_to_contract_days: dayDiff(m.tProposed, m.tContract),
+    contract_to_station_days: dayDiff(m.tContract, m.tStation),
+    station_to_on_days: dayDiff(m.tStation, m.tOn),
+  };
+}
+
+exports.getLeadDetails = async (query, user) => {
+  const { filters } = parseFilters(query || {});
+  const { page, limit } = parsePaging(query || {});
+  const cacheKey = `reports:lead-details:${user.id}:${user.role}:${JSON.stringify(filters)}:${page}:${limit}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached) return { ...cached, cached: true };
+
+  const lw = await leadWhere(user, filters);
+  const whereSql = `WHERE ${lw.where.join(' AND ')}`;
+  const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM leads l ${whereSql}`, lw.params);
+  const [rows] = await pool.query(
+    `SELECT l.*, j.journey_code, j.current_stage AS journey_stage, u.full_name AS assignee_name
+     FROM leads l LEFT JOIN business_journeys j ON j.id = l.journey_id
+     LEFT JOIN users u ON u.id = l.assigned_user_id
+     ${whereSql} ORDER BY l.created_at DESC LIMIT ? OFFSET ?`,
+    [...lw.params, limit, (page - 1) * limit]
+  );
+
+  const journeyIds = [...new Set(rows.map((r) => r.journey_id).filter(Boolean))];
+  const logsByJourney = {};
+  const propsByJourney = {};
+  if (journeyIds.length > 0) {
+    const ph = journeyIds.map(() => '?').join(',');
+    const [logs] = await pool.query(
+      `SELECT journey_id, action, status_after, created_at FROM journey_activity_logs
+       WHERE journey_id IN (${ph}) ORDER BY created_at ASC, id ASC`,
+      journeyIds
+    );
+    logs.forEach((l) => {
+      (logsByJourney[l.journey_id] = logsByJourney[l.journey_id] || []).push(l);
+    });
+    const [props] = await pool.query(
+      `SELECT p.journey_id, p.id, p.ma_de_xuat_gen AS code, p.status, p.station_id, p.created_at,
+              s.name AS station_name, s.status AS station_status
+       FROM station_proposals p LEFT JOIN stations s ON s.id = p.station_id
+       WHERE p.journey_id IN (${ph}) ORDER BY p.created_at ASC`,
+      journeyIds
+    );
+    props.forEach((p) => {
+      (propsByJourney[p.journey_id] = propsByJourney[p.journey_id] || []).push({
+        id: p.id, code: p.code, status: p.status, station_id: p.station_id,
+        station_name: p.station_name, station_status: p.station_status, created_at: p.created_at,
+      });
+    });
+  }
+
+  const items = rows.map((r) => {
+    const m = journeyMilestones(logsByJourney[r.journey_id], r);
+    const durations = journeyDurations(m);
+    const cd = parseLeadCustomData(r.custom_data);
+    const plist = propsByJourney[r.journey_id] || [];
+    const seen = new Set();
+    const stations = [];
+    plist.forEach((p) => {
+      if (p.station_id && !seen.has(p.station_id)) {
+        seen.add(p.station_id);
+        stations.push({ id: p.station_id, name: p.station_name, status: p.station_status });
+      }
+    });
+    return {
+      id: r.id, lead_code: r.lead_code, full_name: r.full_name, phone: r.phone,
+      stage: r.stage, customer_classification: r.customer_classification, source: r.source,
+      province: r.province, region: r.region, created_at: r.created_at,
+      assigned_user_id: r.assigned_user_id, assignee_name: r.assignee_name || null,
+      assigned_department: r.assigned_department, assigned_at: r.assigned_at,
+      cskh_count: Array.isArray(cd.cskh_history) ? cd.cskh_history.length : 0,
+      tvbh_count: Array.isArray(cd.tvbh_history) ? cd.tvbh_history.length : 0,
+      sales_outcome: r.sales_outcome,
+      journey_stage: r.journey_stage, journey_code: r.journey_code,
+      on_at: m.tOn, total_days: dayDiff(m.tCreated, m.tOn),
+      durations, proposals: plist, stations,
+    };
+  });
+
+  const result = {
+    items,
+    pagination: { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) },
+    generated_at: new Date().toISOString(),
+  };
+  ttlCache.set(cacheKey, result, CACHE_TTL_MS);
+  return { ...result, cached: false };
+};
+
+exports.getStageDurations = async (query, user) => {
+  const { filters } = parseFilters(query || {});
+  const cacheKey = `reports:stage-durations:${user.id}:${user.role}:${JSON.stringify(filters)}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached) return { ...cached, cached: true };
+
+  const lw = await leadWhere(user, filters);
+  const whereSql = `WHERE ${lw.where.join(' AND ')}`;
+  const [rows] = await pool.query(
+    `SELECT
+       COUNT(CASE WHEN d.d1 >= 0 THEN 1 END) AS n1, AVG(CASE WHEN d.d1 >= 0 THEN d.d1 END) AS avg1, MIN(CASE WHEN d.d1 >= 0 THEN d.d1 END) AS min1, MAX(CASE WHEN d.d1 >= 0 THEN d.d1 END) AS max1,
+       COUNT(CASE WHEN d.d2 >= 0 THEN 1 END) AS n2, AVG(CASE WHEN d.d2 >= 0 THEN d.d2 END) AS avg2, MIN(CASE WHEN d.d2 >= 0 THEN d.d2 END) AS min2, MAX(CASE WHEN d.d2 >= 0 THEN d.d2 END) AS max2,
+       COUNT(CASE WHEN d.d3 >= 0 THEN 1 END) AS n3, AVG(CASE WHEN d.d3 >= 0 THEN d.d3 END) AS avg3, MIN(CASE WHEN d.d3 >= 0 THEN d.d3 END) AS min3, MAX(CASE WHEN d.d3 >= 0 THEN d.d3 END) AS max3,
+       COUNT(CASE WHEN d.d4 >= 0 THEN 1 END) AS n4, AVG(CASE WHEN d.d4 >= 0 THEN d.d4 END) AS avg4, MIN(CASE WHEN d.d4 >= 0 THEN d.d4 END) AS min4, MAX(CASE WHEN d.d4 >= 0 THEN d.d4 END) AS max4,
+       COUNT(CASE WHEN d.d5 >= 0 THEN 1 END) AS n5, AVG(CASE WHEN d.d5 >= 0 THEN d.d5 END) AS avg5, MIN(CASE WHEN d.d5 >= 0 THEN d.d5 END) AS min5, MAX(CASE WHEN d.d5 >= 0 THEN d.d5 END) AS max5
+     FROM (
+       SELECT l.id,
+         TIMESTAMPDIFF(DAY, l.created_at, COALESCE(la.t, l.assigned_at)) AS d1,
+         TIMESTAMPDIFF(DAY, COALESCE(la.t, l.assigned_at), lp.t) AS d2,
+         TIMESTAMPDIFF(DAY, lp.t, lc.t) AS d3,
+         TIMESTAMPDIFF(DAY, lc.t, ls.t) AS d4,
+         TIMESTAMPDIFF(DAY, ls.t, lo.t) AS d5
+       FROM leads l
+       LEFT JOIN (SELECT journey_id, MIN(created_at) AS t FROM journey_activity_logs WHERE action = 'assigned' GROUP BY journey_id) la ON la.journey_id = l.journey_id
+       LEFT JOIN (SELECT journey_id, MIN(created_at) AS t FROM journey_activity_logs WHERE action = 'proposal_created' GROUP BY journey_id) lp ON lp.journey_id = l.journey_id
+       LEFT JOIN (SELECT journey_id, MIN(created_at) AS t FROM journey_activity_logs WHERE action = 'proposal_status_changed' AND status_after = 'CONTRACT_SIGNED' GROUP BY journey_id) lc ON lc.journey_id = l.journey_id
+       LEFT JOIN (SELECT journey_id, MIN(created_at) AS t FROM journey_activity_logs WHERE action = 'station_created' GROUP BY journey_id) ls ON ls.journey_id = l.journey_id
+       LEFT JOIN (SELECT journey_id, MIN(created_at) AS t FROM journey_activity_logs WHERE action = 'station_status_changed' AND status_after = 'ACTIVE' GROUP BY journey_id) lo ON lo.journey_id = l.journey_id
+       ${whereSql}
+     ) d`,
+    lw.params
+  );
+  const r = rows[0] || {};
+  const round1 = (v) => (v === null || v === undefined ? null : Math.round(Number(v) * 10) / 10);
+  const num = (v) => (v === null || v === undefined ? 0 : Number(v));
+  const stages = STAGE_DEFS.map((s, i) => {
+    const k = i + 1;
+    return {
+      key: s.key, label: s.label,
+      n: num(r[`n${k}`]), avg: round1(r[`avg${k}`]),
+      min: r[`min${k}`] === null || r[`min${k}`] === undefined ? null : Number(r[`min${k}`]),
+      max: r[`max${k}`] === null || r[`max${k}`] === undefined ? null : Number(r[`max${k}`]),
+    };
+  });
+  const result = { stages, generated_at: new Date().toISOString() };
+  ttlCache.set(cacheKey, result, CACHE_TTL_MS);
+  return { ...result, cached: false };
+};
+
 async function inScopeProposalCodes(scope, user, f, limit) {
   if (!scope || (scope.role !== 'SALES' && scope.role !== 'MKT')) return null;
   const pw = proposalWhere(scope, user, f, 'p');

@@ -87,6 +87,60 @@ router.get('/metrics', requireAuth, requireReportViewer, adminReportController.g
 
 /**
  * @swagger
+ * /api/admin/reports/lead-details:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Bảng chi tiết từng Lead từ tạo đến ON (phân trang, scope theo role)
+ *     description: |
+ *       Mỗi dòng: thông tin lead, người/phòng ban được giao, số lần CSKH/TVBH,
+ *       outcome, proposals kèm trạm, on_at, total_days và durations 5 chặng
+ *       (mốc earliest, thiếu log ra null). Durations âm bị loại.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Trang hiện tại (mặc định 1)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Số dòng/trang 1-200 (mặc định 20)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Filter không hợp lệ
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.get('/lead-details', requireAuth, requireReportViewer, adminReportController.getLeadDetails);
+
+/**
+ * @swagger
+ * /api/admin/reports/stage-durations:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Min/avg/max số ngày từng chặng Lead→ON trên toàn scope
+ *     description: |
+ *       5 chặng: Tạo→Giao, Giao→Đề xuất, Đề xuất→Ký, Ký→Trạm, Trạm→ON.
+ *       Mốc earliest như Lead 360, thiếu log ra null, durations âm bị loại.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Filter không hợp lệ
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.get('/stage-durations', requireAuth, requireReportViewer, adminReportController.getStageDurations);
+
+/**
+ * @swagger
  * /api/admin/reports/lead/{id}:
  *   get:
  *     tags: [Reports]

@@ -11,7 +11,7 @@ function badRequest(message) {
 const DATASETS = {
   leads: {
     label: 'Leads',
-    from: 'leads l',
+    from: 'leads l LEFT JOIN (SELECT DISTINCT journey_id FROM station_proposals) hp ON hp.journey_id = l.journey_id LEFT JOIN (SELECT DISTINCT journey_id FROM station_proposals WHERE station_id IS NOT NULL) hs ON hs.journey_id = l.journey_id',
     dimensions: {
       stage: { label: 'Stage', sql: 'l.stage' },
       customer_classification: { label: 'Phân loại KH', sql: 'l.customer_classification' },
@@ -19,6 +19,9 @@ const DATASETS = {
       province: { label: 'Tỉnh/Thành', sql: 'l.province' },
       region: { label: 'Vùng miền', sql: 'l.region' },
       assigned_department: { label: 'Phòng ban', sql: 'l.assigned_department' },
+      sales_outcome: { label: 'Kết quả TVBH', sql: 'l.sales_outcome' },
+      has_proposal: { label: 'Có đề xuất', sql: '(hp.journey_id IS NOT NULL)' },
+      has_station: { label: 'Có trạm', sql: '(hs.journey_id IS NOT NULL)' },
       created_date: { label: 'Ngày tạo', sql: 'DATE(l.created_at)' },
       created_month: { label: 'Tháng tạo', sql: "DATE_FORMAT(l.created_at, '%Y-%m')" },
     },
