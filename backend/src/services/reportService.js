@@ -823,6 +823,19 @@ exports.proposalScopeClause = proposalScopeClause;
 const CHART_WHITELIST = ['kpi', 'bar', 'line', 'pie', 'funnel', 'table', 'echarts_bar', 'dwell'];
 const SIZE_WHITELIST = ['sm', 'md', 'lg', 'full'];
 
+function parseWidgetLayout(value) {
+  if (!value || typeof value !== 'object') return null;
+  const num = (v) => Number(v);
+  const x = num(value.x); const y = num(value.y); const w = num(value.w); const h = num(value.h);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return null;
+  return {
+    x: Math.min(11, Math.max(0, Math.floor(x))),
+    y: Math.min(9999, Math.max(0, Math.floor(y))),
+    w: Math.min(12, Math.max(1, Math.floor(w))),
+    h: Math.min(30, Math.max(1, Math.floor(h))),
+  };
+}
+
 function parseWidgets(input) {
   if (!Array.isArray(input) || input.length === 0) throw badRequest('widgets phải là mảng không rỗng');
   if (input.length > 50) throw badRequest('Tối đa 50 widget');
@@ -834,6 +847,8 @@ function parseWidgets(input) {
     if (!SIZE_WHITELIST.includes(size)) throw badRequest(`Size không hợp lệ: ${size}`);
     const order = Number.isFinite(Number(w.order)) ? Number(w.order) : i + 1;
     const title = w.title !== undefined && w.title !== null && String(w.title) !== '' ? String(w.title).slice(0, 120) : null;
+    const id = w.id !== undefined && w.id !== null && String(w.id) !== '' ? String(w.id).slice(0, 40) : `w${i + 1}`;
+    const layout = parseWidgetLayout(w.layout);
 
     if (w.dataset !== undefined && w.dataset !== null && String(w.dataset) !== '') {
       const filters = Array.isArray(w.filters) ? w.filters.slice(0, 10).map((f) => ({
@@ -842,6 +857,7 @@ function parseWidgets(input) {
         value: f && f.value !== undefined && f.value !== null ? String(f.value).slice(0, 100) : '',
       })) : [];
       return {
+        id,
         dataset: String(w.dataset).slice(0, 40),
         dimension: String(w.dimension || '').slice(0, 60),
         metric: String(w.metric || '').slice(0, 60),
@@ -853,12 +869,13 @@ function parseWidgets(input) {
         size,
         title: title || '',
         order,
+        layout,
       };
     }
 
     const metric = String(w.metric || '').trim();
     if (!METRIC_REGISTRY.includes(metric)) throw badRequest(`Metric không hợp lệ: ${metric || '(trống)'}`);
-    return { metric, title: title || metric, chart, size, order };
+    return { metric, title: title || metric, chart, size, order, id, layout };
   }).sort((a, b) => a.order - b.order);
 }
 

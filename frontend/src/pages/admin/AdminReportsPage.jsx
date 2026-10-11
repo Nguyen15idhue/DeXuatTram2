@@ -10,7 +10,13 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ReportWidget from '../../components/admin/ReportWidget';
 import ReportPropertiesPanel from '../../components/admin/ReportPropertiesPanel';
 import LeadJourneyPopup from '../../components/admin/LeadJourneyPopup';
-import { Settings, Search, Plus, Save, XCircle, PanelRightOpen, Trash2 } from 'lucide-react';
+import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+import { migrateV1toV2, toGridLayout, applyGridLayout, nextLayoutY, newWidgetId, GRID_COLS } from '../../utils/reportLayout';
+import { Settings, Search, Plus, Save, XCircle, PanelRightOpen, Trash2, GripVertical } from 'lucide-react';
+
+const ResponsiveGrid = WidthProvider(Responsive);
 
 const EMPTY_FILTERS = {
   date_from: '', date_to: '', region: '', department: '',
@@ -52,7 +58,7 @@ const AdminReportsPage = () => {
   const loadConfig = useCallback(async () => {
     try {
       const res = await reportService.getConfig(token);
-      if (res.success) setConfig(res.data.widgets || []);
+      if (res.success) setConfig(migrateV1toV2(res.data.widgets || []));
     } catch {
       setToast({ message: 'Không tải được cấu hình dashboard', type: 'error' });
     }
@@ -108,7 +114,7 @@ const AdminReportsPage = () => {
       setToast({ message: 'Chỉ SUPER_ADMIN được chỉnh sửa báo cáo', type: 'error' });
       return;
     }
-    setDraft(config.map((w, i) => ({ ...w, order: i + 1, filters: w.filters ? [...w.filters] : undefined })));
+    setDraft(migrateV1toV2(config).map((w, i) => ({ ...w, order: i + 1, filters: w.filters ? [...w.filters] : undefined })));
     setSelected(-1);
     setPanelOpen(false);
     setTab('charts');
@@ -126,7 +132,7 @@ const AdminReportsPage = () => {
       setSaving(true);
       const res = await reportService.updateConfig(draft.map((w, i) => ({ ...w, order: i + 1 })), token);
       if (res.success) {
-        setConfig(draft.map((w, i) => ({ ...w, order: i + 1 })));
+        setConfig(migrateV1toV2((res.data && res.data.widgets) || draft.map((w, i) => ({ ...w, order: i + 1 }))));
         setToast({ message: 'Đã lưu giao diện báo cáo', type: 'success' });
         exitEdit();
       } else {
@@ -140,13 +146,21 @@ const AdminReportsPage = () => {
   };
 
   const addWidget = () => {
-    const w = { dataset: 'leads', dimension: 'stage', metric: 'id', agg: 'count', chart: 'bar', size: 'md', title: '', filters: [], sort: 'value_desc', limit: 20 };
     setDraft((prev) => {
+      const w = { id: newWidgetId(), dataset: 'leads', dimension: 'stage', metric: 'id', agg: 'count', chart: 'bar', size: 'md', title: '', filters: [], sort: 'value_desc', limit: 20, layout: { x: 0, y: nextLayoutY(prev), w: 6, h: 4 } };
       const next = [...prev, w];
       setSelected(next.length - 1);
       return next;
     });
     setPanelOpen(true);
+  };
+
+  const onGridLayoutChange = (grid) => {
+    setDraft((prev) => applyGridLayout(prev, grid));
+  };
+
+  const onGridResizeStop = () => {
+    window.dispatchEvent(new Event('resize'));
   };
 
   const updateWidget = (patch) => {
@@ -236,7 +250,9 @@ const AdminReportsPage = () => {
               <button className="btn btn-primary btn-sm gap-1" onClick={saveEdit} disabled={saving}><Save size={14} /> {saving ? 'Đang lưu...' : 'Lưu'}</button>
             </div>
           ) : (
-            <button className="btn btn-outline btn-sm gap-1" onClick={enterEdit}><Settings size={14} /> Cài đặt</button>
+            isSuperAdmin ? (
+              <button className="btn btn-outline btn-sm gap-1" onClick={enterEdit}><Settings size={14} /> Cài đặt</button>
+            ) : null
           )
         )}
       />
@@ -256,15 +272,24 @@ const AdminReportsPage = () => {
                 Khung vẽ trống. Bấm <b>Thêm biểu đồ</b> để thêm phần tử.
               </div>
             )}
-            <div className="grid grid-cols-12 gap-4">
+            <ResponsiveGrid
+              className="layout"
+              layouts={{ lg: toGridLayout(activeWidgets) }}
+              breakpoints={{ lg: 996, xs: 0 }}
+              cols={{ lg: GRID_COLS, xs: 4 }}
+              rowHeight={90}
+              margin={[12, 12]}
+              draggableHandle=".report-widget-drag"
+              onLayoutChange={onGridLayoutChange}
+              onResizeStop={onGridResizeStop}
+            >
               {activeWidgets.map((w, i) => {
                 const data = widgetData(w);
                 const isSelected = i === selected;
-                const colClass = w.size === 'full' ? 'col-span-12' : w.size === 'lg' ? 'col-span-12 md:col-span-8' : w.size === 'sm' ? 'col-span-12 md:col-span-4' : 'col-span-12 md:col-span-6';
                 return (
                   <div
-                    key={i}
-                    className={`report-widget-wrap ${colClass} ${isSelected ? 'selected' : ''}`}
+                    key={w.id || i}
+                    className={`report-widget-wrap ${isSelected ? 'selected' : ''}`}
                     onClick={(e) => { e.stopPropagation(); selectWidget(i); }}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); selectWidget(i); }}
                   >
@@ -277,14 +302,19 @@ const AdminReportsPage = () => {
                     >
                       <Trash2 size={13} />
                     </button>
-                    <div className="card bg-base-100 shadow p-4 h-full">
-                      <h3 className="font-semibold mb-2">{w.title || w.metric || w.dataset}</h3>
+                    <div className="card bg-base-100 shadow p-4 h-full overflow-auto">
+                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                        <span className="report-widget-drag" title="Kéo để di chuyển" style={{ cursor: 'move', display: 'inline-flex' }}>
+                          <GripVertical size={14} />
+                        </span>
+                        {w.title || w.metric || w.dataset}
+                      </h3>
                       {data ? <ReportWidget widget={{ ...w, size: 'full' }} data={data} bare /> : <p className="text-sm opacity-50">Đang tải dữ liệu…</p>}
                     </div>
                   </div>
                 );
               })}
-            </div>
+            </ResponsiveGrid>
           </div>
 
           {!panelOpen && (
@@ -329,19 +359,28 @@ const AdminReportsPage = () => {
             config.length === 0 ? (
               <EmptyState title="Chưa có widget" description="Bấm Cài đặt để thêm biểu đồ." />
             ) : (
-              <div className="grid grid-cols-12 gap-4">
+              <ResponsiveGrid
+                className="layout"
+                layouts={{ lg: toGridLayout(config) }}
+                breakpoints={{ lg: 996, xs: 0 }}
+                cols={{ lg: GRID_COLS, xs: 4 }}
+                rowHeight={90}
+                margin={[12, 12]}
+                isDraggable={false}
+                isResizable={false}
+              >
                 {config.map((w, i) => {
                   const data = widgetData(w);
                   return (
-                    <div key={i} className={w.size === 'full' ? 'col-span-12' : w.size === 'lg' ? 'col-span-12 md:col-span-8' : w.size === 'sm' ? 'col-span-12 md:col-span-4' : 'col-span-12 md:col-span-6'}>
-                      <div className="card bg-base-100 shadow p-4 h-full">
+                    <div key={w.id || i}>
+                      <div className="card bg-base-100 shadow p-4 h-full overflow-auto">
                         <h3 className="font-semibold mb-2">{w.title || w.metric}</h3>
                         {data ? <ReportWidget widget={{ ...w, size: 'full' }} data={data} bare /> : <p className="text-sm opacity-50">Đang tải dữ liệu…</p>}
                       </div>
                     </div>
                   );
                 })}
-              </div>
+              </ResponsiveGrid>
             )
           )}
         </div>
