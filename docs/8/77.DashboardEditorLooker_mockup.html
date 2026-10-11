@@ -67,10 +67,12 @@
 
   /* ===== Body ===== */
   .body{flex:1;display:flex;min-height:0;overflow:hidden}
-  .canvas-wrap{flex:1;min-width:0;overflow:auto;padding:16px}
+  .canvas-wrap{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;padding:16px}
+  .canvas-inner{position:relative}
   .canvas-empty{border:1px dashed var(--border-2);border-radius:12px;padding:48px;text-align:center;color:var(--muted);background:#fff}
-  .grid{position:relative;background:#fff;border:1px solid var(--border);border-radius:12px;min-height:100%}
+  .grid{position:absolute;top:0;left:0;background:#fff;border:1px solid var(--border);border-radius:12px;transform-origin:top left}
   .grid.showlines{background-image:linear-gradient(to right,rgba(79,70,229,.06) 1px,transparent 1px);background-size:calc(100%/12) 100%}
+  .zoomtag{position:sticky;top:0;float:right;z-index:20;font-size:10.5px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:999px;padding:2px 8px;margin-bottom:-22px}
 
   /* ===== Widget ===== */
   .w{position:absolute;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
@@ -137,6 +139,15 @@
   .btn:hover{background:#f3f4f6}
   .btn.danger{border-color:#fecaca;color:var(--red)}
   .btn.danger:hover{background:#fef2f2}
+
+  /* config mini tabs */
+  .minitabs{display:flex;gap:2px;border-bottom:1px solid var(--border);padding:0 8px;flex:0 0 auto}
+  .minitab{border:none;background:transparent;padding:9px 10px;font-size:12.5px;color:var(--muted);border-bottom:2px solid transparent}
+  .minitab.active{color:var(--accent-2);border-bottom-color:var(--accent);font-weight:600}
+  .typegrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .typegrid button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:8px 4px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:#374151}
+  .typegrid button.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-2)}
+  .typegrid svg{width:26px;height:20px}
 
   /* data source tab */
   .search{display:flex;align-items:center;gap:6px;border:1px solid var(--border-2);border-radius:8px;padding:6px 9px;background:#fff}
@@ -217,7 +228,10 @@
     <div class="body">
       <!-- Canvas -->
       <div class="canvas-wrap" id="canvasWrap">
-        <div class="grid" id="grid"></div>
+        <div class="zoomtag" id="zoomTag">100%</div>
+        <div class="canvas-inner" id="canvasInner">
+          <div class="grid" id="grid"></div>
+        </div>
       </div>
 
       <!-- Right panel -->
@@ -325,6 +339,7 @@ let activeReportId = 'r1';
 let selectedId = null;
 let mode = 'edit';           // edit | view
 let panelTab = 'config';
+let configSub = 'setup';     // setup | style | type
 let dirty = false;
 let history = [], hIndex = -1;
 
@@ -369,7 +384,7 @@ function restore(){
 /* ============================================================
    RENDER
 ============================================================ */
-function renderAll(){ renderTabs(); renderToolbar(); renderCanvas(); renderPanel(); }
+function renderAll(){ renderTabs(); renderToolbar(); renderPanel(); renderCanvas(); }
 
 function renderToolbar(){
   const edit = mode==='edit';
@@ -416,19 +431,29 @@ function removeReport(e,id){
   selectedId=null; markDirty(); snapshot(); renderAll();
 }
 
+const DESIGN_W = 1180;
+let SCALE = 1;
 function renderCanvas(){
-  const grid=$('#grid');
+  const grid=$('#grid'), inner=$('#canvasInner'), wrap=$('#canvasWrap');
   grid.className='grid'+(mode==='edit'?' showlines':'');
   const ws=widgets();
   if(ws.length===0){
+    grid.style.width='auto'; grid.style.height='auto'; grid.style.transform='none';
+    inner.style.height='auto';
     grid.innerHTML=`<div class="canvas-empty">Khung vẽ trống.<br>Bấm <b>Thêm</b> để thêm biểu đồ, KPI, bảng, bộ lọc…</div>`;
-    grid.style.height='100%';
+    $('#zoomTag').textContent='100%';
     return;
   }
   const maxY = Math.max(...ws.map(w=>w.layout.y+w.layout.h));
-  const cw = grid.clientWidth || $('#canvasWrap').clientWidth-32;
-  const colW = (cw - GAP*(COLS-1))/COLS;
-  grid.style.height = (maxY*ROW + (maxY-1)*GAP + GAP) + 'px';
+  const colW = (DESIGN_W - GAP*(COLS-1))/COLS;
+  const gridH = maxY*ROW + (maxY-1)*GAP;
+  const avail = wrap.clientWidth - 32;
+  SCALE = Math.max(0.3, avail / DESIGN_W);
+  grid.style.width=DESIGN_W+'px';
+  grid.style.height=(gridH+GAP)+'px';
+  grid.style.transform=`scale(${SCALE})`;
+  inner.style.height=((gridH+GAP)*SCALE)+'px';
+  $('#zoomTag').textContent=Math.round(SCALE*100)+'%';
   grid.innerHTML = ws.map(w=>{
     const l=w.layout;
     const left=l.x*(colW+GAP), top=l.y*(ROW+GAP);
@@ -453,7 +478,8 @@ function renderCanvas(){
 function onWidgetPointer(e,id){
   if(mode!=='edit') return;
   if(e.target.closest('.wdel')||e.target.closest('.rz')) return;
-  selectedId=id; renderPanel(); renderCanvas();
+  if(selectedId!==id){ selectedId=id; configSub='setup'; panelTab='config'; }
+  renderPanel(); renderCanvas();
   // chỉ kéo khi bấm vào header (hoặc vùng không phải body tương tác)
   if(!e.target.closest('.whead')) return;
   startDrag(e,id);
@@ -660,24 +686,27 @@ function renderConfigPanel(){
     return;
   }
   const w=byId(selectedId);
-  body.innerHTML=`
-    <details class="section" open><summary>Cấu hình dữ liệu</summary>
-      <div class="sinner">
-        ${w.type==='control'?controlConfig(w):w.type==='text'?`<div class="hint">Thành phần văn bản không cần cấu hình dữ liệu.</div>`:w.type==='detail'?`<div class="hint">Bảng chi tiết Lead→ON dùng endpoint <code>/lead-details</code> + bộ lọc chung.</div>`:dataConfig(w)}
-      </div>
-    </details>
-    ${['control','text','detail'].includes(w.type)?'':`
-    <details class="section" open><summary>Cấu hình giao diện</summary>
-      <div class="sinner">${visualConfig(w)}</div>
-    </details>`}
-    <details class="section"><summary>Bộ lọc (widget)</summary>
-      <div class="sinner">
-        <div class="hint">Thêm điều kiện riêng cho widget này (nếu cần).</div>
-        <button class="btn" onclick="toast('(mock) Thêm bộ lọc widget')">+ Thêm điều kiện</button>
-      </div>
-    </details>`;
+  const isChart = !['control','text','detail'].includes(w.type);
+  const tabs = `<div class="minitabs">
+      <button class="minitab ${configSub==='setup'?'active':''}" onclick="setConfigSub('setup')">Thiết lập</button>
+      ${isChart?`<button class="minitab ${configSub==='style'?'active':''}" onclick="setConfigSub('style')">Kiểu</button>
+      <button class="minitab ${configSub==='type'?'active':''}" onclick="setConfigSub('type')">Loại biểu đồ</button>`:''}
+    </div>`;
+  let content='';
+  if(configSub==='setup'){
+    content = w.type==='control'?controlConfig(w)
+      : w.type==='text'?`<div class="hint">Thành phần văn bản không cần cấu hình dữ liệu.</div>`
+      : w.type==='detail'?`<div class="hint">Bảng chi tiết Lead→ON dùng endpoint <code>/lead-details</code> + bộ lọc chung.</div>`
+      : dataConfig(w);
+  } else if(configSub==='style'){
+    content = visualConfig(w);
+  } else {
+    content = chartTypeGallery(w);
+  }
+  body.innerHTML = tabs + `<div style="padding:12px 14px">${content}</div>`;
   foot.innerHTML=`<button class="btn danger" onclick="delWidget('${w.id}')">Xóa phần tử</button>`;
 }
+function setConfigSub(t){ configSub=t; renderConfigPanel(); }
 function dataConfig(w){
   const ds=DATASETS[w.dataSourceId]||DATASETS.leads;
   const dims=ds.fields.filter(f=>f.t==='dim'), mets=ds.fields.filter(f=>f.t==='metric');
@@ -718,17 +747,41 @@ function controlConfig(w){
 }
 function visualConfig(w){
   const vc=w.visualConfig||(w.visualConfig={chartType:'bar',showLegend:false,showLabels:false});
+  const ct=vc.chartType||'bar';
+  const pieLike = ct==='pie'||ct==='donut';
   return `
-    <div class="fld"><label>Tiêu đề</label><input value="${w.title||''}" oninput="upd('title',this.value)"></div>
-    <div class="fld"><label>Loại biểu đồ</label>
-      <select onchange="updVC('chartType',this.value)">${CHARTS.map(c=>`<option value="${c[0]}" ${c[0]===vc.chartType?'selected':''}>${c[1]}</option>`).join('')}</select></div>
+    <div class="fld"><label>Tiêu đề biểu đồ</label><input value="${w.title||''}" oninput="upd('title',this.value)"></div>
+    <label class="check"><input type="checkbox" checked onchange="toast('(mock) Hiện tiêu đề')"> Hiện tiêu đề</label>
     <div class="fld"><label>Bảng màu</label>
       <select onchange="toast('(mock) Đổi bảng màu')"><option>Mặc định</option><option>Doanh nghiệp</option><option>Biển</option></select></div>
-    <label class="check"><input type="checkbox" ${vc.showLegend?'checked':''} onchange="updVC('showLegend',this.checked)"> Hiện chú giải</label>
-    <label class="check"><input type="checkbox" ${vc.showLabels?'checked':''} onchange="updVC('showLabels',this.checked)"> Hiện nhãn dữ liệu</label>
+    ${pieLike?`
+    <div class="fld"><label>Bán kính trong</label><input type="range" min="0" max="80" value="${ct==='donut'?40:0}" oninput="updVC('innerRadius',+this.value)"></div>
+    <label class="check"><input type="checkbox" onchange="toast('(mock) Nhóm phần còn lại thành Khác')"> Nhóm phần còn lại thành "Khác"</label>`:''}
+    <label class="check"><input type="checkbox" ${vc.showLegend?'checked':''} onchange="updVC('showLegend',this.checked)"> Hiển thị chú giải</label>
+    <div class="two">
+      <div class="fld"><label>Vị trí chú giải</label><select onchange="toast('(mock)')"><option>Bên phải</option><option>Bên dưới</option><option>Trên</option></select></div>
+      <div class="fld"><label>Căn chỉnh</label><select onchange="toast('(mock)')"><option>Chính giữa</option><option>Trái</option></select></div>
+    </div>
+    ${ct!=='pie'&&ct!=='donut'&&ct!=='kpi'?`<label class="check"><input type="checkbox" ${vc.showLabels?'checked':''} onchange="updVC('showLabels',this.checked)"> Hiện nhãn dữ liệu</label>`:''}
     <div class="fld"><label>Định dạng số</label>
       <select onchange="toast('(mock) Đổi định dạng số')"><option>1.000</option><option>1,000</option><option>1 000</option></select></div>`;
 }
+function chartTypeGallery(w){
+  const cur=w.visualConfig?.chartType||'bar';
+  const ico={
+    bar:'<svg viewBox="0 0 24 20"><rect x="3" y="8" width="4" height="9" fill="#94a3b8"/><rect x="10" y="4" width="4" height="13" fill="#94a3b8"/><rect x="17" y="11" width="4" height="6" fill="#94a3b8"/></svg>',
+    barH:'<svg viewBox="0 0 24 20"><rect x="3" y="4" width="12" height="3" fill="#94a3b8"/><rect x="3" y="9" width="18" height="3" fill="#94a3b8"/><rect x="3" y="14" width="8" height="3" fill="#94a3b8"/></svg>',
+    line:'<svg viewBox="0 0 24 20"><polyline points="3,15 9,7 15,12 21,4" fill="none" stroke="#94a3b8" stroke-width="2"/></svg>',
+    pie:'<svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="7" fill="#94a3b8"/></svg>',
+    donut:'<svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="7" fill="none" stroke="#94a3b8" stroke-width="3"/></svg>',
+    table:'<svg viewBox="0 0 24 20"><rect x="3" y="4" width="18" height="13" fill="none" stroke="#94a3b8"/><line x1="3" y1="9" x2="21" y2="9" stroke="#94a3b8"/><line x1="10" y1="4" x2="10" y2="17" stroke="#94a3b8"/></svg>',
+    kpi:'<svg viewBox="0 0 24 20"><text x="12" y="14" font-size="10" text-anchor="middle" fill="#94a3b8">123</text></svg>',
+  };
+  return `<div class="typegrid">${CHARTS.map(c=>`<button class="${c[0]===cur?'active':''}" onclick="setChartType('${c[0]}')">${ico[c[0]]||''}${c[1]}</button>`).join('')}</div>
+    <div class="hint" style="margin-top:10px">Chọn loại biểu đồ; cấu hình hiển thị ở tab <b>Kiểu</b> tự thích ứng theo loại.</div>`;
+}
+function setChartType(t){ const w=byId(selectedId); w.visualConfig=w.visualConfig||{}; w.visualConfig.chartType=t; markDirty(); snapshot(); renderCanvas(); renderConfigPanel(); }
+
 function upd(k,v){ byId(selectedId)[k]=v; markDirty(); snapshot(); renderCanvas(); }
 function updData(k,v){ byId(selectedId).dataConfig[k]=v; markDirty(); snapshot(); renderCanvas(); }
 function updVC(k,v){ const w=byId(selectedId); w.visualConfig=w.visualConfig||{}; w.visualConfig[k]=v; markDirty(); snapshot(); renderCanvas(); renderPanel(); }
@@ -738,9 +791,8 @@ function renameReport(v){ rpt().name=v; $('#reportName').value=v; markDirty(); r
    DRAG & RESIZE (grid snap)
 ============================================================ */
 function gridMetrics(){
-  const grid=$('#grid'); const cw=grid.clientWidth||600;
-  const colW=(cw-GAP*(COLS-1))/COLS;
-  return { colW, gridRect:grid.getBoundingClientRect() };
+  const colW=(DESIGN_W-GAP*(COLS-1))/COLS;
+  return { colW };
 }
 function startDrag(e,id){
   e.preventDefault();
@@ -749,7 +801,7 @@ function startDrag(e,id){
   const {colW}=gridMetrics();
   let moved=false;
   const move=ev=>{
-    const dx=ev.clientX-startX, dy=ev.clientY-startY;
+    const dx=(ev.clientX-startX)/SCALE, dy=(ev.clientY-startY)/SCALE;
     if(Math.abs(dx)<4&&Math.abs(dy)<4) return;
     moved=true;
     const nx=Math.round(l.x+dx/(colW+GAP)), ny=Math.round(l.y+dy/(ROW+GAP));
@@ -766,7 +818,7 @@ function startResize(e,id){
   const {colW}=gridMetrics();
   let moved=false;
   const move=ev=>{
-    const dx=ev.clientX-startX, dy=ev.clientY-startY;
+    const dx=(ev.clientX-startX)/SCALE, dy=(ev.clientY-startY)/SCALE;
     if(Math.abs(dx)<4&&Math.abs(dy)<4) return;
     moved=true;
     const nw=Math.round(l.w+dx/(colW+GAP)), nh=Math.round(l.h+dy/(ROW+GAP));
