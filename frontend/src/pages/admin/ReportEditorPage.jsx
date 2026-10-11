@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, Settings } from 'lucide-react';
+import { Database, Settings, PanelRightOpen } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { builderService } from '../../services/api';
 import useReportEditor from '../../hooks/useReportEditor';
@@ -22,6 +22,15 @@ export default function ReportEditorPage() {
   const previews = useReportPreviews(ed.widgets, ed.controlValues, token);
   const [panelTab, setPanelTab] = useState('config');
   const [showGrid, setShowGrid] = useState(true);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const on = () => setPanelCollapsed(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   useEffect(() => {
@@ -97,6 +106,7 @@ export default function ReportEditorPage() {
         canEdit={isSuperAdmin}
         showGrid={showGrid}
         onToggleGrid={() => setShowGrid((v) => !v)}
+        onTogglePanel={() => setPanelCollapsed((v) => !v)}
         onToggleView={() => ed.setViewMode(ed.viewMode === 'edit' ? 'view' : 'edit')}
         onUndo={ed.undo}
         onRedo={ed.redo}
@@ -132,7 +142,13 @@ export default function ReportEditorPage() {
           token={token}
         />
 
-        {edit && (
+        {edit && panelCollapsed && (
+          <button type="button" className="re-panel-open" title="Mở bảng cấu hình" onClick={() => setPanelCollapsed(false)}>
+            <PanelRightOpen size={16} />
+          </button>
+        )}
+
+        {edit && !panelCollapsed && (
           <div className="re-panel">
             <div className="re-ptabs">
               <button type="button" className={`re-ptab ${panelTab === 'data' ? 'active' : ''}`} onClick={() => setPanelTab('data')}>
