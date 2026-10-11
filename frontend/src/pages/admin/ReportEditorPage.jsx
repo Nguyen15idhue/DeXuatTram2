@@ -19,6 +19,7 @@ export default function ReportEditorPage() {
   const isSuperAdmin = (user && user.role) === 'SUPER_ADMIN';
   const ed = useReportEditor(token);
   const [panelTab, setPanelTab] = useState('config');
+  const [showGrid, setShowGrid] = useState(true);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   useEffect(() => {
@@ -71,6 +72,8 @@ export default function ReportEditorPage() {
         canUndo={ed.canUndo}
         canRedo={ed.canRedo}
         canEdit={isSuperAdmin}
+        showGrid={showGrid}
+        onToggleGrid={() => setShowGrid((v) => !v)}
         onToggleView={() => ed.setViewMode(ed.viewMode === 'edit' ? 'view' : 'edit')}
         onUndo={ed.undo}
         onRedo={ed.redo}
@@ -95,6 +98,7 @@ export default function ReportEditorPage() {
           widgets={ed.widgets}
           selectedId={ed.selectedId}
           viewMode={ed.viewMode}
+          showGrid={showGrid}
           onSelect={ed.setSelectedId}
           onLayoutChange={ed.setLayout}
           onLayoutCommit={ed.commitLayout}
@@ -129,6 +133,7 @@ export default function ReportEditorPage() {
                       onUpdateVisual={(patch) => selected && ed.updateVisual(selected.id, patch)}
                       onUpdateWidget={(patch) => selected && patch && ed.updateWidget(selected.id, patch)}
                       onDelete={() => selected && ed.deleteWidget(selected.id)}
+                      onDuplicate={() => selected && ed.duplicateWidget(selected.id)}
                       onRestoreLayout={ed.restoreLayout}
                     />
                   )}

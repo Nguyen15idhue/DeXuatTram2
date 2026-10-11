@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Undo2, Redo2, Plus, ChevronDown, Save, Eye, Pencil } from 'lucide-react';
+import { ArrowLeft, Undo2, Redo2, Plus, ChevronDown, Save, Eye, Pencil, Grid3x3 } from 'lucide-react';
 
 const STATUS = {
   saved: { cls: 'saved', label: 'Đã lưu' },
@@ -20,8 +20,8 @@ const ADD_ITEMS = [
 ];
 
 export default function ReportToolbar({
-  name, viewMode, saveState, canUndo, canRedo, canEdit = true,
-  onToggleView, onUndo, onRedo, onAdd, onSave, onRename, onBack,
+  name, viewMode, saveState, canUndo, canRedo, canEdit = true, showGrid,
+  onToggleView, onUndo, onRedo, onAdd, onSave, onRename, onBack, onToggleGrid,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -58,6 +58,7 @@ export default function ReportToolbar({
             <button type="button" className="re-tbtn" title="Hoàn tác (Ctrl+Z)" disabled={!canUndo} onClick={onUndo}><Undo2 size={16} /></button>
             <button type="button" className="re-tbtn" title="Làm lại (Ctrl+Y)" disabled={!canRedo} onClick={onRedo}><Redo2 size={16} /></button>
           </div>
+          <button type="button" className={`re-tbtn ${showGrid ? 're-active' : ''}`} title="Bật/tắt đường lưới" onClick={onToggleGrid}><Grid3x3 size={16} /></button>
           <div className="re-menu-wrap" ref={menuRef}>
             <button type="button" className="re-tbtn" onClick={() => setMenuOpen((v) => !v)}>
               <Plus size={15} /> Thêm <ChevronDown size={14} />

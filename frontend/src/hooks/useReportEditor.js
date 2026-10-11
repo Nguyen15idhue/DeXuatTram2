@@ -169,7 +169,7 @@ export default function useReportEditor(token) {
 
   const renameActive = useCallback((v) => { setName(v); markDirty(); }, [markDirty]);
 
-  const commitLayout = useCallback(() => { pushHistory(snapshot()); }, [pushHistory, snapshot]);
+  const commitLayout = useCallback(() => { pushHistory(snapshot()); markDirty(); }, [pushHistory, snapshot, markDirty]);
 
   const restoreLayout = useCallback(() => {
     setWidgets((prev) => {

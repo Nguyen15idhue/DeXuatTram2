@@ -9,7 +9,7 @@ import WidgetRenderer from './widgets/WidgetRenderer';
 const ResponsiveGrid = WidthProvider(Responsive);
 
 export default function ReportCanvas({
-  widgets, selectedId, viewMode, onSelect, onLayoutChange, onLayoutCommit, onDelete, controls, onControlChange,
+  widgets, selectedId, viewMode, showGrid = true, onSelect, onLayoutChange, onLayoutCommit, onDelete, controls, onControlChange,
 }) {
   const wrapRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -52,7 +52,7 @@ export default function ReportCanvas({
       <div className="re-canvas-inner" style={{ height: Math.round(gridH * scale) }}>
         <div className="re-canvas-scaler" style={{ width: DESIGN_W, transform: `scale(${scale})` }}>
           <ResponsiveGrid
-            className={`re-grid${editable ? ' showlines' : ''}`}
+            className={`re-grid${editable && showGrid ? ' showlines' : ''}`}
             width={DESIGN_W}
             layouts={{ lg: toGridLayout(widgets) }}
             breakpoints={{ lg: 0 }}

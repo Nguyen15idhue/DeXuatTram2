@@ -7,7 +7,7 @@ const SORTS = [['value_desc', 'Giá trị giảm'], ['value_asc', 'Giá trị t�
 
 const dsVisible = (catalog) => Object.entries(catalog || {}).filter(([k]) => !HIDDEN.has(k));
 
-export default function ReportConfigPanel({ widget, name, page, catalog, onRename, onUpdateData, onUpdateVisual, onUpdateWidget, onRestoreLayout, onDelete }) {
+export default function ReportConfigPanel({ widget, name, page, catalog, onRename, onUpdateData, onUpdateVisual, onUpdateWidget, onRestoreLayout, onDelete, onDuplicate }) {
   const [sub, setSub] = useState('setup');
 
   useEffect(() => { setSub('setup'); }, [widget && widget.id]);
@@ -194,6 +194,7 @@ export default function ReportConfigPanel({ widget, name, page, catalog, onRenam
       {tabs}
       <div className="re-config-body">{body}</div>
       <div className="re-config-foot">
+        <button type="button" className="re-btn" onClick={onDuplicate}>Nhân bản</button>
         <button type="button" className="re-btn danger" onClick={onDelete}>Xóa phần tử</button>
       </div>
     </div>
