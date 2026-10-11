@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Undo2, Redo2, Plus, ChevronDown, Save, Eye, Pencil, Grid3x3, PanelRightOpen } from 'lucide-react';
+import { Undo2, Redo2, Plus, ChevronDown, Save, Eye, Grid3x3, PanelRightOpen } from 'lucide-react';
 
 const STATUS = {
-  saved: { cls: 'saved', label: 'Đã lưu' },
-  dirty: { cls: 'dirty', label: 'Chưa lưu' },
-  saving: { cls: 'saving', label: 'Đang lưu…' },
-  error: { cls: 'error', label: 'Lỗi lưu' },
+  saved: { cls: 'badge-success', label: 'Đã lưu' },
+  dirty: { cls: 'badge-warning', label: 'Chưa lưu' },
+  saving: { cls: 'badge-info', label: 'Đang lưu…' },
+  error: { cls: 'badge-error', label: 'Lỗi lưu' },
 };
 
 const ADD_ITEMS = [
@@ -20,12 +20,11 @@ const ADD_ITEMS = [
 ];
 
 export default function ReportToolbar({
-  name, viewMode, saveState, canUndo, canRedo, canEdit = true, showGrid,
-  onToggleView, onUndo, onRedo, onAdd, onSave, onRename, onBack, onToggleGrid, onTogglePanel,
+  saveState, canUndo, canRedo, showGrid,
+  onUndo, onRedo, onAdd, onSave, onToggleGrid, onTogglePanel, onToggleView,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
-  const edit = viewMode === 'edit' && canEdit;
   const st = STATUS[saveState] || STATUS.saved;
 
   useEffect(() => {
@@ -35,56 +34,28 @@ export default function ReportToolbar({
   }, []);
 
   return (
-    <div className="re-toolbar">
-      <div className="re-tb-name">
-        <button type="button" className="re-tbtn" title="Quay lại danh sách báo cáo" onClick={onBack}>
-          <ArrowLeft size={16} />
+    <>
+      <span className={`badge badge-sm ${st.cls}`}>{st.label}</span>
+      <button type="button" className="btn btn-sm btn-ghost btn-circle" title="Hoàn tác (Ctrl+Z)" disabled={!canUndo} onClick={onUndo}><Undo2 size={16} /></button>
+      <button type="button" className="btn btn-sm btn-ghost btn-circle" title="Làm lại (Ctrl+Y)" disabled={!canRedo} onClick={onRedo}><Redo2 size={16} /></button>
+      <button type="button" className={`btn btn-sm btn-ghost btn-circle ${showGrid ? 'btn-active' : ''}`} title="Bật/tắt đường lưới" onClick={onToggleGrid}><Grid3x3 size={16} /></button>
+      <button type="button" className="btn btn-sm btn-ghost btn-circle" title="Ẩn/hiện bảng cấu hình" onClick={onTogglePanel}><PanelRightOpen size={16} /></button>
+      <div className="dropdown dropdown-end" ref={menuRef}>
+        <button type="button" className="btn btn-sm btn-outline gap-1" onClick={() => setMenuOpen((v) => !v)}>
+          <Plus size={15} /> Thêm <ChevronDown size={14} />
         </button>
-        <input
-          className="re-name-input"
-          value={name}
-          readOnly={!edit}
-          onChange={(e) => onRename(e.target.value)}
-          aria-label="Tên báo cáo"
-        />
-        <span className={`re-status ${st.cls}`}><span className="dot" />{st.label}</span>
+        {menuOpen && (
+          <ul className="dropdown-content menu bg-base-100 rounded-box z-[60] w-56 p-2 shadow">
+            {ADD_ITEMS.map((it, i) => (
+              it.key === 'sep'
+                ? <li key={`sep${i}`} className="menu-title opacity-0 py-0"><span className="h-0" /></li>
+                : <li key={it.key}><button type="button" onClick={() => { onAdd(it.key); setMenuOpen(false); }}>{it.label}</button></li>
+            ))}
+          </ul>
+        )}
       </div>
-
-      <div className="re-tb-spacer" />
-
-      {edit && (
-        <>
-          <div className="re-tgroup">
-            <button type="button" className="re-tbtn" title="Hoàn tác (Ctrl+Z)" disabled={!canUndo} onClick={onUndo}><Undo2 size={16} /></button>
-            <button type="button" className="re-tbtn" title="Làm lại (Ctrl+Y)" disabled={!canRedo} onClick={onRedo}><Redo2 size={16} /></button>
-          </div>
-          <button type="button" className={`re-tbtn ${showGrid ? 're-active' : ''}`} title="Bật/tắt đường lưới" onClick={onToggleGrid}><Grid3x3 size={16} /></button>
-          <button type="button" className="re-tbtn re-hide-sm" title="Ẩn/hiện bảng cấu hình" onClick={onTogglePanel}><PanelRightOpen size={16} /></button>
-          <div className="re-menu-wrap" ref={menuRef}>
-            <button type="button" className="re-tbtn" onClick={() => setMenuOpen((v) => !v)}>
-              <Plus size={15} /> Thêm <ChevronDown size={14} />
-            </button>
-            {menuOpen && (
-              <div className="re-menu">
-                {ADD_ITEMS.map((it, i) => (
-                  it.key === 'sep'
-                    ? <div className="sep" key={`sep${i}`} />
-                    : <button key={it.key} type="button" onClick={() => { onAdd(it.key); setMenuOpen(false); }}>{it.label}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button type="button" className="re-tbtn re-primary" title="Lưu (Ctrl+S)" onClick={onSave} disabled={saveState === 'saving'}>
-            <Save size={15} /> Lưu
-          </button>
-        </>
-      )}
-
-      {canEdit && (
-        <button type="button" className="re-tbtn re-ghost" onClick={onToggleView}>
-          {edit ? <Eye size={15} /> : <Pencil size={15} />} {edit ? 'Xem' : 'Chỉnh sửa'}
-        </button>
-      )}
-    </div>
+      <button type="button" className="btn btn-sm btn-primary gap-1" title="Lưu (Ctrl+S)" onClick={onSave} disabled={saveState === 'saving'}><Save size={15} /> Lưu</button>
+      <button type="button" className="btn btn-sm btn-outline gap-1" onClick={onToggleView}><Eye size={15} /> Xem</button>
+    </>
   );
 }

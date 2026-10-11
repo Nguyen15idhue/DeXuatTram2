@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Database, Settings, PanelRightOpen } from 'lucide-react';
+import { Settings, Database, PanelRightOpen } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { builderService } from '../../services/api';
 import useReportEditor from '../../hooks/useReportEditor';
 import useReportPreviews from '../../hooks/useReportPreviews';
+import PageHeader from '../../components/ui/PageHeader';
 import ReportToolbar from '../../components/report/ReportToolbar';
 import ReportTabs from '../../components/report/ReportTabs';
 import ReportCanvas from '../../components/report/ReportCanvas';
@@ -16,13 +16,17 @@ import Toast from '../../components/Toast';
 
 export default function ReportEditorPage() {
   const { token, user } = useAuth();
-  const navigate = useNavigate();
   const isSuperAdmin = (user && user.role) === 'SUPER_ADMIN';
   const ed = useReportEditor(token);
   const previews = useReportPreviews(ed.widgets, ed.controlValues, token);
   const [panelTab, setPanelTab] = useState('config');
   const [showGrid, setShowGrid] = useState(true);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [toast, setToast] = useState({ message: '', type: 'success' });
+
+  useEffect(() => {
+    if (user && !isSuperAdmin && ed.viewMode !== 'view') ed.setViewMode('view');
+  }, [user, isSuperAdmin, ed]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)');
@@ -31,11 +35,6 @@ export default function ReportEditorPage() {
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
   }, []);
-  const [toast, setToast] = useState({ message: '', type: 'success' });
-
-  useEffect(() => {
-    if (user && !isSuperAdmin && ed.viewMode !== 'view') ed.setViewMode('view');
-  }, [user, isSuperAdmin, ed]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -93,38 +92,39 @@ export default function ReportEditorPage() {
   if (ed.loading) return <Loading message="Đang tải báo cáo…" />;
   if (ed.error) return <ErrorMessage message={ed.error} onRetry={ed.reload} />;
 
+  const actions = !isSuperAdmin ? null : (edit ? (
+    <ReportToolbar
+      saveState={ed.saveState}
+      canUndo={ed.canUndo}
+      canRedo={ed.canRedo}
+      showGrid={showGrid}
+      onUndo={ed.undo}
+      onRedo={ed.redo}
+      onAdd={ed.addWidget}
+      onSave={onSave}
+      onToggleGrid={() => setShowGrid((v) => !v)}
+      onTogglePanel={() => setPanelCollapsed((v) => !v)}
+      onToggleView={() => ed.setViewMode('view')}
+    />
+  ) : (
+    <button type="button" className="btn btn-sm btn-outline gap-1" onClick={() => ed.setViewMode('edit')}>
+      <Settings size={15} /> Cài đặt
+    </button>
+  ));
+
   return (
-    <div className="re-page">
+    <div>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
+      <PageHeader title={ed.name} subtitle="Báo cáo" actions={actions} />
 
-      <ReportToolbar
-        name={ed.name}
-        viewMode={ed.viewMode}
-        saveState={ed.saveState}
-        canUndo={ed.canUndo}
-        canRedo={ed.canRedo}
-        canEdit={isSuperAdmin}
-        showGrid={showGrid}
-        onToggleGrid={() => setShowGrid((v) => !v)}
-        onTogglePanel={() => setPanelCollapsed((v) => !v)}
-        onToggleView={() => ed.setViewMode(ed.viewMode === 'edit' ? 'view' : 'edit')}
-        onUndo={ed.undo}
-        onRedo={ed.redo}
-        onAdd={ed.addWidget}
-        onSave={onSave}
-        onRename={ed.setName}
-        onBack={() => navigate('/admin')}
+      <ReportTabs
+        reports={ed.reports}
+        activeId={ed.activeId}
+        canEdit={edit}
+        onOpen={openReport}
+        onAdd={onAddReport}
+        onRemove={onRemoveReport}
       />
-
-      {edit && (
-        <ReportTabs
-          reports={ed.reports}
-          activeId={ed.activeId}
-          onOpen={openReport}
-          onAdd={onAddReport}
-          onRemove={onRemoveReport}
-        />
-      )}
 
       <div className="re-body">
         <ReportCanvas

@@ -45,12 +45,14 @@ export default function useReportPreviews(widgets, controls, token) {
             limit: 200,
           };
         const res = await builderService.previewWidget(payload, token);
-        if (res.success) {
-          const rows = res.data.rows || [];
-          const entry = isData ? { key, rows } : { key, options: rows.map((r) => (r.dim === null ? '' : String(r.dim))).filter((x) => x !== '') };
-          setMap((prev) => ({ ...prev, [w.id]: entry }));
-        }
-      } catch { /* silent */ } finally {
+        const rows = (res && res.success && res.data && res.data.rows) ? res.data.rows : [];
+        const entry = isData
+          ? { key, rows }
+          : { key, options: rows.map((r) => (r.dim === null ? '' : String(r.dim))).filter((x) => x !== '') };
+        setMap((prev) => ({ ...prev, [w.id]: entry }));
+      } catch {
+        setMap((prev) => ({ ...prev, [w.id]: isData ? { key, rows: [] } : { key, options: [] } }));
+      } finally {
         pending.current.delete(cacheKey);
       }
     });

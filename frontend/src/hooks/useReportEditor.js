@@ -11,7 +11,7 @@ export default function useReportEditor(token) {
   const [widgets, setWidgets] = useState([]);
   const [page, setPage] = useState({ title: 'Báo cáo', columns: 12, rowHeight: 80 });
   const [selectedId, setSelectedId] = useState(null);
-  const [viewMode, setViewMode] = useState('edit');
+  const [viewMode, setViewMode] = useState('view');
   const [saveState, setSaveState] = useState('saved');
   const [saveError, setSaveError] = useState('');
   const [controlValues, setControlValues] = useState({});
