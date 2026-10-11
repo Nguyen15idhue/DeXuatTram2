@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const ttlCache = require('../utils/ttlCache');
 const reportService = require('./reportService');
 
 const MAX_ROWS = 200;
@@ -222,12 +223,98 @@ async function compileWidget(input, user, rowCap) {
     : 'value DESC, dim ASC';
   const sql = `SELECT ${dim.sql} AS dim, ${aggSql(w.agg, metric.sql)} AS value FROM ${ds.from} ${whereSql} GROUP BY ${dim.sql} ORDER BY ${orderBy} LIMIT ${w.limit}`;
   const [rows] = await pool.query(sql, params);
+  const labelMap = await loadDimLabelMap(w.dataset, w.dimension);
   return {
     widget: w,
     columns: ['dim', 'value'],
-    rows: rows.map((r) => ({ dim: r.dim === null || r.dim === undefined ? null : String(r.dim), value: Number(r.value) })),
+    rows: rows.map((r) => {
+      const raw = r.dim === null || r.dim === undefined ? null : String(r.dim);
+      const dim = labelMap && raw !== null && labelMap[raw] !== undefined ? labelMap[raw] : raw;
+      return { dim, value: Number(r.value) };
+    }),
   };
 }
+
+const parseJsonSafe = (v) => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return null; }
+};
+
+const DIM_LABEL_SOURCE = {
+  leads: {
+    stage: { entity: 'leads', field: 'stage', kind: 'options' },
+    customer_classification: { entity: 'leads', field: 'customer_classification', kind: 'datalist' },
+    source: { entity: 'leads', field: 'source', kind: 'datalist' },
+    province: { entity: 'leads', field: 'province', kind: 'datalist' },
+    sales_outcome: { entity: 'leads', field: 'sales_outcome', kind: 'options' },
+    has_proposal: { kind: 'bool' },
+    has_station: { kind: 'bool' },
+  },
+  proposals: {
+    status: { entity: 'station_proposals', field: 'status', kind: 'options' },
+  },
+  stations: {
+    status: { entity: 'stations', field: 'status', kind: 'options' },
+  },
+};
+
+const EVENT_LABELS = {
+  action: {
+    lead_created: 'Tạo Lead', lead_updated: 'Cập nhật Lead', lead_deleted: 'Xóa Lead',
+    assigned: 'Giao Lead', classification_changed: 'Đổi phân loại', stage_changed: 'Đổi giai đoạn',
+    proposal_created: 'Tạo đề xuất', proposal_status_changed: 'Đổi trạng thái đề xuất', proposal_updated: 'Cập nhật đề xuất',
+    station_created: 'Tạo trạm', station_status_changed: 'Đổi trạng thái trạm', station_updated: 'Cập nhật trạm',
+  },
+  entity_type: { lead: 'Lead', proposal: 'Đề xuất', station: 'Trạm' },
+  actor_role: {
+    SUPER_ADMIN: 'Quản trị cấp cao', ADMIN: 'Quản trị', SALES: 'Kinh doanh', MKT: 'Marketing',
+    CTV: 'Cộng tác viên', NPP: 'Nhà phân phối', SYSTEM: 'Hệ thống', system_auto: 'Hệ thống', '1Office': '1Office',
+  },
+};
+
+const loadDimLabelMap = async (datasetKey, dimensionKey) => {
+  const cacheKey = `rbldim:${datasetKey}:${dimensionKey}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  let map = null;
+  try {
+    if (datasetKey === 'journey_events' && EVENT_LABELS[dimensionKey]) {
+      map = EVENT_LABELS[dimensionKey];
+    } else {
+      const cfg = DIM_LABEL_SOURCE[datasetKey] && DIM_LABEL_SOURCE[datasetKey][dimensionKey];
+      if (cfg && cfg.kind === 'bool') {
+        map = { '1': 'Có', '0': 'Không', 'true': 'Có', 'false': 'Không' };
+      } else if (cfg && cfg.kind === 'options') {
+        const [rows] = await pool.query('SELECT `options` FROM field_definitions WHERE entity = ? AND `key` = ? LIMIT 1', [cfg.entity, cfg.field]);
+        const opts = rows[0] && parseJsonSafe(rows[0].options);
+        if (Array.isArray(opts)) {
+          map = {};
+          opts.forEach((o) => { if (o && o.value !== undefined) map[String(o.value)] = o.label !== undefined ? String(o.label) : String(o.value); });
+        }
+      } else if (cfg && cfg.kind === 'datalist') {
+        const [rows] = await pool.query('SELECT data_list_id, data_list_column, data_list_label_column FROM field_definitions WHERE entity = ? AND `key` = ? LIMIT 1', [cfg.entity, cfg.field]);
+        const f = rows[0];
+        if (f && f.data_list_id) {
+          const [dr] = await pool.query('SELECT `data` FROM data_list_rows WHERE list_id = ? LIMIT 5000', [f.data_list_id]);
+          map = {};
+          const valCol = f.data_list_column;
+          const lblCol = f.data_list_label_column;
+          dr.forEach((r) => {
+            const d = parseJsonSafe(r.data) || {};
+            if (valCol === null || valCol === undefined || !(valCol in d)) return;
+            const v = d[valCol];
+            if (v === null || v === undefined) return;
+            let l = lblCol && d[lblCol] != null ? d[lblCol] : (d.label != null ? d.label : (d.ten != null ? d.ten : (d.name != null ? d.name : null)));
+            map[String(v)] = l != null ? String(l) : String(v);
+          });
+        }
+      }
+    }
+  } catch { /* fallback raw */ }
+  ttlCache.set(cacheKey, map || null, 60000);
+  return map;
+};
 
 function getCatalog() {
   const out = {};

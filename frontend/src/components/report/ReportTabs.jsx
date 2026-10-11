@@ -1,6 +1,4 @@
-import { X } from 'lucide-react';
-
-export default function ReportTabs({ reports, activeId, canEdit, onOpen, onAdd, onRemove }) {
+export default function ReportTabs({ reports, activeId, canEdit, onOpen, onAdd }) {
   return (
     <div className="tabs tabs-boxed mb-4 w-fit max-w-full overflow-x-auto">
       {(reports || []).map((r) => (
@@ -11,15 +9,6 @@ export default function ReportTabs({ reports, activeId, canEdit, onOpen, onAdd, 
           onClick={() => onOpen(r.id)}
         >
           {r.name}
-          {canEdit && reports.length > 1 && (
-            <span
-              role="presentation"
-              className="ml-2 text-base-content/50 hover:text-error"
-              onClick={(e) => { e.stopPropagation(); onRemove(r.id); }}
-            >
-              <X size={13} />
-            </span>
-          )}
         </a>
       ))}
       {canEdit && (

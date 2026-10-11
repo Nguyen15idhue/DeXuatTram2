@@ -59,6 +59,9 @@ export default function ReportCanvas({
             cols={{ lg: COLS }}
             rowHeight={RGL_ROW_H}
             margin={[RGL_MARGIN, RGL_MARGIN]}
+            compactType={null}
+            preventCollision
+            allowOverlap={false}
             isDraggable={editable}
             isResizable={editable}
             draggableHandle=".re-drag"

@@ -10,7 +10,7 @@ const authLimiter = rateLimit({
 
 const adminLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 60 : 120,
+  max: process.env.NODE_ENV === 'production' ? 300 : 600,
   message: { success: false, message: 'Quá nhiều yêu cầu admin, vui lòng thử lại sau' },
   standardHeaders: true,
   legacyHeaders: false

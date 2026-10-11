@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Undo2, Redo2, Plus, ChevronDown, Save, Eye, Grid3x3, PanelRightOpen } from 'lucide-react';
+import { Undo2, Redo2, Plus, ChevronDown, Save, Eye, Grid3x3, PanelRightOpen, Wand2, Trash2 } from 'lucide-react';
 
 const STATUS = {
   saved: { cls: 'badge-success', label: 'Đã lưu' },
@@ -20,8 +20,8 @@ const ADD_ITEMS = [
 ];
 
 export default function ReportToolbar({
-  saveState, canUndo, canRedo, showGrid,
-  onUndo, onRedo, onAdd, onSave, onToggleGrid, onTogglePanel, onToggleView,
+  saveState, canUndo, canRedo, showGrid, canDeleteReport,
+  onUndo, onRedo, onAdd, onAutoArrange, onDeleteReport, onSave, onToggleGrid, onTogglePanel, onToggleView,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -40,6 +40,10 @@ export default function ReportToolbar({
       <button type="button" className="btn btn-sm btn-ghost btn-circle" title="Làm lại (Ctrl+Y)" disabled={!canRedo} onClick={onRedo}><Redo2 size={16} /></button>
       <button type="button" className={`btn btn-sm btn-ghost btn-circle ${showGrid ? 'btn-active' : ''}`} title="Bật/tắt đường lưới" onClick={onToggleGrid}><Grid3x3 size={16} /></button>
       <button type="button" className="btn btn-sm btn-ghost btn-circle" title="Ẩn/hiện bảng cấu hình" onClick={onTogglePanel}><PanelRightOpen size={16} /></button>
+      <button type="button" className="btn btn-sm btn-ghost btn-circle" title="Tự động sắp xếp" onClick={onAutoArrange}><Wand2 size={16} /></button>
+      {canDeleteReport && (
+        <button type="button" className="btn btn-sm btn-ghost btn-circle text-error" title="Xóa báo cáo" onClick={onDeleteReport}><Trash2 size={16} /></button>
+      )}
       <div className="dropdown dropdown-end" ref={menuRef}>
         <button type="button" className="btn btn-sm btn-outline gap-1" onClick={() => setMenuOpen((v) => !v)}>
           <Plus size={15} /> Thêm <ChevronDown size={14} />
@@ -55,7 +59,7 @@ export default function ReportToolbar({
         )}
       </div>
       <button type="button" className="btn btn-sm btn-primary gap-1" title="Lưu (Ctrl+S)" onClick={onSave} disabled={saveState === 'saving'}><Save size={15} /> Lưu</button>
-      <button type="button" className="btn btn-sm btn-outline gap-1" onClick={onToggleView}><Eye size={15} /> Xem</button>
+      <button type="button" className="btn btn-sm btn-outline gap-1 whitespace-nowrap" onClick={onToggleView}><Eye size={15} /> Xem trước</button>
     </>
   );
 }

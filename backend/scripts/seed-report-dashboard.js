@@ -69,7 +69,8 @@ async function ensureReport(name, widgets) {
     console.log(`[seed-report-dashboard] đã có "${name}" (id ${rows[0].id}) — bỏ qua.`);
     return;
   }
-  const layout = { version: 2, page: { title: name, columns: 12, rowHeight: 80 }, widgets };
+  const scaled = widgets.map((w) => ({ ...w, layout: { ...w.layout, y: w.layout.y * 4, h: w.layout.h * 4 } }));
+  const layout = { version: 2, page: { title: name, columns: 12, rowHeight: 20 }, widgets: scaled };
   await pool.query(
     'INSERT INTO report_builder_dashboards (name, layout_json, created_by, updated_by) VALUES (?, ?, ?, ?)',
     [name, JSON.stringify(layout), 1, 1]

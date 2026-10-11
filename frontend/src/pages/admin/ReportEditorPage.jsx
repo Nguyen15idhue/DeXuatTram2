@@ -13,6 +13,7 @@ import ReportConfigPanel from '../../components/report/ReportConfigPanel';
 import Loading from '../../components/Loading';
 import ErrorMessage from '../../components/ErrorMessage';
 import Toast from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 export default function ReportEditorPage() {
   const { token, user } = useAuth();
@@ -22,6 +23,7 @@ export default function ReportEditorPage() {
   const [panelTab, setPanelTab] = useState('config');
   const [showGrid, setShowGrid] = useState(true);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [confirmDeleteReport, setConfirmDeleteReport] = useState(false);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   useEffect(() => {
@@ -98,9 +100,12 @@ export default function ReportEditorPage() {
       canUndo={ed.canUndo}
       canRedo={ed.canRedo}
       showGrid={showGrid}
+      canDeleteReport={ed.reports.length > 1}
       onUndo={ed.undo}
       onRedo={ed.redo}
       onAdd={ed.addWidget}
+      onAutoArrange={ed.autoArrange}
+      onDeleteReport={() => setConfirmDeleteReport(true)}
       onSave={onSave}
       onToggleGrid={() => setShowGrid((v) => !v)}
       onTogglePanel={() => setPanelCollapsed((v) => !v)}
@@ -123,7 +128,6 @@ export default function ReportEditorPage() {
         canEdit={edit}
         onOpen={openReport}
         onAdd={onAddReport}
-        onRemove={onRemoveReport}
       />
 
       <div className="re-body">
@@ -183,6 +187,14 @@ export default function ReportEditorPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDeleteReport}
+        title="Xóa báo cáo"
+        message={`Bạn có chắc chắn muốn xóa báo cáo "${ed.name}"? Thao tác này không thể hoàn tác.`}
+        onConfirm={async () => { setConfirmDeleteReport(false); await onRemoveReport(ed.activeId); }}
+        onCancel={() => setConfirmDeleteReport(false)}
+      />
     </div>
   );
 }

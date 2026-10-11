@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { builderService } from '../services/api';
-import { normalizeReport, defaultWidget, applyGridLayout, nextLayoutY, packLayout } from '../utils/reportModel';
+import { normalizeReport, defaultWidget, applyGridLayout, nextLayoutY, packLayout, packByRows } from '../utils/reportModel';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -174,6 +174,12 @@ export default function useReportEditor(token) {
     markDirty();
   }, [snapshot, pushHistory, markDirty]);
 
+  const autoArrange = useCallback(() => {
+    pushHistory(snapshot());
+    setWidgets((prev) => packByRows(prev));
+    markDirty();
+  }, [snapshot, pushHistory, markDirty]);
+
   const setControlValue = useCallback((id, val) => {
     setControlValues((prev) => ({ ...prev, [id]: val }));
   }, []);
@@ -219,6 +225,6 @@ export default function useReportEditor(token) {
     setActiveId, setViewMode, setSelectedId, setPage, setSaveState,
     setName: renameActive, openReport, addWidget, updateWidget, updateWidgetData, updateVisual,
     deleteWidget, duplicateWidget, setLayout, setControlValue, undo, redo, commit, commitLayout,
-    restoreLayout, reload: loadReports, refreshList, save, createReport,
+    restoreLayout, autoArrange, reload: loadReports, refreshList, save, createReport,
   };
 }

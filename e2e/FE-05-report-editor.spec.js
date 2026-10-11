@@ -174,6 +174,33 @@ test.describe('FE-05 report editor', () => {
     expect(chartReq.some((b) => b.includes('region') && b.includes(opt)), 'chart nhận filter control').toBe(true);
   });
 
+  test('xóa báo cáo có xác nhận; Tự động sắp xếp; Xem trước thoát chỉnh sửa', async ({ page, request }) => {
+    const token = await login(request, 'admin@station.com', '123456');
+    await setToken(page, token);
+    await page.goto(`${FE}/admin/reports`);
+    await page.waitForTimeout(3000);
+    await enterEdit(page);
+
+    // Tự động sắp xếp + Xóa báo cáo tồn tại
+    await expect(page.locator('button[title="Tự động sắp xếp"]')).toBeVisible();
+    await expect(page.locator('button[title="Xóa báo cáo"]')).toBeVisible();
+
+    const tabsBefore = await page.locator('.tabs .tab').count();
+    await page.locator('button[title="Xóa báo cáo"]').click();
+    await page.waitForTimeout(400);
+    await expect(page.getByText('Xóa báo cáo').first()).toBeVisible();
+    await page.getByRole('button', { name: /Hủy/ }).first().click();
+    await page.waitForTimeout(300);
+    expect(await page.locator('.tabs .tab').count()).toBe(tabsBefore);
+
+    // Xem trước → thoát chế độ sửa (không còn Lưu/Thêm, còn Cài đặt)
+    await page.getByRole('button', { name: 'Xem trước' }).click();
+    await page.waitForTimeout(400);
+    await expect(page.getByRole('button', { name: 'Lưu' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Cài đặt' })).toBeVisible();
+    await expect(page.locator('.re-panel')).toHaveCount(0);
+  });
+
   test('non-SUPER chỉ xem, BE chặn ghi', async ({ page, request }) => {
     const adminToken = await login(request, 'admin@station.com', '123456');
     const list = await (await request.get(`${API}/api/admin/reports/builder/dashboards`, { headers: { Authorization: `Bearer ${adminToken}` } })).json();
