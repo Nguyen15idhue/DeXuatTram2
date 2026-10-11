@@ -692,6 +692,18 @@ exports.deleteLead = async (id, user) => {
     throw err;
   }
   await pool.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [id]);
+  try {
+    const journeyActivityService = require('./journeyActivityService');
+    await journeyActivityService.log({
+      journey_id: lead.journey_id,
+      entity_type: 'lead',
+      entity_id: Number(id),
+      action: 'lead_deleted',
+      actor_id: user ? user.id : null,
+      actor_role: user ? user.role : null,
+      source: 'admin',
+    });
+  } catch { /* silent */ }
   return { id: Number(id) };
 };
 
@@ -734,6 +746,18 @@ exports.bulkDeleteLeads = async (ids, user) => {
         throw err;
       }
       await conn.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [lid]);
+      try {
+        const journeyActivityService = require('./journeyActivityService');
+        await journeyActivityService.log({
+          journey_id: lead.journey_id,
+          entity_type: 'lead',
+          entity_id: lid,
+          action: 'lead_deleted',
+          actor_id: user ? user.id : null,
+          actor_role: user ? user.role : null,
+          source: 'admin',
+        }, conn);
+      } catch { /* silent */ }
       results.push({ id: lid });
     }
     await conn.commit();
