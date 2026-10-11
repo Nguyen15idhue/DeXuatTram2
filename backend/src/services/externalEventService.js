@@ -68,10 +68,41 @@ async function failNotified(eventId, body, errorMessage, proposalId) {
   return result;
 }
 
-exports.applyExternalEvent = async ({ eventId, event, proposalCode, contactCode, note, eventTime, actor, source = 'webhook', ip }) => {
-  if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+const NOTE_KEYS = ['note', 'note_tren_0_diem', 'note_0_diem', 'reason', 'reject_reason', 'ly_do', 'ly_do_huy', 'ly_do_tu_choi'];
+
+const PLACEHOLDER_NOTES = new Set(['', '--', '---', '-', '–', '—', 'n/a', 'na', 'null', 'undefined', '...']);
+
+const pickMeaningfulNote = (v) => {
+  const s = String(v ?? '').trim();
+  if (!s || PLACEHOLDER_NOTES.has(s.toLowerCase())) return null;
+  return s;
+};
+
+exports.resolveEventNote = (body, explicitNote) => {
+  const direct = pickMeaningfulNote(explicitNote);
+  if (direct) return direct;
+  const parts = [];
+  const src = body || {};
+  for (const k of NOTE_KEYS) {
+    if (k === 'note') continue;
+    const s = pickMeaningfulNote(src[k]);
+    if (s && !parts.includes(s)) parts.push(s);
+  }
+  for (const k of Object.keys(src)) {
+    if (/^note/i.test(k) && !NOTE_KEYS.includes(k)) {
+      const s = pickMeaningfulNote(src[k]);
+      if (s && !parts.includes(s)) parts.push(s);
+    }
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+};
+
+exports.applyExternalEvent = async ({ eventId, event, proposalCode, contactCode, note, eventTime, actor, source = 'webhook', ip, rawBody }) => {
+  eventId = String(eventId ?? '').trim();
+  if (!eventId) {
     throw err('Thiếu event_id (idempotency key)', 400);
   }
+  const resolvedNote = exports.resolveEventNote(rawBody, note);
   const toStatus = EVENT_TO_STATUS[event];
   if (!toStatus) {
     throw err('event không hợp lệ (PRINCIPLE_APPROVED | APPROVED | ARCHIVED | CONTRACT_SIGNED | CONTRACT_FAILED | CANCELLED)', 400);
@@ -80,7 +111,7 @@ exports.applyExternalEvent = async ({ eventId, event, proposalCode, contactCode,
     throw err('Cần proposal_code hoặc contact_code', 400);
   }
 
-  const body = { event_id: eventId, event, proposal_code: proposalCode || null, contact_code: contactCode || null, note: note || null, event_time: eventTime || null, actor: actor || null };
+  const body = { event_id: eventId, event, proposal_code: proposalCode || null, contact_code: contactCode || null, note: resolvedNote || null, event_time: eventTime || null, actor: actor || null };
 
   const [dup] = await pool.query(
     `SELECT response_payload FROM api_queue_logs
@@ -128,7 +159,7 @@ exports.applyExternalEvent = async ({ eventId, event, proposalCode, contactCode,
   for (const p of rows) {
     try {
       const r = await proposalLifecycle.transition(p.id, toStatus, {
-        reason: note || null, actorId: null, actorRole: null, source, manualOverride: false, ip: ip || null
+        reason: resolvedNote || null, actorId: null, actorRole: null, source, manualOverride: false, ip: ip || null
       });
       applied.push({ proposal_id: p.id, old_status: r.prevStatus, new_status: r.status, unchanged: !!r.unchanged });
     } catch (e) {

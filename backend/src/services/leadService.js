@@ -464,14 +464,14 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     }
     const effClassForAssign = patch.customer_classification !== undefined
       ? patch.customer_classification : lead.customer_classification;
-    if (n && normalizeClassification(effClassForAssign) !== 'TIEM_NANG') {
+    const changedAssignee = Number(n || 0) !== Number(lead.assigned_user_id || 0);
+    if (n && changedAssignee && normalizeClassification(effClassForAssign) !== 'TIEM_NANG') {
       const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
       err.statusCode = 400;
       throw err;
     }
     patch.assigned_user_id = n;
-    patch.assigned_at = n ? new Date() : null;
-    const changedAssignee = Number(n || 0) !== Number(lead.assigned_user_id || 0);
+    if (changedAssignee) patch.assigned_at = n ? new Date() : null;
     if (changedAssignee && n) {
       // Đổi người qua PUT cũng phải đúng luật như /assign: GĐKV đang hoạt động,
       // phòng ban resolve theo lead → GĐKV → routing (không bao giờ để NULL).

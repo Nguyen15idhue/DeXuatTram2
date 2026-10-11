@@ -40,7 +40,16 @@ const normScalar = (v) => {
 
 const DATE_LIKE_RE = /^\d{4}-\d{2}-\d{2}([T\s]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 
+const isEmptyValue = (v) => {
+  if (v === undefined || v === null) return true;
+  if (typeof v === 'string') return v.trim() === '';
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === 'object') return Object.keys(v).length === 0;
+  return false;
+};
+
 const sameValue = (a, b) => {
+  if (isEmptyValue(a) && isEmptyValue(b)) return true;
   const aObj = a && typeof a === 'object';
   const bObj = b && typeof b === 'object';
   if (aObj || bObj || Array.isArray(a) || Array.isArray(b)) {

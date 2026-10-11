@@ -13,7 +13,7 @@ import useDataListMap from '../../hooks/useDataListMap';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { getLeadSectionKind, leadReadOnlyKeysForRole, leadFocusSectionForRole, leadSectionNotice, canViewLeadSection } from '../../utils/leadSectionPerms';
+import { getLeadSectionKind, leadReadOnlyKeysForRole, leadFocusSectionForRole, leadSectionNotice, canViewLeadSection, canEditLeadSection } from '../../utils/leadSectionPerms';
 
 const parseJson = (v, fallback) => {
   if (v === null || v === undefined) return fallback;
@@ -188,10 +188,29 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
     return { sections: rawSections, sectionMap, cellMap };
   }, [formConfig, fieldsByKey]);
 
+  const fieldSectionMap = useMemo(() => {
+    const map = {};
+    const secs = (layout && layout.sections) || [];
+    (formConfig?.fields || []).forEach((f) => {
+      const cfg = parseJson(f.config, null);
+      const key = f.key || f.field_key;
+      if (!key || !cfg || cfg.rowId == null) return;
+      const sec = secs.find((s) => s && ((s.rows || []).some((r) => r && r.id === cfg.rowId)));
+      if (sec) map[key] = sec;
+    });
+    return map;
+  }, [formConfig, layout]);
+
   const handleSave = async (formData) => {
     setSaving(true);
     try {
-      const res = await leadService.update(recordId, formData, token);
+      const payload = { ...(formData || {}) };
+      Object.keys(payload).forEach((k) => {
+        if ((readOnlyKeys || []).includes(k)) { delete payload[k]; return; }
+        const sec = fieldSectionMap[k];
+        if (sec && !canEditLeadSection(sec, user)) delete payload[k];
+      });
+      const res = await leadService.update(recordId, payload, token);
       if (res.success) {
         setRecord(res.data);
         setToast({ message: 'Cập nhật Lead thành công', type: 'success' });
@@ -285,9 +304,11 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
             <button type="button" className="btn btn-sm btn-outline btn-accent gap-1" onClick={() => setShowReport(true)} title="Báo cáo 360 của Lead">
               <FileBarChart size={14} /> <span className="hidden sm:inline">Báo cáo 360</span>
             </button>
-            <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => setShowAssign(true)} title="Phân chia Lead cho Giám đốc Khu vực">
-              <Split size={14} /> <span className="hidden sm:inline">Phân chia Lead</span>
-            </button>
+            {role !== 'MKT' && (
+              <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => setShowAssign(true)} title="Phân chia Lead cho Giám đốc Khu vực">
+                <Split size={14} /> <span className="hidden sm:inline">Phân chia Lead</span>
+              </button>
+            )}
             <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Đóng">
               <X size={18} />
             </button>
@@ -301,8 +322,8 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
             layout ? (
               layout.sections
                 .filter(sec => canViewLeadSection(sec, user))
-                .map(sec => (
-                <fieldset key={sec.id} className="form-section" data-lead-section={getLeadSectionKind(sec.title) || undefined} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>
+                .map((sec, secIdx) => (
+                <fieldset key={sec.id} className={`form-section form-section-block${secIdx === 0 ? ' form-section-block-first' : ''}`} data-lead-section={getLeadSectionKind(sec.title) || undefined}>
                   {sec.title && <legend className="form-section-title" style={{ fontWeight: 600, padding: '0 6px' }}>{sec.title}</legend>}
                   {renderRows(sec)}
                 </fieldset>

@@ -903,10 +903,10 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
     const renderSectionContent = (section) => (section.rows || []).map((row) => renderRow(row));
 
-    const renderSectionBlock = (section) => {
+    const renderSectionBlock = (section, isFirst = false) => {
       if (!sectionVisible(section)) return null;
       return (
-      <fieldset key={section.id} className="form-section" data-lead-section={getLeadSectionKind(section.title) || undefined} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+      <fieldset key={section.id} className={`form-section form-section-block${isFirst ? ' form-section-block-first' : ''}`} data-lead-section={getLeadSectionKind(section.title) || undefined}>
         {section.title && (
           <legend className="form-section-title">
             {section.title}
@@ -924,7 +924,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       );
     };
 
-    const renderTabGroup = (node, path, depth) => {
+    const renderTabGroup = (node, path, depth, isFirst = false) => {
       if (!node || depth > MAX_TAB_DEPTH) return null;
       if (!evalVisibleWhen(node, formData)) return null;
       if (!sectionVisible(node)) return null;
@@ -932,7 +932,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       if (tabs.length === 0) return null;
       const activeId = activeTabs[path] || tabs[0].id;
       return (
-        <fieldset key={node.id || path} className="form-section form-tabs" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+        <fieldset key={node.id || path} className={`form-section form-tabs form-section-block${isFirst ? ' form-section-block-first' : ''}`}>
         {node.title && (
           <legend className="form-section-title">
             {node.title}
@@ -979,15 +979,21 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       );
     };
 
+    const firstVisibleNodeId = hasSections ? ((layoutConfig.sections || []).find((s) => {
+      if (!s) return false;
+      if (s.type === 'tabs' || Array.isArray(s.tabs)) return sectionVisible(s);
+      return evalVisibleWhen(s, formData) && sectionVisible(s);
+    }) || {}).id : null;
+
     return (
       <>
         {hasSections ? (
           layoutConfig.sections.map((section) => {
             if (section.type === 'tabs' || Array.isArray(section.tabs)) {
-              return renderTabGroup(section, section.id, 1);
+              return renderTabGroup(section, section.id, 1, section.id === firstVisibleNodeId);
             }
             if (!evalVisibleWhen(section, formData)) return null;
-            return renderSectionBlock(section);
+            return renderSectionBlock(section, section.id === firstVisibleNodeId);
           })
         ) : (
           rowsToRender.map(row => renderRow(row))

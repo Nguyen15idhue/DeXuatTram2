@@ -90,7 +90,8 @@ exports.proposalStatus = [
         eventTime: event_time,
         actor,
         source: 'webhook',
-        ip: req.ip || null
+        ip: req.ip || null,
+        rawBody: req.body || {}
       });
       res.json({ success: true, data: result });
     } catch (error) {

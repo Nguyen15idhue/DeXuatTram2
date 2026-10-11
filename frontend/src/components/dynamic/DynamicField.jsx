@@ -86,6 +86,29 @@ const MemoryHints = ({ memory, onPick }) => {
   );
 };
 
+const autoGrow = (el) => {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 240) + 'px';
+};
+
+const AutoGrowTextarea = ({ className, value, onChange, placeholder, disabled }) => {
+  const ref = useRef(null);
+  useEffect(() => { autoGrow(ref.current); }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className={className}
+      value={value || ''}
+      onChange={onChange}
+      onInput={(e) => autoGrow(e.target)}
+      placeholder={placeholder || ''}
+      disabled={disabled}
+      rows={1}
+    />
+  );
+};
+
 const normalizeTableLink = (col) => {
   if (!col) return null;
   if (col.data_link && typeof col.data_link.enabled === 'boolean' && !col.data_link.enabled) return null;
@@ -573,13 +596,12 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     case 'textarea':
       return (
         <>
-          <textarea
+          <AutoGrowTextarea
             className={baseClass}
             value={value || ''}
             onChange={handleChange}
             placeholder={field.placeholder || ''}
             disabled={disabled}
-            rows={3}
           />
           {renderMemory()}
         </>

@@ -445,7 +445,9 @@ const AdminLeadsPage = () => {
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/leads/view=${row.id}`)}>Xem</button>
       <button className="btn btn-sm btn-warning" onClick={() => navigate(`/admin/leads/edit=${row.id}`)}>Sửa</button>
-      <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
+      {role !== 'SALES' && (
+        <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
+      )}
     </div>
   );
 
@@ -459,14 +461,20 @@ const AdminLeadsPage = () => {
           <h1 className="text-2xl font-bold">Quản lý Leads</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-primary btn-sm gap-1" onClick={() => { setShowCreateForm(true); setError(''); }}>
-            <Plus size={14} /> Thêm Lead
-          </button>
-          <ViewPickerMenu label="File mẫu" views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
+          {role !== 'SALES' && (
+            <button className="btn btn-primary btn-sm gap-1" onClick={() => { setShowCreateForm(true); setError(''); }}>
+              <Plus size={14} /> Thêm Lead
+            </button>
+          )}
+          {role !== 'SALES' && (
+            <ViewPickerMenu label="File mẫu" views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
+          )}
           <ViewPickerMenu label="Xuất Excel" views={excelViews} onPick={handleExportLeads} title="Chọn bộ cột để export" />
-          <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
-            <Upload size={14} /> Nhập Excel
-          </button>
+          {role !== 'SALES' && (
+            <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+              <Upload size={14} /> Nhập Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -538,12 +546,16 @@ const AdminLeadsPage = () => {
       {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
           <span className="text-sm font-medium">Đã chọn: {selectedIds.length} Lead</span>
-          <button className="btn btn-primary btn-sm gap-1" onClick={() => setAssignOpen(true)} disabled={bulkLoading}>
-            <Split size={14} /> Phân chia ({selectedIds.length})
-          </button>
-          <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={bulkLoading}>
-            <Trash2 size={14} /> Xóa ({selectedIds.length})
-          </button>
+          {role !== 'MKT' && (
+            <button className="btn btn-primary btn-sm gap-1" onClick={() => setAssignOpen(true)} disabled={bulkLoading}>
+              <Split size={14} /> Phân chia ({selectedIds.length})
+            </button>
+          )}
+          {role !== 'SALES' && (
+            <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={bulkLoading}>
+              <Trash2 size={14} /> Xóa ({selectedIds.length})
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm gap-1" onClick={() => setSelectedIds([])}>
             <X size={14} /> Bỏ chọn
           </button>

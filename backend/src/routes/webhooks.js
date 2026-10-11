@@ -28,7 +28,7 @@ const { webhookLimiter } = require('../middlewares/rateLimits');
  *             properties:
  *               event_id:
  *                 type: string
- *                 description: Idempotency key (BPA retry cùng id không đẻ log kép)
+ *                 description: Idempotency key (BPA retry cùng id không đẻ log kép, chấp nhận số — tự ép về chuỗi)
  *               event:
  *                 type: string
  *                 enum: [PRINCIPLE_APPROVED, APPROVED, ARCHIVED, CONTRACT_SIGNED, CONTRACT_FAILED, CANCELLED]
@@ -40,6 +40,13 @@ const { webhookLimiter } = require('../middlewares/rateLimits');
  *                 description: contact_1office_code (dùng khi không có proposal_code)
  *               note:
  *                 type: string
+ *                 description: Lý do hủy/từ chối (bắt buộc khi event=CANCELLED)
+ *               note_tren_0_diem:
+ *                 type: string
+ *                 description: Bí danh của note do node 1Office gửi (lấy khi thiếu note, bỏ qua '--')
+ *               note_0_diem:
+ *                 type: string
+ *                 description: Bí danh của note do node 1Office gửi (lấy khi thiếu note, bỏ qua '--')
  *               event_time:
  *                 type: string
  *               actor:

@@ -1706,7 +1706,7 @@ exports.exportUsers = async (req, res) => {
 
 exports.exportLeads = async (req, res) => {
   req.query.entity = 'leads';
-  if (denyEntityByRole(req, res, 'leads')) return;
+  if (denyEntityByRole(req, res, 'leads', 'read')) return;
   return exports.exportDynamic(req, res);
 };
 
@@ -1794,14 +1794,18 @@ exports.exportProposalsByModel = async (req, res) => {
   }
 };
 
-const SALES_ALLOWED_EXCEL_ENTITIES = new Set(['station_proposals', 'leads']);
+const SALES_ALLOWED_EXCEL_WRITE = new Set(['station_proposals']);
+const SALES_ALLOWED_EXCEL_READ = new Set(['station_proposals', 'leads']);
 const MKT_ALLOWED_EXCEL_ENTITIES = new Set(['leads']);
 
-const denyEntityByRole = (req, res, entity) => {
+const denyEntityByRole = (req, res, entity, mode = 'write') => {
   const role = req.user && req.user.role;
-  if (role === 'SALES' && !SALES_ALLOWED_EXCEL_ENTITIES.has(entity)) {
-    res.status(403).json({ success: false, message: 'SALES chỉ được Template/Import/Export đề xuất/Lead' });
-    return true;
+  if (role === 'SALES') {
+    const allowed = mode === 'read' ? SALES_ALLOWED_EXCEL_READ : SALES_ALLOWED_EXCEL_WRITE;
+    if (!allowed.has(entity)) {
+      res.status(403).json({ success: false, message: mode === 'read' ? 'SALES chỉ được Export đề xuất/Lead' : 'SALES chỉ được Template/Import đề xuất' });
+      return true;
+    }
   }
   if (role === 'MKT' && !MKT_ALLOWED_EXCEL_ENTITIES.has(entity)) {
     res.status(403).json({ success: false, message: 'MKT chỉ được Template/Import/Export Lead' });
@@ -1816,7 +1820,7 @@ exports.getViewsForEntity = async (req, res) => {
     if (!entity || !ENTITY_TABLE_MAP[entity]) {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
     }
-    if (denyEntityByRole(req, res, entity)) return;
+    if (denyEntityByRole(req, res, entity, 'read')) return;
     const [rows] = await pool.query(
       "SELECT id, name, entity, `usage`, include_rest, is_locked, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
       [entity]

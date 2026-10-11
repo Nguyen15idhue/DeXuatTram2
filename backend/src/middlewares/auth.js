@@ -108,6 +108,18 @@ const requireLeadManager = (req, res, next) => {
   next();
 };
 
+const LEAD_WRITER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MKT'];
+
+const requireLeadWriter = (req, res, next) => {
+  if (!LEAD_WRITER_ROLES.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền tạo/sửa/xóa Lead'
+    });
+  }
+  next();
+};
+
 const requireReportViewer = (req, res, next) => {
   if (!LEAD_ROLES.includes(req.user.role)) {
     return res.status(403).json({
@@ -154,6 +166,7 @@ module.exports = {
   requireSuperAdmin,
   requireUserManager,
   requireLeadManager,
+  requireLeadWriter,
   requireReportViewer,
   requireReportConfigurator,
   optionalAuth,

@@ -25,7 +25,7 @@ const getGdkvCandidates = async (department, conn = pool) => {
 };
 
 const canAssign = async (lead, actor) => {
-  if (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN' || actor.role === 'MKT') return true;
+  if (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN') return true;
   if (actor.role === 'SALES') {
     const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ?', [actor.id]);
     const cd = parseCustomData(rows[0] && rows[0].custom_data);
@@ -84,10 +84,10 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
     throw err;
   }
 
-  const adminLevel = ['SUPER_ADMIN', 'ADMIN', 'MKT'].includes(actor.role);
+  const adminLevel = ['SUPER_ADMIN', 'ADMIN'].includes(actor.role);
   let department = lead.assigned_department;
   if (adminLevel) {
-    // ADMIN/SUPER/MKT được giao cho GĐKV bất kỳ → gán phòng ban theo GĐKV được chọn.
+    // ADMIN/SUPER được giao cho GĐKV bất kỳ → gán phòng ban theo GĐKV được chọn.
     department = tcd.department || department;
   } else {
     if (!department && lead.region) {

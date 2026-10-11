@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireLeadManager } = require('../middlewares/auth');
+const { requireAuth, requireLeadManager, requireLeadWriter } = require('../middlewares/auth');
 const { validateCreateLead, validateUpdateLead } = require('../middlewares/validators');
 const adminLeadController = require('../controllers/adminLeadController');
 
@@ -93,14 +93,14 @@ router.get('/', requireAuth, requireLeadManager, adminLeadController.getAll);
  *       409:
  *         description: Lead đã có đề xuất liên kết
  */
-router.post('/bulk-delete', requireAuth, requireLeadManager, adminLeadController.bulkDelete);
+router.post('/bulk-delete', requireAuth, requireLeadWriter, adminLeadController.bulkDelete);
 
 /**
  * @swagger
  * /api/admin/leads/bulk-assign:
  *   post:
  *     tags: [Leads]
- *     summary: Phân chia nhiều Lead cho 1 GĐKV (ADMIN/SUPER/MKT mọi GĐKV; GĐTT chỉ trong phòng ban)
+  *     summary: Phân chia nhiều Lead cho 1 GĐKV (ADMIN/SUPER mọi GĐKV; GĐTT chỉ trong phòng ban; MKT/SALES khác không có quyền)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -321,7 +321,7 @@ router.get('/:id/journey', requireAuth, requireLeadManager, adminLeadController.
 
 router.get('/:id', requireAuth, requireLeadManager, adminLeadController.getById);
 router.put('/:id', requireAuth, requireLeadManager, validateUpdateLead, adminLeadController.update);
-router.delete('/:id', requireAuth, requireLeadManager, adminLeadController.remove);
+router.delete('/:id', requireAuth, requireLeadWriter, adminLeadController.remove);
 
 /**
  * @swagger
@@ -337,6 +337,6 @@ router.delete('/:id', requireAuth, requireLeadManager, adminLeadController.remov
  *       400:
  *         description: Dữ liệu không hợp lệ
  */
-router.post('/', requireAuth, requireLeadManager, validateCreateLead, adminLeadController.create);
+router.post('/', requireAuth, requireLeadWriter, validateCreateLead, adminLeadController.create);
 
 module.exports = router;

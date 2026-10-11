@@ -817,6 +817,9 @@ textarea {
   font-size: 14px;
   resize: vertical;
   font-family: inherit;
+  min-height: 38px;
+  line-height: 1.4;
+  overflow-y: auto;
 }
 
 textarea:focus {
@@ -902,6 +905,9 @@ select:focus {
   font-size: 14px;
   resize: vertical;
   font-family: inherit;
+  min-height: 38px;
+  line-height: 1.4;
+  overflow-y: auto;
 }
 
 .form-group textarea:focus {
@@ -2187,6 +2193,18 @@ fieldset.form-section,
 .popup-body .form-row {
   max-width: 100%;
 }
+.form-section-block {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+.form-section-block-first,
+.popup-detail .popup-body fieldset.form-section-block-first {
+  padding-top: 4px;
+}
 .form-section > legend.form-section-title,
 .popup-body fieldset > legend.form-section-title {
   font-weight: 700;
@@ -2225,6 +2243,8 @@ fieldset.form-section,
 .form-cell-content textarea {
   resize: vertical;
   overflow-wrap: anywhere;
+  min-height: 38px;
+  overflow-y: auto;
 }
 .preview-container.mobile-mode .form-row {
   flex-direction: column;
