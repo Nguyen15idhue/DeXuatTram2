@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup — Dashboard Editor kiểu Looker Studio (doc 77)</title>
+<style>
+  :root{
+    --bg:#f3f4f6; --panel:#ffffff; --border:#e5e7eb; --border-2:#d1d5db;
+    --text:#111827; --muted:#6b7280; --muted-2:#9ca3af;
+    --accent:#4f46e5; --accent-soft:#eef2ff; --accent-2:#4338ca;
+    --green:#16a34a; --amber:#d97706; --red:#dc2626; --sky:#0284c7;
+    --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.1);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+  button{font:inherit;color:inherit;cursor:pointer}
+  .icon{width:16px;height:16px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .icon.sm{width:14px;height:14px}
+
+  /* ===== App shell (mô phỏng có sidebar admin bên trái cho giống thực tế) ===== */
+  .app{display:flex;height:100vh;overflow:hidden}
+  .admin-side{width:220px;flex:0 0 220px;background:#1f2937;color:#e5e7eb;padding:14px 0;display:none}
+  .admin-side .brand{font-weight:700;color:#fff;padding:0 16px 12px;font-size:14px}
+  .admin-side a{display:block;padding:8px 16px;color:#cbd5e1;text-decoration:none;font-size:13px}
+  .admin-side a.active{background:#4f46e5;color:#fff}
+  @media(min-width:1100px){.admin-side{display:block}}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+
+  /* ===== Toolbar 1 ===== */
+  .toolbar{display:flex;align-items:center;gap:8px;background:var(--panel);border-bottom:1px solid var(--border);padding:8px 12px;min-height:52px}
+  .toolbar .tname{display:flex;align-items:center;gap:8px;min-width:0}
+  .toolbar .tname input{border:1px solid transparent;background:transparent;font-weight:600;font-size:14px;padding:5px 8px;border-radius:6px;width:230px;color:var(--text)}
+  .toolbar .tname input:hover{border-color:var(--border)}
+  .toolbar .tname input:focus{border-color:var(--accent);outline:none;background:#fff}
+  .status{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);padding:3px 8px;border-radius:999px;background:#f9fafb;border:1px solid var(--border)}
+  .status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted-2)}
+  .status.saved .dot{background:var(--green)}
+  .status.dirty .dot{background:var(--amber)}
+  .status.saving .dot{background:var(--sky)}
+  .status.error .dot{background:var(--red)}
+  .tspacer{flex:1}
+  .tgroup{display:flex;align-items:center;gap:4px;background:#f9fafb;border:1px solid var(--border);border-radius:8px;padding:2px}
+  .tbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;background:transparent;border-radius:6px;padding:6px 8px;color:#374151;font-size:13px}
+  .tbtn:hover{background:#eef2f7}
+  .tbtn:disabled{opacity:.4;cursor:not-allowed}
+  .tbtn.primary{background:var(--accent);color:#fff;border-radius:8px;padding:7px 14px;font-weight:600}
+  .tbtn.primary:hover{background:var(--accent-2)}
+  .tbtn.ghost{border-radius:8px}
+  .tbtn.active{background:var(--accent-soft);color:var(--accent-2)}
+  .menu-wrap{position:relative}
+  .menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(16,24,40,.14);padding:6px;min-width:210px;z-index:60;display:none}
+  .menu.open{display:block}
+  .menu button{display:flex;align-items:center;gap:10px;width:100%;border:none;background:transparent;padding:8px 10px;border-radius:8px;text-align:left;font-size:13px;color:#374151}
+  .menu button:hover{background:#f3f4f6}
+  .menu .sep{height:1px;background:var(--border);margin:4px 0}
+
+  /* ===== Report tabs ===== */
+  .tabbar{display:flex;align-items:center;gap:6px;background:var(--panel);border-bottom:1px solid var(--border);padding:6px 12px;overflow-x:auto}
+  .rtab{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:#fff;border-radius:8px 8px 0 0;padding:7px 12px;font-size:13px;color:#374151;white-space:nowrap}
+  .rtab.active{border-color:var(--accent);border-bottom-color:#fff;color:var(--accent-2);font-weight:600;background:var(--accent-soft)}
+  .rtab .x{color:var(--muted-2);display:inline-flex}
+  .rtab .x:hover{color:var(--red)}
+  .rtab-add{border:1px dashed var(--border-2);background:transparent;border-radius:8px;padding:7px 10px;color:var(--muted)}
+
+  /* ===== Body ===== */
+  .body{flex:1;display:flex;min-height:0;overflow:hidden}
+  .canvas-wrap{flex:1;min-width:0;overflow:auto;padding:16px}
+  .canvas-empty{border:1px dashed var(--border-2);border-radius:12px;padding:48px;text-align:center;color:var(--muted);background:#fff}
+  .grid{position:relative;background:#fff;border:1px solid var(--border);border-radius:12px;min-height:100%}
+  .grid.showlines{background-image:linear-gradient(to right,rgba(79,70,229,.06) 1px,transparent 1px);background-size:calc(100%/12) 100%}
+
+  /* ===== Widget ===== */
+  .w{position:absolute;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+  .w.editable{cursor:default}
+  .w.selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(79,70,229,.18),var(--shadow)}
+  .w .whead{display:flex;align-items:center;gap:5px;padding:8px 10px;border-bottom:1px solid var(--border);font-weight:600;font-size:12.5px;background:#fcfcfd}
+  .w .whead .gt{color:var(--muted-2);cursor:move;display:inline-flex}
+  .w.editable .whead{cursor:move}
+  .w .wbody{flex:1;min-height:0;padding:10px;overflow:hidden}
+  .w .wbadge{position:absolute;top:-9px;left:10px;background:var(--accent);color:#fff;font-size:9.5px;padding:1px 6px;border-radius:6px;z-index:5}
+  .w .wdel{position:absolute;top:-9px;right:-9px;width:20px;height:20px;border-radius:50%;border:none;background:var(--red);color:#fff;display:none;align-items:center;justify-content:center;z-index:6}
+  .w.selected .wdel{display:flex}
+  .w .rz{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:se-resize;display:none;z-index:6}
+  .w.selected.editable .rz{display:block}
+  .w .rz::after{content:"";position:absolute;right:3px;bottom:3px;width:8px;height:8px;border-right:2px solid var(--accent);border-bottom:2px solid var(--accent)}
+
+  /* chart svg */
+  .chart{width:100%;height:100%}
+  .kpi{display:flex;flex-direction:column;justify-content:center;height:100%}
+  .kpi .val{font-size:34px;font-weight:700;color:var(--text)}
+  .kpi .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .tbl th{ text-align:left;color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);padding:5px 6px;position:sticky;top:0;background:#fff}
+  .tbl td{padding:5px 6px;border-bottom:1px solid #f1f5f9}
+  .tbl td.num,.tbl th.num{text-align:right}
+  .textw{height:100%;display:flex;align-items:center;font-size:18px;font-weight:700;color:#b91c1c;letter-spacing:.4px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:11px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+  /* control widget */
+  .control{display:flex;flex-direction:column;gap:4px;height:100%;justify-content:center}
+  .control label{font-size:11px;color:var(--muted)}
+  .control select,.control input{border:1px solid var(--border-2);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;background:#fff;color:var(--text)}
+  .control .row{display:flex;gap:6px}
+
+  /* ===== Right panel ===== */
+  .panel{width:360px;flex:0 0 360px;background:var(--panel);border-left:1px solid var(--border);display:flex;min-width:0}
+  .panel.off{display:none}
+  .ptabs{width:52px;flex:0 0 52px;border-right:1px solid var(--border);display:flex;flex-direction:column;padding-top:8px;gap:4px;background:#fbfbfc}
+  .ptab{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 2px;border:none;background:transparent;color:var(--muted);font-size:10px;border-left:2px solid transparent}
+  .ptab .icon{width:18px;height:18px}
+  .ptab.active{color:var(--accent-2);background:#fff;border-left-color:var(--accent);font-weight:600}
+  .pcontent{flex:1;min-width:0;display:flex;flex-direction:column}
+  .phead{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+  .pbody{flex:1;overflow-y:auto;padding:12px 14px}
+  .pfoot{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+
+  .section{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .section > summary{list-style:none;padding:9px 12px;font-weight:600;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:6px;background:#fcfcfd}
+  .section > summary::-webkit-details-marker{display:none}
+  .section[open] > summary{border-bottom:1px solid var(--border)}
+  .section .sinner{padding:10px 12px;display:flex;flex-direction:column;gap:9px}
+  .fld{display:flex;flex-direction:column;gap:4px}
+  .fld label{font-size:11.5px;color:var(--muted)}
+  .fld select,.fld input,.fld textarea{border:1px solid var(--border-2);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;background:#fff;width:100%}
+  .fld textarea{resize:vertical;min-height:52px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .check{display:flex;align-items:center;gap:7px;font-size:12.5px;color:#374151}
+  .check input{width:15px;height:15px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent-2)}
+  .hint{font-size:11.5px;color:var(--muted);background:#f9fafb;border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+  .btn{border:1px solid var(--border-2);background:#fff;border-radius:8px;padding:6px 10px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{background:#f3f4f6}
+  .btn.danger{border-color:#fecaca;color:var(--red)}
+  .btn.danger:hover{background:#fef2f2}
+
+  /* data source tab */
+  .search{display:flex;align-items:center;gap:6px;border:1px solid var(--border-2);border-radius:8px;padding:6px 9px;background:#fff}
+  .search input{border:none;outline:none;flex:1;font:inherit;font-size:12.5px;background:transparent}
+  .ds{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden}
+  .ds .dshead{padding:9px 11px;display:flex;align-items:center;gap:8px;cursor:pointer;background:#fcfcfd}
+  .ds .dshead .nm{font-weight:600;font-size:12.5px}
+  .ds .dshead .conn{margin-left:auto;font-size:10.5px;color:var(--green);display:inline-flex;align-items:center;gap:4px}
+  .ds .dsbody{padding:6px 8px;display:none}
+  .ds.open .dsbody{display:block}
+  .fitem{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:7px;font-size:12px;cursor:pointer}
+  .fitem:hover{background:var(--accent-soft)}
+  .fitem .ft{margin-left:auto;font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:0 5px}
+  .fitem .ab{width:22px;text-align:center;font-size:9.5px;font-weight:700;color:var(--muted-2)}
+  .fgroup{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted-2);margin:8px 4px 3px}
+
+  /* toast */
+  .toast{position:fixed;right:18px;bottom:18px;background:#111827;color:#fff;padding:10px 14px;border-radius:10px;font-size:12.5px;opacity:0;transform:translateY(8px);transition:.2s;z-index:120;pointer-events:none}
+  .toast.show{opacity:1;transform:none}
+  .badge-mock{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;background:#fff;border:1px dashed var(--border-2);color:var(--muted);font-size:11px;padding:4px 12px;border-radius:999px;z-index:100}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="admin-side">
+    <div class="brand">Admin Panel</div>
+    <a>Dashboard</a><a>Quản lý Users</a><a>Quản lý Trạm</a><a>Quản lý Đề xuất</a>
+    <a>Quản lý Leads</a><a class="active">Báo cáo</a><a>Audit Log</a>
+  </aside>
+
+  <div class="main">
+    <!-- Toolbar 1 -->
+    <div class="toolbar" id="toolbar">
+      <div class="tname">
+        <button class="tbtn" title="Quay lại danh sách báo cáo" onclick="toast('(mock) Quay lại danh sách báo cáo')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <input id="reportName" value="Báo cáo tổng hợp" />
+        <span class="status saved" id="saveStatus"><span class="dot"></span><span class="txt">Đã lưu</span></span>
+      </div>
+      <div class="tspacer"></div>
+      <div class="tgroup">
+        <button class="tbtn" id="undoBtn" title="Hoàn tác (Ctrl+Z)" onclick="undo()">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a6 6 0 0 1 0 12h-4"/></svg>
+        </button>
+        <button class="tbtn" id="redoBtn" title="Làm lại (Ctrl+Y)" onclick="redo()">
+          <svg class="icon" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a6 6 0 0 0 0 12h4"/></svg>
+        </button>
+      </div>
+      <div class="menu-wrap">
+        <button class="tbtn ghost" id="addBtn" onclick="toggleMenu(event)">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Thêm
+          <svg class="icon sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="menu" id="addMenu">
+          <button onclick="addWidget('chart');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg> Biểu đồ</button>
+          <button onclick="addWidget('kpi');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 12h8"/></svg> Thẻ KPI</button>
+          <button onclick="addWidget('table');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/></svg> Bảng dữ liệu</button>
+          <button onclick="addWidget('detail');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> Bảng chi tiết Lead→ON</button>
+          <button onclick="addWidget('text');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg> Văn bản / tiêu đề</button>
+          <div class="sep"></div>
+          <button onclick="addWidget('controlDate');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Bộ lọc ngày</button>
+          <button onclick="addWidget('controlSelect');closeMenu()"><svg class="icon sm" viewBox="0 0 24 24"><path d="M3 6h18M7 12h10M10 18h4"/></svg> Bộ lọc danh mục</button>
+        </div>
+      </div>
+      <button class="tbtn ghost" id="saveBtn" title="Lưu (Ctrl+S)" onclick="save()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg> Lưu
+      </button>
+      <button class="tbtn ghost" id="viewBtn" onclick="toggleMode()">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span id="viewBtnTxt">Xem</span>
+      </button>
+    </div>
+
+    <!-- Report tabs -->
+    <div class="tabbar" id="tabbar"></div>
+
+    <div class="body">
+      <!-- Canvas -->
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="grid" id="grid"></div>
+      </div>
+
+      <!-- Right panel -->
+      <div class="panel" id="panel">
+        <div class="ptabs">
+          <button class="ptab" id="ptabData" onclick="setPanelTab('data')">
+            <svg class="icon" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+            Nguồn dữ liệu
+          </button>
+          <button class="ptab active" id="ptabConfig" onclick="setPanelTab('config')">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 11 4.6a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 19.4 11a2 2 0 1 1 0 4z"/></svg>
+            Cấu hình
+          </button>
+        </div>
+        <div class="pcontent">
+          <div class="phead" id="phead">Cấu hình</div>
+          <div class="pbody" id="pbody"></div>
+          <div class="pfoot" id="pfoot"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="badge-mock">Mockup tĩnh — dữ liệu giả lập, minh hoạ kết quả dự kiến của tài liệu 77</div>
+
+<script>
+/* ============================================================
+   MOCK DATA
+============================================================ */
+const COLS = 12, ROW = 46, GAP = 12;
+
+const DATASETS = {
+  leads: { label:'Leads', conn:'Đã kết nối', fields:[
+    {k:'stage',label:'Stage',t:'dim'},{k:'customer_classification',label:'Phân loại KH',t:'dim'},
+    {k:'source',label:'Nguồn',t:'dim'},{k:'province',label:'Tỉnh/Thành',t:'dim'},
+    {k:'region',label:'Vùng miền',t:'dim'},{k:'assigned_department',label:'Phòng ban',t:'dim'},
+    {k:'created_date',label:'Ngày tạo',t:'dim'},
+    {k:'id',label:'Số lượng',t:'metric'},
+  ]},
+  proposals: { label:'Đề xuất', conn:'Đã kết nối', fields:[
+    {k:'status',label:'Trạng thái',t:'dim'},{k:'province',label:'Tỉnh/Thành',t:'dim'},
+    {k:'region',label:'Vùng miền',t:'dim'},{k:'created_date',label:'Ngày tạo',t:'dim'},
+    {k:'id',label:'Số lượng',t:'metric'},
+  ]},
+  stations: { label:'Trạm', conn:'Đã kết nối', fields:[
+    {k:'status',label:'Trạng thái',t:'dim'},{k:'province',label:'Tỉnh/Thành',t:'dim'},
+    {k:'region',label:'Vùng miền',t:'dim'},{k:'created_date',label:'Ngày tạo',t:'dim'},
+    {k:'id',label:'Số lượng',t:'metric'},
+  ]},
+  journey_events: { label:'Sự kiện hành trình', conn:'Đã kết nối', fields:[
+    {k:'action',label:'Hành động',t:'dim'},{k:'entity_type',label:'Đối tượng',t:'dim'},
+    {k:'actor_role',label:'Vai trò',t:'dim'},{k:'created_date',label:'Ngày',t:'dim'},
+    {k:'id',label:'Số lượng',t:'metric'},
+  ]},
+};
+const AGGS = [['count','Đếm'],['count_distinct','Đếm khác nhau'],['sum','Tổng'],['avg','Trung bình'],['min','Nhỏ nhất'],['max','Lớn nhất']];
+const CHARTS = [['bar','Cột'],['barH','Cột ngang'],['line','Đường'],['pie','Tròn'],['donut','Donut'],['table','Bảng'],['kpi','Số lớn']];
+const PALETTE = ['#4f46e5','#0ea5e9','#22c55e','#f59e0b','#ef4444','#a855f7','#14b8a6'];
+
+function mockRows(dim, n=5, seed=1){
+  const base = {
+    stage:[['ASSIGNED',11],['TVBH',4],['CSKH',1],['NEW',1],['QUALIFIED',1]],
+    customer_classification:[['Tiềm năng',12],['Không chất lượng',4],['Quan tâm',2]],
+    source:[['FB Lead',9],['Giới thiệu',5],['Trực tiếp',4]],
+    province:[['Hà Nội',8],['Hải Phòng',5],['Quảng Ninh',3],['Nghệ An',2],['Đà Nẵng',2]],
+    region:[['Bắc',13],['Trung',3],['Nam',2]],
+    assigned_department:[['TT KD miền Bắc',8],['TT KD miền Nam',5],['Phòng CSKH',3]],
+    status:[['PENDING',2],['APPROVED',37],['REJECTED',4],['DEPLOYING',28]],
+    action:[['lead_created',20],['assigned',15],['proposal_created',12],['station_created',8]],
+    entity_type:[['lead',25],['proposal',15],['station',8]],
+    actor_role:[['SALES',18],['MKT',9],['ADMIN',6]],
+    id:[['Tổng',18]],
+    created_date:[['2026-10-01',4],['2026-10-02',6],['2026-10-03',3],['2026-10-04',5],['2026-10-05',8]],
+  };
+  const arr = base[dim] || base.stage;
+  return arr.slice(0,n).map(r=>({dim:r[0], value:r[1]}));
+}
+
+/* ============================================================
+   STATE
+============================================================ */
+const reports = [
+  { id:'r1', name:'Báo cáo tổng hợp', widgets:[
+    {id:'c1',type:'control',controlType:'dateRange',title:'Khoảng thời gian',layout:{x:0,y:0,w:4,h:2}},
+    {id:'c2',type:'control',controlType:'select',title:'Vùng miền',field:'region',defaultValue:'Bắc',layout:{x:4,y:0,w:4,h:2}},
+    {id:'t1',type:'text',title:'Tiêu đề',visualConfig:{text:'BÁO CÁO TỔNG HỢP — LEAD ĐẾN ON TRẠM'},layout:{x:8,y:0,w:4,h:2}},
+    {id:'k1',type:'kpi',title:'Lead → ON',dataSourceId:'leads',dataConfig:{dimension:'id',metric:'id',agg:'count'},visualConfig:{suffix:' trạm'},layout:{x:0,y:2,w:3,h:2}},
+    {id:'k2',type:'kpi',title:'Tỷ lệ chuyển đổi',dataSourceId:'leads',dataConfig:{dimension:'id',metric:'id',agg:'count'},visualConfig:{suffix:'%'},layout:{x:3,y:2,w:3,h:2}},
+    {id:'k3',type:'kpi',title:'Đang xử lý',dataSourceId:'proposals',dataConfig:{dimension:'id',metric:'id',agg:'count'},visualConfig:{suffix:''},layout:{x:6,y:2,w:3,h:2}},
+    {id:'k4',type:'kpi',title:'Trạm hoạt động',dataSourceId:'stations',dataConfig:{dimension:'id',metric:'id',agg:'count'},visualConfig:{suffix:''},layout:{x:9,y:2,w:3,h:2}},
+    {id:'g1',type:'chart',title:'Lead theo stage',dataSourceId:'leads',dataConfig:{dimension:'stage',metric:'id',agg:'count',sort:'value_desc',limit:20},visualConfig:{chartType:'bar',showLegend:false,showLabels:true},layout:{x:0,y:4,w:6,h:5}},
+    {id:'g2',type:'chart',title:'Lead theo nguồn',dataSourceId:'leads',dataConfig:{dimension:'source',metric:'id',agg:'count',sort:'value_desc',limit:20},visualConfig:{chartType:'donut',showLegend:true},layout:{x:6,y:4,w:6,h:5}},
+    {id:'g3',type:'chart',title:'Pipeline theo thời gian',dataSourceId:'leads',dataConfig:{dimension:'created_date',metric:'id',agg:'count',sort:'dim_asc',limit:30},visualConfig:{chartType:'line',showLegend:true},layout:{x:0,y:9,w:12,h:5}},
+    {id:'t2',type:'table',title:'Đề xuất theo trạng thái',dataSourceId:'proposals',dataConfig:{dimension:'status',metric:'id',agg:'count',sort:'value_desc',limit:20},visualConfig:{},layout:{x:0,y:14,w:6,h:5}},
+    {id:'d1',type:'detail',title:'Bảng chi tiết Lead → ON',layout:{x:6,y:14,w:6,h:5}},
+  ]},
+  { id:'r2', name:'Báo cáo MKT', widgets:[
+    {id:'k1',type:'kpi',title:'Tổng Lead',dataSourceId:'leads',dataConfig:{dimension:'id',metric:'id',agg:'count'},visualConfig:{suffix:''},layout:{x:0,y:0,w:4,h:2}},
+    {id:'g1',type:'chart',title:'Lead theo vùng',dataSourceId:'leads',dataConfig:{dimension:'region',metric:'id',agg:'count',sort:'value_desc',limit:20},visualConfig:{chartType:'pie',showLegend:true},layout:{x:4,y:0,w:8,h:5}},
+  ]},
+];
+let activeReportId = 'r1';
+let selectedId = null;
+let mode = 'edit';           // edit | view
+let panelTab = 'config';
+let dirty = false;
+let history = [], hIndex = -1;
+
+const controls = {};         // { controlId: value }
+let reportSeq = 2;
+
+/* ============================================================
+   HELPERS
+============================================================ */
+const $ = (s,el=document)=>el.querySelector(s);
+const rpt = ()=>reports.find(r=>r.id===activeReportId);
+const widgets = ()=>rpt().widgets;
+const byId = id=>widgets().find(w=>w.id===id);
+
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800);
+}
+function setStatus(kind,text){
+  const el=$('#saveStatus'); el.className='status '+kind;
+  $('.txt',el).textContent=text;
+}
+function markDirty(){ dirty=true; setStatus('dirty','Chưa lưu'); }
+function snapshot(){
+  history = history.slice(0,hIndex+1);
+  history.push(JSON.stringify({reports,widgets:null}));
+  hIndex = history.length-1;
+  updateHistoryButtons();
+}
+function updateHistoryButtons(){
+  $('#undoBtn').disabled = hIndex<=0;
+  $('#redoBtn').disabled = hIndex>=history.length-1;
+}
+function undo(){ if(hIndex<=0) return; hIndex--; restore(); }
+function redo(){ if(hIndex>=history.length-1) return; hIndex++; restore(); }
+function restore(){
+  const snap=JSON.parse(history[hIndex]);
+  if(snap.reports){ reports.splice(0,reports.length,...snap.reports); }
+  selectedId=null; markDirty(); renderAll(); updateHistoryButtons();
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+function renderAll(){ renderTabs(); renderToolbar(); renderCanvas(); renderPanel(); }
+
+function renderToolbar(){
+  const edit = mode==='edit';
+  const t=$('#toolbar');
+  t.style.display='';
+  t.querySelectorAll('.tbtn.ghost,.tgroup,#addBtn').forEach(()=>{});
+  const show=edit?'':'none';
+  $('#undoBtn').style.display=show; $('#redoBtn').style.display=show;
+  $('#addBtn').parentElement.style.display=show;
+  $('#saveBtn').style.display=show;
+  $('#viewBtnTxt').textContent = edit?'Xem':'Chỉnh sửa';
+  $('#reportName').readOnly = !edit;
+}
+function toggleMode(){
+  mode = mode==='edit'?'view':'edit';
+  if(mode==='view'){ selectedId=null; }
+  renderAll();
+  toast(mode==='view'?'Đang ở chế độ Xem':'Đang ở chế độ Chỉnh sửa');
+}
+
+function renderTabs(){
+  const bar=$('#tabbar');
+  if(mode==='view'){ bar.style.display='none'; return; }
+  bar.style.display='flex';
+  bar.innerHTML = reports.map(r=>`
+    <button class="rtab ${r.id===activeReportId?'active':''}" onclick="switchReport('${r.id}')">
+      ${r.name}
+      ${reports.length>1?`<span class="x" onclick="removeReport(event,'${r.id}')"><svg class="icon sm" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>`:''}
+    </button>`).join('') +
+    `<button class="rtab-add" onclick="addReport()">+ Báo cáo</button>`;
+}
+function switchReport(id){ activeReportId=id; selectedId=null; renderAll(); }
+function addReport(){
+  const id='r'+(++reportSeq);
+  reports.push({id,name:'Báo cáo '+reportSeq,widgets:[]});
+  activeReportId=id; selectedId=null; markDirty(); snapshot(); renderAll();
+  toast('Đã thêm báo cáo mới');
+}
+function removeReport(e,id){
+  e.stopPropagation();
+  if(reports.length<=1) return;
+  reports.splice(reports.findIndex(r=>r.id===id),1);
+  if(activeReportId===id) activeReportId=reports[0].id;
+  selectedId=null; markDirty(); snapshot(); renderAll();
+}
+
+function renderCanvas(){
+  const grid=$('#grid');
+  grid.className='grid'+(mode==='edit'?' showlines':'');
+  const ws=widgets();
+  if(ws.length===0){
+    grid.innerHTML=`<div class="canvas-empty">Khung vẽ trống.<br>Bấm <b>Thêm</b> để thêm biểu đồ, KPI, bảng, bộ lọc…</div>`;
+    grid.style.height='100%';
+    return;
+  }
+  const maxY = Math.max(...ws.map(w=>w.layout.y+w.layout.h));
+  const cw = grid.clientWidth || $('#canvasWrap').clientWidth-32;
+  const colW = (cw - GAP*(COLS-1))/COLS;
+  grid.style.height = (maxY*ROW + (maxY-1)*GAP + GAP) + 'px';
+  grid.innerHTML = ws.map(w=>{
+    const l=w.layout;
+    const left=l.x*(colW+GAP), top=l.y*(ROW+GAP);
+    const width=l.w*colW+(l.w-1)*GAP, height=l.h*ROW+(l.h-1)*GAP;
+    const sel = w.id===selectedId?'selected':'';
+    const editable = mode==='edit'?'editable':'';
+    return `<div class="w ${sel} ${editable}" data-id="${w.id}"
+      style="left:${left}px;top:${top}px;width:${width}px;height:${height}px"
+      onpointerdown="onWidgetPointer(event,'${w.id}')">
+      ${w.id===selectedId?`<div class="wbadge">${w.type}</div>
+        <button class="wdel" onpointerdown="event.stopPropagation()" onclick="delWidget('${w.id}')">
+          <svg class="icon sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+        <div class="rz"></div>`:''}
+      <div class="whead"><span class="gt"><svg class="icon sm" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg></span>${w.title||''}</div>
+      <div class="wbody">${renderWidgetBody(w)}</div>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.rz').forEach(el=>{
+    el.addEventListener('pointerdown',e=>startResize(e,el.closest('.w').dataset.id));
+  });
+}
+function onWidgetPointer(e,id){
+  if(mode!=='edit') return;
+  if(e.target.closest('.wdel')||e.target.closest('.rz')) return;
+  selectedId=id; renderPanel(); renderCanvas();
+  // chỉ kéo khi bấm vào header (hoặc vùng không phải body tương tác)
+  if(!e.target.closest('.whead')) return;
+  startDrag(e,id);
+}
+
+/* ============================================================
+   WIDGET RENDERERS (SVG tự vẽ, không phụ thuộc mạng)
+============================================================ */
+function effRows(w){
+  if(w.type==='kpi'){
+    // KPI mock theo dataset + filter control
+    const fv = controlFilterDesc(w.dataSourceId);
+    const base={leads:18,proposals:43,stations:64}[w.dataSourceId]||20;
+    const val = fv?Math.max(3,base-6):base;
+    return [{dim:'v',value:val}];
+  }
+  if(w.type==='detail') return null;
+  const dim = w.dataConfig?.dimension||'stage';
+  let rows = mockRows(dim, 6);
+  // nếu có control select cho dataset => lọc giả lập
+  const sel = controlValueForDataset(w.dataSourceId);
+  if(sel){ rows = rows.map(r=>({dim:r.dim,value:Math.max(1,Math.round(r.value*(r.dim===sel?1:.6)))})); }
+  return rows;
+}
+function controlValueForDataset(dsId){
+  const c = widgets().find(x=>x.type==='control'&&x.controlType==='select'&&x.dataSourceId!==undefined||(''+x.controlType==='select'));
+  const ctrls = widgets().filter(x=>x.type==='control'&&x.controlType==='select');
+  for(const c of ctrls){ if(c.dataSourceId===dsId||!c.dataSourceId) return controls[c.id]; }
+  return null;
+}
+function controlFilterDesc(dsId){ return controlValueForDataset(dsId); }
+
+function renderWidgetBody(w){
+  if(w.type==='text') return `<div class="textw">${(w.visualConfig?.text)||w.title||'Văn bản'}</div>`;
+  if(w.type==='control') return renderControl(w);
+  if(w.type==='kpi'){
+    const v=effRows(w)[0].value;
+    return `<div class="kpi"><div class="val">${v}${w.visualConfig?.suffix||''}</div><div class="sub">${DATASETS[w.dataSourceId]?.label||''} · đã lọc theo bộ lọc</div></div>`;
+  }
+  if(w.type==='detail') return renderDetail();
+  const rows = effRows(w)||[];
+  const ct = w.visualConfig?.chartType||'bar';
+  if(ct==='table') return renderTable(rows);
+  if(ct==='kpi') return `<div class="kpi"><div class="val">${rows.reduce((s,r)=>s+r.value,0)}</div></div>`;
+  return renderChart(ct, rows, w);
+}
+function renderControl(w){
+  if(w.controlType==='dateRange'){
+    return `<div class="control"><label>${w.title||'Khoảng thời gian'}</label>
+      <div class="row"><input type="date" value="2026-10-01" onpointerdown="event.stopPropagation()"><input type="date" value="2026-10-11" onpointerdown="event.stopPropagation()"></div></div>`;
+  }
+  const field=w.field||'region';
+  const opts = mockRows(field,6).map(r=>r.dim);
+  const cur = controls[w.id]||w.defaultValue||opts[0];
+  return `<div class="control" onpointerdown="event.stopPropagation()"><label>${w.title||field}</label>
+    <select onchange="setControl('${w.id}',this.value)">
+      <option value="">Tất cả</option>
+      ${opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')}
+    </select></div>`;
+}
+function setControl(id,val){ controls[id]=val; renderCanvas(); }
+
+function renderTable(rows){
+  return `<table class="tbl"><thead><tr><th>Nhóm</th><th class="num">Giá trị</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${r.dim}</td><td class="num">${r.value}</td></tr>`).join('')}</tbody></table>`;
+}
+function renderDetail(){
+  const d=[['LD-000047','Hải Nguyên 2','Nguyễn T. Thảo',2,1,'11/10/2026',1.0],
+           ['LD-000042','Lead đã phân','Lê Đức Tài',2,2,'09/10/2026',3.2],
+           ['LD-000001','Lead MKT','—',1,0,'—','—']];
+  return `<table class="tbl"><thead><tr><th>Mã Lead</th><th>Họ tên</th><th>Phụ trách</th><th class="num">ĐX</th><th class="num">Trạm</th><th>Ngày ON</th><th class="num">Tổng ngày</th></tr></thead>
+    <tbody>${d.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="num">${r[3]}</td><td class="num">${r[4]}</td><td>${r[5]}</td><td class="num">${r[6]}</td></tr>`).join('')}</tbody></table>`;
+}
+
+/* -------- charts bằng SVG -------- */
+function renderChart(type,rows,w){
+  const W=300,H=160,pad=26;
+  const max=Math.max(1,...rows.map(r=>r.value));
+  if(type==='bar'||type==='barH'){
+    const showLabels=w.visualConfig?.showLabels;
+    const bw=(W-pad-10)/rows.length;
+    const bars=rows.map((r,i)=>{
+      const h=(r.value/max)*(H-pad-12);
+      const x=pad+i*bw, y=H-12-h;
+      return `<rect x="${x+4}" y="${y}" width="${bw-8}" height="${h}" rx="2" fill="${PALETTE[i%PALETTE.length]}"/>
+        ${showLabels?`<text x="${x+bw/2}" y="${y-3}" font-size="9" text-anchor="middle" fill="#6b7280">${r.value}</text>`:''}`;
+    }).join('');
+    const labels=rows.map((r,i)=>`<text x="${pad+i*bw+bw/2}" y="${H-1}" font-size="8.5" text-anchor="middle" fill="#9ca3af">${String(r.dim).slice(0,8)}</text>`).join('');
+    return svg(W,H,`${[0,.25,.5,.75,1].map(t=>`<line x1="${pad}" x2="${W-6}" y1="${12+t*(H-pad-12)}" y2="${12+t*(H-pad-12)}" stroke="#f1f5f9"/>`).join('')}${bars}${labels}`);
+  }
+  if(type==='line'){
+    const step=(W-pad-10)/(rows.length-1||1);
+    const pts=rows.map((r,i)=>[pad+i*step, H-12-(r.value/max)*(H-pad-12)]);
+    const path=pts.map((p,i)=>(i?'L':'M')+p[0]+' '+p[1]).join(' ');
+    const dots=pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#4f46e5"/>`).join('');
+    const labels=rows.map((r,i)=>`<text x="${pad+i*step}" y="${H-1}" font-size="8" text-anchor="middle" fill="#9ca3af">${String(r.dim).slice(5)}</text>`).join('');
+    return svg(W,H,`${[0,.25,.5,.75,1].map(t=>`<line x1="${pad}" x2="${W-6}" y1="${12+t*(H-pad-12)}" y2="${12+t*(H-pad-12)}" stroke="#f1f5f9"/>`).join('')}<path d="${path}" fill="none" stroke="#4f46e5" stroke-width="2"/>${dots}${labels}`);
+  }
+  // pie / donut
+  const cx=W/2, cy=H/2, R=58, r0 = type==='donut'?32:0;
+  const total=rows.reduce((s,x)=>s+x.value,0)||1;
+  let a=-Math.PI/2, arcs='';
+  rows.forEach((row,i)=>{
+    const ang=row.value/total*Math.PI*2, a2=a+ang, large=ang>Math.PI?1:0;
+    const x1=cx+R*Math.cos(a), y1=cy+R*Math.sin(a), x2=cx+R*Math.cos(a2), y2=cy+R*Math.sin(a2);
+    let d;
+    if(r0>0){
+      const x3=cx+r0*Math.cos(a2), y3=cy+r0*Math.sin(a2), x4=cx+r0*Math.cos(a), y4=cy+r0*Math.sin(a);
+      d=`M${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${r0} ${r0} 0 ${large} 0 ${x4} ${y4} Z`;
+    } else {
+      d=`M${cx} ${cy} L${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} Z`;
+    }
+    arcs+=`<path d="${d}" fill="${PALETTE[i%PALETTE.length]}"/>`;
+    a=a2;
+  });
+  const legend = w.visualConfig?.showLegend ? `<div class="legend">${rows.map((r,i)=>`<span><i style="background:${PALETTE[i%PALETTE.length]}"></i>${r.dim} (${r.value})</span>`).join('')}</div>`:'';
+  return `<div style="display:flex;flex-direction:column;height:100%"><div style="flex:1;min-height:0">${svg(W,H,arcs)}</div>${legend}</div>`;
+}
+function svg(W,H,inner){
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${inner}</svg>`;
+}
+
+/* ============================================================
+   SELECT / CONFIG PANEL
+============================================================ */
+function selectWidget(id){ selectedId=id; if(panelTab!=='config') panelTab='config'; renderCanvas(); renderPanel(); }
+
+function setPanelTab(t){ panelTab=t; renderPanel(); }
+function renderPanel(){
+  const panel=$('#panel');
+  if(mode==='view'){ panel.classList.add('off'); return; }
+  panel.classList.remove('off');
+  $('#ptabData').classList.toggle('active',panelTab==='data');
+  $('#ptabConfig').classList.toggle('active',panelTab==='config');
+  if(panelTab==='data'){ $('#phead').textContent='Nguồn dữ liệu'; renderDataPanel(); }
+  else { $('#phead').textContent = selectedId?'Cấu hình — '+(byId(selectedId)?.title||''):'Cấu hình trang'; renderConfigPanel(); }
+}
+
+function renderDataPanel(){
+  const body=$('#pbody'); const foot=$('#pfoot');
+  foot.innerHTML='<span class="pill">Chỉ 4 dataset nội bộ</span>';
+  body.innerHTML=`
+    <div class="search"><svg class="icon sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input placeholder="Tìm nguồn dữ liệu…" oninput="filterDs(this.value)"></div>
+    <div style="height:8px"></div>
+    <div id="dsList">
+    ${Object.entries(DATASETS).map(([k,ds])=>`
+      <div class="ds" data-ds="${k}">
+        <div class="dshead" onclick="toggleDs(this)">
+          <svg class="icon sm" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+          <span class="nm">${ds.label}</span>
+          <span class="conn">● ${ds.conn}</span>
+        </div>
+        <div class="dsbody">
+          <div class="fgroup">Chiều phân tích (dimension)</div>
+          ${ds.fields.filter(f=>f.t==='dim').map(f=>fitem(k,f)).join('')}
+          <div class="fgroup">Chỉ số (metric)</div>
+          ${ds.fields.filter(f=>f.t==='metric').map(f=>fitem(k,f)).join('')}
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="hint">Bấm một trường để gán vào biểu đồ đang chọn (dimension hoặc metric). Field lấy từ <code>GET /builder/datasets</code>.</div>`;
+}
+function fitem(ds,f){
+  return `<div class="fitem" onclick="applyField('${ds}','${f.k}','${f.t}')">
+    <span class="ab">${f.t==='metric'?'#':'Abc'}</span>${f.label}<span class="ft">${f.k}</span></div>`;
+}
+function toggleDs(el){ el.parentElement.classList.toggle('open'); }
+function filterDs(q){
+  q=q.toLowerCase();
+  document.querySelectorAll('.ds').forEach(el=>{
+    const k=el.dataset.ds, label=DATASETS[k].label.toLowerCase();
+    el.style.display = label.includes(q)?'':'none';
+  });
+}
+function applyField(ds,key,type){
+  if(!selectedId){ toast('Chọn một widget trên canvas trước'); return; }
+  const w=byId(selectedId);
+  if(w.type==='control'){ w.field=key; w.dataSourceId=ds; toast('Đã gán trường lọc: '+key); }
+  else { w.dataSourceId=ds; w.dataConfig=w.dataConfig||{}; w.dataConfig[type==='metric'?'metric':'dimension']=key; toast('Đã gán '+(type==='metric'?'chỉ số':'chiều')+': '+key); }
+  markDirty(); snapshot(); renderCanvas(); renderPanel();
+}
+
+function renderConfigPanel(){
+  const body=$('#pbody'), foot=$('#pfoot');
+  if(!selectedId){
+    foot.innerHTML='';
+    body.innerHTML=`
+      <details class="section" open><summary>Cấu hình trang báo cáo</summary>
+        <div class="sinner">
+          <div class="fld"><label>Tên báo cáo</label><input value="${rpt().name}" oninput="renameReport(this.value)"></div>
+          <div class="two">
+            <div class="fld"><label>Số cột lưới</label><input value="12" disabled></div>
+            <div class="fld"><label>Chiều cao hàng</label><input value="46 px" disabled></div>
+          </div>
+          <div class="hint">Chọn một thành phần trên canvas để cấu hình chi tiết. Đây là cấu hình chung của báo cáo.</div>
+        </div>
+      </details>
+      <details class="section" open><summary>Bố cục</summary>
+        <div class="sinner">
+          <button class="btn" onclick="toast('(mock) Khôi phục bố cục mặc định')">Khôi phục bố cục mặc định</button>
+        </div>
+      </details>`;
+    return;
+  }
+  const w=byId(selectedId);
+  body.innerHTML=`
+    <details class="section" open><summary>Cấu hình dữ liệu</summary>
+      <div class="sinner">
+        ${w.type==='control'?controlConfig(w):w.type==='text'?`<div class="hint">Thành phần văn bản không cần cấu hình dữ liệu.</div>`:w.type==='detail'?`<div class="hint">Bảng chi tiết Lead→ON dùng endpoint <code>/lead-details</code> + bộ lọc chung.</div>`:dataConfig(w)}
+      </div>
+    </details>
+    ${['control','text','detail'].includes(w.type)?'':`
+    <details class="section" open><summary>Cấu hình giao diện</summary>
+      <div class="sinner">${visualConfig(w)}</div>
+    </details>`}
+    <details class="section"><summary>Bộ lọc (widget)</summary>
+      <div class="sinner">
+        <div class="hint">Thêm điều kiện riêng cho widget này (nếu cần).</div>
+        <button class="btn" onclick="toast('(mock) Thêm bộ lọc widget')">+ Thêm điều kiện</button>
+      </div>
+    </details>`;
+  foot.innerHTML=`<button class="btn danger" onclick="delWidget('${w.id}')">Xóa phần tử</button>`;
+}
+function dataConfig(w){
+  const ds=DATASETS[w.dataSourceId]||DATASETS.leads;
+  const dims=ds.fields.filter(f=>f.t==='dim'), mets=ds.fields.filter(f=>f.t==='metric');
+  const dc=w.dataConfig||(w.dataConfig={dimension:dims[0].k,metric:mets[0].k,agg:'count',sort:'value_desc',limit:20});
+  return `
+    <div class="fld"><label>Nguồn dữ liệu</label>
+      <select onchange="upd('dataSourceId',this.value)">${Object.entries(DATASETS).map(([k,d])=>`<option value="${k}" ${k===w.dataSourceId?'selected':''}>${d.label}</option>`).join('')}</select></div>
+    <div class="fld"><label>Nhóm theo (dimension)</label>
+      <select onchange="updData('dimension',this.value)">${dims.map(f=>`<option value="${f.k}" ${f.k===dc.dimension?'selected':''}>${f.label}</option>`).join('')}</select></div>
+    <div class="two">
+      <div class="fld"><label>Chỉ số</label>
+        <select onchange="updData('metric',this.value)">${mets.map(f=>`<option value="${f.k}" ${f.k===dc.metric?'selected':''}>${f.label}</option>`).join('')}</select></div>
+      <div class="fld"><label>Phép gộp</label>
+        <select onchange="updData('agg',this.value)">${AGGS.map(a=>`<option value="${a[0]}" ${a[0]===dc.agg?'selected':''}>${a[1]}</option>`).join('')}</select></div>
+    </div>
+    <div class="two">
+      <div class="fld"><label>Sắp xếp</label>
+        <select onchange="updData('sort',this.value)">
+          <option value="value_desc" ${dc.sort==='value_desc'?'selected':''}>Giá trị giảm</option>
+          <option value="value_asc" ${dc.sort==='value_asc'?'selected':''}>Giá trị tăng</option>
+          <option value="dim_asc" ${dc.sort==='dim_asc'?'selected':''}>Nhóm A→Z</option>
+        </select></div>
+      <div class="fld"><label>Giới hạn</label><input type="number" value="${dc.limit}" min="1" max="200" onchange="updData('limit',+this.value)"></div>
+    </div>`;
+}
+function controlConfig(w){
+  return `
+    <div class="fld"><label>Loại điều khiển</label>
+      <select onchange="upd('controlType',this.value)">
+        <option value="dateRange" ${w.controlType==='dateRange'?'selected':''}>Ngày (khoảng)</option>
+        <option value="select" ${w.controlType==='select'?'selected':''}>Danh mục (chọn 1)</option>
+      </select></div>
+    ${w.controlType==='select'?`
+    <div class="fld"><label>Trường lọc (field)</label>
+      <select onchange="upd('field',this.value)">${['region','province','stage','source','status'].map(f=>`<option value="${f}" ${f===w.field?'selected':''}>${f}</option>`).join('')}</select></div>
+    <div class="fld"><label>Giá trị mặc định</label><input value="${w.defaultValue||''}" onchange="upd('defaultValue',this.value)"></div>`:''}
+    <div class="hint">Bộ lọc cấp dashboard — áp cho mọi biểu đồ cùng nguồn dữ liệu.</div>`;
+}
+function visualConfig(w){
+  const vc=w.visualConfig||(w.visualConfig={chartType:'bar',showLegend:false,showLabels:false});
+  return `
+    <div class="fld"><label>Tiêu đề</label><input value="${w.title||''}" oninput="upd('title',this.value)"></div>
+    <div class="fld"><label>Loại biểu đồ</label>
+      <select onchange="updVC('chartType',this.value)">${CHARTS.map(c=>`<option value="${c[0]}" ${c[0]===vc.chartType?'selected':''}>${c[1]}</option>`).join('')}</select></div>
+    <div class="fld"><label>Bảng màu</label>
+      <select onchange="toast('(mock) Đổi bảng màu')"><option>Mặc định</option><option>Doanh nghiệp</option><option>Biển</option></select></div>
+    <label class="check"><input type="checkbox" ${vc.showLegend?'checked':''} onchange="updVC('showLegend',this.checked)"> Hiện chú giải</label>
+    <label class="check"><input type="checkbox" ${vc.showLabels?'checked':''} onchange="updVC('showLabels',this.checked)"> Hiện nhãn dữ liệu</label>
+    <div class="fld"><label>Định dạng số</label>
+      <select onchange="toast('(mock) Đổi định dạng số')"><option>1.000</option><option>1,000</option><option>1 000</option></select></div>`;
+}
+function upd(k,v){ byId(selectedId)[k]=v; markDirty(); snapshot(); renderCanvas(); }
+function updData(k,v){ byId(selectedId).dataConfig[k]=v; markDirty(); snapshot(); renderCanvas(); }
+function updVC(k,v){ const w=byId(selectedId); w.visualConfig=w.visualConfig||{}; w.visualConfig[k]=v; markDirty(); snapshot(); renderCanvas(); renderPanel(); }
+function renameReport(v){ rpt().name=v; $('#reportName').value=v; markDirty(); renderTabs(); }
+
+/* ============================================================
+   DRAG & RESIZE (grid snap)
+============================================================ */
+function gridMetrics(){
+  const grid=$('#grid'); const cw=grid.clientWidth||600;
+  const colW=(cw-GAP*(COLS-1))/COLS;
+  return { colW, gridRect:grid.getBoundingClientRect() };
+}
+function startDrag(e,id){
+  e.preventDefault();
+  const w=byId(id), l={...w.layout};
+  const startX=e.clientX,startY=e.clientY;
+  const {colW}=gridMetrics();
+  let moved=false;
+  const move=ev=>{
+    const dx=ev.clientX-startX, dy=ev.clientY-startY;
+    if(Math.abs(dx)<4&&Math.abs(dy)<4) return;
+    moved=true;
+    const nx=Math.round(l.x+dx/(colW+GAP)), ny=Math.round(l.y+dy/(ROW+GAP));
+    w.layout={...w.layout,x:Math.max(0,Math.min(COLS-w.layout.w,nx)),y:Math.max(0,ny)};
+    renderCanvas();
+  };
+  const up=()=>{ document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up); if(moved){ markDirty(); snapshot(); } };
+  document.addEventListener('pointermove',move); document.addEventListener('pointerup',up);
+}
+function startResize(e,id){
+  e.preventDefault(); e.stopPropagation();
+  const w=byId(id), l={...w.layout};
+  const startX=e.clientX,startY=e.clientY;
+  const {colW}=gridMetrics();
+  let moved=false;
+  const move=ev=>{
+    const dx=ev.clientX-startX, dy=ev.clientY-startY;
+    if(Math.abs(dx)<4&&Math.abs(dy)<4) return;
+    moved=true;
+    const nw=Math.round(l.w+dx/(colW+GAP)), nh=Math.round(l.h+dy/(ROW+GAP));
+    w.layout={...w.layout,w:Math.max(2,Math.min(COLS-w.layout.x,nw)),h:Math.max(2,nh)};
+    renderCanvas();
+  };
+  const up=()=>{ document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up); if(moved){ markDirty(); snapshot(); } };
+  document.addEventListener('pointermove',move); document.addEventListener('pointerup',up);
+}
+
+/* ============================================================
+   WIDGET CRUD
+============================================================ */
+let addSeq=100;
+function nextPos(){ const ws=widgets(); const maxY=ws.length?Math.max(...ws.map(w=>w.layout.y+w.layout.h)):0; return maxY; }
+function addWidget(kind){
+  if(mode!=='edit'){ toast('Bật chế độ Chỉnh sửa để thêm'); return; }
+  const y=nextPos();
+  let w;
+  if(kind==='kpi') w={id:'w'+(++addSeq),type:'kpi',title:'Chỉ số mới',dataSourceId:'leads',dataConfig:{dimension:'id',metric:'id',agg:'count'},visualConfig:{suffix:''},layout:{x:0,y,w:3,h:2}};
+  else if(kind==='table') w={id:'w'+(++addSeq),type:'table',title:'Bảng dữ liệu',dataSourceId:'leads',dataConfig:{dimension:'stage',metric:'id',agg:'count',sort:'value_desc',limit:20},visualConfig:{},layout:{x:0,y,w:6,h:5}};
+  else if(kind==='detail') w={id:'w'+(++addSeq),type:'detail',title:'Bảng chi tiết Lead → ON',layout:{x:0,y,w:12,h:5}};
+  else if(kind==='text') w={id:'w'+(++addSeq),type:'text',title:'Tiêu đề',visualConfig:{text:'TIÊU ĐỀ MỚI'},layout:{x:0,y,w:6,h:2}};
+  else if(kind==='controlDate') w={id:'w'+(++addSeq),type:'control',controlType:'dateRange',title:'Khoảng thời gian',layout:{x:0,y,w:4,h:2}};
+  else if(kind==='controlSelect') w={id:'w'+(++addSeq),type:'control',controlType:'select',title:'Danh mục',field:'region',layout:{x:4,y,w:4,h:2}};
+  else w={id:'w'+(++addSeq),type:'chart',title:'Biểu đồ mới',dataSourceId:'leads',dataConfig:{dimension:'stage',metric:'id',agg:'count',sort:'value_desc',limit:20},visualConfig:{chartType:'bar',showLegend:false,showLabels:false},layout:{x:0,y,w:6,h:5}};
+  widgets().push(w); selectedId=w.id; panelTab='config'; markDirty(); snapshot(); renderAll();
+  toast('Đã thêm: '+(w.title||w.type));
+}
+function delWidget(id){
+  const ws=widgets(); const i=ws.findIndex(w=>w.id===id); if(i<0) return;
+  ws.splice(i,1); selectedId=null; markDirty(); snapshot(); renderAll();
+  toast('Đã xóa phần tử (Undo để khôi phục)');
+}
+
+/* ============================================================
+   MENU / SAVE / KEYBOARD
+============================================================ */
+function toggleMenu(e){ e.stopPropagation(); $('#addMenu').classList.toggle('open'); }
+function closeMenu(){ $('#addMenu').classList.remove('open'); }
+document.addEventListener('click',closeMenu);
+
+function save(){
+  if(mode!=='edit'){ toast('Chỉ lưu ở chế độ Chỉnh sửa'); return; }
+  setStatus('saving','Đang lưu…');
+  setTimeout(()=>{ setStatus('saved','Đã lưu'); dirty=false; snapshot();
+    toast('Đã lưu báo cáo (mock)'); }, 500);
+}
+$('#reportName').addEventListener('input',e=>{ rpt().name=e.target.value; renderTabs(); markDirty(); });
+
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
+  if(e.ctrlKey&&(e.key.toLowerCase()==='y')){ e.preventDefault(); redo(); }
+  if(e.ctrlKey&&e.key.toLowerCase()==='s'){ e.preventDefault(); save(); }
+  if((e.key==='Delete'||e.key==='Backspace')&&selectedId&&document.activeElement===document.body){ delWidget(selectedId); }
+});
+
+/* ============================================================
+   INIT
+============================================================ */
+// init control default values
+widgets().forEach(w=>{ if(w.type==='control'&&w.controlType==='select') controls[w.id]=w.defaultValue; });
+snapshot();
+renderAll();
+window.addEventListener('resize',()=>renderCanvas());
+</script>
+</body>
+</html>
