@@ -141,6 +141,41 @@ router.get('/stage-durations', requireAuth, requireReportViewer, adminReportCont
 
 /**
  * @swagger
+ * /api/admin/reports/export/excel:
+ *   post:
+ *     tags: [Reports]
+ *     summary: Xuất Excel báo cáo (widget builder hoặc bảng chi tiết Lead, scope theo role)
+ *     description: |
+ *       Body `{ widget }` xuất kết quả preview widget (tối đa 5000 dòng);
+ *       body `{ detail: true, filters }` xuất bảng chi tiết Lead→ON (tối đa 5000 dòng).
+ *       Vượt cap trả header `X-Export-Truncated: true`.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               detail:
+ *                 type: boolean
+ *               filters:
+ *                 type: object
+ *               widget:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: File .xlsx
+ *       400:
+ *         description: Thiếu widget/dữ liệu không hợp lệ
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.post('/export/excel', requireAuth, requireReportViewer, adminReportController.exportReportExcel);
+
+/**
+ * @swagger
  * /api/admin/reports/lead/{id}:
  *   get:
  *     tags: [Reports]

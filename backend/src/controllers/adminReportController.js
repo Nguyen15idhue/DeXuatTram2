@@ -75,6 +75,18 @@ exports.exportBuilderWidget = async (req, res) => {
   }
 };
 
+exports.exportReportExcel = async (req, res) => {
+  try {
+    const data = await reportService.exportReportExcel(req.body || {}, req.query || {}, req.user);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${data.filename}"`);
+    if (data.truncated) res.setHeader('X-Export-Truncated', 'true');
+    res.send(Buffer.from(data.buffer));
+  } catch (error) {
+    sendErr(res, error, 'Report excel export error:');
+  }
+};
+
 exports.getBuilderDatasets = async (req, res) => {
   res.json({ success: true, data: reportBuilderService.getCatalog(), message: 'Danh sách dataset builder' });
 };

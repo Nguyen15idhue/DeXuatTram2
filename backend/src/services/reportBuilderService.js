@@ -134,7 +134,7 @@ const DATASETS = {
 const FILTER_OPS = ['=', '!=', '>', '>=', '<', '<=', 'LIKE'];
 const SORTS = ['value_desc', 'value_asc', 'dim_asc', 'dim_desc'];
 
-function validateWidget(input) {
+function validateWidget(input, rowCap) {
   if (!input || typeof input !== 'object') throw badRequest('Widget không hợp lệ');
   const dsKey = String(input.dataset || '').trim();
   const ds = DATASETS[dsKey];
@@ -166,9 +166,10 @@ function validateWidget(input) {
   });
   const sort = input.sort === undefined || input.sort === null || input.sort === '' ? 'value_desc' : String(input.sort);
   if (!SORTS.includes(sort)) throw badRequest(`Sort không hợp lệ: ${sort}`);
+  const cap = Number.isFinite(Number(rowCap)) && Number(rowCap) > 0 ? Math.min(Math.round(Number(rowCap)), 10000) : MAX_ROWS;
   let limit = input.limit === undefined || input.limit === null || input.limit === '' ? 20 : Number(input.limit);
   if (!Number.isFinite(limit)) throw badRequest('Limit không hợp lệ');
-  limit = Math.min(Math.max(Math.round(limit), 1), MAX_ROWS);
+  limit = Math.min(Math.max(Math.round(limit), 1), cap);
   return {
     dataset: dsKey,
     dimension: dimKey,
@@ -192,8 +193,8 @@ function aggSql(agg, col) {
   return `MAX(${col})`;
 }
 
-async function compileWidget(input, user) {
-  const w = validateWidget(input);
+async function compileWidget(input, user, rowCap) {
+  const w = validateWidget(input, rowCap);
   const ds = DATASETS[w.dataset];
   const dim = ds.dimensions[w.dimension];
   const metric = ds.metrics[w.metric];

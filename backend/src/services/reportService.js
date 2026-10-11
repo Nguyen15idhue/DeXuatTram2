@@ -459,13 +459,7 @@ function journeyDurations(m) {
   };
 }
 
-exports.getLeadDetails = async (query, user) => {
-  const { filters } = parseFilters(query || {});
-  const { page, limit } = parsePaging(query || {});
-  const cacheKey = `reports:lead-details:${user.id}:${user.role}:${JSON.stringify(filters)}:${page}:${limit}`;
-  const cached = ttlCache.get(cacheKey);
-  if (cached) return { ...cached, cached: true };
-
+async function queryLeadDetails(filters, user, page, limit) {
   const lw = await leadWhere(user, filters);
   const whereSql = `WHERE ${lw.where.join(' AND ')}`;
   const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM leads l ${whereSql}`, lw.params);
@@ -533,13 +527,100 @@ exports.getLeadDetails = async (query, user) => {
     };
   });
 
-  const result = {
+  return {
     items,
     pagination: { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) },
-    generated_at: new Date().toISOString(),
   };
+}
+
+exports.getLeadDetails = async (query, user) => {
+  const { filters } = parseFilters(query || {});
+  const { page, limit } = parsePaging(query || {});
+  const cacheKey = `reports:lead-details:${user.id}:${user.role}:${JSON.stringify(filters)}:${page}:${limit}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached) return { ...cached, cached: true };
+
+  const { items, pagination } = await queryLeadDetails(filters, user, page, limit);
+  const result = { items, pagination, generated_at: new Date().toISOString() };
   ttlCache.set(cacheKey, result, CACHE_TTL_MS);
   return { ...result, cached: false };
+};
+
+const EXCEL_MAX_ROWS = 5000;
+
+function stampName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function detailRowToExcel(r) {
+  const fmtDate = (v) => (v ? new Date(v).toLocaleString('vi-VN') : '');
+  return {
+    'Mã Lead': r.lead_code || '',
+    'Họ tên': r.full_name || '',
+    'SĐT': r.phone || '',
+    'Stage': r.stage || '',
+    'Phân loại': r.customer_classification || '',
+    'Nguồn': r.source || '',
+    'Tỉnh/Thành': r.province || '',
+    'Vùng': r.region || '',
+    'Ngày tạo': fmtDate(r.created_at),
+    'Người phụ trách': r.assignee_name || '',
+    'Phòng ban': r.assigned_department || '',
+    'Ngày giao': fmtDate(r.assigned_at),
+    'Số lần CSKH': r.cskh_count || 0,
+    'Số lần TVBH': r.tvbh_count || 0,
+    'Kết quả TVBH': r.sales_outcome || '',
+    'Stage hành trình': r.journey_stage || '',
+    'Đề xuất': (r.proposals || []).map((p) => `${p.code || `#${p.id}`} (${p.status})`).join('; '),
+    'Trạm': (r.stations || []).map((s) => `${s.name || `#${s.id}`} (${s.status})`).join('; '),
+    'Ngày ON': fmtDate(r.on_at),
+    'Tổng số ngày': r.total_days === null || r.total_days === undefined ? '' : r.total_days,
+    'Tạo→Giao (ngày)': r.durations.new_to_assigned_days ?? '',
+    'Giao→Đề xuất (ngày)': r.durations.assigned_to_proposal_days ?? '',
+    'Đề xuất→Ký (ngày)': r.durations.proposal_to_contract_days ?? '',
+    'Ký→Trạm (ngày)': r.durations.contract_to_station_days ?? '',
+    'Trạm→ON (ngày)': r.durations.station_to_on_days ?? '',
+  };
+}
+
+exports.exportReportExcel = async (body, query, user) => {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Bao cao');
+  let filename;
+  let truncated = false;
+
+  if (body && body.detail) {
+    const { filters } = parseFilters((body && body.filters) || query || {});
+    const { items, pagination } = await queryLeadDetails(filters, user, 1, EXCEL_MAX_ROWS + 1);
+    const rows = items.slice(0, EXCEL_MAX_ROWS).map(detailRowToExcel);
+    truncated = items.length > EXCEL_MAX_ROWS;
+    if (rows.length > 0) {
+      ws.columns = Object.keys(rows[0]).map((k) => ({ header: k, key: k, width: 20 }));
+      rows.forEach((r) => ws.addRow(r));
+      ws.getRow(1).font = { bold: true };
+    }
+    filename = `bao_cao_chi_tiet_lead_${stampName()}.xlsx`;
+    void pagination;
+  } else {
+    if (!body || !body.widget) throw badRequest('Thiếu widget để xuất');
+    const reportBuilderService = require('./reportBuilderService');
+    const out = await reportBuilderService.compileWidget(body.widget, user, EXCEL_MAX_ROWS + 1);
+    const rows = out.rows.slice(0, EXCEL_MAX_ROWS);
+    truncated = out.rows.length > EXCEL_MAX_ROWS;
+    ws.columns = [
+      { header: out.widget.title || 'Nhóm', key: 'dim', width: 30 },
+      { header: 'Giá trị', key: 'value', width: 15 },
+    ];
+    rows.forEach((r) => ws.addRow({ dim: r.dim === null ? '(Trống)' : r.dim, value: r.value }));
+    ws.getRow(1).font = { bold: true };
+    filename = `${(out.widget.title || 'bao_cao').replace(/[^\w\-]+/g, '_').slice(0, 60)}_${stampName()}.xlsx`;
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return { filename, buffer, truncated };
 };
 
 exports.getStageDurations = async (query, user) => {
