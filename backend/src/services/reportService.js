@@ -820,7 +820,7 @@ async function datasetLead360Sections() {
 exports.buildReportScope = buildReportScope;
 exports.proposalScopeClause = proposalScopeClause;
 
-const CHART_WHITELIST = ['kpi', 'bar', 'line', 'pie', 'funnel', 'table'];
+const CHART_WHITELIST = ['kpi', 'bar', 'line', 'pie', 'funnel', 'table', 'echarts_bar', 'dwell'];
 const SIZE_WHITELIST = ['sm', 'md', 'lg', 'full'];
 
 function parseWidgets(input) {

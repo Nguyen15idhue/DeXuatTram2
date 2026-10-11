@@ -2,6 +2,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   LineChart, Line, PieChart, Pie, Cell,
 } from 'recharts';
+import EChartWidget from './EChartWidget';
 
 export const PALETTE = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#f97316', '#64748b'];
 
@@ -188,8 +189,18 @@ const RowsTable = ({ rows }) => {
   );
 };
 
+export const ECHART_CHARTS = ['echarts_bar', 'dwell'];
+
 export const renderWidgetBody = (widget, dataset) => {
   const hasRows = dataset && Array.isArray(dataset.rows);
+  if (widget.chart === 'echarts_bar') {
+    return <EChartWidget kind="bar" pairs={hasRows ? toChartPairs(dataset) : toPairs(dataset)} />;
+  }
+  if (widget.chart === 'dwell') {
+    const stages = (dataset && dataset.stages) || [];
+    if (stages.length === 0) return <p className="text-sm opacity-60">Chưa có số liệu</p>;
+    return <EChartWidget kind="dwell" stages={stages} />;
+  }
   switch (widget.chart) {
     case 'kpi':
       if (hasRows) return <RowsSummary rows={dataset.rows} />;

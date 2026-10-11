@@ -7,6 +7,8 @@ export const CHARTS = [
   { value: 'kpi', label: 'Số lớn' },
   { value: 'line', label: 'Đường' },
   { value: 'funnel', label: 'Phễu' },
+  { value: 'echarts_bar', label: 'Cột (ECharts)' },
+  { value: 'dwell', label: 'Thời gian chặng' },
 ];
 
 export const SIZES = [

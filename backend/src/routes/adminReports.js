@@ -311,7 +311,7 @@ router.get('/config', requireAuth, requireReportViewer, adminReportController.ge
  *                       type: string
  *                     chart:
  *                       type: string
- *                       enum: [kpi, bar, line, pie, funnel, table]
+ *                       enum: [kpi, bar, line, pie, funnel, table, echarts_bar, dwell]
  *                     size:
  *                       type: string
  *                       enum: [sm, md, lg, full]
