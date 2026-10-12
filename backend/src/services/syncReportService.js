@@ -12,6 +12,10 @@ const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // + contact API rieng 600ms + ton trong retry_after.
 const SYNC_PROC_CONCURRENCY = 3;
 const SYNC_PROC_DELAY_MS = 200;
+// Full-overwrite dinh ky: cuoi moi FULL_OVERWRITE_HOURS gio, luot AUTO ghi de toan bo
+// tab (don rac tich luy) thay vi partial. Sync tay giu nguyen (chi full khi doi cau truc).
+const FULL_OVERWRITE_HOURS = 2;
+const SUMMARY_TAB = 'Tổng hợp';
 const versionOfCache = new Map();
 let versionOfLiveCount = 0;
 let userMapCache = { at: 0, map: {} };
@@ -2340,6 +2344,44 @@ const ensureMappingsForVersion = async (automationId, version, templateIds = nul
 };
 exports.ensureMappingsForVersion = ensureMappingsForVersion;
 
+// Dem dong tab Tong hop so voi hop ID cac tab nguon (khong dung snapshot vi snapshot
+// con hang stale cua version cu + thieu process moi ve sau). Leach lan 1 -> doi 15s
+// (cho recalc) roi dem lai; van lech thi tra equal=false (caller tu notify).
+// Khong throw (doc that bai -> skipped).
+const checkSummaryTab = async ({ spreadsheetId, tabName = SUMMARY_TAB, expectedIds = [] } = {}) => {
+  const googleSheetService = require('./googleSheetService');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const norm = (v) => String(v || '').trim();
+  const readIds = async () => {
+    const colA = await googleSheetService.readColumnA(spreadsheetId, tabName);
+    return colA.slice(1).map(norm).filter(Boolean);
+  };
+  const diff = (actual) => {
+    const actualSet = new Set(actual);
+    const missing = (expectedIds || []).map(norm).filter((id) => id && !actualSet.has(id));
+    const expSet = new Set((expectedIds || []).map(norm).filter(Boolean));
+    const extra = actual.filter((id) => !expSet.has(id));
+    return { missing, extra };
+  };
+  try {
+    let actual = await readIds();
+    let { missing, extra } = diff(actual);
+    if (missing.length > 0 || extra.length > 0) {
+      await sleep(15000);
+      actual = await readIds();
+      ({ missing, extra } = diff(actual));
+    }
+    return {
+      tab: tabName, expected: (expectedIds || []).length, actual: actual.length,
+      missing: missing.slice(0, 20), extra: extra.slice(0, 20),
+      equal: missing.length === 0 && extra.length === 0,
+    };
+  } catch (e) {
+    return { tab: tabName, expected: (expectedIds || []).length, actual: null, equal: true, skipped: `read_error: ${e.message || e}` };
+  }
+};
+exports.checkSummaryTab = checkSummaryTab;
+
 // Lấy danh sách process IDs cho một version (bao gồm cả các version đã merge vào nó)
 const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, templateIds = null } = {}) => {
   // Chỉ merge trong phạm vi quy trình mẫu đã chọn (templateIds)
@@ -2391,6 +2433,16 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
   // Revert P2 (12/10/2026): date_updated cua 1Office khong tin cay (day-granularity +
   // nhieu process khong bao gio bump) -> luon fetch full de khong sot. Giu P0/P1.
   const fullRun = true;
+  // Cadence full-overwrite: luot AUTO qua FULL_OVERWRITE_HOURS gio tu lan full truoc
+  // thi ep ghi de toan bo tab trong luot nay.
+  let forceFullOverwrite = false;
+  if (trigger === 'auto') {
+    try {
+      const [ar] = await pool.query('SELECT last_full_overwrite_at FROM work_automations WHERE id = ?', [effAuto.id]);
+      const lf = ar.length > 0 ? ar[0].last_full_overwrite_at : null;
+      if (!lf || Date.now() - new Date(lf).getTime() > FULL_OVERWRITE_HOURS * 3600 * 1000) forceFullOverwrite = true;
+    } catch { forceFullOverwrite = true; }
+  }
   await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
   await pool.query('DELETE FROM automation_process_versions WHERE checked_at < NOW() - INTERVAL 30 DAY').catch(() => {});
   const googleSheetService = require('./googleSheetService');
@@ -2496,7 +2548,7 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
       if (created && created.created) sheetTabs.push(tab);
       const colA = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
       const sheetEmpty = colA.length === 0 || colA.every((v) => !v);
-      const needFullOverwrite = (structureChanged && !headerOnlyChanged) || sheetEmpty;
+      const needFullOverwrite = forceFullOverwrite || (structureChanged && !headerOnlyChanged) || sheetEmpty;
       if (needFullOverwrite) {
         await googleSheetService.clearTab(auto.spreadsheet_id, tab);
         const wr = await googleSheetService.upsertRows(auto.spreadsheet_id, tab, headers, rows);
@@ -2632,9 +2684,53 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
   const status = failedCount > 0 ? 'failed' : 'success';
   const errorMsg = failedCount > 0 ? result.failed.map((f) => `Ver ${f.version}: ${f.error}`).join('; ').slice(0, 1000) : null;
   result.timing = { ...tm, versionof_live: versionOfLiveCount, total_ms: Date.now() - T0, full_run: fullRun };
+  if (forceFullOverwrite) result.overwrite_forced = true;
   if (fullRun && failedCount === 0) {
     await pool.query('UPDATE work_automations SET last_full_sync_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
   }
+  if (forceFullOverwrite && failedCount === 0) {
+    await pool.query('UPDATE work_automations SET last_full_overwrite_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
+  }
+  // Giam sat tab Tong hop: chi khi sync full (khong loc version) vi tab gop moi version.
+  // So ID thuc te voi hop ID cac tab nguon vua sync xong.
+  // Leach -> doi recalc 15s roi check lai; van lech thi log + notify (khong fail run).
+  try {
+    if (!version) {
+      const expectedIds = [];
+      let srcOk = false;
+      for (const info of Object.values(result.versions || {})) {
+        if (!info || info.status === 'failed' || !info.tab) continue;
+        try {
+          const colA = await googleSheetService.readColumnA(auto.spreadsheet_id, info.tab);
+          srcOk = true;
+          for (const x of colA.slice(1)) {
+            const s = String(x || '').trim();
+            if (s && !expectedIds.includes(s)) expectedIds.push(s);
+          }
+        } catch (err2) { /* tab loi -> bo qua tab do */ }
+      }
+      if (srcOk) {
+        const check = await exports.checkSummaryTab({ spreadsheetId: auto.spreadsheet_id, expectedIds });
+        result.summary_check = check;
+        if (!check.equal && !check.skipped) {
+          try {
+            const notificationService = require('./notificationService');
+            const [admins] = await pool.query("SELECT id FROM users WHERE role IN ('SUPER_ADMIN','ADMIN') AND status = 'ACTIVE'");
+            for (const a of admins) {
+              await notificationService.create({
+                userId: a.id, type: 'SYNC_SUMMARY_MISMATCH',
+                title: 'Tab Tong hop lech du lieu (' + auto.automation_key + ')',
+                message: 'Thieu ' + check.missing.length + ' dong, thua ' + check.extra.length + ' dong. Kiem tra cong thuc tab ' + SUMMARY_TAB + '.',
+                entityType: 'automation', entityId: effAuto.id,
+              });
+            }
+          } catch (err3) { /* silent */ }
+        }
+      }
+    } else {
+      result.summary_check = { skipped: 'single_version_run' };
+    }
+  } catch (err4) { /* giam sat khong duoc fail run */ }
   if (runId) {
     await pool.query('UPDATE work_automation_runs SET status = ?, error = ?, response_json = ?, finished_at = NOW() WHERE id = ?', [status, errorMsg, JSON.stringify(result), runId]);
   } else {
