@@ -13,6 +13,7 @@ const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SYNC_PROC_CONCURRENCY = 3;
 const SYNC_PROC_DELAY_MS = 200;
 const versionOfCache = new Map();
+let versionOfLiveCount = 0;
 let userMapCache = { at: 0, map: {} };
 const proposalCache = new Map();
 const PROPOSAL_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -284,14 +285,43 @@ exports.listRoots = async (auto) => {
     if (all.length >= (j.total_item || 0) || rows.length === 0 || page > 10) break;
     page++;
   }
-  return all.filter((d) => !d.parent_id && String(d.method || '').includes('Quy tr')).map((d) => ({ ID: d.ID, title: d.title, process_type_id: d.process_type_id || '' }));
+  return all.filter((d) => !d.parent_id && String(d.method || '').includes('Quy tr')).map((d) => ({ ID: d.ID, title: d.title, process_type_id: d.process_type_id || '', date_updated: d.date_updated || d.end || null }));
+};
+
+const saveProcessVersionMap = async (entries) => {
+  const list = (entries || []).filter((e) => e && e.process_id !== undefined && e.process_id !== null);
+  if (!list.length) return 0;
+  const CHUNK = 200;
+  let n = 0;
+  for (let s = 0; s < list.length; s += CHUNK) {
+    const part = list.slice(s, s + CHUNK);
+    const vals = part.map(() => '(?, ?, ?, NOW())').join(', ');
+    const params = [];
+    for (const e of part) params.push(String(e.process_id), e.version !== undefined && e.version !== null ? String(e.version) : null, e.last_seen_updated !== undefined && e.last_seen_updated !== null ? String(e.last_seen_updated) : null);
+    await pool.query(
+      `INSERT INTO automation_process_versions (process_id, version, last_seen_updated, checked_at) VALUES ${vals}
+       ON DUPLICATE KEY UPDATE version = COALESCE(VALUES(version), version), last_seen_updated = COALESCE(VALUES(last_seen_updated), last_seen_updated), checked_at = NOW()`,
+      params
+    );
+    n += part.length;
+  }
+  return n;
 };
 
 exports.versionOf = async (auto, processId) => {
   if (versionOfCache.has(processId)) return versionOfCache.get(processId);
+  try {
+    const [rows] = await pool.query('SELECT version FROM automation_process_versions WHERE process_id = ? LIMIT 1', [String(processId)]);
+    if (rows.length > 0 && rows[0].version !== undefined && rows[0].version !== null && String(rows[0].version) !== '') {
+      versionOfCache.set(processId, String(rows[0].version));
+      return String(rows[0].version);
+    }
+  } catch { /* bo qua, goi live */ }
   const vals = await sessionDialog(auto, processId);
   const v = String(vals.workflow_version_id);
   versionOfCache.set(processId, v);
+  versionOfLiveCount++;
+  saveProcessVersionMap([{ process_id: processId, version: v }]).catch(() => {});
   return v;
 };
 
@@ -2271,6 +2301,48 @@ const getEffectiveMappings = async (automationId, version, templateIds = null) =
   return mappings; // trả về empty array nếu không tìm thấy
 };
 
+// Version chua co mapping (VD version moi vua quet) -> tu gieo bang bulk-apply
+// tu version giong nhat (uu tien cung nhom merge), roi LUU lai de lan sau + UI
+// Mapping tab deu thay (thay vi muon tam roi bo, mo UI ra van thay trong).
+// Chi chay o duong ghi (runSync), khong ghi o dry-run/preview.
+const ensureMappingsForVersion = async (automationId, version, templateIds = null) => {
+  const existing = await exports.getMappings(automationId, version);
+  if (existing.length > 0) return { mappings: existing, seeded: false };
+  const { mergeInfo } = await exports.deduplicateFieldCacheVersions(automationId, templateIds);
+  const group = new Set([String(version)]);
+  for (const m of mergeInfo || []) {
+    if (String(m.keptAs) === String(version)) group.add(String(m.duplicate));
+    if (String(m.duplicate) === String(version)) group.add(String(m.keptAs));
+  }
+  const [rows] = await pool.query(
+    'SELECT DISTINCT version FROM automation_sheet_mappings WHERE automation_id = ?', [automationId]);
+  const withMaps = rows.map((r) => String(r.version)).filter((v) => v !== String(version));
+  if (withMaps.length === 0) return { mappings: [], seeded: false };
+  let treePaths = new Set();
+  try {
+    const tree = await exports.getFieldTree(version);
+    for (const n of (tree.nodes || [])) {
+      for (const f of (n.fields || [])) if (f && f.path) treePaths.add(f.path);
+    }
+  } catch { treePaths = new Set(); }
+  let best = null;
+  let bestScore = -1;
+  for (const cand of withMaps) {
+    const cm = await exports.getMappings(automationId, cand);
+    let score = 0;
+    for (const m of cm) if (treePaths.has(m.source_path)) score++;
+    if (group.has(cand)) score += 0.5;
+    if (score > bestScore) { bestScore = score; best = cand; }
+  }
+  if (!best || bestScore <= 0) return { mappings: [], seeded: false };
+  const applied = await exports.bulkApply(automationId, best, [String(version)], 'merge');
+  const res = ((applied && applied.results) || [])[0] || {};
+  const seeded = await exports.getMappings(automationId, version);
+  console.log(`[runSync] Version ${version} chua co mapping -> gieo tu ${best} (added ${res.added || 0}, unmatched ${res.unmatched || 0})`);
+  return { mappings: seeded, seeded: true, seeded_from: best, added: res.added || 0, unmatched: res.unmatched || 0 };
+};
+exports.ensureMappingsForVersion = ensureMappingsForVersion;
+
 // Lấy danh sách process IDs cho một version (bao gồm cả các version đã merge vào nó)
 const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, templateIds = null } = {}) => {
   // Chỉ merge trong phạm vi quy trình mẫu đã chọn (templateIds)
@@ -2304,17 +2376,33 @@ const getProcessIdsForVersion = async (auto, targetVersion, roots, { limit = 0, 
 
 exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) => {
   if (!auto.spreadsheet_id) throw Object.assign(new Error('Chua cau hinh Sheet ID'), { statusCode: 400 });
+  const T0 = Date.now();
+  const tm = { roots_ms: 0, resolve_ms: 0, collect_ms: 0, sheets_ms: 0, db_ms: 0, fetched: 0, skipped: 0, versionof_live: 0 };
+  versionOfLiveCount = 0;
   const fresh = await workAutomationService.getByKey(auto.automation_key).catch(() => null);
   const effAuto = fresh || auto;
   const token = await getWorkToken(effAuto);
   const userMap = await exports.getUserMap();
+  let t = Date.now();
   let roots = await exports.listRoots(effAuto);
+  tm.roots_ms = Date.now() - t;
   const tplIds = parseTemplateIds(effAuto);
   if (tplIds.length > 0) {
     const nameSet = new Set(tplIds.map(String));
     roots = roots.filter((r) => nameSet.has(String(r.process_type_id)));
   }
+  const updatedById = new Map(roots.map((r) => [String(r.ID), r.date_updated === undefined || r.date_updated === null ? null : String(r.date_updated)]));
+  // Incremental: chi auto + full-refresh qua 24h; sync tay luon full.
+  let fullRun = trigger !== 'auto';
+  if (!fullRun) {
+    try {
+      const [ar] = await pool.query('SELECT last_full_sync_at FROM work_automations WHERE id = ?', [effAuto.id]);
+      const lf = ar.length > 0 ? ar[0].last_full_sync_at : null;
+      if (!lf || Date.now() - new Date(lf).getTime() > 24 * 3600 * 1000) fullRun = true;
+    } catch { fullRun = true; }
+  }
   await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
+  await pool.query('DELETE FROM automation_process_versions WHERE checked_at < NOW() - INTERVAL 30 DAY').catch(() => {});
   const googleSheetService = require('./googleSheetService');
   const result = { versions: {}, unmapped: [], failed: [] };
   const targetVersions = await versionsWithMappings(effAuto.id, version, effAuto);
@@ -2333,7 +2421,7 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
   try { sheetTabs = await googleSheetService.getTabs(auto.spreadsheet_id); } catch { sheetTabs = []; }
   if (targetVersions.length === 0) {
     const note = 'Khong co version nao thuoc quy trinh mau da chon (hoac chua co mapping)';
-    const payload = { versions: {}, note };
+    const payload = { versions: {}, note, timing: { ...tm, versionof_live: versionOfLiveCount, total_ms: Date.now() - T0, full_run: fullRun } };
     if (runId) {
       await pool.query('UPDATE work_automation_runs SET status = ?, error = NULL, response_json = ?, finished_at = NOW() WHERE id = ?', ['success', JSON.stringify(payload), runId]);
     } else {
@@ -2346,28 +2434,81 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
   }
   for (const v of targetVersions) {
     try {
-      // Lấy mappings effective (chỉ trong phạm vi quy trình mẫu đã chọn)
-      const mappings = await getEffectiveMappings(effAuto.id, v, tplIds);
+      // Mapping that + tu gieo neu version moi chua co (chi trong pham vi template da chon)
+      const ensured = await ensureMappingsForVersion(effAuto.id, v, tplIds);
+      const mappings = ensured.mappings;
       if (!mappings.length) {
         console.log(`[runSync] Version ${v} khong co mapping, skip`);
         result.versions[v] = { processes: 0, note: 'Khong tim thay mapping' };
         continue;
       }
+      const seedNote = ensured.seeded
+        ? { seeded_from: ensured.seeded_from, seeded_added: ensured.added, seeded_unmatched: ensured.unmatched } : {};
       // Lấy process IDs (bao gồm cả các version đã merge vào version này, trong lựa chọn)
+      t = Date.now();
       const ids = await getProcessIdsForVersion(effAuto, v, roots, { templateIds: tplIds });
+      tm.resolve_ms += Date.now() - t;
       const tab = `Ver ${v}`;
       const mapSig = JSON.stringify(mappings.map((m) => [m.source_path, m.sheet_col, m.label || '']));
       const [stRows] = await pool.query('SELECT mapping_json FROM automation_sync_state WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
       const prevSig = !stRows.length ? null : (typeof stRows[0].mapping_json === 'string' ? stRows[0].mapping_json : JSON.stringify(stRows[0].mapping_json));
       const structureChanged = prevSig !== mapSig;
       await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [auto.id]);
-      const { headers, rows, unmapped } = await buildVersionRows(auto, token, userMap, v, mappings, ids);
+      // Incremental skip (P2): process co date_updated khong doi + da co snapshot
+      // thi dung snapshot, khong fetch 1Office. Doi cau truc/moi gieo thi fetch het.
+      let fetchIds = ids;
+      let snapshotRows = [];
+      if (!fullRun && !structureChanged && !ensured.seeded && ids.length > 0) {
+        t = Date.now();
+        const [vrows] = await pool.query(
+          `SELECT s.process_id, s.cells_json, p.last_seen_updated FROM automation_sync_snapshots s
+           LEFT JOIN automation_process_versions p ON p.process_id = s.process_id
+           WHERE s.automation_id = ? AND s.version = ?`, [auto.id, String(v)]);
+        const snapById = new Map(vrows.map((r) => [String(r.process_id), r]));
+        fetchIds = [];
+        for (const pid of ids) {
+          const liveUpdated = updatedById.has(String(pid)) ? updatedById.get(String(pid)) : undefined;
+          const sn = snapById.get(String(pid));
+          const prevCells = sn && sn.cells_json
+            ? (typeof sn.cells_json === 'string' ? JSON.parse(sn.cells_json) : sn.cells_json) : null;
+          if (prevCells && liveUpdated !== undefined && liveUpdated !== null
+              && sn.last_seen_updated !== undefined && sn.last_seen_updated !== null
+              && String(sn.last_seen_updated) === String(liveUpdated)) {
+            snapshotRows.push({ pid: String(pid), cells: prevCells });
+          } else fetchIds.push(pid);
+        }
+        tm.db_ms += Date.now() - t;
+        tm.skipped += snapshotRows.length;
+      }
+      t = Date.now();
+      const built = await buildVersionRows(auto, token, userMap, v, mappings, fetchIds);
+      tm.collect_ms += Date.now() - t;
+      const headers = built.headers;
+      const rows = built.rows;
+      const unmapped = built.unmapped;
+      for (const s of snapshotRows) {
+        const row = new Array(headers.length).fill('');
+        for (const [k, val] of Object.entries(s.cells || {})) {
+          const i = parseInt(k, 10);
+          if (Number.isFinite(i) && i >= 0 && i < headers.length) row[i] = val === undefined || val === null ? '' : String(val);
+        }
+        if (!row[0]) row[0] = s.pid;
+        rows.push(row);
+      }
+      tm.fetched += fetchIds.length;
+      if (fetchIds.length > 0) {
+        saveProcessVersionMap(fetchIds.map((pid) => ({
+          process_id: pid,
+          last_seen_updated: updatedById.get(String(pid)) === undefined ? null : updatedById.get(String(pid)),
+        }))).catch(() => {});
+      }
       result.unmapped.push(...unmapped);
       if (rows.length === 0) {
         result.versions[v] = { processes: 0, note: 'Khong tim thay quy trinh' };
         continue;
       }
       const minCols = Math.max(headers.length, ...mappings.map((m) => colToIndex(m.sheet_col) + 1));
+      t = Date.now();
       let renamedFrom = null;
       if (!sheetTabs.includes(tab)) {
         const dupes = dupesOfKept.get(String(v)) || [];
@@ -2398,6 +2539,8 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
       if (structureChanged || sheetEmpty) {
         await googleSheetService.clearTab(auto.spreadsheet_id, tab);
         const wr = await googleSheetService.upsertRows(auto.spreadsheet_id, tab, headers, rows);
+        tm.sheets_ms += Date.now() - t;
+        t = Date.now();
         await pool.query(
           `INSERT INTO automation_sync_state (automation_id, version, mapping_json) VALUES (?, ?, ?)
            ON DUPLICATE KEY UPDATE mapping_json = VALUES(mapping_json)`,
@@ -2414,16 +2557,19 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
           [auto.id, String(v), String(row[0]), JSON.stringify(cells), codes.proposal_code, codes.contact_code]
         );
       }
-      result.versions[v] = { processes: rows.length, tab, tab_created: created.created, full_overwrite: true, ...(renamedFrom ? { renamed_from: renamedFrom } : {}), ...wr };
+      result.versions[v] = { processes: rows.length, tab, tab_created: created.created, full_overwrite: true, ...(renamedFrom ? { renamed_from: renamedFrom } : {}), ...seedNote, ...wr };
+      tm.db_ms += Date.now() - t;
       continue;
     }
     // Header reconcile (mapping thang): sua dong 1 bi sua/xoa tay truoc khi so snapshot.
     let headerRepair = { repaired: [], repaired_count: 0, shift_suspected: false };
+    t = Date.now();
     try {
       headerRepair = await googleSheetService.repairHeaders(auto.spreadsheet_id, tab, headers);
     } catch (e) {
       console.error(`[runSync] repair headers ${tab} error:`, e.message);
     }
+    tm.sheets_ms += Date.now() - t;
     // Fetch snapshot để sớm kiểm tra thay đổi
     const [snaps] = await pool.query('SELECT process_id, cells_json FROM automation_sync_snapshots WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
     const prev = new Map(snaps.map((s) => [String(s.process_id), typeof s.cells_json === 'string' ? JSON.parse(s.cells_json) : s.cells_json]));
@@ -2442,12 +2588,14 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
           processes: rows.length, tab, tab_created: false,
           inserted: 0, cells_written: 0, changed_cells: 0,
           ...(renamedFrom ? { renamed_from: renamedFrom } : {}),
+          ...seedNote,
           ...(headerRepair.repaired_count > 0 ? { header_repaired: headerRepair.repaired, header_cells_written: headerRepair.repaired_count, ...(headerRepair.shift_suspected ? { header_shift_suspected: true } : {}), note: 'header repaired' } : { note: 'khong thay doi' }),
           changed_sample: [],
         };
         continue;
       }
     }
+    t = Date.now();
     const colAData = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
     const rowOf = new Map();
     colAData.forEach((val, i) => { if (val && !rowOf.has(String(val))) rowOf.set(String(val), i + 1); });
@@ -2485,6 +2633,8 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
     }
     let wrote = { updated: 0 };
     if (updates.length > 0) wrote = await googleSheetService.updateCells(auto.spreadsheet_id, updates);
+    tm.sheets_ms += Date.now() - t;
+    t = Date.now();
     for (const row of rows) {
       const cells = {};
       row.forEach((val, i) => { cells[i] = String(val ?? ''); });
@@ -2500,10 +2650,12 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
        ON DUPLICATE KEY UPDATE mapping_json = VALUES(mapping_json)`,
       [auto.id, String(v), mapSig]
     );
+    tm.db_ms += Date.now() - t;
     result.versions[v] = {
       processes: rows.length, tab, tab_created: created.created,
       changed_cells: changed.length, inserted, cells_written: wrote.updated,
       ...(renamedFrom ? { renamed_from: renamedFrom } : {}),
+      ...seedNote,
       ...(headerRepair.repaired_count > 0 ? { header_repaired: headerRepair.repaired, header_cells_written: headerRepair.repaired_count, ...(headerRepair.shift_suspected ? { header_shift_suspected: true } : {}) } : {}),
       note: updates.length === 0 ? (headerRepair.repaired_count > 0 ? 'header repaired' : 'khong thay doi') : undefined,
       changed_sample: changed.slice(0, 10),
@@ -2516,6 +2668,10 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
   const failedCount = (result.failed || []).length;
   const status = failedCount > 0 ? 'failed' : 'success';
   const errorMsg = failedCount > 0 ? result.failed.map((f) => `Ver ${f.version}: ${f.error}`).join('; ').slice(0, 1000) : null;
+  result.timing = { ...tm, versionof_live: versionOfLiveCount, total_ms: Date.now() - T0, full_run: fullRun };
+  if (fullRun && failedCount === 0) {
+    await pool.query('UPDATE work_automations SET last_full_sync_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
+  }
   if (runId) {
     await pool.query('UPDATE work_automation_runs SET status = ?, error = ?, response_json = ?, finished_at = NOW() WHERE id = ?', [status, errorMsg, JSON.stringify(result), runId]);
   } else {
