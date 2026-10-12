@@ -115,6 +115,43 @@ exports.expandColumns = async (spreadsheetId, tab, minCols) => {
   await s.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [updateReq] } });
 };
 
+exports.renameTab = async (spreadsheetId, oldTab, newTab) => {
+  const s = await sheets();
+  const meta = await s.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const sheetsArr = meta.data.sheets || [];
+  const src = sheetsArr.find((sh) => sh.properties.title === oldTab);
+  if (!src) return { renamed: false, reason: 'old_tab_not_found' };
+  if (sheetsArr.some((sh) => sh.properties.title === newTab)) {
+    return { renamed: false, reason: 'new_tab_exists' };
+  }
+  await s.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ updateSheetProperties: { properties: { sheetId: src.properties.sheetId, title: newTab }, fields: 'title' } }] },
+  });
+  return { renamed: true, sheetId: src.properties.sheetId };
+};
+
+exports.repairHeaders = async (spreadsheetId, tab, headers) => {
+  let live = [];
+  try {
+    live = await exports.getHeaders(spreadsheetId, tab);
+  } catch {
+    live = [];
+  }
+  const repaired = [];
+  const updates = [];
+  headers.forEach((want, i) => {
+    if (want === undefined || want === '') return;
+    const cur = live[i] || '';
+    if (cur !== want) {
+      updates.push({ range: a1(tab, `${colLetter(i)}1`), values: [[want]] });
+      if (repaired.length < 50) repaired.push({ col: colLetter(i), old: cur, new: want });
+    }
+  });
+  if (updates.length > 0) await exports.updateCells(spreadsheetId, updates);
+  return { repaired, repaired_count: updates.length, shift_suspected: updates.length >= 3 };
+};
+
 exports.updateCells = async (spreadsheetId, updates) => {
   if (!updates || updates.length === 0) return { updated: 0 };
   const s = await sheets();
@@ -136,15 +173,9 @@ exports.readColumnA = async (spreadsheetId, tab) => {
 
 exports.upsertRows = async (spreadsheetId, tab, headers, rows) => {
   const s = await sheets();
-  const cur = await s.spreadsheets.values.get({ spreadsheetId, range: a1(tab, `A1:${colLetter(Math.max(headers.length - 1, 25))}1`) });
-  const existing = (cur.data.values && cur.data.values[0]) || [];
-  const merged = headers.map((h, i) => {
-    const old = String(existing[i] || '').trim();
-    return old !== '' ? existing[i] : h;
-  });
   await s.spreadsheets.values.update({
-    spreadsheetId, range: a1(tab, `A1:${colLetter(merged.length - 1)}1`),
-    valueInputOption: 'RAW', requestBody: { values: [merged] },
+    spreadsheetId, range: a1(tab, `A1:${colLetter(headers.length - 1)}1`),
+    valueInputOption: 'RAW', requestBody: { values: [headers] },
   });
   const colA = await exports.readColumnA(spreadsheetId, tab);
   const pos = new Map();

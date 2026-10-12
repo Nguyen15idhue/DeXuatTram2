@@ -453,6 +453,9 @@ const buildContactNode = async (title) => {
       { key: '__tru_nq', label: 'Số lượng trụ NQ' },
       { key: '__tru_lk', label: 'Số lượng trụ LK' },
       { key: '__tru_total', label: 'Tổng số lượng trụ' },
+      { key: '__tru_tdt_detail', label: 'Chi tiết trụ TDT' },
+      { key: '__tru_nq_detail', label: 'Chi tiết trụ NQ' },
+      { key: '__tru_lk_detail', label: 'Chi tiết trụ LK' },
     ];
     const existing = new Set(node.fields.map((f) => f.path));
     for (const v of virtual) {
@@ -934,6 +937,48 @@ const contactTruCount = (contact, key) => {
   return '';
 };
 
+const cleanTruName = (raw) => {
+  const out = [];
+  for (const line of String(raw || '').split(/\n/)) {
+    const s = line.trim().replace(/^\d+\s*[.)]?\s*/, '');
+    if (!s) continue;
+    let cleaned = null;
+    for (let i = 1; i < s.length; i++) {
+      const name = s.slice(0, i);
+      const tail = s.slice(i).trim();
+      if (!/[A-Za-zÀ-ỹ]/.test(name)) continue;
+      if (!/^[\d.,\s]+$/.test(tail) || !/\d/.test(tail)) continue;
+      if (splitValidatedMoneys(tail, 3) || splitValidatedMoneys(tail, 2)) { cleaned = name.trim(); break; }
+    }
+    out.push(cleaned || s);
+  }
+  return out;
+};
+
+const truDetailOf = (arr) => {
+  if (!Array.isArray(arr)) {
+    if (typeof arr === 'string') return cleanTruName(arr).map((name) => ({ name, qty: 0 }));
+    return [];
+  }
+  return arr.flatMap((r) => {
+    if (!r) return [];
+    if (typeof r === 'string') return cleanTruName(r).map((name) => ({ name, qty: 0 }));
+    if (typeof r !== 'object') return [];
+    const qty = Number(r.so_luong) || 0;
+    return cleanTruName(r.loai_tru || r.ten_tru || r.loai || '').map((name) => ({ name, qty }));
+  });
+};
+
+const contactTruDetail = (contact, key) => {
+  const groups = key === '__tru_tdt_detail' ? [contact.tdt_tru]
+    : key === '__tru_nq_detail' ? [contact.nq_tru, contact.loai_tru_nq, contact.loai_tru_nq_cs]
+    : key === '__tru_lk_detail' ? [contact.lk_tru, contact.loai_tru_lk]
+    : [];
+  return groups.flatMap(truDetailOf)
+    .map(({ name, qty }) => (qty > 0 ? `${qty}x ${name}` : name))
+    .filter(Boolean).join('; ');
+};
+
 exports.resolveRow = async (proc, mappings, userMap) => {
   const { item, filled, tree, nodeStatus = {}, nodeFinished = {}, nodeSchedule = {}, contact = {} } = proc;
   const schedOf = (nid) => nodeSchedule[nid] || {};
@@ -954,7 +999,9 @@ exports.resolveRow = async (proc, mappings, userMap) => {
     if (path === CONTACT_NODE_ID || path.startsWith(`${CONTACT_NODE_ID}.`)) {
       const k = path === CONTACT_NODE_ID ? '' : path.slice(CONTACT_NODE_ID.length + 1);
       if (!k) return contact.code ?? contact.ID ?? contact.id ?? '';
-      if (k.startsWith('__tru_')) return contactTruCount(contact, k);
+      if (k.startsWith('__tru_')) {
+        return k.endsWith('_detail') ? contactTruDetail(contact, k) : contactTruCount(contact, k);
+      }
       return formatContactVal(contact[k]);
     }
     if (path === LATEST_NODE_ID || path.startsWith(`${LATEST_NODE_ID}.`)) {
@@ -973,7 +1020,9 @@ exports.resolveRow = async (proc, mappings, userMap) => {
         if (field.kind === 'contact') {
           const k = field.ref;
           if (!k) return '';
-          if (k.startsWith('__tru_')) return contactTruCount(contact, k);
+          if (k.startsWith('__tru_')) {
+            return k.endsWith('_detail') ? contactTruDetail(contact, k) : contactTruCount(contact, k);
+          }
           return formatContactVal(contact[k]);
         }
         if (field.kind === 'node' && field.ref) {
@@ -1283,6 +1332,30 @@ const fetchContactDetail = async (code) => {
 
 const digitsOf = (v) => String(v || '').replace(/\D/g, '');
 
+const normVnMobile = (v) => {
+  const d = String(v || '').replace(/\D/g, '');
+  return /^0\d{9}$/.test(d) ? d : '';
+};
+
+const extractDescPhone = (desc) => {
+  const text = String(desc || '');
+  if (!text) return null;
+  for (const ln of text.split(/\n/)) {
+    if (!/^SĐT liên hệ/i.test(ln.trim())) continue;
+    const v = ln.trim().replace(/^SĐT liên hệ/i, '').replace(/^[\s:：\-–—]+/, '').split(/📋/)[0].trim();
+    if (!v || v === '—' || v === '-') continue;
+    const direct = normVnMobile(v);
+    if (direct) return direct;
+    const m = v.match(/0[\d.\s-]{8,15}/);
+    if (m) {
+      const d2 = normVnMobile(m[0]);
+      if (d2) return d2;
+    }
+  }
+  const all = text.match(/(?<!\d)0\d{9}(?!\d)/g) || [];
+  return all.length > 0 ? all[0] : null;
+};
+
 const findLocalProposalByContact = async (contact) => {
   if (contact.ID !== undefined && contact.ID !== null && String(contact.ID).trim() !== '') {
     const [rows] = await pool.query('SELECT * FROM station_proposals WHERE contact_1office_id = ? LIMIT 1', [String(contact.ID)]);
@@ -1302,7 +1375,9 @@ const findLocalProposalByContact = async (contact) => {
   pushDigits(contact.phones);
   pushDigits(contact.phone);
   pushDigits(contact.mobile);
-  (String(contact.desc || '').match(/0\d{9}/g) || []).forEach((p) => phones.add(p));
+  const sdtLine = extractDescPhone(contact.desc);
+  if (sdtLine) phones.add(sdtLine);
+  (String(contact.desc || '').match(/(?<!\d)0\d{9}(?!\d)/g) || []).forEach((p) => phones.add(p));
   for (const ph of phones) {
     const [rows] = await pool.query(
       `SELECT * FROM station_proposals
@@ -1313,6 +1388,96 @@ const findLocalProposalByContact = async (contact) => {
     if (rows.length > 0) return { proposal: rows[0], via: 'phone' };
   }
   return null;
+};
+
+const splitValidatedMoneys = (digits, moneyCount) => {
+  const clean = String(digits).replace(/[.,\s]/g, '');
+  for (let ql = 1; ql <= 3; ql++) {
+    if (clean.length <= ql + 6 * moneyCount) continue;
+    const qty = parseInt(clean.slice(0, ql), 10);
+    if (!qty) continue;
+    const rest = clean.slice(ql);
+    const lens = [];
+    for (let i = 0; i < moneyCount - 1; i++) lens.push([8, 9, 10]);
+    lens.push([6, 7, 8, 9, 10, 11, 12]);
+    const rec = (i, pos, acc) => {
+      if (i === moneyCount) {
+        if (pos !== rest.length) return null;
+        const unit = parseInt(acc[acc.length - 2], 10);
+        const total = parseInt(acc[acc.length - 1], 10);
+        return unit * qty === total ? { qty, moneys: acc } : null;
+      }
+      for (const l of lens[i]) {
+        if (pos + l > rest.length) continue;
+        const hit = rec(i + 1, pos + l, [...acc, rest.slice(pos, pos + l)]);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const hit = rec(0, 0, []);
+    if (hit) return hit;
+  }
+  return null;
+};
+
+const parseDescTruLine = (line, moneyCount) => {
+  const s = String(line || '').trim().replace(/^\d+\s*[.)]?\s*/, '');
+  if (!s) return null;
+  for (let i = 1; i < s.length; i++) {
+    const name = s.slice(0, i);
+    const tail = s.slice(i).trim();
+    if (!/[A-Za-zÀ-ỹ]/.test(name)) continue;
+    if (!/^[\d.,\s]+$/.test(tail) || !/\d/.test(tail)) continue;
+    const hit = splitValidatedMoneys(tail, moneyCount);
+    if (hit) return { loai_tru: name.trim(), so_luong: hit.qty };
+  }
+  return null;
+};
+
+const extractDescTruRows = (section, moneyCount) => {
+  if (!section) return [];
+  let body = String(section);
+  const cut = body.search(/Thành tiền/i);
+  if (cut >= 0) body = body.slice(cut + 'Thành tiền'.length);
+  const rows = [];
+  for (const ln of body.split(/\n/)) {
+    const line = ln.trim();
+    if (!line) continue;
+    const hit = parseDescTruLine(line, moneyCount);
+    if (hit) { rows.push(hit); continue; }
+    for (const p of line.split(/(?<=\d)(?=\d{1,2}[A-ZÀ-ỸĐ])/)) {
+      if (p.trim() === line) continue;
+      const h2 = parseDescTruLine(p, moneyCount);
+      if (h2) rows.push(h2);
+    }
+  }
+  return rows;
+};
+
+const extractDescContactFallback = (desc) => {
+  const out = { address: '', tables: {} };
+  const text = String(desc || '');
+  if (!text) return out;
+  const lines = text.split(/\n/);
+  for (const ln of lines) {
+    const m = String(ln).match(/^Địa chỉ(?! ?ĐKKD)(.+)$/);
+    if (!m) continue;
+    const v = String(m[1] || '').split(/📋/)[0].replace(/^[\s:：-]+/, '').trim();
+    if (v && v !== '—' && v !== '-') { out.address = v; break; }
+  }
+  for (const [label, key, moneyCount] of [['Loại trụ NQ', 'loai_tru_nq', 3], ['Loại trụ LK', 'loai_tru_lk', 2]]) {
+    const start = text.indexOf(label);
+    if (start < 0) continue;
+    let end = text.length;
+    for (const stop of ['📋', 'Chi phí', 'Chính sách', 'Đặt cọc', 'Loại trụ NQ', 'Loại trụ LK']) {
+      if (stop === label) continue;
+      const i = text.indexOf(stop, start + label.length);
+      if (i >= 0 && i < end) end = i;
+    }
+    const rows = extractDescTruRows(text.slice(start, end), moneyCount);
+    if (rows.length > 0) out.tables[key] = rows;
+  }
+  return out;
 };
 
 const buildOneOfficeContact = async (contact, code) => {
@@ -1337,15 +1502,20 @@ const buildOneOfficeContact = async (contact, code) => {
       if (out[k] === undefined) out[k] = v;
     }
   } catch { /* silent */ }
-  const put = (k, v) => {
+const put = (k, v) => {
     if (out[k] === undefined && v !== undefined && v !== null && String(v).trim() !== '') out[k] = v;
   };
   put('doi_tac', contact.name || contact.formal_name);
-  const descPhone = String(contact.desc || '').match(/0\d{9}/);
-  put('owner_phone', descPhone ? descPhone[0] : null);
+  put('owner_phone', extractDescPhone(contact.desc));
   put('owner_name', contact.name || contact.formal_name);
   put('address', contact.place_of_address || contact.address);
   put('vi_tri_lap_tru', contact.place_of_address || contact.address);
+  const descFallback = extractDescContactFallback(contact.desc);
+  if (out.address === undefined && descFallback.address) out.address = descFallback.address;
+  if (out.vi_tri_lap_tru === undefined && descFallback.address) out.vi_tri_lap_tru = descFallback.address;
+  for (const [k, v] of Object.entries(descFallback.tables)) {
+    if (v.length > 0 && (out[k] === undefined || (Array.isArray(out[k]) && out[k].length === 0))) out[k] = v;
+  }
   const data = { ...out, code: contact.code || code, ID: contact.ID ?? null, custom_data: { ...out } };
   data._source = 'oneoffice';
   return data;
@@ -1404,11 +1574,15 @@ exports.getMappings = async (automationId, version) => {
 exports.saveMappings = async (automationId, version, items) => {
   const v = String(version);
   const seen = new Set();
+  const seenCol = new Set();
   for (const it of items) {
     if (!it.source_path || !it.sheet_col) throw Object.assign(new Error('Thieu source_path/sheet_col'), { statusCode: 400 });
     if (seen.has(it.source_path)) throw Object.assign(new Error(`Field da map: ${it.source_path}`), { statusCode: 400 });
     seen.add(it.source_path);
     if (!/^[A-Z]{1,3}$/.test(it.sheet_col)) throw Object.assign(new Error(`Cot Sheet khong hop le: ${it.sheet_col}`), { statusCode: 400 });
+    const colUp = String(it.sheet_col).toUpperCase();
+    if (seenCol.has(colUp)) throw Object.assign(new Error(`Cot ${it.sheet_col} dang dung cho 2 field (chon cot trong): ${it.source_path}`), { statusCode: 400 });
+    seenCol.add(colUp);
   }
   await pool.query('DELETE FROM automation_sheet_mappings WHERE automation_id = ? AND version = ?', [automationId, v]);
   const conn = await pool.getConnection();
@@ -1465,8 +1639,11 @@ exports.autoMatch = async (automationId, version) => {
   const CONTACT_AUTOMATCH = [
     ['contact.doi_tac', 'Tên liên hệ'],
     ['contact.owner_phone', 'Số điện thoại'],
-    ['contact.vi_tri_lap_tru', 'Vị trí lắp đặt'],
+    ['contact.address', 'Vị trí lắp đặt'],
     ['contact.mo_hinh_dau_tu', 'Mô hình đầu tư'],
+    ['contact.__tru_tdt_detail', 'Chi tiết trụ TDT'],
+    ['contact.__tru_nq_detail', 'Chi tiết trụ NQ'],
+    ['contact.__tru_lk_detail', 'Chi tiết trụ LK'],
     ['contact.__tru_tdt', 'Số lượng trụ TDT'],
     ['contact.__tru_nq', 'Số lượng trụ NQ'],
     ['contact.__tru_lk', 'Số lượng trụ LK'],
@@ -1477,8 +1654,25 @@ exports.autoMatch = async (automationId, version) => {
   const items = existing.map((m) => ({
     source_path: m.source_path,
     sheet_col: m.sheet_col,
-    label: labelOf.get(m.source_path) || m.label,
+    label: m.label || labelOf.get(m.source_path),
   }));
+  const DETAIL_PATHS = ['contact.__tru_tdt_detail', 'contact.__tru_nq_detail', 'contact.__tru_lk_detail'];
+  if (DETAIL_PATHS.every((p) => items.some((m) => m.source_path === p))) {
+    const rest = items.filter((m) => !DETAIL_PATHS.includes(m.source_path));
+    let anchor = rest.findIndex((m) => m.source_path === 'contact.mo_hinh_dau_tu');
+    if (anchor < 0) {
+      anchor = -1;
+      rest.forEach((m, i) => { if (m.source_path === CONTACT_NODE_ID || m.source_path.startsWith(`${CONTACT_NODE_ID}.`)) anchor = i; });
+    }
+    const anchorIdx = anchor >= 0 ? colToIndex(rest[anchor].sheet_col) : -1;
+    const details = DETAIL_PATHS.map((p) => items.find((m) => m.source_path === p));
+    rest.splice(anchor + 1, 0, ...details);
+    for (let i = anchor + 1; i < rest.length; i++) {
+      rest[i].sheet_col = colLetterOf(anchorIdx + 1 + (i - (anchor + 1)));
+    }
+    items.length = 0;
+    items.push(...rest);
+  }
   const add = (source_path, label) => {
     if (have.has(source_path)) return;
     have.add(source_path);
@@ -2124,6 +2318,19 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
   const googleSheetService = require('./googleSheetService');
   const result = { versions: {}, unmapped: [], failed: [] };
   const targetVersions = await versionsWithMappings(effAuto.id, version, effAuto);
+  let runMergeInfo = [];
+  try {
+    const dd = await exports.deduplicateFieldCacheVersions(effAuto.id, tplIds.length ? tplIds : null);
+    runMergeInfo = (dd && dd.mergeInfo) || [];
+  } catch { runMergeInfo = []; }
+  const dupesOfKept = new Map();
+  for (const m of runMergeInfo) {
+    const k = String(m.keptAs);
+    if (!dupesOfKept.has(k)) dupesOfKept.set(k, []);
+    dupesOfKept.get(k).push(String(m.duplicate));
+  }
+  let sheetTabs = [];
+  try { sheetTabs = await googleSheetService.getTabs(auto.spreadsheet_id); } catch { sheetTabs = []; }
   if (targetVersions.length === 0) {
     const note = 'Khong co version nao thuoc quy trinh mau da chon (hoac chua co mapping)';
     const payload = { versions: {}, note };
@@ -2161,7 +2368,31 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
         continue;
       }
       const minCols = Math.max(headers.length, ...mappings.map((m) => colToIndex(m.sheet_col) + 1));
+      let renamedFrom = null;
+      if (!sheetTabs.includes(tab)) {
+        const dupes = dupesOfKept.get(String(v)) || [];
+        for (const d of dupes) {
+          const oldTab = `Ver ${d}`;
+          if (!sheetTabs.includes(oldTab)) continue;
+          try {
+            const rn = await googleSheetService.renameTab(auto.spreadsheet_id, oldTab, tab);
+            if (rn && rn.renamed) {
+              renamedFrom = oldTab;
+              sheetTabs = sheetTabs.filter((t) => t !== oldTab);
+              sheetTabs.push(tab);
+              await pool.query('UPDATE automation_sync_state SET version = ? WHERE automation_id = ? AND version = ?', [String(v), auto.id, String(d)]).catch(() => {});
+              await pool.query('UPDATE automation_sync_snapshots SET version = ? WHERE automation_id = ? AND version = ?', [String(v), auto.id, String(d)]).catch(() => {});
+              console.log(`[runSync] renamed ${oldTab} -> ${tab}`);
+              break;
+            }
+          } catch (e) {
+            console.error(`[runSync] rename ${oldTab} -> ${tab} error:`, e.message);
+          }
+          break;
+        }
+      }
       const created = await googleSheetService.ensureTab(auto.spreadsheet_id, tab, minCols);
+      if (created && created.created) sheetTabs.push(tab);
       const colA = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
       const sheetEmpty = colA.length === 0 || colA.every((v) => !v);
       if (structureChanged || sheetEmpty) {
@@ -2183,8 +2414,15 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
           [auto.id, String(v), String(row[0]), JSON.stringify(cells), codes.proposal_code, codes.contact_code]
         );
       }
-      result.versions[v] = { processes: rows.length, tab, tab_created: created.created, full_overwrite: true, ...wr };
+      result.versions[v] = { processes: rows.length, tab, tab_created: created.created, full_overwrite: true, ...(renamedFrom ? { renamed_from: renamedFrom } : {}), ...wr };
       continue;
+    }
+    // Header reconcile (mapping thang): sua dong 1 bi sua/xoa tay truoc khi so snapshot.
+    let headerRepair = { repaired: [], repaired_count: 0, shift_suspected: false };
+    try {
+      headerRepair = await googleSheetService.repairHeaders(auto.spreadsheet_id, tab, headers);
+    } catch (e) {
+      console.error(`[runSync] repair headers ${tab} error:`, e.message);
     }
     // Fetch snapshot để sớm kiểm tra thay đổi
     const [snaps] = await pool.query('SELECT process_id, cells_json FROM automation_sync_snapshots WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
@@ -2203,7 +2441,9 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
         result.versions[v] = {
           processes: rows.length, tab, tab_created: false,
           inserted: 0, cells_written: 0, changed_cells: 0,
-          note: 'khong thay doi', changed_sample: [],
+          ...(renamedFrom ? { renamed_from: renamedFrom } : {}),
+          ...(headerRepair.repaired_count > 0 ? { header_repaired: headerRepair.repaired, header_cells_written: headerRepair.repaired_count, ...(headerRepair.shift_suspected ? { header_shift_suspected: true } : {}), note: 'header repaired' } : { note: 'khong thay doi' }),
+          changed_sample: [],
         };
         continue;
       }
@@ -2263,7 +2503,9 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
     result.versions[v] = {
       processes: rows.length, tab, tab_created: created.created,
       changed_cells: changed.length, inserted, cells_written: wrote.updated,
-      note: updates.length === 0 ? 'khong thay doi' : undefined,
+      ...(renamedFrom ? { renamed_from: renamedFrom } : {}),
+      ...(headerRepair.repaired_count > 0 ? { header_repaired: headerRepair.repaired, header_cells_written: headerRepair.repaired_count, ...(headerRepair.shift_suspected ? { header_shift_suspected: true } : {}) } : {}),
+      note: updates.length === 0 ? (headerRepair.repaired_count > 0 ? 'header repaired' : 'khong thay doi') : undefined,
       changed_sample: changed.slice(0, 10),
     };
     } catch (e) {
