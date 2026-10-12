@@ -12,6 +12,9 @@ const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // + contact API rieng 600ms + ton trong retry_after.
 const SYNC_PROC_CONCURRENCY = 3;
 const SYNC_PROC_DELAY_MS = 200;
+// Incremental: auto-run bo qua process khong doi; cuoi moi FULL_REFRESH_HOURS gio
+// (tinh tu last_full_sync_at) thi full 1 lan de chong sot thay doi ngay.
+const FULL_REFRESH_HOURS = 4;
 const versionOfCache = new Map();
 let versionOfLiveCount = 0;
 let userMapCache = { at: 0, map: {} };
@@ -2398,7 +2401,7 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
     try {
       const [ar] = await pool.query('SELECT last_full_sync_at FROM work_automations WHERE id = ?', [effAuto.id]);
       const lf = ar.length > 0 ? ar[0].last_full_sync_at : null;
-      if (!lf || Date.now() - new Date(lf).getTime() > 24 * 3600 * 1000) fullRun = true;
+      if (!lf || Date.now() - new Date(lf).getTime() > FULL_REFRESH_HOURS * 3600 * 1000) fullRun = true;
     } catch { fullRun = true; }
   }
   await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
