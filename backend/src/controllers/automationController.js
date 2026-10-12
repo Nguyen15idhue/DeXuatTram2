@@ -468,6 +468,9 @@ exports.syncRun = async (req, res) => {
   try {
     const auto = await needSyncAuto(req.query.key);
     const { version } = req.body || {};
+    if (await workAutomationService.hasActiveSyncRun(auto.id)) {
+      return res.status(409).json({ success: false, message: 'Đang có lượt đồng bộ chạy, vui lòng đợi xong rồi thử lại' });
+    }
     const { id } = await workAutomationService.createSyncRun({ automationId: auto.id, trigger: 'manual', version: version || null });
     res.json({ success: true, data: { run_id: id, status: 'pending', queued: true }, message: 'Đã xếp hàng đồng bộ' });
   } catch (error) {
