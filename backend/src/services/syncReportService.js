@@ -12,9 +12,6 @@ const FIELD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // + contact API rieng 600ms + ton trong retry_after.
 const SYNC_PROC_CONCURRENCY = 3;
 const SYNC_PROC_DELAY_MS = 200;
-// Incremental: auto-run bo qua process khong doi; cuoi moi FULL_REFRESH_HOURS gio
-// (tinh tu last_full_sync_at) thi full 1 lan de chong sot thay doi ngay.
-const FULL_REFRESH_HOURS = 4;
 const versionOfCache = new Map();
 let versionOfLiveCount = 0;
 let userMapCache = { at: 0, map: {} };
@@ -1598,7 +1595,7 @@ exports.collectProcess = async (token, processId, tree, opts = {}) => {
 
 exports.getMappings = async (automationId, version) => {
   const [rows] = await pool.query(
-    'SELECT source_path, sheet_col, label FROM automation_sheet_mappings WHERE automation_id = ? AND version = ? ORDER BY sheet_col ASC',
+    'SELECT source_path, sheet_col, label FROM automation_sheet_mappings WHERE automation_id = ? AND version = ? ORDER BY LENGTH(sheet_col), sheet_col ASC',
     [automationId, String(version)]
   );
   return rows;
@@ -1689,23 +1686,6 @@ exports.autoMatch = async (automationId, version) => {
     sheet_col: m.sheet_col,
     label: m.label || labelOf.get(m.source_path),
   }));
-  const DETAIL_PATHS = ['contact.__tru_tdt_detail', 'contact.__tru_nq_detail', 'contact.__tru_lk_detail'];
-  if (DETAIL_PATHS.every((p) => items.some((m) => m.source_path === p))) {
-    const rest = items.filter((m) => !DETAIL_PATHS.includes(m.source_path));
-    let anchor = rest.findIndex((m) => m.source_path === 'contact.mo_hinh_dau_tu');
-    if (anchor < 0) {
-      anchor = -1;
-      rest.forEach((m, i) => { if (m.source_path === CONTACT_NODE_ID || m.source_path.startsWith(`${CONTACT_NODE_ID}.`)) anchor = i; });
-    }
-    const anchorIdx = anchor >= 0 ? colToIndex(rest[anchor].sheet_col) : -1;
-    const details = DETAIL_PATHS.map((p) => items.find((m) => m.source_path === p));
-    rest.splice(anchor + 1, 0, ...details);
-    for (let i = anchor + 1; i < rest.length; i++) {
-      rest[i].sheet_col = colLetterOf(anchorIdx + 1 + (i - (anchor + 1)));
-    }
-    items.length = 0;
-    items.push(...rest);
-  }
   const add = (source_path, label) => {
     if (have.has(source_path)) return;
     have.add(source_path);
@@ -1735,6 +1715,16 @@ exports.autoMatch = async (automationId, version) => {
       add(f.path, labelOf.get(f.path));
     }
   }
+  // Chuan hoa khoi contact theo dung thu tu CONTACT_AUTOMATCH (giu nguyen vi tri
+  // khoi, chi sap lai ben trong + danh lai chu cai lien tuc). Moi lan autoMatch
+  // (version moi hay cu) deu ra cung layout -> dev/VPS khong lech nhau.
+  const canonIdx = new Map(CONTACT_AUTOMATCH.map(([p], i) => [p, i]));
+  const slots = [];
+  items.forEach((m, i) => { if (canonIdx.has(m.source_path)) slots.push(i); });
+  const sortedContact = slots.map((i) => items[i])
+    .sort((a, b) => canonIdx.get(a.source_path) - canonIdx.get(b.source_path));
+  slots.forEach((pos, k) => { items[pos] = sortedContact[k]; });
+  items.forEach((m, i) => { m.sheet_col = colLetterOf(i); });
   await exports.saveMappings(automationId, v, items);
   return { version: v, total: items.length, added: items.length - existing.length };
 };
@@ -2177,6 +2167,10 @@ const versionsWithMappings = async (automationId, onlyVersion, auto) => {
     if (!allowedVersions.includes(String(onlyVersion))) throw Object.assign(new Error(`Version ${onlyVersion} chua co mapping (hoac khong thuoc quy trinh mau da chon)`), { statusCode: 400 });
     return [String(onlyVersion)];
   }
+  if (allowedVersions.length === 0) {
+    console.log(`[versionsWithMappings] Automation ${automationId}: no version under selected templates`);
+    return [];
+  }
 
   // 4. Merge các version giống nhau (chỉ trong nhóm allowedVersions)
   // Lấy data từ cache đã filter
@@ -2394,16 +2388,9 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
     const nameSet = new Set(tplIds.map(String));
     roots = roots.filter((r) => nameSet.has(String(r.process_type_id)));
   }
-  const updatedById = new Map(roots.map((r) => [String(r.ID), r.date_updated === undefined || r.date_updated === null ? null : String(r.date_updated)]));
-  // Incremental: chi auto + full-refresh qua 24h; sync tay luon full.
-  let fullRun = trigger !== 'auto';
-  if (!fullRun) {
-    try {
-      const [ar] = await pool.query('SELECT last_full_sync_at FROM work_automations WHERE id = ?', [effAuto.id]);
-      const lf = ar.length > 0 ? ar[0].last_full_sync_at : null;
-      if (!lf || Date.now() - new Date(lf).getTime() > FULL_REFRESH_HOURS * 3600 * 1000) fullRun = true;
-    } catch { fullRun = true; }
-  }
+  // Revert P2 (12/10/2026): date_updated cua 1Office khong tin cay (day-granularity +
+  // nhieu process khong bao gio bump) -> luon fetch full de khong sot. Giu P0/P1.
+  const fullRun = true;
   await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [effAuto.id]).catch(() => {});
   await pool.query('DELETE FROM automation_process_versions WHERE checked_at < NOW() - INTERVAL 30 DAY').catch(() => {});
   const googleSheetService = require('./googleSheetService');
@@ -2456,55 +2443,25 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
       const [stRows] = await pool.query('SELECT mapping_json FROM automation_sync_state WHERE automation_id = ? AND version = ?', [auto.id, String(v)]);
       const prevSig = !stRows.length ? null : (typeof stRows[0].mapping_json === 'string' ? stRows[0].mapping_json : JSON.stringify(stRows[0].mapping_json));
       const structureChanged = prevSig !== mapSig;
-      await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [auto.id]);
-      // Incremental skip (P2): process co date_updated khong doi + da co snapshot
-      // thi dung snapshot, khong fetch 1Office. Doi cau truc/moi gieo thi fetch het.
-      let fetchIds = ids;
-      let snapshotRows = [];
-      if (!fullRun && !structureChanged && !ensured.seeded && ids.length > 0) {
-        t = Date.now();
-        const [vrows] = await pool.query(
-          `SELECT s.process_id, s.cells_json, p.last_seen_updated FROM automation_sync_snapshots s
-           LEFT JOIN automation_process_versions p ON p.process_id = s.process_id
-           WHERE s.automation_id = ? AND s.version = ?`, [auto.id, String(v)]);
-        const snapById = new Map(vrows.map((r) => [String(r.process_id), r]));
-        fetchIds = [];
-        for (const pid of ids) {
-          const liveUpdated = updatedById.has(String(pid)) ? updatedById.get(String(pid)) : undefined;
-          const sn = snapById.get(String(pid));
-          const prevCells = sn && sn.cells_json
-            ? (typeof sn.cells_json === 'string' ? JSON.parse(sn.cells_json) : sn.cells_json) : null;
-          if (prevCells && liveUpdated !== undefined && liveUpdated !== null
-              && sn.last_seen_updated !== undefined && sn.last_seen_updated !== null
-              && String(sn.last_seen_updated) === String(liveUpdated)) {
-            snapshotRows.push({ pid: String(pid), cells: prevCells });
-          } else fetchIds.push(pid);
-        }
-        tm.db_ms += Date.now() - t;
-        tm.skipped += snapshotRows.length;
+      // Chi doi nhan header (giong path + cot) thi di partial + repairHeaders,
+      // khong clearTab/ghi de toan bo.
+      let headerOnlyChanged = false;
+      if (structureChanged && prevSig) {
+        try {
+          const norm = (arr) => [...(arr || [])].map((m) => `${m[0]}|${m[1]}`).sort().join(';');
+          const prev = JSON.parse(prevSig);
+          const cur = JSON.parse(mapSig);
+          headerOnlyChanged = Array.isArray(prev) && prev.length === cur.length && norm(prev) === norm(cur);
+        } catch { headerOnlyChanged = false; }
       }
+      await pool.query('UPDATE work_automations SET last_run_at = NOW() WHERE id = ?', [auto.id]);
       t = Date.now();
-      const built = await buildVersionRows(auto, token, userMap, v, mappings, fetchIds);
+      const built = await buildVersionRows(auto, token, userMap, v, mappings, ids);
       tm.collect_ms += Date.now() - t;
       const headers = built.headers;
       const rows = built.rows;
       const unmapped = built.unmapped;
-      for (const s of snapshotRows) {
-        const row = new Array(headers.length).fill('');
-        for (const [k, val] of Object.entries(s.cells || {})) {
-          const i = parseInt(k, 10);
-          if (Number.isFinite(i) && i >= 0 && i < headers.length) row[i] = val === undefined || val === null ? '' : String(val);
-        }
-        if (!row[0]) row[0] = s.pid;
-        rows.push(row);
-      }
-      tm.fetched += fetchIds.length;
-      if (fetchIds.length > 0) {
-        saveProcessVersionMap(fetchIds.map((pid) => ({
-          process_id: pid,
-          last_seen_updated: updatedById.get(String(pid)) === undefined ? null : updatedById.get(String(pid)),
-        }))).catch(() => {});
-      }
+      tm.fetched += ids.length;
       result.unmapped.push(...unmapped);
       if (rows.length === 0) {
         result.versions[v] = { processes: 0, note: 'Khong tim thay quy trinh' };
@@ -2539,7 +2496,8 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
       if (created && created.created) sheetTabs.push(tab);
       const colA = await googleSheetService.readColumnA(auto.spreadsheet_id, tab);
       const sheetEmpty = colA.length === 0 || colA.every((v) => !v);
-      if (structureChanged || sheetEmpty) {
+      const needFullOverwrite = (structureChanged && !headerOnlyChanged) || sheetEmpty;
+      if (needFullOverwrite) {
         await googleSheetService.clearTab(auto.spreadsheet_id, tab);
         const wr = await googleSheetService.upsertRows(auto.spreadsheet_id, tab, headers, rows);
         tm.sheets_ms += Date.now() - t;
@@ -2592,6 +2550,7 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
           inserted: 0, cells_written: 0, changed_cells: 0,
           ...(renamedFrom ? { renamed_from: renamedFrom } : {}),
           ...seedNote,
+          ...(headerOnlyChanged ? { header_only: true } : {}),
           ...(headerRepair.repaired_count > 0 ? { header_repaired: headerRepair.repaired, header_cells_written: headerRepair.repaired_count, ...(headerRepair.shift_suspected ? { header_shift_suspected: true } : {}), note: 'header repaired' } : { note: 'khong thay doi' }),
           changed_sample: [],
         };
@@ -2659,6 +2618,7 @@ exports.runSync = async (auto, { version, trigger = 'manual', runId = 0 } = {}) 
       changed_cells: changed.length, inserted, cells_written: wrote.updated,
       ...(renamedFrom ? { renamed_from: renamedFrom } : {}),
       ...seedNote,
+      ...(headerOnlyChanged ? { header_only: true } : {}),
       ...(headerRepair.repaired_count > 0 ? { header_repaired: headerRepair.repaired, header_cells_written: headerRepair.repaired_count, ...(headerRepair.shift_suspected ? { header_shift_suspected: true } : {}) } : {}),
       note: updates.length === 0 ? (headerRepair.repaired_count > 0 ? 'header repaired' : 'khong thay doi') : undefined,
       changed_sample: changed.slice(0, 10),

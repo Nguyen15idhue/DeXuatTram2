@@ -161,13 +161,13 @@ exports.updateCells = async (spreadsheetId, updates) => {
 
 exports.clearTab = async (spreadsheetId, tab) => {
   const s = await sheets();
-  await s.spreadsheets.values.clear({ spreadsheetId, range: a1(tab, 'A1:ZZ10000') });
+  await s.spreadsheets.values.clear({ spreadsheetId, range: a1(tab, 'A1:ZZ50000') });
   return { cleared: true };
 };
 
 exports.readColumnA = async (spreadsheetId, tab) => {
   const s = await sheets();
-  const r = await s.spreadsheets.values.get({ spreadsheetId, range: a1(tab, 'A1:A10000') });
+  const r = await s.spreadsheets.values.get({ spreadsheetId, range: a1(tab, 'A1:A50000') });
   return (r.data.values || []).map((x) => String(x[0] || ''));
 };
 
