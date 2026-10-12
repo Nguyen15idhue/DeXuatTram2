@@ -116,6 +116,7 @@ const processPushJob = async (job) => {
   const recreated = !!was_linked && !existingId;
 
   let prevFileIds = [];
+  let prevSentNames = [];
   if (proposal_id && !recreated) {
     try {
       const [rows] = await pool.query('SELECT last_synced_data FROM station_proposals WHERE id = ?', [proposal_id]);
@@ -125,6 +126,7 @@ const processPushJob = async (job) => {
           : rows[0].last_synced_data;
         const fr = snap && snap.files_result;
         prevFileIds = (fr && fr.fileIds) || [];
+        prevSentNames = (fr && fr.fileNames) || [];
       }
     } catch (err) {
       console.error('[QueueWorker] Read snapshot error:', err.message);
@@ -149,8 +151,17 @@ const processPushJob = async (job) => {
           const localFiles = await fileSyncService.loadFiles(proposal_id);
           const remoteNames = new Set((contactInfo.fileNames || []).map(stripFileName));
           const prevSet = new Set((prevFileIds || []).map(String));
+          const snapSentNames = new Set(((prevSentNames || []).map(stripFileName)));
           resendIds = localFiles
-            .filter((f) => f.id !== undefined && f.id !== null && prevSet.has(String(f.id)) && !remoteNames.has(stripFileName(f.original_name)))
+            .filter((f) => {
+              if (f.id === undefined || f.id === null) return false;
+              const missingRemote = !remoteNames.has(stripFileName(f.original_name));
+              if (!missingRemote) return false;
+              if (prevSet.has(String(f.id))) return true;
+              // Snapshot mat id (cu) nhung ten tung bao "da gui" ma remote thieu
+              // -> file that tren 1Office (vd bi xoa tay), gui lai.
+              return snapSentNames.has(stripFileName(f.original_name));
+            })
             .map((f) => f.id);
           if (resendIds.length > 0) {
             console.log(`[QueueWorker] Resend ${resendIds.length} file(s) missing on 1Office (proposal #${proposal_id}): ${resendIds.join(',')}`);

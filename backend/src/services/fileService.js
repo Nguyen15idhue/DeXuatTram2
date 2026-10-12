@@ -132,6 +132,13 @@ const extOf = (fileRow) => {
   return MIME_TO_EXT[mime] || '';
 };
 
+const tsOf = (row) => {
+  const d = row && row.created_at ? new Date(row.created_at) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const p = (v) => String(v).padStart(2, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
+};
+
 exports.renameProposalFiles = async ({ dynamicData, fieldDefs, maDeXuat, connection = null }) => {
   if (!dynamicData || !Array.isArray(fieldDefs) || fieldDefs.length === 0) return 0;
   const code = sanitizeNamePart(maDeXuat) || 'DX';
@@ -149,10 +156,17 @@ exports.renameProposalFiles = async ({ dynamicData, fieldDefs, maDeXuat, connect
       if (!Number.isInteger(fid) || fid <= 0) continue;
       let rows;
       try {
-        [rows] = await db.query("SELECT id, original_name, mime_type, status FROM files WHERE id = ? LIMIT 1", [fid]);
+        [rows] = await db.query("SELECT id, original_name, mime_type, status, created_at FROM files WHERE id = ? LIMIT 1", [fid]);
       } catch { continue; }
       if (!rows || rows.length === 0 || rows[0].status === 'deleted') continue;
-      const nextName = `${code}_${label}_${i + 1}${extOf(rows[0])}`;
+      const ext = extOf(rows[0]);
+      const legacyName = `${code}_${label}_${i + 1}${ext}`;
+      // File cu dung ten cu (khong timestamp) thi giu nguyen de tranh doi ten + gui lai hang loat.
+      // File moi/doi ten thi dung dinh dang moi co timestamp tao (on dinh, duy nhat).
+      const ts = tsOf(rows[0]);
+      const nextName = (ts && rows[0].original_name !== legacyName)
+        ? `${ts}_${code}_${label}_${i + 1}${ext}`
+        : legacyName;
       if (rows[0].original_name !== nextName) {
         try {
           await db.query('UPDATE files SET original_name = ? WHERE id = ?', [nextName, fid]);
