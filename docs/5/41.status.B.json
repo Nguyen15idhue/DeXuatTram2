@@ -1,0 +1,65 @@
+{
+  "lane": "B",
+  "imageDir": "admin-data",
+  "at": "2026-09-14T16:58:11.690Z",
+  "total": 11,
+  "ok": 11,
+  "failed": [],
+  "results": [
+    {
+      "id": "B01",
+      "title": "Dashboard",
+      "ok": true
+    },
+    {
+      "id": "B02",
+      "title": "Users danh sách",
+      "ok": true
+    },
+    {
+      "id": "B03",
+      "title": "Users tạo",
+      "ok": true
+    },
+    {
+      "id": "B04",
+      "title": "Users Import/Export",
+      "ok": true
+    },
+    {
+      "id": "B05",
+      "title": "Stations danh sách",
+      "ok": true
+    },
+    {
+      "id": "B06",
+      "title": "Stations thêm",
+      "ok": true
+    },
+    {
+      "id": "B07",
+      "title": "Proposals danh sách",
+      "ok": true
+    },
+    {
+      "id": "B08",
+      "title": "Proposals trạng thái",
+      "ok": true
+    },
+    {
+      "id": "B09",
+      "title": "Proposals 1Office",
+      "ok": true
+    },
+    {
+      "id": "B10",
+      "title": "Audit log",
+      "ok": true
+    },
+    {
+      "id": "B11",
+      "title": "Chi tiết bản ghi (file)",
+      "ok": true
+    }
+  ]
+}

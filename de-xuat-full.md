@@ -1,0 +1,181 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "Đề xuất trạm sạc" [ref=e5] [cursor=pointer]:
+      - /url: /de-xuat
+    - link "Đăng nhập" [ref=e6] [cursor=pointer]:
+      - /url: /login
+  - main [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - heading "Đề xuất vị trí trạm sạc" [level=1] [ref=e10]
+        - paragraph [ref=e11]: Không cần tài khoản. Điền form bên dưới, lưu mã tra cứu để theo dõi trạng thái.
+      - generic [ref=e12]:
+        - heading "Form đề xuất" [level=2] [ref=e13]
+        - generic [ref=e14]:
+          - generic [ref=e15]: 1. Lấy vị trí đề xuất (chọn 1 trong 2 cách)
+          - generic [ref=e16]:
+            - button "Vị trí của tôi" [ref=e17] [cursor=pointer]
+            - generic [ref=e21]:
+              - textbox "Hoặc dán link Google Maps..." [ref=e22]
+              - button "Lấy tọa độ" [disabled]
+        - generic [ref=e23]:
+          - generic [ref=e24]: 2. Nhập thông tin
+          - generic [ref=e35]:
+            - group "Thông tin chủ sở hữu" [ref=e36]:
+              - generic [ref=e38]:
+                - generic [ref=e40]:
+                  - generic [ref=e41]: Tên chủ sở hữu *
+                  - textbox [ref=e42]
+                - generic [ref=e44]:
+                  - generic [ref=e45]: SĐT chủ sở hữu *
+                  - textbox [ref=e46]
+            - group "Vị trí" [ref=e47]:
+              - generic [ref=e49]:
+                - generic [ref=e51]:
+                  - generic [ref=e52]: Vĩ độ *
+                  - spinbutton [ref=e53]
+                - generic [ref=e55]:
+                  - generic [ref=e56]: Kinh độ *
+                  - spinbutton [ref=e57]
+              - generic [ref=e58]:
+                - generic [ref=e60]:
+                  - generic [ref=e61]: Địa chỉ *
+                  - textbox [ref=e62]
+                - generic [ref=e64]:
+                  - generic [ref=e65]: Tỉnh thành *
+                  - generic [ref=e67] [cursor=pointer]:
+                    - generic [ref=e68]: "-- Chọn --"
+                    - generic [ref=e69]: ▼
+              - generic [ref=e70]:
+                - generic [ref=e72]:
+                  - generic [ref=e73]: Xã phường *
+                  - generic [ref=e75] [cursor=pointer]:
+                    - generic [ref=e76]: "-- Chọn --"
+                    - generic [ref=e77]: ▼
+                - generic [ref=e79]:
+                  - generic [ref=e80]: Diện tích
+                  - textbox [ref=e81]
+              - generic [ref=e82]:
+                - generic [ref=e84]:
+                  - generic [ref=e85]: Diện tích mặt bằng (m²) *
+                  - spinbutton [ref=e86]
+                - generic [ref=e88]:
+                  - generic [ref=e89]: Vùng miền
+                  - generic [ref=e91] [cursor=pointer]:
+                    - generic [ref=e92]: "-- Chọn --"
+                    - generic [ref=e93]: ▼
+              - generic [ref=e96]:
+                - generic [ref=e97]: Loại đất *
+                - textbox [ref=e98]
+            - group "Thông tin đề xuất" [ref=e99]:
+              - generic [ref=e103]:
+                - generic [ref=e104]: Mô tả
+                - textbox [ref=e105]
+              - generic [ref=e108]:
+                - generic [ref=e109]: Ghi chú
+                - textbox [ref=e110]
+              - generic [ref=e111]:
+                - generic [ref=e113]:
+                  - generic [ref=e114]: Chi phí đầu tư *
+                  - spinbutton [ref=e115]
+                - generic [ref=e117]:
+                  - generic [ref=e118]: Loại trụ *
+                  - generic [ref=e120] [cursor=pointer]:
+                    - generic [ref=e121]: "-- Chọn --"
+                    - generic [ref=e122]: ▼
+              - generic [ref=e123]:
+                - generic [ref=e125]:
+                  - generic [ref=e126]: Mô hình đầu tư *
+                  - generic [ref=e128] [cursor=pointer]:
+                    - generic [ref=e129]: "-- Chọn --"
+                    - generic [ref=e130]: ▼
+                - generic [ref=e132]:
+                  - generic [ref=e133]: Mã tỉnh *
+                  - generic [ref=e135] [cursor=pointer]:
+                    - generic [ref=e136]: "-- Chọn --"
+                    - generic [ref=e137]: ▼
+              - generic [ref=e138]:
+                - generic [ref=e140]:
+                  - generic [ref=e141]: Nguồn điện *
+                  - generic [ref=e143] [cursor=pointer]:
+                    - generic [ref=e144]: "-- Chọn --"
+                    - generic [ref=e145]: ▼
+                - generic [ref=e147]:
+                  - generic [ref=e148]: Thời gian lắp đặt *
+                  - textbox [ref=e149]
+              - generic [ref=e152]:
+                - generic [ref=e153]: Thời gian nghiệm thu *
+                - textbox [ref=e154]
+            - group "Hồ sơ & Hình ảnh" [ref=e155]:
+              - generic [ref=e160]:
+                - generic [ref=e161]: Hình ảnh hiện trường *
+                - generic [ref=e162]: Kéo thả hoặc click để chọn file
+              - generic [ref=e164]:
+                - generic [ref=e166]:
+                  - generic [ref=e167]: Pháp lý đất
+                  - textbox [ref=e168]
+                - generic [ref=e170]:
+                  - generic [ref=e171]: Đăng ký kinh doanh + CCCD (chủ hkd)
+                  - generic [ref=e172]: Kéo thả hoặc click để chọn file
+            - group "Thông tin hệ thống" [ref=e174]:
+              - generic [ref=e176]:
+                - generic [ref=e178]:
+                  - generic [ref=e179]: Trạng thái
+                  - generic [ref=e181] [cursor=pointer]:
+                    - generic [ref=e182]: "-- Chọn --"
+                    - generic [ref=e183]: ▼
+                - generic [ref=e185]:
+                  - generic [ref=e186]: Mã đề xuất
+                  - textbox "Tính sau khi lưu" [disabled] [ref=e187]
+              - generic [ref=e188]:
+                - generic [ref=e190]:
+                  - generic [ref=e191]: Người đề xuất
+                  - generic [ref=e192]:
+                    - combobox [disabled] [ref=e193]:
+                      - option "-- Chọn người dùng --"
+                      - option "Admin (SUPER_ADMIN)" [selected]
+                      - option "Admin (ADMIN)"
+                      - option "admin (CTV)"
+                      - option "CTV Branch Test (CTV)"
+                      - option "d e (CTV)"
+                      - option "d g (CTV)"
+                      - option "ff ff (CTV)"
+                      - option "fffrg rrt (CTV)"
+                      - option "g f (CTV)"
+                      - option "Lê Văn C (CTV)"
+                      - option "Register Test (CTV)"
+                      - option "Sales Test (SALES)"
+                      - option "test ctv (CTV)"
+                      - option "Test User P4 (CTV)"
+                      - option "Tran Thi B (CTV)"
+                      - option "van w (CTV)"
+                    - generic [ref=e194]: Admin — SUPER_ADMIN
+                - generic [ref=e196]:
+                  - generic [ref=e197]: Sales quản lý
+                  - generic [ref=e198]:
+                    - combobox [disabled] [ref=e199]:
+                      - option "-- Chọn người dùng --"
+                      - option "Admin (SUPER_ADMIN)" [selected]
+                      - option "Admin (ADMIN)"
+                      - option "admin (CTV)"
+                      - option "CTV Branch Test (CTV)"
+                      - option "d e (CTV)"
+                      - option "d g (CTV)"
+                      - option "ff ff (CTV)"
+                      - option "fffrg rrt (CTV)"
+                      - option "g f (CTV)"
+                      - option "Lê Văn C (CTV)"
+                      - option "Register Test (CTV)"
+                      - option "Sales Test (SALES)"
+                      - option "test ctv (CTV)"
+                      - option "Test User P4 (CTV)"
+                      - option "Tran Thi B (CTV)"
+                      - option "van w (CTV)"
+                    - generic [ref=e200]: Admin — SUPER_ADMIN
+            - button "Lưu" [ref=e202] [cursor=pointer]
+      - generic [ref=e26]:
+        - heading "Tra cứu đề xuất" [level=2] [ref=e27]
+        - generic [ref=e28]:
+          - textbox "Nhập mã tra cứu (VD DX-ABC123)" [ref=e29]
+          - button "Tra cứu" [ref=e30] [cursor=pointer]
+  - contentinfo [ref=e34]: Gửi đề xuất vị trí trạm sạc — không cần tài khoản

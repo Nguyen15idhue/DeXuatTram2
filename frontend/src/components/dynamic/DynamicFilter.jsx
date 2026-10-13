@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { getDataListLabelFromMap } from '../../utils/dataListLabel';
 
-const DynamicFilter = ({ columns, filters, onChange }) => {
+const DynamicFilter = ({ columns, filters, onChange, dataListOptions = {} }) => {
   const [localFilters, setLocalFilters] = useState(filters || {});
 
   const filterableColumns = columns.filter(c => c.filterable);
@@ -37,6 +38,11 @@ const DynamicFilter = ({ columns, filters, onChange }) => {
 
         if (type === 'select') {
           const parsedOptions = (() => {
+            if (col.data_list_id && dataListOptions[col.data_list_id]) {
+              const map = dataListOptions[col.data_list_id];
+              const uniq = map.unique?.[col.data_list_column] || [];
+              if (uniq.length > 0) return uniq.map(v => ({ value: v, label: getDataListLabelFromMap(map, col, v) }));
+            }
             if (!col.options) return [];
             if (Array.isArray(col.options)) return col.options;
             try {
@@ -97,7 +103,7 @@ const DynamicFilter = ({ columns, filters, onChange }) => {
           </div>
         );
       })}
-      <div className="dynamic-filter-item" style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-end' }}>
+      <div className="dynamic-filter-item flex-row gap-1.5 items-end">
         <button className="btn btn-primary btn-sm" onClick={handleApply}>Lọc</button>
         <button className="btn btn-secondary btn-sm" onClick={handleReset}>Đặt lại</button>
       </div>

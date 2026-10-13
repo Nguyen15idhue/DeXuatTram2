@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager, optionalAuth } = require('../middlewares/auth');
 const { validateCreateStation, validateUpdateStation } = require('../middlewares/validators');
 const stationController = require('../controllers/stationController');
 
@@ -21,10 +21,27 @@ const stationController = require('../controllers/stationController');
  *         name: status
  *         schema:
  *           type: string
- *           enum: [ACTIVE, DEPLOYING]
+ *           enum: [PLANNING, ACTIVE, DEPLOYING, REJECTED]
  *         description: Lọc theo trạng thái
  *       - in: query
- *         name: page
+ *         name: uu_tien
+ *         schema:
+ *           type: string
+ *           enum: ['1', '2']
+ *         description: Lọc theo loại ưu tiên (1 = TDT, 2 = LK/NQ)
+ *       - in: query
+ *         name: mo_hinh_tram
+ *         schema:
+ *           type: string
+ *           enum: [TDT, LK, NQ]
+ *         description: Lọc theo mô hình trạm
+  *       - in: query
+  *         name: filters
+  *         schema:
+  *           type: string
+  *         description: Lọc theo cột dạng JSON (VD {"name":"abc","province":"Hà Nội"}) — tìm trên toàn bộ database, không chỉ trang hiện tại
+  *       - in: query
+  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
@@ -50,7 +67,7 @@ const stationController = require('../controllers/stationController');
  *                 pagination:
  *                   $ref: '#/components/schemas/Pagination'
  */
-router.get('/', stationController.getAll);
+router.get('/', optionalAuth, stationController.getAll);
 
 /**
  * @swagger
@@ -80,7 +97,51 @@ router.get('/', stationController.getAll);
  *       404:
  *         description: Không tìm thấy trạm
  */
-router.get('/:id', stationController.getById);
+router.get('/:id', optionalAuth, stationController.getById);
+
+/**
+ * @swagger
+ * /api/stations/{id}/activity:
+ *   get:
+ *     tags: [Stations]
+ *     summary: Timeline hoạt động trạm (đổi trạng thái, đổi trường, nội dung 1Office)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       404:
+ *         description: Không tìm thấy trạm
+ */
+router.get('/:id/activity', requireAuth, requireUserManager, stationController.activity);
+
+/**
+ * @swagger
+ * /api/stations/{id}/proposal:
+ *   get:
+ *     tags: [Stations]
+ *     summary: Đề xuất nguồn đã tạo ra trạm (theo station_id)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       404:
+ *         description: Không tìm thấy trạm hoặc chưa liên kết đề xuất
+ */
+router.get('/:id/proposal', requireAuth, requireUserManager, stationController.sourceProposal);
 
 /**
  * @swagger

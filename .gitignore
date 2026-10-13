@@ -7,3 +7,18 @@ backend/storage/uploads/*
 10
 test_api.js
 test_files/
+/tests/
+frontend/tests
+
+frontend/dist/
+frontend/public/pmtiles/*.pmtiles
+test-results/
+playwright-report/
+.playwright-mcp/
+backups/
+frontend/test-*-results.json
+.kilo/
+# Service Account key Google (PRIVATE - khong bao gio commit)
+test_files/ggsheet/*.json
+secrets/
+

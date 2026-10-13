@@ -1,0 +1,141 @@
+{
+  "tokens": {
+    "nguoi_phu_trach": {
+      "source": "field",
+      "key": "nguoi_phu_trach"
+    },
+    "address": {
+      "source": "field",
+      "key": "address"
+    },
+    "link_de_xuat": {
+      "source": "field",
+      "key": "link_de_xuat"
+    },
+    "dien_tich_mat_bang": {
+      "source": "field",
+      "key": "dien_tich_mat_bang"
+    },
+    "nguon_dien": {
+      "source": "field",
+      "key": "nguon_dien"
+    },
+    "thoi_gian_lap_dat": {
+      "source": "field",
+      "key": "thoi_gian_lap_dat"
+    },
+    "thoi_gian_nghiem_thu": {
+      "source": "field",
+      "key": "thoi_gian_nghiem_thu"
+    },
+    "nq_ten_khach_hang": {
+      "source": "field",
+      "key": "nq_ten_khach_hang"
+    },
+    "nq_mst": {
+      "source": "field",
+      "key": "nq_mst"
+    },
+    "nq_nguoi_dai_dien": {
+      "source": "field",
+      "key": "nq_nguoi_dai_dien"
+    },
+    "nq_sdt": {
+      "source": "field",
+      "key": "nq_sdt"
+    },
+    "nq_so_tai_khoan": {
+      "source": "field",
+      "key": "nq_so_tai_khoan"
+    },
+    "nq_chia_loi_nhuan_tmt": {
+      "source": "field",
+      "key": "nq_chia_loi_nhuan_tmt"
+    },
+    "nq_chia_loi_nhuan_nq": {
+      "source": "field",
+      "key": "nq_chia_loi_nhuan_nq"
+    },
+    "const_so_van_ban": {
+      "source": "const",
+      "key": "so_van_ban"
+    },
+    "const_plan_tdt": {
+      "source": "const",
+      "key": "plan_tdt"
+    },
+    "const_plan_lk": {
+      "source": "const",
+      "key": "plan_lk"
+    },
+    "const_plan_nq": {
+      "source": "const",
+      "key": "plan_nq"
+    },
+    "const_plan_npp": {
+      "source": "const",
+      "key": "plan_npp"
+    },
+    "const_signer_ketoan": {
+      "source": "const",
+      "key": "signer_ketoan"
+    },
+    "const_signer_tgd_nq_lk": {
+      "source": "const",
+      "key": "signer_tgd_nq_lk"
+    }
+  },
+  "loops": {
+    "loai_tru_nq": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "table",
+          "table": "loai_tru_nq",
+          "columns": {
+            "loai_tru": "loai_tru",
+            "gia_niem_yet": "gia_niem_yet",
+            "gia_uu_dai": "gia_uu_dai",
+            "so_luong": "so_luong",
+            "thanh_tien": "thanh_tien"
+          }
+        }
+      ],
+      "footers": [
+        {
+          "id": "tong",
+          "label": "Tổng cộng",
+          "formula": "SUM(thanh_tien)"
+        }
+      ]
+    },
+    "luy_ke": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "datalist",
+          "listId": 25,
+          "columns": {
+            "loai_hinh": "loai_hinh",
+            "ke_hoach": "ke_hoach",
+            "de_xuat": "de_xuat",
+            "luy_ke": "luy_ke",
+            "chenh_lech": "chenh_lech"
+          }
+        }
+      ],
+      "footers": [
+        {
+          "id": "kehoach",
+          "label": "Tổng kế hoạch",
+          "formula": "SUM(ke_hoach)"
+        },
+        {
+          "id": "luyke",
+          "label": "Tổng lũy kế",
+          "formula": "SUM(luy_ke)"
+        }
+      ]
+    }
+  }
+}

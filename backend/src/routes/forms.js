@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const formController = require('../controllers/formController');
 
 /**
@@ -17,12 +17,17 @@ const formController = require('../controllers/formController');
  *         name: entity
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *       - in: query
  *         name: status
  *         schema:
  *           type: string
  *           enum: [active, inactive]
+ *       - in: query
+ *         name: purpose
+ *         schema:
+ *           type: string
+ *           enum: [create, view, all]
  *       - in: query
  *         name: page
  *         schema:
@@ -41,7 +46,132 @@ const formController = require('../controllers/formController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, formController.getAll);
+router.get('/', requireAuth, requireSuperAdmin, formController.getAll);
+
+/**
+ * @swagger
+ * /api/forms/by-entity-purpose:
+ *   get:
+ *     tags: [Forms]
+ *     summary: Lấy form theo entity và purpose (công khai)
+ *     description: Trả về form active có entity và purpose khớp
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, station_proposals, users, leads]
+ *       - in: query
+ *         name: purpose
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [create, view, all]
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Thiếu tham số
+ *       404:
+ *         description: Không tìm thấy form
+ */
+router.get('/by-entity-purpose', formController.getByEntityAndPurpose);
+
+/**
+ * @swagger
+ * /api/forms/quick-create:
+ *   get:
+ *     tags: [Forms]
+ *     summary: Lấy form "Tạo nhanh" (purpose=create, không phải form mặc định)
+ *     description: Dùng cho nút "Tạo nhanh" ở trang đề xuất và trên bản đồ. Mọi vai trò đã đăng nhập đều gọi được.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, station_proposals, users, leads]
+ *     responses:
+ *       200:
+ *         description: Thành công (data = null nếu chưa cấu hình form tạo nhanh)
+ *       400:
+ *         description: Thiếu entity
+ */
+router.get('/quick-create', requireAuth, formController.getQuickCreate);
+
+/**
+ * @swagger
+ * /api/forms/{id}/sync-preview:
+ *   get:
+ *     tags: [Forms]
+ *     summary: Xem trước đồng bộ form Xem/sửa từ form Nhập liệu
+ *     description: >
+ *       Trả về diff khi đồng bộ cấu hình: field lấy từ form Nhập liệu, field riêng của form Xem/sửa
+ *       (hoặc field không có vị trí trong form Nhập liệu) sẽ được gom vào section riêng
+ *       "Trường riêng form xem/sửa", kèm mẫu mô tả 1Office sinh ra tương ứng.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID form Xem/sửa (purpose = view)
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Form không phải Xem/sửa hoặc không có form Nhập liệu
+ *       404:
+ *         description: Không tìm thấy form
+ */
+router.get('/:id/sync-preview', requireAuth, requireSuperAdmin, formController.syncPreview);
+
+/**
+ * @swagger
+ * /api/forms/{id}/sync-from-create:
+ *   post:
+ *     tags: [Forms]
+ *     summary: Đồng bộ cấu hình form Xem/sửa theo form Nhập liệu
+ *     description: >
+ *       Ghi đè layout + field của form Xem/sửa bằng form Nhập liệu mặc định cùng entity.
+ *       Field chỉ có ở form Xem/sửa (hoặc không có vị trí trong form Nhập liệu) được đưa vào
+ *       section riêng. Khi syncDesc = true, mẫu mô tả 1Office cũng được sinh lại theo form Nhập liệu.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               syncDesc:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Đồng bộ luôn mẫu mô tả đẩy sang 1Office
+ *     responses:
+ *       200:
+ *         description: Đồng bộ thành công
+ *       400:
+ *         description: Form không hợp lệ hoặc mẫu mô tả sinh ra không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy form
+ */
+router.post('/:id/sync-from-create', requireAuth, requireSuperAdmin, formController.syncFromCreate);
 
 /**
  * @swagger
@@ -82,7 +212,7 @@ router.get('/:id', formController.getById);
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, station_proposals, users]
+ *                 enum: [stations, station_proposals, users, leads]
  *               name:
  *                 type: string
  *               description:
@@ -91,12 +221,41 @@ router.get('/:id', formController.getById);
  *                 type: string
  *                 enum: [active, inactive]
  *                 default: active
+ *               purpose:
+ *                 type: string
+ *                 enum: [create, view, all]
+ *                 default: all
+ *                 description: "Mục đích form: create (nhập liệu), view (xem/sửa), all (cả hai)"
  *               layout_config:
  *                 type: object
- *                 description: Layout rows config
+ *                 description: Layout config với sections và rows
  *                 properties:
+ *                   sections:
+ *                     type: array
+ *                     description: Danh sách section (nếu có)
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         title:
+ *                           type: string
+ *                         collapsible:
+ *                           type: boolean
+ *                           default: false
+ *                         rows:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                               columns:
+ *                                 type: string
+ *                                 enum: ['1:1', '1:2', '2:1', '2:2']
  *                   rows:
  *                     type: array
+ *                     description: Rows cũ (backward compatible, không có sections)
  *                     items:
  *                       type: object
  *                       properties:
@@ -115,7 +274,7 @@ router.get('/:id', formController.getById);
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireAdmin, formController.create);
+router.post('/', requireAuth, requireSuperAdmin, formController.create);
 
 /**
  * @swagger
@@ -147,10 +306,35 @@ router.post('/', requireAuth, requireAdmin, formController.create);
  *                 type: string
  *               status:
  *                 type: string
+ *               purpose:
+ *                 type: string
+ *                 enum: [create, view, all]
+ *                 default: all
  *               layout_config:
  *                 type: object
- *                 description: Layout rows config
+ *                 description: Layout config với sections và rows
  *                 properties:
+ *                   sections:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         title:
+ *                           type: string
+ *                         collapsible:
+ *                           type: boolean
+ *                         rows:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                               columns:
+ *                                 type: string
+ *                                 enum: ['1:1', '1:2', '2:1', '2:2']
  *                   rows:
  *                     type: array
  *                     items:
@@ -173,7 +357,7 @@ router.post('/', requireAuth, requireAdmin, formController.create);
  *       404:
  *         description: Không tìm thấy
  */
-router.put('/:id', requireAuth, requireAdmin, formController.update);
+router.put('/:id', requireAuth, requireSuperAdmin, formController.update);
 
 /**
  * @swagger
@@ -199,6 +383,6 @@ router.put('/:id', requireAuth, requireAdmin, formController.update);
  *       404:
  *         description: Không tìm thấy
  */
-router.delete('/:id', requireAuth, requireAdmin, formController.delete);
+router.delete('/:id', requireAuth, requireSuperAdmin, formController.delete);
 
 module.exports = router;

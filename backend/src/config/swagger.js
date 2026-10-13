@@ -4,9 +4,9 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Station Management API',
+      title: 'TMT-EGREEN API',
       version: '1.0.0',
-      description: 'API Documentation for Station Management System',
+      description: 'API Documentation for TMT-EGREEN System',
       contact: {
         name: 'Admin'
       }
@@ -34,7 +34,7 @@ const options = {
             full_name: { type: 'string', example: 'Nguyen Van A' },
             email: { type: 'string', example: 'user@example.com' },
             phone: { type: 'string', example: '0912345678' },
-            role: { type: 'string', enum: ['USER', 'ADMIN'], example: 'USER' },
+            role: { type: 'string', enum: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'], example: 'CTV' },
             status: { type: 'string', enum: ['ACTIVE', 'LOCKED'], example: 'ACTIVE' },
             created_at: { type: 'string', format: 'date-time' }
           }
@@ -66,7 +66,7 @@ const options = {
             area: { type: 'string', example: '100m2' },
             land_type: { type: 'string', example: 'Dân cư' },
             description: { type: 'string', example: 'Vị trí đẹp' },
-            status: { type: 'string', enum: ['PENDING', 'REVIEWING', 'APPROVED', 'REJECTED'], example: 'PENDING' },
+            status: { type: 'string', enum: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'], example: 'PENDING' },
             created_at: { type: 'string', format: 'date-time' },
             user_name: { type: 'string', example: 'Nguyen Van A' }
           }

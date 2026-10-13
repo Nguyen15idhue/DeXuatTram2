@@ -7,6 +7,7 @@ CREATE TABLE files (
     checksum VARCHAR(64) DEFAULT NULL,
     storage_provider VARCHAR(50) NOT NULL DEFAULT 'local',
     uploaded_by INT DEFAULT NULL,
+    submitter_ip VARCHAR(45) DEFAULT NULL,
     status ENUM('active','deleted') NOT NULL DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_uploaded_by (uploaded_by),

@@ -1,4 +1,74 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+const fileStamp = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+};
+
+const parseDispositionFilename = (disposition) => {
+  if (!disposition) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (utf8 && utf8[1]) {
+    try { return decodeURIComponent(utf8[1].trim().replace(/^"|"$/g, '')); } catch { /* silent */ }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  return plain && plain[1] ? plain[1].trim() : null;
+};
+
+const triggerDownload = (href, filename) => {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename || '';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { try { a.remove(); } catch { /* silent */ } }, 5000);
+};
+
+const parseJsonSafe = async (response) => {
+  const text = await response.text();
+  if (!text) throw new Error(`Server không trả dữ liệu (HTTP ${response.status}). Có thể request bị ngắt do xử lý quá lâu — hãy chia file nhỏ hơn, tắt check trùng/geocode rồi thử lại.`);
+  try { return JSON.parse(text); } catch {
+    if (response.status >= 500) throw new Error(`Server lỗi (HTTP ${response.status}). Có thể import quá lâu trên VPS chậm — hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.`);
+    throw new Error(`Phản hồi không hợp lệ (HTTP ${response.status})`);
+  }
+};
+
+const importErrorMessage = (err) => {
+  const msg = String((err && err.message) || '');
+  if (/Failed to fetch|NetworkError|load failed/i.test(msg)) {
+    return 'Mất kết nối tới server khi import (VPS xử lý quá lâu hoặc mạng chập chờn). Hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.';
+  }
+  if (/aborted|abort/i.test(msg)) return 'Import bị hủy do quá thời gian. Hãy chia file nhỏ hơn rồi thử lại.';
+  return msg || 'Lỗi kết nối server';
+};
+
+const fetchWithImportTimeout = (url, options = {}, timeoutMs = 10 * 60 * 1000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
+let authExpiredNotified = false;
+
+export const resetAuthExpiredFlag = () => { authExpiredNotified = false; };
+
+const handleUnauthorized = (response) => {
+  if (response.status === 401) {
+    let hadToken = false;
+    try {
+      hadToken = !!localStorage.getItem('token');
+      localStorage.removeItem('token');
+    } catch { /* silent */ }
+    if (typeof window !== 'undefined' && hadToken && !authExpiredNotified) {
+      authExpiredNotified = true;
+      window.dispatchEvent(new Event('auth:expired'));
+      setTimeout(() => { authExpiredNotified = false; }, 5000);
+    }
+  }
+};
 
 export const api = {
   async get(endpoint) {
@@ -39,20 +109,30 @@ export const api = {
     const response = await fetch(`${API_URL}${endpoint}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
 
   async postWithAuth(endpoint, body, token) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await response.json();
+    let response;
+    try {
+      response = await fetchWithImportTimeout(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+      });
+    } catch (err) {
+      throw new Error(importErrorMessage(err));
+    }
+    handleUnauthorized(response);
+    if (response.status === 413) throw new Error('Dữ liệu import quá lớn (HTTP 413). Hãy chia file <200 dòng rồi import từng phần.');
+    if (response.status === 429) throw new Error('Thao tác quá nhanh (HTTP 429). Hãy chờ 1 phút rồi thử lại.');
+    if (response.status === 504) throw new Error('Server xử lý quá lâu (HTTP 504). Hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.');
+    const data = await parseJsonSafe(response);
     return data;
   },
 
@@ -65,6 +145,7 @@ export const api = {
       },
       body: JSON.stringify(body)
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -74,6 +155,7 @@ export const api = {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -87,6 +169,7 @@ export const api = {
       },
       body: JSON.stringify(body)
     });
+    handleUnauthorized(response);
     const data = await response.json();
     return data;
   },
@@ -95,24 +178,56 @@ export const api = {
     const response = await fetch(`${API_URL}${endpoint}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!response.ok) throw new Error('Download failed');
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = `Tải file thất bại (HTTP ${response.status})`;
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch { /* silent */ }
+      throw new Error(message);
+    }
     return response;
   },
 
   async uploadWithAuth(endpoint, formData, token) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
-    const data = await response.json();
+    let response;
+    try {
+      response = await fetchWithImportTimeout(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+    } catch (err) {
+      throw new Error(importErrorMessage(err));
+    }
+    handleUnauthorized(response);
+    if (response.status === 413) throw new Error('File quá lớn (HTTP 413). Hãy chia file <200 dòng hoặc nén <8MB rồi thử lại.');
+    if (response.status === 429) throw new Error('Thao tác quá nhanh (HTTP 429). Hãy chờ 1 phút rồi thử lại.');
+    if (response.status === 504) throw new Error('Server xử lý quá lâu (HTTP 504). Hãy chia file <200 dòng, tắt check trùng rồi thử lại.');
+    const data = await parseJsonSafe(response);
     return data;
   }
 };
 
+const _pendingGets = new Map();
+function dedupGet(endpoint) {
+  if (_pendingGets.has(endpoint)) return _pendingGets.get(endpoint);
+  const p = api.get(endpoint).finally(() => _pendingGets.delete(endpoint));
+  _pendingGets.set(endpoint, p);
+  return p;
+}
+function dedupGetWithAuth(endpoint, token) {
+  const key = `auth:${endpoint}`;
+  if (_pendingGets.has(key)) return _pendingGets.get(key);
+  const p = api.getWithAuth(endpoint, token).finally(() => _pendingGets.delete(key));
+  _pendingGets.set(key, p);
+  return p;
+}
+
 export const stationService = {
-  getAll() {
-    return api.get('/stations');
+  getAll(token) {
+    return token ? api.getWithAuth('/stations', token) : api.get('/stations');
   },
   getAllWithParams(queryString) {
     return api.get(`/stations?${queryString}`);
@@ -128,18 +243,77 @@ export const stationService = {
   },
   delete(id, token) {
     return api.deleteWithAuth(`/stations/${id}`, token);
+  },
+  activity(id, token) {
+    return api.getWithAuth(`/stations/${id}/activity`, token);
+  },
+  sourceProposal(id, token) {
+    return api.getWithAuth(`/stations/${id}/proposal`, token);
+  }
+};
+
+export const leadService = {
+  getAllWithParams(queryString, token) {
+    return api.getWithAuth(`/admin/leads?${queryString}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/leads/${id}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/leads', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/leads/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/leads/${id}`, token);
+  },
+  bulkDelete(ids, token) {
+    return api.postWithAuth('/admin/leads/bulk-delete', { ids }, token);
+  },
+  assign(id, assigneeUserId, token, reason) {
+    return api.postWithAuth(`/admin/leads/${id}/assign`, { assignee_user_id: assigneeUserId, reason }, token);
+  },
+  bulkAssign(ids, assigneeUserId, token, reason) {
+    return api.postWithAuth('/admin/leads/bulk-assign', { ids, assignee_user_id: assigneeUserId, reason }, token);
+  },
+  getGdkvOptions(token) {
+    return api.getWithAuth('/admin/users/options/all?pool=gdkv', token);
+  },
+  assignments(id, token) {
+    return api.getWithAuth(`/admin/leads/${id}/assignments`, token);
+  },
+  journey(id, token) {
+    return api.getWithAuth(`/admin/leads/${id}/journey`, token);
+  },
+  createProposal(id, data, token, idempotencyKey) {
+    const body = idempotencyKey ? { ...data, idempotency_key: idempotencyKey } : data;
+    return api.postWithAuth(`/admin/leads/${id}/create-proposal`, body, token);
   }
 };
 
 export const proposalService = {
-  getAll() {
-    return api.get('/proposals');
+  getAll(token) {
+    return token ? api.getWithAuth('/proposals', token) : api.get('/proposals');
   },
   getById(id) {
     return api.get(`/proposals/${id}`);
   },
-  create(proposal, token) {
-    return api.postWithAuth('/proposals', proposal, token);
+  create(proposal, token, formId) {
+    const q = formId ? `?formId=${formId}` : '';
+    return api.postWithAuth(`/proposals${q}`, proposal, token);
+  },
+  checkNearby(data, token) {
+    return api.postWithAuth('/proposals/check-nearby', data, token);
+  },
+  createGuest(data) {
+    return api.post('/proposals/guest', data);
+  },
+  checkNearbyPublic(data) {
+    return api.post('/proposals/check-nearby-public', data);
+  },
+  trackByCode(code) {
+    return api.get(`/proposals/track/${encodeURIComponent(code)}`);
   }
 };
 
@@ -151,14 +325,44 @@ export const adminProposalService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/admin/proposals?${queryString}`, token);
   },
-  updateStatus(id, status, token) {
-    return api.putWithAuth(`/admin/proposals/${id}/status`, { status }, token);
+  getById(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}`, token);
+  },
+  updateStatus(id, status, token, reason, force) {
+    return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token);
+  },
+  convertToStation(id, data, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token);
   },
   update(id, data, token) {
     return api.putWithAuth(`/admin/proposals/${id}`, data, token);
   },
   delete(id, token) {
     return api.deleteWithAuth(`/admin/proposals/${id}`, token);
+  },
+  duplicates(minM, maxM, token) {
+    return api.getWithAuth(`/admin/proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
+  },
+  pushCheck(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}/push-check`, token);
+  },
+  getCompleteness(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}/completeness`, token);
+  },
+  confirmInfo(id, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/confirm-info`, {}, token);
+  },
+  reopenInfo(id, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/reopen-info`, {}, token);
+  },
+  extendDeadline(id, data, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token);
+  },
+  extendInfo(id, token) {
+    return api.getWithAuth(`/admin/proposals/${id}/extend-info`, token);
+  },
+  confirmInfoBatch(token, limit) {
+    return api.postWithAuth('/admin/proposals/confirm-info-batch', { limit: limit || 500 }, token);
   }
 };
 
@@ -170,14 +374,30 @@ export const myProposalService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/my-proposals?${queryString}`, token);
   },
-  create(data, token) {
-    return api.postWithAuth('/proposals', data, token);
+  create(data, token, formId) {
+    const q = formId ? `?formId=${formId}` : '';
+    return api.postWithAuth(`/proposals${q}`, data, token);
   },
   update(id, data, token) {
     return api.putWithAuth(`/my-proposals/${id}`, data, token);
   },
   delete(id, token) {
     return api.deleteWithAuth(`/my-proposals/${id}`, token);
+  },
+  duplicates(minM, maxM, token) {
+    return api.getWithAuth(`/my-proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
+  },
+  confirmInfo(id, token) {
+    return api.postWithAuth(`/my-proposals/${id}/confirm-info`, {}, token);
+  },
+  reopenInfo(id, token) {
+    return api.postWithAuth(`/my-proposals/${id}/reopen-info`, {}, token);
+  },
+  extendDeadline(id, data, token) {
+    return api.postWithAuth(`/my-proposals/${id}/extend-deadline`, data || {}, token);
+  },
+  extendInfo(id, token) {
+    return api.getWithAuth(`/my-proposals/${id}/extend-info`, token);
   }
 };
 
@@ -194,6 +414,9 @@ export const adminUserService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/admin/users?${queryString}`, token);
   },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/users/${id}`, token);
+  },
   create(user, token) {
     return api.postWithAuth('/admin/users', user, token);
   },
@@ -208,12 +431,15 @@ export const adminUserService = {
   },
   changeRole(id, role, token) {
     return api.patchWithAuth(`/admin/users/${id}/role`, { role }, token);
+  },
+  changePassword(id, password, token, oldPassword) {
+    return api.patchWithAuth(`/admin/users/${id}/password`, oldPassword ? { password, old_password: oldPassword } : { password }, token);
   }
 };
 
 export const authService = {
-  login(email, password) {
-    return api.post('/auth/login', { email, password });
+  login(identifier, password, remember = false) {
+    return api.post('/auth/login', { email: identifier, password, remember });
   },
   register(full_name, email, phone, password) {
     return api.post('/auth/register', { full_name, email, phone, password });
@@ -229,6 +455,21 @@ export const mapService = {
   }
 };
 
+export const geocodeService = {
+  reverse(lat, lng) {
+    return api.post('/geocode/reverse', { lat, lng });
+  },
+  getConfig(token) {
+    return api.getWithAuth('/admin/geocode-config', token);
+  },
+  updateConfig(data, token) {
+    return api.putWithAuth('/admin/geocode-config', data, token);
+  },
+  test(data, token) {
+    return api.postWithAuth('/admin/geocode-config/test', data, token);
+  }
+};
+
 export const dashboardService = {
   getStats(token) {
     return api.getWithAuth('/admin/dashboard', token);
@@ -238,13 +479,13 @@ export const dashboardService = {
 export const fieldDefinitionService = {
   getAll(queryString, token) {
     const query = queryString ? `?${queryString}` : '';
-    return api.getWithAuth(`/field-definitions${query}`, token);
+    return dedupGetWithAuth(`/field-definitions${query}`, token);
   },
   getById(id, token) {
     return api.getWithAuth(`/field-definitions/${id}`, token);
   },
   getByEntity(entity) {
-    return api.get(`/field-definitions/entity/${entity}`);
+    return dedupGet(`/field-definitions/entity/${entity}`);
   },
   create(data, token) {
     return api.postWithAuth('/field-definitions', data, token);
@@ -257,6 +498,9 @@ export const fieldDefinitionService = {
   },
   updateStatus(id, status, token) {
     return api.patchWithAuth(`/field-definitions/${id}/status`, { status }, token);
+  },
+  setLock(id, locked, token) {
+    return api.patchWithAuth(`/field-definitions/${id}/lock`, { locked }, token);
   }
 };
 
@@ -268,6 +512,12 @@ export const formService = {
   getById(id) {
     return api.get(`/forms/${id}`);
   },
+  getByEntityAndPurpose(entity, purpose) {
+    return dedupGet(`/forms/by-entity-purpose?entity=${entity}&purpose=${purpose}`);
+  },
+  getQuickCreate(entity, token) {
+    return api.getWithAuth(`/forms/quick-create?entity=${entity}`, token);
+  },
   create(data, token) {
     return api.postWithAuth('/forms', data, token);
   },
@@ -276,6 +526,12 @@ export const formService = {
   },
   delete(id, token) {
     return api.deleteWithAuth(`/forms/${id}`, token);
+  },
+  syncPreview(id, token) {
+    return api.getWithAuth(`/forms/${id}/sync-preview`, token);
+  },
+  syncFromCreate(id, data, token) {
+    return api.postWithAuth(`/forms/${id}/sync-from-create`, data, token);
   }
 };
 
@@ -316,6 +572,63 @@ export const viewService = {
   }
 };
 
+export const reportService = {
+  getPipeline(params, token) {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return api.getWithAuth(`/admin/reports/pipeline${qs ? `?${qs}` : ''}`, token);
+  },
+  getLead360(id, token) {
+    return api.getWithAuth(`/admin/reports/lead/${id}`, token);
+  },
+  updateConfig(widgets, token) {
+    return api.putWithAuth('/admin/reports/config', { widgets }, token);
+  },
+  getLead360Config(token) {
+    return api.getWithAuth('/admin/reports/config?dashboard=lead360', token);
+  },
+  updateLead360Config(sections, token) {
+    return api.putWithAuth('/admin/reports/config?dashboard=lead360', { sections }, token);
+  },
+  getConfig(token) {
+    return api.getWithAuth('/admin/reports/config', token);
+  },
+  getMetrics(token) {
+    return api.getWithAuth('/admin/reports/metrics', token);
+  },
+  getLeadDetails(params, token) {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return api.getWithAuth(`/admin/reports/lead-details${qs ? `?${qs}` : ''}`, token);
+  },
+  getStageDurations(params, token) {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return api.getWithAuth(`/admin/reports/stage-durations${qs ? `?${qs}` : ''}`, token);
+  },
+};
+
+export const builderService = {
+  getDatasets(token) {
+    return api.getWithAuth('/admin/reports/builder/datasets', token);
+  },
+  previewWidget(widget, token) {
+    return api.postWithAuth('/admin/reports/builder/preview', { widget }, token);
+  },
+  listDashboards(token) {
+    return api.getWithAuth('/admin/reports/builder/dashboards', token);
+  },
+  createDashboard(body, token) {
+    return api.postWithAuth('/admin/reports/builder/dashboards', body, token);
+  },
+  getDashboard(id, token) {
+    return api.getWithAuth(`/admin/reports/builder/dashboards/${id}`, token);
+  },
+  updateDashboard(id, body, token) {
+    return api.putWithAuth(`/admin/reports/builder/dashboards/${id}`, body, token);
+  },
+  deleteDashboard(id, token) {
+    return api.deleteWithAuth(`/admin/reports/builder/dashboards/${id}`, token);
+  },
+};
+
 export const viewFieldService = {
   getByView(viewId) {
     return api.get(`/views/${viewId}/fields`);
@@ -336,10 +649,10 @@ export const viewFieldService = {
 
 export const dynamicService = {
   getFormConfig(entity, formId) {
-    return api.get(`/dynamic/${entity}/form/${formId}`);
+    return dedupGet(`/dynamic/${entity}/form/${formId}`);
   },
   getViewConfig(entity, viewId) {
-    return api.get(`/dynamic/${entity}/view/${viewId}`);
+    return dedupGet(`/dynamic/${entity}/view/${viewId}`);
   },
   validate(entity, data, token) {
     return api.postWithAuth(`/dynamic/${entity}/validate`, data, token);
@@ -347,35 +660,149 @@ export const dynamicService = {
 };
 
 export const excelService = {
+  async getViews(entity, token) {
+    const res = await fetch(`${API_URL}/admin/excel/views?entity=${encodeURIComponent(entity)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Không tải được danh sách bộ cột');
+    return res.json();
+  },
+
   async downloadBlob(url, token, filename) {
     const response = await api.downloadWithAuth(url, token);
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const isExcel = contentType.includes('spreadsheetml')
+      || contentType.includes('ms-excel')
+      || contentType.includes('octet-stream');
+
+    if (!isExcel) {
+      let message = `Máy chủ trả về định dạng không phải Excel (${contentType || 'không rõ định dạng'})`;
+      try {
+        const text = await response.text();
+        if (/^\s*</.test(text)) {
+          message = 'Máy chủ trả về trang HTML thay vì file Excel — kiểm tra cấu hình proxy /api (backend có chạy không?).';
+        } else {
+          const err = JSON.parse(text);
+          if (err && err.message) message = err.message;
+        }
+      } catch { /* silent */ }
+      throw new Error(message);
+    }
+
+    const serverName = parseDispositionFilename(response.headers.get('content-disposition')) || filename;
+    try { if (response.body && response.body.cancel) await response.body.cancel(); } catch { /* silent */ }
+
+    const sep = url.includes('?') ? '&' : '?';
+    triggerDownload(`${API_URL}${url}${sep}token=${encodeURIComponent(token)}`, serverName);
+    return serverName;
+  },
+
+  async exportData(entity, token, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.layout) params.append('layout', filters.layout);
+    if (filters.formId) params.append('formId', filters.formId);
+    if (filters.purpose) params.append('purpose', filters.purpose);
+    if (filters.viewId) params.append('viewId', filters.viewId);
+    if (filters.viewIds && filters.viewIds.length) params.append('viewIds', filters.viewIds.join(','));
+    // Filter chi tiết trang Leads (backend entity khác bỏ qua param lạ)
+    ['stage', 'source', 'province', 'region', 'customer_classification', 'sales_outcome',
+      'assigned_user_id', 'assigned_department', 'date_from', 'date_to', 'date_field'].forEach((k) => {
+      if (filters[k] !== undefined && filters[k] !== null && String(filters[k]).trim() !== '') {
+        params.append(k, filters[k]);
+      }
+    });
+    const query = params.toString() ? `?${params.toString()}` : '';
+    await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${fileStamp()}_export_${entity}.xlsx`);
+  },
+
+  async exportDataByModel(entity, token, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) params.append('status', filters.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    await this.downloadBlob(`/admin/excel/export/${entity}/by-model${query}`, token, `${fileStamp()}_export_${entity}_mo_hinh.xlsx`);
+  },
+
+  async exportMyProposals(token, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.layout) params.append('layout', filters.layout);
+    if (filters.formId) params.append('formId', filters.formId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    await this.downloadBlob(`/my-proposals/export${query}`, token, `${fileStamp()}_export_station_proposals.xlsx`);
+  },
+
+  async exportDuplicatesBlob(url, body, token, filename) {
+    const response = await fetch(`${API_URL}${url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      let message = 'Export thất bại';
+      try {
+        const err = await response.json();
+        if (err.message) message = err.message;
+      } catch { /* silent */ }
+      throw new Error(message);
+    }
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('spreadsheetml') && !contentType.includes('ms-excel') && !contentType.includes('octet-stream')) {
+      throw new Error('Máy chủ trả về định dạng không phải Excel');
+    }
+
+    const serverName = parseDispositionFilename(response.headers.get('content-disposition')) || filename;
     const blob = await response.blob();
     const objUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(objUrl);
+    triggerDownload(objUrl, serverName);
+    setTimeout(() => { try { window.URL.revokeObjectURL(objUrl); } catch { /* silent */ } }, 30000);
+    return serverName;
   },
 
-  async exportData(entity, token) {
-    await this.downloadBlob(`/admin/excel/export/${entity}`, token, `${entity}_export.xlsx`);
+  async downloadTemplate(entity, token, opts = {}) {
+    const params = new URLSearchParams({ entity });
+    if (opts.viewId) params.append('viewId', opts.viewId);
+    if (opts.viewIds && opts.viewIds.length) params.append('viewIds', opts.viewIds.join(','));
+    if (opts.usage) params.append('usage', opts.usage);
+    await this.downloadBlob(`/admin/excel/template?${params.toString()}`, token, `template_${entity}.xlsx`);
   },
 
-  async downloadTemplate(entity, token) {
-    await this.downloadBlob(`/admin/excel/template?entity=${entity}`, token, `${entity}_template.xlsx`);
+  async downloadTemplateByModel(entity, token) {
+    const params = new URLSearchParams({ entity });
+    await this.downloadBlob(`/admin/excel/template/by-model?${params.toString()}`, token, `template_${entity}_mo_hinh_dau_tu.xlsx`);
   },
 
-  previewImport(entity, file, token) {
+  previewImport(entity, file, token, opts = {}) {
+    const params = new URLSearchParams({ entity });
+    if (opts.viewId) params.append('viewId', opts.viewId);
+    if (opts.usage) params.append('usage', opts.usage);
+    if (opts.checkDuplicate === false) params.append('checkDuplicate', 'false');
+    if (opts.checkIntraFile === false) params.append('checkIntraFile', 'false');
     const formData = new FormData();
     formData.append('file', file);
-    return api.uploadWithAuth(`/admin/excel/import/preview?entity=${entity}`, formData, token);
+    return api.uploadWithAuth(`/admin/excel/import/preview?${params.toString()}`, formData, token);
   },
 
-  confirmImport(entity, rows, token) {
-    return api.postWithAuth('/admin/excel/import/confirm', { entity, rows }, token);
+  confirmImport(entity, rows, token, opts = {}) {
+    return api.postWithAuth('/admin/excel/import/confirm', {
+      entity, rows, viewId: opts.viewId || null, jobId: opts.jobId || null,
+      geocode: opts.geocode !== false,
+      checkDuplicate: opts.checkDuplicate !== false,
+      checkIntraFile: opts.checkIntraFile !== false,
+      fileName: opts.fileName || null,
+      columns: Array.isArray(opts.columns) ? opts.columns : null
+    }, token);
+  },
+
+  getImportProgress(jobId, token) {
+    return api.getWithAuth(`/admin/excel/import/progress/${encodeURIComponent(jobId)}`, token);
   },
 
   async exportDataList(listId, token) {
@@ -397,8 +824,14 @@ export const dataListService = {
   getAll(params, token) {
     return api.getWithAuth(`/admin/data-lists?${params}`, token);
   },
-  getById(id, token) {
-    return api.getWithAuth(`/admin/data-lists/${id}`, token);
+  getById(id, token, params = '') {
+    const query = params ? `?${params}` : '';
+    if (!token) return api.get(`/data-lists/${id}${query}`);
+    return api.getWithAuth(`/admin/data-lists/${id}${query}`, token);
+  },
+  getChildren(id, column, parentColumn, parentValue) {
+    const q = `column=${encodeURIComponent(column)}&parent_column=${encodeURIComponent(parentColumn)}&parent_value=${encodeURIComponent(parentValue ?? '')}`;
+    return api.get(`/data-lists/${id}/children?${q}`);
   },
   create(data, token) {
     return api.postWithAuth('/admin/data-lists', data, token);
@@ -427,7 +860,520 @@ export const formulaService = {
   preview(expression, scope = {}, token) {
     return api.postWithAuth('/formulas/preview', { expression, scope }, token);
   },
-  previewPost(expression, metadata, token) {
-    return api.postWithAuth('/formulas/preview', { expression, metadata }, token);
+  previewPost(expression, metadata, scope = {}, token) {
+    return api.postWithAuth('/formulas/preview', { expression, metadata, scope }, token);
+  }
+};
+
+export const apiConfigService = {
+  getAll(queryString, token) {
+    return api.getWithAuth(`/admin/api-configs?${queryString || ''}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/api-configs/${id}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/api-configs', data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/api-configs/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/api-configs/${id}`, token);
+  },
+  testConnection(id, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/test`, {}, token);
+  },
+  syncPersonnel(id, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/sync-personnel`, {}, token);
+  },
+  rotateWebhookSecret(id, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/webhook-secret/rotate`, {}, token);
+  },
+  testWebhook(id, data, token) {
+    return api.postWithAuth(`/admin/api-configs/${id}/webhook-test`, data, token);
+  }
+};
+
+export const webhookConfigService = {
+  list(token) {
+    return api.getWithAuth('/admin/webhook-configs', token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/webhook-configs', data, token);
+  },
+  rotate(id, token) {
+    return api.postWithAuth(`/admin/webhook-configs/${id}/rotate`, {}, token);
+  },
+  setActive(id, isActive, token) {
+    return api.putWithAuth(`/admin/webhook-configs/${id}/active`, { is_active: isActive }, token);
+  },
+  remove(id, token) {
+    return api.deleteWithAuth(`/admin/webhook-configs/${id}`, token);
+  },
+  testSend(data, token) {
+    return api.postWithAuth('/admin/webhook-configs/test-send', data, token);
+  },
+  testSendWork(data, token) {
+    return api.postWithAuth('/admin/webhook-configs/test-send-work', data, token);
+  },
+  inboundLogs(params, token) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    });
+    return api.getWithAuth(`/admin/webhook-configs/inbound-logs?${qs.toString()}`, token);
+  }
+};
+
+export const automationService = {
+  list(token) {
+    return api.getWithAuth('/admin/automations', token);
+  },
+  listByType(type, token) {
+    return api.getWithAuth(`/admin/automations/type/${type}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/automations', data, token);
+  },
+  get(key, token) {
+    return api.getWithAuth(`/admin/automations/${key}`, token);
+  },
+  update(key, data, token) {
+    return api.putWithAuth(`/admin/automations/${key}`, data, token);
+  },
+  testLogin(key, data, token) {
+    return api.postWithAuth(`/admin/automations/${key}/test-login`, data || {}, token);
+  },
+  runManual(key, proposalCode, token) {
+    return api.postWithAuth(`/admin/automations/${key}/run`, { proposal_code: proposalCode }, token);
+  },
+  runs(key, params, token) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    });
+    return api.getWithAuth(`/admin/automations/${key}/runs?${qs.toString()}`, token);
+  },
+  runDetail(key, id, token) {
+    return api.getWithAuth(`/admin/automations/${key}/runs/${id}`, token);
+  },
+  getByKey(key, token) {
+    return api.getWithAuth(`/admin/automations/${key}`, token);
+  },
+  syncVersions(key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.getWithAuth(`/admin/automations/sync/versions${qs}`, token);
+  },
+  syncRefreshAll(key, templateNames, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    const body = templateNames && templateNames.length > 0 ? { template_names: templateNames } : {};
+    return api.postWithAuth(`/admin/automations/sync/refresh-all${qs}`, body, token);
+  },
+  syncFields(version, refresh, key, token) {
+    let qs = `?version=${encodeURIComponent(version)}`;
+    if (refresh) qs += '&refresh=1';
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.getWithAuth(`/admin/automations/sync/fields${qs}`, token);
+  },
+  syncMappingsGet(version, key, token) {
+    let qs = `?version=${encodeURIComponent(version)}`;
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.getWithAuth(`/admin/automations/sync/mappings${qs}`, token);
+  },
+  syncMappingsPut(version, items, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.putWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}${key ? `&key=${encodeURIComponent(key)}` : ''}`, { items }, token);
+  },
+  syncCopyMap(fromVersion, toVersion, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/copy-map${qs}`, { from_version: fromVersion, to_version: toVersion }, token);
+  },
+  syncAutoMatch(version, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/auto-match${qs}`, { version }, token);
+  },
+  specialNodesList(token) {
+    return api.getWithAuth('/admin/automations/special-nodes', token);
+  },
+  specialNodesCreate(data, token) {
+    return api.postWithAuth('/admin/automations/special-nodes', data, token);
+  },
+  specialNodesUpdate(key, data, token) {
+    return api.putWithAuth(`/admin/automations/special-nodes/${encodeURIComponent(key)}`, data, token);
+  },
+  specialNodesDelete(key, token) {
+    return api.deleteWithAuth(`/admin/automations/special-nodes/${encodeURIComponent(key)}`, token);
+  },
+  syncBulkPlan(fromVersion, toVersions, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/bulk-plan${qs}`, { from_version: fromVersion, to_versions: toVersions }, token);
+  },
+  syncBulkApply(fromVersion, toVersions, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/bulk-apply${qs}`, { from_version: fromVersion, to_versions: toVersions, mode: 'merge' }, token);
+  },
+  syncMappingsDelete(version, key, token) {
+    let qs = `?version=${encodeURIComponent(version)}`;
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.deleteWithAuth(`/admin/automations/sync/mappings${qs}`, token);
+  },
+  syncSheetHeaders(tab, key, token) {
+    let qs = `?tab=${encodeURIComponent(tab)}`;
+    if (key) qs += `&key=${encodeURIComponent(key)}`;
+    return api.getWithAuth(`/admin/automations/sync/sheet-headers${qs}`, token);
+  },
+  syncSheetAddColumn(tab, header, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/sheet-column${qs}`, { tab, header }, token);
+  },
+  syncSheetInsertColumn(tab, index, header, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/sheet-column-insert${qs}`, { tab, index, header }, token);
+  },
+  syncTest(data, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/test${qs}`, data || {}, token);
+  },
+  syncRun(version, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/run${qs}`, version ? { version } : {}, token);
+  },
+  syncRuns(params, key, token) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    });
+    if (key) qs.set('key', key);
+    return api.getWithAuth(`/admin/automations/sync/runs?${qs.toString()}`, token);
+  },
+  syncRunDetail(id, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.getWithAuth(`/admin/automations/sync/runs/${id}${qs}`, token);
+  },
+  syncListTemplates(key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.getWithAuth(`/admin/automations/sync/templates${qs}`, token);
+  },
+  syncGetTemplateVersions(processIds, key, token) {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
+    return api.postWithAuth(`/admin/automations/sync/template-versions${qs}`, { process_ids: processIds }, token);
+  }
+};
+
+export const externalUserService = {
+  getAll(system, token) {
+    const qs = system ? `?system=${encodeURIComponent(system)}` : '';
+    return api.getWithAuth(`/admin/external-users${qs}`, token);
+  }
+};
+
+export const notificationService = {
+  getAll(page = 1, limit = 20, token) {
+    return api.getWithAuth(`/notifications?page=${page}&limit=${limit}`, token);
+  },
+  unreadCount(token) {
+    return api.getWithAuth('/notifications/unread-count', token);
+  },
+  getAllAdmin(page = 1, limit = 20, token) {
+    return api.getWithAuth(`/notifications/all?page=${page}&limit=${limit}`, token);
+  },
+  markRead(id, token) {
+    return api.putWithAuth(`/notifications/${id}/read`, {}, token);
+  },
+  markAllRead(token) {
+    return api.putWithAuth('/notifications/read-all', {}, token);
+  }
+};
+
+export const fieldMappingService = {
+  getTypes(token, configId) {
+    const url = configId ? `/admin/field-mappings/types?configId=${configId}` : '/admin/field-mappings/types';
+    return api.getWithAuth(url, token);
+  },
+  getAllByConfig(configId, token) {
+    return api.getWithAuth(`/admin/field-mappings/${configId}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/field-mappings/detail/${id}`, token);
+  },
+  create(configId, data, token) {
+    return api.postWithAuth(`/admin/field-mappings/${configId}`, data, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/field-mappings/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/admin/field-mappings/${id}`, token);
+  },
+  preview(data, token) {
+    return api.postWithAuth('/admin/field-mappings/preview', data, token);
+  },
+  updateMetadata(configId, metadata, token) {
+    return api.putWithAuth(`/admin/field-mappings/metadata/${configId}`, metadata, token);
+  },
+  getSelectedFields(configId, token) {
+    return api.getWithAuth(`/admin/field-mappings/selected-fields/${configId}`, token);
+  },
+  updateSelectedFields(configId, fields, token) {
+    return api.putWithAuth(`/admin/field-mappings/selected-fields/${configId}`, fields, token);
+  },
+  getUsedInDesc(configId, token) {
+    return api.getWithAuth(`/admin/field-mappings/used-in-desc/${configId}`, token);
+  }
+};
+
+export const oneOfficeSyncService = {
+  push(data, token) {
+    return api.postWithAuth('/admin/1office/push', data, token);
+  },
+  pull(data, token) {
+    return api.postWithAuth('/admin/1office/pull', data, token);
+  },
+  link(data, token) {
+    return api.postWithAuth('/admin/1office/link', data, token);
+  },
+  unlink(data, token) {
+    return api.postWithAuth('/admin/1office/unlink', data, token);
+  },
+  searchContacts(configId, query, token) {
+    return api.getWithAuth(`/admin/1office/contacts/search?configId=${configId}&q=${encodeURIComponent(query || '')}`, token);
+  },
+  getJobDetail(jobId, token) {
+    return api.getWithAuth(`/admin/queue-logs/${jobId}`, token);
+  },
+  getTemplate(configId, token) {
+    return api.getWithAuth(`/admin/1office/template?configId=${configId}`, token);
+  },
+  updateTemplate(configId, template, token) {
+    return api.putWithAuth('/admin/1office/template', { configId, template }, token);
+  },
+  previewDesc(configId, proposalId, token) {
+    return api.postWithAuth('/admin/1office/preview', { apiConfigId: configId, proposalId }, token);
+  },
+  restorePreview(code, token, apiConfigId = 3) {
+    return api.postWithAuth('/admin/1office/restore/preview', { code, apiConfigId }, token);
+  },
+  restoreConfirm(code, overrides, token, apiConfigId = 3, fileAssignments = {}) {
+    return api.postWithAuth('/admin/1office/restore/confirm', { code, overrides, apiConfigId, fileAssignments }, token);
+  }
+};
+
+export const queueLogService = {
+  getAll(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/queue-logs?${params.toString()}`, token);
+  },
+  getStats(apiConfigId, token) {
+    const q = apiConfigId ? `?api_config_id=${apiConfigId}` : '';
+    return api.getWithAuth(`/admin/queue-logs/stats${q}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/queue-logs/${id}`, token);
+  },
+  retry(id, token) {
+    return api.postWithAuth(`/admin/queue-logs/${id}/retry`, {}, token);
+  },
+  cancel(id, token) {
+    return api.postWithAuth(`/admin/queue-logs/${id}/cancel`, {}, token);
+  }
+};
+
+export const importJobService = {
+  list(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/excel/import/jobs?${params.toString()}`, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/admin/excel/import/jobs/${encodeURIComponent(id)}`, token);
+  },
+  cancel(id, token) {
+    return api.postWithAuth(`/admin/excel/import/jobs/${encodeURIComponent(id)}/cancel`, {}, token);
+  },
+  exportSuccess(id, token) {
+    return excelService.downloadBlob(`/admin/excel/import/jobs/${encodeURIComponent(id)}/export-success`, token, `import_success.xlsx`);
+  },
+  exportFailed(id, token) {
+    return excelService.downloadBlob(`/admin/excel/import/jobs/${encodeURIComponent(id)}/export-failed`, token, `import_failed.xlsx`);
+  }
+};
+
+export const proposalLogService = {
+  getAll(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/proposal-logs?${params.toString()}`, token);
+  },
+  timeline(proposalId, token) {
+    return api.getWithAuth(`/admin/proposal-logs/${proposalId}/timeline`, token);
+  },
+  journeyLogs(filters, token) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params.set(k, v);
+    });
+    return api.getWithAuth(`/admin/proposal-logs/journey?${params.toString()}`, token);
+  }
+};
+
+export const documentService = {
+  listTemplates(token) {
+    return api.getWithAuth('/admin/documents/templates', token);
+  },
+  getTemplate(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}`, token);
+  },
+  createTemplate(data, token) {
+    return api.postWithAuth('/admin/documents/templates', data, token);
+  },
+  updateTemplate(id, data, token) {
+    return api.putWithAuth(`/admin/documents/templates/${id}`, data, token);
+  },
+  deleteTemplate(id, token) {
+    return api.deleteWithAuth(`/admin/documents/templates/${id}`, token);
+  },
+  listConstants(token) {
+    return api.getWithAuth('/admin/documents/constants', token);
+  },
+  updateConstants(items, token) {
+    return api.putWithAuth('/admin/documents/constants', { items }, token);
+  },
+  deleteConstant(key, token) {
+    return api.deleteWithAuth(`/admin/documents/constants/${encodeURIComponent(key)}`, token);
+  },
+  listDatalists(token) {
+    return api.getWithAuth('/admin/documents/datalists', token);
+  },
+  async exportReports(proposalIds, templateId, token) {
+    const response = await fetch(`${API_URL}/admin/proposals/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ proposalIds, templateId: templateId || undefined })
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Xuất báo cáo thất bại';
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch {}
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    let filename = 'bao-cao-de-xuat.docx';
+    const disp = response.headers.get('Content-Disposition') || '';
+    const m = disp.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m) {
+      try { filename = decodeURIComponent(m[1]); } catch {}
+    }
+    const skipped = response.headers.get('X-Report-Skipped') || '';
+    const warnings = response.headers.get('X-Report-Warnings') || '';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return { filename, skipped, warnings: warnings ? decodeURIComponent(warnings) : '' };
+  },
+  listTokens(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/tokens`, token);
+  },
+  previewBlank(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/preview-blank`, token);
+  },
+  validateMapping(id, mapping, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/validate`, { mapping }, token);
+  },
+  getLayout(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/layout`, token);
+  },
+  async fetchLayoutPreview(id, token) {
+    const response = await fetch(`${API_URL}/admin/documents/templates/${id}/layout/preview`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Không tải được bố cục template';
+      try { const err = await response.json(); if (err && err.message) message = err.message; } catch {}
+      throw new Error(message);
+    }
+    return response.arrayBuffer();
+  },
+  insertLayoutToken(id, nodeId, name, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/layout/insert`, { nodeId, name }, token);
+  },
+  removeLayoutToken(id, nodeId, tokenName, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/layout/remove`, { nodeId, token: tokenName }, token);
+  },
+  alignLayout(id, nodeId, opts, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/layout/align`, { nodeId, ...(opts || {}) }, token);
+  },
+  listLayoutVersions(id, token) {
+    return api.getWithAuth(`/admin/documents/templates/${id}/versions`, token);
+  },
+  restoreLayoutVersion(id, versionId, token) {
+    return api.postWithAuth(`/admin/documents/templates/${id}/versions/${versionId}/restore`, {}, token);
+  },
+  async fetchTemplateBytes(fileId, token) {
+    const response = await fetch(`${API_URL}/files/${fileId}/download?token=${encodeURIComponent(token)}`);
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Không tải được file template';
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch {}
+      throw new Error(message);
+    }
+    const ct = (response.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('wordprocessingml') && !ct.includes('octet-stream') && !ct.includes('zip')) {
+      throw new Error('File template không phải định dạng docx');
+    }
+    return response.arrayBuffer();
+  },
+  async fetchReportBytes(proposalId, templateId, token) {
+    const response = await fetch(`${API_URL}/admin/proposals/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ proposalIds: [proposalId], templateId: templateId || undefined })
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Xuất báo cáo thất bại';
+      try {
+        const err = await response.json();
+        if (err && err.message) message = err.message;
+      } catch {}
+      throw new Error(message);
+    }
+    return response.arrayBuffer();
+  },
+  async uploadTemplateFile(file, token) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_URL}/files/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    handleUnauthorized(response);
+    return response.json();
   }
 };

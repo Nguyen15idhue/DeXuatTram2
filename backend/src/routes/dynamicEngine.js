@@ -16,7 +16,7 @@ const dynamicEngineController = require('../controllers/dynamicEngineController'
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *       - in: path
  *         name: formId
  *         required: true
@@ -45,7 +45,7 @@ router.get('/:entity/form/:formId', dynamicEngineController.getFormConfig);
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *       - in: path
  *         name: viewId
  *         required: true
@@ -75,7 +75,7 @@ router.get('/:entity/view/:viewId', dynamicEngineController.getViewConfig);
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *     requestBody:
  *       required: true
  *       content:

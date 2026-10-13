@@ -2,7 +2,7 @@ const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, confirmTex
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-overlay" onClick={(e) => { e.stopPropagation(); onCancel(); }}>
       <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
         <div className={`confirm-icon confirm-icon-${type}`}>
           {type === 'danger' ? '⚠' : type === 'warning' ? '!' : '✓'}

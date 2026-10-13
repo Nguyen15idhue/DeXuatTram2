@@ -1,10 +1,22 @@
 const bcrypt = require('bcryptjs');
 const adminUserService = require('../services/adminUserService');
 
+const ALLOWED_PARENT_ROLES = ['SALES', 'ADMIN', 'SUPER_ADMIN'];
+const { isGdkv, isGdtt } = require('../constants/salesRanks');
+
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
 exports.getAll = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '' } = req.query;
-    const result = await adminUserService.getAllUsers(search, parseInt(page), parseInt(limit));
+    const { page = 1, limit = 10, search = '', all = '', role, status, department, chuc_vu, parent_id, date_from, date_to, date_field } = req.query;
+    const scope = { role: req.user.role, userId: req.user.id, all: all === '1' };
+    const result = await adminUserService.getAllUsers(search, parseInt(page), parseInt(limit), scope, {
+      role, status, department, chucVu: chuc_vu, parentId: parent_id, dateFrom: date_from, dateTo: date_to, dateField: date_field
+    });
     res.json({ success: true, data: result.users, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get users error:', error);
@@ -12,18 +24,113 @@ exports.getAll = async (req, res) => {
   }
 };
 
+exports.getOptions = async (req, res) => {
+  try {
+    const pool = ['gdkv', 'gdtt'].includes(req.query.pool) ? req.query.pool : null;
+    const options = await adminUserService.getUserOptions({ role: req.user.role, userId: req.user.id }, pool);
+    res.json({ success: true, data: options });
+  } catch (error) {
+    console.error('Get user options error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getById = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const user = await adminUserService.findById(targetId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+    if (req.user.role === 'SALES') {
+      const branchIds = await adminUserService.getBranchIds(req.user.id);
+      if (branchIds.includes(targetId)) {
+        user._scope = 'branch';
+      } else {
+        const ancestorIds = await adminUserService.getAncestorIds(req.user.id);
+        if (!ancestorIds.includes(targetId)) {
+          return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+        }
+        user._scope = 'ancestor';
+      }
+    } else if (req.user.role === 'ADMIN') {
+      if (user.role === 'SUPER_ADMIN') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+    }
+    res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Admin get user error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
 exports.create = async (req, res) => {
   try {
-    const { full_name, email, phone, password, role, status, custom_data } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
+    const creatorRole = req.user.role;
+
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'];
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
+    }
+
+    let parentId = null;
+    if (creatorRole === 'SALES') {
+      if (role && !['CTV', 'NPP'].includes(role)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      role = role || 'CTV';
+      const creator = await adminUserService.findById(req.user.id);
+      const creatorCd = parseCustomData(creator && creator.custom_data);
+      if (isGdkv(creatorCd.chuc_vu, creatorCd.department)) {
+        parentId = req.user.id;
+      } else if (isGdtt(creatorCd.chuc_vu, creatorCd.department) && parent_id) {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        const parentCd = parseCustomData(parentUser && parentUser.custom_data);
+        const sameDept = parentCd.department && parentCd.department === creatorCd.department;
+        parentId = (parentUser && parentUser.role === 'SALES' && isGdkv(parentCd.chuc_vu, parentCd.department) && sameDept)
+          ? parentUser.id
+          : req.user.id;
+      } else {
+        parentId = req.user.id;
+      }
+    } else if (creatorRole === 'ADMIN') {
+      if (role === 'SUPER_ADMIN') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      role = role || 'CTV';
+      if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        if (parentUser && ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
+          parentId = parentUser.id;
+        }
+      }
+    } else {
+      role = role || 'CTV';
+      if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        if (parentUser && ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
+          parentId = parentUser.id;
+        }
+      }
+    }
 
     const existing = await adminUserService.findByEmail(email);
     if (existing) {
       return res.status(400).json({ success: false, message: 'Email đã tồn tại' });
     }
 
+    if (external_id) {
+      const extCheck = await adminUserService.findByExternalId(external_id);
+      if (extCheck) {
+        return res.status(400).json({ success: false, message: 'Mã ngoài đã tồn tại' });
+      }
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data);
+    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data, parentId, external_id || null);
     res.status(201).json({ success: true, data: user, message: 'Tạo user thành công' });
   } catch (error) {
     console.error('Admin create user error:', error);
@@ -33,30 +140,97 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const { full_name, email, phone, password, role, status, custom_data } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
     const { id } = req.params;
+    const editorRole = req.user.role;
+    const targetId = parseInt(id);
 
-    const existing = await adminUserService.findById(id);
+    const existing = await adminUserService.findById(targetId);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    const emailCheck = await adminUserService.findByEmailExceptId(email, id);
+    if (editorRole === 'SALES') {
+      const branchIds = await adminUserService.getBranchIds(req.user.id);
+      if (!branchIds.includes(targetId)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      role = existing.role;
+      status = existing.status;
+      parent_id = existing.parent_id;
+    } else if (editorRole === 'ADMIN') {
+      if (existing.role === 'SUPER_ADMIN') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      if (role === 'SUPER_ADMIN') {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      if (status !== undefined && status !== existing.status) {
+        if (targetId === req.user.id || existing.role === 'ADMIN') {
+          return res.status(403).json({ success: false, message: 'Không được đổi trạng thái tài khoản này' });
+        }
+      }
+      if (targetId === req.user.id) {
+        role = existing.role;
+      } else {
+        role = role || existing.role;
+      }
+    } else {
+      if (targetId === req.user.id && role && role !== existing.role) {
+        role = existing.role;
+      } else {
+        role = role || existing.role;
+      }
+      if (targetId === req.user.id && status !== undefined && status !== existing.status) {
+        return res.status(400).json({ success: false, message: 'Không thể khóa chính mình' });
+      }
+    }
+
+    const emailCheck = await adminUserService.findByEmailExceptId(email, targetId);
     if (emailCheck) {
       return res.status(400).json({ success: false, message: 'Email đã tồn tại' });
     }
 
-    const cd = custom_data !== undefined ? custom_data : existing.custom_data;
-
-    if (password) {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
-      await adminUserService.updateUserWithPassword(id, full_name, email, phone, hashedPassword, role, status, cd);
-    } else {
-      await adminUserService.updateUser(id, full_name, email, phone, role, status, cd);
+    if (external_id) {
+      const extCheck = await adminUserService.findByExternalIdExceptId(external_id, targetId);
+      if (extCheck) {
+        return res.status(400).json({ success: false, message: 'Mã ngoài đã tồn tại' });
+      }
     }
 
-    const user = await adminUserService.findById(id);
+    const cd = custom_data !== undefined ? custom_data : existing.custom_data;
+    const ext = external_id === undefined ? existing.external_id : (external_id || null);
+    const finalStatus = status !== undefined ? status : existing.status;
+
+    let parentId = undefined;
+    if (parent_id !== undefined) {
+      if (parent_id === null || parent_id === '' || parent_id === 0) {
+        parentId = null;
+      } else {
+        const parentUser = await adminUserService.findById(Number(parent_id));
+        if (!parentUser || !ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
+          return res.status(400).json({ success: false, message: 'Cấp trên phải là tài khoản SALES/ADMIN/SUPER_ADMIN' });
+        }
+        const branchIds = await adminUserService.getBranchIds(targetId);
+        if (branchIds.includes(Number(parentUser.id))) {
+          return res.status(400).json({ success: false, message: 'Không thể gán cấp trên là chính mình hoặc cấp dưới' });
+        }
+        parentId = parentUser.id;
+      }
+    }
+
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, finalStatus, cd, ext, parentId);
+    } else {
+      await adminUserService.updateUser(targetId, full_name, email, phone, role, finalStatus, cd, ext, parentId);
+    }
+
+    const user = await adminUserService.findById(targetId);
     res.json({ success: true, data: user, message: 'Cập nhật user thành công' });
   } catch (error) {
     console.error('Admin update user error:', error);
@@ -67,21 +241,38 @@ exports.update = async (req, res) => {
 exports.delete = async (req, res) => {
   try {
     const { id } = req.params;
+    const targetId = parseInt(id);
+    const deleterRole = req.user.role;
 
-    const existing = await adminUserService.findByIdWithRole(id);
+    const existing = await adminUserService.findByIdWithRole(targetId);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    if (existing.role === 'ADMIN') {
-      return res.status(400).json({ success: false, message: 'Không thể xóa admin' });
-    }
-
-    if (parseInt(id) === req.user.id) {
+    if (targetId === req.user.id) {
       return res.status(400).json({ success: false, message: 'Không thể xóa chính mình' });
     }
 
-    await adminUserService.deleteUser(id);
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3, MKT: 3 };
+    const deleterRank = RANK[deleterRole] ?? 99;
+    const targetRank = RANK[existing.role] ?? 99;
+
+    if (deleterRank >= targetRank) {
+      return res.status(403).json({ success: false, message: 'Không có quyền xóa tài khoản này' });
+    }
+
+    if (deleterRole === 'SALES') {
+      const full = await adminUserService.findById(targetId);
+      if (!full || !['CTV', 'NPP'].includes(full.role) || full.parent_id !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      await adminUserService.deleteUserWithOrphan(targetId, req.user.id);
+      return res.json({ success: true, message: 'Xóa user thành công' });
+    }
+
+    const full = await adminUserService.findById(targetId);
+    const newOwner = full && full.parent_id ? full.parent_id : null;
+    await adminUserService.deleteUserWithOrphan(targetId, newOwner);
     res.json({ success: true, message: 'Xóa user thành công' });
   } catch (error) {
     console.error('Admin delete user error:', error);
@@ -92,17 +283,26 @@ exports.delete = async (req, res) => {
 exports.toggleLock = async (req, res) => {
   try {
     const { id } = req.params;
+    const targetId = parseInt(id);
 
-    const existing = await adminUserService.findByIdWithStatus(id);
+    if (targetId === req.user.id) {
+      return res.status(400).json({ success: false, message: 'Không thể khóa chính mình' });
+    }
+
+    const existing = await adminUserService.findById(targetId);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    const newStatus = existing.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
-    await adminUserService.updateStatus(id, newStatus);
+    if (existing.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
 
-    const user = await adminUserService.findById(id);
-    res.json({ success: true, data: user, message: newStatus === 'LOCKED' ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' });
+    const newStatus = existing.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
+    await adminUserService.updateStatus(targetId, newStatus);
+
+    const lockedUser = await adminUserService.findById(targetId);
+    res.json({ success: true, data: lockedUser, message: newStatus === 'LOCKED' ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' });
   } catch (error) {
     console.error('Admin lock user error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -114,7 +314,7 @@ exports.changeRole = async (req, res) => {
     const { id } = req.params;
     const { role } = req.body;
 
-    if (!['USER', 'ADMIN'].includes(role)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Role không hợp lệ' });
     }
 
@@ -123,11 +323,114 @@ exports.changeRole = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
+    if (role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    if (existing.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
     await adminUserService.updateRole(id, role);
     const user = await adminUserService.findById(id);
     res.json({ success: true, data: user, message: 'Đổi role thành công' });
   } catch (error) {
     console.error('Admin change role error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password, old_password } = req.body;
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+    }
+
+    const existing = await adminUserService.findByIdWithRole(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+
+    if (existing.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    const targetId = parseInt(id);
+    if (targetId === req.user.id) {
+      if (!old_password) {
+        return res.status(400).json({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại' });
+      }
+      const pool = require('../utils/db');
+      const [rows] = await pool.query('SELECT password FROM users WHERE id = ?', [targetId]);
+      if (rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+      }
+      const match = await bcrypt.compare(old_password, rows[0].password);
+      if (!match) {
+        return res.status(400).json({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+      }
+    }
+
+    if (req.user.role === 'SALES') {
+      const branchIds = await adminUserService.getBranchIds(req.user.id);
+      if (!branchIds.includes(targetId)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    await adminUserService.updatePassword(id, hashedPassword);
+    console.warn(`[security] password changed target=${id} by=${req.user.id} self=${targetId === req.user.id}`);
+    const user = await adminUserService.findById(id);
+    res.json({ success: true, data: user, message: 'Đổi mật khẩu thành công' });
+  } catch (error) {
+    console.error('Admin change password error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getExternal = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const user = await adminUserService.findById(targetId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+    const mappings = await adminUserService.getExternalMappings(targetId);
+    res.json({ success: true, data: mappings });
+  } catch (error) {
+    console.error('Admin get external mappings error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.setExternal = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const { system, external_id } = req.body || {};
+    const mapping = await adminUserService.setExternalMapping(targetId, system, external_id);
+    res.json({ success: true, data: mapping, message: 'Lưu liên kết hệ ngoài thành công' });
+  } catch (error) {
+    console.error('Admin set external mapping error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.deleteExternal = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    const { system } = req.body || {};
+    const deleted = await adminUserService.deleteExternalMapping(targetId, system);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy liên kết' });
+    }
+    res.json({ success: true, message: 'Xóa liên kết thành công' });
+  } catch (error) {
+    console.error('Admin delete external mapping error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

@@ -1,0 +1,45 @@
+{
+  "lane": "G",
+  "imageDir": "user",
+  "at": "2026-09-15T02:26:35.964Z",
+  "total": 7,
+  "ok": 7,
+  "failed": [],
+  "results": [
+    {
+      "id": "G03",
+      "title": "Dang xuat",
+      "ok": true
+    },
+    {
+      "id": "G05",
+      "title": "Doi mat khau",
+      "ok": true
+    },
+    {
+      "id": "G11",
+      "title": "Ban do lan can",
+      "ok": true
+    },
+    {
+      "id": "G15",
+      "title": "Xoa de xuat (khong xac nhan)",
+      "ok": true
+    },
+    {
+      "id": "G18",
+      "title": "Tra cuu tracking",
+      "ok": true
+    },
+    {
+      "id": "F13",
+      "title": "Tao de xuat tu my-proposals",
+      "ok": true
+    },
+    {
+      "id": "F43",
+      "title": "O ID 1Office",
+      "ok": true
+    }
+  ]
+}

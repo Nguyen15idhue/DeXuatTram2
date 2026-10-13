@@ -1,0 +1,815 @@
+const crypto = require('crypto');
+const pool = require('../utils/db');
+const { isGdtt, isGdkv } = require('../constants/salesRanks');
+
+const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at', 'deleted_at']);
+
+const normalizeUserValue = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const raw = (typeof value === 'object') ? (value.id ?? value.user_id ?? value.value) : value;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+const lookupProvince = async (province, conn = pool) => {
+  if (!province) return null;
+  const [lists] = await conn.query(
+    "SELECT id FROM data_lists WHERE name IN ('Tỉnh', 'dm_tinh') ORDER BY (name = 'Tỉnh') DESC LIMIT 1"
+  );
+  if (lists.length === 0) return null;
+  const [rows] = await conn.query(
+    'SELECT `data` FROM data_list_rows WHERE list_id = ?',
+    [lists[0].id]
+  );
+  for (const r of rows) {
+    let d = r.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
+    const name = d.ten_tinh || d.tinh || '';
+    if (String(name).trim() === String(province).trim()) {
+      return { province_code: d.ma_tinh || null, region: d.vung_mien || null };
+    }
+  }
+  return { notFound: true };
+};
+
+const checkWard = async (ward, province, conn = pool) => {
+  if (!ward) return true;
+  const [lists] = await conn.query(
+    "SELECT id FROM data_lists WHERE name = 'Danh mục Phường Xã' LIMIT 1"
+  );
+  if (lists.length === 0) return true;
+  const [rows] = await conn.query(
+    `SELECT COUNT(*) AS c FROM data_list_rows
+      WHERE list_id = ?
+        AND JSON_UNQUOTE(JSON_EXTRACT(\`data\`, '$.xa')) = ?
+        AND JSON_UNQUOTE(JSON_EXTRACT(\`data\`, '$.tinh')) = ?`,
+    [lists[0].id, String(ward).trim(), String(province).trim()]
+  );
+  return rows[0].c > 0;
+};
+
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+const FILTER_COLUMNS = {
+  stage: 'l.stage',
+  source: 'l.source',
+  province: 'l.province',
+  region: 'l.region',
+  assigned_user_id: 'l.assigned_user_id',
+  assigned_department: 'l.assigned_department',
+  customer_classification: 'l.customer_classification',
+  sales_outcome: 'l.sales_outcome',
+};
+
+const LEAD_STAGE_RANKS = {
+  NEW: 0, ASSIGNED: 1, CSKH: 2, QUALIFIED: 3, TVBH: 4,
+  PROPOSAL: 5, STATION: 6, ON: 7,
+};
+
+const CLASSIFICATION_CODES = {
+  'TIEM_NANG': 'TIEM_NANG',
+  'Tiềm năng': 'TIEM_NANG',
+  'QUAN_TAM': 'QUAN_TAM',
+  'Quan tâm': 'QUAN_TAM',
+  'THEO_DOI': 'THEO_DOI',
+  'Theo dõi thêm': 'THEO_DOI',
+  'KHONG_CHAT_LUONG': 'KHONG_CHAT_LUONG',
+  'Không chất lượng': 'KHONG_CHAT_LUONG',
+};
+
+const normalizeClassification = (value) => {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  return CLASSIFICATION_CODES[s] || s;
+};
+
+// Chuẩn hóa giá trị query: Express trả mảng khi key lặp lại (panel + column filter
+// cùng field) — lấy giá trị cuối khác rỗng thay vì để mysql escape mảng gây 500.
+const normalizeQueryValue = (v) => {
+  if (Array.isArray(v)) {
+    const last = [...v].reverse().find((x) => x !== undefined && x !== null && String(x).trim() !== '');
+    return last === undefined ? '' : last;
+  }
+  return v;
+};
+
+// Điều kiện lọc danh sách Lead dùng chung cho GET list và Excel export.
+// Hỗ trợ __empty__ (chưa có giá trị) + khoảng ngày. Không ném lỗi với mảng.
+const applyLeadListFilters = (where, params, query, alias = 'l.') => {
+  const q = {};
+  Object.keys(query || {}).forEach((k) => { q[k] = normalizeQueryValue(query[k]); });
+  const EMPTY_FILTER = '__empty__';
+  Object.keys(FILTER_COLUMNS).forEach((key) => {
+    const value = q[key];
+    if (value === undefined || value === null || String(value).trim() === '') return;
+    const col = `${alias}${FILTER_COLUMNS[key].split('.')[1]}`;
+    if (value === EMPTY_FILTER) {
+      if (key === 'assigned_user_id') {
+        where.push(`${col} IS NULL`);
+      } else {
+        where.push(`(${col} IS NULL OR ${col} = '')`);
+      }
+      return;
+    }
+    where.push(`${col} = ?`);
+    params.push(value);
+  });
+  const dateField = q.date_field === 'updated_at' ? `${alias}updated_at` : `${alias}created_at`;
+  if (q.date_from && String(q.date_from).trim()) {
+    where.push(`${dateField} >= ?`);
+    params.push(`${String(q.date_from).slice(0, 10)} 00:00:00`);
+  }
+  if (q.date_to && String(q.date_to).trim()) {
+    where.push(`${dateField} <= ?`);
+    params.push(`${String(q.date_to).slice(0, 10)} 23:59:59`);
+  }
+  return q;
+};
+
+// Kiểm tra giá trị thuộc danh mục (datalist) của field — data-driven, không hard-code.
+// Field không gắn datalist → bỏ qua (trả true).
+const checkFieldOptionValue = async (entity, fieldKey, value, conn = pool) => {
+  if (value === undefined || value === null || String(value).trim() === '') return true;
+  const [defs] = await conn.query(
+    'SELECT data_list_id FROM field_definitions WHERE entity = ? AND `key` = ? LIMIT 1',
+    [entity, fieldKey]
+  );
+  const def = defs[0];
+  if (!def || !def.data_list_id) return true;
+  const [rows] = await conn.query('SELECT `data` FROM data_list_rows WHERE list_id = ?', [def.data_list_id]);
+  const v = String(value).trim();
+  for (const r of rows) {
+    let d = r.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
+    if (String(d.value ?? '') === v || String(d.label ?? '') === v) return true;
+  }
+  return false;
+};
+
+// Tra phòng ban routing theo vùng từ Data List 'MKT Lead Routing' (không hard-code).
+const getRoutingDepartment = async (region, conn = pool) => {
+  if (!region) return null;
+  const [lists] = await conn.query(
+    "SELECT id FROM data_lists WHERE name = 'MKT Lead Routing' LIMIT 1"
+  );
+  if (lists.length === 0) return null;
+  const [rows] = await conn.query('SELECT `data` FROM data_list_rows WHERE list_id = ?', [lists[0].id]);
+  for (const r of rows) {
+    let d = r.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
+    if (String(d.vung_mien || '').trim() !== String(region).trim()) continue;
+    const active = d.active;
+    const on = active === true || active === 1 || active === '1' || String(active).toLowerCase() === 'true';
+    if (!on) continue;
+    return d.department ? String(d.department).trim() : null;
+  }
+  return null;
+};
+
+// Scope Lead theo contract docs/8/mkt/04 §3 — WHERE clause, khong filter FE.
+// Tra ve null (khong gioi han) hoac { sql, params } cho nguoi dung hien tai.
+const buildScope = async (user) => {
+  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return null;
+
+  if (user.role === 'MKT') {
+    return { sql: 'l.created_by = ?', params: [user.id] };
+  }
+
+  if (user.role === 'SALES') {
+    const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ?', [user.id]);
+    const cd = parseCustomData(rows[0] && rows[0].custom_data);
+    const department = cd.department || '';
+
+    if (department && isGdtt(cd.chuc_vu, department)) {
+      return { sql: 'l.assigned_department = ?', params: [department] };
+    }
+    if (isGdkv(cd.chuc_vu, department)) {
+      return { sql: 'l.assigned_user_id = ?', params: [user.id] };
+    }
+    // SALES khong phai GĐTT/GĐKV: khong thay lead nao (contract 04 §3)
+    return { sql: '1 = 0', params: [] };
+  }
+
+  // CTV/NPP khong co quyen Lead — bi chan o middleware, khong duoc vao day
+  return { sql: '1 = 0', params: [] };
+};
+
+exports.getLeads = async (query, user) => {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 10));
+  const search = String(normalizeQueryValue(query.search) || '').trim();
+
+  const where = ['l.deleted_at IS NULL'];
+  const params = [];
+
+  if (search) {
+    where.push('(l.full_name LIKE ? OR l.phone LIKE ? OR l.lead_code LIKE ?)');
+    const like = `%${search}%`;
+    params.push(like, like, like);
+  }
+
+  applyLeadListFilters(where, params, query, 'l.');
+
+  const scope = await buildScope(user);
+  if (scope) {
+    where.push(scope.sql);
+    params.push(...scope.params);
+  }
+
+  const whereSql = `WHERE ${where.join(' AND ')}`;
+
+  const [[{ total }]] = await pool.query(
+    `SELECT COUNT(*) AS total FROM leads l ${whereSql}`,
+    params
+  );
+
+  const [rows] = await pool.query(
+    `SELECT l.*, j.journey_code
+       FROM leads l
+       JOIN business_journeys j ON j.id = l.journey_id
+       ${whereSql}
+      ORDER BY l.created_at DESC
+      LIMIT ? OFFSET ?`,
+    [...params, limit, (page - 1) * limit]
+  );
+
+  let enriched = rows;
+  try {
+    const dynamicUtils = require('./dynamicUtils');
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('leads');
+    enriched = await dynamicUtils.enrichUserFieldsMany(rows, fieldDefs);
+  } catch { /* silent */ }
+
+  return {
+    leads: enriched,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
+
+const canAccessLead = async (lead, user) => {
+  if (!lead) return false;
+  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return true;
+  if (user.role === 'MKT') return Number(lead.created_by) === Number(user.id);
+  if (user.role === 'SALES') {
+    const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ?', [user.id]);
+    const cd = parseCustomData(rows[0] && rows[0].custom_data);
+    const department = cd.department || '';
+    if (department && isGdtt(cd.chuc_vu, department)) {
+      return String(lead.assigned_department || '') === String(department);
+    }
+    if (isGdkv(cd.chuc_vu, department)) {
+      return Number(lead.assigned_user_id) === Number(user.id);
+    }
+  }
+  return false;
+};
+
+const getLeadRow = async (id, conn = pool) => {
+  const [rows] = await conn.query(
+    `SELECT l.*, j.journey_code, j.current_stage AS journey_stage
+       FROM leads l
+       JOIN business_journeys j ON j.id = l.journey_id
+      WHERE l.id = ? AND l.deleted_at IS NULL
+      LIMIT 1`,
+    [id]
+  );
+  return rows[0] || null;
+};
+
+exports.createLead = async (data, user, opts = {}) => {
+  const fullName = String(data.full_name || '').trim();
+  const phone = String(data.phone || '').trim();
+  if (!fullName) {
+    const err = new Error('Họ tên là bắt buộc');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!/^\d{10}$/.test(phone)) {
+    const err = new Error('Số điện thoại phải có đúng 10 chữ số');
+    err.statusCode = 400;
+    throw err;
+  }
+  const province = String(data.province || '').trim();
+  if (!province) {
+    const err = new Error('Tỉnh/Thành phố là bắt buộc');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const geo = await lookupProvince(province, conn);
+    if (!geo || geo.notFound) {
+      const err = new Error(`Tỉnh/Thành phố "${province}" không thuộc danh mục`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (data.ward && !(await checkWard(data.ward, province, conn))) {
+      const err = new Error(`Phường/Xã "${data.ward}" không thuộc "${province}"`);
+      err.statusCode = 400;
+      throw err;
+    }
+    const optionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
+    for (const k of Object.keys(optionLabels)) {
+      if (data[k] !== undefined && data[k] !== null && String(data[k]).trim() !== '') {
+        if (!(await checkFieldOptionValue('leads', k, String(data[k]).trim(), conn))) {
+          const err = new Error(`${optionLabels[k]} "${String(data[k]).trim()}" không thuộc danh mục`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+    }
+
+    const journeyCode = crypto.randomUUID();
+    const [jres] = await conn.query(
+      "INSERT INTO business_journeys (journey_code, current_stage, status, started_at) VALUES (?, 'NEW', 'ACTIVE', NOW())",
+      [journeyCode]
+    );
+    const journeyId = jres.insertId;
+
+    const customData = {};
+    ['cskh_history', 'cskh_note', 'tvbh_history', 'tvbh_note'].forEach((k) => {
+      if (data[k] !== undefined) customData[k] = data[k];
+    });
+
+    const [lres] = await conn.query(
+      `INSERT INTO leads (journey_id, full_name, phone, email, address, province, ward,
+        province_code, region, customer_type, source, note, stage,
+        customer_classification, sales_outcome, custom_data, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, NULL, ?, ?)`,
+      [
+        journeyId, fullName, phone,
+        data.email ? String(data.email).trim() : null,
+        data.address ? String(data.address).trim() : null,
+        province,
+        data.ward ? String(data.ward).trim() : null,
+        geo.province_code, geo.region,
+        data.customer_type ? String(data.customer_type).trim() : null,
+        data.source ? String(data.source).trim() : null,
+        data.note ? String(data.note).trim() : null,
+        data.customer_classification ? String(data.customer_classification).trim() : null,
+        JSON.stringify(customData),
+        user.id,
+      ]
+    );
+    const leadId = lres.insertId;
+    const leadCode = `LD-${String(leadId).padStart(6, '0')}`;
+    await conn.query('UPDATE leads SET lead_code = ? WHERE id = ?', [leadCode, leadId]);
+
+    const journeyActivityService = require('./journeyActivityService');
+    await journeyActivityService.log({
+      journey_id: journeyId,
+      entity_type: 'lead',
+      entity_id: leadId,
+      action: 'lead_created',
+      stage_after: 'NEW',
+      actor_id: user.id,
+      actor_role: user.role,
+      source: opts.source || 'admin',
+      ip: opts.ip || null,
+    }, conn);
+
+    await conn.commit();
+    return await getLeadRow(leadId);
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* silent */ }
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+exports.updateLead = async (id, data, user, opts = {}) => {
+  const lead = await getLeadRow(id);
+  if (!lead) {
+    const err = new Error('Không tìm thấy Lead');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!(await canAccessLead(lead, user))) {
+    const err = new Error('Không có quyền sửa Lead này');
+    err.statusCode = 403;
+    throw err;
+  }
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const updated = await applyLeadUpdate(conn, lead, data, user, opts);
+    await conn.commit();
+    return updated;
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* silent */ }
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
+  const id = lead.id;
+
+  const patch = {};
+  // Quyền sửa theo section (chỉ chặn sửa, vẫn xem bình thường):
+  // section có cấu hình permissions.edit riêng thì tuân theo đó
+  // (role/phòng ban/chức vụ/đích danh user); thiếu thì fallback mặc định:
+  // - Thông tin Marketing + CSKH: MKT, ADMIN, SUPER_ADMIN
+  // - Tư vấn bán hàng TVBH: SALES, ADMIN, SUPER_ADMIN
+  try {
+    const sectionPermService = require('./sectionPermService');
+    await sectionPermService.enforceLeadEdit(user, data, conn, lead);
+  } catch (err) {
+    if (err.statusCode) throw err;
+  }
+  // assigned_department KHÔNG nhận trực tiếp từ PUT (đi qua /assign hoặc tự resolve
+  // nội bộ khi đổi người) — tránh ghi phòng ban bừa / NULL gây 500 ở history.
+  const updatable = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
+    'customer_type', 'source', 'note', 'customer_classification', 'sales_outcome',
+    'cskh_note', 'tvbh_note', 'cskh_history', 'tvbh_history',
+    'assigned_user_id'];
+  updatable.forEach((k) => {
+    if (data[k] !== undefined) patch[k] = data[k];
+  });
+
+  if (patch.full_name !== undefined && !String(patch.full_name).trim()) {
+    const err = new Error('Họ tên là bắt buộc');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (patch.phone !== undefined) {
+    const digits = String(patch.phone).replace(/[^\d]/g, '');
+    if (!/^\d{10}$/.test(digits)) {
+      const err = new Error('Số điện thoại phải có đúng 10 chữ số');
+      err.statusCode = 400;
+      throw err;
+    }
+    patch.phone = digits;
+  }
+  if (patch.assigned_user_id !== undefined) {
+    const n = normalizeUserValue(patch.assigned_user_id);
+    if (patch.assigned_user_id !== null && patch.assigned_user_id !== '' && n === null) {
+      const err = new Error('Người phụ trách không hợp lệ');
+      err.statusCode = 400;
+      throw err;
+    }
+    const effClassForAssign = patch.customer_classification !== undefined
+      ? patch.customer_classification : lead.customer_classification;
+    const changedAssignee = Number(n || 0) !== Number(lead.assigned_user_id || 0);
+    if (n && changedAssignee && normalizeClassification(effClassForAssign) !== 'TIEM_NANG') {
+      const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
+      err.statusCode = 400;
+      throw err;
+    }
+    patch.assigned_user_id = n;
+    if (changedAssignee) patch.assigned_at = n ? new Date() : null;
+    if (changedAssignee && n) {
+      // Đổi người qua PUT cũng phải đúng luật như /assign: GĐKV đang hoạt động,
+      // phòng ban resolve theo lead → GĐKV → routing (không bao giờ để NULL).
+      const [trows] = await conn.query(
+        'SELECT id, role, status, custom_data FROM users WHERE id = ? LIMIT 1', [n]
+      );
+      const target = trows[0];
+      const tcd = parseCustomData(target && target.custom_data);
+      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || !isGdkv(tcd.chuc_vu, tcd.department || '')) {
+        const err = new Error('Chỉ giao Lead cho Giám đốc Khu vực (GĐKV) đang hoạt động');
+        err.statusCode = 400;
+        throw err;
+      }
+      let dept = lead.assigned_department || null;
+      if (dept && tcd.department && String(tcd.department) !== String(dept)) {
+        const err = new Error(`GĐKV phải thuộc "${dept}" (đổi phòng ban phải dùng Phân chia Leads)`);
+        err.statusCode = 400;
+        throw err;
+      }
+      if (!dept) dept = tcd.department || null;
+      if (!dept && lead.region) dept = await getRoutingDepartment(lead.region, conn);
+      if (!dept) {
+        const err = new Error('Lead chưa có phòng ban (thiếu routing theo vùng)');
+        err.statusCode = 400;
+        throw err;
+      }
+      patch.assigned_department = dept;
+    }
+    if (changedAssignee && !n) patch.assigned_department = lead.assigned_department || null;
+  }
+
+  const province = patch.province !== undefined ? String(patch.province).trim() : lead.province;
+  if (patch.province !== undefined && !province) {
+    const err = new Error('Tỉnh/Thành phố là bắt buộc');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (patch.province !== undefined || patch.ward !== undefined) {
+    const ward = patch.ward !== undefined ? patch.ward : lead.ward;
+    const geo = await lookupProvince(province, conn);
+    if (!geo || geo.notFound) {
+      const err = new Error(`Tỉnh/Thành phố "${province}" không thuộc danh mục`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (ward && !(await checkWard(ward, province, conn))) {
+      const err = new Error(`Phường/Xã "${ward}" không thuộc "${province}"`);
+      err.statusCode = 400;
+      throw err;
+    }
+    patch.province_code = geo.province_code;
+    patch.region = geo.region;
+  }
+
+  const optionLabels = { customer_type: 'Đối tượng khách hàng', source: 'Nguồn Lead', customer_classification: 'Phân loại khách hàng' };
+  for (const k of Object.keys(optionLabels)) {
+    if (patch[k] !== undefined && patch[k] !== null && String(patch[k]).trim() !== '') {
+      if (!(await checkFieldOptionValue('leads', k, String(patch[k]).trim(), conn))) {
+        const err = new Error(`${optionLabels[k]} "${String(patch[k]).trim()}" không thuộc danh mục`);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+  }
+
+  // Suy giai đoạn Lead từ dữ liệu (chỉ nâng, không hạ, không đụng UNQUALIFIED/LOST):
+  // được giao → ASSIGNED; có dòng CSKH → CSKH; phân loại Tiềm năng → QUALIFIED;
+  // TVBH SUCCESS → TVBH.
+  {
+    const effOutcome = patch.sales_outcome !== undefined ? patch.sales_outcome : lead.sales_outcome;
+    const effClass = patch.customer_classification !== undefined ? patch.customer_classification : lead.customer_classification;
+    const effAssignee = patch.assigned_user_id !== undefined ? patch.assigned_user_id : lead.assigned_user_id;
+    const leadCd = parseCustomData(lead.custom_data);
+    const effCskh = patch.cskh_history !== undefined ? patch.cskh_history : leadCd.cskh_history;
+    let candidate = null;
+    if (effAssignee) candidate = 'ASSIGNED';
+    if (Array.isArray(effCskh) && effCskh.length > 0) candidate = 'CSKH';
+    if (normalizeClassification(effClass) === 'TIEM_NANG') candidate = 'QUALIFIED';
+    if (effOutcome === 'SUCCESS') candidate = 'TVBH';
+    const cur = lead.stage || 'NEW';
+    if (candidate && (LEAD_STAGE_RANKS[candidate] ?? 0) > (LEAD_STAGE_RANKS[cur] ?? 0)
+      && cur !== 'UNQUALIFIED' && cur !== 'LOST') {
+      patch.stage = candidate;
+    }
+  }
+
+  const fixedCols = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
+    'province_code', 'region', 'customer_type', 'source', 'note',
+    'customer_classification', 'sales_outcome', 'stage',
+    'assigned_user_id', 'assigned_department', 'assigned_at'];
+  const sets = [];
+  const params = [];
+  fixedCols.forEach((c) => {
+    if (patch[c] !== undefined) {
+      sets.push(`\`${c}\` = ?`);
+      params.push(typeof patch[c] === 'string' ? patch[c].trim() || null : patch[c]);
+    }
+  });
+
+  const jsonKeys = ['cskh_history', 'cskh_note', 'tvbh_history', 'tvbh_note'];
+  const hasJson = jsonKeys.some((k) => patch[k] !== undefined);
+  let customData = {};
+  if (hasJson) {
+    const [rows] = await conn.query('SELECT custom_data FROM leads WHERE id = ?', [id]);
+    customData = parseCustomData(rows[0] && rows[0].custom_data);
+    jsonKeys.forEach((k) => { if (patch[k] !== undefined) customData[k] = patch[k]; });
+    sets.push('`custom_data` = ?');
+    params.push(JSON.stringify(customData));
+  }
+
+  if (sets.length > 0) {
+    params.push(id);
+    await conn.query(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+
+  const journeyActivityService = require('./journeyActivityService');
+  const after = await getLeadRow(id, conn);
+  const changed = {};
+  ['full_name', 'phone', 'email', 'address', 'province', 'ward', 'customer_type',
+    'source', 'note', 'customer_classification', 'sales_outcome'].forEach((k) => {
+    if (patch[k] !== undefined && String(after[k] ?? '') !== String(lead[k] ?? '')) {
+      changed[k] = { from: lead[k] ?? null, to: after[k] ?? null };
+    }
+  });
+
+  const beforeCd = parseCustomData(lead.custom_data);
+  const afterCd = parseCustomData(after.custom_data);
+  ['cskh_history', 'cskh_note', 'tvbh_history', 'tvbh_note'].forEach((k) => {
+    const b = beforeCd[k] ?? null;
+    const a = afterCd[k] ?? null;
+    if (JSON.stringify(b) !== JSON.stringify(a)) {
+      changed[k] = { from: b, to: a };
+    }
+  });
+
+  const assigneeChanged = patch.assigned_user_id !== undefined &&
+    Number(patch.assigned_user_id || 0) !== Number(lead.assigned_user_id || 0);
+  if (assigneeChanged) {
+    await conn.query(
+      'UPDATE lead_assignments SET ended_at = NOW() WHERE lead_id = ? AND ended_at IS NULL',
+      [id]
+    );
+    if (after.assigned_user_id) {
+      await conn.query(
+        `INSERT INTO lead_assignments (lead_id, assignee_user_id, assigned_department, assignment_type, assigned_by)
+         VALUES (?, ?, ?, 'manual', ?)`,
+        [id, after.assigned_user_id, after.assigned_department, user.id]
+      );
+    }
+    await journeyActivityService.log({
+      journey_id: lead.journey_id,
+      entity_type: 'lead',
+      entity_id: id,
+      action: 'assigned',
+      stage_before: lead.stage,
+      stage_after: after.stage,
+      actor_id: user.id,
+      actor_role: user.role,
+      source: opts.source || 'admin',
+      ip: opts.ip || null,
+    }, conn);
+  }
+
+  if (String(lead.customer_classification || '') !== String(after.customer_classification || '')) {
+    await journeyActivityService.log({
+      journey_id: lead.journey_id,
+      entity_type: 'lead',
+      entity_id: id,
+      action: 'classification_changed',
+      changed_fields: { customer_classification: { from: lead.customer_classification, to: after.customer_classification } },
+      actor_id: user.id,
+      actor_role: user.role,
+      source: opts.source || 'admin',
+      ip: opts.ip || null,
+    }, conn);
+  }
+
+  if (Object.keys(changed).length > 0) {
+    const stageChanged = String(lead.stage || '') !== String(after.stage || '');
+    await journeyActivityService.log({
+      journey_id: lead.journey_id,
+      entity_type: 'lead',
+      entity_id: id,
+      action: stageChanged ? 'stage_changed' : 'lead_updated',
+      stage_before: stageChanged ? lead.stage : undefined,
+      stage_after: stageChanged ? after.stage : undefined,
+      changed_fields: changed,
+      actor_id: user.id,
+      actor_role: user.role,
+      source: opts.source || 'admin',
+      ip: opts.ip || null,
+    }, conn);
+  }
+  const journeySyncService = require('./journeySyncService');
+  await journeySyncService.recomputeStage(lead.journey_id, conn);
+  return after;
+};
+
+exports.deleteLead = async (id, user) => {
+  const lead = await getLeadRow(id);
+  if (!lead) {
+    const err = new Error('Không tìm thấy Lead');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!(await canAccessLead(lead, user))) {
+    const err = new Error('Không có quyền xóa Lead này');
+    err.statusCode = 403;
+    throw err;
+  }
+  const [[{ c }]] = await pool.query(
+    'SELECT COUNT(*) AS c FROM station_proposals WHERE journey_id = ?',
+    [lead.journey_id]
+  );
+  if (c > 0) {
+    const err = new Error(`Lead đã có ${c} đề xuất liên kết, không thể xóa`);
+    err.statusCode = 409;
+    throw err;
+  }
+  await pool.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [id]);
+  try {
+    const journeyActivityService = require('./journeyActivityService');
+    await journeyActivityService.log({
+      journey_id: lead.journey_id,
+      entity_type: 'lead',
+      entity_id: Number(id),
+      action: 'lead_deleted',
+      actor_id: user ? user.id : null,
+      actor_role: user ? user.role : null,
+      source: 'admin',
+    });
+  } catch { /* silent */ }
+  return { id: Number(id) };
+};
+
+exports.bulkDeleteLeads = async (ids, user) => {
+  const list = [...new Set((ids || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (list.length === 0) {
+    const err = new Error('Danh sách id không hợp lệ');
+    err.statusCode = 400;
+    throw err;
+  }
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const results = [];
+    for (const lid of list) {
+      const [rows] = await conn.query(
+        `SELECT l.*, j.journey_code FROM leads l
+           JOIN business_journeys j ON j.id = l.journey_id
+          WHERE l.id = ? AND l.deleted_at IS NULL LIMIT 1`,
+        [lid]
+      );
+      const lead = rows[0];
+      if (!lead) {
+        const err = new Error(`Lead #${lid} không tồn tại`);
+        err.statusCode = 404;
+        throw err;
+      }
+      if (!(await canAccessLead(lead, user))) {
+        const err = new Error(`Không có quyền xóa Lead #${lid}`);
+        err.statusCode = 403;
+        throw err;
+      }
+      const [[{ c }]] = await conn.query(
+        'SELECT COUNT(*) AS c FROM station_proposals WHERE journey_id = ?',
+        [lead.journey_id]
+      );
+      if (c > 0) {
+        const err = new Error(`Lead #${lid} đã có ${c} đề xuất liên kết, không thể xóa`);
+        err.statusCode = 409;
+        throw err;
+      }
+      await conn.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [lid]);
+      try {
+        const journeyActivityService = require('./journeyActivityService');
+        await journeyActivityService.log({
+          journey_id: lead.journey_id,
+          entity_type: 'lead',
+          entity_id: lid,
+          action: 'lead_deleted',
+          actor_id: user ? user.id : null,
+          actor_role: user ? user.role : null,
+          source: 'admin',
+        }, conn);
+      } catch { /* silent */ }
+      results.push({ id: lid });
+    }
+    await conn.commit();
+    return results;
+  } catch (err) {
+    try { await conn.rollback(); } catch { /* silent */ }
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+exports.getLeadDetail = async (id, user = null) => {
+  const row = await getLeadRow(id);
+  if (!row) return null;
+  const dynamicUtils = require('./dynamicUtils');
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('leads');
+  const merged = dynamicUtils.mergeData(row, fieldDefs);
+  let out = merged;
+  try { out = await dynamicUtils.enrichUserFields(merged, fieldDefs); } catch { out = merged; }
+  if (user) {
+    try {
+      const sectionPermService = require('./sectionPermService');
+      out = await sectionPermService.stripLeadView(out, user);
+    } catch { /* silent */ }
+  }
+  return out;
+};
+
+exports.getJourneyProposals = async (journeyId) => {
+  const [rows] = await pool.query(
+    `SELECT p.id, p.status, p.station_id, p.created_at,
+        JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.ma_de_xuat')) AS ma_de_xuat,
+        s.id AS station_id_resolved, s.name AS station_name, s.status AS station_status,
+        JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.ma_tram')) AS station_code
+       FROM station_proposals p
+       LEFT JOIN stations s ON s.id = p.station_id
+      WHERE p.journey_id = ?
+      ORDER BY p.created_at ASC, p.id ASC`,
+    [journeyId]
+  );
+  return rows;
+};
+
+exports.getLeadById = getLeadRow;
+exports.canAccessLead = canAccessLead;
+exports.buildScope = buildScope;
+exports.lookupProvince = lookupProvince;
+exports.checkWard = checkWard;
+exports.normalizeClassification = normalizeClassification;
+exports.normalizeQueryValue = normalizeQueryValue;
+exports.applyLeadListFilters = applyLeadListFilters;
+exports.checkFieldOptionValue = checkFieldOptionValue;
+exports.getRoutingDepartment = getRoutingDepartment;
+exports.LEAD_STAGE_RANKS = LEAD_STAGE_RANKS;

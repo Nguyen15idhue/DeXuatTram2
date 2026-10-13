@@ -70,7 +70,7 @@ router.post('/register', validateRegister, authController.register);
  * /api/auth/login:
  *   post:
  *     tags: [Auth]
- *     summary: Đăng nhập
+ *     summary: Đăng nhập bằng email hoặc số điện thoại
  *     requestBody:
  *       required: true
  *       content:
@@ -81,11 +81,15 @@ router.post('/register', validateRegister, authController.register);
  *             properties:
  *               email:
  *                 type: string
- *                 format: email
+ *                 description: Email hoặc số điện thoại
  *                 example: admin@example.com
  *               password:
  *                 type: string
  *                 example: 123456
+ *               remember:
+ *                 type: boolean
+ *                 description: Ghi nhớ 30 ngày (token hết hạn sau 30 ngày thay vì 12h)
+ *                 example: true
  *     responses:
  *       200:
  *         description: Đăng nhập thành công
@@ -108,7 +112,7 @@ router.post('/register', validateRegister, authController.register);
  *                     token:
  *                       type: string
  *       400:
- *         description: Email hoặc password không đúng
+ *         description: Email/Số điện thoại hoặc mật khẩu không đúng
  *       403:
  *         description: Tài khoản đã bị khóa
  */
@@ -150,7 +154,7 @@ router.get('/me', requireAuth, authController.getMe);
  * /api/auth/profile:
  *   put:
  *     tags: [Auth]
- *     summary: Cập nhật hồ sơ cá nhân
+ *     summary: Cập nhật hồ sơ cá nhân (đổi mật khẩu không cần họ tên)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -159,13 +163,13 @@ router.get('/me', requireAuth, authController.getMe);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [full_name]
  *             properties:
  *               full_name:
  *                 type: string
  *                 minLength: 2
  *                 maxLength: 100
  *                 example: Nguyen Van A
+ *                 description: Bắt buộc khi sửa hồ sơ, không cần khi chỉ đổi mật khẩu
  *               phone:
  *                 type: string
  *                 example: 0912345678

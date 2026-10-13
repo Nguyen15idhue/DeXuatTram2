@@ -24,6 +24,7 @@ CREATE TABLE users (
   password VARCHAR(255) NOT NULL,
   role ENUM('USER', 'ADMIN') DEFAULT 'USER',
   status ENUM('ACTIVE', 'LOCKED') DEFAULT 'ACTIVE',
+  token_version INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -70,3 +71,15 @@ CREATE INDEX idx_stations_status ON stations(status);
 CREATE INDEX idx_stations_location ON stations(latitude, longitude);
 CREATE INDEX idx_proposals_status ON station_proposals(status);
 CREATE INDEX idx_proposals_user ON station_proposals(user_id);
+
+-- ============================================
+-- BẢNG 4: PROPOSAL SEQUENCES (đếm mã theo prefix, code dùng từ sớm)
+-- ============================================
+CREATE TABLE IF NOT EXISTS proposal_sequences (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  prefix VARCHAR(20) NOT NULL,
+  last_number INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_prefix (prefix)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

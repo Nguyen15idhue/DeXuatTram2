@@ -1,13 +1,101 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { fieldDefinitionService, formService, formFieldService } from '../../services/api';
+import { fieldDefinitionService, formService, formFieldService, dataListService } from '../../services/api';
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
+import CountdownConfigPanel from './CountdownConfigPanel';
+import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownIcon, Layers, Pencil, Check, X, Zap, Search } from 'lucide-react';
+import { filterFieldsBySearch } from '../../utils/searchText';
+import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
+import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
+import { getColumnSource } from '../../utils/tableColumnSource';
+import { SECTION_PERM_ROLES, normalizePermRule, isPermRuleEmpty, permRuleSummary } from '../../utils/formSectionPerms';
 
-const ENTITIES = ['stations', 'station_proposals', 'users'];
+const ruleToText = (rule, key) => normalizePermRule(rule)[key].join(', ');
+
+const PermRuleEditor = ({ label, rule, onChange }) => {
+  const n = normalizePermRule(rule);
+  const set = (patch) => onChange({ roles: n.roles, departments: n.departments, positions: n.positions, user_ids: n.user_ids, ...patch });
+  const toggleRole = (r) => {
+    const has = n.roles.includes(r);
+    set({ roles: has ? n.roles.filter((x) => x !== r) : [...n.roles, r] });
+  };
+  const textToList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+  return (
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 8, background: '#fff' }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+        {SECTION_PERM_ROLES.map((r) => (
+          <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={n.roles.includes(r)} onChange={() => toggleRole(r)} />
+            <span>{r}</span>
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+        <input
+          type="text" className="input input-bordered input-xs" placeholder="Phòng ban (a, b...)"
+          title="Phòng ban được quyền, cách nhau dấu phẩy"
+          value={ruleToText(rule, 'departments')}
+          onChange={(e) => set({ departments: textToList(e.target.value) })}
+        />
+        <input
+          type="text" className="input input-bordered input-xs" placeholder="Chức vụ (a, b...)"
+          title="Chức vụ được quyền, cách nhau dấu phẩy"
+          value={ruleToText(rule, 'positions')}
+          onChange={(e) => set({ positions: textToList(e.target.value) })}
+        />
+        <input
+          type="text" className="input input-bordered input-xs" placeholder="Đích danh user (id, ...)"
+          title="ID user được quyền, cách nhau dấu phẩy (VD: 3, 7)"
+          value={ruleToText(rule, 'user_ids')}
+          onChange={(e) => set({ user_ids: textToList(e.target.value) })}
+        />
+      </div>
+      <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>Đang áp dụng: {permRuleSummary(rule)}</div>
+    </div>
+  );
+};
+
+const SectionPermEditor = ({ section, onChange }) => {
+  const perms = (section.permissions && typeof section.permissions === 'object') ? section.permissions : {};
+  const setRule = (key, rule) => onChange({ ...(perms || {}), [key]: rule });
+  const clearAll = () => onChange(null);
+  return (
+    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+      <div style={{ fontSize: 12, color: '#374151' }}>
+        Giới hạn ai được <b>xem</b> / <b>sửa</b> section này (theo vai trò, phòng ban, chức vụ, đích danh user).
+        Bỏ trống = mọi người. Trong 1 khung chỉ cần khớp <b>1 điều kiện</b>.
+      </div>
+      <PermRuleEditor label="Được xem" rule={perms.view} onChange={(r) => setRule('view', r)} />
+      <PermRuleEditor label="Được sửa" rule={perms.edit} onChange={(r) => setRule('edit', r)} />
+      <div>
+        <button className="btn btn-ghost btn-xs" onClick={clearAll}>Xóa giới hạn quyền</button>
+      </div>
+    </div>
+  );
+};
+
+const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
+const PURPOSE_OPTIONS = [
+  { value: 'create', label: 'Form nhập liệu' },
+  { value: 'view', label: 'Form xem / sửa' },
+  { value: 'all', label: 'Cả hai (chung)' }
+];
 const COL_OPTIONS = [
-  { value: '1:1', label: '1:1 — 1 cột (Desktop & Mobile)' },
-  { value: '1:2', label: '1:2 — 2 cột Desktop, 1 cột Mobile' }
+  { value: '1:1', label: '1 cột' },
+  { value: '1:2', label: '2 cột' },
+  { value: '1:3', label: '3 cột' },
+  { value: '1:4', label: '4 cột' }
+];
+const LINK_OPS = [
+  { value: '=', label: '=' },
+  { value: '!=', label: '≠' },
+  { value: 'contains', label: 'chứa' },
+  { value: 'not_contains', label: 'không chứa' },
+  { value: 'in', label: 'thuộc (a,b)' },
+  { value: 'empty', label: 'trống' },
+  { value: 'not_empty', label: 'không trống' }
 ];
 
 const FormBuilder = ({ formId, onSaved }) => {
@@ -19,16 +107,54 @@ const FormBuilder = ({ formId, onSaved }) => {
   const [entity, setEntity] = useState('stations');
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
+  const [formPurpose, setFormPurpose] = useState('all');
   const [availableFields, setAvailableFields] = useState([]);
   const [assignedFields, setAssignedFields] = useState([]);
-  const [layoutConfig, setLayoutConfig] = useState({ rows: [] });
+  const [layoutConfig, setLayoutConfig] = useState({ sections: [], rows: [] });
+  const [editingSectionId, setEditingSectionId] = useState(null);
+  const [editingSectionTitle, setEditingSectionTitle] = useState('');
+  const [configSectionId, setConfigSectionId] = useState(null);
   const [selectedField, setSelectedField] = useState(null);
   const [previewMode, setPreviewMode] = useState('desktop');
   const [dragOverCell, setDragOverCell] = useState(null);
+  const [dragOverRow, setDragOverRow] = useState(null);
+  const [draggedRowId, setDraggedRowId] = useState(null);
+  const [availableSearch, setAvailableSearch] = useState('');
+  const [previewSearch, setPreviewSearch] = useState('');
+  const [previewMatchIdx, setPreviewMatchIdx] = useState(0);
+  const [dataLists, setDataLists] = useState([]);
 
   useEffect(() => {
     if (formId) loadFormConfig();
   }, [formId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await dataListService.getAll('limit=100', token);
+        if (res.success) setDataLists(res.data || []);
+      } catch { /* silent */ }
+    })();
+  }, [token]);
+
+  useEffect(() => { setPreviewMatchIdx(0); }, [previewSearch]);
+
+  const previewMatches = filterFieldsBySearch(
+    assignedFields.filter(f => f.config?.rowId),
+    previewSearch,
+    (f) => [f.label, f.key, f.type]
+  ).map(f => f.fieldId);
+  const previewCurrentId = previewMatches.length > 0
+    ? previewMatches[Math.min(previewMatchIdx, previewMatches.length - 1)]
+    : null;
+
+  useEffect(() => {
+    if (!previewCurrentId) return;
+    const el = document.querySelector(`[data-field-cell="${previewCurrentId}"]`);
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [previewCurrentId, previewMatchIdx, previewSearch]);
 
   const loadFormConfig = async () => {
     try {
@@ -38,16 +164,33 @@ const FormBuilder = ({ formId, onSaved }) => {
         setEntity(formRes.data.entity);
         setFormName(formRes.data.name);
         setFormDesc(formRes.data.description || '');
+        setFormPurpose(formRes.data.purpose || 'all');
         if (formRes.data.layout_config) {
-          setLayoutConfig(typeof formRes.data.layout_config === 'string'
+          const lc = typeof formRes.data.layout_config === 'string'
             ? JSON.parse(formRes.data.layout_config)
-            : formRes.data.layout_config);
+            : formRes.data.layout_config;
+          if (!lc.sections) {
+            lc.sections = lc.rows && lc.rows.length > 0
+              ? [{ id: 's1', title: 'Thông tin chung', collapsible: false, rows: lc.rows }]
+              : [];
+            lc.rows = [];
+          }
+          setLayoutConfig(lc);
         }
-        await loadAvailableFields(formRes.data.entity);
+        const availFields = await loadAvailableFields(formRes.data.entity);
         const fieldsRes = await formFieldService.getByForm(formId);
         if (fieldsRes.success) {
           setAssignedFields(fieldsRes.data.map(f => {
             const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
+            if (f.field_type === 'table' && !cfg.tableConfig) {
+              const fieldDef = availFields.find(af => af.id === f.field_id);
+              if (fieldDef && fieldDef.source_config) {
+                const sc = typeof fieldDef.source_config === 'string'
+                  ? (() => { try { return JSON.parse(fieldDef.source_config); } catch { return null; } })()
+                  : fieldDef.source_config;
+                if (sc) cfg.tableConfig = sc;
+              }
+            }
             return {
               id: f.id,
               fieldId: f.field_id,
@@ -72,62 +215,71 @@ const FormBuilder = ({ formId, onSaved }) => {
     try {
       const res = await fieldDefinitionService.getByEntity(ent);
       if (res.success) {
-        setAvailableFields(res.data || []);
+        const data = res.data || [];
+        setAvailableFields(data);
+        return data;
       }
+      return [];
     } catch {
       setError('Lỗi tải field definitions');
+      return [];
     }
   };
 
   const handleEntityChange = (newEntity) => {
     setEntity(newEntity);
     setAssignedFields([]);
-    setLayoutConfig({ rows: [] });
+    setLayoutConfig({ sections: [], rows: [] });
     setSelectedField(null);
+    setAvailableSearch('');
     loadAvailableFields(newEntity);
   };
 
   const handleAddField = (field) => {
     if (assignedFields.find(f => f.fieldId === field.id)) return;
     setAssignedFields([...assignedFields, {
-      fieldId: field.id,
-      label: field.label,
-      key: field.key,
-      type: field.type,
-      orderIndex: assignedFields.length,
-      visible: true,
-      config: {}
+      fieldId: field.id, label: field.label, key: field.key, type: field.type,
+      orderIndex: assignedFields.length, visible: true, config: {}
     }]);
   };
 
   const handleRemoveField = (item) => {
     setAssignedFields(assignedFields.filter(f => f.fieldId !== item.fieldId));
-    if (selectedField && selectedField.fieldId === item.fieldId) {
-      setSelectedField(null);
-    }
+    if (selectedField?.fieldId === item.fieldId) setSelectedField(null);
   };
 
   const handleFieldConfigChange = (fieldId, key, value) => {
     setAssignedFields(prev => prev.map(f =>
       f.fieldId === fieldId ? { ...f, config: { ...f.config, [key]: value } } : f
     ));
-    if (selectedField && selectedField.fieldId === fieldId) {
+    if (selectedField?.fieldId === fieldId) {
       setSelectedField(prev => prev ? { ...prev, config: { ...prev.config, [key]: value } } : null);
     }
   };
 
-  const addRow = () => {
+  // ===== Layout: Row management =====
+  const addRow = (sectionId, insertIndex) => {
     const newId = `r${Date.now()}`;
-    setLayoutConfig(prev => ({
-      ...prev,
-      rows: [...prev.rows, { id: newId, columns: '1:2' }]
-    }));
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || [])];
+      const secIdx = sections.findIndex(s => s.id === sectionId);
+      if (secIdx >= 0) {
+        const rows = [...(sections[secIdx].rows || [])];
+        const idx = insertIndex !== undefined ? insertIndex : rows.length;
+        rows.splice(idx, 0, { id: newId, columns: '1:2' });
+        sections[secIdx] = { ...sections[secIdx], rows };
+      }
+      return { ...prev, sections };
+    });
   };
 
   const removeRow = (rowId) => {
     setLayoutConfig(prev => ({
       ...prev,
-      rows: prev.rows.filter(r => r.id !== rowId)
+      sections: (prev.sections || []).map(s => ({
+        ...s,
+        rows: (s.rows || []).filter(r => r.id !== rowId)
+      }))
     }));
     setAssignedFields(prev => prev.map(f => {
       if (f.config?.rowId === rowId) {
@@ -139,41 +291,104 @@ const FormBuilder = ({ formId, onSaved }) => {
   };
 
   const updateRowColumns = (rowId, columns) => {
+    const maxCols = parseInt(String(columns).split(':')[1], 10) || 1;
     setLayoutConfig(prev => ({
       ...prev,
-      rows: prev.rows.map(r => r.id === rowId ? { ...r, columns } : r)
+      sections: (prev.sections || []).map(s => ({
+        ...s,
+        rows: (s.rows || []).map(r => r.id === rowId ? { ...r, columns } : r)
+      }))
     }));
-  };
-
-  const moveRow = (rowId, direction) => {
-    setLayoutConfig(prev => {
-      const rows = [...prev.rows];
-      const idx = rows.findIndex(r => r.id === rowId);
-      if (idx < 0) return prev;
-      const newIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (newIdx < 0 || newIdx >= rows.length) return prev;
-      [rows[idx], rows[newIdx]] = [rows[newIdx], rows[idx]];
-      return { ...prev, rows };
-    });
-  };
-
-  const assignFieldToCell = (fieldId, rowId, colIndex) => {
-    setAssignedFields(prev => prev.map(f =>
-      f.fieldId === fieldId
-        ? { ...f, config: { ...f.config, rowId, rowIndex: layoutConfig.rows.findIndex(r => r.id === rowId), colIndex } }
-        : f
-    ));
-  };
-
-  const removeFieldFromCell = (rowId, colIndex) => {
     setAssignedFields(prev => prev.map(f => {
-      if (f.config?.rowId === rowId && f.config?.colIndex === colIndex) {
+      if (f.config?.rowId === rowId && Number(f.config?.colIndex) >= maxCols) {
         const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
         return { ...f, config: rest };
       }
       return f;
     }));
-    if (selectedField && selectedField.config?.rowId === rowId && selectedField.config?.colIndex === colIndex) {
+  };
+
+  const reflowForm = (numCols) => {
+    const n = Math.max(1, Math.min(4, parseInt(numCols, 10) || 1));
+    const baseTime = Date.now();
+    const nextAssignments = {};
+    const nextSections = (layoutConfig.sections || []).map((sec, secIdx) => {
+      const sectionRows = sec.rows || [];
+      const rowIds = new Set(sectionRows.map(r => r.id));
+      const ordered = assignedFields
+        .filter(f => rowIds.has(f.config?.rowId))
+        .sort((a, b) => {
+          const ra = sectionRows.findIndex(r => r.id === a.config.rowId);
+          const rb = sectionRows.findIndex(r => r.id === b.config.rowId);
+          if (ra !== rb) return ra - rb;
+          return Number(a.config.colIndex || 0) - Number(b.config.colIndex || 0);
+        });
+      const rowPlan = [];
+      let buffer = [];
+      const flushBuffer = () => { if (buffer.length) { rowPlan.push({ columns: `1:${n}`, fields: buffer }); buffer = []; } };
+      ordered.forEach(f => {
+        if (f.type === 'table') {
+          flushBuffer();
+          rowPlan.push({ columns: '1:1', fields: [f] });
+        } else {
+          buffer.push(f);
+          if (buffer.length === n) flushBuffer();
+        }
+      });
+      flushBuffer();
+      const newRows = rowPlan.map((p, i) => ({ id: `r${baseTime}_${secIdx}_${i}`, columns: p.columns }));
+      if (newRows.length === 0) newRows.push({ id: `r${baseTime}_${secIdx}_0`, columns: `1:${n}` });
+      rowPlan.forEach((p, rowIdx) => {
+        p.fields.forEach((f, colIdx) => {
+          nextAssignments[f.fieldId] = { rowId: newRows[rowIdx].id, rowIndex: rowIdx, colIndex: colIdx };
+        });
+      });
+      return { ...sec, rows: newRows };
+    });
+    setLayoutConfig(prev => ({ ...prev, sections: nextSections }));
+    setAssignedFields(prev => prev.map(f => {
+      if (nextAssignments[f.fieldId]) return { ...f, config: { ...f.config, ...nextAssignments[f.fieldId] } };
+      return f;
+    }));
+  };
+
+  const moveRow = (rowId, direction, sectionId) => {
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || [])];
+      const secIdx = sections.findIndex(s => s.id === sectionId);
+      if (secIdx < 0) return prev;
+      const rows = [...(sections[secIdx].rows || [])];
+      const idx = rows.findIndex(r => r.id === rowId);
+      if (idx < 0) return prev;
+      const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= rows.length) return prev;
+      [rows[idx], rows[newIdx]] = [rows[newIdx], rows[idx]];
+      sections[secIdx] = { ...sections[secIdx], rows };
+      return { ...prev, sections };
+    });
+  };
+
+  // ===== Field <-> Cell assignment =====
+  const assignFieldToCell = (fieldId, rowId, colIndex) => {
+    const allRows = getAllRows();
+    const rowIdx = allRows.findIndex(r => r.id === rowId);
+    setAssignedFields(prev => prev.map(f => {
+      if (f.fieldId === fieldId) {
+        return { ...f, config: { ...f.config, rowId, rowIndex: rowIdx, colIndex } };
+      }
+      if (f.config?.rowId === rowId && f.config?.colIndex === colIndex && f.fieldId !== fieldId) {
+        const { rowId: _a, rowIndex: _b, colIndex: _c, ...rest } = f.config;
+        return { ...f, config: rest };
+      }
+      return f;
+    }));
+  };
+
+  const removeFieldFromCell = (rowId, colIndex) => {
+    const target = assignedFields.find(f => f.config?.rowId === rowId && f.config?.colIndex === colIndex);
+    if (!target) return;
+    setAssignedFields(prev => prev.filter(f => f.fieldId !== target.fieldId));
+    if (selectedField?.fieldId === target.fieldId) {
       setSelectedField(null);
     }
   };
@@ -182,13 +397,47 @@ const FormBuilder = ({ formId, onSaved }) => {
     return assignedFields.find(f => f.config?.rowId === rowId && f.config?.colIndex === colIndex);
   };
 
+  const getAllRows = () => {
+    const allRows = [];
+    (layoutConfig.sections || []).forEach(sec => {
+      (sec.rows || []).forEach(r => allRows.push({ ...r, sectionId: sec.id }));
+    });
+    return allRows;
+  };
+
+  // ===== Drag & Drop: Fields =====
+  const handleFieldDragStart = (e, fieldId) => {
+    e.dataTransfer.setData('fieldId', String(fieldId));
+    e.dataTransfer.setData('sourceType', 'field');
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleAvailableFieldDragStart = (e, field) => {
+    e.dataTransfer.setData('fieldId', String(field.id));
+    e.dataTransfer.setData('sourceType', 'available');
+    e.dataTransfer.effectAllowed = 'copyMove';
+  };
+
   const handleDrop = (e, rowId, colIndex) => {
     e.preventDefault();
     setDragOverCell(null);
     const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
     if (!fieldId) return;
-    const existing = getCellField(rowId, colIndex);
-    if (existing) return;
+
+    const isAlreadyAssigned = assignedFields.find(f => f.fieldId === fieldId);
+    if (!isAlreadyAssigned) {
+      const field = availableFields.find(f => f.id === fieldId);
+      if (field) {
+        const allRows = getAllRows();
+        const rowIdx = allRows.findIndex(r => r.id === rowId);
+        setAssignedFields(prev => [...prev, {
+          fieldId: field.id, label: field.label, key: field.key, type: field.type,
+          orderIndex: prev.length, visible: true, config: { rowId, rowIndex: rowIdx, colIndex }
+        }]);
+        return;
+      }
+    }
+
     assignFieldToCell(fieldId, rowId, colIndex);
   };
 
@@ -196,12 +445,229 @@ const FormBuilder = ({ formId, onSaved }) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverCell(`${rowId}-${colIndex}`);
+    setDragOverRow(null);
   };
 
   const handleDragLeave = () => {
     setDragOverCell(null);
   };
 
+  // ===== Drag & Drop: Rows =====
+  const handleRowDragStart = (e, rowId) => {
+    e.dataTransfer.setData('rowId', rowId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedRowId(rowId);
+  };
+
+  const handleRowDragOver = (e, rowId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverRow(rowId);
+    setDragOverCell(null);
+  };
+
+  const handleRowDrop = (e, targetRowId, sectionId) => {
+    e.preventDefault();
+    setDragOverRow(null);
+    setDraggedRowId(null);
+    const sourceRowId = e.dataTransfer.getData('rowId');
+    if (!sourceRowId || sourceRowId === targetRowId) return;
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || [])];
+      const secIdx = sections.findIndex(s => s.id === sectionId);
+      if (secIdx < 0) return prev;
+      const rows = [...(sections[secIdx].rows || [])];
+      const srcIdx = rows.findIndex(r => r.id === sourceRowId);
+      const tgtIdx = rows.findIndex(r => r.id === targetRowId);
+      if (srcIdx < 0 || tgtIdx < 0) return prev;
+      const [moved] = rows.splice(srcIdx, 1);
+      rows.splice(tgtIdx, 0, moved);
+      sections[secIdx] = { ...sections[secIdx], rows };
+      return { ...prev, sections };
+    });
+  };
+
+  const handleRowDragLeave = () => {
+    setDragOverRow(null);
+  };
+
+  // ===== Section management =====
+  const addSection = () => {
+    const newId = `s${Date.now()}`;
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || []), { id: newId, title: `Section ${prev.sections.length + 1}`, collapsible: false, rows: [] }];
+      return { ...prev, sections };
+    });
+  };
+
+  const removeSection = (sectionId) => {
+    setLayoutConfig(prev => {
+      const sections = (prev.sections || [])
+        .filter(s => s.id !== sectionId)
+        .map(s => isTabGroup(s)
+          ? { ...s, tabs: (s.tabs || []).map(t => ({ ...t, sectionRefs: (t.sectionRefs || []).filter(id => id !== sectionId) })) }
+          : s);
+      return { ...prev, sections };
+    });
+    setAssignedFields(prev => prev.map(f => {
+      const section = (layoutConfig.sections || []).find(s => s.id === sectionId);
+      if (section && (section.rows || []).some(r => r.id === f.config?.rowId)) {
+        const { rowId: _, rowIndex: __, colIndex: ___, ...rest } = f.config;
+        return { ...f, config: rest };
+      }
+      return f;
+    }));
+  };
+
+  const updateSectionTitle = (sectionId, title) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? { ...s, title } : s)
+    }));
+  };
+
+  const toggleSectionCollapsible = (sectionId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? { ...s, collapsible: !s.collapsible } : s)
+    }));
+  };
+
+  const moveSection = (sectionId, direction) => {
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || [])];
+      const idx = sections.findIndex(s => s.id === sectionId);
+      const ni = idx + direction;
+      if (idx < 0 || ni < 0 || ni >= sections.length) return prev;
+      [sections[idx], sections[ni]] = [sections[ni], sections[idx]];
+      return { ...prev, sections };
+    });
+  };
+
+  const updateSection = (sectionId, updates) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? { ...s, ...updates } : s)
+    }));
+  };
+
+  const startEditSectionTitle = (section) => {
+    setEditingSectionId(section.id);
+    setEditingSectionTitle(section.title);
+  };
+
+  const saveEditSectionTitle = () => {
+    if (editingSectionId && editingSectionTitle.trim()) {
+      updateSectionTitle(editingSectionId, editingSectionTitle.trim());
+    }
+    setEditingSectionId(null);
+    setEditingSectionTitle('');
+  };
+
+  // ===== Tab group management =====
+  const isTabGroup = (s) => !!s && (s.type === 'tabs' || Array.isArray(s.tabs));
+
+  const addTabGroup = () => {
+    const now = Date.now();
+    const newId = `tg${now}`;
+    setLayoutConfig(prev => {
+      const sections = [...(prev.sections || []), {
+        id: newId,
+        type: 'tabs',
+        title: 'Nhượng quyền và Liên kết',
+        collapsible: false,
+        rows: [],
+        visibleWhen: { field: 'mo_hinh_dau_tu', value: '' },
+        tabs: [{ id: `tab${now}`, title: 'Tab 1', sectionRefs: [] }]
+      }];
+      return { ...prev, sections };
+    });
+  };
+
+  const updateTabGroup = (groupId, updates) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId ? { ...s, ...updates } : s)
+    }));
+  };
+
+  const removeTabGroup = (groupId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).filter(s => s.id !== groupId)
+    }));
+  };
+
+  const updateTab = (groupId, tabId, updates) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).map(t => t.id === tabId ? { ...t, ...updates } : t) }
+        : s)
+    }));
+  };
+
+  const addTab = (groupId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: [...(s.tabs || []), { id: `tab${Date.now()}`, title: `Tab ${(s.tabs || []).length + 1}`, sectionRefs: [] }] }
+        : s)
+    }));
+  };
+
+  const removeTab = (groupId, tabId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).filter(t => t.id !== tabId) }
+        : s)
+    }));
+  };
+
+  const moveTab = (groupId, tabId, dir) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => {
+        if (s.id !== groupId) return s;
+        const tabs = [...(s.tabs || [])];
+        const i = tabs.findIndex(t => t.id === tabId);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= tabs.length) return s;
+        [tabs[i], tabs[j]] = [tabs[j], tabs[i]];
+        return { ...s, tabs };
+      })
+    }));
+  };
+
+  const addSectionRef = (groupId, tabId, sectionId) => {
+    if (!sectionId) return;
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).map(t => t.id === tabId && !(t.sectionRefs || []).includes(sectionId)
+          ? { ...t, sectionRefs: [...(t.sectionRefs || []), sectionId] } : t) }
+        : s)
+    }));
+  };
+
+  const removeSectionRef = (groupId, tabId, sectionId) => {
+    setLayoutConfig(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === groupId
+        ? { ...s, tabs: (s.tabs || []).map(t => t.id === tabId
+          ? { ...t, sectionRefs: (t.sectionRefs || []).filter(id => id !== sectionId) } : t) }
+        : s)
+    }));
+  };
+
+  const handleTabSectionDrop = (e, groupId, tabId) => {
+    e.preventDefault();
+    const sectionId = e.dataTransfer.getData('sectionId');
+    if (sectionId) addSectionRef(groupId, tabId, sectionId);
+  };
+
+  // ===== Conditions =====
   const handleConditionChange = (fieldId, condIdx, key, value) => {
     setAssignedFields(prev => prev.map(f => {
       if (f.fieldId !== fieldId) return f;
@@ -209,7 +675,7 @@ const FormBuilder = ({ formId, onSaved }) => {
       conditions[condIdx] = { ...conditions[condIdx], [key]: value };
       return { ...f, config: { ...f.config, conditions } };
     }));
-    if (selectedField && selectedField.fieldId === fieldId) {
+    if (selectedField?.fieldId === fieldId) {
       setSelectedField(prev => {
         if (!prev) return null;
         const conditions = [...(prev.config?.conditions || [])];
@@ -220,80 +686,112 @@ const FormBuilder = ({ formId, onSaved }) => {
   };
 
   const addCondition = (fieldId) => {
-    setAssignedFields(prev => prev.map(f => {
-      if (f.fieldId !== fieldId) return f;
-      const conditions = [...(f.config?.conditions || []), { field: '', operator: '=', value: '' }];
-      return { ...f, config: { ...f.config, conditions } };
-    }));
-    if (selectedField && selectedField.fieldId === fieldId) {
-      setSelectedField(prev => {
-        if (!prev) return null;
-        const conditions = [...(prev.config?.conditions || []), { field: '', operator: '=', value: '' }];
-        return { ...prev, config: { ...prev.config, conditions } };
-      });
+    const cond = { field: '', operator: '=', value: '' };
+    setAssignedFields(prev => prev.map(f =>
+      f.fieldId === fieldId ? { ...f, config: { ...f.config, conditions: [...(f.config?.conditions || []), cond] } } : f
+    ));
+    if (selectedField?.fieldId === fieldId) {
+      setSelectedField(prev => prev ? { ...prev, config: { ...prev.config, conditions: [...(prev.config?.conditions || []), cond] } } : null);
     }
   };
 
   const removeCondition = (fieldId, condIdx) => {
     setAssignedFields(prev => prev.map(f => {
       if (f.fieldId !== fieldId) return f;
-      const conditions = (f.config?.conditions || []).filter((_, i) => i !== condIdx);
-      return { ...f, config: { ...f.config, conditions } };
+      return { ...f, config: { ...f.config, conditions: (f.config?.conditions || []).filter((_, i) => i !== condIdx) } };
     }));
-    if (selectedField && selectedField.fieldId === fieldId) {
-      setSelectedField(prev => {
-        if (!prev) return null;
-        const conditions = (prev.config?.conditions || []).filter((_, i) => i !== condIdx);
-        return { ...prev, config: { ...prev.config, conditions } };
-      });
+    if (selectedField?.fieldId === fieldId) {
+      setSelectedField(prev => prev ? { ...prev, config: { ...prev.config, conditions: (prev.config?.conditions || []).filter((_, i) => i !== condIdx) } } : null);
     }
   };
 
+  // ===== Save =====
+  const buildLayoutForSave = () => {
+    const regularIds = new Set((layoutConfig.sections || [])
+      .filter(s => !isTabGroup(s))
+      .map(s => s.id));
+    const sections = (layoutConfig.sections || []).map(s => {
+      if (isTabGroup(s)) {
+        const tabs = (s.tabs || []).map(t => ({
+          id: t.id,
+          title: t.title,
+          sectionRefs: (t.sectionRefs || []).filter(id => regularIds.has(id))
+        }));
+        return {
+          id: s.id,
+          type: 'tabs',
+          title: s.title,
+          collapsible: !!s.collapsible,
+          rows: [],
+          visibleWhen: s.visibleWhen || null,
+          permissions: s.permissions || null,
+          tabs
+        };
+      }
+      return s;
+    });
+    return { ...layoutConfig, sections };
+  };
+
+  const validateLayout = (lc) => {
+    const errors = [];
+    (lc.sections || []).forEach(s => {
+      if (isTabGroup(s)) {
+        const tabs = s.tabs || [];
+        if (tabs.length === 0) errors.push(`Tab "${s.title || s.id}" phải có ít nhất 1 tab con`);
+        tabs.forEach(t => {
+          if (!(t.sectionRefs || []).length) errors.push(`Tab con "${t.title || t.id}" phải có ít nhất 1 section`);
+        });
+      }
+    });
+    return errors;
+  };
+
   const handleSave = async () => {
-    if (!formName.trim()) {
-      setError('Vui lòng nhập tên form');
-      return;
+    if (!formName.trim()) { setError('Vui lòng nhập tên form'); return; }
+    const layoutForSave = buildLayoutForSave();
+    const layoutErrors = validateLayout(layoutForSave);
+    if (layoutErrors.length > 0) { setError(layoutErrors[0]); return; }
+    for (const field of assignedFields) {
+      if (field.type === 'table' && field.config?.tableConfig?.columns) {
+        const cols = field.config.tableConfig.columns;
+        for (const c of cols) {
+          const v = validateFooterFormula(c.footer_formula, cols, c.key);
+          if (!v.valid) {
+            setError(`Công thức footer cột "${c.label || c.key}"${field.label ? ` (${field.label})` : ''}: ${v.error}`);
+            return;
+          }
+        }
+      }
     }
     setSaving(true);
     setError('');
     try {
       let res;
       if (formId) {
-        res = await formService.update(formId, { entity, name: formName, description: formDesc, layout_config: layoutConfig }, token);
+        res = await formService.update(formId, { entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutForSave }, token);
       } else {
-        res = await formService.create({ entity, name: formName, description: formDesc, layout_config: layoutConfig }, token);
+        res = await formService.create({ entity, name: formName, description: formDesc, purpose: formPurpose, layout_config: layoutForSave }, token);
       }
-      if (!res.success) {
-        setError(res.message || 'Lỗi lưu form');
-        setSaving(false);
-        return;
-      }
+      if (!res.success) { setError(res.message || 'Lỗi lưu form'); setSaving(false); return; }
       const savedFormId = formId || res.data.id;
-
       const existingFieldsRes = await formFieldService.getByForm(savedFormId);
       const existingIds = existingFieldsRes.success ? existingFieldsRes.data.map(f => f.id) : [];
       const keptIds = assignedFields.filter(f => f.id).map(f => f.id);
       for (const exId of existingIds) {
-        if (!keptIds.includes(exId)) {
-          await formFieldService.remove(savedFormId, exId, token);
-        }
+        if (!keptIds.includes(exId)) await formFieldService.remove(savedFormId, exId, token);
       }
-
       for (const field of assignedFields) {
         const config = { ...field.config };
+        if (field.type === 'table' && config.tableConfig) {
+          try {
+            await fieldDefinitionService.update(field.fieldId, { table_config: config.tableConfig }, token);
+          } catch (e) { console.error('[FormBuilder] Error saving table config', e); }
+        }
         if (field.id) {
-          await formFieldService.update(savedFormId, field.id, {
-            order_index: field.orderIndex,
-            visible: field.visible ? 1 : 0,
-            config
-          }, token);
+          await formFieldService.update(savedFormId, field.id, { order_index: field.orderIndex, visible: field.visible ? 1 : 0, config }, token);
         } else {
-          await formFieldService.add(savedFormId, {
-            field_id: field.fieldId,
-            order_index: field.orderIndex,
-            visible: field.visible ? 1 : 0,
-            config
-          }, token);
+          await formFieldService.add(savedFormId, { field_id: field.fieldId, order_index: field.orderIndex, visible: field.visible ? 1 : 0, config }, token);
         }
       }
       setToast({ message: 'Lưu form thành công', type: 'success' });
@@ -307,15 +805,191 @@ const FormBuilder = ({ formId, onSaved }) => {
 
   if (loading) return <div className="loading">Đang tải cấu hình...</div>;
 
-  const filteredAvailable = availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id));
+  const filteredAvailable = filterFieldsBySearch(
+    availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id)),
+    availableSearch
+  );
   const unassignedFields = assignedFields.filter(f => !f.config?.rowId);
+  const conditionFields = assignedFields.filter(f => ['select', 'text', 'boolean'].includes(f.type));
+  const regularSections = (layoutConfig.sections || []).filter(s => !isTabGroup(s));
+
+  const renderTabGroupEditor = (section, secIdx) => (
+    <div key={section.id} className="section-block tab-group-block" style={{ border: '2px solid #6366f1', borderRadius: 8, marginBottom: 12, background: '#f5f3ff' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+        borderBottom: '1px solid #ddd6fe', background: '#ede9fe', borderRadius: '8px 8px 0 0', cursor: 'grab'
+      }}
+        draggable
+        onDragStart={(e) => { e.dataTransfer.setData('sectionId', section.id); e.dataTransfer.effectAllowed = 'move'; }}
+      >
+        <GripVertical size={14} className="text-gray-400" />
+        {editingSectionId === section.id ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+            <input
+              value={editingSectionTitle}
+              onChange={(e) => setEditingSectionTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEditSectionTitle(); if (e.key === 'Escape') setEditingSectionId(null); }}
+              autoFocus
+              style={{ fontSize: 13, padding: '2px 6px', flex: 1, border: '1px solid #6366f1', borderRadius: 4 }}
+            />
+            <button className="btn btn-xs btn-ghost" onClick={saveEditSectionTitle}><Check size={12} /></button>
+            <button className="btn btn-xs btn-ghost" onClick={() => setEditingSectionId(null)}><X size={12} /></button>
+          </div>
+        ) : (
+          <span
+            style={{ fontWeight: 600, fontSize: 13, flex: 1, cursor: 'text' }}
+            onDoubleClick={() => startEditSectionTitle(section)}
+            title="Double-click để sửa tên"
+          >
+            {section.title}
+          </span>
+        )}
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#ddd6fe', color: '#4338ca' }}>TAB</span>
+        {section.visibleWhen && section.visibleWhen.field && (
+          <span style={{
+            fontSize: 11, padding: '2px 8px', borderRadius: 4,
+            background: '#fff3cd', color: '#856404', border: '1px solid #ffc107'
+          }}>
+            {section.visibleWhen.field} = {section.visibleWhen.value || '...'}
+          </span>
+        )}
+        <button className="btn btn-xs btn-ghost" onClick={() => setConfigSectionId(configSectionId === section.id ? null : section.id)} title="Điều kiện hiển thị">
+          <Pencil size={12} />
+        </button>
+        <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, -1)} disabled={secIdx === 0} title="Di chuyển lên">
+          <ChevronUp size={12} />
+        </button>
+        <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, 1)} disabled={secIdx === (layoutConfig.sections || []).length - 1} title="Di chuyển xuống">
+          <ChevronDown size={12} />
+        </button>
+        <button className="btn btn-xs btn-ghost text-error" onClick={() => removeTabGroup(section.id)} title="Xóa tab">
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      {configSectionId === section.id && (
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid #ddd6fe', background: '#f8f9ff', fontSize: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={!section.visibleWhen}
+              onChange={(e) => updateTabGroup(section.id, {
+                visibleWhen: e.target.checked ? null : { field: section.visibleWhen?.field || '', value: section.visibleWhen?.value || '' }
+              })}
+            />
+            <span>Luôn hiển thị</span>
+          </label>
+          {section.visibleWhen && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <span className="text-gray-500">Hiện khi</span>
+              <select
+                className="select select-bordered select-xs"
+                value={section.visibleWhen.field || ''}
+                onChange={(e) => updateTabGroup(section.id, { visibleWhen: { ...section.visibleWhen, field: e.target.value } })}
+              >
+                <option value="">-- Chọn field --</option>
+                {conditionFields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+              </select>
+              <span>=</span>
+              {(() => {
+                const def = availableFields.find(af => af.key === section.visibleWhen.field);
+                const opts = def && Array.isArray(def.options) ? def.options : [];
+                if (opts.length > 0) {
+                  return (
+                    <select
+                      className="select select-bordered select-xs"
+                      value={section.visibleWhen.value || ''}
+                      onChange={(e) => updateTabGroup(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                    >
+                      <option value="">-- Chọn giá trị --</option>
+                      {opts.map((o, i) => {
+                        const val = (o && typeof o === 'object') ? (o.value ?? o.label) : o;
+                        const lbl = (o && typeof o === 'object') ? (o.label ?? o.value) : o;
+                        return <option key={i} value={val}>{lbl}</option>;
+                      })}
+                    </select>
+                  );
+                }
+                return (
+                  <input
+                    type="text"
+                    className="input input-bordered input-xs"
+                    placeholder="Giá trị"
+                    value={section.visibleWhen.value || ''}
+                    onChange={(e) => updateTabGroup(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                  />
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ padding: 8 }}>
+        {(section.tabs || []).map((tab, tabIdx) => (
+          <div
+            key={tab.id}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+            onDrop={(e) => handleTabSectionDrop(e, section.id, tab.id)}
+            style={{ border: '1px dashed #a5b4fc', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fff' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                value={tab.title}
+                onChange={(e) => updateTab(section.id, tab.id, { title: e.target.value })}
+                style={{ fontWeight: 600, fontSize: 13, flex: 1, border: '1px solid #e5e7eb', borderRadius: 4, padding: '2px 6px' }}
+              />
+              <button className="btn btn-xs btn-ghost" onClick={() => moveTab(section.id, tab.id, -1)} disabled={tabIdx === 0} title="Lên">
+                <ChevronUp size={12} />
+              </button>
+              <button className="btn btn-xs btn-ghost" onClick={() => moveTab(section.id, tab.id, 1)} disabled={tabIdx === (section.tabs || []).length - 1} title="Xuống">
+                <ChevronDown size={12} />
+              </button>
+              <button className="btn btn-xs btn-ghost text-error" onClick={() => removeTab(section.id, tab.id)} title="Xóa tab con">
+                <Trash2 size={12} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' }}>
+              {(tab.sectionRefs || []).map(refId => {
+                const sec = regularSections.find(s => s.id === refId);
+                return (
+                  <span key={refId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#e0e7ff', color: '#3730a3' }}>
+                    {sec ? sec.title : refId}
+                    <button className="btn btn-xs btn-ghost" style={{ padding: 0 }} onClick={() => removeSectionRef(section.id, tab.id, refId)}>
+                      <X size={10} />
+                    </button>
+                  </span>
+                );
+              })}
+              <select
+                value=""
+                onChange={(e) => addSectionRef(section.id, tab.id, e.target.value)}
+                className="select select-bordered select-xs"
+                style={{ fontSize: 11 }}
+              >
+                <option value="">+ Thêm section…</option>
+                {regularSections.filter(s => !(tab.sectionRefs || []).includes(s.id)).map(s => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Kéo section từ danh sách vào đây hoặc chọn ở dropdown.</div>
+          </div>
+        ))}
+        <button className="btn btn-xs btn-secondary" onClick={() => addTab(section.id)}>
+          <Plus size={12} /> Thêm tab con
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="form-builder">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       {error && <ErrorMessage message={error} />}
 
-      <div style={{ marginBottom: 16 }}>
+      {/* Basic Info */}
+      <div className="mb-4">
         <div className="form-row">
           <div className="form-group">
             <label>Entity</label>
@@ -327,6 +1001,12 @@ const FormBuilder = ({ formId, onSaved }) => {
             <label>Tên form *</label>
             <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="VD: Form tạo trạm" />
           </div>
+          <div className="form-group">
+            <label>Mục đích</label>
+            <select value={formPurpose} onChange={(e) => setFormPurpose(e.target.value)}>
+              {PURPOSE_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </div>
         </div>
         <div className="form-group">
           <label>Mô tả</label>
@@ -334,34 +1014,68 @@ const FormBuilder = ({ formId, onSaved }) => {
         </div>
       </div>
 
-      <div className="layout-section">
-        <div className="layout-section-header">
-          <strong>Cấu hình Layout</strong>
-        </div>
-        <div className="layout-rows">
-          {layoutConfig.rows.map((row, idx) => (
-            <div key={row.id} className="layout-row-item">
-              <span className="layout-row-label">Row {idx + 1}</span>
-              <select value={row.columns} onChange={(e) => updateRowColumns(row.id, e.target.value)}>
-                {COL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-              <button className="btn btn-sm" onClick={() => moveRow(row.id, 'up')} disabled={idx === 0}>↑</button>
-              <button className="btn btn-sm" onClick={() => moveRow(row.id, 'down')} disabled={idx === layoutConfig.rows.length - 1}>↓</button>
-              <button className="btn btn-sm btn-delete" onClick={() => removeRow(row.id)}>✕</button>
-            </div>
-          ))}
-          <button className="btn btn-sm btn-secondary" onClick={addRow}>+ Thêm hàng</button>
-        </div>
+      {/* Preview Toggle */}
+      <div className="preview-toggle mb-3">
+        <button className={`btn btn-xs ${previewMode === 'desktop' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setPreviewMode('desktop')}>Desktop</button>
+        <button className={`btn btn-xs ${previewMode === 'mobile' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setPreviewMode('mobile')}>Mobile</button>
+        <span className="text-xs text-gray-500 ml-3 mr-1">Sắp xếp nhanh toàn form:</span>
+        {[1, 2, 3, 4].map(n => (
+          <button
+            key={n}
+            className="btn btn-xs btn-ghost"
+            title={`Dồn toàn bộ form về ${n} cột (section giữ nguyên)`}
+            onClick={() => { if (window.confirm(`Dồn toàn bộ form về ${n} cột? Các section giữ nguyên, chỉ xếp lại hàng/cột.`)) reflowForm(n); }}
+          >
+            {n}:1
+          </button>
+        ))}
       </div>
 
-      <div className="preview-toggle">
-        <button className={previewMode === 'desktop' ? 'active' : ''} onClick={() => setPreviewMode('desktop')}>💻 Desktop</button>
-        <button className={previewMode === 'mobile' ? 'active' : ''} onClick={() => setPreviewMode('mobile')}>📱 Mobile</button>
-      </div>
+      {entity === 'station_proposals' && <CountdownConfigPanel />}
 
       <div className="builder-layout">
-        <div className="builder-panel" style={{ flex: 2 }}>
-          <div className="builder-panel-header">Form Preview</div>
+        {/* Left: Preview with inline layout controls */}
+        <div className="builder-panel flex-[2]">
+          <div className="builder-panel-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>Form Preview</span>
+            <div style={{ position: 'relative', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={previewSearch}
+                onChange={(e) => setPreviewSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && previewMatches.length > 0) {
+                    setPreviewMatchIdx(i => (i + 1) % previewMatches.length);
+                  }
+                }}
+                placeholder="Tìm field trong preview..."
+                className="input input-bordered input-xs"
+                style={{ paddingLeft: 28, width: 200 }}
+              />
+              {previewSearch.trim() !== '' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    disabled={previewMatches.length === 0}
+                    onClick={() => setPreviewMatchIdx(i => (i - 1 + previewMatches.length) % previewMatches.length)}
+                    title="Kết quả trước"
+                  >
+                    ‹
+                  </button>
+                  <span>{previewMatches.length === 0 ? '0' : `${Math.min(previewMatchIdx, previewMatches.length - 1) + 1}/${previewMatches.length}`}</span>
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    disabled={previewMatches.length === 0}
+                    onClick={() => setPreviewMatchIdx(i => (i + 1) % previewMatches.length)}
+                    title="Kết quả tiếp"
+                  >
+                    ›
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
           <div className="builder-panel-body">
             <div
               className={`preview-container ${previewMode === 'mobile' ? 'mobile-mode' : ''}`}
@@ -373,83 +1087,492 @@ const FormBuilder = ({ formId, onSaved }) => {
                 padding: previewMode === 'mobile' ? '16px' : '0'
               }}
             >
-              {layoutConfig.rows.length === 0 ? (
-                <div className="builder-empty">Chưa có hàng nào. Nhấn "+ Thêm hàng" để bắt đầu.</div>
-              ) : layoutConfig.rows.map((row) => {
-                const desktopCols = parseInt(row.columns.split(':')[1]);
-                const isStacked = previewMode === 'mobile' && desktopCols > 1;
+              {/* Empty state */}
+              {(layoutConfig.sections || []).length === 0 && (
+                <div className="builder-empty mb-3">
+                  <p className="text-sm text-gray-500 mb-2">Chưa có section nào. Bấm nút bên dưới để thêm section đầu tiên.</p>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                    <button className="btn btn-primary btn-sm gap-1" onClick={addSection}>
+                      <Plus size={14} /> Thêm section
+                    </button>
+                    <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={addTabGroup}>
+                      <Layers size={14} /> Thêm tab
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Render each section as a block */}
+              {(layoutConfig.sections || []).map((section, secIdx) => {
+                if (section.type === 'tabs' || Array.isArray(section.tabs)) {
+                  return renderTabGroupEditor(section, secIdx);
+                }
                 return (
-                  <div key={row.id} className={`form-row ${isStacked ? 'form-row-stacked' : ''}`} data-cols={row.columns}>
-                    {Array.from({ length: desktopCols }).map((_, colIdx) => {
-                      const cellField = getCellField(row.id, colIdx);
-                      const cellKey = `${row.id}-${colIdx}`;
-                      const isOver = dragOverCell === cellKey;
+                <div key={section.id} className="section-block" style={{
+                  border: '1px solid #d1d5db',
+                  borderRadius: 8,
+                  marginBottom: 12,
+                  background: '#fafbfc'
+                }}>
+                  {/* Section header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 10px',
+                    borderBottom: (section.rows || []).length > 0 ? '1px solid #e5e7eb' : 'none',
+                    background: '#f3f4f6',
+                    borderRadius: (section.rows || []).length > 0 ? '8px 8px 0 0' : 8,
+                    cursor: 'grab'
+                  }}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('sectionId', section.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                  >
+                    <GripVertical size={14} className="text-gray-400" />
+                    {editingSectionId === section.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                        <input
+                          value={editingSectionTitle}
+                          onChange={(e) => setEditingSectionTitle(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditSectionTitle(); if (e.key === 'Escape') setEditingSectionId(null); }}
+                          autoFocus
+                          style={{ fontSize: 13, padding: '2px 6px', flex: 1, border: '1px solid #6366f1', borderRadius: 4 }}
+                        />
+                        <button className="btn btn-xs btn-ghost" onClick={saveEditSectionTitle}><Check size={12} /></button>
+                        <button className="btn btn-xs btn-ghost" onClick={() => setEditingSectionId(null)}><X size={12} /></button>
+                      </div>
+                    ) : (
+                      <span
+                        style={{ fontWeight: 600, fontSize: 13, flex: 1, cursor: 'text' }}
+                        onDoubleClick={() => startEditSectionTitle(section)}
+                        title="Double-click để sửa tên"
+                      >
+                        {section.title}
+                      </span>
+                    )}
+                    {section.visibleWhen && section.visibleWhen.field && (
+                      <span style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                        background: '#fff3cd', color: '#856404', border: '1px solid #ffc107'
+                      }}>
+                        {section.visibleWhen.field} = {section.visibleWhen.value || '...'}
+                      </span>
+                    )}
+                    {section.permissions && (!isPermRuleEmpty(section.permissions.view) || !isPermRuleEmpty(section.permissions.edit)) && (
+                      <span
+                        style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                          background: '#e0e7ff', color: '#3730a3', border: '1px solid #6366f1'
+                        }}
+                        title={`Xem: ${permRuleSummary(section.permissions.view)} | Sửa: ${permRuleSummary(section.permissions.edit)}`}
+                      >
+                        Quyền xem/sửa
+                      </span>
+                    )}
+                    <button
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => toggleSectionCollapsible(section.id)}
+                      title={section.collapsible ? 'Thu gọn được' : 'Cố định'}
+                      style={{ padding: '0 4px' }}
+                    >
+                      {section.collapsible ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, -1)} disabled={secIdx === 0} title="Di chuyển lên">
+                      <ChevronUp size={12} />
+                    </button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => moveSection(section.id, 1)} disabled={secIdx === (layoutConfig.sections || []).length - 1} title="Di chuyển xuống">
+                      <ChevronDown size={12} />
+                    </button>
+                    <button className="btn btn-xs btn-ghost" onClick={() => setConfigSectionId(configSectionId === section.id ? null : section.id)} title="Điều kiện hiển thị">
+                      <Pencil size={12} />
+                    </button>
+                    <button className="btn btn-xs btn-ghost text-error" onClick={() => removeSection(section.id)} title="Xóa section">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+
+                  {/* Section condition config */}
+                  {configSectionId === section.id && (
+                    <div style={{ padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#f8f9ff', fontSize: 12 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={!section.visibleWhen}
+                          onChange={(e) => updateSection(section.id, {
+                            visibleWhen: e.target.checked ? null : { field: section.visibleWhen?.field || '', value: section.visibleWhen?.value || '' }
+                          })}
+                        />
+                        <span>Luôn hiển thị</span>
+                      </label>
+                      {section.visibleWhen && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                          <span className="text-gray-500">Hiện khi</span>
+                          <select
+                            className="select select-bordered select-xs"
+                            value={section.visibleWhen.field || ''}
+                            onChange={(e) => updateSection(section.id, { visibleWhen: { ...section.visibleWhen, field: e.target.value } })}
+                          >
+                            <option value="">-- Chọn field --</option>
+                            {conditionFields.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                          </select>
+                          <span>=</span>
+                          {(() => {
+                            const def = availableFields.find(af => af.key === section.visibleWhen.field);
+                            const opts = def && Array.isArray(def.options) ? def.options : [];
+                            if (opts.length > 0) {
+                              return (
+                                <select
+                                  className="select select-bordered select-xs"
+                                  value={section.visibleWhen.value || ''}
+                                  onChange={(e) => updateSection(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                                >
+                                  <option value="">-- Chọn giá trị --</option>
+                                  {opts.map((o, i) => {
+                                    const val = (o && typeof o === 'object') ? (o.value ?? o.label) : o;
+                                    const lbl = (o && typeof o === 'object') ? (o.label ?? o.value) : o;
+                                    return <option key={i} value={val}>{lbl}</option>;
+                                  })}
+                                </select>
+                              );
+                            }
+                            return (
+                              <input
+                                type="text"
+                                className="input input-bordered input-xs"
+                                placeholder="Giá trị"
+                                value={section.visibleWhen.value || ''}
+                                onChange={(e) => updateSection(section.id, { visibleWhen: { ...section.visibleWhen, value: e.target.value } })}
+                              />
+                            );
+                          })()}
+                        </div>
+                      )}
+                      <SectionPermEditor
+                        section={section}
+                        onChange={(permissions) => updateSection(section.id, { permissions })}
+                      />
+                    </div>
+                  )}
+
+                  {/* Section body: rows */}
+                  <div style={{ padding: (section.rows || []).length > 0 ? '8px' : '0', minHeight: (section.rows || []).length === 0 ? 40 : 'auto' }}>
+                    {(section.rows || []).length === 0 && (
+                      <div
+                        style={{ border: '1px dashed #d1d5db', borderRadius: 6, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: '#9ca3af' }}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                          if (!fieldId) return;
+                          const field = availableFields.find(f => f.id === fieldId);
+                          if (!field) return;
+                          const newRowId = `r${Date.now()}`;
+                          setLayoutConfig(prev => {
+                            const sections = [...(prev.sections || [])];
+                            const si = sections.findIndex(s => s.id === section.id);
+                            if (si >= 0) {
+                              sections[si] = { ...sections[si], rows: [{ id: newRowId, columns: '1:1' }] };
+                            }
+                            return { ...prev, sections };
+                          });
+                          setTimeout(() => {
+                            setAssignedFields(prev => [...prev, {
+                              fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                              orderIndex: 0, visible: true, config: { rowId: newRowId, rowIndex: 0, colIndex: 0 }
+                            }]);
+                          }, 0);
+                        }}
+                      >
+                        Kéo field vào đây
+                      </div>
+                    )}
+
+                    {(section.rows || []).map((row, rowIdx) => {
+                      const desktopCols = parseInt(row.columns.split(':')[1]);
+                      const isStacked = previewMode === 'mobile' && desktopCols > 1;
                       return (
-                        <div
-                          key={colIdx}
-                          className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''}`}
-                          onDragOver={(e) => handleDragOver(e, row.id, colIdx)}
-                          onDragLeave={handleDragLeave}
-                          onDrop={(e) => handleDrop(e, row.id, colIdx)}
-                        >
-                          {cellField ? (
-                            <div className="field-assigned" onClick={() => setSelectedField(cellField)}>
-                              <span className="field-assigned-label">{cellField.label}</span>
-                              <span className="field-assigned-type">{cellField.type}</span>
-                              <button className="btn btn-sm btn-delete" onClick={(e) => { e.stopPropagation(); removeFieldFromCell(row.id, colIdx); }}>✕</button>
+                        <div key={row.id}>
+                          {/* Insert row zone */}
+                          <div
+                            className={`insert-row-zone ${dragOverRow === `before-${row.id}` ? 'drag-over' : ''}`}
+                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`before-${row.id}`); }}
+                            onDragLeave={handleRowDragLeave}
+                            onDrop={(e) => {
+                              e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
+                              const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                              if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
+                                const field = availableFields.find(f => f.id === fieldId);
+                                if (field) {
+                                  const newId = `r${Date.now()}`;
+                                  setLayoutConfig(prev => {
+                                    const sections = [...(prev.sections || [])];
+                                    const si = sections.findIndex(s => s.id === section.id);
+                                    if (si >= 0) {
+                                      const rows = [...(sections[si].rows || [])];
+                                      rows.splice(rowIdx, 0, { id: newId, columns: '1:1' });
+                                      sections[si] = { ...sections[si], rows };
+                                    }
+                                    return { ...prev, sections };
+                                  });
+                                  setTimeout(() => {
+                                    setAssignedFields(prev => [...prev, {
+                                      fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                                      orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: rowIdx, colIndex: 0 }
+                                    }]);
+                                  }, 0);
+                                  return;
+                                }
+                              }
+                              const sec = (layoutConfig.sections || []).find(s => s.id === section.id);
+                              if (sec) {
+                                setLayoutConfig(prev => {
+                                  const sections = [...(prev.sections || [])];
+                                  const si = sections.findIndex(s => s.id === section.id);
+                                  if (si >= 0) {
+                                    const rows = [...(sections[si].rows || [])];
+                                    rows.splice(rowIdx, 0, { id: newId || `r${Date.now()}`, columns: '1:2' });
+                                    sections[si] = { ...sections[si], rows };
+                                  }
+                                  return { ...prev, sections };
+                                });
+                              }
+                            }}
+                          >
+                            <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => {
+                              const newId = `r${Date.now()}`;
+                              setLayoutConfig(prev => {
+                                const sections = [...(prev.sections || [])];
+                                const si = sections.findIndex(s => s.id === section.id);
+                                if (si >= 0) {
+                                  const rows = [...(sections[si].rows || [])];
+                                  rows.splice(rowIdx, 0, { id: newId, columns: '1:2' });
+                                  sections[si] = { ...sections[si], rows };
+                                }
+                                return { ...prev, sections };
+                              });
+                            }}>
+                              <Plus size={12} /> Thêm hàng
+                            </button>
+                          </div>
+
+                          {/* Row container */}
+                          <div
+                            className={`preview-row ${dragOverRow === row.id ? 'row-drag-over' : ''}`}
+                            onDragOver={(e) => handleRowDragOver(e, row.id)}
+                            onDragLeave={handleRowDragLeave}
+                            onDrop={(e) => handleRowDrop(e, row.id, section.id)}
+                          >
+                            <div className="row-header">
+                              <div
+                                className="row-drag-handle"
+                                draggable
+                                onDragStart={(e) => handleRowDragStart(e, row.id)}
+                                onDragEnd={() => setDraggedRowId(null)}
+                              >
+                                <GripVertical size={14} />
+                              </div>
+                              <span className="row-label text-xs text-gray-500">Hàng {rowIdx + 1}</span>
+                              <select
+                                className="select select-bordered select-xs w-auto ml-1"
+                                value={row.columns}
+                                onChange={(e) => updateRowColumns(row.id, e.target.value)}
+                              >
+                                {COL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                              </select>
+                              <div className="row-actions ml-auto flex gap-0.5">
+                                <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'up', section.id)} disabled={rowIdx === 0} title="Lên">
+                                  <ChevronUp size={14} />
+                                </button>
+                                <button className="btn btn-xs btn-ghost" onClick={() => moveRow(row.id, 'down', section.id)} disabled={rowIdx === (section.rows || []).length - 1} title="Xuống">
+                                  <ChevronDown size={14} />
+                                </button>
+                                <button className="btn btn-xs btn-ghost text-error" onClick={() => removeRow(row.id)} title="Xóa hàng">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </div>
-                          ) : (
-                            <span className="drop-hint">Kéo field vào đây</span>
-                          )}
+
+                            {/* Row cells */}
+                            <div className={`form-row ${isStacked ? 'form-row-stacked' : ''}`} data-cols={row.columns}>
+                              {Array.from({ length: desktopCols }).map((_, colIdx) => {
+                                const cellField = getCellField(row.id, colIdx);
+                                const cellKey = `${row.id}-${colIdx}`;
+                                const isOver = dragOverCell === cellKey;
+                                return (
+                                  <div
+                                    key={colIdx}
+                                    data-field-cell={cellField ? cellField.fieldId : undefined}
+                                    className={`form-cell ${cellField ? 'has-field' : 'drop-zone'} ${isOver ? 'drag-over' : ''} ${cellField && cellField.type === 'table' ? 'form-cell-full' : ''}`}
+                                    style={cellField && previewSearch.trim() && previewMatches.includes(cellField.fieldId) ? {
+                                      outline: cellField.fieldId === previewCurrentId ? '2px solid #6366f1' : '1px dashed #a5b4fc',
+                                      outlineOffset: -2,
+                                      background: cellField.fieldId === previewCurrentId ? '#eef2ff' : undefined
+                                    } : undefined}
+                                    onDragOver={(e) => handleDragOver(e, row.id, colIdx)}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={(e) => handleDrop(e, row.id, colIdx)}
+                                  >
+                                    {cellField ? (
+                                      <div
+                                        className="field-assigned"
+                                        draggable
+                                        onDragStart={(e) => handleFieldDragStart(e, cellField.fieldId)}
+                                        onClick={() => setSelectedField(cellField)}
+                                      >
+                                        <GripVertical size={12} className="opacity-40 cursor-grab" />
+                                        <div className="flex-1 min-w-0">
+                                          <span className="field-assigned-label">{cellField.label}</span>
+                                          <span className="field-assigned-type">{cellField.type}</span>
+                                        </div>
+                                        <button className="btn btn-xs btn-ghost text-error" title="Xóa field khỏi form (về Available Fields)" onClick={(e) => { e.stopPropagation(); removeFieldFromCell(row.id, colIdx); }}>
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="drop-hint">Kéo field vào đây</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
-                  </div>
+
+                    {/* Insert row zone after last row in section */}
+                    {(section.rows || []).length > 0 && (
+                      <div
+                        className={`insert-row-zone ${dragOverRow === `after-last-${section.id}` ? 'drag-over' : ''}`}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRow(`after-last-${section.id}`); }}
+                        onDragLeave={handleRowDragLeave}
+                        onDrop={(e) => {
+                          e.preventDefault(); setDragOverRow(null); setDraggedRowId(null);
+                          const fieldId = parseInt(e.dataTransfer.getData('fieldId'));
+                          const newId = `r${Date.now()}`;
+                          if (fieldId && !assignedFields.find(f => f.fieldId === fieldId)) {
+                            const field = availableFields.find(f => f.id === fieldId);
+                            if (field) {
+                              setLayoutConfig(prev => {
+                                const sections = [...(prev.sections || [])];
+                                const si = sections.findIndex(s => s.id === section.id);
+                                if (si >= 0) {
+                                  sections[si] = { ...sections[si], rows: [...(sections[si].rows || []), { id: newId, columns: '1:1' }] };
+                                }
+                                return { ...prev, sections };
+                              });
+                              setTimeout(() => {
+                                setAssignedFields(prev => [...prev, {
+                                  fieldId: field.id, label: field.label, key: field.key, type: field.type,
+                                  orderIndex: prev.length, visible: true, config: { rowId: newId, rowIndex: (section.rows || []).length, colIndex: 0 }
+                                }]);
+                              }, 0);
+                              return;
+                            }
+                          }
+                          setLayoutConfig(prev => {
+                            const sections = [...(prev.sections || [])];
+                            const si = sections.findIndex(s => s.id === section.id);
+                            if (si >= 0) {
+                              sections[si] = { ...sections[si], rows: [...(sections[si].rows || []), { id: newId, columns: '1:2' }] };
+                            }
+                            return { ...prev, sections };
+                          });
+                        }}
+                      >
+                        <button className="btn btn-xs btn-ghost opacity-0 hover:opacity-100 insert-row-btn" onClick={() => {
+                          const newId = `r${Date.now()}`;
+                          setLayoutConfig(prev => {
+                            const sections = [...(prev.sections || [])];
+                            const si = sections.findIndex(s => s.id === section.id);
+                            if (si >= 0) {
+                              sections[si] = { ...sections[si], rows: [...(sections[si].rows || []), { id: newId, columns: '1:2' }] };
+                            }
+                            return { ...prev, sections };
+                          });
+                        }}>
+                          <Plus size={12} /> Thêm hàng
+                        </button>
+                      </div>
+                    )}
+                   </div>
+                </div>
                 );
               })}
 
+              {/* Add section button at bottom */}
+              {(layoutConfig.sections || []).length > 0 && (
+                <div style={{ textAlign: 'center', margin: '8px 0' }}>
+                  <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={addSection}>
+                    <Plus size={14} /> Thêm section
+                  </button>
+                  <button className="btn btn-outline btn-primary btn-sm gap-1" style={{ marginLeft: 8 }} onClick={addTabGroup}>
+                    <Layers size={14} /> Thêm tab
+                  </button>
+                </div>
+              )}
+
+              {/* Unassigned fields */}
               {unassignedFields.length > 0 && (
-                <div className="unassigned-section">
-                  <div className="unassigned-label">Fields chưa xếp vào layout:</div>
-                  {unassignedFields.map(field => (
-                    <div key={field.fieldId} className="field-chip" draggable
-                      onDragStart={(e) => { e.dataTransfer.setData('fieldId', String(field.fieldId)); e.dataTransfer.effectAllowed = 'move'; }}>
-                      {field.label}
-                      <button className="btn btn-sm btn-delete" onClick={() => handleRemoveField(field)}>✕</button>
-                    </div>
-                  ))}
+                <div className="unassigned-section mt-3">
+                  <div className="unassigned-label text-xs text-gray-500 mb-1">Fields chưa xếp vào section:</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {unassignedFields.map(field => (
+                      <div key={field.fieldId} className="field-chip" draggable
+                        onDragStart={(e) => handleFieldDragStart(e, field.fieldId)}>
+                        {field.label}
+                        <button className="btn btn-xs btn-ghost text-error" onClick={() => handleRemoveField(field)}>
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className="builder-panel" style={{ flex: 1 }}>
+        {/* Right: Available Fields */}
+        <div className="builder-panel flex-1">
           <div className="builder-panel-header">Available Fields ({filteredAvailable.length})</div>
           <div className="builder-panel-body">
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={availableSearch}
+                onChange={(e) => setAvailableSearch(e.target.value)}
+                placeholder="Tìm field (tên/key/loại)..."
+                className="input input-bordered input-sm w-full"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
             {filteredAvailable.length === 0 ? (
-              <div className="builder-empty">Không có field nào khả dụng</div>
+              <div className="builder-empty">{availableSearch.trim() ? `Không tìm thấy field nào cho "${availableSearch.trim()}"` : 'Không có field nào khả dụng'}</div>
             ) : filteredAvailable.map(field => (
               <div key={field.id} className="builder-available-item"
                 draggable
-                onDragStart={(e) => { e.dataTransfer.setData('fieldId', String(field.id)); e.dataTransfer.effectAllowed = 'copy'; }}
+                onDragStart={(e) => handleAvailableFieldDragStart(e, field)}
                 onClick={() => handleAddField(field)}>
                 <div>
                   <strong>{field.label}</strong>
-                  <div style={{ fontSize: 12, color: '#888' }}>{field.key} · {field.type}</div>
+                  <div className="text-xs text-gray-400">{field.key} · {field.type}</div>
                 </div>
-                <span style={{ color: '#4a6cf7', fontSize: 20 }}>+</span>
+                <Plus size={16} className="text-indigo-500" />
               </div>
             ))}
           </div>
         </div>
       </div>
 
+      {/* Field Config Panel */}
       {selectedField && (
-        <div className="field-config-panel">
+        <div className="field-config-panel mt-3">
           <div className="field-config-header">
             <h3>Cấu hình: {selectedField.label} <code>{selectedField.key}</code></h3>
-            <button className="btn btn-sm" onClick={() => setSelectedField(null)}>✕ Đóng</button>
+            <button className="btn btn-xs btn-ghost" onClick={() => setSelectedField(null)}>✕ Đóng</button>
           </div>
           <div className="field-config-body">
             <div className="form-row">
@@ -463,10 +1586,11 @@ const FormBuilder = ({ formId, onSaved }) => {
               </div>
             </div>
             <div className="form-row">
-              <label className="checkbox-label">
-                <input type="checkbox" checked={selectedField.config?.requiredOverride ?? availableFields.find(f => f.id === selectedField.fieldId)?.required ?? false}
-                  onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'requiredOverride', e.target.checked)} />
-                Bắt buộc
+              <label className="checkbox-label" title="Bắt buộc được cấu hình tại Admin → Fields">
+                <span className="text-gray-500">
+                  Bắt buộc nhập: cấu hình tại&nbsp;
+                  <a href="/admin/fields" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>Admin → Fields</a>
+                </span>
               </label>
               <label className="checkbox-label">
                 <input type="checkbox" checked={selectedField.config?.readonly || false}
@@ -503,12 +1627,12 @@ const FormBuilder = ({ formId, onSaved }) => {
                   {!['empty', 'not_empty'].includes(cond.operator) && (
                     <input value={cond.value || ''} onChange={(e) => handleConditionChange(selectedField.fieldId, i, 'value', e.target.value)} placeholder="Giá trị" />
                   )}
-                  <button className="btn btn-sm btn-delete" onClick={() => removeCondition(selectedField.fieldId, i)}>✕</button>
+                  <button className="btn btn-xs btn-ghost text-error" onClick={() => removeCondition(selectedField.fieldId, i)}>✕</button>
                 </div>
               ))}
-              <button className="btn btn-sm btn-secondary" onClick={() => addCondition(selectedField.fieldId)}>+ Thêm điều kiện</button>
+              <button className="btn btn-xs btn-secondary mt-1" onClick={() => addCondition(selectedField.fieldId)}>+ Thêm điều kiện</button>
               {(selectedField.config?.conditions || []).length > 1 && (
-                <div className="form-group" style={{ marginTop: 8 }}>
+                <div className="form-group mt-2">
                   <label>Logic</label>
                   <select value={selectedField.config?.conditionLogic || 'AND'} onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'conditionLogic', e.target.value)}>
                     <option value="AND">AND (tất cả)</option>
@@ -517,12 +1641,311 @@ const FormBuilder = ({ formId, onSaved }) => {
                 </div>
               )}
             </div>
+
+            {selectedField.type === 'table' && (
+              <div className="table-config-section mt-3" style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+                <label style={{ fontWeight: 600, fontSize: 13 }}>Cấu hình bảng</label>
+                <div className="form-row mt-1">
+                  <div className="form-group">
+                    <label>Số dòng tối thiểu</label>
+                    <input type="number" min="0" value={selectedField.config?.tableConfig?.min_rows ?? 0}
+                      onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                        ...(selectedField.config?.tableConfig || {}),
+                        min_rows: parseInt(e.target.value) || 0
+                      })} />
+                  </div>
+                  <div className="form-group">
+                    <label>Số dòng tối đa</label>
+                    <input type="number" min="1" value={selectedField.config?.tableConfig?.max_rows ?? 10}
+                      onChange={(e) => handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                        ...(selectedField.config?.tableConfig || {}),
+                        max_rows: parseInt(e.target.value) || 10
+                      })} />
+                  </div>
+                </div>
+                <label style={{ fontSize: 13, marginTop: 8 }}>Cột bảng</label>
+                {(selectedField.config?.tableConfig?.columns || []).map((col, idx) => {
+                  const isNumber = (!col.field_id && col.column_type === 'number') || (col.field_id && availableFields.find(f => f.id === parseInt(col.field_id))?.type === 'number');
+                  return (
+                    <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, minWidth: 24 }}>#{idx + 1}</span>
+                        <select value={col.field_id || ''} onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          const refField = availableFields.find(f => f.id === parseInt(e.target.value));
+                          newCols[idx] = {
+                            ...newCols[idx],
+                            field_id: parseInt(e.target.value) || null,
+                            key: refField ? refField.key : newCols[idx].key,
+                            label: refField ? refField.label : newCols[idx].label,
+                            column_type: refField ? refField.type : (newCols[idx].column_type || 'text')
+                          };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ flex: 2, minWidth: 140, fontSize: 12 }}>
+                          <option value="">-- Tạo thủ công --</option>
+                          {availableFields.filter(f => f.type !== 'table' && f.type !== 'formula' && f.type !== 'password').map(f => (
+                            <option key={f.id} value={f.id}>{f.label} ({f.key})</option>
+                          ))}
+                        </select>
+                        {!col.field_id && (
+                          <select value={col.column_type || 'text'} onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], column_type: e.target.value };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }} style={{ width: 90, fontSize: 12 }}>
+                            <option value="text">Text</option>
+                            <option value="number">Number</option>
+                            <option value="date">Date</option>
+                            <option value="datetime">DateTime</option>
+                            <option value="boolean">Boolean</option>
+                            <option value="select">Select</option>
+                          </select>
+                        )}
+                        <button className="btn btn-xs btn-ghost text-error" onClick={() => {
+                          const newCols = (selectedField.config?.tableConfig?.columns || []).filter((_, i) => i !== idx);
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }}>✕</button>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                        <input value={col.key || ''} placeholder="Key" onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], key: e.target.value };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ flex: 1, minWidth: 100, fontSize: 12 }} disabled={!!col.field_id} />
+                        <input value={col.label || ''} placeholder="Label" onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], label: e.target.value };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ flex: 1, minWidth: 100, fontSize: 12 }} />
+                        <input type="number" min="60" value={col.width || 120} placeholder="W" onChange={(e) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], width: parseInt(e.target.value) || 120 };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}),
+                            columns: newCols
+                          });
+                        }} style={{ width: 55, fontSize: 12 }} />
+                        <label style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={!!col.required} onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], required: e.target.checked };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }} /> Bắt buộc
+                        </label>
+                      </div>
+                      {(() => {
+                        const baseFld = col.field_id ? availableFields.find(f => f.id === parseInt(col.field_id)) : null;
+                        const isSelectCol = (col.column_type === 'select') || (baseFld && baseFld.type === 'select');
+                        if (!isSelectCol) return null;
+                        const src = getColumnSource(col, baseFld);
+                        const link = (col.data_link && typeof col.data_link === 'object') ? col.data_link : null;
+                        const enabled = !!(link && link.enabled);
+                        const isSelectOwn = col.column_type === 'select';
+                        const forceEnabled = isSelectOwn && src === 'datalist';
+                        const dlId = (link && link.datalist_id) || col.data_list_id || null;
+                        const dl = dataLists.find(d => d.id === Number(dlId));
+                        const dlCols = dl && Array.isArray(dl.columns_config) ? dl.columns_config : [];
+                        const baseDl = baseFld && baseFld.data_list_id ? dataLists.find(d => d.id === Number(baseFld.data_list_id)) : null;
+                        const siblings = (selectedField.config?.tableConfig?.columns || []).filter((_, i) => i !== idx);
+                        const conds = Array.isArray(link && link.conditions) ? link.conditions : [];
+                        const updateCol = (patch) => {
+                          const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                          newCols[idx] = { ...newCols[idx], ...patch };
+                          handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                            ...(selectedField.config?.tableConfig || {}), columns: newCols
+                          });
+                        };
+                        const setLink = (patch) => {
+                          const prev = (col.data_link && typeof col.data_link === 'object') ? col.data_link : {};
+                          const next = { data_link: { ...prev, ...(forceEnabled ? { enabled: true } : {}), ...patch } };
+                          if (isSelectOwn) {
+                            if (Object.prototype.hasOwnProperty.call(patch, 'datalist_id')) next.data_list_id = patch.datalist_id || null;
+                            if (Object.prototype.hasOwnProperty.call(patch, 'default_column')) next.data_list_column = patch.default_column || null;
+                            next.data_list_label_column = next.data_list_column || col.data_list_label_column || null;
+                          }
+                          updateCol(next);
+                        };
+                        const setSource = (next) => {
+                          if (next === 'manual') {
+                            updateCol({ options_source: 'manual', data_list_id: null, data_list_column: null, data_list_label_column: null, data_link: { ...(col.data_link || {}), enabled: false } });
+                          } else if (next === 'datalist') {
+                            const first = dataLists[0];
+                            const cfg = first && Array.isArray(first.columns_config) ? first.columns_config : [];
+                            const keep = (col.data_list_column && cfg.some(c => c.key === col.data_list_column)) ? col.data_list_column : (cfg[0] ? cfg[0].key : null);
+                            const id = col.data_list_id || (first ? first.id : null);
+                            updateCol({ options_source: 'datalist', data_list_id: id, data_list_column: keep, data_list_label_column: keep, data_link: { ...(col.data_link || {}), enabled: true, datalist_id: id, default_column: keep } });
+                          } else if (next === 'inherit') {
+                            updateCol({ options_source: 'inherit', data_list_id: null, data_list_column: null, data_list_label_column: null });
+                          }
+                        };
+                        const changeDatalist = (raw) => {
+                          const id = raw ? parseInt(raw) : null;
+                          const d = dataLists.find(x => x.id === Number(id));
+                          const cfg = d && Array.isArray(d.columns_config) ? d.columns_config : [];
+                          const keep = cfg.some(c => c.key === col.data_list_column) ? col.data_list_column : (cfg[0] ? cfg[0].key : null);
+                          setLink({ datalist_id: id, default_column: keep });
+                        };
+                        const setConds = (next) => setLink({ conditions: next });
+                        return (
+                          <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px dashed #e2e8f0', fontSize: 12 }}>
+                            <div style={{ fontWeight: 600, color: '#475569', marginBottom: 6 }}>Liên kết dữ liệu</div>
+                            <label>Nguồn options
+                              <select value={src} onChange={(e) => setSource(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
+                                <option value="manual">Thủ công (nhập tay)</option>
+                                <option value="datalist">Từ DataList</option>
+                                {col.field_id
+                                  ? <option value="inherit">Theo field liên kết</option>
+                                  : <option value="inherit" disabled>Theo field liên kết (cần gắn field)</option>}
+                              </select>
+                            </label>
+                            {src === 'manual' && (
+                              <input type="text" placeholder="Options (cách nhau bởi dấu phẩy)" value={(col.options || []).join(', ')}
+                                onChange={(e) => {
+                                  const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                  updateCol({ options: opts });
+                                }} style={{ width: '100%', fontSize: 12, marginTop: 4 }} />
+                            )}
+                            {src === 'inherit' && (
+                              <div style={{ fontSize: 11, color: baseDl ? '#075985' : '#92400e', marginTop: 4 }}>
+                                {baseDl
+                                  ? `Kế thừa DataList "${baseDl.name}" từ field "${baseFld.label || baseFld.key}".`
+                                  : `Field "${(baseFld && (baseFld.label || baseFld.key)) || ''}" gốc nhập tay — cột này cũng nhập tay.`}
+                              </div>
+                            )}
+                            {src === 'datalist' && (
+                              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                  <label style={{ flex: 1, minWidth: 140 }}>Danh mục dữ liệu
+                                    <select value={dlId || ''} onChange={(e) => changeDatalist(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
+                                      <option value="">-- Chọn --</option>
+                                      {dataLists.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                    </select>
+                                  </label>
+                                  <label style={{ flex: 1, minWidth: 140 }}>Cột mặc định (Cột giá trị)
+                                    <select value={(link && link.default_column) || col.data_list_column || ''} onChange={(e) => setLink({ default_column: e.target.value || null })} style={{ width: '100%', fontSize: 12 }}>
+                                      <option value="">-- Chọn --</option>
+                                      {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                    </select>
+                                  </label>
+                                </div>
+                                <label>Tự động điền khi cột có giá trị (tùy chọn)
+                                  <select value={(link && link.trigger_column) || ''} onChange={(e) => setLink({ trigger_column: e.target.value || null })} style={{ width: '100%', fontSize: 12 }}>
+                                    <option value="">-- Không tự động điền --</option>
+                                    {siblings.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                  </select>
+                                </label>
+                                {enabled && !(link && link.trigger_column) && conds.length > 0 && (
+                                  <div style={{ fontSize: 11, color: '#b45309' }}>Chưa chọn cột kích hoạt — các điều kiện này sẽ bị bỏ qua.</div>
+                                )}
+                                <div>
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Điều kiện (dòng đầu khớp thắng)</div>
+                                  {conds.map((cd, ci) => (
+                                    <div key={ci} style={{ display: 'flex', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
+                                      <select value={cd.field || ''} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], field: e.target.value }; setConds(n); }} style={{ flex: 2, minWidth: 110, fontSize: 12 }}>
+                                        <option value="">-- Field --</option>
+                                        {availableFields.filter(f => f.status !== 'inactive').map(f => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+                                      </select>
+                                      <select value={cd.op || '='} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], op: e.target.value }; setConds(n); }} style={{ width: 100, fontSize: 12 }}>
+                                        {LINK_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                      </select>
+                                      <input type="text" placeholder="Giá trị" value={cd.value || ''} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], value: e.target.value }; setConds(n); }} style={{ flex: 1, minWidth: 70, fontSize: 12 }} />
+                                      <select value={cd.column || ''} onChange={(e) => { const n = [...conds]; n[ci] = { ...n[ci], column: e.target.value }; setConds(n); }} style={{ flex: 1, minWidth: 90, fontSize: 12 }}>
+                                        <option value="">-- Cột DL --</option>
+                                        {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                      </select>
+                                      <button type="button" className="btn btn-xs btn-ghost text-error" onClick={() => setConds(conds.filter((_, i) => i !== ci))}>✕</button>
+                                    </div>
+                                  ))}
+                                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => setConds([...conds, { field: '', op: '=', value: '', column: '' }])}>+ Thêm điều kiện</button>
+                                </div>
+                                <span style={{ fontSize: 11, color: '#888' }}>Ô trong table thành select: 1 giá trị → tự chọn (khóa), nhiều → chọn tay.</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      <div style={{ marginTop: 4, fontSize: 12 }}>
+                        <input type="text" placeholder={`Formula (VD: so_luong * don_gia)`}
+                          value={col.formula || ''}
+                          onChange={(e) => {
+                            const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                            newCols[idx] = { ...newCols[idx], formula: e.target.value };
+                            handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                              ...(selectedField.config?.tableConfig || {}),
+                              columns: newCols
+                            });
+                          }}
+                          style={{ width: '100%', fontSize: 12, fontFamily: 'monospace', background: col.formula ? '#fffbeb' : undefined }}
+                          disabled={!!col.field_id} />
+                        {col.formula && <span style={{ color: '#d97706', fontSize: 11 }}><Zap size={11} style={{ verticalAlign: 'middle' }} /> Tự tính</span>}
+                        {!col.formula && <span style={{ color: '#888', fontSize: 11 }}>Dùng tên cột khác trong dòng</span>}
+                      </div>
+                      {isNumber && (
+                        <div style={{ marginTop: 4, fontSize: 12 }}>
+                          <label style={{ fontWeight: 500 }}>Footer (công thức):</label>
+                          <TableFooterFormulaInput
+                            value={col.footer_formula || ''}
+                            currentColKey={col.key}
+                            columns={selectedField.config?.tableConfig?.columns || []}
+                            onChange={(v) => {
+                              const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                              newCols[idx] = { ...newCols[idx], footer_formula: v || null };
+                              handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                                ...(selectedField.config?.tableConfig || {}),
+                                columns: newCols
+                              });
+                            }} />
+                          <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{FOOTER_FUNCTION_HELP}</div>
+                          <input type="text" placeholder="Tên footer (VD: Tổng giá khuyến mãi)"
+                            value={col.footer_label || ''}
+                            onChange={(e) => {
+                              const newCols = [...(selectedField.config?.tableConfig?.columns || [])];
+                              newCols[idx] = { ...newCols[idx], footer_label: e.target.value };
+                              handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                                ...(selectedField.config?.tableConfig || {}),
+                                columns: newCols
+                              });
+                            }}
+                            style={{ width: '100%', fontSize: 12, padding: '6px 8px', marginTop: 4 }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button className="btn btn-xs btn-secondary mt-1" onClick={() => {
+                  const newCols = [...(selectedField.config?.tableConfig?.columns || []), { field_id: null, key: '', label: '', column_type: 'text', width: 120, required: false, options: [] }];
+                  handleFieldConfigChange(selectedField.fieldId, 'tableConfig', {
+                    ...(selectedField.config?.tableConfig || {}),
+                    columns: newCols
+                  });
+                }}>+ Thêm cột</button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      <div className="builder-actions">
-        <button className="btn btn-secondary" onClick={onSaved}>Hủy</button>
+      {/* Action Buttons */}
+      <div className="builder-actions mt-3">
+        <button className="btn btn-ghost" onClick={onSaved}>Hủy</button>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Đang lưu...' : 'Lưu form'}
         </button>

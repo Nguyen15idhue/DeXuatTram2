@@ -64,15 +64,19 @@ router.post('/validate', requireAuth, (req, res) => {
  *       200:
  *         description: Preview result
  */
-router.post('/preview', requireAuth, (req, res) => {
-  const { expression, scope = {}, metadata } = req.body;
-  let result;
-  if (metadata) {
-    result = formulaService.evaluatePostFormula(expression, metadata);
-  } else {
-    result = formulaService.evaluateFormula(expression, scope);
+router.post('/preview', requireAuth, async (req, res) => {
+  try {
+    const { expression, scope = {}, metadata } = req.body;
+    let result;
+    if (metadata) {
+      result = await formulaService.evaluatePostFormulaAsync(expression, metadata, scope, { dryRun: true });
+    } else {
+      result = formulaService.evaluateFormula(expression, scope);
+    }
+    res.json({ success: true, data: { result } });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
   }
-  res.json({ success: true, data: { result } });
 });
 
 module.exports = router;

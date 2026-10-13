@@ -1,6 +1,6 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
 const { validateCreateUser, validateUpdateUser } = require('../middlewares/validators');
 const adminUserController = require('../controllers/adminUserController');
 
@@ -49,7 +49,58 @@ const adminUserController = require('../controllers/adminUserController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, adminUserController.getAll);
+router.get('/', requireAuth, requireUserManager, adminUserController.getAll);
+
+/**
+ * @swagger
+ * /api/admin/users/options/all:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Danh sách user gọn (id, tên, quyền) cho select
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ */
+router.get('/options/all', requireAuth, adminUserController.getOptions);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Lấy chi tiết user theo ID (SALES chỉ bản thân + CTV của mình, ADMIN không xem SUPER_ADMIN)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.get('/:id', requireAuth, requireUserManager, adminUserController.getById);
 
 /**
  * @swagger
@@ -86,7 +137,7 @@ router.get('/', requireAuth, requireAdmin, adminUserController.getAll);
  *                 example: 123456
  *               role:
  *                 type: string
- *                 enum: [USER, ADMIN]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
  *                 default: USER
  *               status:
  *                 type: string
@@ -111,7 +162,7 @@ router.get('/', requireAuth, requireAdmin, adminUserController.getAll);
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireAdmin, validateCreateUser, adminUserController.create);
+router.post('/', requireAuth, requireUserManager, validateCreateUser, adminUserController.create);
 
 /**
  * @swagger
@@ -146,7 +197,7 @@ router.post('/', requireAuth, requireAdmin, validateCreateUser, adminUserControl
  *                 description: Để trống nếu không đổi mật khẩu
  *               role:
  *                 type: string
- *                 enum: [USER, ADMIN]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
  *               status:
  *                 type: string
  *                 enum: [ACTIVE, LOCKED]
@@ -162,7 +213,7 @@ router.post('/', requireAuth, requireAdmin, validateCreateUser, adminUserControl
  *       404:
  *         description: Không tìm thấy user
  */
-router.put('/:id', requireAuth, requireAdmin, validateUpdateUser, adminUserController.update);
+router.put('/:id', requireAuth, requireUserManager, validateUpdateUser, adminUserController.update);
 
 /**
  * @swagger
@@ -191,7 +242,7 @@ router.put('/:id', requireAuth, requireAdmin, validateUpdateUser, adminUserContr
  *       404:
  *         description: Không tìm thấy user
  */
-router.delete('/:id', requireAuth, requireAdmin, adminUserController.delete);
+router.delete('/:id', requireAuth, requireUserManager, adminUserController.delete);
 
 /**
  * @swagger
@@ -252,7 +303,7 @@ router.patch('/:id/lock', requireAuth, requireAdmin, adminUserController.toggleL
  *             properties:
  *               role:
  *                 type: string
- *                 enum: [USER, ADMIN]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
  *     responses:
  *       200:
  *         description: Đổi role thành công
@@ -266,5 +317,152 @@ router.patch('/:id/lock', requireAuth, requireAdmin, adminUserController.toggleL
  *         description: Không tìm thấy user
  */
 router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeRole);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/password:
+ *   patch:
+ *     tags: [Admin - Users]
+ *     summary: Admin đổi mật khẩu user (tự đổi cần mật khẩu cũ old_password)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+  *             required: [password]
+  *             properties:
+  *               password:
+  *                 type: string
+  *                 minLength: 6
+  *               old_password:
+  *                 type: string
+  *                 description: Bắt buộc khi tự đổi mật khẩu của chính mình
+ *     responses:
+ *       200:
+ *         description: Đổi mật khẩu thành công
+ *       400:
+ *         description: Mật khẩu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.patch('/:id/password', requireAuth, requireUserManager, adminUserController.changePassword);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/external:
+ *   get:
+ *     tags: [Admin - Users]
+ *     summary: Lấy danh sách liên kết hệ ngoài của user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.get('/:id/external', requireAuth, requireAdmin, adminUserController.getExternal);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/external:
+ *   put:
+ *     tags: [Admin - Users]
+ *     summary: Gán ID hệ ngoài cho user (vd 1office)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [system, external_id]
+ *             properties:
+ *               system:
+ *                 type: string
+ *                 example: 1office
+ *               external_id:
+ *                 type: string
+ *                 example: "4"
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy user
+ */
+router.put('/:id/external', requireAuth, requireAdmin, adminUserController.setExternal);
+
+/**
+ * @swagger
+ * /api/admin/users/{id}/external:
+ *   delete:
+ *     tags: [Admin - Users]
+ *     summary: Xóa liên kết hệ ngoài của user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [system]
+ *             properties:
+ *               system:
+ *                 type: string
+ *                 example: 1office
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy liên kết
+ */
+router.delete('/:id/external', requireAuth, requireAdmin, adminUserController.deleteExternal);
 
 module.exports = router;

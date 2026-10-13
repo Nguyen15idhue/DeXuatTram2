@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { Zap, Star } from 'lucide-react';
 import { fieldDefinitionService, dataListService } from '../../services/api';
 import Loading from '../Loading';
 import Toast from '../Toast';
@@ -7,12 +8,105 @@ import ConfirmDialog from '../ConfirmDialog';
 import EmptyState from '../EmptyState';
 import ErrorMessage from '../ErrorMessage';
 import Pagination from '../Pagination';
+import { clearFieldOptionsCache } from '../../hooks/useFieldOptions';
+import { getColumnSource } from '../../utils/tableColumnSource';
+import { MARKER_ICON_GROUPS, isValidMarkerIcon, notifyMarkerIconsChanged } from '../../utils/mapMarkerIcons';
+import MarkerIcon from '../MarkerIcon';
 import FormulaEditor from '../dynamic/FormulaEditor';
+import TableFooterFormulaInput from '../dynamic/TableFooterFormulaInput';
+import { formatNumber } from '../../utils/formatNumber';
+import { FOOTER_FUNCTION_HELP, validateFooterFormula } from '../../utils/tableFooter';
 
-const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula'];
-const ENTITIES = ['stations', 'station_proposals', 'users'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'phone', 'url', 'date', 'datetime', 'boolean', 'select', 'multiselect', 'file', 'formula', 'password', 'table', 'user'];
+const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
 const BORDER_RADIUS_OPTIONS = ['square', 'rounded-sm', 'rounded', 'rounded-full'];
 const DATE_FORMAT_OPTIONS = ['DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD-MM-YYYY', 'YYYY/MM/DD'];
+
+const LABEL_STYLE = { display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 };
+const SECTION_STYLE = { gridColumn: '1 / -1', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, background: '#f8fafc' };
+const SECTION_TITLE_STYLE = { margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 6 };
+const GRID2_STYLE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 };
+const INPUT_STYLE = { width: '100%' };
+const FIELD_GROUP_STYLE = { marginBottom: 0 };
+const TABLE_HEADER_STYLE_FM = { padding: '6px 8px', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, background: '#f8fafc', textAlign: 'left' };
+const TABLE_CELL_STYLE_FM = { padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 13 };
+const LINK_OPS_FM = [
+  { value: '=', label: '=' },
+  { value: '!=', label: 'khác' },
+  { value: 'contains', label: 'chứa' },
+  { value: 'not_contains', label: 'không chứa' },
+  { value: 'in', label: 'thuộc (phẩy)' },
+  { value: 'empty', label: 'trống' },
+  { value: 'not_empty', label: 'không trống' }
+];
+const NUMBER_FORMAT_OPTIONS = [
+  { value: 'plain', sample: '1000' },
+  { value: 'dot', sample: '1.000' },
+  { value: 'comma', sample: '1,000' },
+  { value: 'space', sample: '1 000' }
+];
+
+const NumberFormatPicker = ({ value, onChange, disabled }) => (
+  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    {NUMBER_FORMAT_OPTIONS.map(opt => {
+      const active = (value || 'plain') === opt.value;
+      return (
+        <button
+          type="button"
+          key={opt.value}
+          disabled={disabled}
+          onClick={() => onChange(opt.value)}
+          style={{
+            padding: '6px 14px', borderRadius: 8, fontSize: 13, minWidth: 74,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            border: active ? '2px solid #2563eb' : '1px solid #cbd5e1',
+            background: active ? '#eff6ff' : '#fff',
+            color: active ? '#1d4ed8' : '#334155',
+            fontWeight: active ? 700 : 500
+          }}
+        >
+          {opt.sample}
+        </button>
+      );
+    })}
+  </div>
+);
+
+const OptionIconPicker = ({ value, onChange }) => (
+  <div className="icon-select" title="Icon hiển thị trên bản đồ">
+    <div className="icon-selected">
+      {isValidMarkerIcon(value)
+        ? <MarkerIcon id={value} size={18} />
+        : value === 'none'
+          ? <span className="icon-none-dot" />
+          : <span className="icon-selected-empty">—</span>}
+    </div>
+    <div className="icon-dropdown">
+      <button type="button" className={`icon-option icon-option-special ${!value || value === 'default' ? 'active' : ''}`} title="Icon mặc định theo trạng thái" onClick={() => onChange('default')}>
+        <Star size={14} style={{ opacity: 0.6 }} />
+      </button>
+      <button type="button" className={`icon-option icon-option-special ${value === 'none' ? 'active' : ''}`} title="Không dùng icon (chấm tròn)" onClick={() => onChange('none')}>
+        <span className="icon-none-dot" />
+      </button>
+      {MARKER_ICON_GROUPS.map(group => (
+        <Fragment key={group.title}>
+          <div className="icon-group-title">{group.title}</div>
+          {group.icons.map(ic => (
+            <button
+              key={ic.id}
+              type="button"
+              className={`icon-option ${value === ic.id ? 'active' : ''}`}
+              title={ic.label}
+              onClick={() => onChange(ic.id)}
+            >
+              <MarkerIcon id={ic.id} size={18} />
+            </button>
+          ))}
+        </Fragment>
+      ))}
+    </div>
+  </div>
+);
 
 const COLOR_PALETTE = [
   { label: 'Xanh lá đậm', value: '#166534' },
@@ -51,12 +145,18 @@ const FieldManager = () => {
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
   const [editingId, setEditingId] = useState(null);
   const [editingIsFixed, setEditingIsFixed] = useState(false);
+  const [editingIsLocked, setEditingIsLocked] = useState(false);
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [dataLists, setDataLists] = useState([]);
+
   const [entityFields, setEntityFields] = useState([]);
 
+  const [expandedTblCols, setExpandedTblCols] = useState({});
   const defaultForm = {
     entity: 'stations', key: '', label: '', type: 'text', source_type: 'json',
     required: false, placeholder: '', help_text: '',
@@ -66,30 +166,35 @@ const FieldManager = () => {
     option_style: { defaultColor: '#666666', defaultBorderRadius: 'rounded' },
     file_config: { images: true, videos: false, documents: true, maxSize: 5, multiple: false },
     formula_config: { expression: '', referencedFields: [], compute_mode: 'pre', outputType: 'auto', outputFormat: '', decimalPlaces: 0, unit: '', label: '' },
+    table_config: { columns: [], min_rows: 0, max_rows: 10 },
     data_list_id: null,
     data_list_column: '',
+    data_list_label_column: '',
     parent_field: '',
-    relation_key: ''
+    relation_key: '',
+    auto_user: 'none'
   };
   const [form, setForm] = useState(defaultForm);
 
   const loadFields = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: 10 });
+      const params = new URLSearchParams({ page, limit: pageSize });
       if (filterEntity) params.append('entity', filterEntity);
       if (filterStatus) params.append('status', filterStatus);
+      if (searchText) params.append('search', searchText);
+      if (filterType) params.append('type', filterType);
       const res = await fieldDefinitionService.getAll(params.toString(), token);
       if (res.success) {
         setFields(res.data);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+        setPagination(res.pagination || { page: 1, limit: pageSize, total: 0, totalPages: 1 });
       }
     } catch {
       setError('Lỗi tải danh sách field definitions');
     } finally {
       setLoading(false);
     }
-  }, [filterEntity, filterStatus, token]);
+  }, [filterEntity, filterStatus, searchText, filterType, token, pageSize]);
 
   useEffect(() => { loadFields(1); }, [loadFields]);
 
@@ -117,6 +222,7 @@ const FieldManager = () => {
   const openCreate = () => {
     setEditingId(null);
     setEditingIsFixed(false);
+    setEditingIsLocked(false);
     setForm({ ...defaultForm, entity: filterEntity || 'stations', data_list_id: null });
     setShowForm(true);
     setError('');
@@ -125,6 +231,7 @@ const FieldManager = () => {
   const openEdit = (field) => {
     setEditingId(field.id);
     setEditingIsFixed(field.source_type === 'fixed');
+    setEditingIsLocked(!!field.is_locked);
     let parsedOptions = [];
     if (field.options) {
       try {
@@ -150,6 +257,19 @@ const FieldManager = () => {
         parsedFormulaConfig = typeof field.formula_config === 'string' ? JSON.parse(field.formula_config) : field.formula_config;
       } catch {}
     }
+    let parsedTableConfig = { columns: [], min_rows: 0, max_rows: 10 };
+    if (field.source_config && field.type === 'table') {
+      try {
+        parsedTableConfig = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
+      } catch {}
+    }
+    let autoUser = 'none';
+    if (field.source_config && field.type === 'user') {
+      try {
+        const parsedSc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
+        autoUser = parsedSc.auto_user || 'none';
+      } catch {}
+    }
     setForm({
       entity: field.entity, key: field.key, label: field.label, type: field.type,
       source_type: field.source_type || 'json', required: !!field.required,
@@ -163,10 +283,13 @@ const FieldManager = () => {
       option_style: parsedOptionStyle,
       file_config: parsedFileConfig,
       formula_config: parsedFormulaConfig,
+      table_config: parsedTableConfig,
       data_list_id: field.data_list_id || null,
       data_list_column: field.data_list_column || '',
+      data_list_label_column: field.data_list_label_column || '',
       parent_field: field.parent_field || '',
-      relation_key: field.relation_key || ''
+      relation_key: field.relation_key || '',
+      auto_user: autoUser
     });
     setShowForm(true);
     setError('');
@@ -175,6 +298,10 @@ const FieldManager = () => {
   const updateForm = (key, value) => {
     setForm(prev => ({ ...prev, [key]: value }));
   };
+
+  const handleFormulaChange = useCallback((cfg) => {
+    setForm(prev => ({ ...prev, formula_config: cfg }));
+  }, []);
 
   const updateFileConfig = (key, value) => {
     setForm(prev => ({ ...prev, file_config: { ...prev.file_config, [key]: value } }));
@@ -206,12 +333,48 @@ const FieldManager = () => {
     }));
   };
 
+  const moveOption = (index, dir) => {
+    setForm(prev => {
+      const next = [...prev.options];
+      const j = index + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[index], next[j]] = [next[j], next[index]];
+      return { ...prev, options: next };
+    });
+  };
+
+  const [dragOptionIdx, setDragOptionIdx] = useState(null);
+
+  const dropOption = (index) => {
+    if (dragOptionIdx === null || dragOptionIdx === index) {
+      setDragOptionIdx(null);
+      return;
+    }
+    setForm(prev => {
+      const next = [...prev.options];
+      const [moved] = next.splice(dragOptionIdx, 1);
+      next.splice(index, 0, moved);
+      return { ...prev, options: next };
+    });
+    setDragOptionIdx(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!form.entity || !form.key || !form.label) {
       setError('Vui lòng nhập đầy đủ entity, key, label');
       return;
+    }
+    if (form.type === 'table') {
+      const cols = form.table_config?.columns || [];
+      for (const c of cols) {
+        const v = validateFooterFormula(c.footer_formula, cols, c.key);
+        if (!v.valid) {
+          setError(`Công thức footer cột "${c.label || c.key}": ${v.error}`);
+          return;
+        }
+      }
     }
     const payload = {
       entity: form.entity, key: form.key, label: form.label, type: form.type,
@@ -232,6 +395,7 @@ const FieldManager = () => {
       payload.option_style = form.option_style;
       payload.data_list_id = form.data_list_id || null;
       payload.data_list_column = form.data_list_column || null;
+      payload.data_list_label_column = form.data_list_label_column || null;
       payload.parent_field = form.parent_field || null;
       payload.relation_key = form.relation_key || null;
     }
@@ -240,6 +404,12 @@ const FieldManager = () => {
     }
     if (form.type === 'formula') {
       payload.formula_config = form.formula_config;
+    }
+    if (form.type === 'table') {
+      payload.table_config = form.table_config;
+    }
+    if (form.type === 'user') {
+      payload.source_config = (form.auto_user && form.auto_user !== 'none') ? { auto_user: form.auto_user } : null;
     }
     try {
       let res;
@@ -251,6 +421,8 @@ const FieldManager = () => {
       if (res.success) {
         setToast({ message: editingId ? 'Cập nhật field thành công' : 'Tạo field thành công', type: 'success' });
         setShowForm(false);
+        clearFieldOptionsCache(form.entity);
+        notifyMarkerIconsChanged();
         loadFields(pagination.page);
       } else {
         setError(res.message || 'Thao tác thất bại');
@@ -271,6 +443,7 @@ const FieldManager = () => {
       const res = await fieldDefinitionService.delete(id, token);
       if (res.success) {
         setToast({ message: 'Xóa field thành công', type: 'success' });
+        clearFieldOptionsCache();
         loadFields(pagination.page);
       } else {
         setError(res.message || 'Xóa thất bại');
@@ -286,7 +459,23 @@ const FieldManager = () => {
       const res = await fieldDefinitionService.updateStatus(id, newStatus, token);
       if (res.success) {
         setToast({ message: `Field đã chuyển sang ${newStatus}`, type: 'success' });
+        clearFieldOptionsCache();
         loadFields(pagination.page);
+      }
+    } catch {
+      setError('Lỗi kết nối server');
+    }
+  };
+
+  const handleToggleLock = async (field) => {
+    try {
+      const res = await fieldDefinitionService.setLock(field.id, !field.is_locked, token);
+      if (res.success) {
+        setToast({ message: field.is_locked ? 'Đã mở khóa field' : 'Đã khóa field', type: 'success' });
+        clearFieldOptionsCache();
+        loadFields(pagination.page);
+      } else {
+        setError(res.message || 'Thao tác thất bại');
       }
     } catch {
       setError('Lỗi kết nối server');
@@ -317,93 +506,163 @@ const FieldManager = () => {
       />
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
-            <h2>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
-            <form onSubmit={handleSubmit}>
+        <div className="modal-overlay">
+          <div
+            className="legacy-modal"
+            style={{ maxWidth: 780, width: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: 0, fontSize: 18 }}>{editingId ? 'Sửa field' : 'Thêm field mới'}</h2>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                aria-label="Đóng"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1, color: '#64748b' }}
+              >✕</button>
+            </div>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+              <div style={{ overflowY: 'auto', padding: '16px 20px' }}>
               {error && <ErrorMessage message={error} />}
+              {editingIsLocked && (
+                <div className="alert alert-warning mb-3 text-sm">
+                  🔒 Field đang bị khóa — chỉ có thể sửa <strong>Label</strong>. Mở khóa ở danh sách nếu cần sửa thêm.
+                </div>
+              )}
               <div className="field-form">
-                <div className="form-group">
-                  <label>Entity * {editingIsFixed && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
-                  <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)} disabled={editingIsFixed}>
-                    {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Key * {editingId && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
-                  <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" disabled={!!editingId} />
-                </div>
-                <div className="form-group">
-                  <label>Label *</label>
-                  <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" />
-                </div>
-                <div className="form-group">
-                  <label>Type {editingIsFixed && <span style={{ color: '#999', fontWeight: 'normal', fontSize: 12 }}>(không thể thay đổi)</span>}</label>
-                  <select value={form.type} onChange={(e) => updateForm('type', e.target.value)} disabled={editingIsFixed}>
-                    {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Placeholder</label>
-                  <input type="text" value={form.placeholder} onChange={(e) => updateForm('placeholder', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Help Text</label>
-                  <input type="text" value={form.help_text} onChange={(e) => updateForm('help_text', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>
-                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} style={{ marginRight: 6 }} />
-                    Bắt buộc
+                <div style={SECTION_STYLE}>
+                  <h4 style={SECTION_TITLE_STYLE}>Thông tin cơ bản</h4>
+                  <div style={GRID2_STYLE}>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Entity * {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
+                      <select value={form.entity} onChange={(e) => updateForm('entity', e.target.value)} disabled={editingIsFixed || editingIsLocked} style={INPUT_STYLE}>
+                        {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Key * {editingId && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
+                      <input type="text" value={form.key} onChange={(e) => updateForm('key', e.target.value)} placeholder="vi_du_field" disabled={!!editingId || editingIsLocked} style={INPUT_STYLE} />
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Label *</label>
+                      <input type="text" value={form.label} onChange={(e) => updateForm('label', e.target.value)} placeholder="Tên hiển thị" style={INPUT_STYLE} />
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Type {editingIsFixed && <span className="text-gray-400 font-normal text-xs">(không thể thay đổi)</span>}</label>
+                      <select value={form.type} onChange={(e) => updateForm('type', e.target.value)} disabled={editingIsFixed || editingIsLocked} style={INPUT_STYLE}>
+                        {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Placeholder</label>
+                      <input type="text" value={form.placeholder} onChange={(e) => updateForm('placeholder', e.target.value)} disabled={editingIsLocked} style={INPUT_STYLE} />
+                    </div>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Help Text</label>
+                      <input type="text" value={form.help_text} onChange={(e) => updateForm('help_text', e.target.value)} disabled={editingIsLocked} style={INPUT_STYLE} />
+                    </div>
+                  </div>
+                  <label style={{ ...LABEL_STYLE, marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                    <input type="checkbox" checked={form.required} onChange={(e) => updateForm('required', e.target.checked)} />
+                    Bắt buộc nhập
                   </label>
                 </div>
 
-                {(form.type === 'number') && (
-                  <div className="form-group-section">
-                    <h4>Cấu hình Number</h4>
-                    <div className="form-group">
-                      <label>Number Format</label>
-                      <select value={form.number_format} onChange={(e) => updateForm('number_format', e.target.value)}>
-                        <option value="integer">Integer (số nguyên)</option>
-                        <option value="float">Float (số thập phân)</option>
-                        <option value="currency">Currency (tiền tệ)</option>
-                      </select>
-                    </div>
-                    {form.number_format !== 'integer' && (
-                      <div className="form-group">
-                        <label>Decimal Places</label>
-                        <input type="number" min="0" max="10" value={form.decimal_places} onChange={(e) => updateForm('decimal_places', parseInt(e.target.value) || 0)} />
+                {!editingIsLocked && (form.type === 'number') && (
+                  <div style={SECTION_STYLE}>
+                    <h4 style={SECTION_TITLE_STYLE}>Cấu hình hiển thị số</h4>
+                    <div style={GRID2_STYLE}>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Kiểu số</label>
+                        <select value={form.number_format} onChange={(e) => updateForm('number_format', e.target.value)} style={INPUT_STYLE}>
+                          <option value="integer">Số nguyên</option>
+                          <option value="float">Số thập phân</option>
+                          <option value="currency">Tiền tệ</option>
+                        </select>
                       </div>
-                    )}
-                    <div className="form-group">
-                      <label>Hiển thị</label>
-                      <select value={form.display_format || 'plain'} onChange={(e) => updateForm('display_format', e.target.value)}>
-                        <option value="plain">1000</option>
-                        <option value="comma">1,000</option>
-                        <option value="dot">1.000</option>
-                        <option value="space">1 000</option>
-                      </select>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Số chữ số thập phân</label>
+                        <input type="number" min="0" max="10" value={form.decimal_places} onChange={(e) => updateForm('decimal_places', parseInt(e.target.value) || 0)} disabled={form.number_format === 'integer'} style={INPUT_STYLE} />
+                      </div>
                     </div>
-                    <div className="form-group">
-                      <label>Đơn vị (tùy chọn)</label>
-                      <input type="text" value={form.unit || ''} onChange={(e) => updateForm('unit', e.target.value)} placeholder="VND, %, kg..." />
+                    <div style={{ marginTop: 12 }}>
+                      <label style={LABEL_STYLE}>Kiểu hiển thị (dấu phân cách)</label>
+                      <NumberFormatPicker value={form.display_format} onChange={(v) => updateForm('display_format', v)} />
+                    </div>
+                    <div style={{ ...GRID2_STYLE, marginTop: 12 }}>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Đơn vị (tùy chọn)</label>
+                        <input type="text" value={form.unit || ''} onChange={(e) => updateForm('unit', e.target.value)} placeholder="VND, %, kg..." style={INPUT_STYLE} />
+                      </div>
+                      <div className="form-group" style={FIELD_GROUP_STYLE}>
+                        <label>Xem trước</label>
+                        <div style={{ padding: '12px', borderRadius: 5, border: '1px solid #ddd', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 15 }}>
+                          {formatNumber(1234567.89, { format: form.display_format || 'plain', decimalPlaces: form.number_format === 'integer' ? 0 : (form.decimal_places || 0), unit: form.unit })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {(form.type === 'date' || form.type === 'datetime') && (
-                  <div className="form-group-section">
-                    <h4>Cấu hình Date</h4>
-                    <div className="form-group">
-                      <label>Date Format</label>
-                      <select value={form.date_format} onChange={(e) => updateForm('date_format', e.target.value)}>
+                {!editingIsLocked && (form.type === 'date' || form.type === 'datetime') && (
+                  <div style={SECTION_STYLE}>
+                    <h4 style={SECTION_TITLE_STYLE}>Cấu hình hiển thị ngày</h4>
+                    <div className="form-group" style={FIELD_GROUP_STYLE}>
+                      <label>Định dạng ngày</label>
+                      <select value={form.date_format} onChange={(e) => updateForm('date_format', e.target.value)} style={INPUT_STYLE}>
                         {DATE_FORMAT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </div>
                   </div>
                 )}
 
-                {(form.type === 'select' || form.type === 'multiselect') && (
+                {!editingIsLocked && (form.type === 'user') && (
+                  <div className="form-group-section">
+                    <h4>Cấu hình Người dùng</h4>
+                    <div className="form-group">
+                      <label>Tự động lấy người</label>
+                      <select value={form.auto_user || 'none'} onChange={(e) => updateForm('auto_user', e.target.value)}>
+                        <option value="none">Không (chọn thủ công)</option>
+                        <option value="current_user">Người đăng nhập (người tạo)</option>
+                        <option value="parent_sales">Sales quản lý (người tạo cấp trên)</option>
+                        <option value="owner_or_manager">Người phụ trách (CTV → Sales quản lý, còn lại → người tạo)</option>
+                      </select>
+                    </div>
+                    {form.auto_user && form.auto_user !== 'none' && (
+                      <div style={{ fontSize: 12, color: '#6b7280' }}>
+                        Field sẽ tự điền và khóa (chỉ đọc) trên form, dùng để đẩy sang hệ ngoài.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {editingIsLocked && (form.type === 'select' || form.type === 'multiselect') && !form.data_list_id && (() => {
+                  const isMapStatus = form.key === 'status' && (form.entity === 'stations' || form.entity === 'station_proposals');
+                  if (!isMapStatus) return null;
+                  return (
+                    <div className="form-group-section">
+                      <h4>Options — Icon bản đồ</h4>
+                      <div className="options-editor">
+                        {form.options.map((opt, idx) => (
+                          <div key={idx} className="option-row">
+                            <input type="text" placeholder="Label" value={opt.label} disabled />
+                            <input type="text" placeholder="Value" value={opt.value} disabled />
+                            <div className="color-selected" style={{ backgroundColor: opt.color || '#666666', flex: '0 0 auto' }} title="Màu badge" />
+                            <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                            <select value={opt.icon_bg || 'flat'} onChange={(e) => updateOption(idx, 'icon_bg', e.target.value)} title="Nền icon trên bản đồ">
+                              <option value="flat">Phẳng</option>
+                              <option value="circle">Tròn trắng</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>
+                        Field đang khóa nên chỉ chọn được icon cho marker bản đồ. Muốn sửa label/value/màu hoặc đổi hẳn icon sang style khác, mở khóa (🔓) rồi sửa.
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {!editingIsLocked && (form.type === 'select' || form.type === 'multiselect') && (
                   <div className="form-group-section">
                     <h4>Nguồn dữ liệu</h4>
                     <div className="form-group">
@@ -429,7 +688,7 @@ const FieldManager = () => {
                               <option key={dl.id} value={dl.id}>{dl.name} ({dl.row_count || 0} rows)</option>
                             ))}
                           </select>
-                          <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                          <p className="text-xs text-gray-500 mt-1">
                             Quản lý data list tại <a href="/admin/data-lists" target="_blank" rel="noopener noreferrer">/admin/data-lists</a>
                           </p>
                         </div>
@@ -437,48 +696,34 @@ const FieldManager = () => {
                           const selectedDL = dataLists.find(dl => dl.id === form.data_list_id);
                           const cols = selectedDL?.columns_config || [];
                           return cols.length > 0 ? (
-                            <div className="form-group">
-                              <label>Column (cột dữ liệu cho field này)</label>
-                              <select value={form.data_list_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_column: e.target.value }))}>
-                                <option value="">-- Chọn column --</option>
-                                {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
-                              </select>
-                            </div>
-                          ) : null;
-                        })()}
-                        {form.data_list_id && (() => {
-                          const selectFields = entityFields.filter(f => 
-                            f.type === 'select' && f.key !== form.key && f.id !== editingId
-                            && !f.parent_field && f.data_list_id
-                          );
-                          return selectFields.length > 0 ? (
                             <>
+                              <div className="form-group">
+                                <label>Column (cột dữ liệu cho field này)</label>
+                                <select value={form.data_list_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_column: e.target.value }))}>
+                                  <option value="">-- Chọn column --</option>
+                                  {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
+                                </select>
+                              </div>
+                              <div className="form-group">
+                                <label>Cột hiển thị (label)</label>
+                                <select value={form.data_list_label_column || ''} onChange={(e) => setForm(prev => ({ ...prev, data_list_label_column: e.target.value }))}>
+                                  <option value="">-- Mặc định (hiện giá trị) --</option>
+                                  {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Form/table sẽ hiện giá trị cột này thay vì mã lưu trong DB
+                                </p>
+                              </div>
                               <div className="form-group">
                                 <label>Field cha (parent_field)</label>
                                 <select value={form.parent_field || ''} onChange={(e) => setForm(prev => ({ ...prev, parent_field: e.target.value, relation_key: '' }))}>
                                   <option value="">-- Không có parent --</option>
-                                  {selectFields.map(f => <option key={f.id} value={f.key}>{f.label} ({f.key})</option>)}
+                                  {cols.filter(c => c.key !== form.data_list_column).map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
                                 </select>
-                                <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                                <p className="text-xs text-gray-500 mt-1">
                                   Field hiện tại sẽ phụ thuộc vào field cha
                                 </p>
                               </div>
-                              {form.parent_field && (() => {
-                                const selectedDL = dataLists.find(dl => dl.id === form.data_list_id);
-                                const cols = selectedDL?.columns_config || [];
-                                return cols.length > 0 ? (
-                                  <div className="form-group">
-                                    <label>Link key (column chứa FK về parent)</label>
-                                    <select value={form.relation_key || ''} onChange={(e) => setForm(prev => ({ ...prev, relation_key: e.target.value }))}>
-                                      <option value="">-- Chọn column --</option>
-                                      {cols.map(c => <option key={c.key} value={c.key}>{c.label} ({c.key})</option>)}
-                                    </select>
-                                    <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
-                                      Column trong data list chứa giá trị link về parent field
-                                    </p>
-                                  </div>
-                                ) : null;
-                              })()}
                             </>
                           ) : null;
                         })()}
@@ -488,7 +733,19 @@ const FieldManager = () => {
                         <h4>Options</h4>
                         <div className="options-editor">
                           {form.options.map((opt, idx) => (
-                            <div key={idx} className="option-row">
+                            <div
+                              key={idx}
+                              className="option-row"
+                              draggable
+                              onDragStart={() => setDragOptionIdx(idx)}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={() => dropOption(idx)}
+                              style={dragOptionIdx === idx ? { opacity: 0.4 } : undefined}
+                              title="Kéo để đổi thứ tự"
+                            >
+                              <span style={{ cursor: 'grab', color: '#9ca3af', fontSize: 12 }} title="Kéo để đổi thứ tự">⠿</span>
+                              <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '0 4px' }} disabled={idx === 0} onClick={() => moveOption(idx, -1)} title="Lên">▲</button>
+                              <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '0 4px' }} disabled={idx === form.options.length - 1} onClick={() => moveOption(idx, 1)} title="Xuống">▼</button>
                               <input type="text" placeholder="Label" value={opt.label} onChange={(e) => updateOption(idx, 'label', e.target.value)} />
                               <input type="text" placeholder="Value" value={opt.value} onChange={(e) => updateOption(idx, 'value', e.target.value)} />
                               <select value={opt.optionType || 'text'} onChange={(e) => updateOption(idx, 'optionType', e.target.value)} title="Loại dữ liệu">
@@ -517,6 +774,15 @@ const FieldManager = () => {
                                   ))}
                                 </div>
                               </div>
+                              {(form.key === 'status' && (form.entity === 'stations' || form.entity === 'station_proposals')) && (
+                                <>
+                                  <OptionIconPicker value={opt.icon} onChange={(v) => updateOption(idx, 'icon', v)} />
+                                  <select value={opt.icon_bg || 'flat'} onChange={(e) => updateOption(idx, 'icon_bg', e.target.value)} title="Nền icon trên bản đồ">
+                                    <option value="flat">Phẳng</option>
+                                    <option value="circle">Tròn trắng</option>
+                                  </select>
+                                </>
+                              )}
                               <select value={opt.borderRadius || 'rounded'} onChange={(e) => updateOption(idx, 'borderRadius', e.target.value)}>
                                 {BORDER_RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                               </select>
@@ -567,20 +833,20 @@ const FieldManager = () => {
                   </div>
                 )}
 
-                {(form.type === 'file') && (
+                {!editingIsLocked && (form.type === 'file') && (
                   <div className="form-group-section">
                     <h4>Cấu hình File</h4>
                     <div className="form-row">
                       <label>
-                        <input type="checkbox" checked={form.file_config.images} onChange={(e) => updateFileConfig('images', e.target.checked)} style={{ marginRight: 4 }} />
+                        <input type="checkbox" checked={form.file_config.images} onChange={(e) => updateFileConfig('images', e.target.checked)} className="mr-1" />
                         Images
                       </label>
                       <label>
-                        <input type="checkbox" checked={form.file_config.videos} onChange={(e) => updateFileConfig('videos', e.target.checked)} style={{ marginRight: 4 }} />
+                        <input type="checkbox" checked={form.file_config.videos} onChange={(e) => updateFileConfig('videos', e.target.checked)} className="mr-1" />
                         Videos
                       </label>
                       <label>
-                        <input type="checkbox" checked={form.file_config.documents} onChange={(e) => updateFileConfig('documents', e.target.checked)} style={{ marginRight: 4 }} />
+                        <input type="checkbox" checked={form.file_config.documents} onChange={(e) => updateFileConfig('documents', e.target.checked)} className="mr-1" />
                         Documents
                       </label>
                     </div>
@@ -591,7 +857,7 @@ const FieldManager = () => {
                       </div>
                       <div className="form-group">
                         <label>
-                          <input type="checkbox" checked={form.file_config.multiple} onChange={(e) => updateFileConfig('multiple', e.target.checked)} style={{ marginRight: 4 }} />
+                          <input type="checkbox" checked={form.file_config.multiple} onChange={(e) => updateFileConfig('multiple', e.target.checked)} className="mr-1" />
                           Multiple files
                         </label>
                       </div>
@@ -599,18 +865,448 @@ const FieldManager = () => {
                   </div>
                 )}
 
-                {(form.type === 'formula') && (
+                {!editingIsLocked && (form.type === 'formula') && (
                   <div className="form-group-section">
                     <h4>Cấu hình Formula</h4>
                     <FormulaEditor
                       value={form.formula_config}
-                      onChange={(cfg) => updateForm('formula_config', cfg)}
+                      onChange={handleFormulaChange}
                       allFields={entityFields}
                     />
                   </div>
                 )}
+
+                {!editingIsLocked && (form.type === 'table') && (
+                  <div className="form-group-section" style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginTop: 12 }}>
+                    <h4 style={{ marginTop: 0, marginBottom: 12 }}>Cấu hình Bảng (Table)</h4>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Số dòng tối thiểu</label>
+                        <input type="number" min="0" value={form.table_config.min_rows ?? 0}
+                          onChange={(e) => updateForm('table_config', { ...form.table_config, min_rows: parseInt(e.target.value) || 0 })} />
+                      </div>
+                      <div className="form-group">
+                        <label>Số dòng tối đa</label>
+                        <input type="number" min="1" value={form.table_config.max_rows ?? 10}
+                          onChange={(e) => updateForm('table_config', { ...form.table_config, max_rows: parseInt(e.target.value) || 10 })} />
+                      </div>
+                    </div>
+                    <h4 style={{ marginTop: 12, marginBottom: 8 }}>Cấu hình cột</h4>
+                    {(form.table_config.columns || []).map((col, idx) => {
+                      const expanded = !!expandedTblCols[idx];
+                      const tblCols = form.table_config.columns || [];
+                      const badges = [];
+                      if (col.column_type === 'select') {
+                        const baseFld = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                        const effSrc = getColumnSource(col, baseFld);
+                        if (effSrc === 'datalist') badges.push(['DL', '#e0e7ff', '#3730a3']);
+                        else if (effSrc === 'inherit') badges.push(['Kế thừa', '#e0f2fe', '#075985']);
+                      }
+                      if (!col.data_list_id && (col.data_list_column || col.parent_column)) badges.push(['DL ẩn', '#fef3c7', '#92400e']);
+                      if (col.parent_column) badges.push(['Cascade', '#dcfce7', '#166534']);
+                      if (col.data_link && col.data_link.enabled) badges.push(['DL-Link', '#e0f2fe', '#075985']);
+                      else if (col.autofill_from) badges.push(['Auto', '#ffedd5', '#9a3412']);
+                      if (col.formula) badges.push(['Fx', '#f3e8ff', '#6b21a8']);
+                      if (col.footer_formula) badges.push([`Footer: ${col.footer_label || col.footer_formula}`, '#f1f5f9', '#334155']);
+                      return (
+                      <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 8, marginBottom: 8, background: '#fafbfc' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
+                          <button type="button" className="btn btn-sm btn-ghost" style={{ minWidth: 28, padding: '0 6px' }} onClick={() => setExpandedTblCols(prev => ({ ...prev, [idx]: !prev[idx] }))} title={expanded ? 'Thu gọn' : 'Mở rộng'}>
+                            {expanded ? '▾' : '▸'}
+                          </button>
+                          <span style={{ fontSize: 12, fontWeight: 600, minWidth: 30 }}>#{idx + 1}</span>
+                          <select value={col.field_id || ''} onChange={(e) => {
+                            const refField = entityFields.find(f => f.id === parseInt(e.target.value));
+                            const newCols = [...(form.table_config.columns || [])];
+                            newCols[idx] = {
+                              ...newCols[idx],
+                              field_id: parseInt(e.target.value) || null,
+                              key: refField ? refField.key : (newCols[idx].key || ''),
+                              label: refField ? refField.label : (newCols[idx].label || ''),
+                              column_type: refField ? refField.type : (newCols[idx].column_type || 'text')
+                            };
+                            updateForm('table_config', { ...form.table_config, columns: newCols });
+                          }} style={{ flex: 2, minWidth: 150 }}>
+                            <option value="">-- Tạo thủ công --</option>
+                            {entityFields.filter(f => f.type !== 'table' && f.type !== 'formula' && f.type !== 'password').map(f => (
+                              <option key={f.id} value={f.id}>{f.label} ({f.key})</option>
+                            ))}
+                          </select>
+                          {!col.field_id && (
+                            <select value={col.column_type || 'text'} onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], column_type: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ width: 110 }}>
+                              <option value="text">Text</option>
+                              <option value="number">Number</option>
+                              <option value="date">Date</option>
+                              <option value="datetime">DateTime</option>
+                              <option value="boolean">Boolean</option>
+                              <option value="select">Select</option>
+                            </select>
+                          )}
+                          <button type="button" className="btn btn-sm btn-delete" onClick={() => {
+                            const newCols = (form.table_config.columns || []).filter((_, i) => i !== idx);
+                            updateForm('table_config', { ...form.table_config, columns: newCols });
+                          }} title="Xóa cột">✕</button>
+                          <span style={{ fontSize: 12, fontWeight: 600 }}>{col.label || col.key || '(chưa đặt tên)'}</span>
+                          {badges.map(([t, bg, fg], i) => (
+                            <span key={i} style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: bg, color: fg }}>{t}</span>
+                          ))}
+                        </div>
+                        {expanded && (
+                        <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                          <input type="text" className="form-control" placeholder="Key (VD: so_luong)" value={col.key || ''}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], key: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '6px 8px' }} disabled={!!col.field_id} />
+                          <input type="text" className="form-control" placeholder="Label hiển thị" value={col.label || ''}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], label: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '6px 8px' }} />
+                          <input type="number" className="form-control" min="60" placeholder="Width" value={col.width || 120}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], width: parseInt(e.target.value) || 120 };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }} style={{ width: 70, fontSize: 12, padding: '6px 8px' }} />
+                          <label style={{ fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <input type="checkbox" checked={!!col.required}
+                              onChange={(e) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], required: e.target.checked };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }} />
+                            Bắt buộc
+                          </label>
+                        </div>
+                        {((!col.field_id && col.column_type === 'number') || (col.field_id && entityFields.find(f => f.id === parseInt(col.field_id))?.type === 'number')) && (
+                          <div style={{ marginTop: 8 }}>
+                            <label style={LABEL_STYLE}>Kiểu hiển thị số</label>
+                            <NumberFormatPicker
+                              value={col.display_format}
+                              onChange={(v) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], display_format: v };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }}
+                            />
+                          </div>
+                        )}
+                        {(col.column_type === 'select') && (() => {
+                          const baseFld = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                          const src = getColumnSource(col, baseFld);
+                          const setSource = (next) => {
+                            const newCols = [...(form.table_config.columns || [])];
+                            const cur = { ...newCols[idx] };
+                            const linkObj = (cur.data_link && typeof cur.data_link === 'object') ? { ...cur.data_link } : null;
+                            if (next === 'manual') {
+                              delete cur.data_list_id; delete cur.data_list_column; delete cur.data_list_label_column; delete cur.parent_column;
+                              cur.options_source = 'manual';
+                              if (linkObj) cur.data_link = { ...linkObj, enabled: false };
+                            } else if (next === 'datalist') {
+                              cur.options_source = 'datalist';
+                              if (!cur.data_list_id && dataLists.length > 0) {
+                                cur.data_list_id = dataLists[0].id;
+                                const cfg = Array.isArray(dataLists[0].columns_config) ? dataLists[0].columns_config : [];
+                                if (cfg.length > 0 && !cur.data_list_column) {
+                                  cur.data_list_column = cfg[0].key;
+                                  cur.data_list_label_column = cfg[0].key;
+                                }
+                              }
+                              cur.data_link = {
+                                ...(linkObj || {}),
+                                enabled: true,
+                                datalist_id: cur.data_list_id || (linkObj && linkObj.datalist_id) || null,
+                                default_column: cur.data_list_column || (linkObj && linkObj.default_column) || null
+                              };
+                            } else if (next === 'inherit') {
+                              delete cur.data_list_id; delete cur.data_list_column; delete cur.data_list_label_column;
+                              cur.options_source = 'inherit';
+                            }
+                            newCols[idx] = cur;
+                            updateForm('table_config', { ...form.table_config, columns: newCols });
+                          };
+                          const selDl = dataLists.find(dl => dl.id === Number(col.data_list_id));
+                          const baseDl = baseFld && baseFld.data_list_id ? dataLists.find(dl => dl.id === Number(baseFld.data_list_id)) : null;
+                          return (
+                          <div style={{ marginTop: 4, fontSize: 12 }}>
+                            <label>Nguồn options
+                              <select value={src} onChange={(e) => setSource(e.target.value)} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                <option value="manual">Thủ công (nhập tay)</option>
+                                <option value="datalist">Từ DataList</option>
+                                {col.field_id
+                                  ? <option value="inherit">Theo field liên kết</option>
+                                  : <option value="inherit" disabled>Theo field liên kết (cần gắn field ở trên)</option>}
+                              </select>
+                            </label>
+                            {src === 'manual' && (
+                              <>
+                                <label style={{ marginTop: 4 }}>Options (cách nhau bởi dấu phẩy):</label>
+                                <input type="text" className="form-control" placeholder="Option A, Option B, Option C" value={(col.options || []).join(', ')}
+                                  onChange={(e) => {
+                                    const opts = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                                    const newCols = [...(form.table_config.columns || [])];
+                                    newCols[idx] = { ...newCols[idx], options: opts };
+                                    updateForm('table_config', { ...form.table_config, columns: newCols });
+                                  }} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }} />
+                              </>
+                            )}
+                            {src === 'datalist' && (
+                              <div style={{ marginTop: 4, fontSize: 11, color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '6px 8px' }}>
+                                {selDl
+                                  ? <>Danh mục: <b>{selDl.name}</b>{col.data_list_column ? <> · Cột giá trị: <b>{col.data_list_column}</b></> : null}. Chỉnh ở mục <b>Liên kết dữ liệu</b> bên dưới.</>
+                                  : <>Chọn <b>Danh mục dữ liệu</b> và <b>Cột mặc định (Cột giá trị)</b> ở mục <b>Liên kết dữ liệu</b> bên dưới.</>}
+                              </div>
+                            )}
+                            {src === 'inherit' && (
+                              <div style={{ marginTop: 4, fontSize: 11, color: baseDl ? '#075985' : '#92400e' }}>
+                                {baseDl
+                                  ? `Đang kế thừa options từ field "${baseFld.label || baseFld.key}" → DataList "${baseDl.name}".`
+                                  : `Field "${(baseFld && (baseFld.label || baseFld.key)) || ''}" gốc nhập tay — cột này cũng nhập tay.`}
+                              </div>
+                            )}
+                          </div>
+                          );
+                        })()}
+                        <div style={{ marginTop: 4, fontSize: 12 }}>
+                          <label style={{ fontWeight: 500 }}>Formula (tự tính — để trống nếu nhập tay):</label>
+                          <input type="text" className="form-control" placeholder={`VD: ${col.key || 'col_a'} * ${col.key || 'col_b'}`}
+                            value={col.formula || ''}
+                            onChange={(e) => {
+                              const newCols = [...(form.table_config.columns || [])];
+                              newCols[idx] = { ...newCols[idx], formula: e.target.value };
+                              updateForm('table_config', { ...form.table_config, columns: newCols });
+                            }}
+                            style={{ width: '100%', fontSize: 12, padding: '6px 8px', fontFamily: 'monospace', background: col.formula ? '#fffbeb' : undefined }}
+                            disabled={!!col.field_id} />
+                          {col.formula && (
+                            <span style={{ color: '#d97706', fontSize: 11 }}><Zap size={11} style={{ verticalAlign: 'middle' }} /> Tự tính, ô nhập bị khóa</span>
+                          )}
+                          {!col.formula && (
+                            <span style={{ color: '#888', fontSize: 11 }}>Dùng tên cột khác trong cùng dòng. VD: so_luong * don_gia</span>
+                          )}
+                        </div>
+                        {((!col.field_id && col.column_type === 'number') || (col.field_id && entityFields.find(f => f.id === parseInt(col.field_id))?.type === 'number')) && (
+                          <div style={{ marginTop: 4, fontSize: 12 }}>
+                            <label style={{ fontWeight: 500 }}>Footer (công thức):</label>
+                            <TableFooterFormulaInput
+                              value={col.footer_formula || ''}
+                              currentColKey={col.key}
+                              columns={form.table_config.columns || []}
+                              onChange={(v) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], footer_formula: v || null };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }} />
+                            <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{FOOTER_FUNCTION_HELP}</div>
+                            <input type="text" className="form-control" placeholder="Tên footer (VD: Tổng giá khuyến mãi)"
+                              value={col.footer_label || ''}
+                              onChange={(e) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                newCols[idx] = { ...newCols[idx], footer_label: e.target.value };
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              }}
+                              style={{ width: '100%', fontSize: 12, padding: '6px 8px', marginTop: 4 }} />
+                          </div>
+                        )}
+                        {(() => {
+                          const lb0 = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                          if (col.column_type === 'select' && getColumnSource(col, lb0) !== 'datalist') return null;
+                          return (
+                        <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e2e8f0' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Liên kết dữ liệu</div>
+                          <div style={GRID2_STYLE}>
+                            {(form.table_config.columns || []).length > 1 && !col.formula && (() => {
+                              const link = col.data_link && typeof col.data_link === 'object' ? col.data_link : null;
+                              const enabled = !!(link && link.enabled);
+                              const linkBase = col.field_id ? entityFields.find(f => f.id === parseInt(col.field_id)) : null;
+                              const linkSrc = getColumnSource(col, linkBase);
+                              const isSelectCol = col.column_type === 'select';
+                              const forceEnabled = isSelectCol && linkSrc === 'datalist';
+                              const setLink = (patch) => {
+                                const newCols = [...(form.table_config.columns || [])];
+                                const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
+                                const next = { ...newCols[idx], data_link: { ...prev, ...(forceEnabled ? { enabled: true } : {}), ...patch } };
+                                if (isSelectCol) {
+                                  if (Object.prototype.hasOwnProperty.call(patch, 'datalist_id')) next.data_list_id = patch.datalist_id || null;
+                                  if (Object.prototype.hasOwnProperty.call(patch, 'default_column')) next.data_list_column = patch.default_column || null;
+                                  next.data_list_label_column = next.data_list_column || next.data_list_label_column || null;
+                                }
+                                newCols[idx] = next;
+                                updateForm('table_config', { ...form.table_config, columns: newCols });
+                              };
+                              const dlCols = (() => {
+                                const dlId = (link && link.datalist_id) || (isSelectCol ? col.data_list_id : null);
+                                const dl = dataLists.find(d => d.id === Number(dlId));
+                                const cfg = dl && dl.columns_config ? dl.columns_config : [];
+                                return Array.isArray(cfg) ? cfg : [];
+                              })();
+                              const changeDatalist = (raw) => {
+                                const dlId = raw ? parseInt(raw) : null;
+                                const dl = dataLists.find(d => d.id === Number(dlId));
+                                const cfg = dl && Array.isArray(dl.columns_config) ? dl.columns_config : [];
+                                const patch = { datalist_id: dlId };
+                                if (isSelectCol) {
+                                  const cur = col.data_list_column;
+                                  patch.default_column = cfg.some(c => c.key === cur) ? cur : (cfg[0] ? cfg[0].key : null);
+                                }
+                                setLink(patch);
+                              };
+                              const siblings = (form.table_config.columns || []).filter((_, i) => i !== idx);
+                              const conds = Array.isArray(link && link.conditions) ? link.conditions : [];
+                              const setConds = (next) => setLink({ conditions: next });
+                              const moveCond = (ci, dir) => {
+                                const next = [...conds];
+                                const j = ci + dir;
+                                if (j < 0 || j >= next.length) return;
+                                [next[ci], next[j]] = [next[j], next[ci]];
+                                setConds(next);
+                              };
+                              const legacy = !link && col.autofill_from ? { from: col.autofill_from, col: col.autofill_column || null } : null;
+                              return (
+                                <div className="form-group" style={{ ...FIELD_GROUP_STYLE, gridColumn: '1 / -1' }}>
+                                {!isSelectCol && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#1e293b', padding: '10px 12px', borderRadius: 8, border: enabled ? '1.5px solid #2563eb' : '1px solid #e2e8f0', background: enabled ? '#eff6ff' : '#f8fafc' }}>
+                                  <input type="checkbox" checked={enabled} style={{ width: 20, height: 20, accentColor: '#2563eb', cursor: 'pointer', flexShrink: 0 }} onChange={(e) => {
+                                      const newCols = [...(form.table_config.columns || [])];
+                                      if (e.target.checked) {
+                                        const prev = (newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {};
+                                        newCols[idx] = { ...newCols[idx], data_link: { enabled: true, datalist_id: prev.datalist_id || null, trigger_column: prev.trigger_column || null, default_column: prev.default_column || null, conditions: Array.isArray(prev.conditions) ? prev.conditions : [] } };
+                                      } else {
+                                        newCols[idx] = { ...newCols[idx], data_link: { ...((newCols[idx].data_link && typeof newCols[idx].data_link === 'object') ? newCols[idx].data_link : {}), enabled: false } };
+                                      }
+                                      updateForm('table_config', { ...form.table_config, columns: newCols });
+                                    }} />
+                                    <span>Lấy dữ liệu từ DataList</span>
+                                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 999, background: enabled ? '#2563eb' : '#cbd5e1', color: '#fff', whiteSpace: 'nowrap' }}>{enabled ? 'Đang bật' : 'Đang tắt'}</span>
+                                </label>
+                                )}
+                                  {legacy && (
+                                    <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>
+                                      Đang dùng cấu hình cũ (từ cột {legacy.from}{legacy.col ? `, lấy cột ${legacy.col}` : ''}).
+                                      <button type="button" className="btn btn-xs btn-secondary" style={{ marginLeft: 6 }} onClick={() => {
+                                        const newCols = [...(form.table_config.columns || [])];
+                                        const src = siblings.find(c => c.key === col.autofill_from);
+                                        newCols[idx] = { ...newCols[idx], data_link: { enabled: true, datalist_id: (src && src.data_list_id) || null, trigger_column: col.autofill_from, default_column: col.autofill_column || null, conditions: [] } };
+                                        updateForm('table_config', { ...form.table_config, columns: newCols });
+                                      }}>Chuyển sang model mới</button>
+                                    </div>
+                                  )}
+                                  {(enabled || forceEnabled) && (
+                                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        <label style={{ flex: 1, minWidth: 140 }}>Danh mục dữ liệu
+                                          <select value={(link && link.datalist_id) || (isSelectCol ? col.data_list_id : '') || ''} onChange={(e) => changeDatalist(e.target.value)} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                            <option value="">-- Chọn --</option>
+                                            {dataLists.map(dl => <option key={dl.id} value={dl.id}>{dl.name}</option>)}
+                                          </select>
+                                        </label>
+                                        <label style={{ flex: 1, minWidth: 140 }}>Tự động điền khi cột có giá trị (tùy chọn)
+                                          <select value={(link && link.trigger_column) || ''} onChange={(e) => setLink({ trigger_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                            <option value="">-- Không tự động điền --</option>
+                                            {siblings.map(c => <option key={c.key} value={c.key}>{c.label || c.key}</option>)}
+                                          </select>
+                                        </label>
+                                      </div>
+                                      <span style={{ fontSize: 11, color: '#888' }}>Để trống nếu muốn người dùng tự chọn/nhập giá trị trong ô này.</span>
+                                      <div>
+                                        <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Điều kiện (dòng đầu khớp thắng)</div>
+                                        {!(link && link.trigger_column) && conds.length > 0 && (
+                                          <div style={{ fontSize: 11, color: '#b45309', marginBottom: 4 }}>Chưa chọn cột kích hoạt — các điều kiện này sẽ bị bỏ qua.</div>
+                                        )}
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                          <thead>
+                                            <tr>
+                                              <th style={{ ...TABLE_HEADER_STYLE_FM, width: 34 }}>STT</th>
+                                              <th style={TABLE_HEADER_STYLE_FM}>Cột A (field form)</th>
+                                              <th style={{ ...TABLE_HEADER_STYLE_FM, width: 110 }}>Toán tử</th>
+                                              <th style={TABLE_HEADER_STYLE_FM}>Giá trị</th>
+                                              <th style={TABLE_HEADER_STYLE_FM}>Cột B (datalist)</th>
+                                              <th style={{ ...TABLE_HEADER_STYLE_FM, width: 76 }}></th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {conds.length === 0 && (
+                                              <tr><td colSpan={6} style={{ ...TABLE_CELL_STYLE_FM, textAlign: 'center', color: '#999' }}>Chưa có điều kiện — dùng Cột mặc định bên dưới.</td></tr>
+                                            )}
+                                            {conds.map((cd, ci) => (
+                                              <tr key={ci}>
+                                                <td style={TABLE_CELL_STYLE_FM}>{ci + 1}</td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <select value={cd.field || ''} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], field: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                                    <option value="">-- Chọn --</option>
+                                                    {entityFields.filter(f => f.status !== 'inactive').map(f => <option key={f.key} value={f.key}>{f.label || f.key} ({f.key})</option>)}
+                                                  </select>
+                                                </td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <select value={cd.op || '='} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], op: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                                    {LINK_OPS_FM.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                  </select>
+                                                </td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <input type="text" placeholder="Giá trị" value={cd.value || ''} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], value: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }} />
+                                                </td>
+                                                <td style={TABLE_CELL_STYLE_FM}>
+                                                  <select value={cd.column || ''} onChange={(e) => { const next = [...conds]; next[ci] = { ...next[ci], column: e.target.value }; setConds(next); }} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                                    <option value="">-- Chọn --</option>
+                                                    {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                                  </select>
+                                                </td>
+                                                <td style={{ ...TABLE_CELL_STYLE_FM, whiteSpace: 'nowrap' }}>
+                                                  <button type="button" className="btn btn-xs btn-ghost" disabled={ci === 0} onClick={() => moveCond(ci, -1)} title="Lên">▲</button>
+                                                  <button type="button" className="btn btn-xs btn-ghost" disabled={ci === conds.length - 1} onClick={() => moveCond(ci, 1)} title="Xuống">▼</button>
+                                                  <button type="button" className="btn btn-xs btn-delete" onClick={() => setConds(conds.filter((_, i) => i !== ci))} title="Xóa">✕</button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                        <button type="button" className="btn btn-xs btn-secondary mt-1" onClick={() => setConds([...conds, { field: '', op: '=', value: '', column: '' }])}>+ Thêm dòng</button>
+                                      </div>
+                                      <label>{isSelectCol ? 'Cột mặc định (Cột giá trị của ô select)' : 'Cột mặc định (lấy khi không khớp điều kiện nào)'}
+                                        <select value={(link && link.default_column) || (isSelectCol ? col.data_list_column : '') || ''} onChange={(e) => setLink({ default_column: e.target.value || null })} style={{ ...INPUT_STYLE, width: '100%' }}>
+                                          <option value="">-- Chọn --</option>
+                                          {dlCols.map(c => <option key={c.key} value={c.key}>{c.label || c.key} ({c.key})</option>)}
+                                        </select>
+                                      </label>
+                                       <span style={{ fontSize: 11, color: '#888' }}>Ô trong table thành select khi có nhiều giá trị; 1 giá trị → tự điền gợi ý (vẫn sửa tay được).</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                          );
+                        })()}
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                          {col.field_id
+                            ? `Tham chiếu field #${col.field_id}`
+                            : `Tạo thủ công — type: ${col.column_type || 'text'}, key: ${col.key || '(chưa có)'}`
+                          }
+                        </div>
+                        </>
+                        )}
+                      </div>
+                      );
+                    })}
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => {
+                      const newCols = [...(form.table_config.columns || []), { field_id: null, key: '', label: '', column_type: 'text', width: 120, required: false, options: [] }];
+                      updateForm('table_config', { ...form.table_config, columns: newCols });
+                      setExpandedTblCols(prev => ({ ...prev, [newCols.length - 1]: true }));
+                    }}>+ Thêm cột</button>
+                  </div>
+                )}
               </div>
-              <div className="form-actions">
+              </div>
+              <div className="form-actions" style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', margin: 0 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary">{editingId ? 'Cập nhật' : 'Tạo mới'}</button>
               </div>
@@ -620,11 +1316,23 @@ const FieldManager = () => {
       )}
 
       <div className="filter-bar">
-        <select value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}>
+        <input
+          type="text"
+          className="input input-bordered input-sm"
+          placeholder="Tìm theo Label hoặc Key..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && loadFields(1)}
+        />
+        <select className="select select-bordered select-sm" value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}>
           <option value="">Tất cả entity</option>
           {ENTITIES.map(en => <option key={en} value={en}>{en}</option>)}
         </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+        <select className="select select-bordered select-sm" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+          <option value="">Tất cả type</option>
+          {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select className="select select-bordered select-sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -655,19 +1363,23 @@ const FieldManager = () => {
                 <td>
                   <code>{f.key}</code>
                   {f.source_type === 'fixed' && <span className="badge badge-fixed" title="Field cố định">🔒</span>}
+                  {!!f.is_locked && <span className="badge badge-fixed" title="Field đang khóa">🔐</span>}
                 </td>
                 <td>{f.label}</td>
                 <td><span className="field-type-badge">{f.type}</span></td>
                 <td>{f.required ? '✓' : ''}</td>
                 <td>
-                  <span className={`badge badge-${f.status === 'active' ? 'active' : 'inactive'}`} style={{ cursor: 'pointer' }} onClick={() => handleToggleStatus(f.id, f.status)}>
+                  <span className={`badge badge-${f.status === 'active' ? 'active' : 'inactive'} cursor-pointer`} onClick={() => handleToggleStatus(f.id, f.status)}>
                     {f.status}
                   </span>
                 </td>
                 <td>
                   <div className="action-buttons">
                     <button className="btn btn-sm btn-edit" onClick={() => openEdit(f)}>Sửa</button>
-                    {f.source_type !== 'fixed' && (
+                    <button className="btn btn-sm" onClick={() => handleToggleLock(f)} title={f.is_locked ? 'Mở khóa field' : 'Khóa field'}>
+                      {f.is_locked ? 'Mở khóa' : 'Khóa'}
+                    </button>
+                    {f.source_type !== 'fixed' && !f.is_locked && (
                       <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(f.id, f.label)}>Xóa</button>
                     )}
                   </div>
@@ -683,6 +1395,8 @@ const FieldManager = () => {
         totalPages={pagination.pagination?.totalPages || pagination.totalPages}
         total={pagination.pagination?.total || pagination.total}
         onPageChange={loadFields}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
       />
     </div>
   );

@@ -1,9 +1,10 @@
 const formService = require('../services/formService');
+const formSyncService = require('../services/formSyncService');
 
 exports.getAll = async (req, res) => {
   try {
-    const { entity, status, page = 1, limit = 50 } = req.query;
-    const result = await formService.getAllForms(entity, status, parseInt(page), parseInt(limit));
+    const { entity, status, purpose, page = 1, limit = 50 } = req.query;
+    const result = await formService.getAllForms(entity, status, purpose, parseInt(page), parseInt(limit));
     res.json({ success: true, data: result.forms, pagination: result.pagination });
   } catch (error) {
     console.error('Get forms error:', error);
@@ -26,7 +27,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const { entity, name, description, status, layout_config } = req.body;
+    const { entity, name, description, status, layout_config, purpose, is_default } = req.body;
 
     if (!entity || !entity.trim()) {
       return res.status(400).json({ success: false, message: 'Entity không được để trống' });
@@ -35,7 +36,7 @@ exports.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name không được để trống' });
     }
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }
@@ -45,7 +46,9 @@ exports.create = async (req, res) => {
       name: name.trim(),
       description,
       status,
-      layout_config
+      layout_config,
+      purpose,
+      is_default
     });
 
     res.status(201).json({ success: true, data: form, message: 'Tạo form thành công' });
@@ -58,7 +61,7 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { entity, name, description, status, layout_config } = req.body;
+    const { entity, name, description, status, layout_config, purpose, is_default } = req.body;
 
     const existing = await formService.getFormById(id);
     if (!existing) {
@@ -72,7 +75,7 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name không được để trống' });
     }
 
-    const allowedEntities = ['stations', 'station_proposals', 'users'];
+    const allowedEntities = ['stations', 'station_proposals', 'users', 'leads'];
     if (!allowedEntities.includes(entity)) {
       return res.status(400).json({ success: false, message: `Entity phải là một trong: ${allowedEntities.join(', ')}` });
     }
@@ -82,7 +85,9 @@ exports.update = async (req, res) => {
       name: name.trim(),
       description,
       status,
-      layout_config
+      layout_config,
+      purpose,
+      is_default
     });
 
     res.json({ success: true, data: form, message: 'Cập nhật form thành công' });
@@ -104,7 +109,68 @@ exports.delete = async (req, res) => {
     await formService.deleteForm(id);
     res.json({ success: true, message: 'Xóa form thành công (form_fields tự xóa theo CASCADE)' });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Delete form error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getByEntityAndPurpose = async (req, res) => {
+  try {
+    const { entity, purpose } = req.query;
+    if (!entity || !purpose) {
+      return res.status(400).json({ success: false, message: 'entity và purpose là bắt buộc' });
+    }
+    const form = await formService.getFormByEntityAndPurpose(entity, purpose);
+    if (!form) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy form' });
+    }
+    res.json({ success: true, data: form });
+  } catch (error) {
+    console.error('Get form by entity+purpose error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.getQuickCreate = async (req, res) => {
+  try {
+    const { entity } = req.query;
+    if (!entity) {
+      return res.status(400).json({ success: false, message: 'entity là bắt buộc' });
+    }
+    const form = await formService.getQuickCreateForm(entity);
+    res.json({ success: true, data: form });
+  } catch (error) {
+    console.error('Get quick create form error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncPreview = async (req, res) => {
+  try {
+    const data = await formSyncService.syncPreview(req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Sync preview error:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.syncFromCreate = async (req, res) => {
+  try {
+    const { syncDesc } = req.body || {};
+    const data = await formSyncService.syncFromCreate(req.params.id, { syncDesc });
+    res.json({ success: true, data, message: 'Đồng bộ cấu hình từ form Nhập liệu thành công' });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Sync form from create error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

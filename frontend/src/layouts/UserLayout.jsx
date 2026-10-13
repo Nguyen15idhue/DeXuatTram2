@@ -1,71 +1,30 @@
-import { useState } from 'react';
-import { Outlet, Navigate, Link, useLocation } from 'react-router-dom';
+import { useState, Suspense } from 'react';
+import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import UserHeader from '../components/layout/UserHeader';
+import UserSidebar from '../components/layout/UserSidebar';
+import RouteFallback from '../components/RouteFallback';
 
 const UserLayout = () => {
-  const { user, isAuthenticated, isAdmin, loading, logout } = useAuth();
-  const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { isAuthenticated, loading } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
-    return <div className="loading">Đang tải...</div>;
+    return <div className="flex items-center justify-center min-h-screen text-base-content">Đang tải...</div>;
   }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  const menuItems = [
-    { path: '/map', label: 'Bản đồ', icon: '🗺️' },
-    { path: '/my-proposals', label: 'Đề xuất của tôi', icon: '📋' },
-    { path: '/profile', label: 'Hồ sơ', icon: '👤' },
-  ];
-
-  const handleNavClick = () => {
-    setMenuOpen(false);
-  };
-
   return (
-    <div className={`user-layout ${menuOpen ? 'menu-open' : ''}`}>
-      {menuOpen && <div className="menu-overlay" onClick={() => setMenuOpen(false)} />}
-      <header className="header">
-        <div className="header-left">
-          <button className="hamburger-btn" onClick={() => setMenuOpen(!menuOpen)}>
-            <span className="hamburger-icon">☰</span>
-          </button>
-          <Link to="/map" className="logo" onClick={handleNavClick}>Station Management</Link>
-        </div>
-        <nav className={`nav ${menuOpen ? 'nav-open' : ''}`}>
-          {menuItems.map(item => (
-            <Link 
-              key={item.path} 
-              to={item.path}
-              className={location.pathname === item.path ? 'active' : ''}
-              onClick={handleNavClick}
-            >
-              <span>{item.icon}</span> {item.label}
-            </Link>
-          ))}
-          {isAdmin && (
-            <>
-              <div className="nav-divider" />
-              <Link
-                to="/admin"
-                className="nav-link-admin"
-                onClick={handleNavClick}
-              >
-                <span>🔧</span> Admin Panel
-              </Link>
-            </>
-          )}
-        </nav>
-        <div className="header-right">
-          <span className="user-name">{user?.full_name}</span>
-          <button onClick={logout} className="btn-logout">Đăng xuất</button>
-        </div>
-      </header>
-      <main className="main-content">
-        <Outlet />
+    <div className="app-viewport flex flex-col bg-base-200 overflow-hidden">
+      <UserHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <UserSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <main className="flex-1 overflow-y-auto min-h-0">
+        <Suspense fallback={<RouteFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

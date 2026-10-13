@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const ttlCache = require('../utils/ttlCache');
 
 const parseJsonField = (val) => {
   if (!val) return val;
@@ -19,16 +20,38 @@ exports.getAll = async (page = 1, limit = 50) => {
   return { data: parsed, pagination: { page, limit, total: countResult[0].total, totalPages: Math.ceil(countResult[0].total / limit) } };
 };
 
-exports.getById = async (id) => {
+exports.getById = async (id, rowPage, rowLimit) => {
+  const cacheKey = `datalist:${id}`;
+  const useCache = !rowPage && !rowLimit;
+  if (useCache) {
+    const cached = ttlCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+  }
+
   const [lists] = await pool.query('SELECT * FROM data_lists WHERE id = ?', [id]);
   if (lists.length === 0) return null;
   const list = { ...lists[0], columns_config: parseJsonField(lists[0].columns_config) };
+
+  if (rowPage && rowLimit) {
+    const offset = (rowPage - 1) * rowLimit;
+    const [countResult] = await pool.query('SELECT COUNT(*) as total FROM data_list_rows WHERE list_id = ?', [id]);
+    const [rows] = await pool.query(
+      'SELECT * FROM data_list_rows WHERE list_id = ? ORDER BY sort_order, id LIMIT ? OFFSET ?',
+      [id, rowLimit, offset]
+    );
+    const parsedRows = rows.map(r => ({ ...r, data: parseJsonField(r.data) }));
+    const total = countResult[0].total;
+    return { ...list, rows: parsedRows, rowPagination: { page: rowPage, limit: rowLimit, total, totalPages: Math.ceil(total / rowLimit) } };
+  }
+
   const [rows] = await pool.query(
-    'SELECT * FROM data_list_rows WHERE list_id = ? ORDER BY sort_order, id',
+    'SELECT id, list_id, data, parent_row_id, sort_order FROM data_list_rows WHERE list_id = ? ORDER BY sort_order, id',
     [id]
   );
   const parsedRows = rows.map(r => ({ ...r, data: parseJsonField(r.data) }));
-  return { ...list, rows: parsedRows };
+  const result = { ...list, rows: parsedRows };
+  if (useCache) ttlCache.set(cacheKey, result, 120000);
+  return result;
 };
 
 exports.create = async (data) => {
@@ -41,6 +64,7 @@ exports.create = async (data) => {
 };
 
 exports.update = async (id, data) => {
+  ttlCache.del(`datalist:${id}`);
   const { name, description, columns_config } = data;
   const fields = [];
   const values = [];
@@ -54,10 +78,12 @@ exports.update = async (id, data) => {
 };
 
 exports.remove = async (id) => {
+  ttlCache.del(`datalist:${id}`);
   await pool.query('DELETE FROM data_lists WHERE id = ?', [id]);
 };
 
 exports.addRows = async (listId, rows) => {
+  ttlCache.del(`datalist:${listId}`);
   if (!rows || rows.length === 0) return [];
   const values = rows.map((r, i) => [
     listId,
@@ -77,6 +103,7 @@ exports.addRows = async (listId, rows) => {
 };
 
 exports.updateRow = async (listId, rowId, data) => {
+  ttlCache.del(`datalist:${listId}`);
   await pool.query(
     'UPDATE data_list_rows SET data = ? WHERE id = ? AND list_id = ?',
     [JSON.stringify(data), rowId, listId]
@@ -86,10 +113,167 @@ exports.updateRow = async (listId, rowId, data) => {
 };
 
 exports.deleteRow = async (listId, rowId) => {
+  ttlCache.del(`datalist:${listId}`);
   await pool.query('UPDATE data_list_rows SET parent_row_id = NULL WHERE parent_row_id = ? AND list_id = ?', [rowId, listId]);
   await pool.query('DELETE FROM data_list_rows WHERE id = ? AND list_id = ?', [rowId, listId]);
 };
 
 exports.deleteAllRows = async (listId) => {
+  ttlCache.del(`datalist:${listId}`);
   await pool.query('DELETE FROM data_list_rows WHERE list_id = ?', [listId]);
+};
+
+exports.normalizeAdminName = (s) => {
+  let str = String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  str = str.replace(/đ/g, 'd');
+  str = str.replace(/^(thanh pho|tp\.?|tinh|phuong|xa|thi tran|thi xa|quan|huyen|dac khu)\s+/i, '');
+  str = str.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return str;
+};
+
+const ADMIN_LIST_CACHE = { at: 0, dmTinh: null, wards: null };
+const ADMIN_LIST_TTL = 5 * 60 * 1000;
+
+const loadRowsByName = async (name) => {
+  const [rows] = await pool.query(
+    'SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name = ?',
+    [name]
+  );
+  return rows
+    .map(r => (typeof r.data === 'string' ? parseJsonField(r.data) : r.data))
+    .filter(Boolean);
+};
+
+const TINH_LIST_NAMES = ['dm_tinh', 'Tỉnh'];
+
+const loadRowsByNames = async (names) => {
+  const [rows] = await pool.query(
+    `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${names.map(() => '?').join(', ')})`,
+    names
+  );
+  return rows
+    .map(r => (typeof r.data === 'string' ? parseJsonField(r.data) : r.data))
+    .filter(Boolean);
+};
+
+const loadAdminLists = async () => {
+  const now = Date.now();
+  if (ADMIN_LIST_CACHE.dmTinh && now - ADMIN_LIST_CACHE.at < ADMIN_LIST_TTL) return ADMIN_LIST_CACHE;
+  const [dmTinh, wards] = await Promise.all([
+    loadRowsByNames(TINH_LIST_NAMES),
+    loadRowsByName('Danh muc Phuong Xa'),
+  ]);
+  ADMIN_LIST_CACHE.at = now;
+  ADMIN_LIST_CACHE.dmTinh = dmTinh;
+  ADMIN_LIST_CACHE.wards = wards;
+  return ADMIN_LIST_CACHE;
+};
+
+exports.matchAdministrative = async (geo) => {
+  const result = { province: null, ma_tinh: null, vung_mien: null, xa_phuong: null };
+  if (!geo) return result;
+  const norm = exports.normalizeAdminName;
+  const { dmTinh, wards } = await loadAdminLists();
+
+  let matched = null;
+  for (const cand of [geo.state, geo.city, geo.county]) {
+    const n = norm(cand);
+    if (!n) continue;
+    matched = dmTinh.find(t => norm(t.ten_tinh) === n) || null;
+    if (matched) break;
+  }
+  if (!matched) return result;
+
+  result.province = matched.ten_tinh;
+  result.ma_tinh = matched.ma_tinh;
+  result.vung_mien = matched.vung_mien || null;
+
+  const normTinh = norm(matched.ten_tinh);
+  const wardsOfTinh = wards.filter(w => norm(w.tinh) === normTinh);
+  const isNumericOnly = (n) => /^[0-9]+$/.test(n);
+  for (const cand of [geo.suburb, geo.city, geo.district, geo.quarter, geo.county]) {
+    const n = norm(cand);
+    if (!n || isNumericOnly(n)) continue;
+    const found = wardsOfTinh.find(w => norm(w.xa) === n);
+    if (found) { result.xa_phuong = found.xa; break; }
+  }
+  return result;
+};
+
+exports.applyDiaGioi = async (dynamicData) => {
+  const province = dynamicData ? dynamicData.province : null;
+  if (province === undefined || province === null || String(province).trim() === '') {
+    const err = new Error('Vui lòng chọn Tỉnh/Thành phố');
+    err.statusCode = 400;
+    throw err;
+  }
+  const found = await exports.getDiaGioiByTenTinh(province);
+  if (!found) {
+    const err = new Error(`Tỉnh/Thành phố "${province}" không có trong danh mục`);
+    err.statusCode = 400;
+    throw err;
+  }
+  dynamicData.ma_tinh = found.ma_tinh;
+  dynamicData.vung_mien = found.vung_mien;
+  return dynamicData;
+};
+
+exports.getDiaGioiByTenTinh = async (tenTinh) => {
+  const name = String(tenTinh || '').trim();
+  if (!name) return null;
+  const cacheKey = 'diagioi:tinh-rows';
+  let all = ttlCache.get(cacheKey);
+  if (!all) {
+    const inList = TINH_LIST_NAMES.map(() => '?').join(', ');
+    const [rows] = await pool.query(
+      `SELECT r.data FROM data_list_rows r JOIN data_lists l ON l.id = r.list_id WHERE l.name IN (${inList})`,
+      TINH_LIST_NAMES
+    );
+    all = rows;
+    ttlCache.set(cacheKey, all, 60000);
+  }
+  const normalize = (s) => String(s || '').trim().toLowerCase()
+    .replace(/^(thành phố|tp\.?|tỉnh)\s+/i, '');
+  const pick = (row) => {
+    if (!row) return null;
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (!data || !data.ma_tinh) return null;
+    return { ma_tinh: data.ma_tinh, vung_mien: data.vung_mien || '', ten_tinh: data.ten_tinh || '' };
+  };
+  for (const row of all) {
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (data && String(data.ten_tinh || '').trim() === name) return pick(row);
+  }
+  const lowered = name.toLowerCase();
+  for (const row of all) {
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (data && String(data.ten_tinh || '').trim().toLowerCase() === lowered) return pick(row);
+  }
+  const normalized = normalize(name);
+  for (const row of all) {
+    const data = typeof row.data === 'string' ? parseJsonField(row.data) : (row.data || {});
+    if (data && normalize(data.ten_tinh) === normalized) return pick(row);
+  }
+  return null;
+};
+
+exports.findProvinceInAddress = async (address) => {
+  if (!address) return null;
+  try {
+    const { dmTinh } = await loadAdminLists();
+    const norm = exports.normalizeAdminName;
+    const normAddr = norm(address);
+    if (!normAddr) return null;
+    const sorted = dmTinh.slice().sort((a, b) => (b.ten_tinh || '').length - (a.ten_tinh || '').length);
+    for (const t of sorted) {
+      if (!t.ten_tinh) continue;
+      const normTinh = norm(t.ten_tinh);
+      if (normTinh && normAddr.includes(normTinh)) {
+        return { province: t.ten_tinh, ma_tinh: t.ma_tinh, vung_mien: t.vung_mien || '' };
+      }
+    }
+  } catch (err) {
+    console.warn('[DataList] findProvinceInAddress error:', err.message);
+  }
+  return null;
 };

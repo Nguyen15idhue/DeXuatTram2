@@ -1,0 +1,35 @@
+# User Taste Profile
+- Communicates in Vietnamese; prefers responses in Vietnamese. Confidence: 0.95
+- Prefers concise, well-structured summaries using tables and bullet points over long prose. Confidence: 0.7
+- Prefers a high-level overview/summary of codebases first ("đọc hiểu cơ bản") before diving into specifics. Confidence: 0.8
+- Uses `@filename` syntax to reference files when requesting code comprehension tasks. Confidence: 0.75
+- Prefers Plan Mode: thorough code analysis and a detailed written plan before implementation begins. Confidence: 0.8
+- Favors extensible, multi-instance architectures over hardcoded singletons (e.g., multiple automations per type vs. fixed types). Confidence: 0.8
+- Wants automatic side-effects triggered on save (e.g., auto-search related data after saving config). Confidence: 0.75
+- Wants configurable periodic tasks (cron-style) with sensible defaults (e.g., 24h scan intervals). Confidence: 0.7
+- Prefers searchable multiselect dropdowns (click to open → select items → display as chips/rows) over native `<select multiple>`. Confidence: 0.9
+- Wants selected items from multiselect displayed in a separate dedicated table/list below the control, rather than packed inside the dropdown — avoids visual clutter. Confidence: 0.85
+- Expects the agent to empirically verify data claims by calling actual APIs or running commands ("tự get API để kiểm chứng"), not just assume based on code reading. Confidence: 0.85
+- After Plan Mode, wants immediate full execution with a structured to-do list — no extra confirmation step needed. Confidence: 0.85
+- Execution protocol: implement → test (backend + frontend build/playwright) → fix & retest → update progress after each step → final comprehensive report. Confidence: 0.85
+- Expects the assistant to follow project coding conventions (e.g., via `@AGENTS.md`) rather than inventing its own style. Confidence: 0.8
+- Prefers granting full autonomous execution mode ("mod full quyền") — AI should run scripts, fix issues, and continue without asking for permission. Confidence: 0.9
+- Prefers full, descriptive Vietnamese labels in UI headers over abbreviations (e.g., "Số lượng" not "SL CT"). Confidence: 0.8
+- When the agent misunderstands the domain model, provides detailed mechanism explanations and references existing UI/components to guide the agent toward the correct understanding (e.g., "Kiểm tra mục chọn version ở tab mapping 2 cột để hiểu version là ntn"). Confidence: 0.85
+- Expects the agent to first study existing UI and data model (e.g., version mapping tabs, API field semantics like `process_type_id` vs `parent_id`) before implementing changes — not to assume based on partial code reading. Confidence: 0.85
+- Strongly prefers time-efficient, focused execution — explicitly instructs "Ko tốn nhiều thời gian, tập trung vào trọng tâm" (don't waste time, focus on the core). Expects the agent to cut unnecessary steps and go straight to what matters. Confidence: 0.9
+- Prefers inclusive data-fetching logic: items should be included if they are in an active/enabled status OR have related data (instances), not strictly filtered by join conditions alone. Confidence: 0.8
+- Reports bugs by pasting raw API response JSON (request + response + error) and asks "lỗi này là gì vậy" — expects the agent to diagnose from the actual error output, not from code speculation. Confidence: 0.85
+- Expects UI display to be consistent with backend operations (e.g., after filtering by template, only filtered results should show — not all data). Catches and reports UI/backend data mismatches quickly. Confidence: 0.8
+- Prefers fire-and-forget background tasks over blocking modal/popup confirmation for long-running operations (e.g., manual sync should dispatch a background job, show a toast, and redirect to status view immediately). Confidence: 0.9
+- Expects comprehensive status tracking in UI — wants intermediate states like "Đang chờ" and "Đang thực hiện" alongside terminal states (success/failed), not just binary outcomes. Confidence: 0.85
+- Expects ALL downstream operations (sync, dry-run, export, etc.) to respect the same configured filters (e.g., template_process_ids) — catches and reports when any code path skips filtering and processes everything instead. Confidence: 0.9
+- Prefers executing build and runtime commands inside Docker containers rather than on the host machine when the project is containerized. Confidence: 0.85
+- Prefers consistent metrics and messaging across all UI components (e.g., toast counts must exactly match banner/dropdown counts). Confidence: 0.8
+- Prefers purely descriptive explanations over automatic code modifications when asking about system mechanisms, only applying fixes if explicitly requested. Confidence: 0.85
+- Requires strict structural matching for merge logic (compare exact count of nodes and fields within nodes) rather than fuzzy percentage/Jaccard similarity; explicitly blocks merging versions that differ in structure (e.g., v56 and v57 must remain separate). Confidence: 0.9
+
+- Relies on ad-hoc PowerShell test scripts (e.g., `test-sync-*.ps1` using `Invoke-RestMethod`) to manually trigger API endpoints and validate backend syncing/filtering logic iteratively. Confidence: 0.85
+- Performs deep container introspection during debugging (e.g., `docker exec node -e "..."`) to verify module exports and function existence before tracing execution flow. Confidence: 0.85
+- Prefers structured console logging (prefixed tags like `[module-name]`) to trace multi-step processing flows directly in container logs. Confidence: 0.8
+- Expects strict boundary enforcement in data pipelines: filtering/scope constraints must be applied before passing data into shared algorithms (e.g., deduplication/merge) to prevent cross-scope contamination. Confidence: 0.9

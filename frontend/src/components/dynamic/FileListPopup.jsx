@@ -10,7 +10,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const getViewUrl = (file) => {
   if (file.url) return file.url;
-  if (file.storage_key) return `${API_URL.replace('/api', '')}/uploads/${file.storage_key}`;
+  if (file.id) return `${API_URL}/files/${file.id}/download`;
   return null;
 };
 
@@ -26,7 +26,7 @@ const getFileIcon = (file) => {
   return '📁';
 };
 
-const FileListPopup = ({ files = [], onClose, title = 'Danh sách file' }) => {
+const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity, entityId }) => {
   const { token } = useAuth();
   const [viewingFile, setViewingFile] = useState(null);
   const [selected, setSelected] = useState({});
@@ -181,24 +181,26 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
       <FileViewer
         file={viewingFile}
         onClose={() => setViewingFile(null)}
+        entity={entity}
+        entityId={entityId}
       />
     );
   }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>{title}</h2>
+      <div className="legacy-modal max-w-[600px]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="m-0">{title}</h2>
           <button className="btn btn-sm btn-secondary" onClick={onClose}>✕</button>
         </div>
 
         {list.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>Không có file nào</div>
+          <div className="text-center p-6 text-gray-400">Không có file nào</div>
         ) : (
           <>
-            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <div className="mb-3 flex items-center gap-2">
+              <label className="text-[13px] flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
                   className="file-card-checkbox"
@@ -209,7 +211,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
               </label>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto' }}>
+            <div className="flex flex-col gap-2 max-h-[55vh] overflow-y-auto">
               {list.map((file, idx) => {
                 const name = file.original_name || file.name || `File ${idx + 1}`;
                 return (
@@ -235,7 +237,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
             </div>
 
             {selectedCount > 0 && (
-              <div style={{ marginTop: 16, textAlign: 'right', paddingTop: 12, borderTop: '1px solid #e0e0e0' }}>
+              <div className="mt-4 text-right pt-3 border-t border-gray-200">
                 <button
                   className="btn btn-primary"
                   onClick={handleDownloadSelected}

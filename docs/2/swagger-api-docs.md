@@ -19,9 +19,9 @@
 
 | Thông tin | Giá trị |
 |-----------|---------|
-| Title | Station Management API |
+| Title | TMT-EGREEN API |
 | Version | 1.0.0 |
-| Description | API Documentation for Station Management System |
+| Description | API Documentation for TMT-EGREEN System |
 | Base URL | `http://localhost:3000` |
 | Auth | JWT Bearer Token |
 | Format | JSON |

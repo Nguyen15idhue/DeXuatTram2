@@ -1,0 +1,126 @@
+import { useState, useEffect } from 'react';
+import SearchableSelect from '../ui/SearchableSelect';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+const GDKV_GROUP = 'Giám đốc Khu vực';
+const GDTT_GROUP = 'Giám đốc Trung tâm Kinh doanh';
+
+const resolveUserId = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  const raw = (typeof value === 'object' && value !== null) ? (value.id ?? value.user_id ?? value.value) : value;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : '';
+};
+
+const parseAutoUser = (field) => {
+  if (!field) return null;
+  if (field.autoUser) return field.autoUser;
+  const sc = field.source_config;
+  if (!sc) return null;
+  if (typeof sc === 'object') return sc.auto_user || null;
+  try { return JSON.parse(sc).auto_user || null; } catch { return null; }
+};
+
+const parseUserPool = (field) => {
+  if (!field) return null;
+  const sc = field.source_config;
+  if (!sc) return null;
+  if (typeof sc === 'object') return sc.user_pool || null;
+  try { return JSON.parse(sc).user_pool || null; } catch { return null; }
+};
+
+const poolOfField = (field) => {
+  const mode = parseAutoUser(field);
+  if (mode === 'area_director') return 'gdkv';
+  if (mode === 'center_director') return 'gdtt';
+  const pool = parseUserPool(field);
+  if (pool === 'gdkv' || pool === 'gdtt') return pool;
+  return null;
+};
+
+const buildOptions = (users) => {
+  const opts = [];
+  let lastGroup;
+  (users || []).forEach(u => {
+    if (u.group && u.group !== lastGroup) {
+      opts.push({ value: `__group_${u.group}`, label: u.group, isGroup: true });
+      lastGroup = u.group;
+    }
+    opts.push({ value: String(u.id), label: `${u.full_name} (${u.role})` });
+  });
+  return opts;
+};
+
+const UserField = ({ field, value, onChange, disabled, error }) => {
+  const [options, setOptions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const selectedId = resolveUserId(value);
+  const selectedUser = options.find(o => Number(o.id) === Number(selectedId));
+  const pool = poolOfField(field);
+  // Pool GĐKV/GĐTT: chỉ hiện đúng nhóm (tránh chọn người không đủ điều kiện rồi bị 400).
+  // Giữ lại option đã lưu (fetch bù theo id) để không mất giá trị hiện tại.
+  const visibleOptions = pool
+    ? options.filter(o => o.group === (pool === 'gdkv' ? GDKV_GROUP : GDTT_GROUP) || !o.group || Number(o.id) === Number(selectedId))
+    : options;
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const token = localStorage.getItem('token') || '';
+        const url = `${API_URL}/admin/users/options/all${pool ? `?pool=${pool}` : ''}`;
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (!cancelled && data.success) setOptions(data.data || []);
+      } catch {
+        if (!cancelled) setOptions([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [pool]);
+
+  useEffect(() => {
+    if (loading || !selectedId) return;
+    if (options.some(o => Number(o.id) === Number(selectedId))) return;
+    let cancelled = false;
+    const token = localStorage.getItem('token') || '';
+    fetch(`${API_URL}/admin/users/${selectedId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data && data.success && data.data) {
+          setOptions((prev) => (prev.some(o => Number(o.id) === Number(selectedId)) ? prev : [...prev, data.data]));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [loading, selectedId, options]);
+
+  return (
+    <div className={`dynamic-field-user${error ? ' has-error' : ''}`}>
+      <SearchableSelect
+        options={buildOptions(visibleOptions)}
+        value={selectedId === '' ? '' : String(selectedId)}
+        onChange={(v) => onChange(v === '' ? '' : { id: Number(v) })}
+        placeholder={loading ? 'Đang tải...' : '-- Chọn người dùng --'}
+        disabled={disabled || loading}
+        className={error ? 'is-invalid' : ''}
+      />
+      {selectedUser && (
+        <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+          {selectedUser.full_name} — {selectedUser.role}
+        </div>
+      )}
+      {error && <div className="text-error text-xs mt-1">{error}</div>}
+    </div>
+  );
+};
+
+export default UserField;

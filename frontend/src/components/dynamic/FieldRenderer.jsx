@@ -1,14 +1,46 @@
 import { useState, lazy, Suspense } from 'react';
-import { formatNumber } from '../../utils/formatNumber';
+import UserChip from './UserChip';
+import { create, all } from 'mathjs';
+import { Zap } from 'lucide-react';
+import { formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
+import { formatDate, formatDateTime } from '../../utils/formatDateTime';
+import { getDataListLabelFromMap } from '../../utils/dataListLabel';
+import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
+
+const math = create(all);
+const customFunctions = {
+  ROUNDUP: (x, d = 0) => Math.ceil(x * Math.pow(10, d)) / Math.pow(10, d),
+  ROUNDDOWN: (x, d = 0) => Math.floor(x * Math.pow(10, d)) / Math.pow(10, d),
+  MOD: (a, b) => a % b,
+  IF: (cond, t, f) => cond ? t : f,
+  AND: (...args) => args.every(Boolean),
+  OR: (...args) => args.some(Boolean),
+  NOT: (v) => !v,
+  ROUND: (x, d = 0) => { const f = Math.pow(10, d); return Math.round(x * f) / f; },
+  CONCAT: (...args) => args.join(''),
+  LEN: (s) => String(s ?? '').length,
+  UPPER: (s) => String(s ?? '').toUpperCase(),
+  LOWER: (s) => String(s ?? '').toLowerCase(),
+  TRIM: (s) => String(s ?? '').trim(),
+};
+math.import(customFunctions, { override: false });
 
 const FileListPopup = lazy(() => import('./FileListPopup'));
 
-const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'];
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T|\s)\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const isImageFile = (file) => {
-  if (!file) return false;
-  const name = (file.original_name || file.name || '').toLowerCase();
-  return IMAGE_EXTS.some(ext => name.endsWith(ext));
+const formatTableCellValue = (col, v) => {
+  if (v === null || v === undefined || v === '') return '-';
+  const colType = col && col.type;
+  if (colType === 'datetime') return formatDateTime(v);
+  if (colType === 'date') return formatDate(v);
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (ISO_DATETIME_RE.test(s)) return formatDateTime(s);
+    if (ISO_DATE_RE.test(s)) return formatDate(s);
+  }
+  return v;
 };
 
 const getFileUrl = (file, entity, entityId) => {
@@ -16,14 +48,16 @@ const getFileUrl = (file, entity, entityId) => {
   if (file.link) return file.link;
   if (file.id) {
     const base = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-    return `${base}/files/${file.id}/image`;
+    const t = localStorage.getItem('token') || '';
+    return t ? `${base}/files/${file.id}/image?token=${encodeURIComponent(t)}` : `${base}/files/${file.id}/image`;
   }
   return '';
 };
 
-const FieldRenderer = ({ field, value, entity, entityId }) => {
+const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, expandTable = false }) => {
   const [showFilePopup, setShowFilePopup] = useState(false);
   const [showAvatarPopup, setShowAvatarPopup] = useState(false);
+  const [showTablePopup, setShowTablePopup] = useState(false);
 
   if (value === null || value === undefined || value === '') {
     return <span className="field-empty">-</span>;
@@ -54,7 +88,20 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     } catch { return []; }
   })();
 
+  const resolveOption = (val) => {
+    if (field.data_list_id && dataListOptions[field.data_list_id]) {
+      const map = dataListOptions[field.data_list_id];
+      const col = field.data_list_column;
+      const uniq = map.unique?.[col] || [];
+      if (uniq.includes(val)) return { value: val, label: getDataListLabelFromMap(map, field, val) };
+    }
+    return parsedOptions.find(o => (o.value || o) === val) || null;
+  };
+
   switch (field.type) {
+    case 'password':
+      return <span>********</span>;
+
     case 'boolean':
       return <span className={value ? 'field-true' : 'field-false'}>{value ? '✓' : ''}</span>;
 
@@ -68,7 +115,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     }
 
     case 'select': {
-      const opt = parsedOptions.find(o => (o.value || o) === value);
+      const opt = resolveOption(value);
       if (!opt) return <span>{value}</span>;
       if (opt.optionType === 'number') {
         const displayVal = formatNumber(value, { format: opt.numberFormat || field.number_format || 'plain' });
@@ -81,9 +128,9 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
       const vals = Array.isArray(value) ? value : [];
       if (vals.length === 0) return <span className="field-empty">-</span>;
       return (
-        <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4 }}>
+        <span className="inline-flex flex-wrap gap-1">
           {vals.map((v, i) => {
-            const opt = parsedOptions.find(o => (o.value || o) === v);
+            const opt = resolveOption(v);
             if (opt) {
               if (opt.optionType === 'number') {
                 const displayVal = formatNumber(v, { format: opt.numberFormat || field.number_format || 'plain' });
@@ -91,7 +138,7 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
               }
               return <span key={i} style={getBadgeStyle(opt)}>{opt.label || v}</span>;
             }
-            return <span key={i} style={{ fontSize: 12, color: '#666' }}>{v}</span>;
+            return <span key={i} className="text-xs text-gray-500">{v}</span>;
           })}
         </span>
       );
@@ -100,8 +147,10 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     case 'file': {
       const files = Array.isArray(value) ? value : [value];
       if (files.length === 0 || !files[0]) return <span className="field-empty">-</span>;
-      const firstFile = files[0];
-      if (isImageFile(firstFile)) {
+      const fieldKey = field.field_key || field.key || '';
+      const isAvatarField = fieldKey === 'avatar';
+      if (isAvatarField) {
+        const firstFile = files[0];
         const imgUrl = getFileUrl(firstFile, entity, entityId);
         return (
           <>
@@ -168,15 +217,21 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
         const year = d.getFullYear();
         const hours = String(d.getHours()).padStart(2, '0');
         const mins = String(d.getMinutes()).padStart(2, '0');
+        const secs = String(d.getSeconds()).padStart(2, '0');
         const datePart = fmt.replace('DD', day).replace('MM', month).replace('YYYY', year);
-        return <span>{datePart} {hours}:{mins}</span>;
+        return <span>{datePart} {hours}:{mins}:{secs}</span>;
       } catch {
         return <span>{value}</span>;
       }
     }
 
-    case 'url':
-      return <span style={{ color: '#4a6cf7' }}>{value}</span>;
+    case 'url': {
+      const urlStr = String(value);
+      if (/^https?:\/\//i.test(urlStr)) {
+        return <a href={urlStr} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{urlStr}</a>;
+      }
+      return <span className="text-indigo-500">{urlStr}</span>;
+    }
 
     case 'email':
       return <span>{value}</span>;
@@ -190,10 +245,117 @@ const FieldRenderer = ({ field, value, entity, entityId }) => {
     case 'formula': {
       if (!field.formula_config) return <span>{String(value)}</span>;
       if (field.formula_config.outputType === 'url') {
-        return <a href={value} target="_blank" rel="noopener noreferrer" style={{ color: '#4a6cf7' }}>{field.formula_config.label || value}</a>;
+        const tpl = field.formula_config.url_template;
+        if (tpl) {
+          if (/^\d+$/.test(String(value ?? ''))) {
+            return <a href={tpl.replace('{value}', value)} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{value}</a>;
+          }
+          return <span>{String(value)}</span>;
+        }
+        return <a href={value} target="_blank" rel="noopener noreferrer" className="text-indigo-500">{field.formula_config.label || value}</a>;
+      }
+      const { num, unit } = parseLeadingNumber(value);
+      if (!isNaN(num)) {
+        return <span>{formatNumber(num, { format: field.formula_config.numberFormat || field.formula_config.outputFormat || 'plain', decimalPlaces: field.formula_config.decimalPlaces, unit: field.formula_config.unit || unit })}</span>;
       }
       return <span>{String(value)}</span>;
     }
+
+    case 'table': {
+      const rows = Array.isArray(value) ? value : [];
+      if (rows.length === 0) return <span className="field-empty">-</span>;
+      const tc = (() => {
+        if (!field.source_config) return {};
+        if (typeof field.source_config === 'object') return field.source_config;
+        try { return JSON.parse(field.source_config); } catch { return {}; }
+      })();
+      const columns = tc.columns || [];
+      const computeCell = (col, row) => {
+        if (col.formula) {
+          try { return math.evaluate(col.formula, row); } catch { return '#ERR'; }
+        }
+        return formatTableCellValue(col, row[col.key]);
+      };
+      const tableEl = (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'center', width: 40 }}>STT</th>
+              {columns.map(col => (
+                <th key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'left' }}>
+                  {col.label || col.key}
+                  {col.formula && <Zap size={10} style={{ color: '#d97706', marginLeft: 2, verticalAlign: 'middle' }} />}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={idx}>
+                <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#999' }}>{idx + 1}</td>
+                {columns.map(col => (
+                  <td key={col.key} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', background: col.formula ? '#f0fdf4' : undefined }}>
+                    {(() => {
+                      const v = computeCell(col, row);
+                      if (typeof v === 'number') {
+                        return formatNumber(v, { format: col.display_format || 'plain', decimalPlaces: col.decimal_places, unit: col.unit });
+                      }
+                      return v;
+                    })()}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          {hasFooter(columns) && (
+            <tfoot>
+              <tr>
+                <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', textAlign: 'center', fontWeight: 700 }}></td>
+                {columns.map(col => {
+                  const cfg = getFooterConfig(col);
+                  if (!cfg) return <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9' }}></td>;
+                  const footerVal = computeFooterValue(col, columns, rows, (c, r) => computeCell(c, r));
+                  return (
+                    <td key={col.key} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontWeight: 700, color: '#1e40af' }}>
+                      {cfg.label && <span style={{ fontSize: 11, color: '#6b7280', marginRight: 4 }}>{cfg.label}:</span>}
+                      {formatFooterValue(footerVal, col)}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      );
+      if (expandTable) {
+        return <div style={{ overflowX: 'auto', maxWidth: '100%' }}>{tableEl}</div>;
+      }
+      return (
+        <>
+          <span
+            className="field-file-btn view-btn"
+            onClick={() => setShowTablePopup(true)}
+            style={{ cursor: 'pointer' }}
+          >
+            📋 {rows.length} dòng
+          </span>
+          {showTablePopup && (
+            <div className="modal-overlay" onClick={() => setShowTablePopup(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="legacy-modal" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 8, padding: 16, maxHeight: '80vh', overflow: 'auto', minWidth: 400 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 15 }}>{field.label || field.key} — {rows.length} dòng</h3>
+                  <button className="btn btn-xs btn-ghost" onClick={() => setShowTablePopup(false)}>✕</button>
+                </div>
+                {tableEl}
+              </div>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    case 'user':
+      return <UserChip value={value} />;
 
     default:
       return <span>{String(value)}</span>;

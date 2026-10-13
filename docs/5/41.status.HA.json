@@ -1,0 +1,25 @@
+{
+  "lane": "HA",
+  "imageDir": "admin-data",
+  "at": "2026-09-16T08:22:53.023Z",
+  "total": 3,
+  "ok": 3,
+  "failed": [],
+  "results": [
+    {
+      "id": "G40",
+      "title": "Excel chon bo cot",
+      "ok": true
+    },
+    {
+      "id": "G42",
+      "title": " Gan ma nhan su 1Office",
+      "ok": true
+    },
+    {
+      "id": "F42",
+      "title": "Lay ve / thao tac 1Office",
+      "ok": true
+    }
+  ]
+}

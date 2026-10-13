@@ -14,7 +14,9 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const data = await dataListService.getById(req.params.id);
+    const rowPage = req.query.row_page ? parseInt(req.query.row_page) : undefined;
+    const rowLimit = req.query.row_limit ? parseInt(req.query.row_limit) : undefined;
+    const data = await dataListService.getById(req.params.id, rowPage, rowLimit);
     if (!data) return res.status(404).json({ success: false, message: 'Không tìm thấy data list' });
     res.json({ success: true, data });
   } catch (error) {

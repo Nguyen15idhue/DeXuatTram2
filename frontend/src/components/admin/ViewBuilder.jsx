@@ -4,8 +4,10 @@ import { fieldDefinitionService, viewService, viewFieldService } from '../../ser
 import Toast from '../Toast';
 import ErrorMessage from '../ErrorMessage';
 import DragDropList from './DragDropList';
+import { Search } from 'lucide-react';
+import { filterFieldsBySearch } from '../../utils/searchText';
 
-const ENTITIES = ['stations', 'station_proposals', 'users'];
+const ENTITIES = ['stations', 'station_proposals', 'users', 'leads'];
 
 const ViewBuilder = ({ viewId, onSaved }) => {
   const { token } = useAuth();
@@ -16,8 +18,11 @@ const ViewBuilder = ({ viewId, onSaved }) => {
   const [entity, setEntity] = useState('stations');
   const [viewName, setViewName] = useState('');
   const [viewDesc, setViewDesc] = useState('');
+  const [viewFrozen, setViewFrozen] = useState(2);
   const [availableFields, setAvailableFields] = useState([]);
   const [assignedFields, setAssignedFields] = useState([]);
+  const [availableSearch, setAvailableSearch] = useState('');
+  const [columnSearch, setColumnSearch] = useState('');
 
   useEffect(() => {
     if (viewId) loadViewConfig();
@@ -31,6 +36,8 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         setEntity(viewRes.data.entity);
         setViewName(viewRes.data.name);
         setViewDesc(viewRes.data.description || '');
+        setViewFrozen(viewRes.data.frozen_columns !== undefined && viewRes.data.frozen_columns !== null
+          ? Number(viewRes.data.frozen_columns) : 2);
         await loadAvailableFields(viewRes.data.entity);
         const fieldsRes = await viewFieldService.getByView(viewId);
         if (fieldsRes.success) {
@@ -70,6 +77,8 @@ const ViewBuilder = ({ viewId, onSaved }) => {
   const handleEntityChange = (newEntity) => {
     setEntity(newEntity);
     setAssignedFields([]);
+    setAvailableSearch('');
+    setColumnSearch('');
     loadAvailableFields(newEntity);
   };
 
@@ -113,9 +122,9 @@ const ViewBuilder = ({ viewId, onSaved }) => {
     try {
       let res;
       if (viewId) {
-        res = await viewService.update(viewId, { entity, name: viewName, description: viewDesc }, token);
+        res = await viewService.update(viewId, { entity, name: viewName, description: viewDesc, frozen_columns: viewFrozen }, token);
       } else {
-        res = await viewService.create({ entity, name: viewName, description: viewDesc }, token);
+        res = await viewService.create({ entity, name: viewName, description: viewDesc, frozen_columns: viewFrozen }, token);
       }
       if (!res.success) {
         setError(res.message || 'Lỗi lưu view');
@@ -166,14 +175,19 @@ const ViewBuilder = ({ viewId, onSaved }) => {
 
   if (loading) return <div className="loading">Đang tải cấu hình...</div>;
 
-  const filteredAvailable = availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id));
+  const filteredAvailable = filterFieldsBySearch(
+    availableFields.filter(f => !assignedFields.find(a => a.fieldId === f.id)),
+    availableSearch
+  );
+  const searchingColumns = columnSearch.trim() !== '';
+  const visibleColumns = filterFieldsBySearch(assignedFields, columnSearch);
 
   return (
     <div className="view-builder">
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
       {error && <ErrorMessage message={error} />}
 
-      <div style={{ marginBottom: 16 }}>
+      <div className="mb-4">
         <div className="form-row">
           <div className="form-group">
             <label>Entity</label>
@@ -190,21 +204,44 @@ const ViewBuilder = ({ viewId, onSaved }) => {
           <label>Mô tả</label>
           <input type="text" value={viewDesc} onChange={(e) => setViewDesc(e.target.value)} placeholder="Mô tả ngắn" />
         </div>
+        <div className="form-group">
+          <label>Đóng băng cột đầu</label>
+          <input
+            type="number"
+            min="0"
+            max="20"
+            value={viewFrozen}
+            onChange={(e) => setViewFrozen(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+            title="Số cột đầu đóng băng khi cuộn ngang (đã gồm cột STT). Mặc định 2. Đặt 0 để tắt."
+          />
+          <div className="field-help">Số cột đầu đóng băng khi cuộn ngang (đã gồm STT, mặc định 2; 0 = tắt).</div>
+        </div>
       </div>
 
       <div className="builder-layout">
         <div className="builder-panel">
           <div className="builder-panel-header">Available Fields ({filteredAvailable.length})</div>
           <div className="builder-panel-body">
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={availableSearch}
+                onChange={(e) => setAvailableSearch(e.target.value)}
+                placeholder="Tìm field (tên/key/loại)..."
+                className="input input-bordered input-sm w-full"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
             {filteredAvailable.length === 0 ? (
-              <div className="builder-empty">Không có field nào khả dụng</div>
+              <div className="builder-empty">{availableSearch.trim() ? `Không tìm thấy field nào cho "${availableSearch.trim()}"` : 'Không có field nào khả dụng'}</div>
             ) : filteredAvailable.map(field => (
               <div key={field.id} className="builder-available-item" onClick={() => handleAddField(field)}>
                 <div>
                   <strong>{field.label}</strong>
-                  <div style={{ fontSize: 12, color: '#888' }}>{field.key} · {field.type}</div>
+                  <div className="text-xs text-gray-400">{field.key} · {field.type}</div>
                 </div>
-                <span style={{ color: '#4a6cf7', fontSize: 20 }}>+</span>
+                <span className="text-indigo-500 text-xl">+</span>
               </div>
             ))}
           </div>
@@ -213,17 +250,32 @@ const ViewBuilder = ({ viewId, onSaved }) => {
         <div className="builder-panel">
           <div className="builder-panel-header">Table Columns ({assignedFields.length})</div>
           <div className="builder-panel-body">
-            {assignedFields.length === 0 ? (
-              <div className="builder-empty">Kéo fields từ panel bên trái vào đây</div>
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input
+                type="text"
+                value={columnSearch}
+                onChange={(e) => setColumnSearch(e.target.value)}
+                placeholder="Tìm cột (tên/key/loại)..."
+                className="input input-bordered input-sm w-full"
+                style={{ paddingLeft: 28 }}
+              />
+            </div>
+            {searchingColumns && (
+              <div className="text-xs text-gray-500 mb-1">Đang lọc — xóa từ khóa để kéo-thả sắp xếp lại.</div>
+            )}
+            {visibleColumns.length === 0 ? (
+              <div className="builder-empty">{assignedFields.length === 0 ? 'Kéo fields từ panel bên trái vào đây' : `Không tìm thấy cột nào cho "${columnSearch.trim()}"`}</div>
             ) : (
               <DragDropList
-                items={assignedFields}
-                onReorder={handleReorder}
+                items={visibleColumns}
+                onReorder={searchingColumns ? undefined : handleReorder}
+                disableDrag={searchingColumns}
                 onRemove={handleRemoveField}
                 renderItem={(item) => (
                   <div className="builder-assigned-item">
                     <span className="drag-handle">⠿</span>
-                    <div className="field-label">{item.label} <code style={{ fontSize: 11, color: '#888' }}>{item.key}</code></div>
+                    <div className="field-label">{item.label} <code className="text-[11px] text-gray-400">{item.key}</code></div>
                     <div className="field-config">
                       <label>
                         <input type="checkbox" checked={item.visible} onChange={(e) => handleFieldConfigChange(item.fieldId, 'visible', e.target.checked)} />
@@ -240,6 +292,16 @@ const ViewBuilder = ({ viewId, onSaved }) => {
                       <label>
                         <input type="checkbox" checked={item.filterable} onChange={(e) => handleFieldConfigChange(item.fieldId, 'filterable', e.target.checked)} />
                         Lọc
+                      </label>
+                      <label style={{ flexBasis: '100%' }}>
+                        HDSD Excel:
+                        <input
+                          type="text"
+                          value={(item.config && item.config.guide_text) || ''}
+                          onChange={(e) => handleFieldConfigChange(item.fieldId, 'config', { ...(item.config || {}), guide_text: e.target.value })}
+                          placeholder="Để trống = tự sinh theo loại field"
+                          style={{ width: '100%' }}
+                        />
                       </label>
                     </div>
                   </div>

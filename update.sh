@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+COMPOSE_FILE="docker-compose.simple.yml"
+
+if [ -f scripts/migrate.sh ]; then
+  echo "[update] Chay migration DB..."
+  rc=0
+  bash scripts/migrate.sh run || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$rc" = "2" ]; then
+      echo "[update] DB chua co tracking. Chay: scripts/migrate.sh mark-all --yes (sau khi xac minh schema), roi chay lai update."
+    fi
+    exit 1
+  fi
+fi
+
+# Build truc tiep bang BuildKit + tat provenance de tranh loi
+# "DeadlineExceeded: context deadline exceeded" cua docker compose build (bake) tren VPS cham.
+echo "[update] Build images (BuildKit, --provenance=false)..."
+IMAGES="$(docker compose -f "$COMPOSE_FILE" config --images 2>/dev/null || true)"
+FE_IMAGE="$(printf '%s\n' "$IMAGES" | grep -i 'frontend' | head -n1 || true)"
+BE_IMAGE="$(printf '%s\n' "$IMAGES" | grep -i 'backend' | head -n1 || true)"
+FE_IMAGE="${FE_IMAGE:-dexuattram2-frontend}"
+BE_IMAGE="${BE_IMAGE:-dexuattram2-backend}"
+
+build_images() {
+  echo "[update] > frontend -> $FE_IMAGE"
+  DOCKER_BUILDKIT=1 docker build --provenance=false -f frontend/Dockerfile.prod -t "$FE_IMAGE" frontend
+  echo "[update] > backend -> $BE_IMAGE"
+  DOCKER_BUILDKIT=1 docker build --provenance=false -f backend/Dockerfile.prod -t "$BE_IMAGE" backend
+}
+
+if ! build_images; then
+  echo "[update] Build truc tiep loi -> thu docker compose build..."
+  COMPOSE_BAKE=false docker compose -f "$COMPOSE_FILE" build
+fi
+
+echo "[update] Khoi dong lai (backend, frontend, mysql)..."
+docker compose -f "$COMPOSE_FILE" up -d
+
+# Cac buoc phu (seed template BCX + index kho tri thuc chatbot) MAC DINH TAT.
+# Bat khi can: RUN_EXTRAS=1 ./update.sh
+if [ "${RUN_EXTRAS:-0}" = "1" ]; then
+  echo "[update] Seed template bao cao BCX (best-effort, bo qua neu da co)..."
+  sleep 5
+  docker compose -f "$COMPOSE_FILE" exec -T backend node scripts/seed-document-templates.js \
+    || echo "[update] Canh bao: seed template BCX that bai (bo qua)."
+
+  echo "[update] Index kho tri thuc chatbot (best-effort, toi da ${INDEX_TIMEOUT:-600}s/script)..."
+  INDEX_TIMEOUT="${INDEX_TIMEOUT:-600}"
+  if command -v node >/dev/null 2>&1 && node -e "require('mysql2')" 2>/dev/null; then
+    (cd backend && echo "[update] > index-knowledge.js ..." && timeout "$INDEX_TIMEOUT" node scripts/index-knowledge.js) || echo "[update] Canh bao: index-knowledge that bai/qua han (bo qua)."
+    (cd backend && echo "[update] > index-code-knowledge.js ..." && timeout "$INDEX_TIMEOUT" node scripts/index-code-knowledge.js) || echo "[update] Canh bao: index-code-knowledge that bai/qua han (bo qua)."
+  elif docker compose -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
+    echo "[update] Chay index trong container backend (mount repo)..."
+    run_index() {
+      local script="$1"
+      echo "[update] > $script ..."
+      timeout "$INDEX_TIMEOUT" docker compose -f "$COMPOSE_FILE" run --rm --no-deps -T \
+        -v "$PWD:/repo" -w /repo/backend backend \
+        sh -c 'SCRIPT="$1"; LINKED=0; if [ ! -e node_modules ]; then ln -sfn /app/node_modules node_modules && LINKED=1; fi; node "scripts/$SCRIPT"; rc=$?; [ "$LINKED" = "1" ] && rm -f node_modules; exit $rc' _ "$script" \
+        || echo "[update] Canh bao: $script that bai/qua han (bo qua)."
+    }
+    run_index index-knowledge.js
+    run_index index-code-knowledge.js
+  else
+    echo "[update] Bo qua index chatbot (khong co node host va khong chay duoc container)."
+  fi
+else
+  echo "[update] Bo qua seed template + index chatbot (dat RUN_EXTRAS=1 de chay)."
+fi
+
+echo "Da cap nhat. Log: docker compose -f $COMPOSE_FILE logs -f"

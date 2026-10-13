@@ -1,5 +1,6 @@
 const { create, all } = require('mathjs');
 const math = create(all);
+const pool = require('../utils/db');
 
 const customFunctions = {
   ROUNDUP: (x, d = 0) => Math.ceil(x * Math.pow(10, d)) / Math.pow(10, d),
@@ -28,6 +29,30 @@ const customFunctions = {
     if (nums.length === 0) return 0;
     return nums.reduce((s, v) => s + Number(v), 0) / nums.length;
   },
+  TABLE_SUM: (arr) => {
+    if (!Array.isArray(arr)) return 0;
+    return arr.reduce((s, v) => s + (Number(v) || 0), 0);
+  },
+  TABLE_AVG: (arr) => {
+    if (!Array.isArray(arr)) return 0;
+    const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (nums.length === 0) return 0;
+    return nums.reduce((s, v) => s + Number(v), 0) / nums.length;
+  },
+  TABLE_MIN: (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return 0;
+    const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number);
+    return nums.length === 0 ? 0 : Math.min(...nums);
+  },
+  TABLE_MAX: (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return 0;
+    const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number);
+    return nums.length === 0 ? 0 : Math.max(...nums);
+  },
+  TABLE_COUNT: (arr) => {
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter(v => v !== null && v !== undefined && v !== '').length;
+  },
   CONCAT: (...args) => args.map(v => v ?? '').join(''),
   LEN: (s) => String(s ?? '').length,
   LEFT: (s, n = 1) => String(s ?? '').substring(0, n),
@@ -47,7 +72,10 @@ const customFunctions = {
 
 math.import(customFunctions, { override: false });
 
+exports.math = math;
 exports.customFunctions = customFunctions;
+
+const DB_FUNCTIONS = new Set(['SEQ']);
 
 exports.validateFormula = (expression, availableFields = []) => {
   if (!expression || typeof expression !== 'string') {
@@ -55,18 +83,36 @@ exports.validateFormula = (expression, availableFields = []) => {
   }
 
   try {
-    const node = math.parse(expression);
+    const node = math.parse(substituteMetadataPlaceholders(expression, {}));
     const symbols = new Set();
+    const funcNames = new Set();
     node.traverse(n => {
-      if (n.isSymbolNode && !customFunctions[n.name.toUpperCase()]) {
+      if (n.isFunctionNode && n.fn && n.fn.name) funcNames.add(n.fn.name);
+      if (n.isSymbolNode && !customFunctions[n.name.toUpperCase()] && !DB_FUNCTIONS.has(n.name.toUpperCase())) {
         symbols.add(n.name);
       }
     });
 
     const fieldKeys = new Set(availableFields.map(f => f.key));
-    const unknown = [...symbols].filter(s => !fieldKeys.has(s));
+    const passwordKeys = new Set(availableFields.filter(f => f.type === 'password').map(f => f.key));
+    const tableFields = new Set(availableFields.filter(f => f.type === 'table').map(f => f.key));
+    const unknown = [...symbols].filter(s => {
+      if (fieldKeys.has(s)) return false;
+      if (funcNames.has(s)) return false;
+      if (POST_METADATA.has(s)) return false;
+      if (tableFields.has(s)) return false;
+      if (s.includes('.')) {
+        const parts = s.split('.');
+        if (parts.length === 2 && tableFields.has(parts[0])) return false;
+      }
+      return true;
+    });
     if (unknown.length > 0) {
       return { valid: false, error: `Trường không tồn tại: ${unknown.join(', ')}` };
+    }
+    const forbidden = [...symbols].filter(s => passwordKeys.has(s));
+    if (forbidden.length > 0) {
+      return { valid: false, error: `Không được dùng trường mật khẩu trong công thức: ${forbidden.join(', ')}` };
     }
 
     return { valid: true, symbols: [...symbols] };
@@ -84,16 +130,177 @@ exports.evaluateFormula = (expression, scope = {}) => {
 };
 
 exports.evaluatePostFormula = (expression, metadata = {}) => {
-  let expr = expression;
-  expr = expr.replace(/\bid\b/g, String(metadata.id ?? ''));
-  expr = expr.replace(/\bentity\b/g, `'${metadata.entity || ''}'`);
-  expr = expr.replace(/\bbase_url\b/g, `'${metadata.base_url || ''}'`);
-  expr = expr.replace(/\bcreated_at\b/g, `'${metadata.created_at || ''}'`);
-  expr = expr.replace(/\buser_id\b/g, String(metadata.user_id ?? ''));
-  expr = expr.replace(/\buser_email\b/g, `'${metadata.user_email || ''}'`);
-
+  const scope = exports.buildPostScope(metadata, {});
+  const substituted = substituteMetadataPlaceholders(expression, scope);
   try {
-    return math.evaluate(expr);
+    return math.evaluate(substituted, scope);
+  } catch {
+    return null;
+  }
+};
+
+exports.buildPostScope = (metadata = {}, recordData = {}) => {
+  const scope = {};
+  if (recordData && typeof recordData === 'object' && !Array.isArray(recordData)) {
+    for (const [k, v] of Object.entries(recordData)) {
+      scope[k] = (v === null || v === undefined) ? '' : v;
+    }
+  }
+  scope.id = metadata.id ?? '';
+  scope.entity = metadata.entity || '';
+  scope.base_url = metadata.base_url || '';
+  scope.created_at = metadata.created_at || '';
+  scope.user_id = metadata.user_id ?? '';
+  scope.user_email = metadata.user_email || '';
+  scope.user_name = metadata.user_name || '';
+  scope.user_role = metadata.user_role || '';
+  scope.sales_name = metadata.sales_name || '';
+  scope.id_1office = metadata.id_1office || '';
+  return scope;
+};
+
+const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name', 'id_1office']);
+
+const substituteMetadataPlaceholders = (expression, values) => {  const toRaw = (v) => (v === null || v === undefined ? '' : String(v));
+  const toLiteral = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)))) return String(v);
+    return JSON.stringify(String(v));
+  };
+  const src = String(expression || '');
+  let out = '';
+  let quote = null;
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (quote) {
+      if (ch === '\\' && i + 1 < src.length) {
+        out += ch + src[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === quote) {
+        quote = null;
+        out += ch;
+        i += 1;
+        continue;
+      }
+      const m = /^\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(src.slice(i));
+      if (m && POST_METADATA.has(m[1])) {
+        out += toRaw(values ? values[m[1]] : undefined);
+        i += m[0].length;
+        continue;
+      }
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    const m = /^\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(src.slice(i));
+    if (m && POST_METADATA.has(m[1])) {
+      out += toLiteral(values ? values[m[1]] : undefined);
+      i += m[0].length;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+};
+
+exports.substituteMetadataPlaceholders = substituteMetadataPlaceholders;
+
+exports.getNextSequence = async (prefix, connection) => {
+  const p = String(prefix ?? '').slice(0, 20);
+  if (!p) throw new Error('SEQ thiếu prefix');
+  const run = async (db) => {
+    await db.query('INSERT IGNORE INTO proposal_sequences (prefix, last_number) VALUES (?, 0)', [p]);
+    await db.query('UPDATE proposal_sequences SET last_number = LAST_INSERT_ID(last_number + 1) WHERE prefix = ?', [p]);
+    const [rows] = await db.query('SELECT LAST_INSERT_ID() AS n');
+    return rows[0].n;
+  };
+  let n;
+  if (connection) {
+    n = await run(connection);
+  } else {
+    const conn = await pool.getConnection();
+    try {
+      n = await run(conn);
+    } finally {
+      conn.release();
+    }
+  }
+  return n;
+};
+
+exports.parseCodeToSeq = (code) => {
+  const m = /^(.*)(\d{4})$/.exec(String(code || ''));
+  if (!m) return null;
+  const prefix = m[1].replace(/_+$/, '').slice(0, 20);
+  if (!prefix) return null;
+  return { prefix, num: parseInt(m[2], 10) };
+};
+
+exports.reconcileSequences = async () => {
+  const targets = [
+    { table: 'station_proposals', key: 'ma_de_xuat' },
+    { table: 'stations', key: 'ma_tram' },
+    { table: 'station_proposals', column: 'pending_station_code' }
+  ];
+  const maxByPrefix = {};
+  for (const t of targets) {
+    const [rows] = t.column
+      ? await pool.query(`SELECT DISTINCT \`${t.column}\` AS code FROM ${t.table} WHERE \`${t.column}\` IS NOT NULL`)
+      : await pool.query(
+        `SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) AS code FROM ${t.table} WHERE JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.${t.key}')) IS NOT NULL`
+      );
+    for (const r of rows) {
+      const parsed = exports.parseCodeToSeq(r.code);
+      if (!parsed) continue;
+      maxByPrefix[parsed.prefix] = Math.max(maxByPrefix[parsed.prefix] || 0, parsed.num);
+    }
+  }
+  let fixed = 0;
+  for (const [prefix, max] of Object.entries(maxByPrefix)) {
+    await pool.query(
+      'INSERT INTO proposal_sequences (prefix, last_number) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_number = GREATEST(last_number, VALUES(last_number))',
+      [prefix, max]
+    );
+    fixed++;
+  }
+  return { prefixes: fixed };
+};
+
+exports.evaluatePostFormulaAsync = async (expression, metadata = {}, recordData = {}, options = {}) => {
+  const scope = exports.buildPostScope(metadata, recordData);
+  const substituted = substituteMetadataPlaceholders(expression, scope);
+  let node;
+  try {
+    node = math.parse(substituted);
+  } catch {
+    return null;
+  }
+  const seqNodes = node.filter(n => n.isFunctionNode && n.fn && (n.fn.name || '').toUpperCase() === 'SEQ');
+  const values = new Map();
+  for (const seqNode of seqNodes) {
+    try {
+      if (!seqNode.args || seqNode.args.length === 0) return null;
+      const prefix = String(math.evaluate(seqNode.args[0].toString(), scope));
+      values.set(seqNode, options.dryRun ? 1 : await exports.getNextSequence(prefix, options.connection));
+    } catch {
+      return null;
+    }
+  }
+  const transformed = values.size > 0
+    ? node.transform(n => (values.has(n) ? new math.ConstantNode(values.get(n)) : n))
+    : node;
+  try {
+    return transformed.compile().evaluate(scope);
   } catch {
     return null;
   }

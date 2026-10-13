@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const mapConfigController = require('../controllers/mapConfigController');
 
 /**
@@ -22,7 +22,7 @@ router.get('/tile-providers', mapConfigController.getTileProviders);
  *   get:
  *     tags: [Map Config]
  *     summary: Lấy cấu hình bản đồ
- *     description: Lấy config theo entity (stations mặc định)
+ *     description: Lấy config theo entity (stations mặc định). Trả kèm `renderer`, `tile_mode`, `default_mode` và `layers_config`; ẩn `api_key`/secret trong `tile_url` khi proxy.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -39,6 +39,28 @@ router.get('/', mapConfigController.getConfig);
 
 /**
  * @swagger
+ * /api/map-configs/admin:
+ *   get:
+ *     tags: [Map Config]
+ *     summary: Lấy cấu hình bản đồ đầy đủ (gồm API key) cho admin
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         schema:
+ *           type: string
+ *           default: stations
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa đăng nhập
+ */
+router.get('/admin', requireAuth, requireSuperAdmin, mapConfigController.getAdminConfig);
+
+/**
+ * @swagger
  * /api/map-configs:
  *   post:
  *     tags: [Map Config]
@@ -49,14 +71,15 @@ router.get('/', mapConfigController.getConfig);
  *       201:
  *         description: Tạo thành công
  */
-router.post('/', requireAuth, requireAdmin, mapConfigController.createConfig);
+router.post('/', requireAuth, requireSuperAdmin, mapConfigController.createConfig);
 
 /**
  * @swagger
  * /api/map-configs/{id}:
  *   put:
  *     tags: [Map Config]
- *     summary: Cập nhật cấu hình bản đồ
+  *     summary: Cập nhật cấu hình bản đồ
+  *     description: Chỉ nhận các cột trong allow-list (name, tile_provider_id, style_url, renderer, tile_mode, retina, default_mode, layers_config, show_cluster, cluster_radius 20-150, cluster_max_zoom 8-20...). Cột lạ bị bỏ qua. `layers_config` là JSON mảng layer.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -69,7 +92,7 @@ router.post('/', requireAuth, requireAdmin, mapConfigController.createConfig);
  *       200:
  *         description: Cập nhật thành công
  */
-router.put('/:id', requireAuth, requireAdmin, mapConfigController.updateConfig);
+router.put('/:id', requireAuth, requireSuperAdmin, mapConfigController.updateConfig);
 
 /**
  * @swagger
@@ -89,6 +112,6 @@ router.put('/:id', requireAuth, requireAdmin, mapConfigController.updateConfig);
  *       200:
  *         description: Xoá thành công
  */
-router.delete('/:id', requireAuth, requireAdmin, mapConfigController.deleteConfig);
+router.delete('/:id', requireAuth, requireSuperAdmin, mapConfigController.deleteConfig);
 
 module.exports = router;

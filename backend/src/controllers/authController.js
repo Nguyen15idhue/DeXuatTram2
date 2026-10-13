@@ -13,7 +13,7 @@ exports.register = async (req, res) => {
     }
 
     const result = await authService.createUser(full_name, email, phone, password);
-    const token = authService.generateToken(result.id, email, 'USER');
+    const token = authService.generateToken(result.id, email, 'CTV');
 
     res.status(201).json({
       success: true,
@@ -24,7 +24,7 @@ exports.register = async (req, res) => {
           full_name,
           email,
           phone,
-          role: 'USER',
+          role: 'CTV',
           status: 'ACTIVE'
         },
         token
@@ -38,13 +38,14 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const identifier = req.body.email || req.body.identifier || req.body.phone || '';
+    const { password, remember } = req.body;
 
-    const user = await authService.findByEmail(email);
+    const user = await authService.findByEmailOrPhone(identifier);
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Email hoặc password không đúng'
+        message: 'Email/Số điện thoại hoặc mật khẩu không đúng'
       });
     }
 
@@ -59,11 +60,14 @@ exports.login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(400).json({
         success: false,
-        message: 'Email hoặc password không đúng'
+        message: 'Email/Số điện thoại hoặc mật khẩu không đúng'
       });
     }
 
-    const token = authService.generateToken(user.id, user.email, user.role);
+    const loginCd = parseCustomData(user.custom_data);
+    const avatar = loginCd.avatar || null;
+
+    const token = authService.generateToken(user.id, user.email, user.role, user.token_version || 0, !!remember);
 
     res.json({
       success: true,
@@ -75,7 +79,11 @@ exports.login = async (req, res) => {
           email: user.email,
           phone: user.phone,
           role: user.role,
-          status: user.status
+          status: user.status,
+          parent_id: user.parent_id || null,
+          department: loginCd.department || null,
+          chuc_vu: loginCd.chuc_vu || null,
+          avatar
         },
         token
       }
@@ -84,6 +92,12 @@ exports.login = async (req, res) => {
     console.error('Login error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
+};
+
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
 };
 
 exports.getMe = async (req, res) => {
@@ -96,9 +110,12 @@ exports.getMe = async (req, res) => {
       });
     }
 
+    const cd = parseCustomData(user.custom_data);
+    const avatar = cd.avatar || null;
+
     res.json({
       success: true,
-      data: { user }
+      data: { user: { ...user, department: cd.department || null, chuc_vu: cd.chuc_vu || null, avatar, custom_data: undefined } }
     });
   } catch (error) {
     console.error('Get me error:', error);
@@ -110,25 +127,19 @@ exports.updateProfile = async (req, res) => {
   try {
     const { full_name, phone, current_password, new_password, avatar } = req.body;
 
-    if (!full_name) {
-      return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
-    }
-
     const user = await authService.findByIdFull(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    let customData = {};
-    try {
-      customData = user.custom_data ? JSON.parse(user.custom_data) : {};
-    } catch { customData = {}; }
+    let customData = parseCustomData(user.custom_data);
 
     if (avatar !== undefined) {
       customData.avatar = avatar;
     }
 
-    if (new_password) {
+    const wantsPassword = new_password !== undefined && new_password !== null && new_password !== '';
+    if (wantsPassword) {
       if (!current_password) {
         return res.status(400).json({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại' });
       }
@@ -139,14 +150,23 @@ exports.updateProfile = async (req, res) => {
       if (new_password.length < 6) {
         return res.status(400).json({ success: false, message: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
       }
-      await authService.updatePassword(req.user.id, full_name, phone, new_password);
+      await authService.updatePassword(req.user.id, full_name || user.full_name, phone !== undefined ? phone : user.phone, new_password);
+      if (avatar !== undefined) {
+        await authService.updateProfile(req.user.id, full_name || user.full_name, phone !== undefined ? phone : user.phone, customData);
+      }
     } else {
+      if (!full_name) {
+        return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
+      }
       await authService.updateProfile(req.user.id, full_name, phone, customData);
     }
 
     const updated = await authService.findById(req.user.id);
 
-    res.json({ success: true, data: updated, message: 'Cập nhật hồ sơ thành công' });
+    const updatedCd = parseCustomData(updated.custom_data);
+    const updatedAvatar = updatedCd.avatar || null;
+
+    res.json({ success: true, data: { ...updated, avatar: updatedAvatar, custom_data: undefined }, message: 'Cập nhật hồ sơ thành công' });
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

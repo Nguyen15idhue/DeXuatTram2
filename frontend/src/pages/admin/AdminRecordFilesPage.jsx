@@ -4,30 +4,34 @@ import { useAuth } from '../../contexts/AuthContext';
 import { dynamicService, adminProposalService, stationService, adminUserService } from '../../services/api';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ErrorMessage from '../../components/ErrorMessage';
+import { ArrowLeft, Download, Image, Film, Music, FileText, File, Table, Eye, ExternalLink } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const getFileUrl = (file) => {
   if (file.url) return file.url;
-  if (file.storage_key) return `${API_URL.replace('/api', '')}/uploads/${file.storage_key}`;
+  if (file.id) {
+    const t = localStorage.getItem('token') || '';
+    return t ? `${API_URL}/files/${file.id}/download?token=${encodeURIComponent(t)}` : `${API_URL}/files/${file.id}/download`;
+  }
   return null;
 };
 
 const getFileIcon = (file) => {
   const mime = file.mime_type || file.type || '';
-  if (mime.startsWith('image/')) return '🖼️';
-  if (mime.startsWith('video/')) return '🎬';
-  if (mime.startsWith('audio/')) return '🎵';
-  if (mime.includes('pdf')) return '📄';
-  if (mime.includes('word') || mime.includes('document')) return '📝';
-  if (mime.includes('excel') || mime.includes('sheet')) return '📊';
-  return '📁';
+  if (mime.startsWith('image/')) return Image;
+  if (mime.startsWith('video/')) return Film;
+  if (mime.startsWith('audio/')) return Music;
+  if (mime.includes('pdf')) return FileText;
+  if (mime.includes('word') || mime.includes('document')) return FileText;
+  if (mime.includes('excel') || mime.includes('sheet')) return Table;
+  return File;
 };
 
-const VIEW_MAP = { stations: 6, users: 7, station_proposals: 8 };
+const VIEW_MAP = { stations: 6, users: 7, station_proposals: 8, leads: 0 };
 
 const AdminRecordFilesPage = () => {
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { entity, id } = useParams();
   const [searchParams] = useSearchParams();
@@ -47,6 +51,7 @@ const AdminRecordFilesPage = () => {
     try {
       setLoading(true);
       setError('');
+      if (entity === 'users' && !isAdmin) { setError('Không có quyền truy cập'); return; }
       const viewId = VIEW_MAP[entity];
       if (!viewId) { setError('Entity không hợp lệ'); return; }
 
@@ -56,14 +61,14 @@ const AdminRecordFilesPage = () => {
 
       let recordData = null;
       if (entity === 'station_proposals') {
-        const res = await adminProposalService.getAllWithParams('', token);
-        recordData = res.data?.find(r => r.id === parseInt(id));
+        const res = await adminProposalService.getById(id, token);
+        recordData = res.data;
       } else if (entity === 'stations') {
-        const res = await stationService.getAllWithParams('');
-        recordData = res.data?.find(r => r.id === parseInt(id));
+        const res = await stationService.getById(id);
+        recordData = res.data;
       } else if (entity === 'users') {
-        const res = await adminUserService.getAllWithParams('', token);
-        recordData = res.data?.find(r => r.id === parseInt(id));
+        const res = await adminUserService.getById(id, token);
+        recordData = res.data;
       }
 
       if (!recordData) { setError('Không tìm thấy bản ghi'); return; }
@@ -134,15 +139,41 @@ const AdminRecordFilesPage = () => {
     if (url) window.open(url, '_blank');
   };
 
-  if (error) return <div className="admin-record-files-page"><ErrorMessage message={error} /><div style={{ marginTop: 12 }}><button className="btn btn-secondary" onClick={() => navigate(-1)}>Quay lại</button></div></div>;
-  if (loading) return <div className="admin-record-files-page"><h1>Files của bản ghi #{id}</h1><p>Đang tải...</p></div>;
-  if (allFiles.length === 0) return (
-    <div className="admin-record-files-page">
-      <h1>Files của bản ghi #{id}</h1>
-      <p>Không có file nào.</p>
-      <button className="btn btn-secondary" onClick={() => navigate(-1)}>Quay lại</button>
-    </div>
-  );
+  if (error) {
+    return (
+      <div>
+        <ErrorMessage message={error} />
+        <button className="btn btn-ghost gap-1 mt-4" onClick={() => navigate(-1)}>
+          <ArrowLeft size={16} />
+          Quay lại
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold mb-4">Files của bản ghi #{id}</h1>
+        <div className="flex justify-center py-12">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      </div>
+    );
+  }
+
+  if (allFiles.length === 0) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold mb-4">Files của bản ghi #{id}</h1>
+        <p className="text-base-content/60 mb-4">Không có file nào.</p>
+        <button className="btn btn-ghost gap-1" onClick={() => navigate(-1)}>
+          <ArrowLeft size={16} />
+          Quay lại
+        </button>
+      </div>
+    );
+  }
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
   const basePath = entity === 'station_proposals' ? 'proposals' : entity;
@@ -152,26 +183,28 @@ const AdminRecordFilesPage = () => {
   }
 
   return (
-    <div className="admin-record-files-page">
-      <div className="page-header">
-        <h1>Files của bản ghi #{id}</h1>
-        <div className="page-header-actions">
+    <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <h1 className="text-2xl font-bold">Files của bản ghi #{id}</h1>
+        <div className="flex gap-2">
           {selectedCount > 0 && (
-            <button className="btn btn-primary" onClick={handleDownloadSelected}>
-              Tải {selectedCount} file đã chọn
+            <button className="btn btn-primary btn-sm gap-1" onClick={handleDownloadSelected}>
+              <Download size={14} />
+              Tải {selectedCount} file
             </button>
           )}
-          <button className="btn btn-secondary" onClick={() => navigate(`/${basePath === 'proposals' ? 'admin/proposals' : 'admin/' + basePath}`)}>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => navigate(`/${basePath === 'proposals' ? 'admin/proposals' : 'admin/' + basePath}`)}>
+            <ArrowLeft size={14} />
             Quay lại
           </button>
         </div>
       </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+      <div className="mb-4">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input
             type="checkbox"
-            className="file-card-checkbox"
+            className="checkbox checkbox-sm"
             checked={allFiles.length > 0 && allFiles.every((_, i) => selected[i])}
             onChange={toggleSelectAll}
           />
@@ -179,35 +212,48 @@ const AdminRecordFilesPage = () => {
         </label>
       </div>
 
-      <div className="file-grid">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {allFiles.map((file, idx) => {
           const url = getFileUrl(file);
+          const IconComponent = getFileIcon(file);
           return (
-            <div key={idx} className="file-card">
-              <input
-                type="checkbox"
-                className="file-card-checkbox"
-                checked={!!selected[idx]}
-                onChange={() => toggleSelect(idx)}
-              />
-              <span className="file-card-icon">{getFileIcon(file)}</span>
-              <div className="file-card-info">
-                <div className="file-card-name">{file.original_name || file.name || `File ${idx + 1}`}</div>
-                <div className="file-card-meta">
-                  {file._fieldLabel && <span>{file._fieldLabel}</span>}
-                  {file.mime_type && <span> — {file.mime_type}</span>}
+            <div key={idx} className="card bg-base-100 shadow-sm border border-base-300">
+              <div className="card-body p-4">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm mt-1"
+                    checked={!!selected[idx]}
+                    onChange={() => toggleSelect(idx)}
+                  />
+                  <IconComponent size={24} className="text-primary flex-shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{file.original_name || file.name || `File ${idx + 1}`}</div>
+                    <div className="text-xs text-base-content/50">
+                      {file._fieldLabel && <span>{file._fieldLabel}</span>}
+                      {file.mime_type && <span> — {file.mime_type}</span>}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="file-card-actions">
-                {url && (
-                  <button className="btn btn-sm btn-primary" onClick={() => setViewingFile(file)}>Xem</button>
-                )}
-                {url && (
-                  <button className="btn btn-sm btn-secondary" onClick={() => handleDownload(file)}>Tải</button>
-                )}
-                {url && (
-                  <button className="btn btn-sm btn-secondary" onClick={() => handleOpenNewTab(file)}>Tab mới</button>
-                )}
+                <div className="card-actions justify-end mt-2">
+                  {url && (
+                    <button className="btn btn-primary btn-xs gap-1" onClick={() => setViewingFile(file)}>
+                      <Eye size={12} />
+                      Xem
+                    </button>
+                  )}
+                  {url && (
+                    <button className="btn btn-ghost btn-xs gap-1" onClick={() => handleDownload(file)}>
+                      <Download size={12} />
+                      Tải
+                    </button>
+                  )}
+                  {url && (
+                    <button className="btn btn-ghost btn-xs gap-1" onClick={() => handleOpenNewTab(file)}>
+                      <ExternalLink size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );

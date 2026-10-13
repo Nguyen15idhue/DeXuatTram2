@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager, requireLeadManager } = require('../middlewares/auth');
+const { adminLimiter, excelLimiter } = require('../middlewares/rateLimits');
 const excelService = require('../services/excelService');
 
 /**
@@ -11,6 +12,34 @@ const excelService = require('../services/excelService');
  *     summary: Xuất danh sách trạm ra file Excel (dynamic columns)
  *     security:
  *       - bearerAuth: []
+  *     parameters:
+  *       - in: query
+  *         name: search
+  *         schema:
+  *           type: string
+  *         description: Lọc theo tên hoặc địa chỉ (bỏ trống = tất cả)
+  *       - in: query
+  *         name: status
+  *         schema:
+  *           type: string
+  *           enum: [ACTIVE, DEPLOYING]
+  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: layout
+  *         schema:
+  *           type: string
+  *           enum: [view, form]
+  *         description: Kiểu xuất — `view` (phẳng theo view, mặc định) hoặc `form` (3 hàng header section/tab/field theo layout form, chỉ export)
+  *       - in: query
+  *         name: formId
+  *         schema:
+  *           type: integer
+  *         description: ID form dùng khi layout=form (bỏ trống = form view mặc định)
+  *       - in: query
+  *         name: purpose
+  *         schema:
+  *           type: string
+  *         description: Purpose form khi layout=form (mặc định `view`)
  *     responses:
  *       200:
  *         description: File Excel
@@ -19,7 +48,7 @@ const excelService = require('../services/excelService');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/export/stations', requireAuth, requireAdmin, excelService.exportStations);
+router.get('/export/stations', requireAuth, requireAdmin, adminLimiter, excelLimiter, excelService.exportStations);
 
 /**
  * @swagger
@@ -27,8 +56,32 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *   get:
  *     tags: [Admin - Excel]
  *     summary: Xuất danh sách đề xuất ra file Excel (dynamic columns)
+ *     description: Admin/Super xuất tất cả; Sales xuất nhánh mình (scope role tự động).
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, địa chỉ, người tạo (bỏ trống = tất cả)
+  *       - in: query
+  *         name: status
+  *         schema:
+  *           type: string
+  *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
+  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: layout
+  *         schema:
+  *           type: string
+  *           enum: [view, form]
+  *         description: Kiểu xuất — `view` (phẳng theo view, mặc định) hoặc `form` (3 hàng header section/tab/field theo layout form, chỉ export)
+  *       - in: query
+  *         name: formId
+  *         schema:
+  *           type: integer
+  *         description: ID form dùng khi layout=form (bỏ trống = form view mặc định)
  *     responses:
  *       200:
  *         description: File Excel
@@ -37,7 +90,7 @@ router.get('/export/stations', requireAuth, requireAdmin, excelService.exportSta
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/export/station_proposals', requireAuth, requireAdmin, excelService.exportProposals);
+router.get('/export/station_proposals', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.exportProposals);
 
 /**
  * @swagger
@@ -47,6 +100,29 @@ router.get('/export/station_proposals', requireAuth, requireAdmin, excelService.
  *     summary: Xuất danh sách người dùng ra file Excel (dynamic columns)
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, email, SĐT (bỏ trống = tất cả)
+  *       - in: query
+  *         name: status
+  *         schema:
+  *           type: string
+  *           enum: [ACTIVE, LOCKED]
+  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+  *       - in: query
+  *         name: layout
+  *         schema:
+  *           type: string
+  *           enum: [view, form]
+  *         description: Kiểu xuất — `view` (phẳng theo view, mặc định) hoặc `form` (3 hàng header section/tab/field theo layout form, chỉ export)
+  *       - in: query
+  *         name: formId
+  *         schema:
+  *           type: integer
+  *         description: ID form dùng khi layout=form (bỏ trống = form view mặc định)
  *     responses:
  *       200:
  *         description: File Excel
@@ -55,7 +131,64 @@ router.get('/export/station_proposals', requireAuth, requireAdmin, excelService.
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers);
+router.get('/export/users', requireAuth, requireAdmin, adminLimiter, excelLimiter, excelService.exportUsers);
+
+/**
+ * @swagger
+ * /api/admin/excel/export/leads:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất danh sách Lead ra Excel (theo view, scope theo role)
+ *     description: ADMIN/SUPER xuất tất cả; MKT theo Lead mình tạo; SALES theo scope (GĐTT phòng ban, GĐKV được giao).
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: viewId
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: usage
+ *         schema:
+ *           type: string
+ *           enum: [table, excel_full, excel_basic]
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/export/leads', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.exportLeads);
+
+/**
+ * @swagger
+ * /api/admin/excel/export/station_proposals/by-model:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất đề xuất theo mô hình đầu tư (dynamic columns)
+ *     description: Admin/Super xuất tất cả; Sales xuất nhánh mình (scope role tự động). File gồm sheet HDSD + 4 sheet NQ/TDT/LK/NQ_LK (chỉ đề xuất đúng mô hình, cột theo sheet template) + sheet Chưa rõ mô hình.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Lọc theo tên, địa chỉ, người tạo (bỏ trống = tất cả)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Lọc theo trạng thái (bỏ trống = tất cả)
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/export/station_proposals/by-model', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.exportProposalsByModel);
 
 /**
  * @swagger
@@ -63,6 +196,7 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *   get:
  *     tags: [Admin - Excel]
  *     summary: Tải file template import
+ *     description: Chọn bộ cột theo view. `viewId` (1 view) hoặc `viewIds` (nhiều view → 1 file nhiều sheet) hoặc `usage` (table|excel_full|excel_basic). Không truyền → view bảng mặc định.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -71,8 +205,24 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, users, station_proposals]
+ *           enum: [stations, users, station_proposals, leads]
  *         description: Entity name
+ *       - in: query
+ *         name: viewId
+ *         schema:
+ *           type: integer
+ *         description: ID view (bộ cột) muốn dùng
+ *       - in: query
+ *         name: viewIds
+ *         schema:
+ *           type: string
+ *         description: Danh sách ID view, phân tách dấu phẩy (vd `8,18`) → 1 file nhiều sheet
+ *       - in: query
+ *         name: usage
+ *         schema:
+ *           type: string
+ *           enum: [table, excel_full, excel_basic]
+ *         description: Chọn view theo loại sử dụng
  *     responses:
  *       200:
  *         description: File Excel template
@@ -83,14 +233,15 @@ router.get('/export/users', requireAuth, requireAdmin, excelService.exportUsers)
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
+router.get('/template', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.getTemplate);
 
 /**
  * @swagger
- * /api/admin/excel/import/preview:
- *   post:
+ * /api/admin/excel/template/by-model:
+ *   get:
  *     tags: [Admin - Excel]
- *     summary: Preview import từ file Excel
+ *     summary: Tải file template import đề xuất theo mô hình đầu tư
+ *     description: File 5 sheet — `HDSD` (hướng dẫn) + 4 sheet `Mô hình NQ/TDT/LK/NQ_LK` (cột chung + cột riêng từng mô hình). Chỉ hỗ trợ `entity=station_proposals`. Import trực tiếp file này (tự gán mô hình theo tên sheet) hoặc copy 1 sheet sang file mới rồi import.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -99,8 +250,73 @@ router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, users, station_proposals]
+ *           enum: [station_proposals]
+ *         description: Chỉ nhận station_proposals
+ *     responses:
+ *       200:
+ *         description: File Excel template 5 sheet
+ *       400:
+ *         description: Entity không hỗ trợ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/template/by-model', requireAuth, requireUserManager, adminLimiter, excelLimiter, excelService.getTemplateByModel);
+
+/**
+ * @swagger
+ * /api/admin/excel/views:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Danh sách view đang hoạt động của 1 entity (ADMIN/SALES dùng cho menu Template/Export)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, users, station_proposals, leads]
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/views', requireAuth, requireLeadManager, excelService.getViewsForEntity);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/preview:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Preview import từ file Excel
+ *     description: "Tự nhận diện bộ cột theo header file (trả `data.detection`: viewId/usage/score/confident/unmatchedFileColumns/missingViewColumns). Override bằng `viewId` hoặc `usage`."
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [stations, users, station_proposals, leads]
  *         description: Entity name
+ *       - in: query
+ *         name: viewId
+ *         schema:
+ *           type: integer
+ *         description: Ép dùng bộ cột của view này (bỏ qua tự nhận diện)
+ *       - in: query
+ *         name: usage
+ *         schema:
+ *           type: string
+ *           enum: [table, excel_full, excel_basic]
+ *         description: Ép dùng bộ cột theo loại sử dụng
  *     requestBody:
  *       required: true
  *       content:
@@ -122,14 +338,15 @@ router.get('/template', requireAuth, requireAdmin, excelService.getTemplate);
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMiddleware, excelService.importPreview);
+router.post('/import/preview', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.uploadMiddleware, excelService.importPreview);
 
 /**
  * @swagger
  * /api/admin/excel/import/confirm:
  *   post:
  *     tags: [Admin - Excel]
- *     summary: Xác nhận import
+ *     summary: Nhận import vào job nền (trả 202 ngay, worker xử lý sau)
+ *     description: Import partial từng dòng — dòng đúng commit ngay, dòng lỗi gom lại. Theo dõi qua `/import/jobs/{id}` hoặc `/import/progress/{jobId}` (tab Excel trong Audit Log).
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -142,19 +359,216 @@ router.post('/import/preview', requireAuth, requireAdmin, excelService.uploadMid
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, users, station_proposals]
+ *                 enum: [stations, users, station_proposals, leads]
  *               rows:
  *                 type: array
+ *               viewId:
+ *                 type: integer
+ *                 description: ID bộ cột (view) dùng để import
+ *               jobId:
+ *                 type: string
+ *                 description: Mã phiên do client sinh (UUID) để poll tiến độ qua `/import/progress/:jobId`
+ *               geocode:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Stations/proposals — `false` = bỏ qua reverse geocode tự suy Địa chỉ/Xã phường từ tọa độ (import nhanh hơn nhiều)
  *     responses:
- *       200:
- *         description: Import thành công
+ *       202:
+ *         description: Đã nhận job (trả jobId + total, xem tiến độ ở tab Excel)
  *       400:
- *         description: Import thất bại
+ *         description: Dữ liệu không hợp lệ (entity sai, thiếu rows, quá 2000 dòng)
  *       401:
  *         description: Chưa xác thực
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/import/confirm', requireAuth, requireAdmin, excelService.importConfirm);
+router.post('/import/confirm', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.importConfirm);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/progress/{jobId}:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Tiến độ import (poll theo jobId do client gửi lên /import/confirm)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: '{ status: running|done|failed|not_found, total, done }'
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
+router.get('/import/progress/:jobId', requireAuth, requireLeadManager, adminLimiter, excelService.getImportProgress);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/jobs:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Danh sách job import Excel (tab Excel trong Audit Log)
+ *     description: ADMIN/SUPER xem tất cả; SALES chỉ thấy job mình tạo.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: entity
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [queued, processing, done, partial, failed, cancelled]
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: Thành công
+ */
+router.get('/import/jobs', requireAuth, requireLeadManager, adminLimiter, excelService.listImportJobs);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/jobs/{id}:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Chi tiết job import (popup tab Excel)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền xem
+ *       404:
+ *         description: Không tìm thấy
+ */
+router.get('/import/jobs/:id', requireAuth, requireLeadManager, adminLimiter, excelService.getImportJob);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/jobs/{id}/cancel:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Hủy job import đang chờ/chạy (dừng giữa chừng, giữ dòng đã ăn)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Đã hủy
+ */
+router.post('/import/jobs/:id/cancel', requireAuth, requireLeadManager, adminLimiter, excelService.cancelImportJob);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/jobs/{id}/export-success:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất file các bản ghi import thành công của job
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: File Excel
+ */
+router.get('/import/jobs/:id/export-success', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.exportImportSuccess);
+
+/**
+ * @swagger
+ * /api/admin/excel/import/jobs/{id}/export-failed:
+ *   get:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất file dòng lỗi + dòng chưa xử lý (giữ header file gốc, import lại được)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: File Excel
+ */
+router.get('/import/jobs/:id/export-failed', requireAuth, requireLeadManager, adminLimiter, excelLimiter, excelService.exportImportFailed);
+
+/**
+ * @swagger
+ * /api/admin/excel/export/duplicates:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất file Excel 3 sheets cho kết quả check trùng
+ *     description: Sheet ketqua (Bên A, Bên B, Khoảng cách) + sheet Ben A + sheet Ben B (full columns như export tất cả).
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               min_m:
+ *                 type: number
+ *                 default: 200
+ *               max_m:
+ *                 type: number
+ *                 default: 2000
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *       400:
+ *         description: Tham số không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ */
+router.post('/export/duplicates', requireAuth, requireAdmin, adminLimiter, excelLimiter, (req, res) => excelService.exportDuplicates(req, res));
 
 module.exports = router;

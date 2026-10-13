@@ -1,13 +1,22 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const formulaService = require('./formulaService');
+const ttlCache = require('../utils/ttlCache');
+const math = formulaService.math;
 
 exports.getFormConfig = async (entity, formId) => {
+  const cacheKey = `formcfg:${entity}:${formId}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const [forms] = await pool.query(
-    'SELECT * FROM forms WHERE id = ? AND entity = ?',
-    [formId, entity]
+    'SELECT * FROM forms WHERE id = ? AND entity = ? AND status = ?',
+    [formId, entity, 'active']
   );
-  if (forms.length === 0) return null;
+  if (forms.length === 0) {
+    ttlCache.set(cacheKey, null, 30000);
+    return null;
+  }
 
   const form = forms[0];
 
@@ -19,15 +28,15 @@ exports.getFormConfig = async (entity, formId) => {
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
             fd.formula, fd.placeholder, fd.help_text,
-            fd.data_list_id, fd.data_list_column, fd.relation_key
+            fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.relation_key
      FROM form_fields ff
-     JOIN field_definitions fd ON ff.field_id = fd.id
-     WHERE ff.form_id = ?
-     ORDER BY ff.order_index`,
+      JOIN field_definitions fd ON ff.field_id = fd.id
+      WHERE ff.form_id = ? AND fd.status = 'active'
+      ORDER BY ff.order_index`,
     [formId]
   );
 
-  return {
+  const result = {
     form: {
       id: form.id,
       entity: form.entity,
@@ -64,17 +73,27 @@ exports.getFormConfig = async (entity, formId) => {
       config: f.config,
       data_list_id: f.data_list_id || null,
       data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
       relation_key: f.relation_key || null
     }))
   };
+  ttlCache.set(cacheKey, result, 120000);
+  return result;
 };
 
 exports.getViewConfig = async (entity, viewId) => {
+  const cacheKey = `viewcfg:${entity}:${viewId}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const [views] = await pool.query(
-    'SELECT * FROM views WHERE id = ? AND entity = ?',
-    [viewId, entity]
+    'SELECT * FROM views WHERE id = ? AND entity = ? AND status = ?',
+    [viewId, entity, 'active']
   );
-  if (views.length === 0) return null;
+  if (views.length === 0) {
+    ttlCache.set(cacheKey, null, 30000);
+    return null;
+  }
 
   const view = views[0];
 
@@ -85,23 +104,25 @@ exports.getViewConfig = async (entity, viewId) => {
             fd.source_type, fd.required, fd.options,
             fd.source_config, fd.parent_field, fd.option_style,
             fd.file_config, fd.formula_config,
-            fd.data_list_id, fd.data_list_column, fd.relation_key
+            fd.data_list_id, fd.data_list_column, fd.data_list_label_column, fd.relation_key
      FROM view_fields vf
-     JOIN field_definitions fd ON vf.field_id = fd.id
-     WHERE vf.view_id = ?
-     ORDER BY vf.order_index`,
+      JOIN field_definitions fd ON vf.field_id = fd.id
+      WHERE vf.view_id = ? AND fd.status = 'active'
+      ORDER BY vf.order_index`,
     [viewId]
   );
 
   const allFieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
 
-  return {
+  const result = {
     view: {
       id: view.id,
       entity: view.entity,
       name: view.name,
       description: view.description,
-      status: view.status
+      status: view.status,
+      frozen_columns: view.frozen_columns !== undefined && view.frozen_columns !== null
+        ? Number(view.frozen_columns) : 2
     },
     fields: fields.map(f => ({
       field_id: f.field_id,
@@ -130,6 +151,7 @@ exports.getViewConfig = async (entity, viewId) => {
       config: f.config,
       data_list_id: f.data_list_id || null,
       data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
       relation_key: f.relation_key || null
     })),
     allFields: allFieldDefs.map(f => ({
@@ -153,9 +175,12 @@ exports.getViewConfig = async (entity, viewId) => {
       formula_config: f.formula_config ? dynamicUtils.parseOptions(f.formula_config) : null,
       data_list_id: f.data_list_id || null,
       data_list_column: f.data_list_column || null,
+      data_list_label_column: f.data_list_label_column || null,
       relation_key: f.relation_key || null
     }))
   };
+  ttlCache.set(cacheKey, result, 120000);
+  return result;
 };
 
 exports.validateEntityData = async (entity, data) => {
@@ -163,24 +188,140 @@ exports.validateEntityData = async (entity, data) => {
   return dynamicUtils.validateData(entity, data, fieldDefs);
 };
 
-exports.computePostFormulas = async (entity, recordId, recordData, userId, userEmail) => {
+exports.computePostFormulas = async (entity, recordId, recordData, userId, userEmail, options = {}) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity(entity);
   const postFormulaFields = fieldDefs.filter(f => {
     if (f.type !== 'formula' || !f.formula_config) return false;
     const fc = typeof f.formula_config === 'string' ? (() => { try { return JSON.parse(f.formula_config); } catch { return {}; } })() : f.formula_config;
-    return fc.compute_mode === 'post';
+    return fc.compute_mode === 'post' || fc.compute_mode === 'pre';
   });
   if (postFormulaFields.length === 0) return {};
 
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   const createdAt = new Date().toISOString();
-  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail };
+  let resolveUserId = recordData?.user_id ?? userId;
+  if ((resolveUserId === undefined || resolveUserId === null || resolveUserId === '') && recordId !== undefined && recordId !== null) {
+    try {
+      const [prows] = await pool.query('SELECT user_id FROM station_proposals WHERE id = ?', [recordId]);
+      if (prows.length > 0) resolveUserId = prows[0].user_id;
+    } catch { /* silent */ }
+  }
+  let userName = '';
+  let userRole = '';
+  let salesName = '';
+  let id1Office = '';
+  if (resolveUserId !== undefined && resolveUserId !== null && resolveUserId !== '') {
+    try {
+      const [users] = await pool.query('SELECT full_name, role, parent_id FROM users WHERE id = ?', [resolveUserId]);
+      if (users.length > 0) {
+        userName = users[0].full_name || '';
+        userRole = users[0].role || '';
+        if (users[0].parent_id) {
+          try {
+            const [parents] = await pool.query('SELECT full_name FROM users WHERE id = ?', [users[0].parent_id]);
+            if (parents.length > 0) salesName = parents[0].full_name || '';
+          } catch { /* silent */ }
+        }
+      }
+    } catch { /* silent */ }
+  }
+  if (entity === 'station_proposals' && recordId !== undefined && recordId !== null && recordId !== '') {
+    try {
+      const [linked] = await pool.query('SELECT contact_1office_id, contact_1office_code FROM station_proposals WHERE id = ?', [recordId]);
+      if (linked.length > 0) {
+        const numId = linked[0].contact_1office_id;
+        id1Office = (numId !== null && numId !== undefined && String(numId) !== '')
+          ? String(numId)
+          : (linked[0].contact_1office_code || '');
+      }
+    } catch { /* silent */ }
+  }
+  const metadata = { id: recordId, entity, base_url: baseUrl, created_at: createdAt, user_id: userId, user_email: userEmail, user_name: userName, user_role: userRole, sales_name: salesName, id_1office: id1Office };
+
+  const tableFields = fieldDefs.filter(f => f.type === 'table');
+  const tableColArrays = {};
+  const tableNested = {};
+  for (const tf of tableFields) {
+    const tc = typeof tf.source_config === 'string' ? (() => { try { return JSON.parse(tf.source_config); } catch { return {}; } })() : (tf.source_config || {});
+    const columns = tc.columns || [];
+    const rows = Array.isArray(recordData[tf.key]) ? recordData[tf.key] : [];
+    tableNested[tf.key] = {};
+    for (const col of columns) {
+      const colValues = rows.map(r => r[col.key] ?? '');
+      tableColArrays[`${tf.key}.${col.key}`] = colValues;
+      tableNested[tf.key][col.key] = colValues;
+    }
+  }
 
   const results = {};
+  const excludeKeys = new Set(options.excludeKeys || []);
+  const userFieldKeys = fieldDefs.filter(f => f.type === 'user').map(f => f.key);
+  const userLabelMap = {};
+  if (userFieldKeys.length > 0) {
+    const uidSet = new Set();
+    for (const k of userFieldKeys) {
+      const v = recordData?.[k];
+      const id = (v && typeof v === 'object') ? Number(v.id ?? v.user_id ?? v.value) : Number(v);
+      if (Number.isInteger(id) && id > 0) uidSet.add(id);
+    }
+    if (uidSet.size > 0) {
+      try {
+        const ids = [...uidSet];
+        const [urows] = await pool.query(`SELECT id, full_name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+        for (const r of urows) userLabelMap[Number(r.id)] = r.full_name || '';
+      } catch { /* silent */ }
+    }
+  }
   for (const field of postFormulaFields) {
     const fc = typeof field.formula_config === 'string' ? (() => { try { return JSON.parse(field.formula_config); } catch { return {}; } })() : field.formula_config;
     if (!fc.expression) continue;
-    const result = formulaService.evaluatePostFormula(fc.expression, metadata);
+    if (excludeKeys.has(field.key)) continue;
+    if (Array.isArray(fc.referencedFields) && fc.referencedFields.length > 0) {
+      const missing = fc.referencedFields.some(k => {
+        if (k.includes('.')) return false;
+        return recordData?.[k] === undefined || recordData?.[k] === null || recordData?.[k] === '';
+      });
+      if (missing) continue;
+    }
+    const scope = { ...recordData };
+    for (const fd of fieldDefs) {
+      if (scope[fd.key] === undefined || scope[fd.key] === null) scope[fd.key] = '';
+    }
+    for (const [key, arr] of Object.entries(tableColArrays)) {
+      scope[key] = arr;
+    }
+    for (const [tkey, obj] of Object.entries(tableNested)) {
+      scope[tkey] = obj;
+    }
+    for (const k of userFieldKeys) {
+      const v = scope[k];
+      const id = (v && typeof v === 'object') ? Number(v.id ?? v.user_id ?? v.value) : Number(v);
+      if (Number.isInteger(id) && id > 0 && userLabelMap[id]) scope[k] = userLabelMap[id];
+    }
+    for (const [k, v] of Object.entries(metadata)) {
+      scope[k] = v;
+    }
+    let result;
+    // Thay {metadata} (vd {base_url}) trước khi evaluate — giống preview.
+    // Không thay thì mathjs coi đó là chữ trong string literal và lưu nguyên văn.
+    const substitutedExpression = formulaService.substituteMetadataPlaceholders(fc.expression, scope);
+    try {
+      const node = math.parse(substitutedExpression);
+      const seqNodes = node.filter(n => n.isFunctionNode && n.fn && (n.fn.name || '').toUpperCase() === 'SEQ');
+      if (seqNodes.length > 0) {
+        const values = new Map();
+        for (const seqNode of seqNodes) {
+          if (!seqNode.args || seqNode.args.length === 0) { result = null; break; }
+          const prefix = String(math.evaluate(seqNode.args[0].toString(), scope));
+          values.set(seqNode, options.dryRun ? 1 : await formulaService.getNextSequence(prefix, options.connection));
+        }
+        if (result === null) continue;
+        const transformed = node.transform(n => (values.has(n) ? new math.ConstantNode(values.get(n)) : n));
+        result = transformed.compile().evaluate(scope);
+      } else {
+        result = math.evaluate(substitutedExpression, scope);
+      }
+    } catch { result = null; }
     if (result !== null && result !== undefined) {
       const decimalPlaces = fc.decimalPlaces ?? 2;
       if (fc.outputType === 'number' || (fc.outputType === 'auto' && typeof result === 'number')) {

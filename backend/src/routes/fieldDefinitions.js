@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const fieldDefinitionController = require('../controllers/fieldDefinitionController');
 
 /**
@@ -17,7 +17,7 @@ const fieldDefinitionController = require('../controllers/fieldDefinitionControl
  *         name: entity
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *         description: Filter theo entity
  *       - in: query
  *         name: status
@@ -43,7 +43,7 @@ const fieldDefinitionController = require('../controllers/fieldDefinitionControl
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, fieldDefinitionController.getAll);
+router.get('/', requireAuth, requireSuperAdmin, fieldDefinitionController.getAll);
 
 /**
  * @swagger
@@ -58,7 +58,7 @@ router.get('/', requireAuth, requireAdmin, fieldDefinitionController.getAll);
  *         required: true
  *         schema:
  *           type: string
- *           enum: [stations, station_proposals, users]
+ *           enum: [stations, station_proposals, users, leads]
  *     responses:
  *       200:
  *         description: Thành công
@@ -89,7 +89,7 @@ router.get('/entity/:entity', fieldDefinitionController.getByEntity);
  *       404:
  *         description: Không tìm thấy
  */
-router.get('/:id', requireAuth, requireAdmin, fieldDefinitionController.getById);
+router.get('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.getById);
 
 /**
  * @swagger
@@ -109,7 +109,7 @@ router.get('/:id', requireAuth, requireAdmin, fieldDefinitionController.getById)
  *             properties:
  *               entity:
  *                 type: string
- *                 enum: [stations, station_proposals, users]
+ *                 enum: [stations, station_proposals, users, leads]
  *               key:
  *                 type: string
  *               label:
@@ -145,7 +145,7 @@ router.get('/:id', requireAuth, requireAdmin, fieldDefinitionController.getById)
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireAdmin, fieldDefinitionController.create);
+router.post('/', requireAuth, requireSuperAdmin, fieldDefinitionController.create);
 
 /**
  * @swagger
@@ -195,7 +195,7 @@ router.post('/', requireAuth, requireAdmin, fieldDefinitionController.create);
  *       404:
  *         description: Không tìm thấy
  */
-router.put('/:id', requireAuth, requireAdmin, fieldDefinitionController.update);
+router.put('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.update);
 
 /**
  * @swagger
@@ -221,7 +221,7 @@ router.put('/:id', requireAuth, requireAdmin, fieldDefinitionController.update);
  *       404:
  *         description: Không tìm thấy
  */
-router.delete('/:id', requireAuth, requireAdmin, fieldDefinitionController.delete);
+router.delete('/:id', requireAuth, requireSuperAdmin, fieldDefinitionController.delete);
 
 /**
  * @swagger
@@ -260,6 +260,43 @@ router.delete('/:id', requireAuth, requireAdmin, fieldDefinitionController.delet
  *       404:
  *         description: Không tìm thấy
  */
-router.patch('/:id/status', requireAuth, requireAdmin, fieldDefinitionController.updateStatus);
+router.patch('/:id/status', requireAuth, requireSuperAdmin, fieldDefinitionController.updateStatus);
+
+/**
+ * @swagger
+ * /api/field-definitions/{id}/lock:
+ *   patch:
+ *     tags: [Field Definitions]
+ *     summary: Khóa / mở khóa field definition (chỉ SUPER_ADMIN)
+ *     description: Field bị khóa chỉ cho phép sửa label; không thể sửa thuộc tính khác hoặc xóa.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [locked]
+ *             properties:
+ *               locked:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền Admin
+ *       404:
+ *         description: Không tìm thấy
+ */
+router.patch('/:id/lock', requireAuth, requireSuperAdmin, fieldDefinitionController.updateLock);
 
 module.exports = router;

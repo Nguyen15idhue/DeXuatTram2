@@ -1,0 +1,168 @@
+{
+  "tokens": {
+    "nguoi_phu_trach": {
+      "source": "field",
+      "key": "nguoi_phu_trach"
+    },
+    "address": {
+      "source": "field",
+      "key": "address"
+    },
+    "link_de_xuat": {
+      "source": "field",
+      "key": "link_de_xuat"
+    },
+    "dien_tich_mat_bang": {
+      "source": "field",
+      "key": "dien_tich_mat_bang"
+    },
+    "nguon_dien": {
+      "source": "field",
+      "key": "nguon_dien"
+    },
+    "thoi_gian_lap_dat": {
+      "source": "field",
+      "key": "thoi_gian_lap_dat"
+    },
+    "thoi_gian_nghiem_thu": {
+      "source": "field",
+      "key": "thoi_gian_nghiem_thu"
+    },
+    "lk_ten_phap_nhan": {
+      "source": "field",
+      "key": "lk_ten_phap_nhan"
+    },
+    "lk_mst": {
+      "source": "field",
+      "key": "lk_mst"
+    },
+    "lk_nguoi_dai_dien": {
+      "source": "field",
+      "key": "lk_nguoi_dai_dien"
+    },
+    "lk_dia_chi_dkkd": {
+      "source": "field",
+      "key": "lk_dia_chi_dkkd"
+    },
+    "lk_sdt": {
+      "source": "field",
+      "key": "lk_sdt"
+    },
+    "lk_ty_le_tmt": {
+      "source": "field",
+      "key": "lk_ty_le_tmt"
+    },
+    "lk_ty_le_doi_tac": {
+      "source": "field",
+      "key": "lk_ty_le_doi_tac"
+    },
+    "lk_chia_loi_nhuan_tmt": {
+      "source": "field",
+      "key": "lk_chia_loi_nhuan_tmt"
+    },
+    "lk_chia_loi_nhuan_lk": {
+      "source": "field",
+      "key": "lk_chia_loi_nhuan_lk"
+    },
+    "const_so_van_ban": {
+      "source": "const",
+      "key": "so_van_ban"
+    },
+    "const_plan_tdt": {
+      "source": "const",
+      "key": "plan_tdt"
+    },
+    "const_plan_lk": {
+      "source": "const",
+      "key": "plan_lk"
+    },
+    "const_plan_nq": {
+      "source": "const",
+      "key": "plan_nq"
+    },
+    "const_plan_npp": {
+      "source": "const",
+      "key": "plan_npp"
+    },
+    "const_signer_ketoan": {
+      "source": "const",
+      "key": "signer_ketoan"
+    },
+    "const_signer_tgd_nq_lk": {
+      "source": "const",
+      "key": "signer_tgd_nq_lk"
+    }
+  },
+  "loops": {
+    "loai_tru_lk": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "table",
+          "table": "loai_tru_lk",
+          "columns": {
+            "loai_tru": "loai_tru",
+            "so_luong": "so_luong",
+            "don_gia": "gia_niem_yet",
+            "thanh_tien": "thanh_tien"
+          }
+        }
+      ],
+      "footers": [
+        {
+          "id": "tmt",
+          "label": "Tổng chi phí TMT",
+          "formula": "SUM(thanh_tien)"
+        }
+      ]
+    },
+    "chi_phi_lk": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "table",
+          "table": "chi_phi_lk",
+          "columns": {
+            "loai_chi_phi": "loai_chi_phi",
+            "so_tien": "so_tien"
+          }
+        }
+      ],
+      "footers": [
+        {
+          "id": "dt",
+          "label": "Tổng chi phí đối tác",
+          "formula": "SUM(so_tien)"
+        }
+      ]
+    },
+    "luy_ke": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "datalist",
+          "listId": 25,
+          "columns": {
+            "loai_hinh": "loai_hinh",
+            "ke_hoach": "ke_hoach",
+            "de_xuat": "de_xuat",
+            "luy_ke": "luy_ke",
+            "chenh_lech": "chenh_lech"
+          }
+        }
+      ],
+      "footers": [
+        {
+          "id": "kehoach",
+          "label": "Tổng kế hoạch",
+          "formula": "SUM(ke_hoach)"
+        },
+        {
+          "id": "luyke",
+          "label": "Tổng lũy kế",
+          "formula": "SUM(luy_ke)"
+        }
+      ]
+    }
+  }
+}

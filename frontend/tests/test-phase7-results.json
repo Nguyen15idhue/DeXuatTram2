@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Login admin",
+    "status": "PASS"
+  },
+  {
+    "name": "Navigate to API Configs",
+    "status": "PASS"
+  },
+  {
+    "name": "Click edit on 1Office config",
+    "status": "PASS"
+  },
+  {
+    "name": "Preview endpoint works",
+    "status": "PASS"
+  },
+  {
+    "name": "Get template endpoint works",
+    "status": "PASS"
+  },
+  {
+    "name": "PUT template works",
+    "status": "PASS"
+  },
+  {
+    "name": "Preview returns correct sections",
+    "status": "PASS"
+  },
+  {
+    "name": "Check Swagger docs",
+    "status": "PASS"
+  }
+]

@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const ttlCache = require('../utils/ttlCache');
 
 exports.parseOptions = (optionsJson) => {
   if (!optionsJson) return [];
@@ -73,7 +74,7 @@ exports.validateField = (fieldDef, value) => {
       break;
 
     case 'select':
-      const options = exports.parseOptions(fieldDef.options);
+      const options = exports.parseOptions(fieldDef.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
       if (options.length > 0 && !options.includes(value)) {
         errors.push(`${fieldDef.label} không hợp lệ`);
       }
@@ -83,7 +84,7 @@ exports.validateField = (fieldDef, value) => {
       if (!Array.isArray(value)) {
         errors.push(`${fieldDef.label} phải là mảng`);
       } else {
-        const multiOptions = exports.parseOptions(fieldDef.options);
+        const multiOptions = exports.parseOptions(fieldDef.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
         if (multiOptions.length > 0) {
           const invalid = value.filter(v => !multiOptions.includes(v));
           if (invalid.length > 0) {
@@ -104,6 +105,50 @@ exports.validateField = (fieldDef, value) => {
         }
       }
       break;
+
+    case 'table': {
+      if (!Array.isArray(value)) {
+        errors.push(`${fieldDef.label} phải là mảng`);
+        break;
+      }
+      const tc = typeof fieldDef.source_config === 'string'
+        ? (() => { try { return JSON.parse(fieldDef.source_config); } catch { return {}; } })()
+        : (fieldDef.source_config || {});
+      if (tc.min_rows != null && value.length < tc.min_rows) {
+        errors.push(`${fieldDef.label} phải có ít nhất ${tc.min_rows} dòng`);
+      }
+      if (tc.max_rows != null && value.length > tc.max_rows) {
+        errors.push(`${fieldDef.label} không được quá ${tc.max_rows} dòng`);
+      }
+      const reqCols = (tc.columns || []).filter(c => c && c.required);
+      if (reqCols.length > 0) {
+        for (let i = 0; i < value.length; i++) {
+          const row = value[i] || {};
+          const missing = reqCols.filter(c => {
+            const v = row[c.key];
+            return v === '' || v === null || v === undefined;
+          });
+          if (missing.length > 0) {
+            errors.push(`${fieldDef.label}: dòng ${i + 1} thiếu ${missing.map(c => c.label || c.key).join(', ')}`);
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    case 'user': {
+      let rawUserId = value;
+      if (typeof value === 'object' && value !== null) {
+        rawUserId = value.id ?? value.user_id ?? value.value;
+      }
+      const userIdNum = Number(rawUserId);
+      if (!Number.isInteger(userIdNum) || userIdNum <= 0) {
+        errors.push(`${fieldDef.label} không hợp lệ`);
+      }
+      break;
+    }
+
     case 'textarea':
     case 'text':
     case 'formula':
@@ -129,6 +174,27 @@ exports.validateData = async (entity, data, fieldDefs) => {
     const value = data[fieldDef.key];
     const errors = exports.validateField(fieldDef, value);
     allErrors.push(...errors);
+  }
+
+  const userChecks = [];
+  for (const fieldDef of fieldDefs) {
+    if (fieldDef.type !== 'user') continue;
+    const value = data[fieldDef.key];
+    if (value === undefined || value === null || value === '') continue;
+    let raw = value;
+    if (typeof value === 'object' && value !== null) raw = value.id ?? value.user_id ?? value.value;
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > 0) userChecks.push({ fieldDef, id: n });
+  }
+  if (userChecks.length > 0) {
+    const ids = [...new Set(userChecks.map(u => u.id))];
+    try {
+      const [rows] = await pool.query(`SELECT id FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      const found = new Set(rows.map(r => Number(r.id)));
+      for (const { fieldDef, id } of userChecks) {
+        if (!found.has(id)) allErrors.push(`${fieldDef.label} không tồn tại`);
+      }
+    } catch { /* silent */ }
   }
 
   return allErrors;
@@ -184,6 +250,262 @@ exports.mergeData = (row, fieldDefs) => {
   return result;
 };
 
+const parseSourceConfig = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+exports.parseSourceConfig = parseSourceConfig;
+
+const TABLE_LINK_OPS = ['=', '!=', 'contains', 'not_contains', 'in', 'empty', 'not_empty'];
+
+const normalizeTableLink = (col) => {
+  if (!col) return null;
+  if (col.data_link && typeof col.data_link.enabled === 'boolean' && !col.data_link.enabled) return null;
+  if (col.data_link && col.data_link.enabled) {
+    return {
+      trigger: col.data_link.trigger_column || null,
+      fallbackColumn: col.data_link.default_column || col.data_list_column || null,
+      datalistId: col.data_link.datalist_id || col.data_list_id || null,
+      conditions: Array.isArray(col.data_link.conditions) ? col.data_link.conditions : []
+    };
+  }
+  if (col.autofill_from && (col.autofill_column || (col.price_rules && col.price_rules.when_field))) {
+    const pr = col.price_rules || {};
+    const conditions = pr.when_field
+      ? Object.entries(pr.map || {}).map(([value, column]) => ({ field: pr.when_field, op: '=', value, column }))
+      : [];
+    return {
+      trigger: col.autofill_from,
+      fallbackColumn: col.autofill_column || null,
+      datalistId: col.data_list_id || null,
+      conditions
+    };
+  }
+  return null;
+};
+
+const resolveCondFieldLabel = (fieldKey, rawVal, fieldDefs, dlRowsById) => {
+  const def = (fieldDefs || []).find(d => d && (d.key === fieldKey || d.field_key === fieldKey));
+  if (!def) return null;
+  const opts = Array.isArray(def.options) ? def.options : parseJsonField(def.options, []);
+  const m = (opts || []).find(o => String(o && o.value !== undefined ? o.value : (o && o.label)) === String(rawVal));
+  if (m) return (m.label !== undefined && m.label !== null) ? String(m.label) : null;
+  if (def.data_list_id && def.data_list_column && dlRowsById) {
+    const rows = dlRowsById[def.data_list_id] || [];
+    const hit = rows.find(r => String(r[def.data_list_column] ?? '') === String(rawVal));
+    if (hit) {
+      const lc = def.data_list_label_column || def.data_list_column;
+      if (hit[lc] !== undefined && hit[lc] !== null && hit[lc] !== '') return String(hit[lc]);
+    }
+  }
+  return null;
+};
+
+const testTableCondition = (cond, formValues, labelOf) => {
+  if (!cond || !cond.field) return false;
+  const raw = (formValues || {})[cond.field];
+  const s = (v) => String(v === undefined || v === null ? '' : v);
+  const cands = [s(raw)];
+  try {
+    const lb = labelOf(cond.field, raw);
+    if (lb !== null && lb !== undefined && s(lb) !== s(raw)) cands.push(s(lb));
+  } catch { /* silent */ }
+  const t = s(cond.value);
+  const tl = t.toLowerCase();
+  switch (cond.op) {
+    case '=': return cands.includes(t);
+    case '!=': return !cands.includes(t);
+    case 'contains': return tl !== '' && cands.some(c => c.toLowerCase().includes(tl));
+    case 'not_contains': return tl === '' || !cands.some(c => c.toLowerCase().includes(tl));
+    case 'in': {
+      const set = t.split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+      return set.length > 0 && cands.some(c => set.includes(c.toLowerCase()));
+    }
+    case 'empty': return raw === '' || raw === null || raw === undefined || (Array.isArray(raw) && raw.length === 0);
+    case 'not_empty': return !(raw === '' || raw === null || raw === undefined || (Array.isArray(raw) && raw.length === 0));
+    default: return false;
+  }
+};
+
+const parseJsonField = (v, fallback) => {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') { try { const p = JSON.parse(v); return p === undefined ? fallback : p; } catch { return fallback; } }
+  return fallback;
+};
+
+exports.resolveTablePrices = async (formValues, dynamicData, fieldDefs) => {
+  const flags = [];
+  const tables = (fieldDefs || []).filter(f => f && f.type === 'table' && f.source_type === 'json');
+  if (tables.length === 0) return flags;
+  const dataListService = require('./dataListService');
+  const dlCache = {};
+  const getDlRows = async (dlId) => {
+    if (!dlId) return [];
+    if (!dlCache[dlId]) {
+      try {
+        const dl = await dataListService.getById(Number(dlId));
+        dlCache[dlId] = (dl && dl.rows ? dl.rows : []).map(r => (r.data && typeof r.data === 'object' ? r.data : {}));
+      } catch { dlCache[dlId] = []; }
+    }
+    return dlCache[dlId];
+  };
+  for (const f of tables) {
+    const tc = parseSourceConfig(f.source_config);
+    const priceCols = (tc.columns || []).filter(c => normalizeTableLink(c));
+    if (priceCols.length === 0) continue;
+    const rows = dynamicData[f.key];
+    if (!Array.isArray(rows)) continue;
+    const fv = { ...(formValues || {}), ...(dynamicData || {}) };
+    const labelOf = (fk, rv) => resolveCondFieldLabel(fk, rv, fieldDefs, dlCache);
+    for (const pc of priceCols) {
+      const link = normalizeTableLink(pc);
+      const srcCol = (tc.columns || []).find(c => c && c.key === link.trigger);
+      if (!srcCol) continue;
+      let refDlId = srcCol.data_list_id;
+      let refDlCol = srcCol.data_list_column;
+      if (!refDlId || !refDlCol) {
+        try {
+          const refDef = (fieldDefs || []).find(d => d && d.key === link.trigger);
+          const sc2 = parseSourceConfig(refDef && refDef.source_config);
+          refDlId = refDlId || sc2.data_list_id;
+          refDlCol = refDlCol || sc2.data_list_column;
+        } catch { /* silent */ }
+      }
+      if (!refDlId) refDlId = link.datalistId;
+      let priceCol = link.fallbackColumn;
+      for (const cond of (link.conditions || [])) {
+        if (testTableCondition(cond, fv, labelOf)) { priceCol = cond.column; break; }
+      }
+      const dlRows = await getDlRows(refDlId);
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] || {};
+        const srcVal = row[link.trigger];
+        if (srcVal === '' || srcVal === null || srcVal === undefined) continue;
+        const allowed = [];
+        const seen = new Set();
+        dlRows.forEach(r => {
+          if (String(r[refDlCol] ?? '') !== String(srcVal)) return;
+          const v = r[priceCol];
+          if (v === null || v === undefined || v === '') return;
+          const k = String(v);
+          if (!seen.has(k)) { seen.add(k); allowed.push(v); }
+        });
+        const cur = row[pc.key];
+        const isEmpty = cur === '' || cur === null || cur === undefined;
+        const inSet = allowed.some(v => String(v) === String(cur));
+        if (isEmpty) {
+          if (allowed.length === 1) {
+            rows[i] = { ...row, [pc.key]: allowed[0] };
+          }
+        } else if (!inSet) {
+          flags.push(`${f.label || f.key}: dòng ${i + 1} giá "${cur}" không thuộc bảng giá theo điều kiện hiện tại`);
+        }
+      }
+    }
+  }
+  return flags;
+};
+
+const AUTO_USER_MODES = ['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'];
+const { gdttTitlesFor, isGdtt } = require('../constants/salesRanks');
+
+const parseCustomData = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+const hasUserValue = (v) => {
+  if (v === undefined || v === null || v === '') return false;
+  if (typeof v === 'object') {
+    const id = v.id ?? v.user_id ?? v.value;
+    return id !== undefined && id !== null && String(id).trim() !== '';
+  }
+  return String(v).trim() !== '';
+};
+
+const getUserWorkInfo = async (db, userId) => {
+  const info = { id: userId, role: '', parentId: null, phongBan: '', chucVu: '' };
+  if (!userId) return info;
+  try {
+    const [rows] = await db.query('SELECT role, parent_id, custom_data FROM users WHERE id = ?', [userId]);
+    if (rows.length === 0) return info;
+    info.role = rows[0].role || '';
+    if (rows[0].parent_id) info.parentId = Number(rows[0].parent_id);
+    const cd = parseCustomData(rows[0].custom_data);
+    info.phongBan = cd.department ? String(cd.department) : '';
+    info.chucVu = cd.chuc_vu ? String(cd.chuc_vu) : '';
+  } catch { /* silent */ }
+  return info;
+};
+
+const findCenterDirectorId = async (db, phongBan) => {
+  if (!phongBan) return null;
+  try {
+    const titles = gdttTitlesFor(phongBan);
+    const [rows] = await db.query(
+      `SELECT id FROM users WHERE role = 'SALES' AND status = 'ACTIVE'
+       AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?
+       AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) IN (${titles.map(() => '?').join(',')})
+       ORDER BY id ASC LIMIT 1`,
+      [phongBan, ...titles]
+    );
+    return rows.length > 0 ? rows[0].id : null;
+  } catch { return null; }
+};
+
+exports.applyAutoUserFields = async (dynamicData, fieldDefs, userId, connection = null, existingData = null) => {
+  if (!dynamicData || !fieldDefs || fieldDefs.length === 0) return dynamicData;
+  const autoFields = fieldDefs.filter(f => {
+    if (f.type !== 'user') return false;
+    const sc = parseSourceConfig(f.source_config);
+    return AUTO_USER_MODES.includes(sc.auto_user);
+  });
+  if (autoFields.length === 0) return dynamicData;
+
+  const db = connection || pool;
+  const currentId = Number(userId) > 0 ? Number(userId) : null;
+  const me = await getUserWorkInfo(db, currentId);
+
+  for (const f of autoFields) {
+    if (hasUserValue(dynamicData[f.key])) continue;
+    if (existingData && hasUserValue(existingData[f.key])) continue;
+    const sc = parseSourceConfig(f.source_config);
+    if (!currentId) {
+      dynamicData[f.key] = '';
+      continue;
+    }
+    let id = null;
+    if (sc.auto_user === 'parent_sales') {
+      id = me.parentId || currentId;
+    } else if (sc.auto_user === 'owner_or_manager') {
+      id = ['CTV', 'NPP'].includes(me.role) ? (me.parentId || currentId) : currentId;
+    } else if (sc.auto_user === 'area_director') {
+      if (['CTV', 'NPP'].includes(me.role)) id = me.parentId || currentId;
+      else if (me.role === 'SALES') id = currentId;
+      else id = null;
+    } else if (sc.auto_user === 'center_director') {
+      let picId = null;
+      if (['CTV', 'NPP'].includes(me.role)) picId = me.parentId || currentId;
+      else if (me.role === 'SALES' && !isGdtt(me.chucVu, me.phongBan)) picId = currentId;
+      if (picId) {
+        const pic = await getUserWorkInfo(db, picId);
+        if (['ADMIN', 'SUPER_ADMIN'].includes(pic.role)) id = picId;
+        else id = await findCenterDirectorId(db, pic.phongBan);
+      } else {
+        id = null;
+      }
+    } else {
+      id = currentId;
+    }
+    dynamicData[f.key] = id ? { id } : '';
+  }
+
+  return dynamicData;
+};
+
 exports.buildDynamicSetClause = (data, fieldDefs) => {
   if (!fieldDefs || fieldDefs.length === 0) return null;
 
@@ -200,9 +522,88 @@ exports.buildDynamicSetClause = (data, fieldDefs) => {
 };
 
 exports.getFieldDefinitionsByEntity = async (entity) => {
+  const cacheKey = `fielddefs:${entity}`;
+  const cached = ttlCache.get(cacheKey);
+  if (cached) return cached;
   const [rows] = await pool.query(
     'SELECT * FROM field_definitions WHERE entity = ? AND status = ?',
     [entity, 'active']
   );
+  ttlCache.set(cacheKey, rows, 120000);
   return rows;
+};
+
+exports.enrichUserFields = async (record, fieldDefs, preloadedMap = null) => {
+  if (!record || !fieldDefs || fieldDefs.length === 0) return record;
+  const userFields = fieldDefs.filter(f => f.type === 'user');
+  if (userFields.length === 0) return record;
+  const getId = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const raw = (typeof v === 'object' && v !== null) ? (v.id ?? v.user_id ?? v.value) : v;
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const idSet = new Set();
+  for (const f of userFields) {
+    const v = record[f.key] !== undefined ? record[f.key] : (record.custom_data && record.custom_data[f.key]);
+    const id = getId(v);
+    if (id !== null) idSet.add(id);
+  }
+  if (idSet.size === 0) return record;
+  let nameMap = preloadedMap;
+  if (!nameMap) {
+    nameMap = new Map();
+    try {
+      const ids = [...idSet];
+      const [rows] = await pool.query(`SELECT id, full_name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      nameMap = new Map(rows.map(r => [Number(r.id), r.full_name || '']));
+    } catch { /* silent */ }
+  }
+  if (!nameMap || nameMap.size === 0) return record;
+  const out = { ...record };
+  const cd = { ...(out.custom_data || {}) };
+  for (const f of userFields) {
+    const cur = out[f.key] !== undefined ? out[f.key] : cd[f.key];
+    const id = getId(cur);
+    if (id === null || !nameMap.has(id)) continue;
+    const label = nameMap.get(id);
+    const enriched = (typeof cur === 'object' && cur !== null) ? { ...cur, label } : { id, label };
+    if (out[f.key] !== undefined) out[f.key] = enriched;
+    if (cd[f.key] !== undefined) cd[f.key] = enriched;
+  }
+  out.custom_data = cd;
+  return out;
+};
+
+exports.enrichUserFieldsMany = async (records, fieldDefs) => {
+  if (!records || records.length === 0 || !fieldDefs || fieldDefs.length === 0) return records;
+  const userFields = fieldDefs.filter(f => f.type === 'user');
+  if (userFields.length === 0) return records;
+  const getId = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const raw = (typeof v === 'object' && v !== null) ? (v.id ?? v.user_id ?? v.value) : v;
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const idSet = new Set();
+  for (const rec of records) {
+    for (const f of userFields) {
+      const v = rec[f.key] !== undefined ? rec[f.key] : (rec.custom_data && rec.custom_data[f.key]);
+      const id = getId(v);
+      if (id !== null) idSet.add(id);
+    }
+  }
+  let nameMap = new Map();
+  if (idSet.size > 0) {
+    try {
+      const ids = [...idSet];
+      const [rows] = await pool.query(`SELECT id, full_name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+      nameMap = new Map(rows.map(r => [Number(r.id), r.full_name || '']));
+    } catch { /* silent */ }
+  }
+  const out = [];
+  for (const rec of records) {
+    out.push(await exports.enrichUserFields(rec, fieldDefs, nameMap));
+  }
+  return out;
 };

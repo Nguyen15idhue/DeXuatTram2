@@ -16,7 +16,7 @@ export const useDataList = (dataListId, token) => {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await dataListService.getById(dataListId, token);
+        const res = await dataListService.getById(dataListId);
         if (!cancelled && res.success && res.data) {
           const cols = res.data.columns_config || [];
           setColumns(cols);

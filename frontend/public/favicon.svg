@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="TMT-EGREEN">
+  <rect width="512" height="512" fill="#ffffff"/>
+  <ellipse cx="256" cy="200" rx="168" ry="86" fill="none" stroke="#243a7d" stroke-width="16"/>
+  <text x="256" y="238" text-anchor="middle" fill="#243a7d"
+        font-family="Arial, Helvetica, sans-serif" font-weight="bold"
+        font-size="120" letter-spacing="2">TMT</text>
+  <text x="256" y="332" text-anchor="middle" fill="#243a7d"
+        font-family="Arial, Helvetica, sans-serif" font-weight="bold"
+        font-size="54" letter-spacing="1">TMT - EGREEN</text>
+</svg>

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middlewares/auth');
+const { requireAuth, requireUserManager } = require('../middlewares/auth');
 const dashboardController = require('../controllers/dashboardController');
 
 /**
@@ -58,6 +58,6 @@ const dashboardController = require('../controllers/dashboardController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireAdmin, dashboardController.getStats);
+router.get('/', requireAuth, requireUserManager, dashboardController.getStats);
 
 module.exports = router;

@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { dynamicService, dataListService } from '../../services/api';
+import { dynamicService, dataListService, fieldDefinitionService, formService, geocodeService } from '../../services/api';
 import DynamicField from './DynamicField';
 import { create, all } from 'mathjs';
-import { formatNumber } from '../../utils/formatNumber';
+import { parseFormattedNumber, formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
+import { getDataListLabel } from '../../utils/dataListLabel';
+import { collectTableDatalistIds } from '../../utils/tableColumnSource';
+import { fetchDataList } from '../../utils/dataListCache';
+import { getSuggestions, rememberFormValues, clearFieldMemory, isMemorableField } from '../../utils/formMemory';
+import { getLeadSectionKind } from '../../utils/leadSectionPerms';
+import { canViewSection, canEditSectionExplicit, userCtxFromAuthUser } from '../../utils/formSectionPerms';
+import { canViewLeadSection, canEditLeadSection } from '../../utils/leadSectionPerms';
 
 const math = create(all);
 const customFunctions = {
@@ -18,6 +25,11 @@ const customFunctions = {
   COUNT: (...args) => args.filter(v => v !== null && v !== undefined && !isNaN(v)).length,
   COUNTA: (...args) => args.filter(v => v !== null && v !== undefined && v !== '').length,
   AVERAGE: (...args) => { const nums = args.flat().filter(v => v !== null && v !== undefined && !isNaN(v)); return nums.length === 0 ? 0 : nums.reduce((s, v) => s + Number(v), 0) / nums.length; },
+  TABLE_SUM: (arr) => { if (!Array.isArray(arr)) return 0; return arr.reduce((s, v) => s + (Number(v) || 0), 0); },
+  TABLE_AVG: (arr) => { if (!Array.isArray(arr)) return 0; const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)); return nums.length === 0 ? 0 : nums.reduce((s, v) => s + Number(v), 0) / nums.length; },
+  TABLE_MIN: (arr) => { if (!Array.isArray(arr) || arr.length === 0) return 0; const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number); return nums.length === 0 ? 0 : Math.min(...nums); },
+  TABLE_MAX: (arr) => { if (!Array.isArray(arr) || arr.length === 0) return 0; const nums = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).map(Number); return nums.length === 0 ? 0 : Math.max(...nums); },
+  TABLE_COUNT: (arr) => { if (!Array.isArray(arr)) return 0; return arr.filter(v => v !== null && v !== undefined && v !== '').length; },
   CONCAT: (...args) => args.map(v => v ?? '').join(''),
   LEN: (s) => String(s ?? '').length,
   LEFT: (s, n = 1) => String(s ?? '').substring(0, n),
@@ -36,28 +48,225 @@ const customFunctions = {
 };
 math.import(customFunctions, { override: false });
 
-const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) => {
-  const { token } = useAuth();
+const parseSourceConfig = (val) => {
+  if (!val) return {};
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return {}; }
+};
+
+const AUTO_USER_MODES = ['current_user', 'parent_sales', 'owner_or_manager', 'area_director', 'center_director'];
+const LOCKED_ROLES = ['CTV', 'NPP'];
+
+const resolveAutoUserId = (sc, authUser) => {
+  const mode = sc && sc.auto_user;
+  if (!AUTO_USER_MODES.includes(mode)) return null;
+  if (!authUser || !authUser.id) return null;
+  if (mode === 'parent_sales') return authUser.parent_id || authUser.id;
+  if (mode === 'owner_or_manager') {
+    return ['CTV', 'NPP'].includes(authUser.role) ? (authUser.parent_id || authUser.id) : authUser.id;
+  }
+  if (mode === 'area_director') {
+    if (['CTV', 'NPP'].includes(authUser.role)) return authUser.parent_id || authUser.id;
+    if (authUser.role === 'SALES') return authUser.id;
+    return null;
+  }
+  if (mode === 'center_director') return null;
+  return authUser.id;
+};
+
+const isAutoUserLocked = (sc, authUser) => {
+  const mode = sc && sc.auto_user;
+  if (!AUTO_USER_MODES.includes(mode)) return false;
+  return LOCKED_ROLES.includes(authUser && authUser.role);
+};
+
+const MAX_TAB_DEPTH = 5;
+
+const evalVisibleWhen = (node, formData) => {
+  if (!node || !node.visibleWhen || !node.visibleWhen.field) return true;
+  return String(formData[node.visibleWhen.field] ?? '') === String(node.visibleWhen.value ?? '');
+};
+
+const markRows = (rowHidden, rows, visible) => {
+  (rows || []).forEach((row) => {
+    if (!row || !row.id) return;
+    rowHidden[row.id] = rowHidden[row.id] === false ? false : !visible;
+  });
+};
+
+const walkLayout = (node, visible, formData, sectionMap, pathSet, depth, isReferenced, rowHidden) => {
+  if (!node || depth > MAX_TAB_DEPTH) return;
+  const myVisible = isReferenced ? visible : (visible && evalVisibleWhen(node, formData));
+  if (node.type === 'tabs' || Array.isArray(node.tabs)) {
+    (node.tabs || []).forEach((tab) => {
+      if (!tab) return;
+      const tabVisible = myVisible && evalVisibleWhen(tab, formData);
+      (tab.sectionRefs || []).forEach((refId) => {
+        if (pathSet.has(refId)) return;
+        const sec = sectionMap[refId];
+        if (!sec) return;
+        const next = new Set(pathSet);
+        next.add(refId);
+        walkLayout(sec, tabVisible, formData, sectionMap, next, depth + 1, true, rowHidden);
+      });
+      if (Array.isArray(tab.tabs)) {
+        walkLayout(tab, tabVisible, formData, sectionMap, pathSet, depth + 1, false, rowHidden);
+      }
+    });
+    markRows(rowHidden, node.rows, myVisible);
+  } else {
+    markRows(rowHidden, node.rows, myVisible);
+  }
+};
+
+const computeRowHidden = (layoutConfig, formData) => {
+  const rowHidden = {};
+  const sections = (layoutConfig && layoutConfig.sections) || [];
+  const sectionMap = {};
+  sections.forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
+  sections.forEach((sec) => walkLayout(sec, true, formData, sectionMap, new Set(), 1, false, rowHidden));
+  return rowHidden;
+};
+
+const buildSectionMap = (layoutConfig) => {
+  const sectionMap = {};
+  ((layoutConfig && layoutConfig.sections) || []).forEach((s) => { if (s && s.id) sectionMap[s.id] = s; });
+  return sectionMap;
+};
+
+const findTabForRow = (layoutConfig, rowId) => {
+  const sectionMap = buildSectionMap(layoutConfig);
+  const sections = (layoutConfig && layoutConfig.sections) || [];
+  const search = (node, path, depth) => {
+    if (!node || depth > MAX_TAB_DEPTH) return null;
+    if (node.type === 'tabs' || Array.isArray(node.tabs)) {
+      for (const tab of (node.tabs || [])) {
+        if (!tab) continue;
+        for (const refId of (tab.sectionRefs || [])) {
+          const sec = sectionMap[refId];
+          if (sec && !(sec.type === 'tabs' || Array.isArray(sec.tabs)) && (sec.rows || []).some((r) => r.id === rowId)) {
+            return { path, tabId: tab.id };
+          }
+        }
+        if (Array.isArray(tab.tabs)) {
+          const found = search(tab, `${path}/${tab.id}`, depth + 1);
+          if (found) return found;
+        }
+      }
+    }
+    return null;
+  };
+  for (const sec of sections) {
+    const found = search(sec, sec.id, 1);
+    if (found) return found;
+  }
+  return null;
+};
+
+const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null, beforeActions = null, readOnlyKeys = [], focusSection = null }) => {
+  const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [formConfig, setFormConfig] = useState(null);
   const [fields, setFields] = useState([]);
+  const [allEntityFields, setAllEntityFields] = useState([]);
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [dataListOptions, setDataListOptions] = useState({});
+  const [resolvedFormId, setResolvedFormId] = useState(null);
+  const [activeTabs, setActiveTabs] = useState({});
+  const [geocoding, setGeocoding] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [memVersion, setMemVersion] = useState(0);
+  const formRef = useRef(null);
+  const geocodeTimerRef = useRef(null);
+  const geocodeSeqRef = useRef(0);
 
   useEffect(() => {
-    if (formId) loadFormConfig();
-  }, [entity, formId]);
+    if (formIdProp) { setResolvedFormId(formIdProp); return; }
+    if (purpose) { resolveFormId(); return; }
+  }, [entity, formIdProp, purpose]);
+
+  const resolveFormId = async () => {
+    try {
+      setLoading(true);
+      const res = await formService.getByEntityAndPurpose(entity, purpose);
+      if (res.success && res.data) {
+        setResolvedFormId(res.data.id);
+      } else {
+        setResolvedFormId(formIdProp || null);
+      }
+    } catch {
+      setResolvedFormId(formIdProp || null);
+    }
+  };
+
+  useEffect(() => {
+    if (resolvedFormId) loadFormConfig();
+  }, [resolvedFormId, authUser?.id, authUser?.parent_id]);
+
+  useEffect(() => {
+    if (!focusSection || fields.length === 0) return;
+    const t = setTimeout(() => {
+      const el = formRef.current && formRef.current.querySelector(`[data-lead-section="${focusSection}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [focusSection, fields.length]);
+
+  const userCtx = useMemo(() => userCtxFromAuthUser(authUser), [authUser]);
+  const sectionVisible = useCallback((section) => {
+    if (entity === 'leads') return canViewLeadSection(section, authUser);
+    return canViewSection(section, userCtx);
+  }, [entity, authUser, userCtx]);
+  const sectionEditable = useCallback((section) => {
+    if (!section) return true;
+    if (entity === 'leads') return canEditLeadSection(section, authUser);
+    const ex = canEditSectionExplicit(section, userCtx);
+    return ex === null ? true : ex;
+  }, [entity, authUser, userCtx]);
+  const fieldSectionMap = useMemo(() => {
+    const map = {};
+    const lc = formConfig?.layout_config
+      ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+      : null;
+    if (!lc || !lc.sections) return map;
+    const secMap = buildSectionMap(lc);
+    const rowToSec = {};
+    (lc.sections || []).forEach((s) => {
+      if (!s) return;
+      if (s.type === 'tabs' || Array.isArray(s.tabs)) {
+        (s.tabs || []).forEach((t) => {
+          (t.sectionRefs || []).forEach((id) => {
+            const rs = secMap[id];
+            if (rs) (rs.rows || []).forEach((r) => { rowToSec[r.id] = rs; });
+          });
+        });
+      } else {
+        (s.rows || []).forEach((r) => { rowToSec[r.id] = s; });
+      }
+    });
+    fields.forEach((f) => {
+      const rid = f.config && f.config.rowId;
+      if (rid !== undefined && rid !== null && rowToSec[rid]) map[f.key] = rowToSec[rid];
+    });
+    return map;
+  }, [formConfig, fields]);
 
   const loadFormConfig = async () => {
     try {
       setLoading(true);
-      const res = await dynamicService.getFormConfig(entity, formId);
+      const res = await dynamicService.getFormConfig(entity, resolvedFormId);
       if (res.success) {
         setFormConfig(res.data.form);
+        setSubmitAttempted(false);
+        setErrors({});
         const fieldList = (res.data.fields || []).map(f => {
           const cfg = f.config ? (typeof f.config === 'string' ? JSON.parse(f.config) : f.config) : {};
+          const sc = parseSourceConfig(f.source_config);
+          const autoUserId = f.type === 'user' ? resolveAutoUserId(sc, authUser) : null;
+          const autoLocked = f.type === 'user' ? isAutoUserLocked(sc, authUser) : false;
           return {
             ...f,
             config: cfg,
@@ -66,13 +275,17 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
             readonly: cfg.readonly || false,
             labelOverride: cfg.labelOverride || '',
             placeholderOverride: cfg.placeholderOverride || '',
-            requiredOverride: cfg.requiredOverride
+            autoUser: sc.auto_user || 'none',
+            autoUserId,
+            autoLocked
           };
         });
         setFields(fieldList);
         const defaults = {};
         fieldList.forEach(f => {
-          if (initialData[f.key] !== undefined && initialData[f.key] !== null) {
+          if (f.autoUserId) {
+            defaults[f.key] = { id: f.autoUserId };
+          } else if (initialData[f.key] !== undefined && initialData[f.key] !== null) {
             defaults[f.key] = initialData[f.key];
           } else if (f.default_value !== undefined) {
             defaults[f.key] = f.default_value;
@@ -80,37 +293,50 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
             defaults[f.key] = false;
           } else if (f.type === 'multiselect') {
             defaults[f.key] = [];
+          } else if (f.type === 'table') {
+            defaults[f.key] = [];
           } else {
             defaults[f.key] = '';
           }
         });
         setFormData(defaults);
 
-        const dlIds = [...new Set(fieldList.filter(f => f.data_list_id).map(f => f.data_list_id))];
+        const dlIdSet = new Set(fieldList.filter(f => f.data_list_id).map(f => f.data_list_id));
+        fieldList.forEach(f => {
+          if (f.type !== 'table') return;
+          const tc = (() => {
+            if (!f.source_config) return {};
+            if (typeof f.source_config === 'object') return f.source_config;
+            try { return JSON.parse(f.source_config); } catch { return {}; }
+          })();
+          (tc.columns || []).forEach(col => { for (const id of collectTableDatalistIds([col], fieldList)) dlIdSet.add(id); });
+        });
+        const dlIds = [...dlIdSet];
         if (dlIds.length > 0) {
           const dlMap = {};
           await Promise.all(dlIds.map(async (dlId) => {
             try {
-              const dlRes = await dataListService.getById(dlId, token);
-              if (dlRes.success && dlRes.data) {
-                const cols = dlRes.data.columns_config || [];
-                const rows = dlRes.data.rows || [];
+              const dlData = await fetchDataList(dlId);
+              if (dlData) {
+                const cols = dlData.columns_config || [];
+                const rows = dlData.rows || [];
                 const tree = {};
                 const unique = {};
-                cols.forEach(col => { tree[col.key] = {}; unique[col.key] = []; });
+                const seen = {};
+                cols.forEach(col => { tree[col.key] = {}; unique[col.key] = []; seen[col.key] = new Set(); });
+                const firstCol = cols[0];
                 rows.forEach(r => {
                   const data = r.data || {};
                   cols.forEach(col => {
                     const val = data[col.key];
                     if (!val) return;
                     if (!tree[col.key][val]) tree[col.key][val] = [];
-                    const firstCol = cols[0];
                     tree[col.key][val].push({
                       value: firstCol ? (data[firstCol.key] || '') : '',
                       label: firstCol ? (data[firstCol.key] || '') : '',
                       _raw: data
                     });
-                    if (!unique[col.key].includes(val)) unique[col.key].push(val);
+                    if (!seen[col.key].has(val)) { seen[col.key].add(val); unique[col.key].push(val); }
                   });
                 });
                 dlMap[dlId] = { tree, unique };
@@ -127,10 +353,97 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     }
   };
 
+  useEffect(() => {
+    if (!entity || fields.length === 0) return;
+    const hasTable = fields.some(f => f.type === 'table');
+    if (!hasTable) return;
+    const loadAll = async () => {
+      try {
+        const res = await fieldDefinitionService.getAll(`entity=${entity}&limit=100`, token);
+        if (res.success) setAllEntityFields(res.data || []);
+      } catch {}
+    };
+    loadAll();
+  }, [entity, fields, token]);
+
+  useEffect(() => {
+    if (!initialData || fields.length === 0) return;
+    setFormData(prev => {
+      let changed = false;
+      const next = { ...prev };
+      fields.forEach(f => {
+        if (initialData[f.key] !== undefined && initialData[f.key] !== null && initialData[f.key] !== prev[f.key]) {
+          next[f.key] = initialData[f.key];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [initialData, fields]);
+
   const handleChange = useCallback((key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: '' }));
+    if (onValuesChangeRef.current) {
+      onValuesChangeRef.current({ [key]: value });
+    }
   }, []);
+
+  const onValuesChangeRef = useRef(null);
+  onValuesChangeRef.current = onValuesChange;
+  const lastCoordsRef = useRef({ latitude: undefined, longitude: undefined });
+  useEffect(() => {
+    if (!onValuesChangeRef.current) return;
+    const lat = formData.latitude ?? '';
+    const lng = formData.longitude ?? '';
+    if (lastCoordsRef.current.latitude === lat && lastCoordsRef.current.longitude === lng) return;
+    lastCoordsRef.current = { latitude: lat, longitude: lng };
+    onValuesChangeRef.current({ latitude: lat, longitude: lng });
+  });
+
+  useEffect(() => {
+    if (entity !== 'station_proposals' && entity !== 'stations') return;
+    if (fields.length === 0) return;
+    const keySet = new Set(fields.map(f => f.key));
+    if (!keySet.has('latitude') || !keySet.has('longitude')) return;
+    const targets = ['address', 'province', 'xa_phuong', 'ma_tinh', 'vung_mien'].filter(k => keySet.has(k));
+    if (targets.length === 0) return;
+
+    const lat = parseFloat(formData.latitude);
+    const lng = parseFloat(formData.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const isEmpty = (v) => v === undefined || v === null || String(v).trim() === '';
+    if (!targets.some(k => isEmpty(formData[k]))) return;
+
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    const seq = ++geocodeSeqRef.current;
+    geocodeTimerRef.current = setTimeout(async () => {
+      setGeocoding(true);
+      try {
+        const res = await geocodeService.reverse(lat, lng);
+        if (seq !== geocodeSeqRef.current) return;
+        const data = res && res.data;
+        if (!data || !data.found) return;
+        const admin = data.admin || {};
+        setFormData(prev => {
+          const next = { ...prev };
+          const empty = (v) => v === undefined || v === null || String(v).trim() === '';
+          const addr = data.address || data.formatted;
+          if (keySet.has('address') && empty(prev.address) && addr) next.address = addr;
+          if (keySet.has('province') && empty(prev.province) && admin.province) next.province = admin.province;
+          if (keySet.has('xa_phuong') && empty(prev.xa_phuong) && admin.xa_phuong) next.xa_phuong = admin.xa_phuong;
+          if (keySet.has('ma_tinh') && empty(prev.ma_tinh) && admin.ma_tinh) next.ma_tinh = admin.ma_tinh;
+          if (keySet.has('vung_mien') && empty(prev.vung_mien) && admin.vung_mien) next.vung_mien = admin.vung_mien;
+          return next;
+        });
+      } catch { /* bỏ qua lỗi geocode */ } finally {
+        if (seq === geocodeSeqRef.current) setGeocoding(false);
+      }
+    }, 700);
+
+    return () => { if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current); };
+  }, [entity, fields, formData.latitude, formData.longitude]);
 
   const parentFieldMap = useMemo(() => {
     const map = {};
@@ -143,6 +456,25 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     return map;
   }, [fields]);
 
+  const memoryMap = useMemo(() => {
+    if (purpose !== 'create') return {};
+    const map = {};
+    const formKey = resolvedFormId || purpose;
+    fields.forEach(f => {
+      if (isMemorableField(f)) {
+        map[f.key] = getSuggestions(entity, formKey, f.key, authUser?.id);
+      }
+    });
+    return map;
+  }, [purpose, entity, resolvedFormId, fields, authUser?.id, memVersion]);
+
+  const getParentValue = useCallback((parentCol) => {
+    if (formData[parentCol] !== undefined) return formData[parentCol];
+    const parentFieldDef = fields.find(f => f.data_list_column === parentCol && f.key !== parentCol);
+    if (parentFieldDef) return formData[parentFieldDef.key];
+    return undefined;
+  }, [fields, formData]);
+
   const prevFormDataRef = useRef(formData);
 
   useEffect(() => {
@@ -154,7 +486,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       childKeys.forEach(childKey => {
         const childField = fields.find(f => f.key === childKey);
         if (childField && childField.type === 'select') {
-          const parentVal = formData[parentKey];
+          const parentVal = getParentValue(parentKey);
           if (parentVal) {
             if (next[childKey] && !isOptionValidForParent(childField, parentVal, next[childKey])) {
               next[childKey] = '';
@@ -187,8 +519,7 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     if (!tree) return true;
     const col = childField.data_list_column;
     if (!col) return true;
-    const parentField = fields.find(f => f.key === childField.parent_field);
-    const parentCol = childField.relation_key || parentField?.data_list_column;
+    const parentCol = childField.parent_field;
     if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
       return tree[parentCol][parentVal].some(r => r._raw?.[col] === optionVal);
     }
@@ -202,10 +533,9 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       if (!col || !tree[col]) return [];
 
       if (field.parent_field) {
-        const parentVal = formData[field.parent_field];
+        const parentVal = getParentValue(field.parent_field);
         if (!parentVal) return [];
-        const parentField = fields.find(f => f.key === field.parent_field);
-        const parentCol = field.relation_key || parentField?.data_list_column;
+        const parentCol = field.parent_field;
         if (parentCol && tree[parentCol] && tree[parentCol][parentVal]) {
           const parentRows = tree[parentCol][parentVal];
           const seen = new Set();
@@ -213,16 +543,19 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
             const v = r._raw?.[col];
             if (v && !seen.has(v)) { seen.add(v); return true; }
             return false;
-          }).map(r => ({ value: r._raw[col], label: r._raw[col], _raw: r._raw }));
+          }).map(r => ({ value: r._raw[col], label: getDataListLabel(field, r._raw, r._raw[col]), _raw: r._raw }));
         }
         return [];
       }
 
-      return (unique[col] || []).map(v => ({ value: v, label: v }));
+      return (unique[col] || []).map(v => {
+        const raw = tree[col][v] && tree[col][v][0] ? tree[col][v][0]._raw : null;
+        return { value: v, label: getDataListLabel(field, raw, v) };
+      });
     }
 
     if (!field.parent_field || !field.source_config) return field.options || [];
-    const parentVal = formData[field.parent_field];
+    const parentVal = getParentValue(field.parent_field);
     if (!parentVal) return [];
     try {
       const sc = typeof field.source_config === 'string' ? JSON.parse(field.source_config) : field.source_config;
@@ -239,24 +572,36 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     try {
       const scope = {};
       fields.forEach(f => {
-        if (f.key !== field.key) {
+        if (f.key !== field.key && f.type !== 'password') {
           const val = formData[f.key];
           if (val !== undefined && val !== '') {
-            scope[f.key] = f.type === 'number' ? (parseFloat(val) || 0) : val;
+            if (f.type === 'table' && Array.isArray(val)) {
+              const tc = (() => {
+                if (!f.source_config) return {};
+                if (typeof f.source_config === 'object') return f.source_config;
+                try { return JSON.parse(f.source_config); } catch { return {}; }
+              })();
+              const columns = tc.columns || [];
+              const nested = {};
+              for (const col of columns) {
+                const colValues = val.map(r => r[col.key] ?? '');
+                scope[`${f.key}.${col.key}`] = colValues;
+                nested[col.key] = colValues;
+              }
+              scope[f.key] = nested;
+            } else if (f.type === 'number' || f.type === 'formula') {
+              const num = typeof val === 'number' ? val : parseFormattedNumber(val);
+              scope[f.key] = isNaN(num) ? 0 : num;
+            } else {
+              scope[f.key] = val;
+            }
           }
         }
       });
       const result = math.evaluate(field.formula_config.expression, scope);
       if (result === null || result === undefined) return '';
-      const outputType = field.formula_config.outputType || 'auto';
-      if (outputType === 'number' || (outputType === 'auto' && typeof result === 'number')) {
-        return formatNumber(result, {
-          format: field.formula_config.numberFormat || 'plain',
-          decimalPlaces: field.formula_config.decimalPlaces,
-          unit: field.formula_config.unit
-        });
-      }
-      return String(result);
+      if (typeof result === 'number' && !isFinite(result)) return '';
+      return result;
     } catch { return ''; }
   };
 
@@ -282,9 +627,14 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
 
   const validate = () => {
     const newErrors = {};
+    const layoutForValidate = formConfig?.layout_config
+      ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+      : null;
+    const sectionHidden = computeRowHidden(layoutForValidate, formData);
     fields.forEach(f => {
+      if (f.config && f.config.rowId && sectionHidden[f.config.rowId]) return;
       if (!isFieldVisible(f)) return;
-      const isRequired = f.requiredOverride !== undefined ? f.requiredOverride : f.required;
+      const isRequired = f.required;
       if (isRequired) {
         const val = formData[f.key];
         if (val === '' || val === null || val === undefined) {
@@ -295,22 +645,119 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
           const label = f.labelOverride || f.label;
           newErrors[f.key] = `${label} là bắt buộc`;
         }
+        if (f.type === 'table' && Array.isArray(val) && val.length === 0) {
+          const label = f.labelOverride || f.label;
+          newErrors[f.key] = `${label} phải có ít nhất 1 dòng`;
+        }
+      }
+      if (f.type === 'table' && Array.isArray(formData[f.key])) {
+        const tc = (() => {
+          if (!f.source_config) return {};
+          if (typeof f.source_config === 'object') return f.source_config;
+          try { return JSON.parse(f.source_config); } catch { return {}; }
+        })();
+        const rows = formData[f.key];
+        if (tc.min_rows != null && rows.length < tc.min_rows) {
+          newErrors[f.key] = `${f.label || f.key} phải có ít nhất ${tc.min_rows} dòng`;
+        }
+        if (tc.max_rows != null && rows.length > tc.max_rows) {
+          newErrors[f.key] = `${f.label || f.key} không được quá ${tc.max_rows} dòng`;
+        }
+        const reqCols = (tc.columns || []).filter(c => c && c.required);
+        if (reqCols.length > 0 && !newErrors[f.key]) {
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i] || {};
+            const missing = reqCols.filter(c => {
+              const v = row[c.key];
+              return v === '' || v === null || v === undefined;
+            });
+            if (missing.length > 0) {
+              newErrors[f.key] = `${f.label || f.key}: dòng ${i + 1} thiếu ${missing.map(c => c.label || c.key).join(', ')}`;
+              break;
+            }
+          }
+        }
       }
     });
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const errorKeys = getOrderedErrorKeys(newErrors);
+    if (errorKeys.length > 0) {
+      activateTabForField(errorKeys[0], layoutForValidate);
+    }
+    return errorKeys;
+  };
+
+  const getOrderedErrorKeys = (errObj) => {
+    const order = {};
+    fields.forEach((f, i) => { order[f.key] = i; });
+    return Object.keys(errObj || {}).sort((a, b) => (order[a] ?? 9999) - (order[b] ?? 9999));
+  };
+
+  const activateTabForField = (key, layout) => {
+    const target = fields.find(f => f.key === key);
+    const rowId = target?.config?.rowId;
+    if (!rowId) return;
+    const lc = layout || (formConfig?.layout_config
+      ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
+      : null);
+    const loc = findTabForRow(lc, rowId);
+    if (loc) setActiveTabs(prev => (prev[loc.path] === loc.tabId ? prev : { ...prev, [loc.path]: loc.tabId }));
+  };
+
+  const scrollToField = (key) => {
+    setTimeout(() => {
+      const root = formRef.current || document;
+      const el = root.querySelector(`[data-field-key="${CSS.escape(key)}"]`);
+      const visible = el && el.offsetParent !== null;
+      const target = visible ? el : root.querySelector('[data-error-summary]');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (visible) {
+          const input = el.querySelector('input, select, textarea');
+          if (input) input.focus({ preventScroll: true });
+        }
+      }
+    }, 80);
+  };
+
+  const focusFirstError = (keys) => {
+    if (!keys || keys.length === 0) return;
+    activateTabForField(keys[0]);
+    scrollToField(keys[0]);
+  };
+
+  const scrollToBanner = () => {
+    setTimeout(() => {
+      const banner = (formRef.current || document).querySelector('[data-error-summary],[data-error-banner]');
+      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setError('');
-    if (!validate()) return;
+    setSubmitAttempted(true);
+    const errorKeys = validate();
+    if (errorKeys.length > 0) {
+      scrollToBanner();
+      return;
+    }
+    setSubmitting(true);
     try {
       if (onSubmit) {
         await onSubmit(formData);
       }
+      if (purpose === 'create') {
+        rememberFormValues(entity, resolvedFormId || purpose, fields, formData, authUser?.id);
+        setMemVersion((v) => v + 1);
+      }
+      setSubmitAttempted(false);
     } catch (err) {
       setError(err.message || 'Lỗi lưu dữ liệu');
+      scrollToBanner();
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -321,7 +768,14 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     const resolvedOptions = getFilteredOptions(field);
     const displayLabel = field.labelOverride || field.label;
     const displayPlaceholder = field.placeholderOverride || '';
-    const isRequired = field.requiredOverride !== undefined ? field.requiredOverride : field.required;
+    const isRequired = field.required;
+
+    let scReadonly = false;
+    try {
+      const sc = field.source_config;
+      const obj = typeof sc === 'string' ? JSON.parse(sc) : sc;
+      scReadonly = !!(obj && obj.readonly);
+    } catch { scReadonly = false; }
 
     const fieldForRender = {
       ...field,
@@ -329,16 +783,24 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || false
+      readonly: field.readonly || !!field.autoLocked || scReadonly || (readOnlyKeys || []).includes(field.key)
+        || !sectionEditable(fieldSectionMap[field.key])
     };
 
     if (field.type === 'formula') {
-      const isPost = field.formula_config?.compute_mode === 'post';
+      const fc = field.formula_config || {};
+      const isPost = fc.compute_mode === 'post';
+      const rawVal = formData[field.key];
+      const { num: parsedNum, unit: parsedUnit } = parseLeadingNumber(rawVal);
+      const isNumeric = rawVal !== '' && rawVal !== null && rawVal !== undefined && !isNaN(parsedNum) && fc.outputType !== 'text';
+      const displayVal = isNumeric
+        ? formatNumber(parsedNum, { format: fc.numberFormat || fc.outputFormat || 'plain', decimalPlaces: fc.decimalPlaces, unit: fc.unit || parsedUnit })
+        : (rawVal || '');
       return (
         <input
           type="text"
           className="form-control"
-          value={formData[field.key] || ''}
+          value={displayVal}
           readOnly
           disabled
           placeholder={isPost ? 'Tính sau khi lưu' : 'Tính tự động'}
@@ -352,7 +814,24 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
         value={formData[field.key]}
         onChange={(val) => handleChange(field.key, val)}
         error={errors[field.key]}
+        disabled={fieldForRender.readonly}
         entityType={entity}
+        uploadUrl={guestMode ? '/files/guest-upload' : '/files/upload'}
+        allowedOptions={optionAllowlist[field.key] || null}
+        allFields={allEntityFields.length > 0 ? allEntityFields : fields}
+        dataListOptions={dataListOptions}
+        formValues={formData}
+        memory={(() => {
+          const list = memoryMap[field.key];
+          if (!list || list.length === 0) return null;
+          return {
+            suggestions: list,
+            onClear: () => {
+              clearFieldMemory(entity, resolvedFormId || purpose, field.key, authUser?.id);
+              setMemVersion((v) => v + 1);
+            }
+          };
+        })()}
       />
     );
   };
@@ -360,7 +839,8 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   const layoutConfig = formConfig?.layout_config
     ? (typeof formConfig.layout_config === 'string' ? JSON.parse(formConfig.layout_config) : formConfig.layout_config)
     : null;
-  const hasLayout = layoutConfig && layoutConfig.rows && layoutConfig.rows.length > 0;
+  const hasSections = layoutConfig && layoutConfig.sections && layoutConfig.sections.length > 0;
+  const hasLayout = hasSections || (layoutConfig && layoutConfig.rows && layoutConfig.rows.length > 0);
 
   const fieldsByKey = {};
   fields.forEach(f => { fieldsByKey[f.key] = f; });
@@ -378,45 +858,156 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
     return fieldInCell[`${rowId}-${colIndex}`] || null;
   };
 
+  const isFieldFilled = (key) => {
+    if (purpose !== 'create') return false;
+    const v = formData[key];
+    if (v === undefined || v === null || v === '') return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'object') return Object.keys(v).length > 0;
+    return true;
+  };
+
   const renderLayoutForm = () => {
+    const rowsToRender = hasSections ? null : layoutConfig.rows;
+    const sectionMap = buildSectionMap(layoutConfig);
+
+    const renderRow = (row) => {
+      const desktopCol = parseInt(row.columns.split(':')[1]);
+      const cells = Array.from({ length: desktopCol }).map((_, colIdx) => getCellField(row.id, colIdx));
+      if (!cells.some((f) => f && isFieldVisible(f))) return null;
+      return (
+        <div key={row.id} className={`form-row form-row-${row.columns}`} data-cols={row.columns}>
+          {Array.from({ length: desktopCol }).map((_, colIdx) => {
+            const cellField = getCellField(row.id, colIdx);
+            if (!cellField || !isFieldVisible(cellField)) {
+              return <div key={colIdx} className="form-cell-empty" />;
+            }
+            const isFullRow = cellField.type === 'table';
+            return (
+              <div key={colIdx} className={`form-cell-content${isFullRow ? ' form-cell-full' : ''}`}>
+                <div className={`dynamic-form-field${isFieldFilled(cellField.key) ? ' is-filled' : ''}${errors[cellField.key] ? ' has-error' : ''}`} data-field-key={cellField.key}>
+                  <label>
+                    {cellField.labelOverride || cellField.label}
+                    {cellField.required && <span className="text-red-600"> *</span>}
+                  </label>
+                  {renderField(cellField)}
+                  {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
+                  {errors[cellField.key] && <div className="field-error">{errors[cellField.key]}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    };
+
+    const renderSectionContent = (section) => (section.rows || []).map((row) => renderRow(row));
+
+    const renderSectionBlock = (section, isFirst = false) => {
+      if (!sectionVisible(section)) return null;
+      return (
+      <fieldset key={section.id} className={`form-section form-section-block${isFirst ? ' form-section-block-first' : ''}`} data-lead-section={getLeadSectionKind(section.title) || undefined}>
+        {section.title && (
+          <legend className="form-section-title">
+            {section.title}
+          </legend>
+        )}
+        {section.collapsible ? (
+          <details open>
+            <summary style={{ cursor: 'pointer', fontSize: 12, color: '#6b7280', marginBottom: 8 }}> Chi tiết</summary>
+            {renderSectionContent(section)}
+          </details>
+        ) : (
+          renderSectionContent(section)
+        )}
+      </fieldset>
+      );
+    };
+
+    const renderTabGroup = (node, path, depth, isFirst = false) => {
+      if (!node || depth > MAX_TAB_DEPTH) return null;
+      if (!evalVisibleWhen(node, formData)) return null;
+      if (!sectionVisible(node)) return null;
+      const tabs = (node.tabs || []).filter(Boolean);
+      if (tabs.length === 0) return null;
+      const activeId = activeTabs[path] || tabs[0].id;
+      return (
+        <fieldset key={node.id || path} className={`form-section form-tabs form-section-block${isFirst ? ' form-section-block-first' : ''}`}>
+        {node.title && (
+          <legend className="form-section-title">
+            {node.title}
+          </legend>
+        )}
+          <div className="form-tabs-bar" role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e2e8f0', marginBottom: 12, overflowX: 'auto' }}>
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeId;
+              return (
+                <button
+                  type="button"
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTabs((prev) => ({ ...prev, [path]: tab.id }))}
+                  style={{
+                    padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    border: 'none', borderBottom: isActive ? '2px solid #4f46e5' : '2px solid transparent',
+                    background: 'transparent', color: isActive ? '#4f46e5' : '#6b7280', whiteSpace: 'nowrap'
+                  }}
+                >
+                  {tab.title}
+                </button>
+              );
+            })}
+          </div>
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeId;
+            return (
+              <div key={tab.id} role="tabpanel" style={{ display: isActive ? 'block' : 'none' }}>
+                {(tab.sectionRefs || []).map((refId) => {
+                  const sec = sectionMap[refId];
+                  if (!sec) return null;
+                  if (sec.type === 'tabs' || Array.isArray(sec.tabs)) {
+                    return renderTabGroup(sec, `${path}/${tab.id}`, depth + 1);
+                  }
+                  return <div key={refId} className="form-tab-section">{renderSectionContent(sec)}</div>;
+                })}
+                {Array.isArray(tab.tabs) && renderTabGroup(tab, `${path}/${tab.id}`, depth + 1)}
+              </div>
+            );
+          })}
+        </fieldset>
+      );
+    };
+
+    const firstVisibleNodeId = hasSections ? ((layoutConfig.sections || []).find((s) => {
+      if (!s) return false;
+      if (s.type === 'tabs' || Array.isArray(s.tabs)) return sectionVisible(s);
+      return evalVisibleWhen(s, formData) && sectionVisible(s);
+    }) || {}).id : null;
+
     return (
       <>
-        {layoutConfig.rows.map((row) => {
-          const desktopCol = parseInt(row.columns.split(':')[1]);
-          return (
-            <div key={row.id} className={`form-row form-row-${row.columns}`} data-cols={row.columns}>
-              {Array.from({ length: desktopCol }).map((_, colIdx) => {
-                const cellField = getCellField(row.id, colIdx);
-                if (!cellField || !isFieldVisible(cellField)) {
-                  return <div key={colIdx} className="form-cell-empty" />;
-                }
-                return (
-                  <div key={colIdx} className="form-cell-content">
-                    <div className="dynamic-form-field">
-                      <label>
-                        {cellField.labelOverride || cellField.label}
-                        {(cellField.requiredOverride !== undefined ? cellField.requiredOverride : cellField.required) && <span style={{ color: '#dc2626' }}> *</span>}
-                      </label>
-                      {renderField(cellField)}
-                      {cellField.help_text && <div className="field-help">{cellField.help_text}</div>}
-                      {errors[cellField.key] && <div className="field-error">{errors[cellField.key]}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+        {hasSections ? (
+          layoutConfig.sections.map((section) => {
+            if (section.type === 'tabs' || Array.isArray(section.tabs)) {
+              return renderTabGroup(section, section.id, 1, section.id === firstVisibleNodeId);
+            }
+            if (!evalVisibleWhen(section, formData)) return null;
+            return renderSectionBlock(section, section.id === firstVisibleNodeId);
+          })
+        ) : (
+          rowsToRender.map(row => renderRow(row))
+        )}
 
         {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).length > 0 && (
           <div className="dynamic-form-row">
             {fields.filter(f => !f.config?.rowId && isFieldVisible(f)).map(field => {
               const colSpan = field.config?.colSpan || 1;
               return (
-                <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+                <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''}${errors[field.key] ? ' has-error' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
                   <label>
                     {field.labelOverride || field.label}
-                    {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                    {field.required && <span className="text-red-600"> *</span>}
                   </label>
                   {renderField(field)}
                   {field.help_text && <div className="field-help">{field.help_text}</div>}
@@ -436,10 +1027,10 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
         {fields.filter(f => isFieldVisible(f)).map(field => {
           const colSpan = field.config?.colSpan || 1;
           return (
-            <div key={field.id || field.key} className={`dynamic-form-field ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
+            <div key={field.id || field.key} data-field-key={field.key} className={`dynamic-form-field${isFieldFilled(field.key) ? ' is-filled' : ''}${errors[field.key] ? ' has-error' : ''} ${colSpan > 1 ? 'full-width' : ''}`} style={colSpan > 1 ? { gridColumn: `span ${colSpan}` } : undefined}>
               <label>
                 {field.labelOverride || field.label}
-                {(field.requiredOverride !== undefined ? field.requiredOverride : field.required) && <span style={{ color: '#dc2626' }}> *</span>}
+                {field.required && <span className="text-red-600"> *</span>}
               </label>
               {renderField(field)}
               {field.help_text && <div className="field-help">{field.help_text}</div>}
@@ -463,18 +1054,32 @@ const DynamicForm = ({ entity, formId, onSubmit, initialData = {}, children }) =
   };
 
   return (
-    <form className="dynamic-form" onSubmit={handleSubmit}>
-      {error && <div className="error-message">{error}</div>}
+    <form ref={formRef} id={htmlId || undefined} className="dynamic-form" onSubmit={handleSubmit}>
+      {error && <div className="error-message" data-error-banner>{error}</div>}
+      {submitAttempted && getOrderedErrorKeys(errors).length > 0 && (
+        <div className="form-error-summary" data-error-summary>
+          <div className="form-error-summary-title">Vui lòng kiểm tra {getOrderedErrorKeys(errors).length} lỗi sau:</div>
+          <ul>
+            {getOrderedErrorKeys(errors).map(k => (
+              <li key={k}>
+                <button type="button" onClick={() => focusFirstError([k])}>{errors[k]}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {geocoding && <div className="text-xs text-info mb-2">Đang tìm địa chỉ từ tọa độ...</div>}
       {hasLayout ? renderLayoutForm() : renderNoLayoutMessage()}
-      {hasLayout && (
+      {beforeActions}
+      {hasLayout && !hideActions && (
         children ? (
           <div className="form-actions">
             {children}
-            <button type="submit" className="btn btn-primary">Lưu</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         ) : (
           <div className="form-actions">
-            <button type="submit" className="btn btn-primary">Lưu</button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? 'Đang lưu...' : 'Lưu'}</button>
           </div>
         )
       )}

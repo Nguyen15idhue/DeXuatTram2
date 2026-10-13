@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 
-const DragDropList = ({ items, onReorder, renderItem, onAdd, onRemove }) => {
+const DragDropList = ({ items, onReorder, renderItem, onAdd, onRemove, disableDrag = false }) => {
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const dragItem = useRef(null);
@@ -21,6 +21,7 @@ const DragDropList = ({ items, onReorder, renderItem, onAdd, onRemove }) => {
 
   const handleDrop = (e) => {
     e.preventDefault();
+    if (disableDrag) return;
     if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
       const newItems = [...items];
       const draggedItem = newItems.splice(dragItem.current, 1)[0];
@@ -55,7 +56,7 @@ const DragDropList = ({ items, onReorder, renderItem, onAdd, onRemove }) => {
             <li
               key={item.id || index}
               className={`drag-drop-item ${dragIndex === index ? 'dragging' : ''} ${overIndex === index ? 'drag-over' : ''}`}
-              draggable
+              draggable={!disableDrag}
               onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={(e) => handleDragOver(e, index)}
               onDrop={handleDrop}

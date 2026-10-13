@@ -1,33 +1,124 @@
 import L from 'leaflet';
 import { mapService } from '../services/api';
+import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP, getStatusColor } from './mapStatuses';
+import { iconSvgMarkup, isValidMarkerBadge, MARKER_ICON_BG } from './mapMarkerIcons';
 
 export const MARKER_COLORS = {
+  PLANNING: '#a855f7',
   ACTIVE: '#22c55e',
   DEPLOYING: '#eab308',
   PENDING: '#f97316',
   REVIEWING: '#3b82f6',
   APPROVED: '#22c55e',
-  REJECTED: '#ef4444'
+  REJECTED: '#ef4444',
+  CANCELLED: '#6b7280',
+  CONTRACT_SIGNED: '#0d9488',
+  CONTRACT_FAILED: '#f59e0b'
 };
 
-export const getMarkerColor = (status) => {
+export const getMarkerColor = (status, entity) => {
+  const dynamic = getStatusColor(status, entity);
+  if (dynamic) return dynamic;
+  if (entity === 'station' && STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
+  if (entity === 'proposal' && PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
+  if (STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
+  if (PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
   return MARKER_COLORS[status] || '#6b7280';
 };
 
-export const createCustomIcon = (color) => {
+export const createCustomIcon = (color, icon, badge, bg) => {
+  const hasIcon = !!icon;
+  if (!hasIcon) {
+    const size = 24;
+    const inner = `<div style="
+        width: ${size}px;
+        height: ${size}px;
+        background-color: ${color};
+        border: 3px solid white;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      "></div>`;
+    return L.divIcon({
+      className: 'custom-marker',
+      html: inner,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2]
+    });
+  }
+  const showBadge = isValidMarkerBadge(badge);
+  if (bg === MARKER_ICON_BG.CIRCLE) {
+    const size = 38;
+    const badgeHtml = showBadge ? `<span style="
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 17px;
+        height: 17px;
+        padding: 0 3px;
+        background-color: #ffffff;
+        border: 2px solid ${color};
+        border-radius: 999px;
+        color: ${color};
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 14px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      ">${badge}</span>` : '';
+    const inner = `<div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        background-color: #ffffff;
+        border: 3px solid ${color};
+        border-radius: 50%;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">${iconSvgMarkup(icon, { size: 24 })}${badgeHtml}</div>`;
+    return L.divIcon({
+      className: 'custom-marker',
+      html: inner,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2]
+    });
+  }
+  const size = 38;
+  const badgeHtml = showBadge ? `<span style="
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 17px;
+        height: 17px;
+        padding: 0 3px;
+        background-color: #ffffff;
+        border: 2px solid ${color};
+        border-radius: 999px;
+        color: ${color};
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 14px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      ">${badge}</span>` : '';
+  const inner = `<div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        filter: drop-shadow(0 3px 4px rgba(0,0,0,0.65));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">${iconSvgMarkup(icon, { size: 36 })}${badgeHtml}</div>`;
   return L.divIcon({
-    className: 'custom-marker',
-    html: `<div style="
-      width: 24px;
-      height: 24px;
-      background-color: ${color};
-      border: 3px solid white;
-      border-radius: 50%;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    "></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12]
+    className: 'custom-marker-flat',
+    html: inner,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   });
 };
 
@@ -35,6 +126,18 @@ export const parseGoogleMapsLink = (url) => {
   if (!url || typeof url !== 'string') return null;
 
   const trimmed = url.trim();
+
+  // Data parameters pattern first: !3dlat!4dlng is the actual pin,
+  // @lat,lng may only be the camera center (can be hundreds of meters off)
+  const dataPattern = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/;
+  const dataMatch = trimmed.match(dataPattern);
+  if (dataMatch) {
+    const lat = parseFloat(dataMatch[1]);
+    const lng = parseFloat(dataMatch[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng };
+    }
+  }
 
   // Standard patterns: @lat,lng ?q=lat,lng etc.
   const patterns = [
@@ -57,17 +160,6 @@ export const parseGoogleMapsLink = (url) => {
           return { lat, lng };
         }
       }
-    }
-  }
-
-  // Data parameters pattern: !3dlat!4dlng (from short URL redirects)
-  const dataPattern = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/;
-  const dataMatch = trimmed.match(dataPattern);
-  if (dataMatch) {
-    const lat = parseFloat(dataMatch[1]);
-    const lng = parseFloat(dataMatch[2]);
-    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-      return { lat, lng };
     }
   }
 

@@ -1,41 +1,302 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminUserService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
+import Loading from '../../components/Loading';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import ImportErrorList from '../../components/admin/ImportErrorList';
+import ViewPickerMenu, { usageLabel } from '../../components/admin/ViewPickerMenu';
+import ImportViewPanel from '../../components/admin/ImportViewPanel';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useDefaultViewId from '../../hooks/useDefaultViewId';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
+import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2, List, Network } from 'lucide-react';
+import UserTreeView from '../../components/admin/UserTreeView';
+import { isGdkv, isGdtt } from '../../utils/salesRanks';
 
 const USERS_VIEW_ID = 7;
-const USERS_FORM_ID = 8;
+const USERS_FORM_ID = 15;
+
+const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
+
+const parseCustomData = (cd) => {
+  if (!cd) return {};
+  if (typeof cd === 'object') return cd;
+  try { return JSON.parse(cd); } catch { return {}; }
+};
+
+const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, allUsers, currentUser, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
+  const [detectedRole, setDetectedRole] = useState(createRole);
+  const [dept, setDept] = useState('');
+  const [chucVu, setChucVu] = useState('');
+  const modalRef = useRef(null);
+
+  const handleValuesChange = (vals) => {
+    if (vals.role !== undefined) {
+      const val = vals.role || 'CTV';
+      setDetectedRole(val);
+      setCreateRole(val);
+      if (val !== 'CTV' && val !== 'NPP') setCreateParentId('');
+    }
+    if (vals.department !== undefined) setDept(vals.department || '');
+    if (vals.chuc_vu !== undefined) setChucVu(vals.chuc_vu || '');
+  };
+
+  const isCtvOrNpp = ['CTV', 'NPP'].includes(detectedRole);
+  const isNewGdkv = detectedRole === 'SALES' && isGdkv(chucVu, dept);
+
+  const deptOfSales = (s) => parseCustomData(s.custom_data).department || '';
+  const meCd = parseCustomData(currentUser && currentUser.custom_data);
+  const meChucVu = meCd.chuc_vu || '';
+  const meDept = meCd.department || '';
+  const isGdkvViewer = isSales && isGdkv(meChucVu, meDept);
+  const isGdttViewer = isSales && isGdtt(meChucVu, meDept);
+
+  const activeUsers = (allUsers || []).filter(u => u.status === 'ACTIVE');
+  const gdkvList = activeUsers.filter(s => s.role === 'SALES' && isGdkv(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
+  const gdttList = activeUsers.filter(s => s.role === 'SALES' && isGdtt(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
+  const parentableUsers = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
+  const gdkvIds = new Set(gdkvList.map(s => s.id));
+  const otherUsers = parentableUsers.filter(u => !gdkvIds.has(u.id));
+
+  const suggestedGdtt = isNewGdkv && dept
+    ? gdttList.find(s => deptOfSales(s) === dept) || null
+    : null;
+  const sameDeptGdkv = isCtvOrNpp && dept ? gdkvList.filter(s => deptOfSales(s) === dept) : [];
+  const gdkvForGdttViewer = gdkvList.filter(s => deptOfSales(s) === meDept);
+
+  useEffect(() => {
+    if (createParentId) return;
+    if (isGdkvViewer && isCtvOrNpp) { setCreateParentId(String(currentUser.id)); return; }
+    if (isGdttViewer && isCtvOrNpp) {
+      if (gdkvForGdttViewer.length === 1) setCreateParentId(String(gdkvForGdttViewer[0].id));
+      return;
+    }
+    if (isSales) return;
+    if (isCtvOrNpp) {
+      if (sameDeptGdkv.length === 1) setCreateParentId(String(sameDeptGdkv[0].id));
+    } else if (suggestedGdtt) {
+      setCreateParentId(String(suggestedGdtt.id));
+    }
+  }, [dept, detectedRole, chucVu, allUsers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <dialog className="modal modal-open" ref={modalRef} onCancel={(e) => e.preventDefault()}>
+      <div className="modal-box max-w-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">Tạo user mới</h3>
+          <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <DynamicForm
+          entity="users"
+          purpose="create"
+          formId={15}
+          onSubmit={onSubmit}
+          onValuesChange={handleValuesChange}
+          initialData={{ role: createRole || 'CTV', status: 'ACTIVE' }}
+          optionAllowlist={createRoleAllowlist ? { role: createRoleAllowlist } : {}}
+          beforeActions={isCtvOrNpp || detectedRole === 'SALES' ? (
+            <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Network size={16} className="text-indigo-500" />
+                <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
+                <span className="text-xs opacity-60">(Áp dụng cho {detectedRole}{isNewGdkv && chucVu ? ` — ${chucVu}` : ''})</span>
+              </div>
+              {isNewGdkv || (detectedRole === 'SALES' && !chucVu) ? (
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text text-sm">Giám đốc Trung tâm (cấp trên)</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={createParentId}
+                  onChange={(e) => setCreateParentId(e.target.value)}
+                >
+                  <option value="">— Chọn GĐTT —</option>
+                  {gdttList.map(s => {
+                    const sDept = deptOfSales(s);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.full_name} — {sDept || 'Chưa có phòng ban'}{dept && sDept === dept ? ' •' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                {suggestedGdtt && String(suggestedGdtt.id) === String(createParentId) ? (
+                  <div className="mt-2 text-xs opacity-70">Tự gợi ý theo phòng ban ({dept}) — có thể đổi tay.</div>
+                ) : (!chucVu && (
+                  <div className="mt-2 text-xs opacity-70">Chọn thêm Chức vụ quản lý cấp giữa + Phòng ban để tự gợi ý GĐTT.</div>
+                ))}
+              </div>
+              ) : detectedRole === 'SALES' ? (
+              <div className="text-xs opacity-70">Chức vụ hiện tại không cần gán cấp trên (chỉ GĐKV mới gán GĐTT).</div>
+              ) : isSales ? (
+                isGdttViewer ? (
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text text-sm">Giám đốc Khu vực (GĐKV) — cùng phòng ban</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm w-full"
+                    value={createParentId}
+                    onChange={(e) => setCreateParentId(e.target.value)}
+                  >
+                    <option value="">— Chọn GĐKV —</option>
+                    {gdkvForGdttViewer.map(s => {
+                      const sDept = deptOfSales(s);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} — {sDept || 'Chưa có phòng ban'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {meDept && gdkvForGdttViewer.length === 0 && (
+                    <div className="mt-2 text-xs text-orange-600">Không có GĐKV cùng phòng ban ({meDept}).</div>
+                  )}
+                </div>
+                ) : (
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text text-sm">Cấp trên</span>
+                  </label>
+                  <div className="text-sm px-1 py-2">
+                    <strong>{currentUser.full_name}</strong>
+                    <span className="ml-1 opacity-60">(bản thân)</span>
+                  </div>
+                </div>
+                )
+              ) : (
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text text-sm">Cấp trên</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={createParentId}
+                  onChange={(e) => setCreateParentId(e.target.value)}
+                >
+                  <option value="">— Chọn cấp trên —</option>
+                  <optgroup label="Giám đốc Khu vực">
+                    {gdkvList.map(s => {
+                      const sDept = deptOfSales(s);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} — {sDept || 'Chưa có phòng ban'}{dept && sDept === dept ? ' •' : ''}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Khác">
+                    {otherUsers.map(s => {
+                      const sDept = deptOfSales(s);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.full_name} — {s.role}{sDept ? ` — ${sDept}` : ''}{s.id === currentUser.id ? ' (bản thân)' : ''}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                </select>
+                {dept && sameDeptGdkv.length === 1 && String(sameDeptGdkv[0].id) === String(createParentId) && (
+                  <div className="mt-2 text-xs opacity-70">Tự gợi ý theo phòng ban ({dept}) — có thể đổi tay.</div>
+                )}
+              </div>
+              )}
+            </div>
+          ) : null}
+        >
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Hủy</button>
+        </DynamicForm>
+      </div>
+      <div className="modal-backdrop" />
+    </dialog>
+  );
+};
 
 const AdminUsersPage = () => {
-  const { token, user: currentUser } = useAuth();
+  const { token, user: currentUser, isSuperAdmin, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { getSelectOptions } = useFieldOptions('users');
+  const usersViewId = useDefaultViewId('users', USERS_VIEW_ID);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { getSelectOptions } = useFieldOptions('users', ['status', 'role', 'department', 'chuc_vu']);
   const statusOptions = getSelectOptions('status');
   const roleOptions = getSelectOptions('role');
+  const departmentOptions = getSelectOptions('department');
+  const chucVuOptions = getSelectOptions('chuc_vu');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+const [search, setSearch] = useState('');
+const [filterStatus, setFilterStatus] = useState('');
+const [filterRole, setFilterRole] = useState('');
+const [filterDepartment, setFilterDepartment] = useState('');
+const [filterChucVu, setFilterChucVu] = useState('');
+const [filterParent, setFilterParent] = useState('');
+const [dateFrom, setDateFrom] = useState('');
+const [dateTo, setDateTo] = useState('');
+const [dateField, setDateField] = useState('created_at');
+const [showFilter, setShowFilter] = useState(false);
+const [viewMode, setViewMode] = useState('table');
+  const [columnFilters, setColumnFilters] = useState({});
+  const tableRef = useRef(null);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importStep, setImportStep] = useState('upload');
+  const [importFailures, setImportFailures] = useState([]);
+  const [importProgress, setImportProgress] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const importPollRef = useRef(null);
+  const [excelViews, setExcelViews] = useState([]);
+  const [importViewId, setImportViewId] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createRole, setCreateRole] = useState('CTV');
+  const [createParentId, setCreateParentId] = useState('');
+  const [salesList, setSalesList] = useState([]);
+  const createRoleAllowlist = isSales ? ['CTV', 'NPP'] : (!isSuperAdmin ? ['CTV', 'NPP', 'SALES', 'ADMIN'] : null);
+  const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
+  const [pwOld, setPwOld] = useState('');
+  const [pw1, setPw1] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    adminUserService.getAllWithParams('all=1', token)
+      .then(res => { if (res && res.success) setSalesList((res.data || []).filter(u => u.role === 'SALES' && u.status === 'ACTIVE')); })
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || isSales) return;
+    let cancelled = false;
+    excelService.getViews('users', token)
+      .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token, isSales]);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -52,42 +313,176 @@ const AdminUsersPage = () => {
 
   const loadUserById = async (id, mode) => {
     try {
-      const res = await adminUserService.getAllWithParams('', token);
+      const res = await adminUserService.getById(id, token);
       if (res.success) {
-        const user = res.data.find(u => u.id === id);
-        if (user) setPopup({ open: true, record: user, mode });
+        setPopup({ open: true, record: res.data, mode });
       }
     } catch { /* silent */ }
   };
 
-  useEffect(() => {
-    loadUsers(1);
-  }, []);
-
-  const loadUsers = useCallback(async (page = 1) => {
+  const loadUsers = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page, limit: 10 });
-      if (search) params.append('search', search);
-      if (filterStatus) params.append('status', filterStatus);
+      const params = new URLSearchParams({ all: '1' });
+      const st = overrides.filterStatus !== undefined ? overrides.filterStatus : filterStatus;
+      const rl = overrides.filterRole !== undefined ? overrides.filterRole : filterRole;
+      const dp = overrides.filterDepartment !== undefined ? overrides.filterDepartment : filterDepartment;
+      const cv = overrides.filterChucVu !== undefined ? overrides.filterChucVu : filterChucVu;
+      const pn = overrides.filterParent !== undefined ? overrides.filterParent : filterParent;
+      const df = overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
+      const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
+      const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
+      if (st) params.append('status', st);
+      if (rl) params.append('role', rl);
+      if (dp) params.append('department', dp);
+      if (cv) params.append('chuc_vu', cv);
+      if (pn) params.append('parent_id', pn);
+      if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       const res = await adminUserService.getAllWithParams(params.toString(), token);
       if (res.success) {
         setUsers(res.data);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
       }
     } catch {
       setError('Lỗi tải danh sách users');
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatus, token]);
+  }, [filterStatus, filterRole, filterDepartment, filterChucVu, filterParent, dateFrom, dateTo, dateField, token]);
 
-  useEffect(() => { loadUsers(1); }, [loadUsers]);
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  const handleSearch = () => { loadUsers(1); };
+  const handleSearch = () => { setAppliedSearch(search); };
+
+  const getUserFieldValue = (u, key) => {
+    if (u[key] !== undefined && u[key] !== null) return u[key];
+    if (u.custom_data) {
+      try {
+        const cd = typeof u.custom_data === 'string' ? JSON.parse(u.custom_data) : u.custom_data;
+        return cd[key];
+      } catch { return null; }
+    }
+    return null;
+  };
+
+  const displayUserValue = (val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val) && typeof val.label === 'string') return val.label;
+    return val;
+  };
+
+  const handleColumnFiltersChange = useCallback((next) => {
+    setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
+  }, []);
+
+  const treeRows = useMemo(() => {
+    const q = appliedSearch.trim().toLowerCase();
+    const colEntries = Object.entries(columnFilters).filter(([, v]) => String(v ?? '').trim());
+    let list = users;
+    if (q || colEntries.length > 0) {
+      const matchSearch = (u) => !q || [u.full_name, u.email, u.phone, u.external_id].some(v => (v || '').toLowerCase().includes(q));
+      const matchColumns = (u) => colEntries.every(([k, fv]) => {
+        const val = displayUserValue(getUserFieldValue(u, k));
+        if (val === null || val === undefined) return false;
+        return String(val).toLowerCase().includes(String(fv).toLowerCase());
+      });
+      const match = (u) => matchSearch(u) && matchColumns(u);
+      const byId = {};
+      users.forEach(u => { byId[u.id] = u; });
+      const keep = new Set();
+      users.forEach(u => {
+        if (match(u)) {
+          keep.add(u.id);
+          let p = u.parent_id;
+          while (p && byId[p] && !keep.has(p)) { keep.add(p); p = byId[p].parent_id; }
+        }
+      });
+      list = users.filter(u => keep.has(u.id));
+    }
+    const inList = new Set(list.map(u => u.id));
+    const children = {};
+    const roots = [];
+    list.forEach(u => {
+      if (u.parent_id && inList.has(u.parent_id)) {
+        (children[u.parent_id] = children[u.parent_id] || []).push(u);
+      } else {
+        roots.push(u);
+      }
+    });
+    const sortFn = (a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9) || (a.full_name || '').localeCompare(b.full_name || '');
+    roots.sort(sortFn);
+    Object.values(children).forEach(arr => arr.sort(sortFn));
+    const rows = [];
+    const walk = (nodes, depth) => {
+      nodes.forEach(n => {
+        rows.push({ user: n, depth });
+        if (children[n.id]) walk(children[n.id], depth + 1);
+      });
+    };
+    walk(roots, 0);
+    return rows;
+  }, [users, appliedSearch, columnFilters]);
+
+  const totalPages = Math.max(1, Math.ceil(treeRows.length / pageSize));
+
+  useEffect(() => {
+    setPage(1);
+  }, [appliedSearch, filterStatus, columnFilters, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedRows = useMemo(
+    () => treeRows.slice((page - 1) * pageSize, page * pageSize),
+    [treeRows, page, pageSize]
+  );
+
+  const handleReset = () => {
+    setSearch('');
+    setFilterStatus('');
+    setFilterRole('');
+    setFilterDepartment('');
+    setFilterChucVu('');
+    setFilterParent('');
+    setDateFrom('');
+    setDateTo('');
+    setDateField('created_at');
+    setAppliedSearch('');
+    setColumnFilters({});
+    if (tableRef.current) tableRef.current.clearFilters();
+    setError('');
+    loadUsers({ filterStatus: '', filterRole: '', filterDepartment: '', filterChucVu: '', filterParent: '', dateFrom: '', dateTo: '', dateField: 'created_at' });
+  };
 
   const handleDeleteClick = (id, name) => {
     setConfirmDelete({ isOpen: true, id, name });
+  };
+
+  const openPasswordModal = (id, name) => {
+    setPwModal({ open: true, id, name });
+    setPwOld('');
+    setPw1('');
+    setPw2('');
+    setPwError('');
+  };
+
+  const handleChangePassword = async () => {
+    if (pwModal.id === currentUser.id && !pwOld) { setPwError('Vui lòng nhập mật khẩu hiện tại'); return; }
+    if (!pw1 || pw1.length < 6) { setPwError('Mật khẩu phải có ít nhất 6 ký tự'); return; }
+    if (pw1 !== pw2) { setPwError('Nhập lại mật khẩu chưa khớp'); return; }
+    try {
+      setPwLoading(true);
+      const res = await adminUserService.changePassword(pwModal.id, pw1, token, pwModal.id === currentUser.id ? pwOld : undefined);
+      if (res.success) {
+        setPwModal({ open: false, id: null, name: '' });
+        setToast({ message: 'Đổi mật khẩu thành công', type: 'success' });
+      } else {
+        setPwError(res.message || 'Đổi mật khẩu thất bại');
+      }
+    } catch {
+      setPwError('Lỗi kết nối server');
+    } finally {
+      setPwLoading(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -97,7 +492,7 @@ const AdminUsersPage = () => {
       const res = await adminUserService.delete(id, token);
       if (res.success) {
         setToast({ message: 'Xóa user thành công', type: 'success' });
-        loadUsers(pagination.page);
+        loadUsers();
       } else {
         setError(res.message || 'Xóa thất bại');
       }
@@ -106,30 +501,82 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setConfirmBulkDelete(false);
+    setBulkLoading(true);
+    const deletable = [];
+    const skipped = [];
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
+    const myRank = RANK[currentUser.role] ?? 99;
+    selectedIds.forEach((id) => {
+      const u = users.find(x => x.id === id);
+      if (!u || u.id === currentUser.id || myRank >= (RANK[u.role] ?? 99)) {
+        skipped.push(`#${id}${u ? ` (${u.full_name || u.email || ''})` : ''}`);
+      } else {
+        deletable.push(id);
+      }
+    });
+    let ok = 0;
+    const failed = [];
+    for (const id of deletable) {
+      try {
+        const res = await adminUserService.delete(id, token);
+        if (res.success) ok++;
+        else failed.push(`#${id}: ${res.message || 'Xóa thất bại'}`);
+      } catch {
+        failed.push(`#${id}: Lỗi kết nối server`);
+      }
+    }
+    setBulkLoading(false);
+    setSelectedIds([]);
+    loadUsers();
+    const parts = [];
+    if (ok > 0) parts.push(`Đã xóa ${ok} user`);
+    if (skipped.length > 0) parts.push(`bỏ qua ${skipped.length} (admin/tự): ${skipped.join('; ')}`);
+    if (failed.length > 0) parts.push(`${failed.length} không xóa được: ${failed.join('; ')}`);
+    if (ok > 0) {
+      setToast({ message: parts.join('; '), type: (skipped.length > 0 || failed.length > 0) ? 'warning' : 'success' });
+    } else {
+      setError(parts.join('; ') || 'Không xóa được user nào');
+    }
+  };
+
   const handleToggleLock = async (id) => {
     try {
       const res = await adminUserService.toggleLock(id, token);
       if (res.success) {
         setToast({ message: res.message, type: 'success' });
-        loadUsers(pagination.page);
+        loadUsers();
+      } else {
+        setError(res.message || 'Không thể khóa/mở tài khoản');
       }
     } catch {
       setError('Lỗi kết nối server');
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (viewIds) => {
     try {
-      await excelService.exportData('users', token);
+      await excelService.exportData('users', token, { search: appliedSearch, status: filterStatus, viewIds: viewIds || undefined });
       setToast({ message: 'Export users thành công', type: 'success' });
     } catch {
       setError('Lỗi export users');
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleExportByForm = async () => {
     try {
-      await excelService.downloadTemplate('users', token);
+      await excelService.exportData('users', token, { search: appliedSearch, status: filterStatus, layout: 'form' });
+      setToast({ message: 'Export theo form thành công', type: 'success' });
+    } catch {
+      setError('Lỗi export theo form');
+    }
+  };
+
+  const handleDownloadTemplate = async (viewIds) => {
+    try {
+      await excelService.downloadTemplate('users', token, { viewIds: viewIds || undefined });
     } catch {
       setError('Lỗi download template');
     }
@@ -141,11 +588,12 @@ const AdminUsersPage = () => {
       email: formData.email || '',
       phone: formData.phone || '',
       password: formData.password || '123456',
-      role: formData.role || 'USER',
-      status: formData.status || 'ACTIVE'
+      role: formData.role === 'USER' ? 'CTV' : (formData.role || createRole || 'CTV'),
+      status: formData.status || 'ACTIVE',
+      external_id: formData.external_id || null
     };
     const customData = {};
-    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status'];
+    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status', 'external_id'];
     Object.keys(formData).forEach(k => {
       if (!fixedKeys.includes(k) && formData[k] !== undefined && formData[k] !== '') {
         customData[k] = formData[k];
@@ -154,6 +602,9 @@ const AdminUsersPage = () => {
     if (Object.keys(customData).length > 0) {
       payload.custom_data = customData;
     }
+    if ((['CTV', 'NPP'].includes(payload.role) || (payload.role === 'SALES' && isGdkv(formData.chuc_vu, formData.department))) && createParentId) {
+      payload.parent_id = Number(createParentId);
+    }
     if (!payload.full_name || !payload.email) {
       throw new Error('Vui lòng nhập đầy đủ họ tên và email');
     }
@@ -161,7 +612,8 @@ const AdminUsersPage = () => {
     if (res.success) {
       setToast({ message: 'Tạo user thành công', type: 'success' });
       setShowCreateForm(false);
-      loadUsers(1);
+      setCreateParentId('');
+      loadUsers();
     } else {
       throw new Error(res.message || 'Tạo user thất bại');
     }
@@ -172,6 +624,7 @@ const AdminUsersPage = () => {
     setImportFile(null);
     setImportPreview(null);
     setImportStep('upload');
+    setImportViewId('');
     setError('');
   };
 
@@ -184,15 +637,24 @@ const AdminUsersPage = () => {
     }
   };
 
-  const handlePreviewImport = async () => {
+  const handlePreviewImport = async (overrideViewId) => {
     if (!importFile) { setError('Vui lòng chọn file Excel'); return; }
+    if (importFile.size > 8 * 1024 * 1024) { setError('File quá lớn (>8MB). Hãy chia file <200 dòng rồi import từng phần để tránh mất kết nối trên VPS chậm.'); return; }
+    const viewIdToUse = overrideViewId !== undefined ? overrideViewId : importViewId;
     try {
       setImportLoading(true);
-      const res = await excelService.previewImport('users', importFile, token);
+      setError('');
+      const res = await excelService.previewImport('users', importFile, token, { viewId: viewIdToUse || undefined });
       if (res.success) {
+        setImportFailures([]);
+        setImportResult(null);
         setImportPreview(res.data);
         setImportStep('preview');
       } else {
+        if (res.data && res.data.detection) {
+          setImportPreview({ detection: res.data.detection, rows: [], errors: [], validRows: 0, totalRows: 0, errorRows: 0 });
+          setImportStep('preview');
+        }
         setError(res.message || 'Lỗi đọc file Excel');
       }
     } catch {
@@ -202,50 +664,141 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleChangeImportView = (value) => {
+    setImportViewId(value);
+    if (importFile) handlePreviewImport(value);
+  };
+
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.rows.length === 0) { setError('Không có dữ liệu hợp lệ để import'); return; }
+    const jobId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setImportProgress({ done: 0, total: importPreview.rows.length });
+    setImportResult(null);
+    const stopPoll = () => { if (importPollRef.current) { clearInterval(importPollRef.current); importPollRef.current = null; } };
+    stopPoll();
+    const finishJob = (data) => {
+      stopPoll();
+      setImportProgress(null);
+      setImportLoading(false);
+      setImportResult(data);
+      if (data.status === 'done') {
+        setToast({ message: `Import thành công: ${data.imported} bản ghi`, type: 'success' });
+        loadUsers();
+      } else if (data.status === 'partial') {
+        setToast({ message: `Import một phần: ${data.imported}/${data.total} thành công, ${data.failed} lỗi — xem tab Excel`, type: 'warning' });
+        loadUsers();
+      } else if (data.status === 'cancelled') {
+        setToast({ message: `Đã hủy import: ${data.imported} đã tạo, ${data.failed} lỗi, ${data.pending} chưa xử lý — xem tab Excel`, type: 'warning' });
+        loadUsers();
+      } else {
+        setError(data.error || 'Import thất bại');
+      }
+    };
+    importPollRef.current = setInterval(async () => {
+      try {
+        const p = await excelService.getImportProgress(jobId, token);
+        if (p && p.success && p.data && p.data.status !== 'not_found') {
+          const d = p.data;
+          setImportProgress({ done: d.done, total: d.total, status: d.status });
+          if (['done', 'partial', 'failed', 'cancelled'].includes(d.status)) finishJob(d);
+        }
+      } catch { }
+    }, 2000);
     try {
       setImportLoading(true);
-      const res = await excelService.confirmImport('users', importPreview.rows, token);
-      if (res.success) {
-        setShowImport(false);
-        setToast({ message: res.message, type: 'success' });
-        loadUsers(1);
-      } else {
+      setError('');
+      const res = await excelService.confirmImport('users', importPreview.rows, token, { viewId: importPreview.viewId, jobId, fileName: (importFile && importFile.name) || null, columns: importPreview.columns || null });
+      if (!res.success) {
+        stopPoll();
+        setImportProgress(null);
+        setImportLoading(false);
+        setImportFailures((res.data && res.data.failDetails) || []);
         setError(res.message || 'Lỗi import');
+      } else {
+        setShowImport(false);
+        setImportLoading(false);
+        setImportProgress(null);
+        setToast({
+          message: `Đang xử lý import ${importPreview.rows.length} dòng — xong sẽ báo tại đây.`,
+          type: 'info',
+          duration: 5000,
+          action: { label: 'Xem tiến độ', onClick: () => navigate('/admin/audit-log', { state: { tab: 'excel', jobId } }) }
+        });
       }
-    } catch {
-      setError('Lỗi import');
-    } finally {
+    } catch (err) {
+      stopPoll();
+      setImportProgress(null);
       setImportLoading(false);
+      setError((err && err.message) || 'Lỗi import');
     }
   };
 
-  const renderActions = (row) => (
-    <div className="action-buttons">
-      <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
-      <button className="btn btn-sm btn-edit" onClick={() => navigate(`/admin/users/edit=${row.id}`)}>Sửa</button>
-      <button className="btn btn-sm btn-lock" onClick={() => handleToggleLock(row.id)}>
-        {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
-      </button>
-      {row.role !== 'ADMIN' && row.id !== currentUser.id && (
-        <button className="btn btn-sm btn-delete" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
-      )}
-    </div>
-  );
+  const renderActions = (row) => {
+    const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
+    const myRank = RANK[currentUser.role] ?? 99;
+    const rowRank = RANK[row.role] ?? 99;
+    const inBranch = !isSales || row._scope === 'branch';
+    const canManage = isSuperAdmin || (inBranch && row.id !== currentUser.id && (myRank < RANK.SALES || (row.role !== 'ADMIN' && row.role !== 'SUPER_ADMIN')));
+    const canDelete = row.id !== currentUser.id && myRank < rowRank;
+    return (
+      <div className="flex flex-wrap gap-1">
+        <button className="btn btn-primary btn-xs" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
+        {canManage && (
+          <button className="btn btn-warning btn-xs" onClick={() => navigate(`/admin/users/edit=${row.id}`)}>Sửa</button>
+        )}
+        {canManage && (
+          <button className="btn btn-ghost btn-xs" onClick={() => openPasswordModal(row.id, row.full_name)}>Đổi MK</button>
+        )}
+        {canManage && !isSales && row.id !== currentUser.id && (
+          <button className="btn btn-sm btn-ghost" onClick={() => handleToggleLock(row.id)}>
+            {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
+          </button>
+        )}
+        {canDelete && (
+          <button className="btn btn-error btn-outline btn-xs" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
+        )}
+      </div>
+    );
+  };
+
+  const popupUserId = popup.open
+    ? (popup.record ? Number(popup.record.id) : parseInt(location.pathname.match(/=(\d+)/)?.[1]))
+    : null;
+  const popupUserScope = popup.open
+    ? (popup.record?._scope || users.find(u => Number(u.id) === popupUserId)?._scope || null)
+    : null;
+  const canEditPopupUser = !isSales || popupUserScope === 'branch';
 
   return (
-    <div className="admin-users-page">
-      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
+    <div>
+      <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      <div className="page-header">
-        <h1>Quản lý Users</h1>
-        <div className="page-header-actions">
-          <button className="btn btn-primary" onClick={() => setShowCreateForm(true)}>+ Tạo user</button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3">
+          <Users size={24} className="text-primary shrink-0" />
+          <h1 className="text-2xl font-bold">Quản lý Users</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn btn-primary btn-sm gap-1" onClick={() => { setCreateParentId(''); setCreateRole('CTV'); setShowCreateForm(true); }}>
+            <Plus size={14} />
+            Tạo user
+          </button>
+          {!isSales && (
+            <ViewPickerMenu label="Template" icon={FileSpreadsheet} views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
+          )}
+          {!isSales && (
+            <ViewPickerMenu label="Export" views={excelViews} onPick={handleExport} onPickForm={handleExportByForm} title="Chọn bộ cột để export" />
+          )}
+          {!isSales && (
+            <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
+              <Upload size={14} />
+              Import
+            </button>
+          )}
         </div>
       </div>
 
-      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(1); }} />}
+      {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadUsers(); }} />}
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -257,111 +810,408 @@ const AdminUsersPage = () => {
         type="danger"
       />
 
-      <div className="filter-bar">
-        <input type="text" placeholder="Search theo tên, email, SĐT..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="">Tất cả trạng thái</option>
-          {statusOptions.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <button className="btn btn-primary" onClick={handleSearch}>Tìm</button>
-        <button className="btn btn-secondary" onClick={handleDownloadTemplate}>Template</button>
-        <button className="btn btn-secondary" onClick={handleExport}>Export Excel</button>
-        <button className="btn btn-secondary" onClick={openImport}>Import Excel</button>
+      <ConfirmDialog
+        isOpen={confirmBulkDelete}
+        title="Xóa nhiều user"
+        message={`Bạn có chắc chắn muốn xóa ${selectedIds.length} user đã chọn? (Tài khoản admin và chính bạn sẽ được bỏ qua)`}
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setConfirmBulkDelete(false)}
+        confirmText="Xóa"
+        type="danger"
+      />
+
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 mb-3">
+        <input
+          type="text"
+          placeholder="Search theo tên, email, SĐT, mã ngoài..."
+          className="input input-bordered input-sm flex-1 min-w-0"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+        />
+        <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterRole, filterDepartment, filterChucVu, filterParent, dateFrom, dateTo].filter(Boolean).length} />
+        <div className="join shrink-0">
+          <button
+            type="button"
+            className={`join-item btn btn-sm gap-1 ${viewMode === 'table' ? 'btn-active' : 'btn-ghost'}`}
+            onClick={() => setViewMode('table')}
+            title="Hiển thị dạng bảng"
+          >
+            <List size={14} /> <span className="hidden sm:inline">Bảng</span>
+          </button>
+          <button
+            type="button"
+            className={`join-item btn btn-sm gap-1 ${viewMode === 'tree' ? 'btn-active' : 'btn-ghost'}`}
+            onClick={() => setViewMode('tree')}
+            title="Hiển thị dạng cây phòng ban"
+          >
+            <Network size={14} /> <span className="hidden sm:inline">Cây</span>
+          </button>
+        </div>
       </div>
 
+      <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={() => loadUsers()} onReset={handleReset} title="Bộ lọc người dùng">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <select className="select select-bordered select-sm w-full" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="">Tất cả trạng thái</option>
+            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
+            <option value="">Tất cả vai trò</option>
+            {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
+            <option value="">Tất cả phòng ban</option>
+            {departmentOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterChucVu} onChange={(e) => setFilterChucVu(e.target.value)}>
+            <option value="">Tất cả chức vụ</option>
+            {chucVuOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          <select className="select select-bordered select-sm w-full" value={filterParent} onChange={(e) => setFilterParent(e.target.value)}>
+            <option value="">Tất cả người quản lý</option>
+            {salesList.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
+            <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+              <option value="created_at">Tạo</option>
+              <option value="updated_at">Cập nhật</option>
+            </select>
+          </div>
+          <input type="date" className="input input-bordered input-sm w-full" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <input type="date" className="input input-bordered input-sm w-full" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="flex items-end gap-2 col-span-1 sm:col-span-2 lg:col-span-2">
+            <button className="btn btn-primary btn-sm flex-1 gap-1" onClick={() => loadUsers()}><Search size={14} /> Áp dụng</button>
+            <button className="btn btn-ghost btn-sm flex-1 gap-1" onClick={handleReset}><RotateCcw size={14} /> Xóa lọc</button>
+          </div>
+        </div>
+      </FilterBody>
+
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
+          <span className="text-sm font-medium">Đã chọn: {selectedIds.length} user</span>
+          <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={bulkLoading}>
+            <Trash2 size={14} /> Xóa ({selectedIds.length})
+          </button>
+          <button className="btn btn-ghost btn-sm gap-1" onClick={() => setSelectedIds([])}>
+            <X size={14} /> Bỏ chọn
+          </button>
+        </div>
+      )}
+
+      {/* Import Modal */}
       {showImport && (
-        <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>Import Users từ Excel</h2>
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Import Users từ Excel</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowImport(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
             {importStep === 'upload' && (
-              <div className="import-upload">
-                <label>Chọn file Excel (.xlsx)</label>
-                <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect} />
+              <div className="space-y-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Chọn file Excel (.xlsx)</span>
+                  </label>
+                  <input type="file" accept=".xlsx,.xls" className="file-input file-input-bordered w-full" onChange={handleFileSelect} />
+                </div>
                 {importFile && (
-                  <div className="import-file-info">
-                    <p>File: <strong>{importFile.name}</strong></p>
-                    <p>Kích thước: {(importFile.size / 1024).toFixed(1)} KB</p>
+                  <div className="alert alert-info">
+                    <span>File: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)</span>
                   </div>
                 )}
-                <div className="import-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button type="button" className="btn btn-primary" onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Bộ cột</span>
+                  </label>
+                  <select className="select select-bordered w-full" value={importViewId} onChange={(e) => setImportViewId(e.target.value)}>
+                    <option value="">Tự nhận diện theo file (khuyến nghị)</option>
+                    {excelViews.map(v => (
+                      <option key={v.id} value={v.id}>{usageLabel(v.usage)} – {v.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-action">
+                  <button className="btn btn-ghost" onClick={() => setShowImport(false)}>Hủy</button>
+                  <button className="btn btn-primary" onClick={() => handlePreviewImport()} disabled={!importFile || importLoading}>
+                    {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang đọc...' : 'Xem trước'}
                   </button>
                 </div>
               </div>
             )}
             {importStep === 'preview' && importPreview && (
-              <div className="import-preview">
-                <div className="import-summary">
-                  <p>Tổng dòng: <strong>{importPreview.totalRows}</strong></p>
-                  <p className="success-text">Hợp lệ: <strong>{importPreview.validRows}</strong></p>
-                  {importPreview.errorRows > 0 && <p className="error-text">Lỗi: <strong>{importPreview.errorRows}</strong></p>}
+              <div className="space-y-4">
+                <div className="stats shadow w-full">
+                  <div className="stat">
+                    <div className="stat-title">Tổng dòng</div>
+                    <div className="stat-value text-lg">{importPreview.totalRows}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-title text-success">Hợp lệ</div>
+                    <div className="stat-value text-lg text-success">{importPreview.validRows}</div>
+                  </div>
+                  {importPreview.errorRows > 0 && (
+                    <div className="stat">
+                      <div className="stat-title text-error">Lỗi</div>
+                      <div className="stat-value text-lg text-error">{importPreview.errorRows}</div>
+                    </div>
+                  )}
                 </div>
-                <div className="import-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => setImportStep('upload')}>Quay lại</button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowImport(false)}>Hủy</button>
-                  <button type="button" className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                <ImportViewPanel
+                  detection={importPreview.detection}
+                  views={excelViews}
+                  value={importViewId}
+                  onChange={handleChangeImportView}
+                  loading={importLoading}
+                />
+                <ImportErrorList errors={importPreview.errors} failures={importFailures} />
+                {importLoading && importProgress && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Đang import...</span>
+                      <span>{importProgress.done}/{importProgress.total} dòng</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full"
+                      value={importProgress.done}
+                      max={Math.max(importProgress.total, 1)}
+                    ></progress>
+                  </div>
+                )}
+                {importResult && (
+                  <div className={`alert ${importResult.status === 'done' ? 'alert-success' : importResult.status === 'partial' ? 'alert-warning' : importResult.status === 'cancelled' ? 'alert-warning' : 'alert-error'} text-sm`}>
+                    <span>
+                      {importResult.status === 'done' && `Import thành công: ${importResult.imported} bản ghi.`}
+                      {importResult.status === 'partial' && `Import một phần: ${importResult.imported}/${importResult.total} thành công, ${importResult.failed} lỗi.`}
+                      {importResult.status === 'cancelled' && `Đã hủy import: ${importResult.imported} đã tạo, ${importResult.failed} lỗi, ${importResult.pending} chưa xử lý.`}
+                      {importResult.status === 'failed' && `Import thất bại${importResult.error ? `: ${importResult.error}` : '.'}`}
+                      {' '}Chi tiết trong tab Excel của Audit Log.
+                    </span>
+                  </div>
+                )}
+                <div className="modal-action">
+                  <button className="btn btn-ghost" onClick={() => setImportStep('upload')}>Quay lại</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowImport(false); setImportResult(null); }}>Hủy</button>
+                  {importResult && ['partial', 'cancelled', 'failed'].includes(importResult.status) && (
+                    <button className="btn btn-info" onClick={() => { setShowImport(false); setImportResult(null); navigate('/admin/audit-log'); }}>Xem trong tab Excel</button>
+                  )}
+                  <button className="btn btn-primary" onClick={handleConfirmImport} disabled={importPreview.rows.length === 0 || importLoading}>
+                    {importLoading ? <span className="loading loading-spinner loading-xs"></span> : null}
                     {importLoading ? 'Đang import...' : `Import ${importPreview.validRows} user`}
                   </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
+          <div className="modal-backdrop" />
+        </dialog>
       )}
 
+      {/* Create User Modal */}
       {showCreateForm && (
-        <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
-          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header-flex">
-              <h2>Tạo user mới</h2>
-              <button className="btn-close-x" onClick={() => setShowCreateForm(false)}>✕</button>
+        <CreateUserModal
+          token={token}
+          isSuperAdmin={isSuperAdmin}
+          isSales={isSales}
+          createRoleAllowlist={createRoleAllowlist}
+          salesList={salesList}
+          allUsers={users}
+          currentUser={currentUser}
+          onClose={() => { setShowCreateForm(false); setCreateParentId(''); setCreateRole('CTV'); }}
+          onSubmit={handleCreateUser}
+          createRole={createRole}
+          setCreateRole={setCreateRole}
+          createParentId={createParentId}
+          setCreateParentId={setCreateParentId}
+        />
+      )}
+
+      {pwModal.open && (
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Đổi mật khẩu — {pwModal.name}</h3>
+              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setPwModal({ open: false, id: null, name: '' })} aria-label="Close">
+                <X size={18} />
+              </button>
             </div>
-            <DynamicForm
-              entity="users"
-              formId={USERS_FORM_ID}
-              onSubmit={handleCreateUser}
-              initialData={{ role: 'USER', status: 'ACTIVE', password: '123456' }}
-            >
-              <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(false)}>Hủy</button>
-            </DynamicForm>
+            <div className="space-y-4">
+              {pwModal.id === currentUser.id && (
+              <div className="form-control">
+                <label className="label"><span className="label-text">Mật khẩu hiện tại</span></label>
+                <input type="password" autoComplete="current-password" className="input input-bordered w-full" value={pwOld} onChange={(e) => setPwOld(e.target.value)} />
+              </div>
+              )}
+              <div className="form-control">
+                <label className="label"><span className="label-text">Mật khẩu mới (ít nhất 6 ký tự)</span></label>
+                <input type="password" autoComplete="new-password" className="input input-bordered w-full" value={pw1} onChange={(e) => setPw1(e.target.value)} />
+              </div>
+              <div className="form-control">
+                <label className="label"><span className="label-text">Nhập lại mật khẩu mới</span></label>
+                <input type="password" autoComplete="new-password" className="input input-bordered w-full" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+              </div>
+              {pwError && <div className="alert alert-error"><span>{pwError}</span></div>}
+              <div className="modal-action">
+                <button className="btn btn-ghost" onClick={() => setPwModal({ open: false, id: null, name: '' })}>Hủy</button>
+                <button className="btn btn-primary" onClick={handleChangePassword} disabled={pwLoading}>
+                  {pwLoading ? 'Đang lưu...' : 'Đổi mật khẩu'}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+          <div className="modal-backdrop" />
+        </dialog>
       )}
 
       {popup.open && (
-        <RecordDetailPopup
-          entity="users"
+        <RecordDetailPopup          entity="users"
           record={popup.record}
           recordId={popup.record ? undefined : parseInt(location.pathname.match(/=(\d+)/)?.[1])}
-          viewId={USERS_VIEW_ID}
+          viewId={usersViewId}
           mode={popup.mode}
-          onClose={() => navigate('/admin/users')}
-          onSaved={() => { loadUsers(pagination.page); navigate('/admin/users'); }}
+          allowEdit={canEditPopupUser}
+          onClose={() => {
+            setPopup({ open: false, record: null, mode: 'view' });
+            navigate('/admin/users');
+          }}
+          onSaved={() => loadUsers()}
           onSwitchMode={(newMode) => {
             const id = location.pathname.match(/=(\d+)/)?.[1];
             navigate(`/admin/users/${newMode}=${id}`, { replace: true });
           }}
+          beforeActions={({ formData: fd, setFormData: setFd, mode: popupMode, record: rec }) => {
+            const recCd = parseCustomData(rec?.custom_data);
+            const targetRole = popupMode === 'edit' ? (fd.role || rec?.role) : rec?.role;
+            const targetChucVu = popupMode === 'edit' ? (fd.chuc_vu || recCd.chuc_vu) : recCd.chuc_vu;
+            const targetDept = popupMode === 'edit' ? (fd.department || recCd.department) : recCd.department;
+            const isGdkvTarget = targetRole === 'SALES' && isGdkv(targetChucVu, targetDept);
+            if (!['CTV', 'NPP'].includes(targetRole) && !isGdkvTarget) return null;
+
+            const meCd = parseCustomData(currentUser.custom_data);
+            const meChucVu = meCd.chuc_vu || '';
+            const meDept = meCd.department || '';
+            const isAdminish = !isSales;
+
+            const activeUsers = (users || []).filter(u => u.status === 'ACTIVE');
+            const gdkv = activeUsers.filter(s => s.role === 'SALES' && isGdkv(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
+            const gdtt = activeUsers.filter(s => s.role === 'SALES' && isGdtt(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
+            const parentable = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
+            const gdkvIdSet = new Set(gdkv.map(s => s.id));
+            const otherUsers = parentable.filter(u => !gdkvIdSet.has(u.id));
+
+            const currentParentId = popupMode === 'edit' ? (fd.parent_id ?? rec?.parent_id) : rec?.parent_id;
+            const currentParent = (users || []).find(s => s.id === Number(currentParentId));
+
+            const parentLabel = isGdkvTarget ? 'Giám đốc Trung tâm (cấp trên)' : 'Giám đốc Khu vực (GĐKV)';
+            const emptyLabel = isGdkvTarget ? '— Chọn GĐTT —' : '— Chọn GĐKV —';
+
+            let groups = [];
+            if (isAdminish) {
+              if (isGdkvTarget) {
+                groups = [
+                  { label: 'Giám đốc Trung tâm Kinh doanh', users: gdtt },
+                  { label: 'Khác', users: parentable.filter(u => !gdtt.some(g => g.id === u.id)) },
+                ];
+              } else {
+                groups = [
+                  { label: 'Giám đốc Khu vực', users: gdkv },
+                  { label: 'Khác', users: otherUsers },
+                ];
+              }
+            } else if (isGdkvTarget) {
+              groups = [{ label: null, users: gdtt }];
+            } else if (isGdkv(meChucVu, meDept)) {
+              groups = [{ label: null, users: (users || []).filter(u => u.id === currentUser.id) }];
+            } else {
+              const sameDept = gdkv.filter(s => (parseCustomData(s.custom_data).department || '') === meDept);
+              groups = [{ label: null, users: sameDept }];
+            }
+
+            const renderOption = (s) => {
+              const cd = parseCustomData(s.custom_data);
+              return (
+                <option key={s.id} value={s.id}>
+                  {s.full_name} — {cd.department || 'Chưa có phòng ban'}{isAdminish && !isGdkvTarget ? ` (${s.role})` : ''}
+                </option>
+              );
+            };
+
+            return (
+              <div className="mb-4 p-3 rounded-lg" style={{ border: '1px solid #e0e7ff', background: '#f5f7ff' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Network size={16} className="text-indigo-500" />
+                  <span className="font-semibold text-sm" style={{ color: '#4338ca' }}>Phân nhánh</span>
+                </div>
+                {popupMode === 'edit' && isAdminish ? (
+                  <div className="form-control">
+                    <label className="label"><span className="label-text text-sm">{parentLabel}</span></label>
+                    <select
+                      className="select select-bordered select-sm w-full"
+                      value={currentParentId || ''}
+                      onChange={(e) => setFd(prev => ({ ...prev, parent_id: e.target.value ? Number(e.target.value) : null }))}
+                    >
+                      <option value="">{emptyLabel}</option>
+                      {groups.map((g, gi) => (
+                        g.label
+                          ? <optgroup key={gi} label={g.label}>{g.users.map(renderOption)}</optgroup>
+                          : <Fragment key={gi}>{g.users.map(renderOption)}</Fragment>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="text-sm">
+                    <span className="opacity-70">{parentLabel}: </span>
+                    {currentParent ? <strong>{currentParent.full_name}</strong> : <span className="opacity-50">Chưa phân nhánh</span>}
+                  </div>
+                )}
+              </div>
+            );
+          }}
         />
       )}
 
-      <DynamicTable
-        entity="users"
-        viewId={USERS_VIEW_ID}
-        data={users}
-        actions={renderActions}
-        startIndex={(pagination.page - 1) * pagination.limit}
-      />
-
-      <Pagination
-        page={pagination.page}
-        totalPages={pagination.totalPages}
-        total={pagination.total}
-        onPageChange={loadUsers}
-      />
+      {loading ? (
+        <Loading />
+      ) : viewMode === 'tree' ? (
+        <div className="bg-base-100 rounded-lg border border-base-300 p-4">
+          <UserTreeView
+            users={users}
+            search={appliedSearch}
+            onSelect={(id) => navigate(`/admin/users/view=${id}`)}
+          />
+        </div>
+      ) : (
+        <>
+          <DynamicTable
+            ref={tableRef}
+            entity="users"
+            viewId={usersViewId}
+            data={pagedRows.map(({ user, depth }) => ({ ...user, _depth: depth }))}
+            actions={renderActions}
+            startIndex={(page - 1) * pageSize}
+            rowDepth={(row) => row._depth || 0}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            onColumnFiltersChange={handleColumnFiltersChange}
+          />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={treeRows.length}
+            onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
+          />
+        </>
+      )}
     </div>
   );
 };

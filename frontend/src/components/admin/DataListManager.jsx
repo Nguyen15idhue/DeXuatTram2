@@ -21,6 +21,7 @@ const DataListManager = () => {
   const [form, setForm] = useState({ name: '', description: '', columns_config: [{ key: '', label: '', type: 'text' }] });
   const [editingId, setEditingId] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(10);
   const [showImport, setShowImport] = useState(false);
   const [importListId, setImportListId] = useState(null);
   const [importFile, setImportFile] = useState(null);
@@ -31,10 +32,10 @@ const DataListManager = () => {
   const loadLists = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await dataListService.getAll(`page=${page}&limit=10`, token);
+      const res = await dataListService.getAll(`page=${page}&limit=${pageSize}`, token);
       if (res && res.success) {
         setLists(res.data || []);
-        setPagination(res.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
+        setPagination(res.pagination || { page: 1, limit: pageSize, total: 0, totalPages: 1 });
       } else {
         setError(res?.message || 'Lỗi tải danh sách');
       }
@@ -44,7 +45,7 @@ const DataListManager = () => {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, pageSize]);
 
   useEffect(() => { loadLists(1); }, [loadLists]);
 
@@ -213,8 +214,9 @@ const DataListManager = () => {
       />
 
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+        <div className="modal-overlay">
+          <div className="legacy-modal max-w-[640px]" style={{ position: 'relative' }}>
+            <button type="button" className="btn btn-ghost btn-sm btn-circle" style={{ position: 'absolute', top: 12, right: 12 }} onClick={() => setShowForm(false)} aria-label="Close">✕</button>
             <h2>{editingId ? 'Sửa danh sách' : 'Tạo danh sách mới'}</h2>
             <form onSubmit={handleSubmit}>
               {error && <ErrorMessage message={error} />}
@@ -229,17 +231,17 @@ const DataListManager = () => {
                 </div>
                 <div className="form-group-section">
                   <h4>Columns (cấu trúc dữ liệu)</h4>
-                  <button type="button" className="btn btn-sm btn-secondary" onClick={addColumn} style={{ marginBottom: 8 }}>+ Thêm column</button>
+                  <button type="button" className="btn btn-sm btn-secondary mb-2" onClick={addColumn}>+ Thêm column</button>
                   {form.columns_config.map((col, i) => (
-                    <div key={i} className="form-row" style={{ alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <input type="text" value={col.key} onChange={e => updateColumn(i, 'key', e.target.value)} placeholder="key (vd: tinh)" style={{ flex: 1 }} />
-                      <input type="text" value={col.label} onChange={e => updateColumn(i, 'label', e.target.value)} placeholder="Label (vd: Tỉnh)" style={{ flex: 1 }} />
-                      <select value={col.type} onChange={e => updateColumn(i, 'type', e.target.value)} style={{ padding: '6px 8px' }}>
+                    <div key={i} className="form-row items-center gap-2 mb-1.5">
+                      <input type="text" value={col.key} onChange={e => updateColumn(i, 'key', e.target.value)} placeholder="key (vd: tinh)" className="flex-1" />
+                      <input type="text" value={col.label} onChange={e => updateColumn(i, 'label', e.target.value)} placeholder="Label (vd: Tỉnh)" className="flex-1" />
+                      <select value={col.type} onChange={e => updateColumn(i, 'type', e.target.value)} className="px-2 py-1.5">
                         <option value="text">Text</option>
                         <option value="number">Number</option>
                       </select>
                       {col.type === 'number' && (
-                        <select value={col.number_format || 'plain'} onChange={e => updateColumn(i, 'number_format', e.target.value)} style={{ padding: '6px 8px' }} title="Định dạng số">
+                        <select value={col.number_format || 'plain'} onChange={e => updateColumn(i, 'number_format', e.target.value)} className="px-2 py-1.5" title="Định dạng số">
                           <option value="plain">1000</option>
                           <option value="comma">1,000</option>
                           <option value="dot">1.000</option>
@@ -263,8 +265,9 @@ const DataListManager = () => {
       )}
 
       {showImport && (
-        <div className="modal-overlay" onClick={() => setShowImport(false)}>
-          <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="legacy-modal legacy-modal-lg" style={{ position: 'relative' }}>
+            <button type="button" className="btn btn-ghost btn-sm btn-circle" style={{ position: 'absolute', top: 12, right: 12 }} onClick={() => setShowImport(false)} aria-label="Close">✕</button>
             {importStep === 'upload' && (
               <>
                 <div className="import-modal-header">
@@ -282,7 +285,7 @@ const DataListManager = () => {
                     type="file"
                     accept=".xlsx,.xls"
                     onChange={handleDLFileSelect}
-                    style={{ display: 'none' }}
+                    className="hidden"
                   />
                   {importFile ? (
                     <div className="import-file-selected">
@@ -398,14 +401,14 @@ const DataListManager = () => {
         </table>
       </div>
 
-      {pagination.totalPages > 1 && (
-        <Pagination
-          page={pagination.page}
-          totalPages={pagination.totalPages}
-          total={pagination.total}
-          onPageChange={loadLists}
-        />
-      )}
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={loadLists}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
+      />
     </div>
   );
 };

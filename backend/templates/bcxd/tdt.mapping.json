@@ -1,0 +1,125 @@
+{
+  "tokens": {
+    "nguoi_phu_trach": {
+      "source": "field",
+      "key": "nguoi_phu_trach"
+    },
+    "address": {
+      "source": "field",
+      "key": "address"
+    },
+    "link_de_xuat": {
+      "source": "field",
+      "key": "link_de_xuat"
+    },
+    "dien_tich_mat_bang": {
+      "source": "field",
+      "key": "dien_tich_mat_bang"
+    },
+    "nguon_dien": {
+      "source": "field",
+      "key": "nguon_dien"
+    },
+    "thoi_gian_lap_dat": {
+      "source": "field",
+      "key": "thoi_gian_lap_dat"
+    },
+    "thoi_gian_nghiem_thu": {
+      "source": "field",
+      "key": "thoi_gian_nghiem_thu"
+    },
+    "note_phap_ly": {
+      "source": "field",
+      "key": "note_phap_ly"
+    },
+    "thoi_han_thue_dat": {
+      "source": "field",
+      "key": "thoi_han_thue_dat"
+    },
+    "tdt_tong_cong": {
+      "source": "field",
+      "key": "tdt_tong_cong"
+    },
+    "const_so_van_ban": {
+      "source": "const",
+      "key": "so_van_ban"
+    },
+    "const_plan_tdt": {
+      "source": "const",
+      "key": "plan_tdt"
+    },
+    "const_plan_lk": {
+      "source": "const",
+      "key": "plan_lk"
+    },
+    "const_plan_nq": {
+      "source": "const",
+      "key": "plan_nq"
+    },
+    "const_plan_npp": {
+      "source": "const",
+      "key": "plan_npp"
+    },
+    "const_signer_ketoan": {
+      "source": "const",
+      "key": "signer_ketoan"
+    },
+    "const_signer_tgd_tdt": {
+      "source": "const",
+      "key": "signer_tgd_tdt"
+    }
+  },
+  "loops": {
+    "tdt_cost": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "table",
+          "table": "tdt_tru",
+          "columns": {
+            "khoan_muc": "loai_tru",
+            "so_luong": "so_luong",
+            "don_gia": "don_gia",
+            "thanh_tien": "thanh_tien"
+          }
+        },
+        {
+          "kind": "table",
+          "table": "tdt_chi_phi_khac",
+          "columns": {
+            "khoan_muc": "loai_chi_phi",
+            "thanh_tien": "so_tien"
+          }
+        }
+      ]
+    },
+    "luy_ke": {
+      "stt": true,
+      "parts": [
+        {
+          "kind": "datalist",
+          "listId": 25,
+          "columns": {
+            "loai_hinh": "loai_hinh",
+            "ke_hoach": "ke_hoach",
+            "de_xuat": "de_xuat",
+            "luy_ke": "luy_ke",
+            "chenh_lech": "chenh_lech"
+          }
+        }
+      ],
+      "footers": [
+        {
+          "id": "kehoach",
+          "label": "Tổng kế hoạch",
+          "formula": "SUM(ke_hoach)"
+        },
+        {
+          "id": "luyke",
+          "label": "Tổng lũy kế",
+          "formula": "SUM(luy_ke)"
+        }
+      ]
+    }
+  }
+}
