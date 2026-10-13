@@ -90,6 +90,7 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
     try {
       const fixedData = row.fixedData || {};
       const dynamicData = row.dynamicData || {};
+      const specifiedOwner = dynamicData.nguoi_de_xuat;
       try {
         const priceFlags = await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, confirmTableDefs);
         if (priceFlags.length > 0) confirmWarnDetails.push({ row: row.rowNumber || '?', warnings: priceFlags });
@@ -175,8 +176,27 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
       }
 
       if (entity === 'station_proposals' && user && user.id) {
-        fixedData.user_id = user.id;
-        await dynamicUtils.applyAutoUserFields(dynamicData, proposalFieldDefs, user.id, null);
+        const canAssignOwner = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN';
+        const specified = specifiedOwner;
+        const rawOwnerId = specified && typeof specified === 'object'
+          ? (specified.id ?? specified.user_id ?? specified.value)
+          : null;
+        const specifiedId = rawOwnerId !== null && rawOwnerId !== undefined && String(rawOwnerId).trim() !== ''
+          ? Number(rawOwnerId)
+          : NaN;
+        if (canAssignOwner && Number.isInteger(specifiedId) && specifiedId > 0) {
+          const [ownerRows] = await pool.query("SELECT id FROM users WHERE id = ? AND status = 'active' LIMIT 1", [specifiedId]);
+          if (ownerRows.length === 0) throw new Error(`Người đề xuất (ID ${specifiedId}) không tồn tại hoặc đã bị khóa`);
+          fixedData.user_id = specifiedId;
+          dynamicData.nguoi_de_xuat = { id: specifiedId };
+        } else {
+          fixedData.user_id = user.id;
+          if (Number.isInteger(specifiedId) && specifiedId > 0 && specifiedId !== Number(user.id)) {
+            dynamicData.nguoi_de_xuat = { id: user.id };
+            confirmWarnDetails.push({ row: row.rowNumber || '?', warnings: ['Không có quyền gán người đề xuất khác - đã gán về bản thân'] });
+          }
+        }
+        await dynamicUtils.applyAutoUserFields(dynamicData, proposalFieldDefs, fixedData.user_id, null);
       }
 
       if (entity === 'users') {
@@ -308,7 +328,10 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
           );
         }
 
-        const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, user ? user.id : null, null, { excludeKeys: Object.keys(keptPost) });
+        const formulaUserId = entity === 'station_proposals' && fixedData.user_id
+          ? Number(fixedData.user_id)
+          : (user ? user.id : null);
+        const postResults = await dynamicEngineService.computePostFormulas(entity, result.insertId, dynamicData, formulaUserId, null, { excludeKeys: Object.keys(keptPost) });
         const mergedDynamic = { ...dynamicData, ...postResults, ...keptPost };
         if (Object.keys(mergedDynamic).length > 0) {
           await pool.query(

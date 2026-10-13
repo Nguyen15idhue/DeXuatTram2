@@ -123,20 +123,20 @@ const buildFileName = (entity, kind, views, withStamp = false) => {
 async function resolveView(entity, viewId, usage) {
   if (viewId) {
     const [rows] = await pool.query(
-      'SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE id = ? AND entity = ? LIMIT 1',
+      'SELECT id, entity, name, `usage`, include_rest, visible_roles, status FROM views WHERE id = ? AND entity = ? LIMIT 1',
       [viewId, entity]
     );
     if (rows.length > 0) return rows[0];
   }
   if (usage) {
     const [rows] = await pool.query(
-      "SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE entity = ? AND `usage` = ? AND status = 'active' ORDER BY id LIMIT 1",
+      "SELECT id, entity, name, `usage`, include_rest, visible_roles, status FROM views WHERE entity = ? AND `usage` = ? AND status = 'active' ORDER BY id LIMIT 1",
       [entity, usage]
     );
     if (rows.length > 0) return rows[0];
   }
   const [rows] = await pool.query(
-    "SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE entity = ? AND `usage` = 'table' AND status = 'active' ORDER BY id LIMIT 1",
+    "SELECT id, entity, name, `usage`, include_rest, visible_roles, status FROM views WHERE entity = ? AND `usage` = 'table' AND status = 'active' ORDER BY id LIMIT 1",
     [entity]
   );
   return rows[0] || null;
@@ -161,18 +161,37 @@ function safeSheetName(name, used = new Set()) {
   return candidate;
 }
 
-async function resolveExportViews(entity, query) {
+function isViewVisibleToRole(view, role) {
+  if (!view) return false;
+  const raw = view.visible_roles;
+  if (raw === null || raw === undefined || raw === '') return true;
+  let arr;
+  try { arr = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return true; }
+  if (!Array.isArray(arr) || arr.length === 0) return true;
+  return arr.includes(role);
+}
+
+async function resolveExportViews(entity, query, role) {
   const idsRaw = query.viewIds || query.view_ids || '';
   const ids = String(idsRaw).split(',').map(s => Number(String(s).trim())).filter(Boolean);
+  const requested = ids.length > 0 || !!query.viewId;
   if (ids.length > 0) {
     const out = [];
+    let forbidden = false;
     for (const id of ids) {
       const v = await resolveView(entity, id, null);
-      if (v) out.push(v);
+      if (!v) continue;
+      if (!isViewVisibleToRole(v, role)) { forbidden = true; continue; }
+      out.push(v);
     }
     if (out.length > 0) return out;
+    if (forbidden) throw Object.assign(new Error('FORBIDDEN_VIEW'), { statusCode: 403 });
   }
   const single = await resolveView(entity, query.viewId ? Number(query.viewId) : null, query.usage || null);
+  if (single && !isViewVisibleToRole(single, role)) {
+    if (requested) throw Object.assign(new Error('FORBIDDEN_VIEW'), { statusCode: 403 });
+    return [];
+  }
   return single ? [single] : [];
 }
 
@@ -490,6 +509,37 @@ function buildImportColumns(entity, fieldDefs) {
   return columns;
 }
 
+async function ensureOwnerColumn(entity, columns) {
+  if (entity !== 'station_proposals') return columns;
+  if (columns.some((c) => c.key === 'nguoi_de_xuat')) return columns;
+  const [rows] = await pool.query(
+    "SELECT `key`, label, type, source_type, required, formula_config, `options`, data_list_id, data_list_column, data_list_label_column, source_config, placeholder, help_text FROM field_definitions WHERE entity = 'station_proposals' AND `key` = 'nguoi_de_xuat' AND status = 'active' LIMIT 1"
+  );
+  if (rows.length === 0) return columns;
+  const f = rows[0];
+  let formulaConfig = null;
+  if (f.formula_config) {
+    try { formulaConfig = typeof f.formula_config === 'string' ? JSON.parse(f.formula_config) : f.formula_config; } catch { formulaConfig = null; }
+  }
+  columns.push({
+    key: f.key,
+    label: f.label,
+    type: f.type,
+    source_type: f.source_type,
+    required: false,
+    computeMode: formulaConfig ? (formulaConfig.compute_mode || 'pre') : null,
+    options: f.options || null,
+    data_list_id: f.data_list_id || null,
+    data_list_column: f.data_list_column || null,
+    data_list_label_column: f.data_list_label_column || null,
+    source_config: f.source_config || null,
+    placeholder: f.placeholder || null,
+    help_text: f.help_text || null,
+    guide_text: null
+  });
+  return columns;
+}
+
 // Voi select/multiselect lay tu Data List (khong co options), nap danh muc de co cap gia tri-nhan
 async function attachSelectOptions(columns) {
   for (const col of columns) {
@@ -759,16 +809,17 @@ function resolveSelectValue(cellValue, optionsJson, isMultiselect) {
   if (!opts || opts.length === 0) return cellValue;
 
   const resolveOne = (str) => {
+    const clean = String(str).trim().replace(/^\d+\s*[.)]\s*/, '');
     for (const o of opts) {
       if (typeof o !== 'object' || !o) continue;
-      if (String(o.value) === str) return o.value;
+      if (String(o.value) === clean) return o.value;
     }
-    const lower = str.toLowerCase();
+    const lower = clean.toLowerCase();
     for (const o of opts) {
       if (typeof o !== 'object' || !o) continue;
       if (o.label && String(o.label).toLowerCase() === lower) return o.value ?? o.label;
     }
-    return str;
+    return clean;
   };
 
   if (isMultiselect) {
@@ -1088,7 +1139,15 @@ exports.exportDynamic = async (req, res) => {
       return;
     }
 
-    const views = await resolveExportViews(entity, req.query);
+    let views;
+    try {
+      views = await resolveExportViews(entity, req.query, req.user && req.user.role);
+    } catch (err) {
+      if (err && err.statusCode === 403) {
+        return res.status(403).json({ success: false, message: 'Bộ cột không khả dụng với vai trò của bạn' });
+      }
+      throw err;
+    }
     if (views.length === 0) {
       return res.status(400).json({ success: false, message: 'Chưa có view bảng cho entity này' });
     }
@@ -1270,13 +1329,14 @@ async function computeViewStats(entity, view, rawFileLabels) {
   };
 }
 
-async function detectViewForFile(entity, fileLabels) {
+async function detectViewForFile(entity, fileLabels, role) {
   const [views] = await pool.query(
-    "SELECT id, entity, name, `usage`, include_rest, status FROM views WHERE entity = ? AND status = 'active' ORDER BY id",
+    "SELECT id, entity, name, `usage`, include_rest, visible_roles, status FROM views WHERE entity = ? AND status = 'active' ORDER BY id",
     [entity]
   );
-  const excelViews = views.filter(v => v.usage === 'excel_full' || v.usage === 'excel_basic');
-  const candidates = excelViews.length > 0 ? excelViews : views;
+  const visible = views.filter((v) => isViewVisibleToRole(v, role));
+  const excelViews = visible.filter(v => v.usage === 'excel_full' || v.usage === 'excel_basic');
+  const candidates = excelViews.length > 0 ? excelViews : visible;
 
   const results = [];
   for (const v of candidates) {
@@ -1342,7 +1402,8 @@ exports.importPreviewDynamic = async (req, res) => {
 
       // --- Nhận diện bộ cột + cho phép override bằng viewId/usage ---
     const fileLabels = getFileHeaderLabels(sheet.getRow(1));
-    const candidates = await detectViewForFile(entity, fileLabels);
+    const role = req.user && req.user.role;
+    const candidates = await detectViewForFile(entity, fileLabels, role);
     const best = candidates[0] || null;
     const confident = !!best && best.coverage >= 0.5;
 
@@ -1356,6 +1417,9 @@ exports.importPreviewDynamic = async (req, res) => {
     } else if (best) {
       view = await resolveView(entity, best.viewId, null);
       detectionSource = 'auto';
+    }
+    if (view && !isViewVisibleToRole(view, role)) {
+      return res.status(403).json({ success: false, message: 'Bộ cột không khả dụng với vai trò của bạn' });
     }
     if (!view) {
       view = await resolveView(entity, null, 'table');
@@ -1386,6 +1450,7 @@ exports.importPreviewDynamic = async (req, res) => {
 
     const fieldDefs = await getFieldDefsForView(entity, view);
     columns = buildImportColumns(entity, fieldDefs);
+    await ensureOwnerColumn(entity, columns);
     await attachSelectOptions(columns);
 
     const headerColumns = entity === 'station_proposals'
@@ -1650,7 +1715,15 @@ exports.getTemplateDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Entity không hợp lệ' });
     }
 
-    const views = await resolveExportViews(entity, req.query);
+    let views;
+    try {
+      views = await resolveExportViews(entity, req.query, req.user && req.user.role);
+    } catch (err) {
+      if (err && err.statusCode === 403) {
+        return res.status(403).json({ success: false, message: 'Bộ cột không khả dụng với vai trò của bạn' });
+      }
+      throw err;
+    }
     if (views.length === 0) {
       return res.status(400).json({ success: false, message: 'Chưa có view cho entity này' });
     }
@@ -1662,6 +1735,7 @@ exports.getTemplateDynamic = async (req, res) => {
     for (const view of views) {
       const fieldDefs = await getFieldDefsForView(entity, view);
       const columns = buildImportColumns(entity, fieldDefs);
+      await ensureOwnerColumn(entity, columns);
       await attachSelectOptions(columns);
 
       const sheet = workbook.addWorksheet(multi ? safeSheetName(view.name, usedNames) : entity);
@@ -1822,10 +1896,11 @@ exports.getViewsForEntity = async (req, res) => {
     }
     if (denyEntityByRole(req, res, entity, 'read')) return;
     const [rows] = await pool.query(
-      "SELECT id, name, entity, `usage`, include_rest, is_locked, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
+      "SELECT id, name, entity, `usage`, include_rest, is_locked, visible_roles, status FROM views WHERE entity = ? AND status = 'active' ORDER BY `usage`, id",
       [entity]
     );
-    res.json({ success: true, data: rows });
+    const role = req.user && req.user.role;
+    res.json({ success: true, data: rows.filter((v) => isViewVisibleToRole(v, role)) });
   } catch (error) {
     console.error('Get excel views error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -1902,6 +1977,7 @@ async function previewModelSheets(modelSheets, entity) {
     [entity]
   );
   const allColumns = buildImportColumns(entity, defs);
+  await ensureOwnerColumn(entity, allColumns);
   await attachSelectOptions(allColumns);
 
   let importUserMap = null;

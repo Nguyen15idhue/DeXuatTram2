@@ -19,6 +19,7 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { leadFocusSectionForRole } from '../../utils/leadSectionPerms';
+import { isViewVisibleToRole } from '../../utils/viewRoles';
 import { Users, Upload, Plus, Search, RotateCcw, X, Trash2, Split, SlidersHorizontal } from 'lucide-react';
 
 const AdminLeadsPage = () => {
@@ -80,10 +81,10 @@ const AdminLeadsPage = () => {
     if (!token) return undefined;
     let cancelled = false;
     excelService.getViews('leads', token)
-      .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
+      .then(res => { if (!cancelled && res && res.success) setExcelViews((res.data || []).filter(v => isViewVisibleToRole(v, role))); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, role]);
 
   useEffect(() => {
     if (!token) return undefined;

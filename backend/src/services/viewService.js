@@ -116,13 +116,32 @@ const normalizeFrozen = (v) => {
   return Number.isFinite(n) ? Math.max(0, n) : 2;
 };
 
+const VALID_VIEW_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'];
+
+const normalizeVisibleRoles = (v) => {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  let arr;
+  if (Array.isArray(v)) arr = v;
+  else if (typeof v === 'string') {
+    const t = v.trim();
+    if (!t) return null;
+    try { arr = JSON.parse(t); } catch { throw Object.assign(new Error('visible_roles không hợp lệ'), { statusCode: 400 }); }
+  } else {
+    throw Object.assign(new Error('visible_roles không hợp lệ'), { statusCode: 400 });
+  }
+  if (!Array.isArray(arr)) throw Object.assign(new Error('visible_roles không hợp lệ'), { statusCode: 400 });
+  const clean = [...new Set(arr.map((r) => String(r).trim().toUpperCase()).filter((r) => VALID_VIEW_ROLES.includes(r)))];
+  return clean.length > 0 ? JSON.stringify(clean) : null;
+};
+
 exports.createView = async (data) => {
   const { entity, name, description, status, usage } = data;
   const finalUsage = usage || 'table';
   const includeRest = normalizeIncludeRest(data.include_rest, finalUsage);
   const [result] = await pool.query(
-    'INSERT INTO views (entity, name, description, status, `usage`, include_rest, frozen_columns) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [entity, name, description || null, status || 'active', finalUsage, includeRest, normalizeFrozen(data.frozen_columns)]
+    'INSERT INTO views (entity, name, description, status, `usage`, include_rest, frozen_columns, visible_roles) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [entity, name, description || null, status || 'active', finalUsage, includeRest, normalizeFrozen(data.frozen_columns), normalizeVisibleRoles(data.visible_roles) ?? null]
   );
   const viewId = result.insertId;
   // Chi seed cho view Excel "dung dung cot trong view" (include_rest = 0) de template khong rong.
@@ -150,11 +169,16 @@ exports.updateView = async (id, data) => {
       : (prev.include_rest !== undefined && prev.include_rest !== null ? Number(prev.include_rest) : normalizeIncludeRest(undefined, data.usage !== undefined && data.usage ? data.usage : prev.usage)),
     frozen_columns: data.frozen_columns !== undefined && data.frozen_columns !== null && data.frozen_columns !== ''
       ? normalizeFrozen(data.frozen_columns)
-      : (prev.frozen_columns !== undefined && prev.frozen_columns !== null ? Number(prev.frozen_columns) : 2)
+      : (prev.frozen_columns !== undefined && prev.frozen_columns !== null ? Number(prev.frozen_columns) : 2),
+    visible_roles: data.visible_roles !== undefined
+      ? normalizeVisibleRoles(data.visible_roles)
+      : (prev.visible_roles !== undefined && prev.visible_roles !== null
+        ? (typeof prev.visible_roles === 'string' ? prev.visible_roles : JSON.stringify(prev.visible_roles))
+        : null)
   };
   await pool.query(
-    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, include_rest = ?, frozen_columns = ?, updated_at = NOW() WHERE id = ?',
-    [next.entity, next.name, next.description, next.status, next.usage, next.include_rest, next.frozen_columns, id]
+    'UPDATE views SET entity = ?, name = ?, description = ?, status = ?, `usage` = ?, include_rest = ?, frozen_columns = ?, visible_roles = ?, updated_at = NOW() WHERE id = ?',
+    [next.entity, next.name, next.description, next.status, next.usage, next.include_rest, next.frozen_columns, next.visible_roles, id]
   );
   const [rows] = await pool.query('SELECT * FROM views WHERE id = ?', [id]);
   return rows[0];

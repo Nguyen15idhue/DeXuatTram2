@@ -5,6 +5,7 @@ import { viewService } from '../../services/api';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
+import { VIEW_ROLES, parseVisibleRoles } from '../../utils/viewRoles';
 import { Zap, ClipboardList, Users, Plus, Pencil, Trash2, LayoutGrid, Lock, Unlock } from 'lucide-react';
 
 const ENTITIES = [
@@ -24,6 +25,32 @@ const usageMeta = (usage) => USAGE_OPTIONS.find(u => u.value === usage) || { val
 
 const defaultIncludeRest = (usage) => usage !== 'excel_basic';
 
+const RoleVisibility = ({ value, onChange }) => {
+  const arr = parseVisibleRoles(value);
+  const isChecked = (r) => !arr || arr.includes(r);
+  const toggle = (r) => {
+    const cur = arr || VIEW_ROLES.map((x) => x.value);
+    const next = cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r];
+    onChange(next.length === 0 || next.length === VIEW_ROLES.length ? null : next);
+  };
+  return (
+    <div className="flex items-center gap-2 mt-2 flex-wrap" title="Role được thấy Template/Export/Import của view này. Tick hết hoặc bỏ hết = mọi role.">
+      <span className="text-xs text-base-content/60">Ai thấy template:</span>
+      {VIEW_ROLES.map((r) => (
+        <label key={r.value} className="label cursor-pointer gap-1 py-0">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-xs checkbox-primary"
+            checked={isChecked(r.value)}
+            onChange={() => toggle(r.value)}
+          />
+          <span className="text-xs">{r.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+};
+
 const AdminViewsPage = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
@@ -40,6 +67,7 @@ const AdminViewsPage = () => {
   const [createStatus, setCreateStatus] = useState('active');
   const [createIncludeRest, setCreateIncludeRest] = useState(true);
   const [createFrozen, setCreateFrozen] = useState(2);
+  const [createRoles, setCreateRoles] = useState(null);
   const [creating, setCreating] = useState(false);
 
   const loadViews = async () => {
@@ -69,6 +97,7 @@ const AdminViewsPage = () => {
     setCreateStatus('active');
     setCreateIncludeRest(defaultIncludeRest('table'));
     setCreateFrozen(2);
+    setCreateRoles(null);
     setCreateOpen(true);
   };
 
@@ -88,6 +117,7 @@ const AdminViewsPage = () => {
         usage: createUsage,
         include_rest: createIncludeRest ? 1 : 0,
         frozen_columns: createFrozen,
+        visible_roles: createRoles,
       }, token);
       if (res.success) {
         setCreateOpen(false);
@@ -150,7 +180,7 @@ const AdminViewsPage = () => {
       </div>
       <p className="text-sm text-base-content/60 mb-6">
         Mỗi entity có 3 loại view: <b>Bảng danh sách</b> (hiển thị bảng), <b>Excel đầy đủ</b> và <b>Excel Tạo nhanh</b> (dùng cho Template/Import/Export).
-        View có ổ khóa là view hệ thống — chỉ sửa được, không xóa.
+        View có ổ khóa là view hệ thống — chỉ sửa được, không xóa. Mục <b>Ai thấy template</b> giới hạn role được dùng Template/Export/Import của view (tick hết = mọi role).
       </p>
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadViews(); }} />}
@@ -210,6 +240,11 @@ const AdminViewsPage = () => {
                               </span>
                             )}
                             <span className="text-xs text-base-content/50 ml-auto">{v.field_count || 0} cột</span>
+                            {parseVisibleRoles(v.visible_roles) && (
+                              <span className="badge badge-accent badge-xs" title={`Chỉ: ${parseVisibleRoles(v.visible_roles).join(', ')}`}>
+                                Giới hạn role
+                              </span>
+                            )}
                             <span className="badge badge-ghost badge-xs" title="Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)">
                               Đóng băng {v.frozen_columns ?? 2}
                             </span>
@@ -271,6 +306,9 @@ const AdminViewsPage = () => {
                               </button>
                             </div>
                           </div>
+                          {v.usage !== 'table' && (
+                            <RoleVisibility value={v.visible_roles} onChange={(roles) => patchView(v, { visible_roles: roles })} />
+                          )}
                         </div>
                       );
                     })}
@@ -361,6 +399,11 @@ const AdminViewsPage = () => {
                   ? 'Template/Export/Import sẽ gồm cột trong view + toàn bộ field còn lại.'
                   : 'Template/Export/Import chỉ gồm đúng các cột trong view. View mới sẽ được thêm sẵn cột cốt lõi (hoặc trường bắt buộc) — chỉnh tiếp ở trang cấu hình.'}
               </p>
+              {createUsage !== 'table' && (
+                <div className="form-control">
+                  <RoleVisibility value={createRoles} onChange={setCreateRoles} />
+                </div>
+              )}
             </div>
             <div className="modal-action">
               <button className="btn btn-ghost" onClick={() => setCreateOpen(false)}>Hủy</button>

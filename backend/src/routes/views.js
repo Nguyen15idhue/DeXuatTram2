@@ -88,14 +88,20 @@ router.get('/:id', viewController.getById);
  *               status:
  *                 type: string
  *                 enum: [active, inactive]
- *               frozen_columns:
- *                 type: integer
- *                 minimum: 0
- *                 default: 2
- *                 description: Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)
- *     responses:
- *       201:
- *         description: Tạo thành công
+  *               frozen_columns:
+  *                 type: integer
+  *                 minimum: 0
+  *                 default: 2
+  *                 description: Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)
+  *               visible_roles:
+  *                 type: array
+  *                 items:
+  *                   type: string
+  *                   enum: [SUPER_ADMIN, ADMIN, SALES, CTV, NPP, MKT]
+  *                 description: Role được thấy template Excel của view (rỗng = mọi role)
+  *     responses:
+  *       201:
+  *         description: Tạo thành công
  *       400:
  *         description: Dữ liệu không hợp lệ
  *       401:
@@ -135,13 +141,19 @@ router.post('/', requireAuth, requireSuperAdmin, viewController.create);
  *                 type: string
  *               status:
  *                 type: string
- *               frozen_columns:
- *                 type: integer
- *                 minimum: 0
- *                 description: Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)
- *     responses:
- *       200:
- *         description: Cập nhật thành công
+  *               frozen_columns:
+  *                 type: integer
+  *                 minimum: 0
+  *                 description: Số cột đầu đóng băng khi cuộn ngang (đã gồm STT)
+  *               visible_roles:
+  *                 type: array
+  *                 items:
+  *                   type: string
+  *                   enum: [SUPER_ADMIN, ADMIN, SALES, CTV, NPP, MKT]
+  *                 description: Role được thấy template Excel của view (rỗng = mọi role)
+  *     responses:
+  *       200:
+  *         description: Cập nhật thành công
  *       401:
  *         description: Chưa xác thực
  *       403:
