@@ -232,7 +232,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
     dynamicData.sales_quan_ly = dynamicData.nguoi_phu_trach;
   }
 
-  const [existing] = await pool.query('SELECT user_id, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
+  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -246,6 +246,8 @@ exports.updateProposal = async (id, data, opts = {}) => {
     throw Object.assign(new Error('Đổi trạng thái phải dùng PUT /admin/proposals/:id/status'), { statusCode: 400 });
   }
   const next = {
+    latitude: fixedData.latitude !== undefined ? fixedData.latitude : prev.latitude,
+    longitude: fixedData.longitude !== undefined ? fixedData.longitude : prev.longitude,
     owner_name: fixedData.owner_name !== undefined ? fixedData.owner_name : prev.owner_name,
     owner_phone: fixedData.owner_phone !== undefined ? fixedData.owner_phone : prev.owner_phone,
     address: fixedData.address !== undefined ? fixedData.address : prev.address,
@@ -256,8 +258,8 @@ exports.updateProposal = async (id, data, opts = {}) => {
   };
 
   await pool.query(
-    `UPDATE station_proposals SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
-    [next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
+    `UPDATE station_proposals SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
+    [next.latitude, next.longitude, next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
   );
 
   try {

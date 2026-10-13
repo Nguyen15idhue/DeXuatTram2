@@ -158,7 +158,7 @@ const buildInitFilters = (statusFilter) => {
   return { ...EMPTY_MAP_FILTERS };
 };
 
-const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 5, onClose, statusFilter = null, onMarkerClick }) => {
+const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, onClose, statusFilter = null, onMarkerClick }) => {
   const { token, user } = useAuth();
   const [radius, setRadius] = useState(radiusKm);
   const [filters, setFilters] = useState(() => buildInitFilters(statusFilter));

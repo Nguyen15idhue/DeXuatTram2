@@ -115,7 +115,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     } catch { return false; }
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
-  const [existing] = await pool.query('SELECT custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -140,14 +140,17 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     } catch { resetDeadlineMinutes = 4320; }
   }
 
+  const prevRow = existing.length > 0 ? existing[0] : {};
+  const nextLat = fixedData.latitude !== undefined ? fixedData.latitude : prevRow.latitude;
+  const nextLng = fixedData.longitude !== undefined ? fixedData.longitude : prevRow.longitude;
   await pool.query(
     `UPDATE station_proposals
-     SET owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
+     SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
      ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
      WHERE id = ? AND user_id = ?`,
     resetDeadlineMinutes
-      ? [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
-      : [fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
+      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
+      : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
   );
 
   if (wasRejected && reviewerId) {
@@ -169,6 +172,8 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     const oldFlat = { ...(existing[0] || {}), ...current };
     const newFlat = {
       ...(existing[0] || {}),
+      latitude: nextLat !== undefined ? nextLat : existing[0].latitude,
+      longitude: nextLng !== undefined ? nextLng : existing[0].longitude,
       owner_name: fixedData.owner_name !== undefined ? fixedData.owner_name : existing[0].owner_name,
       owner_phone: fixedData.owner_phone !== undefined ? fixedData.owner_phone : existing[0].owner_phone,
       address: fixedData.address !== undefined ? fixedData.address : existing[0].address,
