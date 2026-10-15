@@ -553,9 +553,9 @@ router.get('/import/jobs/:id/export-failed', requireAuth, requireLeadManager, ad
  *           schema:
  *             type: object
  *             properties:
- *               min_m:
- *                 type: number
- *                 default: 200
+  *               min_m:
+  *                 type: number
+  *                 default: 0
  *               max_m:
  *                 type: number
  *                 default: 2000

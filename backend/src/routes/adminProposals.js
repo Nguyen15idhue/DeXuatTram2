@@ -86,11 +86,11 @@ router.post('/confirm-info-batch', requireAuth, requireSuperAdmin, adminProposal
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
- *         name: min_m
- *         schema:
- *           type: number
- *           default: 200
- *         description: Khoảng cách tối thiểu (m)
+  *         name: min_m
+  *         schema:
+  *           type: number
+  *           default: 0
+  *         description: Khoảng cách tối thiểu (m)
  *       - in: query
  *         name: max_m
  *         schema:

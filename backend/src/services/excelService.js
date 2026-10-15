@@ -1192,7 +1192,7 @@ exports.exportDynamic = async (req, res) => {
 
 exports.exportDuplicates = async (req, res, ownUserId = null) => {
   try {
-    const { min_m = 200, max_m = 2000 } = req.body || {};
+    const { min_m = 0, max_m = 2000 } = req.body || {};
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
     const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m, ownUserId });
     const { pairs } = result;

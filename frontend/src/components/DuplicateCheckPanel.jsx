@@ -13,7 +13,9 @@ const DuplicateCheckPanel = forwardRef(({
   exportDuplicatesUrl = null,
   exportToken = null
 }, ref) => {
+  const [minM, setMinM] = useState(0);
   const [maxM, setMaxM] = useState(2000);
+  const [appliedMinM, setAppliedMinM] = useState(0);
   const [appliedMaxM, setAppliedMaxM] = useState(2000);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -26,7 +28,9 @@ const DuplicateCheckPanel = forwardRef(({
       setResult(null);
       setShowMap(false);
       setError('');
+      setMinM(0);
       setMaxM(2000);
+      setAppliedMinM(0);
       setAppliedMaxM(2000);
       if (onModeChange) onModeChange(false);
     },
@@ -35,21 +39,32 @@ const DuplicateCheckPanel = forwardRef(({
     }
   }));
 
-  const handleCheck = async () => {    const m = Number(maxM);
-    if (!m || m <= 200) {
-      setError('X (m) phải lớn hơn 200');
+  const handleCheck = async () => {
+    const min = Number(minM);
+    const m = Number(maxM);
+    if (minM === '' || minM == null || isNaN(min) || min < 0) {
+      setError('Min (m) phải từ 0 trở lên');
       return;
     }
-    if (m > 5000) {
-      setError('X (m) tối đa 5000');
+    if (maxM === '' || maxM == null || isNaN(m) || m <= 0) {
+      setError('Max (m) phải lớn hơn 0');
+      return;
+    }
+    if (min > 5000 || m > 5000) {
+      setError('Khoảng cách tối đa 5000m');
+      return;
+    }
+    if (min >= m) {
+      setError('Min (m) phải nhỏ hơn Max (m)');
       return;
     }
     setError('');
     setLoading(true);
     try {
-      const res = await fetchDuplicates(200, m);
+      const res = await fetchDuplicates(min, m);
       if (res.success) {
         setResult(res.data);
+        setAppliedMinM(min);
         setAppliedMaxM(m);
         if (onModeChange) onModeChange(true);
       } else {
@@ -69,7 +84,7 @@ const DuplicateCheckPanel = forwardRef(({
     try {
       await excelService.exportDuplicatesBlob(
         exportDuplicatesUrl,
-        { min_m: 200, max_m: appliedMaxM },
+        { min_m: appliedMinM, max_m: appliedMaxM },
         exportToken,
         'duplicates_export.xlsx'
       );
@@ -110,10 +125,18 @@ const DuplicateCheckPanel = forwardRef(({
     <div className="mb-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
-          <span className="text-sm text-base-content/70">0m –</span>
           <input
             type="number"
-            min={201}
+            min={0}
+            max={4999}
+            className="input input-bordered input-sm w-24"
+            value={minM}
+            onChange={(e) => setMinM(e.target.value)}
+          />
+          <span className="text-sm text-base-content/70">m –</span>
+          <input
+            type="number"
+            min={1}
             max={5000}
             className="input input-bordered input-sm w-24"
             value={maxM}
@@ -161,7 +184,7 @@ const DuplicateCheckPanel = forwardRef(({
               {result.pairs.length === 0 && (
                 <tr>
                   <td colSpan={5} className="text-center py-6 text-base-content/50">
-                    Không có cặp trùng nào trong khoảng 200m – {maxM}m
+                    Không có cặp trùng nào trong khoảng {appliedMinM}m – {appliedMaxM}m
                   </td>
                 </tr>
               )}

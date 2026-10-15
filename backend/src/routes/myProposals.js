@@ -66,11 +66,11 @@ router.get('/', requireAuth, myProposalController.getAll);
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
- *         name: min_m
- *         schema:
- *           type: number
- *           default: 200
- *         description: Khoảng cách tối thiểu (m)
+  *         name: min_m
+  *         schema:
+  *           type: number
+  *           default: 0
+  *         description: Khoảng cách tối thiểu (m)
  *       - in: query
  *         name: max_m
  *         schema:
@@ -103,9 +103,9 @@ router.get('/duplicates', requireAuth, myProposalController.duplicates);
  *           schema:
  *             type: object
  *             properties:
- *               min_m:
- *                 type: number
- *                 default: 200
+  *               min_m:
+  *                 type: number
+  *                 default: 0
  *               max_m:
  *                 type: number
  *                 default: 2000

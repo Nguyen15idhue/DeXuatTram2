@@ -208,16 +208,67 @@ function summarizeTruRows(rows) {
   return total > 0 ? `${parts.join(' + ')} (tổng ${total} trụ)` : parts.join(' + ');
 }
 
+function normalizeLoaiTruText(raw) {
+  if (raw == null) return '';
+  let text = '';
+  if (Array.isArray(raw)) {
+    text = raw.map((v) => (v && typeof v === 'object' ? (v.value ?? v.label ?? '') : String(v ?? ''))).join('; ');
+  } else if (typeof raw === 'object') {
+    text = String(raw.value ?? raw.label ?? '');
+  } else {
+    text = String(raw);
+    const trimmed = text.trim();
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return normalizeLoaiTruText(parsed);
+        if (parsed && typeof parsed === 'object') return normalizeLoaiTruText(parsed);
+      } catch { /* plain text */ }
+    }
+  }
+  const tokens = text.split(/[;\n+,]+/).map((t) => t.trim().replace(/\s+/g, ' ')).filter(Boolean);
+  if (tokens.length === 0) return '';
+  const order = [];
+  const qtyByKey = {};
+  const nameByKey = {};
+  tokens.forEach((tok) => {
+    const m = tok.match(/^(\d+)\s*[x×*]?\s+(.+)$/);
+    let qty;
+    let name;
+    if (m) {
+      qty = Number(m[1]);
+      name = m[2].trim().replace(/\s+/g, ' ');
+    } else {
+      qty = 0;
+      name = tok;
+    }
+    if (!name) return;
+    const k = name.toLowerCase();
+    if (!(k in qtyByKey)) {
+      qtyByKey[k] = 0;
+      nameByKey[k] = name;
+      order.push(k);
+    }
+    qtyByKey[k] += qty;
+  });
+  if (order.length === 0) return '';
+  const parts = order.map((k) => (qtyByKey[k] > 0 ? `${qtyByKey[k]}× ${nameByKey[k]}` : nameByKey[k]));
+  const total = Object.values(qtyByKey).reduce((a, b) => a + b, 0);
+  return total > 0 ? `${parts.join(' + ')} (tổng ${total} trụ)` : parts.join(' + ');
+}
+
 function pickProposalTru(item) {
+  const text = normalizeLoaiTruText(item.loai_tru);
+  if (text) return text;
   const moHinh = item.mo_hinh_dau_tu;
-  if (moHinh === 'TDT') return summarizeTruRows(item.tdt_tru) || item.loai_tru || '';
-  if (moHinh === 'NQ') return summarizeTruRows(item.loai_tru_nq) || item.loai_tru || '';
+  if (moHinh === 'TDT') return summarizeTruRows(item.tdt_tru);
+  if (moHinh === 'NQ') return summarizeTruRows(item.loai_tru_nq);
   if (moHinh === 'NQ_LK') {
     const rows = [...parseTableRows(item.loai_tru_nq), ...parseTableRows(item.loai_tru_lk)];
-    return summarizeTruRows(rows) || item.loai_tru || '';
+    return summarizeTruRows(rows);
   }
-  if (moHinh === 'LK') return summarizeTruRows(item.loai_tru_lk) || '';
-  return summarizeTruRows(item.tdt_tru) || summarizeTruRows(item.loai_tru_nq) || summarizeTruRows(item.loai_tru_lk) || item.loai_tru || '';
+  if (moHinh === 'LK') return summarizeTruRows(item.loai_tru_lk);
+  return summarizeTruRows(item.tdt_tru) || summarizeTruRows(item.loai_tru_nq) || summarizeTruRows(item.loai_tru_lk);
 }
 
 function createStationPopupContent(item, user) {

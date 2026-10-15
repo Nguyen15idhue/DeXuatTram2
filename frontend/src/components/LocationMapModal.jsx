@@ -73,6 +73,55 @@ const readPriority = (item) => {
   return '';
 };
 
+function normalizeNearbyLoaiTruText(raw) {
+  if (raw == null) return '';
+  let text = '';
+  if (Array.isArray(raw)) {
+    text = raw.map((v) => (v && typeof v === 'object' ? (v.value ?? v.label ?? '') : String(v ?? ''))).join('; ');
+  } else if (typeof raw === 'object') {
+    text = String(raw.value ?? raw.label ?? '');
+  } else {
+    text = String(raw);
+    const trimmed = text.trim();
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return normalizeNearbyLoaiTruText(parsed);
+        if (parsed && typeof parsed === 'object') return normalizeNearbyLoaiTruText(parsed);
+      } catch { /* plain text */ }
+    }
+  }
+  const tokens = text.split(/[;\n+,]+/).map((t) => t.trim().replace(/\s+/g, ' ')).filter(Boolean);
+  if (tokens.length === 0) return '';
+  const order = [];
+  const qtyByKey = {};
+  const nameByKey = {};
+  tokens.forEach((tok) => {
+    const m = tok.match(/^(\d+)\s*[x×*]?\s+(.+)$/);
+    let qty;
+    let name;
+    if (m) {
+      qty = Number(m[1]);
+      name = m[2].trim().replace(/\s+/g, ' ');
+    } else {
+      qty = 0;
+      name = tok;
+    }
+    if (!name) return;
+    const k = name.toLowerCase();
+    if (!(k in qtyByKey)) {
+      qtyByKey[k] = 0;
+      nameByKey[k] = name;
+      order.push(k);
+    }
+    qtyByKey[k] += qty;
+  });
+  if (order.length === 0) return '';
+  const parts = order.map((k) => (qtyByKey[k] > 0 ? `${qtyByKey[k]}× ${nameByKey[k]}` : nameByKey[k]));
+  const total = Object.values(qtyByKey).reduce((a, b) => a + b, 0);
+  return total > 0 ? `${parts.join(' + ')} (tổng ${total} trụ)` : parts.join(' + ');
+}
+
 function summarizeNearbyTru(item, entity) {
   if (entity === 'station') {
     const parts = [];
@@ -81,6 +130,8 @@ function summarizeNearbyTru(item, entity) {
     else if (item.loai_tru_sac) parts.push(item.loai_tru_sac);
     return parts.join(' | ');
   }
+  const text = normalizeNearbyLoaiTruText(item.loai_tru);
+  if (text) return text;
   const rows = [...parseNearbyRows(item.tdt_tru), ...parseNearbyRows(item.loai_tru_nq), ...parseNearbyRows(item.loai_tru_lk)];
   if (rows.length > 0) {
     const groups = {};
@@ -93,7 +144,7 @@ function summarizeNearbyTru(item, entity) {
     const total = Object.values(groups).reduce((a, b) => a + b, 0);
     return total > 0 ? `${parts.join(' + ')} (tổng ${total} trụ)` : parts.join(' + ');
   }
-  return item.loai_tru || '';
+  return '';
 }
 
 function createNearbyPopup(title, item, status, entity) {
@@ -420,7 +471,17 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
 
   const allStationStatuses = getStationStatuses();
   const allProposalStatuses = getProposalStatuses();
-  const total = nearby.stations.length + nearby.proposals.length;
+  const pointKey = (item) => {
+    const la = Number(item.latitude);
+    const ln = Number(item.longitude);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return `raw:${item.kind || ''}:${item.id}`;
+    return `${la.toFixed(6)},${ln.toFixed(6)}`;
+  };
+  const distinctPoints = new Set();
+  nearby.stations.forEach((s) => distinctPoints.add(pointKey(s)));
+  nearby.proposals.forEach((p) => distinctPoints.add(pointKey(p)));
+  const total = distinctPoints.size;
+  const totalRecords = nearby.stations.length + nearby.proposals.length;
   const narrowed = filters.scope === 'mine'
     || (filters.stationStatuses || []).length > 0
     || (filters.planningPriorities || []).length > 0
@@ -479,7 +540,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
             </button>
           ))}
           <span className="ml-auto text-xs text-base-content/50">
-            {total} điểm lân cận{narrowed ? ' (đang lọc)' : ''}
+            {total} điểm lân cận{totalRecords > total ? ` · ${totalRecords} bản ghi` : ''}{narrowed ? ' (đang lọc)' : ''}
           </span>
         </div>
 

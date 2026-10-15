@@ -3,7 +3,7 @@ const proximityService = require('../services/proximityService');
 
 exports.duplicates = async (req, res) => {
   try {
-    const { min_m = 200, max_m = 2000 } = req.query;
+    const { min_m = 0, max_m = 2000 } = req.query;
     const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m, ownUserId: req.user.id });
     res.json({ success: true, data: result });
   } catch (error) {

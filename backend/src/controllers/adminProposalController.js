@@ -22,7 +22,7 @@ const denyOutsideBranch = (proposal, scope) => {
 
 exports.duplicates = async (req, res) => {
   try {
-    const { min_m = 200, max_m = 2000 } = req.query;
+    const { min_m = 0, max_m = 2000 } = req.query;
     const scope = await scopeFor(req);
     const result = await proximityService.findDuplicates({
       minM: min_m,
