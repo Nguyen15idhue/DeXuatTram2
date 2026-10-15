@@ -3,6 +3,7 @@
 > Cập nhật: **08/10/2026**. Đây là tài liệu **chuẩn để vận hành** dự án **TMT-EGREEN (DeXuatTram2)**.
 > Các file `Chuanbi_deploy.md` và `Cac_buoc_code_truoc_deploy.md` là **tài liệu lịch sử/quá trình** (còn nhắc `docker-compose.prod.yml`, baseline `01→44` — đã lỗi thời), chỉ dùng tham khảo.
 > Đối tượng: deploy mới hoàn toàn trên VPS + cập nhật code về sau.
+> Dời toàn bộ hệ thống (dữ liệu + mã nguồn) từ VPS đang chạy sang VPS mới tinh: xem **`docs/6/Chuyen_du_lieu_va_ma_nguon_sang_VPS_moi.md`**.
 
 ---
 
