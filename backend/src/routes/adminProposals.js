@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
 const { validateUpdateProposal } = require('../middlewares/validators');
 const adminProposalController = require('../controllers/adminProposalController');
 
@@ -51,29 +51,34 @@ router.get('/', requireAuth, requireUserManager, adminProposalController.getAll)
 
 /**
  * @swagger
- * /api/admin/proposals/confirm-info-batch:
+ * /api/admin/proposals/clear-countdown:
  *   post:
  *     tags: [Admin - Proposals]
- *     summary: Batch tự xác nhận "đủ thông tin" cho đề xuất hiện có (SUPER_ADMIN)
- *     description: Quét tối đa `limit` đề xuất thỏa điều kiện (chưa xác nhận, còn hạn bổ sung, status đang bật countdown bổ sung) và tự xác nhận nếu đủ trường. Chỉ SUPER_ADMIN.
+ *     summary: Xóa toàn bộ countdown của các đề xuất đã chọn (ADMIN/SUPER_ADMIN)
+ *     description: Đặt `supplement_deadline_at` và `transition_deadline_at` = NULL cho từng đề xuất trong `ids`, ghi log `deadline_cleared`. Không đụng `info_completed_at`.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [ids]
  *             properties:
- *               limit:
- *                 type: integer
- *                 default: 500
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
  *     responses:
  *       200:
- *         description: Báo cáo batch
+ *         description: Báo cáo xóa countdown
+ *       400:
+ *         description: Chưa chọn đề xuất
  *       403:
- *         description: Không phải SUPER_ADMIN
+ *         description: Không có quyền Admin
  */
-router.post('/confirm-info-batch', requireAuth, requireSuperAdmin, adminProposalController.confirmInfoBatch);
+router.post('/clear-countdown', requireAuth, requireAdmin, adminProposalController.clearCountdown);
 
 /**
  * @swagger

@@ -167,45 +167,38 @@ exports.updateStatus = async (id, status, opts = {}) => {
   });
 };
 
-exports.batchAutoConfirm = async ({ limit = 500, actorId = null } = {}) => {
+exports.clearCountdown = async (ids, { actorId = null, actorRole = null, ip = null } = {}) => {
   const proposalLifecycle = require('./proposalLifecycle');
-  const suppStatuses = await proposalLifecycle.getEnabledSupplementStatuses();
-  const report = { checked: 0, confirmed: 0, incomplete: 0, already: 0, failed: 0, hasMore: false, missingSamples: [] };
-  if (!suppStatuses || suppStatuses.length === 0) return report;
-
-  const placeholders = suppStatuses.map(() => '?').join(', ');
-  const [countRows] = await pool.query(
-    `SELECT COUNT(*) AS n FROM station_proposals
-     WHERE info_completed_at IS NULL AND supplement_deadline_at IS NOT NULL
-       AND status IN (${placeholders})`,
-    suppStatuses
-  );
-  const total = countRows[0] ? countRows[0].n : 0;
+  const list = [...new Set((ids || []).map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 500);
+  const report = { requested: list.length, cleared: 0, skipped: 0 };
+  if (list.length === 0) return report;
 
   const [rows] = await pool.query(
-    `SELECT id, ma_de_xuat_gen AS code FROM station_proposals
-     WHERE info_completed_at IS NULL AND supplement_deadline_at IS NOT NULL
-       AND status IN (${placeholders})
-     ORDER BY id ASC LIMIT ?`,
-    [...suppStatuses, limit]
+    `SELECT id, status, supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id IN (${list.map(() => '?').join(',')})`,
+    list
   );
+  const found = new Map(rows.map((r) => [Number(r.id), r]));
 
-  report.checked = rows.length;
-  report.hasMore = total > rows.length;
-
-  for (const r of rows) {
+  for (const id of list) {
+    const r = found.get(id);
+    if (!r) { report.skipped++; continue; }
+    if (!r.supplement_deadline_at && !r.transition_deadline_at) { report.skipped++; continue; }
+    await pool.query(
+      'UPDATE station_proposals SET supplement_deadline_at = NULL, transition_deadline_at = NULL, updated_at = NOW() WHERE id = ?',
+      [id]
+    );
     try {
-      const res = await proposalLifecycle.maybeAutoConfirmInfo(r.id, { actorId, purpose: 'view' });
-      if (res.confirmed) report.confirmed++;
-      else if (res.already) report.already++;
-      else if (res.error) report.failed++;
-      else {
-        report.incomplete++;
-        if (report.missingSamples.length < 10) {
-          report.missingSamples.push({ id: r.id, code: r.code || null, missing: res.missing || [] });
-        }
-      }
-    } catch { report.failed++; }
+      await proposalLifecycle.logActivity({
+        proposalId: id, action: 'deadline_cleared',
+        fromStatus: r.status, toStatus: r.status,
+        changedFields: {
+          old_supplement_deadline: r.supplement_deadline_at || null,
+          old_transition_deadline: r.transition_deadline_at || null
+        },
+        actorId: actorId || null, actorRole: actorRole || null, source: 'user', ip: ip || null
+      });
+    } catch { /* silent */ }
+    report.cleared++;
   }
   return report;
 };

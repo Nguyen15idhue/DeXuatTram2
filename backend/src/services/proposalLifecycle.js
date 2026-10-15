@@ -618,6 +618,15 @@ exports.saveCountdownConfig = async (config) => {
   return { warn_hours: warnHours, rules, auto_push_on_update: await exports.isAutoPushOnUpdateEnabled(), ...(limits || await exports.getExtendLimits()) };
 };
 
+exports.deadlineMinutesFromConfig = (cfg, status, kind = 'supplement') => {
+  const rule = (cfg && Array.isArray(cfg.rules) ? cfg.rules : []).find((r) => r.status === status);
+  if (!rule) return null;
+  const part = rule[kind] || DEFAULT_PART;
+  if (!part.enabled) return null;
+  const totalMinutes = (Number(part.days) || 0) * 1440 + (Number(part.hours) || 0) * 60 + (Number(part.minutes) || 0);
+  return totalMinutes > 0 ? totalMinutes : null;
+};
+
 exports.getDeadlineParts = async (status, kind = 'supplement') => {
   const cfg = await exports.getCountdownConfig();
   const rule = cfg.rules.find((r) => r.status === status);

@@ -29,6 +29,7 @@ const ACTION_LABEL = {
   sync_push: 'Đồng bộ lên 1Office',
   sync_pull: 'Lấy dữ liệu từ 1Office',
   deadline_extended: 'Gia hạn bổ sung',
+  deadline_cleared: 'Xóa countdown',
   deadline_expiring: 'Sắp hết hạn bổ sung',
   deadline_overdue: 'Quá hạn bổ sung'
 };

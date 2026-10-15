@@ -96,8 +96,8 @@ const AdminProposalsPage = () => {
   const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
   const [restoreModal, setRestoreModal] = useState({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [confirmInfoBatchOpen, setConfirmInfoBatchOpen] = useState(false);
-  const [batchConfirmLoading, setBatchConfirmLoading] = useState(false);
+  const [clearCountdownOpen, setClearCountdownOpen] = useState(false);
+  const [clearCountdownLoading, setClearCountdownLoading] = useState(false);
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
@@ -1024,22 +1024,22 @@ const AdminProposalsPage = () => {
     }
   };
 
-  const handleConfirmInfoBatch = async () => {
-    setBatchConfirmLoading(true);
+  const handleClearCountdown = async () => {
+    if (selectedIds.length === 0) return;
+    setClearCountdownLoading(true);
     try {
-      const res = await adminProposalService.confirmInfoBatch(token, 500);
+      const res = await adminProposalService.clearCountdown(selectedIds, token);
       const d = (res && res.data) || {};
-      const parts = [`Đã tự xác nhận ${d.confirmed || 0}/${d.checked || 0} đề xuất`];
-      if (d.incomplete) parts.push(`${d.incomplete} chưa đủ trường`);
-      if (d.failed) parts.push(`${d.failed} lỗi`);
-      if (d.hasMore) parts.push('còn lại — bấm Cập nhật lần nữa');
-      setToast({ message: parts.join(' · '), type: d.failed ? 'warning' : 'success' });
+      const parts = [`Đã xóa countdown ${d.cleared || 0}/${d.requested || selectedIds.length} đề xuất`];
+      if (d.skipped) parts.push(`${d.skipped} bỏ qua (không có countdown)`);
+      setToast({ message: parts.join(' · '), type: 'success' });
+      setSelectedIds([]);
       loadProposals(pagination.page);
     } catch {
-      setToast({ message: 'Lỗi khi quét xác nhận đủ thông tin', type: 'error' });
+      setToast({ message: 'Lỗi khi xóa countdown', type: 'error' });
     } finally {
-      setBatchConfirmLoading(false);
-      setConfirmInfoBatchOpen(false);
+      setClearCountdownLoading(false);
+      setClearCountdownOpen(false);
     }
   };
 
@@ -1462,16 +1462,6 @@ const AdminProposalsPage = () => {
                 Import
               </button>
           </>
-          {isSuperAdmin && (
-            <button
-              className="btn btn-ghost btn-sm gap-1"
-              onClick={() => setConfirmInfoBatchOpen(true)}
-              title="Quét và tự xác nhận đủ thông tin cho đề xuất hiện có"
-            >
-              <RefreshCw size={14} />
-              <span className="hidden sm:inline">Cập nhật</span>
-            </button>
-          )}
           <button className="btn btn-ghost btn-sm gap-1" onClick={handleReset} title="Đặt lại bộ lọc">
             <RotateCcw size={14} />
             <span className="hidden sm:inline">Đặt lại</span>
@@ -1705,12 +1695,13 @@ const AdminProposalsPage = () => {
       />
 
       <ConfirmDialog
-        isOpen={confirmInfoBatchOpen}
-        title="Cập nhật xác nhận đủ thông tin?"
-        message="Hệ thống sẽ quét các đề xuất đủ trường và tự chuyển sang 'Đã xác nhận đủ thông tin'? Chạy tối đa 500 đề xuất/lần."
-        onConfirm={handleConfirmInfoBatch}
-        onCancel={() => setConfirmInfoBatchOpen(false)}
-        confirmText={batchConfirmLoading ? 'Đang quét...' : 'Chạy'}
+        isOpen={clearCountdownOpen}
+        title={`Cập nhật Countdown cho ${selectedIds.length} đề xuất?`}
+        message={`Hệ thống sẽ xóa TOÀN BỘ countdown của ${selectedIds.length} đề xuất đã chọn (cả "Bổ sung thông tin" và "Chuyển trạng thái"). Trạng thái và xác nhận đủ thông tin được giữ nguyên. Thao tác không thể hoàn tác.`}
+        onConfirm={handleClearCountdown}
+        onCancel={() => setClearCountdownOpen(false)}
+        confirmText={clearCountdownLoading ? 'Đang xử lý...' : 'Xóa Countdown'}
+        type="warning"
       />
 
       {pushConfirm.open && (
@@ -2232,6 +2223,16 @@ const AdminProposalsPage = () => {
           <button className="btn btn-ghost btn-sm gap-1" onClick={() => setLogProposalId(selectedIds[0])} title="Xem lịch sử hoạt động">
             <History size={14} /> Xem log
           </button>
+          {isAdmin && (
+            <button
+              className="btn btn-warning btn-sm gap-1"
+              onClick={() => setClearCountdownOpen(true)}
+              disabled={clearCountdownLoading}
+              title="Xóa toàn bộ countdown của các đề xuất đã chọn"
+            >
+              <RefreshCw size={14} /> Cập nhật Countdown ({selectedIds.length})
+            </button>
+          )}
           <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={batchLoading}>
             <Trash2 size={14} /> Xóa ({selectedIds.length})
           </button>

@@ -27,6 +27,7 @@ const ACTIVITY_ACTIONS = [
   { value: 'info_completed', label: 'Xác nhận đủ thông tin' },
   { value: 'info_reopened', label: 'Mở lại bổ sung' },
   { value: 'deadline_extended', label: 'Gia hạn bổ sung' },
+  { value: 'deadline_cleared', label: 'Xóa countdown' },
   { value: 'deadline_expiring', label: 'Sắp hết hạn bổ sung' },
   { value: 'deadline_overdue', label: 'Quá hạn bổ sung' }
 ];
@@ -55,6 +56,7 @@ const ACTIVITY_ACTION_BADGE = {
   info_completed: 'badge-success',
   info_reopened: 'badge-warning',
   deadline_extended: 'badge-info',
+  deadline_cleared: 'badge-ghost',
   deadline_expiring: 'badge-warning',
   deadline_overdue: 'badge-error'
 };

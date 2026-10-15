@@ -699,26 +699,28 @@ exports.confirmRestoreFrom1Office = async (code, apiConfigId, userId, overrides 
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
   dynamicData.ma_de_xuat = contact.code;
 
-  let importSupplementMinutes = 4320;
-  let importTransitionMinutes = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
-    importSupplementMinutes = Math.max(1, Number(configured) || 4320);
-    importTransitionMinutes = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
-  } catch { /* silent */ }
+  const proposalLifecycle = require('./proposalLifecycle');
+  let countdownCfg = null;
+  try { countdownCfg = await proposalLifecycle.getCountdownConfig(); } catch { /* silent */ }
+  const restoreStatus = 'PENDING';
+  const restoreSuppMin = proposalLifecycle.deadlineMinutesFromConfig(countdownCfg, restoreStatus, 'supplement');
+  const restoreTransMin = proposalLifecycle.deadlineMinutesFromConfig(countdownCfg, restoreStatus, 'transition');
+  const suppSet = restoreSuppMin ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+  const transSet = restoreTransMin ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+  const deadlineParams = [];
+  if (restoreSuppMin) deadlineParams.push(restoreSuppMin);
+  if (restoreTransMin) deadlineParams.push(restoreTransMin);
 
   const customDataObj = { ...dynamicData };
   const [result] = await pool.query(
     `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at, transition_deadline_at, contact_1office_code, contact_1office_id, sync_status, last_synced_at, last_synced_data)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)), ?, ?, 'synced', NOW(), ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${suppSet}, ${transSet}, ?, ?, 'synced', NOW(), ?)`,
     [
       userId, contact.code,
       fixedData.latitude, fixedData.longitude,
       fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '',
       fixedData.area || '', fixedData.land_type || '', fixedData.description || '',
-      JSON.stringify(customDataObj), importSupplementMinutes,
-      importTransitionMinutes, importTransitionMinutes,
+      JSON.stringify(customDataObj), ...deadlineParams,
       contact.code, contact.ID ? String(contact.ID) : null,
       JSON.stringify({ contact: { code: contact.code, id: contact.ID }, restored_at: new Date().toISOString(), source: 'restore' })
     ]

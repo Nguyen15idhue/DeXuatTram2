@@ -382,8 +382,8 @@ export const adminProposalService = {
   extendInfo(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}/extend-info`, token);
   },
-  confirmInfoBatch(token, limit) {
-    return api.postWithAuth('/admin/proposals/confirm-info-batch', { limit: limit || 500 }, token);
+  clearCountdown(ids, token) {
+    return api.postWithAuth('/admin/proposals/clear-countdown', { ids }, token);
   }
 };
 

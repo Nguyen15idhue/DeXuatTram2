@@ -206,14 +206,20 @@ exports.update = async (req, res) => {
   }
 };
 
-exports.confirmInfoBatch = async (req, res) => {
+exports.clearCountdown = async (req, res) => {
   try {
-    const raw = parseInt(req.body && req.body.limit, 10);
-    const limit = Math.min(Math.max(Number.isFinite(raw) ? raw : 500, 1), 2000);
-    const report = await adminProposalService.batchAutoConfirm({ limit, actorId: req.user.id });
-    res.json({ success: true, data: report, message: 'Đã quét xác nhận đủ thông tin' });
+    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'Chưa chọn đề xuất' });
+    }
+    const report = await adminProposalService.clearCountdown(ids, {
+      actorId: req.user.id,
+      actorRole: req.user.role || null,
+      ip: req.ip || null
+    });
+    res.json({ success: true, data: report, message: `Đã xóa countdown ${report.cleared} đề xuất` });
   } catch (error) {
-    console.error('Admin confirm-info batch error:', error);
+    console.error('Admin clear countdown error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

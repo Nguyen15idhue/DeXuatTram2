@@ -22,14 +22,11 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
   const checkDuplicate = params.checkDuplicate !== false && params.checkDuplicate !== 'false';
   const checkIntraFile = params.checkIntraFile !== false && params.checkIntraFile !== 'false';
 
-  let importSupplementMinutes = 4320;
-  let importTransitionMinutes = null;
+  let countdownCfg = null;
   if (entity === 'station_proposals') {
     try {
       const proposalLifecycle = require('./proposalLifecycle');
-      const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
-      importSupplementMinutes = Math.max(1, Number(configured) || 4320);
-      importTransitionMinutes = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
+      countdownCfg = await proposalLifecycle.getCountdownConfig();
     } catch { /* silent */ }
   }
 
@@ -322,9 +319,19 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
           fixedValues
         );
         if (entity === 'station_proposals') {
+          const proposalLifecycle = require('./proposalLifecycle');
+          const rowStatus = fixedData.status || 'PENDING';
+          const suppMin = proposalLifecycle.deadlineMinutesFromConfig(countdownCfg, rowStatus, 'supplement');
+          const transMin = proposalLifecycle.deadlineMinutesFromConfig(countdownCfg, rowStatus, 'transition');
+          const suppSet = suppMin ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+          const transSet = transMin ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+          const dParams = [];
+          if (suppMin) dParams.push(suppMin);
+          if (transMin) dParams.push(transMin);
+          dParams.push(result.insertId);
           await pool.query(
-            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)) WHERE id = ?',
-            [importSupplementMinutes, importTransitionMinutes, importTransitionMinutes, result.insertId]
+            `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet} WHERE id = ?`,
+            dParams
           );
         }
 
