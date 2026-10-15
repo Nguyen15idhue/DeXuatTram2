@@ -1,4 +1,19 @@
 const stationService = require('../services/stationService');
+const proximityService = require('../services/proximityService');
+
+exports.duplicates = async (req, res) => {
+  try {
+    const { min_m = 0, max_m = 2000, status, uu_tien, mo_hinh_tram, province, region } = req.query;
+    const result = await proximityService.findStationDuplicates({
+      minM: min_m,
+      maxM: max_m,
+      filters: { statuses: status, uuTiens: uu_tien, moHinhs: mo_hinh_tram, provinces: province, regions: region }
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
 
 exports.getAll = async (req, res) => {
   try {

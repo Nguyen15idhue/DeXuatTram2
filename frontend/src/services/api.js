@@ -249,6 +249,17 @@ export const stationService = {
   },
   sourceProposal(id, token) {
     return api.getWithAuth(`/stations/${id}/proposal`, token);
+  },
+  duplicates(minM, maxM, token, filters = {}) {
+    const params = new URLSearchParams({ min_m: minM, max_m: maxM });
+    const appendAll = (key, v) => (Array.isArray(v) ? v : (v !== undefined && v !== null && String(v) !== '' ? [v] : []))
+      .forEach((x) => { if (String(x ?? '').trim() !== '') params.append(key, x); });
+    appendAll('status', filters.status);
+    appendAll('uu_tien', filters.uu_tien);
+    appendAll('mo_hinh_tram', filters.mo_hinh_tram);
+    appendAll('province', filters.province);
+    appendAll('region', filters.region);
+    return api.getWithAuth(`/stations/duplicates?${params.toString()}`, token);
   }
 };
 
@@ -340,8 +351,18 @@ export const adminProposalService = {
   delete(id, token) {
     return api.deleteWithAuth(`/admin/proposals/${id}`, token);
   },
-  duplicates(minM, maxM, token) {
-    return api.getWithAuth(`/admin/proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
+  duplicates(minM, maxM, token, filters = {}) {
+    const params = new URLSearchParams({ min_m: minM, max_m: maxM });
+    const appendAll = (key, v) => (Array.isArray(v) ? v : (v !== undefined && v !== null && String(v) !== '' ? [v] : []))
+      .forEach((x) => { if (String(x ?? '').trim() !== '') params.append(key, x); });
+    appendAll('status', filters.status);
+    appendAll('uu_tien', filters.uu_tien);
+    appendAll('province', filters.province);
+    appendAll('region', filters.region);
+    appendAll('department', filters.department);
+    appendAll('owner_user_id', filters.owner_user_id);
+    if (filters.lead_link) params.append('lead_link', filters.lead_link);
+    return api.getWithAuth(`/admin/proposals/duplicates?${params.toString()}`, token);
   },
   pushCheck(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}/push-check`, token);

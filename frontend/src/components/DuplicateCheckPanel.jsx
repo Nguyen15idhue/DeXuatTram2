@@ -1,4 +1,4 @@
-import { useState, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useState, useMemo, useEffect, forwardRef, useImperativeHandle } from 'react';
 import MapView from './MapView';
 import { excelService } from '../services/api';
 import { formatDistanceM } from '../utils/formatDistance';
@@ -11,7 +11,9 @@ const DuplicateCheckPanel = forwardRef(({
   onModeChange,
   onViewItem,
   exportDuplicatesUrl = null,
-  exportToken = null
+  exportToken = null,
+  exportBodyExtra = null,
+  resetKey = null
 }, ref) => {
   const [minM, setMinM] = useState(0);
   const [maxM, setMaxM] = useState(2000);
@@ -38,6 +40,15 @@ const DuplicateCheckPanel = forwardRef(({
       return !!result;
     }
   }));
+
+  useEffect(() => {
+    if (resetKey === null || resetKey === undefined) return;
+    setResult(null);
+    setShowMap(false);
+    setError('');
+    if (onModeChange) onModeChange(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
 
   const handleCheck = async () => {
     const min = Number(minM);
@@ -84,7 +95,7 @@ const DuplicateCheckPanel = forwardRef(({
     try {
       await excelService.exportDuplicatesBlob(
         exportDuplicatesUrl,
-        { min_m: appliedMinM, max_m: appliedMaxM },
+        { min_m: appliedMinM, max_m: appliedMaxM, ...(typeof exportBodyExtra === 'function' ? exportBodyExtra() : (exportBodyExtra || {})) },
         exportToken,
         'duplicates_export.xlsx'
       );
@@ -121,6 +132,38 @@ const DuplicateCheckPanel = forwardRef(({
     stations: result.duplicate_station_ids
   }) : null, [result]);
 
+  const counts = useMemo(() => {
+    if (!result || !Array.isArray(result.pairs)) return { pairs: 0, points: 0, records: 0 };
+    const coords = new Set();
+    const records = new Set();
+    result.pairs.forEach((p) => {
+      [p.a, p.b].forEach((it) => {
+        const lat = Number(it.latitude);
+        const lng = Number(it.longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) coords.add(`${lat.toFixed(6)},${lng.toFixed(6)}`);
+        records.add(`${it.kind}:${it.id}`);
+      });
+    });
+    return { pairs: result.pairs.length, points: coords.size, records: records.size };
+  }, [result]);
+
+  const dupCounts = useMemo(() => {
+    if (!result || !Array.isArray(result.pairs)) return null;
+    const coordKey = (it) => `${Number(it.latitude).toFixed(6)},${Number(it.longitude).toFixed(6)}`;
+    const perCoord = new Map();
+    const itemCoord = new Map();
+    result.pairs.forEach((p) => {
+      [p.a, p.b].forEach((it) => {
+        const ik = `${it.kind}:${it.id}`;
+        itemCoord.set(ik, coordKey(it));
+      });
+    });
+    itemCoord.forEach((ck) => perCoord.set(ck, (perCoord.get(ck) || 0) + 1));
+    const map = {};
+    itemCoord.forEach((ck, ik) => { map[ik] = perCoord.get(ck) || 1; });
+    return map;
+  }, [result]);
+
   return (
     <div className="mb-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -151,7 +194,7 @@ const DuplicateCheckPanel = forwardRef(({
         {result && (
           <button className="btn btn-info btn-sm gap-1" onClick={() => setShowMap(true)}>
             <MapIcon size={14} />
-            View map ({result.duplicate_proposal_ids.length + result.duplicate_station_ids.length} điểm)
+            View map ({counts.points} điểm)
           </button>
         )}
         {result && exportDuplicatesUrl && (
@@ -162,7 +205,8 @@ const DuplicateCheckPanel = forwardRef(({
         )}
         {result && (
           <span className="text-sm text-base-content/70">
-            Tìm thấy {result.pairs.length} cặp trùng
+            Tìm thấy {counts.pairs} cặp trùng · {counts.points} điểm
+            {counts.records > counts.points ? ` · ${counts.records} bản ghi` : ''}
           </span>
         )}
       </div>
@@ -213,7 +257,7 @@ const DuplicateCheckPanel = forwardRef(({
         <dialog className="modal modal-open">
           <div className="modal-box max-w-5xl h-[80vh] flex flex-col">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-lg">Bản đồ điểm trùng ({result.duplicate_proposal_ids.length + result.duplicate_station_ids.length} điểm)</h3>
+              <h3 className="font-bold text-lg">Bản đồ điểm trùng ({counts.points} điểm{counts.records > counts.points ? ` / ${counts.records} bản ghi` : ''})</h3>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowMap(false)}>
                 <X size={16} />
               </button>
@@ -223,6 +267,8 @@ const DuplicateCheckPanel = forwardRef(({
                 readOnly
                 highlightIds={highlightIds}
                 pairs={result.pairs}
+                clusterOverride={false}
+                dupCounts={dupCounts}
               />
             </div>
           </div>

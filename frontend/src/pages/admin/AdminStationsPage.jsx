@@ -5,6 +5,7 @@ import { stationService, excelService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
+import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -60,7 +61,9 @@ const AdminStationsPage = () => {
   const [pageSize, setPageSize] = useState(10);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view' });
   const [selectedIds, setSelectedIds] = useState([]);
+  const [dupMode, setDupMode] = useState(false);
   const tableRef = useRef(null);
+  const dupRef = useRef(null);
 
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -166,6 +169,8 @@ const AdminStationsPage = () => {
     setDateField('created_at');
     setColumnFilters({});
     if (tableRef.current) tableRef.current.clearFilters();
+    if (dupRef.current) dupRef.current.reset();
+    setDupMode(false);
     setError('');
     loadStations(1, { search: '', filterStatus: [], filterUuTien: [], filterMoHinh: [], filterProvince: [], filterRegion: [], dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {} });
   };
@@ -486,6 +491,24 @@ const AdminStationsPage = () => {
         </div>
       </FilterBody>
 
+      <DuplicateCheckPanel
+        ref={dupRef}
+        fetchDuplicates={(minM, maxM) => stationService.duplicates(minM, maxM, token, {
+          status: filterStatus, uu_tien: filterUuTien, mo_hinh_tram: filterMoHinh,
+          province: filterProvince, region: filterRegion
+        })}
+        resetKey={JSON.stringify([filterStatus, filterUuTien, filterMoHinh, filterProvince, filterRegion])}
+        exportBodyExtra={() => ({
+          status: filterStatus, uu_tien: filterUuTien, mo_hinh_tram: filterMoHinh,
+          province: filterProvince, region: filterRegion
+        })}
+        getStationViewUrl={(id) => `/admin/stations/view=${id}`}
+        onModeChange={setDupMode}
+        onViewItem={(kind, id) => navigate(`/admin/stations/view=${id}`)}
+        exportDuplicatesUrl="/admin/excel/export/station-duplicates"
+        exportToken={token}
+      />
+
       {!isSales && selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
           <span className="text-sm font-medium">Đã chọn: {selectedIds.length} trạm</span>
@@ -716,6 +739,8 @@ const AdminStationsPage = () => {
         />
       )}
 
+      {!dupMode && (
+      <>
       <DynamicTable
         ref={tableRef}
         entity="stations"
@@ -736,6 +761,8 @@ const AdminStationsPage = () => {
         pageSize={pageSize}
         onPageSizeChange={setPageSize}
       />
+      </>
+      )}
     </div>
   );
 };

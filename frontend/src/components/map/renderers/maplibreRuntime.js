@@ -298,7 +298,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           return {
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [lng, lat] },
-            properties: { _idx: idx, _color: item._color || '#6b7280', _glyph: isValidMarkerIcon(item._icon) ? glyphImageId(item._icon, isValidMarkerBadge(item._badge) ? item._badge : '') : '', _bg: item._bg === 'circle' ? 'circle' : 'flat', _label: item._label || '', _type: item._type },
+            properties: { _idx: idx, _color: item._color || '#6b7280', _glyph: isValidMarkerIcon(item._icon) ? glyphImageId(item._icon, isValidMarkerBadge(item._badge) ? item._badge : '') : '', _bg: item._bg === 'circle' ? 'circle' : 'flat', _label: item._label || '', _type: item._type, _dupCount: Number(item._dupCount) || 0 },
           };
         })
         .filter(Boolean),
@@ -379,6 +379,25 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
           'icon-size': 1.15,
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
+        },
+      });
+      map.addLayer({
+        id: 'app-marker-dupcount',
+        type: 'symbol',
+        source: 'app-markers',
+        filter: ['all', ['!', ['has', 'point_count']], ['>', ['get', '_dupCount'], 1]],
+        layout: {
+          'text-field': ['to-string', ['get', '_dupCount']],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 11,
+          'text-offset': [1.05, -1.05],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#dc2626',
+          'text-halo-width': 2.5,
         },
       });
       overlayOrderDirty = true;
@@ -771,6 +790,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
     'app-unclustered',
     'app-marker-glyphs-circle',
     'app-marker-glyphs-flat',
+    'app-marker-dupcount',
     'app-marker-labels',
   ];
 

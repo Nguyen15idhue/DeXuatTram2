@@ -80,23 +80,64 @@ router.post('/confirm-info-batch', requireAuth, requireSuperAdmin, adminProposal
  * /api/admin/proposals/duplicates:
  *   get:
  *     tags: [Admin - Proposals]
- *     summary: Tìm cặp đề xuất/trạm trùng lặp theo khoảng cách
- *     description: So sánh toàn bộ đề xuất (trừ REJECTED) với nhau và với trạm. Khoảng cách Haversine, tính bằng mét.
+ *     summary: Tìm cặp đề xuất/trạm trùng lặp theo khoảng cách (có áp bộ lọc)
+ *     description: So sánh các đề xuất (sau khi áp bộ lọc) với nhau và với toàn bộ trạm. Không lọc trạng thái thì loại REJECTED/CANCELLED. Khoảng cách Haversine (m).
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
-  *         name: min_m
-  *         schema:
-  *           type: number
-  *           default: 0
-  *         description: Khoảng cách tối thiểu (m)
+ *         name: min_m
+ *         schema:
+ *           type: number
+ *           default: 0
+ *         description: Khoảng cách tối thiểu (m)
  *       - in: query
  *         name: max_m
  *         schema:
  *           type: number
  *           default: 2000
  *         description: Khoảng cách tối đa (m, tối đa 5000)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: uu_tien
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: province
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: region
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: department
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: owner_user_id
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: lead_link
+ *         schema:
+ *           type: string
+ *           enum: [yes, no]
  *     responses:
  *       200:
  *         description: Thành công

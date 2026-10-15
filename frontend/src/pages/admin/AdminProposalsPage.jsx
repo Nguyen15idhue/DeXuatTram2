@@ -1525,7 +1525,15 @@ const AdminProposalsPage = () => {
 
       <DuplicateCheckPanel
         ref={dupRef}
-        fetchDuplicates={(minM, maxM) => adminProposalService.duplicates(minM, maxM, token)}
+        fetchDuplicates={(minM, maxM) => adminProposalService.duplicates(minM, maxM, token, {
+          status: filter, uu_tien: filterUuTien, province: filterProvince, region: filterRegion,
+          department: filterDepartment, owner_user_id: filterOwner, lead_link: filterLeadLink
+        })}
+        resetKey={JSON.stringify([filter, filterUuTien, filterProvince, filterRegion, filterDepartment, filterOwner, filterLeadLink])}
+        exportBodyExtra={() => ({
+          status: filter, uu_tien: filterUuTien, province: filterProvince, region: filterRegion,
+          department: filterDepartment, owner_user_id: filterOwner, lead_link: filterLeadLink
+        })}
         getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
         getStationViewUrl={(id) => `/admin/stations/view=${id}`}
         onModeChange={setDupMode}

@@ -26,18 +26,36 @@ export const getMarkerColor = (status, entity) => {
   return MARKER_COLORS[status] || '#6b7280';
 };
 
-export const createCustomIcon = (color, icon, badge, bg) => {
+export const createCustomIcon = (color, icon, badge, bg, dupCount) => {
+  const dupN = Number(dupCount);
+  const dupHtml = Number.isFinite(dupN) && dupN > 1 ? `<span style="
+        position: absolute;
+        bottom: -6px;
+        right: -6px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 4px;
+        background-color: #dc2626;
+        border: 2px solid #ffffff;
+        border-radius: 999px;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 15px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      ">${dupN}</span>` : '';
   const hasIcon = !!icon;
   if (!hasIcon) {
     const size = 24;
-    const inner = `<div style="
+    const inner = `<div style="position: relative;
         width: ${size}px;
         height: ${size}px;
         background-color: ${color};
         border: 3px solid white;
         border-radius: 50%;
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      "></div>`;
+      ">${dupHtml}</div>`;
     return L.divIcon({
       className: 'custom-marker',
       html: inner,
@@ -77,7 +95,7 @@ export const createCustomIcon = (color, icon, badge, bg) => {
         display: flex;
         align-items: center;
         justify-content: center;
-      ">${iconSvgMarkup(icon, { size: 24 })}${badgeHtml}</div>`;
+      ">${iconSvgMarkup(icon, { size: 24 })}${badgeHtml}${dupHtml}</div>`;
     return L.divIcon({
       className: 'custom-marker',
       html: inner,
@@ -112,7 +130,7 @@ export const createCustomIcon = (color, icon, badge, bg) => {
         display: flex;
         align-items: center;
         justify-content: center;
-      ">${iconSvgMarkup(icon, { size: 36 })}${badgeHtml}</div>`;
+      ">${iconSvgMarkup(icon, { size: 36 })}${badgeHtml}${dupHtml}</div>`;
   return L.divIcon({
     className: 'custom-marker-flat',
     html: inner,

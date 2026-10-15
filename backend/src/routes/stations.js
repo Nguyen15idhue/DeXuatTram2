@@ -71,6 +71,69 @@ router.get('/', optionalAuth, stationController.getAll);
 
 /**
  * @swagger
+ * /api/stations/duplicates:
+ *   get:
+ *     tags: [Stations]
+ *     summary: Tìm cặp trạm trùng lặp theo khoảng cách (trạm với trạm), có áp bộ lọc
+ *     description: So sánh các trạm (sau khi áp bộ lọc) với nhau. Không lọc trạng thái thì loại trạm REJECTED. Khoảng cách Haversine (m), mỗi cặp vô thứ tự chỉ trả 1 lần.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: min_m
+ *         schema:
+ *           type: number
+ *           default: 0
+ *       - in: query
+ *         name: max_m
+ *         schema:
+ *           type: number
+ *           default: 2000
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *         description: Lọc theo trạng thái (lặp param)
+ *       - in: query
+ *         name: uu_tien
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: mo_hinh_tram
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: province
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *       - in: query
+ *         name: region
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Tham số không hợp lệ
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/duplicates', requireAuth, requireUserManager, stationController.duplicates);
+
+/**
+ * @swagger
  * /api/stations/{id}:
  *   get:
  *     tags: [Stations]

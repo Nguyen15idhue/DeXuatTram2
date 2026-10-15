@@ -370,6 +370,8 @@ const MapView = ({
   highlightIds = null,
   readOnly = false,
   pairs = EMPTY_PAIRS,
+  clusterOverride = null,
+  dupCounts = null,
   filters = null,
   fabSlot = null
 }) => {
@@ -851,12 +853,12 @@ const MapView = ({
   }, [visibleProposals, highlightIds]);
 
   const canvasStations = useMemo(
-    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '', _bg: getMarkerIconBg(s.status, 'station') })),
-    [layerStations, markerIconsVersion]
+    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '', _bg: getMarkerIconBg(s.status, 'station'), _dupCount: dupCounts ? Number(dupCounts[`station:${s.id}`] || 0) : 0 })),
+    [layerStations, markerIconsVersion, dupCounts]
   );
   const canvasProposals = useMemo(
-    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') })),
-    [layerProposals, markerIconsVersion]
+    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal'), _dupCount: dupCounts ? Number(dupCounts[`proposal:${p.id}`] || 0) : 0 })),
+    [layerProposals, markerIconsVersion, dupCounts]
   );
 
   snapCandidateRef.current = { stations: canvasStations, proposals: canvasProposals, myLocation };
@@ -997,7 +999,7 @@ const MapView = ({
         stations={canvasStations}
         proposals={canvasProposals}
         pairs={pairs}
-        showCluster={showCluster}
+        showCluster={clusterOverride === null ? showCluster : clusterOverride}
         clusterOptions={clusterOptions}
         showStationLabels={showStationLabels}
         showProvinceLabels={showAdminLabels}

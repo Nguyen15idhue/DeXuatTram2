@@ -22,12 +22,16 @@ const denyOutsideBranch = (proposal, scope) => {
 
 exports.duplicates = async (req, res) => {
   try {
-    const { min_m = 0, max_m = 2000 } = req.query;
+    const { min_m = 0, max_m = 2000, status, uu_tien, province, region, department, owner_user_id, lead_link } = req.query;
     const scope = await scopeFor(req);
     const result = await proximityService.findDuplicates({
       minM: min_m,
       maxM: max_m,
-      branchUserIds: scope.role === 'SALES' ? scope.branchIds : null
+      branchUserIds: scope.role === 'SALES' ? scope.branchIds : null,
+      filters: {
+        statuses: status, uuTiens: uu_tien, provinces: province, regions: region,
+        departments: department, ownerIds: owner_user_id, leadLink: lead_link
+      }
     });
     res.json({ success: true, data: result });
   } catch (error) {

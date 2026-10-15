@@ -1193,9 +1193,15 @@ exports.exportDynamic = async (req, res) => {
 
 exports.exportDuplicates = async (req, res, ownUserId = null) => {
   try {
-    const { min_m = 0, max_m = 2000 } = req.body || {};
+    const { min_m = 0, max_m = 2000, status, uu_tien, province, region, department, owner_user_id, lead_link } = req.body || {};
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
-    const result = await proximityService.findDuplicates({ minM: min_m, maxM: max_m, ownUserId });
+    const result = await proximityService.findDuplicates({
+      minM: min_m, maxM: max_m, ownUserId,
+      filters: {
+        statuses: status, uuTiens: uu_tien, provinces: province, regions: region,
+        departments: department, ownerIds: owner_user_id, leadLink: lead_link
+      }
+    });
     const { pairs } = result;
 
     const oriented = pairs.map(pr => {
@@ -1286,6 +1292,71 @@ exports.exportDuplicates = async (req, res, ownUserId = null) => {
     res.end();
   } catch (error) {
     console.error('Export duplicates error:', error);
+    res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.exportStationDuplicates = async (req, res) => {
+  try {
+    const { min_m = 0, max_m = 2000, status, uu_tien, mo_hinh_tram, province, region } = req.body || {};
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query.token || '';
+    const result = await proximityService.findStationDuplicates({
+      minM: min_m, maxM: max_m,
+      filters: { statuses: status, uuTiens: uu_tien, moHinhs: mo_hinh_tram, provinces: province, regions: region }
+    });
+    const { pairs } = result;
+
+    const seen = new Set();
+    const items = [];
+    pairs.forEach(pr => {
+      [pr.a, pr.b].forEach(p => {
+        const k = `station:${p.id}`;
+        if (!seen.has(k)) { seen.add(k); items.push(p); }
+      });
+    });
+
+    const byId = {};
+    const stationIds = items.map(i => i.id);
+    if (stationIds.length > 0) {
+      const [rows] = await pool.query(
+        `SELECT * FROM stations WHERE id IN (${stationIds.map(() => '?').join(',')})`,
+        stationIds
+      );
+      rows.forEach(r => { byId[`station:${r.id}`] = r; });
+    }
+
+    const stationColumns = await buildExportColumns('stations', await resolveView('stations', null, 'table'));
+    const workbook = new ExcelJS.Workbook();
+
+    const ketqua = workbook.addWorksheet('ketqua');
+    ketqua.addRow(['STT', 'Trạm A', 'Trạm B', 'Khoảng cách (m)']);
+    styleHeaderRow(ketqua);
+    pairs.forEach((pr, idx) => {
+      ketqua.addRow([idx + 1, pairLabel(pr.a), pairLabel(pr.b), pr.distance_m]);
+    });
+    autoWidthColumns(ketqua, [{ label: 'STT' }, { label: 'Trạm A' }, { label: 'Trạm B' }, { label: 'Khoảng cách (m)' }]);
+
+    let dupUserMap = null;
+    try {
+      const m = await getUserLabelMap();
+      dupUserMap = m.byId;
+    } catch { /* silent */ }
+
+    const sheet = workbook.addWorksheet('Tram trung');
+    sheet.addRow(stationColumns.map(c => c.label));
+    styleHeaderRow(sheet);
+    items.forEach((item, idx) => {
+      const row = byId[`station:${item.id}`];
+      sheet.addRow(row ? exportRowToValues(row, stationColumns, idx, token, dupUserMap) : stationColumns.map(() => ''));
+    });
+    autoWidthColumns(sheet, stationColumns);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileStamp()}_station_duplicates_export.xlsx`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Export station duplicates error:', error);
     res.status(400).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

@@ -553,12 +553,91 @@ router.get('/import/jobs/:id/export-failed', requireAuth, requireLeadManager, ad
  *           schema:
  *             type: object
  *             properties:
-  *               min_m:
-  *                 type: number
-  *                 default: 0
+   *               min_m:
+   *                 type: number
+   *                 default: 0
+   *               max_m:
+   *                 type: number
+   *                 default: 2000
+   *               status:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               uu_tien:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               province:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               region:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               department:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               owner_user_id:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *               lead_link:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: File Excel
+   *       400:
+   *         description: Tham số không hợp lệ
+   *       401:
+   *         description: Chưa xác thực
+   *       403:
+   *         description: Không có quyền Admin
+   */
+router.post('/export/duplicates', requireAuth, requireAdmin, adminLimiter, excelLimiter, (req, res) => excelService.exportDuplicates(req, res));
+
+/**
+ * @swagger
+ * /api/admin/excel/export/station-duplicates:
+ *   post:
+ *     tags: [Admin - Excel]
+ *     summary: Xuất Excel kết quả check trùng trạm với trạm (theo bộ lọc)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               min_m:
+ *                 type: number
+ *                 default: 0
  *               max_m:
  *                 type: number
  *                 default: 2000
+ *               status:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               uu_tien:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               mo_hinh_tram:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               province:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               region:
+ *                 type: array
+ *                 items:
+ *                   type: string
  *     responses:
  *       200:
  *         description: File Excel
@@ -569,6 +648,6 @@ router.get('/import/jobs/:id/export-failed', requireAuth, requireLeadManager, ad
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/export/duplicates', requireAuth, requireAdmin, adminLimiter, excelLimiter, (req, res) => excelService.exportDuplicates(req, res));
+router.post('/export/station-duplicates', requireAuth, requireAdmin, adminLimiter, excelLimiter, (req, res) => excelService.exportStationDuplicates(req, res));
 
 module.exports = router;
