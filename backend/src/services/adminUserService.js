@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
+const { pushInClause } = require('../utils/dynamicFilter');
 const { gdttTitlesFor, gdkvTitlesFor, isGdkv, isGdtt } = require('../constants/salesRanks');
 
 const USER_SELECT = 'SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at FROM users';
@@ -74,11 +75,11 @@ exports.getAllUsers = async (search, page, limit, scope = {}, filters = {}) => {
     params.push(...orsParams);
   }
 
-  if (filters.role) { where.push('role = ?'); params.push(filters.role); }
-  if (filters.status) { where.push('status = ?'); params.push(filters.status); }
-  if (filters.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?"); params.push(filters.department); }
-  if (filters.chucVu) { where.push("JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) = ?"); params.push(filters.chucVu); }
-  if (filters.parentId) { where.push('parent_id = ?'); params.push(Number(filters.parentId)); }
+  if (filters.role) { pushInClause(where, params, 'role', filters.role); }
+  if (filters.status) { pushInClause(where, params, 'status', filters.status); }
+  if (filters.department) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department'))", filters.department); }
+  if (filters.chucVu) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu'))", filters.chucVu); }
+  if (filters.parentId) { pushInClause(where, params, 'parent_id', filters.parentId, { numeric: true }); }
   const dateField = filters.dateField === 'updated_at' ? 'updated_at' : 'created_at';
   if (filters.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(filters.dateFrom).slice(0, 10)} 00:00:00`); }
   if (filters.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(filters.dateTo).slice(0, 10)} 23:59:59`); }

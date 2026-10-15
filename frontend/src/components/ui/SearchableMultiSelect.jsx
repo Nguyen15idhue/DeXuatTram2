@@ -10,6 +10,9 @@ const SearchableMultiSelect = ({
   className = '',
   searchPlaceholder = 'Tìm kiếm...',
   noResultText = 'Không có kết quả',
+  singleAsLabel = false,
+  multiLabel = null,
+  showChips = true,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -63,6 +66,15 @@ const SearchableMultiSelect = ({
     return found && typeof found === 'object' ? (found.label ?? found.value) : found;
   };
 
+  const boxText = () => {
+    if (selected.length === 0) return placeholder;
+    if (singleAsLabel) {
+      if (selected.length === 1) return labelOf(selected[0]);
+      return `${multiLabel || 'Đã chọn'} (${selected.length})`;
+    }
+    return multiLabel ? `${multiLabel} (${selected.length})` : `Đã chọn ${selected.length} model`;
+  };
+
   return (
     <div className={`${className}`}>
       <div className={`relative ${className}`} ref={boxRef}>
@@ -72,7 +84,7 @@ const SearchableMultiSelect = ({
           onClick={() => !disabled && setOpen(!open)}
         >
           <span className={selected.length > 0 ? '' : 'text-gray-400'} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selected.length > 0 ? `Đã chọn ${selected.length} model` : placeholder}
+            {boxText()}
           </span>
           <span className="ml-auto text-[10px]">▼</span>
         </div>
@@ -137,7 +149,7 @@ const SearchableMultiSelect = ({
           </div>
         )}
       </div>
-      {selected.length > 0 && (
+      {showChips && selected.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5">
           {selected.map((v) => (
             <span key={v} className="badge badge-sm gap-1 max-w-full" title={v}>

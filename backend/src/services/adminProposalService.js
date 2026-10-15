@@ -4,7 +4,7 @@ const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
-const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
+const { buildColumnFilterWhere, pushInClause } = require('../utils/dynamicFilter');
 
 const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
 
@@ -35,13 +35,11 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   }
 
   if (status) {
-    where.push('p.status = ?');
-    params.push(status);
+    pushInClause(where, params, 'p.status', status);
   }
 
   if (uuTien) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) = ?");
-    params.push(String(uuTien));
+    pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien'))", uuTien);
   }
 
   if (search) {
@@ -71,10 +69,10 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
 
   if (extra.leadLink === 'yes') { where.push('p.journey_id IS NOT NULL'); }
   else if (extra.leadLink === 'no') { where.push('p.journey_id IS NULL'); }
-  if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?"); params.push(extra.province); }
-  if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
-  if (extra.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) = ?"); params.push(extra.department); }
-  if (extra.ownerUserId) { where.push('p.user_id = ?'); params.push(Number(extra.ownerUserId)); }
+  if (extra.province) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province'))", extra.province); }
+  if (extra.region) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien'))", extra.region); }
+  if (extra.department) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department'))", extra.department); }
+  if (extra.ownerUserId) { pushInClause(where, params, 'p.user_id', extra.ownerUserId, { numeric: true }); }
   const dateField = extra.dateField === 'updated_at' ? 'p.updated_at' : 'p.created_at';
   if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
   if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }

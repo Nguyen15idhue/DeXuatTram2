@@ -7,6 +7,7 @@ const dynamicUtils = require('./dynamicUtils');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const proximityService = require('./proximityService');
+const { pushInClause } = require('../utils/dynamicFilter');
 const { validateLatitude, validateLongitude, validatePhone, validateRequired, validateEmail } = require('../middlewares/validators');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -572,7 +573,7 @@ function getAllData(entity, filters = {}) {
     const where = [];
     const params = [];
     if (search) { where.push('(s.name LIKE ? OR s.address LIKE ?)'); params.push(like, like); }
-    if (status) { where.push('s.status = ?'); params.push(status); }
+    if (status) { pushInClause(where, params, 's.status', status); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     return pool.query(`SELECT * FROM stations s ${whereClause} ORDER BY id DESC`, params);
   }
@@ -587,7 +588,7 @@ function getAllData(entity, filters = {}) {
         where.push(`p.user_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids);
       }
     }
-    if (status) { where.push('p.status = ?'); params.push(status); }
+    if (status) { pushInClause(where, params, 'p.status', status); }
     if (search) { where.push('(p.owner_name LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)'); params.push(like, like, like); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     const join = search ? 'JOIN users u ON p.user_id = u.id' : '';
@@ -597,7 +598,7 @@ function getAllData(entity, filters = {}) {
     const where = [];
     const params = [];
     if (search) { where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)'); params.push(like, like, like); }
-    if (status) { where.push('status = ?'); params.push(status); }
+    if (status) { pushInClause(where, params, 'status', status); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     return pool.query(`SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at, updated_at FROM users ${whereClause} ORDER BY id DESC`, params);
   }

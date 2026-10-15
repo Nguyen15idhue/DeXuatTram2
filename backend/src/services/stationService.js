@@ -3,7 +3,7 @@ const dynamicUtils = require('./dynamicUtils');
 const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
-const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
+const { buildColumnFilterWhere, pushInClause } = require('../utils/dynamicFilter');
 
 const STATION_FIXED_COLUMNS = ['name', 'latitude', 'longitude', 'address', 'status', 'description'];
 
@@ -19,18 +19,15 @@ exports.getAllStations = async (search, status, page, limit, mapMode = false, ex
   }
 
   if (status) {
-    where.push('s.status = ?');
-    params.push(status);
+    pushInClause(where, params, 's.status', status);
   }
 
   if (extra.moHinhTram) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram')) = ?");
-    params.push(extra.moHinhTram);
+    pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.mo_hinh_tram'))", extra.moHinhTram);
   }
 
   if (extra.uuTien) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien')) = ?");
-    params.push(String(extra.uuTien));
+    pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.loai_uu_tien'))", extra.uuTien);
   }
 
   if (extra.columnFilters) {
@@ -45,8 +42,8 @@ exports.getAllStations = async (search, status, page, limit, mapMode = false, ex
     params.push(...filterParams);
   }
 
-  if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.province')) = ?"); params.push(extra.province); }
-  if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
+  if (extra.province) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.province'))", extra.province); }
+  if (extra.region) { pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(s.custom_data, '$.vung_mien'))", extra.region); }
   const dateField = extra.dateField === 'updated_at' ? 's.updated_at' : 's.created_at';
   if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
   if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }

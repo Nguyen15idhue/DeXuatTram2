@@ -4,7 +4,7 @@ const dynamicEngineService = require('./dynamicEngineService');
 const dataListService = require('./dataListService');
 const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
-const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
+const { buildColumnFilterWhere, pushInClause } = require('../utils/dynamicFilter');
 
 const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
 
@@ -14,13 +14,11 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
   let params = [userId];
 
   if (status) {
-    where.push('p.status = ?');
-    params.push(status);
+    pushInClause(where, params, 'p.status', status);
   }
 
   if (extra.uuTien) {
-    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) = ?");
-    params.push(String(extra.uuTien));
+    pushInClause(where, params, "JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien'))", extra.uuTien);
   }
   const dateField = extra.dateField === 'updated_at' ? 'p.updated_at' : 'p.created_at';
   if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }

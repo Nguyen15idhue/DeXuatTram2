@@ -99,24 +99,30 @@ const normalizeQueryValue = (v) => {
 
 // Điều kiện lọc danh sách Lead dùng chung cho GET list và Excel export.
 // Hỗ trợ __empty__ (chưa có giá trị) + khoảng ngày. Không ném lỗi với mảng.
+const { toStrArray } = require('../utils/dynamicFilter');
+
 const applyLeadListFilters = (where, params, query, alias = 'l.') => {
   const q = {};
   Object.keys(query || {}).forEach((k) => { q[k] = normalizeQueryValue(query[k]); });
   const EMPTY_FILTER = '__empty__';
   Object.keys(FILTER_COLUMNS).forEach((key) => {
-    const value = q[key];
-    if (value === undefined || value === null || String(value).trim() === '') return;
+    const values = toStrArray(query && query[key]);
+    if (values.length === 0) return;
     const col = `${alias}${FILTER_COLUMNS[key].split('.')[1]}`;
-    if (value === EMPTY_FILTER) {
+    const ors = [];
+    if (values.includes(EMPTY_FILTER)) {
       if (key === 'assigned_user_id') {
-        where.push(`${col} IS NULL`);
+        ors.push(`${col} IS NULL`);
       } else {
-        where.push(`(${col} IS NULL OR ${col} = '')`);
+        ors.push(`(${col} IS NULL OR ${col} = '')`);
       }
-      return;
     }
-    where.push(`${col} = ?`);
-    params.push(value);
+    const real = values.filter((v) => v !== EMPTY_FILTER);
+    if (real.length > 0) {
+      ors.push(`${col} IN (${real.map(() => '?').join(',')})`);
+      real.forEach((v) => params.push(key === 'assigned_user_id' ? Number(v) : v));
+    }
+    where.push(ors.length > 1 ? `(${ors.join(' OR ')})` : ors[0]);
   });
   const dateField = q.date_field === 'updated_at' ? `${alias}updated_at` : `${alias}created_at`;
   if (q.date_from && String(q.date_from).trim()) {

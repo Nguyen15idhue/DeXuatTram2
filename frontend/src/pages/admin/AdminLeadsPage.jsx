@@ -14,6 +14,7 @@ import ViewPickerMenu from '../../components/admin/ViewPickerMenu';
 import ImportViewPanel from '../../components/admin/ImportViewPanel';
 import { usageLabel } from '../../components/admin/ViewPickerMenu';
 import Pagination from '../../components/Pagination';
+import SearchableMultiSelect from '../../components/ui/SearchableMultiSelect';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -47,13 +48,13 @@ const AdminLeadsPage = () => {
   const [assignOpen, setAssignOpen] = useState(false);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
-  const [filterStage, setFilterStage] = useState('');
-  const [filterSource, setFilterSource] = useState('');
-  const [filterProvince, setFilterProvince] = useState('');
-  const [filterClassification, setFilterClassification] = useState('');
-  const [filterSalesOutcome, setFilterSalesOutcome] = useState('');
-  const [filterDepartment, setFilterDepartment] = useState('');
-  const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterStage, setFilterStage] = useState([]);
+  const [filterSource, setFilterSource] = useState([]);
+  const [filterProvince, setFilterProvince] = useState([]);
+  const [filterClassification, setFilterClassification] = useState([]);
+  const [filterSalesOutcome, setFilterSalesOutcome] = useState([]);
+  const [filterDepartment, setFilterDepartment] = useState([]);
+  const [filterAssignee, setFilterAssignee] = useState([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dateField, setDateField] = useState('created_at');
@@ -125,13 +126,14 @@ const AdminLeadsPage = () => {
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (s) params.append('search', s);
-      if (st) params.append('stage', st);
-      if (so) params.append('source', so);
-      if (pr) params.append('province', pr);
-      if (cl) params.append('customer_classification', cl);
-      if (oc) params.append('sales_outcome', oc);
-      if (dp) params.append('assigned_department', dp);
-      if (asg) params.append('assigned_user_id', asg);
+      const appendAll = (key, arr) => (Array.isArray(arr) ? arr : (arr ? [arr] : [])).forEach(v => { if (String(v ?? '').trim()) params.append(key, v); });
+      appendAll('stage', st);
+      appendAll('source', so);
+      appendAll('province', pr);
+      appendAll('customer_classification', cl);
+      appendAll('sales_outcome', oc);
+      appendAll('assigned_department', dp);
+      appendAll('assigned_user_id', asg);
       if (df || dt) {
         params.append('date_field', dfield);
         if (df) params.append('date_from', df);
@@ -165,13 +167,13 @@ const AdminLeadsPage = () => {
 
   const handleReset = () => {
     setSearch('');
-    setFilterStage('');
-    setFilterSource('');
-    setFilterProvince('');
-    setFilterClassification('');
-    setFilterSalesOutcome('');
-    setFilterDepartment('');
-    setFilterAssignee('');
+    setFilterStage([]);
+    setFilterSource([]);
+    setFilterProvince([]);
+    setFilterClassification([]);
+    setFilterSalesOutcome([]);
+    setFilterDepartment([]);
+    setFilterAssignee([]);
     setDateFrom('');
     setDateTo('');
     setDateField('created_at');
@@ -179,9 +181,9 @@ const AdminLeadsPage = () => {
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
     loadLeads(1, {
-      search: '', filterStage: '', filterSource: '', filterProvince: '',
-      filterClassification: '', filterSalesOutcome: '', filterDepartment: '',
-      filterAssignee: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}
+      search: '', filterStage: [], filterSource: [], filterProvince: [],
+      filterClassification: [], filterSalesOutcome: [], filterDepartment: [],
+      filterAssignee: [], dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}
     });
   };
 
@@ -234,42 +236,18 @@ const AdminLeadsPage = () => {
     }
   };
 
-  const activeFilterCount = [filterStage, filterSource, filterProvince, filterClassification, filterSalesOutcome, filterDepartment, filterAssignee, dateFrom, dateTo]
-    .filter(Boolean).length;
+  const activeFilterCount = [filterStage, filterSource, filterProvince, filterClassification, filterSalesOutcome, filterDepartment, filterAssignee]
+    .reduce((n, a) => n + (Array.isArray(a) ? a.length : (a ? 1 : 0)), 0) + [dateFrom, dateTo].filter(Boolean).length;
 
   const filterFields = (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <select className="select select-bordered select-sm w-full" value={filterStage} onChange={(e) => setFilterStage(e.target.value)}>
-        <option value="">Tất cả giai đoạn</option>
-        {stageOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <select className="select select-bordered select-sm w-full" value={filterSource} onChange={(e) => setFilterSource(e.target.value)}>
-        <option value="">Tất cả nguồn</option>
-        {sourceOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <select className="select select-bordered select-sm w-full" value={filterClassification} onChange={(e) => setFilterClassification(e.target.value)}>
-        <option value="">Tất cả phân loại KH</option>
-        <option value="__empty__">Chưa phân loại</option>
-        {classificationOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <select className="select select-bordered select-sm w-full" value={filterSalesOutcome} onChange={(e) => setFilterSalesOutcome(e.target.value)}>
-        <option value="">Tất cả kết quả TVBH</option>
-        <option value="__empty__">Chưa cập nhật</option>
-        {salesOutcomeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <select className="select select-bordered select-sm w-full" value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)}>
-        <option value="">Tất cả tỉnh/thành</option>
-        {provinceOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <select className="select select-bordered select-sm w-full" value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
-        <option value="">Tất cả phòng ban</option>
-        {departmentOptions.map(d => <option key={d} value={d}>{d}</option>)}
-      </select>
-      <select className="select select-bordered select-sm w-full" value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}>
-        <option value="">Tất cả người phụ trách</option>
-        <option value="__empty__">Chưa giao phụ trách</option>
-        {gdkvOptions.map(o => <option key={o.id} value={o.id}>{o.full_name}</option>)}
-      </select>
+      <SearchableMultiSelect options={stageOptions} values={filterStage} onChange={setFilterStage} placeholder="Tất cả giai đoạn" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+      <SearchableMultiSelect options={sourceOptions} values={filterSource} onChange={setFilterSource} placeholder="Tất cả nguồn" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+      <SearchableMultiSelect options={[{ value: '__empty__', label: 'Chưa phân loại' }, ...classificationOptions]} values={filterClassification} onChange={setFilterClassification} placeholder="Tất cả phân loại KH" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+      <SearchableMultiSelect options={[{ value: '__empty__', label: 'Chưa cập nhật' }, ...salesOutcomeOptions]} values={filterSalesOutcome} onChange={setFilterSalesOutcome} placeholder="Tất cả kết quả TVBH" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+      <SearchableMultiSelect options={provinceOptions} values={filterProvince} onChange={setFilterProvince} placeholder="Tất cả tỉnh/thành" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+      <SearchableMultiSelect options={departmentOptions.map(d => ({ value: d, label: d }))} values={filterDepartment} onChange={setFilterDepartment} placeholder="Tất cả phòng ban" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+      <SearchableMultiSelect options={[{ value: '__empty__', label: 'Chưa giao phụ trách' }, ...gdkvOptions.map(o => ({ value: o.id, label: o.full_name }))]} values={filterAssignee} onChange={setFilterAssignee} placeholder="Tất cả người phụ trách" singleAsLabel multiLabel="Đã chọn" showChips={false} />
       <div className="flex items-center gap-2">
         <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
         <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>

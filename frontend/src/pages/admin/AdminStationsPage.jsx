@@ -18,6 +18,7 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
+import SearchableMultiSelect from '../../components/ui/SearchableMultiSelect';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { Zap, Download, Upload, Plus, Search, RotateCcw, X, Trash2 } from 'lucide-react';
 
@@ -45,11 +46,11 @@ const AdminStationsPage = () => {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterUuTien, setFilterUuTien] = useState('');
-  const [filterMoHinh, setFilterMoHinh] = useState('');
-  const [filterProvince, setFilterProvince] = useState('');
-  const [filterRegion, setFilterRegion] = useState('');
+  const [filterStatus, setFilterStatus] = useState([]);
+  const [filterUuTien, setFilterUuTien] = useState([]);
+  const [filterMoHinh, setFilterMoHinh] = useState([]);
+  const [filterProvince, setFilterProvince] = useState([]);
+  const [filterRegion, setFilterRegion] = useState([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dateField, setDateField] = useState('created_at');
@@ -122,11 +123,12 @@ const AdminStationsPage = () => {
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (s) params.append('search', s);
-      if (st) params.append('status', st);
-      if (ut) params.append('uu_tien', ut);
-      if (mh) params.append('mo_hinh_tram', mh);
-      if (pr) params.append('province', pr);
-      if (rg) params.append('region', rg);
+      const appendAll = (key, arr) => (Array.isArray(arr) ? arr : (arr ? [arr] : [])).forEach(v => { if (String(v ?? '').trim()) params.append(key, v); });
+      appendAll('status', st);
+      appendAll('uu_tien', ut);
+      appendAll('mo_hinh_tram', mh);
+      appendAll('province', pr);
+      appendAll('region', rg);
       if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
         const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
@@ -154,18 +156,18 @@ const AdminStationsPage = () => {
 
   const handleReset = () => {
     setSearch('');
-    setFilterStatus('');
-    setFilterUuTien('');
-    setFilterMoHinh('');
-    setFilterProvince('');
-    setFilterRegion('');
+    setFilterStatus([]);
+    setFilterUuTien([]);
+    setFilterMoHinh([]);
+    setFilterProvince([]);
+    setFilterRegion([]);
     setDateFrom('');
     setDateTo('');
     setDateField('created_at');
     setColumnFilters({});
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadStations(1, { search: '', filterStatus: '', filterUuTien: '', filterMoHinh: '', filterProvince: '', filterRegion: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {} });
+    loadStations(1, { search: '', filterStatus: [], filterUuTien: [], filterMoHinh: [], filterProvince: [], filterRegion: [], dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {} });
   };
 
   const openCreate = () => {
@@ -451,7 +453,7 @@ const AdminStationsPage = () => {
         <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
           <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
         </button>
-        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterUuTien, filterMoHinh, filterProvince, filterRegion, dateFrom, dateTo].filter(Boolean).length} />
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterUuTien, filterMoHinh, filterProvince, filterRegion].reduce((n, a) => n + (Array.isArray(a) ? a.length : (a ? 1 : 0)), 0) + [dateFrom, dateTo].filter(Boolean).length} />
       </div>
 
       <FilterBody
@@ -463,26 +465,11 @@ const AdminStationsPage = () => {
         title="Bộ lọc trạm"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <select className="select select-bordered select-sm w-full" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
-            <option value="">Tất cả loại ưu tiên</option>
-            {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterMoHinh} onChange={(e) => setFilterMoHinh(e.target.value)}>
-            <option value="">Tất cả mô hình</option>
-            {moHinhOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)}>
-            <option value="">Tất cả tỉnh/thành</option>
-            {provinceOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)}>
-            <option value="">Tất cả vùng miền</option>
-            {regionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
+          <SearchableMultiSelect options={statusOptions} values={filterStatus} onChange={setFilterStatus} placeholder="Tất cả trạng thái" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={PRIORITY_OPTIONS} values={filterUuTien} onChange={setFilterUuTien} placeholder="Tất cả loại ưu tiên" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={moHinhOptions} values={filterMoHinh} onChange={setFilterMoHinh} placeholder="Tất cả mô hình" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={provinceOptions} values={filterProvince} onChange={setFilterProvince} placeholder="Tất cả tỉnh/thành" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={regionOptions} values={filterRegion} onChange={setFilterRegion} placeholder="Tất cả vùng miền" singleAsLabel multiLabel="Đã chọn" showChips={false} />
           <div className="flex items-center gap-2">
             <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
             <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>

@@ -19,6 +19,7 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
+import SearchableMultiSelect from '../../components/ui/SearchableMultiSelect';
 import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
 import { ClipboardList, Download, Upload, Search, MapPin, RotateCcw, X, Zap, Link2, MapPinned } from 'lucide-react';
@@ -36,8 +37,8 @@ const MyProposalsPage = () => {
   const statusOptions = getSelectOptions('status');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
-  const [filterUuTien, setFilterUuTien] = useState('');
+  const [filter, setFilter] = useState([]);
+  const [filterUuTien, setFilterUuTien] = useState([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dateField, setDateField] = useState('created_at');
@@ -113,8 +114,9 @@ const MyProposalsPage = () => {
       const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
-      if (f) params.append('status', f);
-      if (ut) params.append('uu_tien', ut);
+      const appendAll = (key, arr) => (Array.isArray(arr) ? arr : (arr ? [arr] : [])).forEach(v => { if (String(v ?? '').trim()) params.append(key, v); });
+      appendAll('status', f);
+      appendAll('uu_tien', ut);
       if (s) params.append('search', s);
       if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
@@ -427,8 +429,8 @@ const MyProposalsPage = () => {
 
   const handleReset = () => {
     setSearch('');
-    setFilter('');
-    setFilterUuTien('');
+    setFilter([]);
+    setFilterUuTien([]);
     setDateFrom('');
     setDateTo('');
     setDateField('created_at');
@@ -437,7 +439,7 @@ const MyProposalsPage = () => {
     setDupMode(false);
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadProposals(1, { filter: '', filterUuTien: '', dateFrom: '', dateTo: '', dateField: 'created_at', search: '', columnFilters: {} });
+    loadProposals(1, { filter: [], filterUuTien: [], dateFrom: '', dateTo: '', dateField: 'created_at', search: '', columnFilters: {} });
   };
 
   return (
@@ -494,19 +496,13 @@ const MyProposalsPage = () => {
         <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
           <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
         </button>
-        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filter, filterUuTien, dateFrom, dateTo].filter(Boolean).length} />
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filter, filterUuTien].reduce((n, a) => n + (Array.isArray(a) ? a.length : (a ? 1 : 0)), 0) + [dateFrom, dateTo].filter(Boolean).length} />
       </div>
 
       <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={handleSearch} onReset={handleReset} title="Bộ lọc đề xuất của tôi">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <select className="select select-bordered select-sm w-full" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
-            <option value="">Tất cả loại ưu tiên</option>
-            {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
+          <SearchableMultiSelect options={statusOptions} values={filter} onChange={setFilter} placeholder="Tất cả trạng thái" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={PRIORITY_OPTIONS} values={filterUuTien} onChange={setFilterUuTien} placeholder="Tất cả loại ưu tiên" singleAsLabel multiLabel="Đã chọn" showChips={false} />
           <div className="flex items-center gap-2">
             <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
             <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>

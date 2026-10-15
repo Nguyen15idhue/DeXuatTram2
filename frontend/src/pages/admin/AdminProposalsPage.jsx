@@ -22,6 +22,7 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
+import SearchableMultiSelect from '../../components/ui/SearchableMultiSelect';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw } from 'lucide-react';
@@ -44,12 +45,12 @@ const AdminProposalsPage = () => {
   const regionOptions = getSelectOptions('vung_mien');
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
-  const [filterUuTien, setFilterUuTien] = useState('');
-  const [filterProvince, setFilterProvince] = useState('');
-  const [filterRegion, setFilterRegion] = useState('');
-  const [filterDepartment, setFilterDepartment] = useState('');
-  const [filterOwner, setFilterOwner] = useState('');
+  const [filter, setFilter] = useState([]);
+  const [filterUuTien, setFilterUuTien] = useState([]);
+  const [filterProvince, setFilterProvince] = useState([]);
+  const [filterRegion, setFilterRegion] = useState([]);
+  const [filterDepartment, setFilterDepartment] = useState([]);
+  const [filterOwner, setFilterOwner] = useState([]);
   const [filterLeadLink, setFilterLeadLink] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -245,13 +246,14 @@ const AdminProposalsPage = () => {
       const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
-      if (f) params.append('status', f);
-      if (ut) params.append('uu_tien', ut);
+      const appendAll = (key, arr) => (Array.isArray(arr) ? arr : (arr ? [arr] : [])).forEach(v => { if (String(v ?? '').trim()) params.append(key, v); });
+      appendAll('status', f);
+      appendAll('uu_tien', ut);
       if (s) params.append('search', s);
-      if (pr) params.append('province', pr);
-      if (rg) params.append('region', rg);
-      if (dp) params.append('department', dp);
-      if (ow) params.append('owner_user_id', ow);
+      appendAll('province', pr);
+      appendAll('region', rg);
+      appendAll('department', dp);
+      appendAll('owner_user_id', ow);
       if (ll) params.append('lead_link', ll);
       if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
@@ -619,12 +621,12 @@ const AdminProposalsPage = () => {
 
   const handleReset = () => {
     setSearch('');
-    setFilter('');
-    setFilterUuTien('');
-    setFilterProvince('');
-    setFilterRegion('');
-    setFilterDepartment('');
-    setFilterOwner('');
+    setFilter([]);
+    setFilterUuTien([]);
+    setFilterProvince([]);
+    setFilterRegion([]);
+    setFilterDepartment([]);
+    setFilterOwner([]);
     setFilterLeadLink('');
     setDateFrom('');
     setDateTo('');
@@ -635,8 +637,8 @@ const AdminProposalsPage = () => {
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
     loadProposals(1, {
-      filter: '', filterUuTien: '', search: '', filterProvince: '', filterRegion: '',
-      filterDepartment: '', filterOwner: '', filterLeadLink: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}
+      filter: [], filterUuTien: [], search: '', filterProvince: [], filterRegion: [],
+      filterDepartment: [], filterOwner: [], filterLeadLink: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}
     });
   };
 
@@ -1489,35 +1491,17 @@ const AdminProposalsPage = () => {
         <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={() => loadProposals(1)}>
           <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
         </button>
-        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filter, filterUuTien, filterProvince, filterRegion, filterDepartment, filterOwner, filterLeadLink, dateFrom, dateTo].filter(Boolean).length} />
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filter, filterUuTien, filterProvince, filterRegion, filterDepartment, filterOwner].reduce((n, a) => n + (Array.isArray(a) ? a.length : (a ? 1 : 0)), 0) + [filterLeadLink, dateFrom, dateTo].filter(Boolean).length} />
       </div>
 
       <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={() => loadProposals(1)} onReset={handleReset} title="Bộ lọc đề xuất">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <select className="select select-bordered select-sm w-full" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterUuTien} onChange={(e) => setFilterUuTien(e.target.value)}>
-            <option value="">Tất cả loại ưu tiên</option>
-            {PRIORITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)}>
-            <option value="">Tất cả tỉnh/thành</option>
-            {provinceOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)}>
-            <option value="">Tất cả vùng miền</option>
-            {regionOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
-            <option value="">Tất cả phòng ban</option>
-            {departmentOptions.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)}>
-            <option value="">Tất cả người tạo</option>
-            {ownerOptions.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-          </select>
+          <SearchableMultiSelect options={statusOptions} values={filter} onChange={setFilter} placeholder="Tất cả trạng thái" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={PRIORITY_OPTIONS} values={filterUuTien} onChange={setFilterUuTien} placeholder="Tất cả loại ưu tiên" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={provinceOptions} values={filterProvince} onChange={setFilterProvince} placeholder="Tất cả tỉnh/thành" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={regionOptions} values={filterRegion} onChange={setFilterRegion} placeholder="Tất cả vùng miền" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={departmentOptions.map(d => ({ value: d, label: d }))} values={filterDepartment} onChange={setFilterDepartment} placeholder="Tất cả phòng ban" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={ownerOptions.map(u => ({ value: u.id, label: u.full_name }))} values={filterOwner} onChange={setFilterOwner} placeholder="Tất cả người tạo" singleAsLabel multiLabel="Đã chọn" showChips={false} />
           <select className="select select-bordered select-sm w-full" value={filterLeadLink} onChange={(e) => setFilterLeadLink(e.target.value)}>
             <option value="">Tất cả (Lead)</option>
             <option value="yes">Có gắn Lead</option>

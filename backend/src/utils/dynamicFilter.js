@@ -39,6 +39,28 @@ function parseUserFilter(val) {
   return { ids, names };
 }
 
+exports.toStrArray = (v) => {
+  if (v == null) return [];
+  const arr = Array.isArray(v) ? v : String(v).split(',');
+  const out = [];
+  const seen = new Set();
+  for (const x of arr) {
+    const s = String(x).trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out.slice(0, 50);
+};
+
+exports.pushInClause = (where, params, expr, values, { numeric = false } = {}) => {
+  const list = exports.toStrArray(values);
+  if (list.length === 0) return;
+  where.push(`${expr} IN (${list.map(() => '?').join(',')})`);
+  if (numeric) list.forEach((v) => params.push(Number(v)));
+  else params.push(...list);
+};
+
 exports.buildColumnFilterWhere = ({ filters, fieldDefs = [], fixedColumns = [], alias = '', customDataColumn = 'custom_data' } = {}) => {
   const obj = parseFiltersInput(filters);
   const defKeys = new Set((fieldDefs || []).map((f) => f.key));

@@ -700,8 +700,10 @@ export const excelService = {
 
   async exportData(entity, token, filters = {}) {
     const params = new URLSearchParams();
+    const appendAll = (key, v) => (Array.isArray(v) ? v : (v !== undefined && v !== null && String(v) !== '' ? [v] : []))
+      .forEach((x) => { if (String(x ?? '').trim() !== '') params.append(key, x); });
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    appendAll('status', filters.status);
     if (filters.layout) params.append('layout', filters.layout);
     if (filters.formId) params.append('formId', filters.formId);
     if (filters.purpose) params.append('purpose', filters.purpose);
@@ -710,9 +712,7 @@ export const excelService = {
     // Filter chi tiết trang Leads (backend entity khác bỏ qua param lạ)
     ['stage', 'source', 'province', 'region', 'customer_classification', 'sales_outcome',
       'assigned_user_id', 'assigned_department', 'date_from', 'date_to', 'date_field'].forEach((k) => {
-      if (filters[k] !== undefined && filters[k] !== null && String(filters[k]).trim() !== '') {
-        params.append(k, filters[k]);
-      }
+      appendAll(k, filters[k]);
     });
     const query = params.toString() ? `?${params.toString()}` : '';
     await this.downloadBlob(`/admin/excel/export/${entity}${query}`, token, `${fileStamp()}_export_${entity}.xlsx`);
@@ -721,7 +721,8 @@ export const excelService = {
   async exportDataByModel(entity, token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    (Array.isArray(filters.status) ? filters.status : (filters.status ? [filters.status] : []))
+      .forEach((x) => { if (String(x ?? '').trim() !== '') params.append('status', x); });
     const query = params.toString() ? `?${params.toString()}` : '';
     await this.downloadBlob(`/admin/excel/export/${entity}/by-model${query}`, token, `${fileStamp()}_export_${entity}_mo_hinh.xlsx`);
   },
@@ -729,7 +730,8 @@ export const excelService = {
   async exportMyProposals(token, filters = {}) {
     const params = new URLSearchParams();
     if (filters.search) params.append('search', filters.search);
-    if (filters.status) params.append('status', filters.status);
+    (Array.isArray(filters.status) ? filters.status : (filters.status ? [filters.status] : []))
+      .forEach((x) => { if (String(x ?? '').trim() !== '') params.append('status', x); });
     if (filters.layout) params.append('layout', filters.layout);
     if (filters.formId) params.append('formId', filters.formId);
     const query = params.toString() ? `?${params.toString()}` : '';

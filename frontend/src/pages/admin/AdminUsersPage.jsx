@@ -17,6 +17,7 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
+import SearchableMultiSelect from '../../components/ui/SearchableMultiSelect';
 import { Users, Plus, Search, Download, Upload, FileSpreadsheet, RotateCcw, X, Trash2, List, Network } from 'lucide-react';
 import UserTreeView from '../../components/admin/UserTreeView';
 import { isGdkv, isGdtt } from '../../utils/salesRanks';
@@ -243,11 +244,11 @@ const AdminUsersPage = () => {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
 const [search, setSearch] = useState('');
-const [filterStatus, setFilterStatus] = useState('');
-const [filterRole, setFilterRole] = useState('');
-const [filterDepartment, setFilterDepartment] = useState('');
-const [filterChucVu, setFilterChucVu] = useState('');
-const [filterParent, setFilterParent] = useState('');
+const [filterStatus, setFilterStatus] = useState([]);
+const [filterRole, setFilterRole] = useState([]);
+const [filterDepartment, setFilterDepartment] = useState([]);
+const [filterChucVu, setFilterChucVu] = useState([]);
+const [filterParent, setFilterParent] = useState([]);
 const [dateFrom, setDateFrom] = useState('');
 const [dateTo, setDateTo] = useState('');
 const [dateField, setDateField] = useState('created_at');
@@ -332,11 +333,12 @@ const [viewMode, setViewMode] = useState('table');
       const df = overrides.dateFrom !== undefined ? overrides.dateFrom : dateFrom;
       const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
-      if (st) params.append('status', st);
-      if (rl) params.append('role', rl);
-      if (dp) params.append('department', dp);
-      if (cv) params.append('chuc_vu', cv);
-      if (pn) params.append('parent_id', pn);
+      const appendAll = (key, arr) => (Array.isArray(arr) ? arr : (arr ? [arr] : [])).forEach(v => { if (String(v ?? '').trim()) params.append(key, v); });
+      appendAll('status', st);
+      appendAll('role', rl);
+      appendAll('department', dp);
+      appendAll('chuc_vu', cv);
+      appendAll('parent_id', pn);
       if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       const res = await adminUserService.getAllWithParams(params.toString(), token);
       if (res.success) {
@@ -438,11 +440,11 @@ const [viewMode, setViewMode] = useState('table');
 
   const handleReset = () => {
     setSearch('');
-    setFilterStatus('');
-    setFilterRole('');
-    setFilterDepartment('');
-    setFilterChucVu('');
-    setFilterParent('');
+    setFilterStatus([]);
+    setFilterRole([]);
+    setFilterDepartment([]);
+    setFilterChucVu([]);
+    setFilterParent([]);
     setDateFrom('');
     setDateTo('');
     setDateField('created_at');
@@ -450,7 +452,7 @@ const [viewMode, setViewMode] = useState('table');
     setColumnFilters({});
     if (tableRef.current) tableRef.current.clearFilters();
     setError('');
-    loadUsers({ filterStatus: '', filterRole: '', filterDepartment: '', filterChucVu: '', filterParent: '', dateFrom: '', dateTo: '', dateField: 'created_at' });
+    loadUsers({ filterStatus: [], filterRole: [], filterDepartment: [], filterChucVu: [], filterParent: [], dateFrom: '', dateTo: '', dateField: 'created_at' });
   };
 
   const handleDeleteClick = (id, name) => {
@@ -833,7 +835,7 @@ const [viewMode, setViewMode] = useState('table');
         <button className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
           <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
         </button>
-        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterRole, filterDepartment, filterChucVu, filterParent, dateFrom, dateTo].filter(Boolean).length} />
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter(v => !v)} count={[filterStatus, filterRole, filterDepartment, filterChucVu, filterParent].reduce((n, a) => n + (Array.isArray(a) ? a.length : (a ? 1 : 0)), 0) + [dateFrom, dateTo].filter(Boolean).length} />
         <div className="join shrink-0">
           <button
             type="button"
@@ -856,26 +858,11 @@ const [viewMode, setViewMode] = useState('table');
 
       <FilterBody open={showFilter} isDesktop={isDesktop} onClose={() => setShowFilter(false)} onApply={() => loadUsers()} onReset={handleReset} title="Bộ lọc người dùng">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <select className="select select-bordered select-sm w-full" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="">Tất cả trạng thái</option>
-            {statusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
-            <option value="">Tất cả vai trò</option>
-            {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)}>
-            <option value="">Tất cả phòng ban</option>
-            {departmentOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterChucVu} onChange={(e) => setFilterChucVu(e.target.value)}>
-            <option value="">Tất cả chức vụ</option>
-            {chucVuOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
-          <select className="select select-bordered select-sm w-full" value={filterParent} onChange={(e) => setFilterParent(e.target.value)}>
-            <option value="">Tất cả người quản lý</option>
-            {salesList.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-          </select>
+          <SearchableMultiSelect options={statusOptions} values={filterStatus} onChange={setFilterStatus} placeholder="Tất cả trạng thái" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={roleOptions} values={filterRole} onChange={setFilterRole} placeholder="Tất cả vai trò" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={departmentOptions} values={filterDepartment} onChange={setFilterDepartment} placeholder="Tất cả phòng ban" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={chucVuOptions} values={filterChucVu} onChange={setFilterChucVu} placeholder="Tất cả chức vụ" singleAsLabel multiLabel="Đã chọn" showChips={false} />
+          <SearchableMultiSelect options={salesList.map(u => ({ value: u.id, label: u.full_name }))} values={filterParent} onChange={setFilterParent} placeholder="Tất cả người quản lý" singleAsLabel multiLabel="Đã chọn" showChips={false} />
           <div className="flex items-center gap-2">
             <span className="text-xs text-base-content/60 whitespace-nowrap">Thời gian</span>
             <select className="select select-bordered select-sm flex-1" value={dateField} onChange={(e) => setDateField(e.target.value)}>
