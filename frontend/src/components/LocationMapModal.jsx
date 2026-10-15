@@ -404,6 +404,8 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
       const statuses = filters.proposalStatuses || [];
       if (statuses.length > 0) {
         nearProposals = nearProposals.filter((p) => statuses.includes(p.status));
+      } else {
+        nearProposals = nearProposals.filter((p) => p.status !== 'CANCELLED');
       }
     }
     return { stations: nearStations, proposals: nearProposals };

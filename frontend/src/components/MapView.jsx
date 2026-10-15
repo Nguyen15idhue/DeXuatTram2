@@ -821,7 +821,7 @@ const MapView = ({
   }, [stations, filters]);
 
   const visibleProposals = useMemo(() => {
-    if (!filters) return proposals;
+    if (!filters) return proposals.filter(p => p.status !== 'CANCELLED');
     if (filters.hideProposals) return [];
     let list = proposals;
     list = list.filter(p => p.status !== 'CONTRACT_SIGNED');
@@ -836,6 +836,8 @@ const MapView = ({
     const statuses = filters.proposalStatuses || [];
     if (statuses.length > 0) {
       list = list.filter(p => statuses.includes(p.status));
+    } else {
+      list = list.filter(p => p.status !== 'CANCELLED');
     }
     return list;
   }, [proposals, filters, user, proposalLegendStatuses]);
