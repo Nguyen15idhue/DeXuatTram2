@@ -11,7 +11,7 @@ const evReportController = require('../controllers/evReportController');
  *   get:
  *     tags: [EvReports]
  *     summary: Lấy danh sách điểm sạc do khách chia sẻ (công khai, rút gọn)
- *     description: Hiển thị trên bản đồ nội bộ. Không trả tên/SĐT người gửi, chỉ hiện bản ghi ACTIVE.
+ *     description: Hiển thị trên bản đồ. Không trả tên/SĐT khi chưa đăng nhập; có token thì trả thêm full_name/phone để hiện trong popup marker.
  *     responses:
  *       200:
  *         description: Thành công
@@ -24,6 +24,7 @@ router.get('/', optionalAuth, evReportController.getAll);
  *   get:
  *     tags: [EvReports]
  *     summary: Lấy thông tin điểm sạc theo ID (công khai, rút gọn)
+ *     description: Không trả tên/SĐT khi chưa đăng nhập; có token thì trả thêm full_name/phone.
  *     parameters:
  *       - in: path
  *         name: id

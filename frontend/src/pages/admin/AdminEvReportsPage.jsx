@@ -10,7 +10,7 @@ import ErrorMessage from "../../components/ErrorMessage";
 import Pagination from "../../components/Pagination";
 import useDefaultViewId from "../../hooks/useDefaultViewId";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
-import { MapPin, Search, RotateCcw } from "lucide-react";
+import { MapPin, Search, RotateCcw, PlusCircle } from "lucide-react";
 
 const EV_REPORTS_VIEW_ID = 17;
 
@@ -161,6 +161,14 @@ const AdminEvReportsPage = () => {
           <MapPin size={24} className="text-primary shrink-0" />
           <h1 className="text-2xl font-bold">Quản lý nhu cầu sạc xe</h1>
         </div>
+        <a
+          href="/nhu-cau-sac-xe"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-primary btn-sm gap-1 self-start sm:self-auto"
+        >
+          <PlusCircle size={16} /> Thêm nhu cầu sạc xe
+        </a>
       </div>
 
       {error && (

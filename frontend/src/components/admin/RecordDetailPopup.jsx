@@ -373,7 +373,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     return undefined;
   };
 
-  const resolveFieldOptions = (field) => {
+  const resolveFieldOptionsRaw = (field) => {
     const dlId = field.data_list_id;
     if (dlId && dataListOptions[dlId]) {
       const { tree, unique } = dataListOptions[dlId];
@@ -408,6 +408,26 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       }
       return field.options || [];
     } catch { return field.options || []; }
+  };
+
+  // Bổ sung giá trị hiện tại nếu không có trong danh sách options
+  // (vd: hãng xe khách tự nhập ngoài data list) để không hiển thị trống khi sửa.
+  const resolveFieldOptions = (field) => {
+    const opts = resolveFieldOptionsRaw(field) || [];
+    const key = field.field_key || field.key;
+    const current = formData[key];
+    const optValue = (o) => (o && typeof o === 'object' ? o.value : o);
+    if (field.type === 'multiselect') {
+      const cur = Array.isArray(current) ? current : [];
+      const missing = cur.filter(
+        (v) => v !== undefined && v !== null && v !== '' && !opts.some((o) => optValue(o) === v),
+      );
+      if (missing.length === 0) return opts;
+      return [...opts, ...missing.map((v) => ({ value: v, label: v }))];
+    }
+    if (current === undefined || current === null || current === '') return opts;
+    if (opts.some((o) => optValue(o) === current)) return opts;
+    return [...opts, { value: current, label: current }];
   };
 
   useEffect(() => () => {

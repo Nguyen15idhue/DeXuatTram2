@@ -77,7 +77,7 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     expect(Math.abs(inputBox.y - dropBoxAfter.y) < 40, 'ô tìm kiếm vẫn dính đầu dropdown khi cuộn').toBe(true);
   });
 
-  test('manual mode full submit shows thank-you', async ({ page }) => {
+  test('manual mode full submit shows thank-you', async ({ page, request }) => {
     await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('Họ và tên')).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: 'Nhập địa chỉ' }).click();
@@ -88,6 +88,10 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     const brand = page.locator('[data-field-key="hang_xe"]');
     await brand.locator('.dynamic-field-select .form-control').click();
     await brand.locator('.dynamic-select-dropdown').getByText('VinFast', { exact: true }).click();
+
+    const group = page.locator('[data-field-key="nhom_phuong_tien"]');
+    await group.getByText(/Xe cá nhân\/Gia đình/).click();
+    await group.getByText(/Xe kinh doanh dịch vụ/).click();
 
     const province = page.locator('[data-field-key="province"]');
     await province.locator('.dynamic-field-select .form-control').click();
@@ -101,6 +105,126 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     await page.getByRole('button', { name: 'Lưu thông tin' }).click();
     await expect(page.getByText('Cảm ơn bạn đã chia sẻ!')).toBeVisible({ timeout: 30000 });
     await expect(page.getByRole('button', { name: 'Gửi thêm vị trí khác' })).toBeVisible();
+
+    // Dọn record vừa tạo qua form khách (form khách không tự tạo tracking code)
+    const token = await login(request);
+    const auth = { Authorization: `Bearer ${token}` };
+    const list = await request.get(`${API}/api/ev-reports/admin/list?search=E2E Browser`, { headers: auth });
+    for (const row of (await list.json()).data || []) {
+      await request.delete(`${API}/api/ev-reports/admin/${row.id}`, { headers: auth });
+    }
+  });
+
+  test('brand "Khác" reveals free-text input and is required', async ({ page }) => {
+    await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Họ và tên')).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Nhập địa chỉ' }).click();
+
+    const brand = page.locator('[data-field-key="hang_xe"]');
+    await brand.locator('.dynamic-field-select .form-control').click();
+    await brand.locator('.dynamic-select-dropdown').getByText('Khác (nhập tay)', { exact: true }).click();
+
+    const freeText = brand.locator('input[placeholder="Nhập hãng xe bạn đang sử dụng"]');
+    await expect(freeText, 'chọn Khác thì hiện ô nhập tay').toBeVisible();
+
+    // Có vị trí + thiếu tên hãng -> chặn khi lưu
+    const mapSurface = page.locator('.maplibregl-canvas, .leaflet-container');
+    await expect(mapSurface).toBeVisible({ timeout: 30000 });
+    await mapSurface.click({ position: { x: 200, y: 150 } });
+    await expect(page.getByText(/Vĩ độ:/)).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Lưu thông tin' }).click();
+    await expect(brand.locator('.field-error')).toHaveText(/Vui lòng nhập hãng xe/);
+
+    // Chọn lại hãng trong data list -> ô nhập tay ẩn
+    await brand.locator('.dynamic-field-select .form-control').click();
+    await brand.locator('.dynamic-select-dropdown').getByText('VinFast', { exact: true }).click();
+    await expect(freeText).toHaveCount(0);
+  });
+
+  test('admin ev-reports header links to the guest form', async ({ page, request }) => {
+    const token = await login(request);
+    await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
+    await page.evaluate((t) => localStorage.setItem('token', t), token);
+    await page.goto('/admin/ev-reports', { waitUntil: 'domcontentloaded' });
+    const link = page.getByRole('link', { name: /Thêm nhu cầu sạc xe/ });
+    await expect(link).toBeVisible({ timeout: 20000 });
+    await expect(link).toHaveAttribute('href', '/nhu-cau-sac-xe');
+    await expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  test('map marker popup shows charging need + sender name/phone', async ({ page, request }) => {
+    const token = await login(request);
+    const mockReport = {
+      id: 999001,
+      latitude: 21.036,
+      longitude: 105.816,
+      address: 'Số 1 Tràng Thi, Phường Hoàn Kiếm, Thành phố Hà Nội',
+      province: 'Thành phố Hà Nội',
+      ward: 'Phường Hoàn Kiếm',
+      hang_xe: 'MockBrand',
+      full_name: 'Mock Sender',
+      phone: '0912345678'
+    };
+    // Popup marker đọc từ dữ liệu API (đã đăng nhập mới có tên/SĐT) -> mock để
+    // kiểm tra phần render mà không tốn quota guest submit.
+    await page.route(
+      (url) => url.pathname === '/api/ev-reports',
+      async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [mockReport] }) });
+      }
+    );
+    // Ghim renderer leaflet + tắt cluster để marker là 1 divIcon đúng toạ độ
+    await page.route(
+      (url) => url.pathname === '/api/map-configs' && url.searchParams.get('entity') === 'stations',
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: 1, name: 'e2e', entity: 'stations', renderer: 'leaflet', tile_provider_id: 'leaflet-osm',
+              tile_mode: 'proxy', retina: 0, api_key: '', default_mode: 'streets', label_field: 'name',
+              center_lat: mockReport.latitude, center_lng: mockReport.longitude, default_zoom: 15,
+              show_boundaries: false, show_province_labels: false, show_cluster: 0, cluster_radius: 70, cluster_max_zoom: 18
+            }
+          })
+        });
+      }
+    );
+
+    await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
+    await page.evaluate((t) => localStorage.setItem('token', t), token);
+    await page.goto('/map', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.leaflet-container')).toBeVisible({ timeout: 40000 });
+
+    // Lớp "Nhu cầu sạc xe" mặc định ẩn -> bật trong bộ lọc
+    await page.locator('.map-filter-toggle').click();
+    const evBox = page.getByLabel('Nhu cầu sạc xe');
+    await expect(evBox).toBeVisible({ timeout: 20000 });
+    if (!(await evBox.isChecked())) await evBox.check();
+    await page.locator('.map-filter-toggle').click();
+
+    const hasRuntime = await page
+      .waitForFunction(() => !!window.__mapRuntime, null, { timeout: 20000 })
+      .then(() => true)
+      .catch(() => false);
+    test.skip(!hasRuntime, 'MapCanvas chỉ expose __mapRuntime trên dev server');
+
+    await page.evaluate(([lat, lng]) => { window.__mapRuntime.setView([lat, lng], 15); }, [mockReport.latitude, mockReport.longitude]);
+    await page.waitForTimeout(2000);
+
+    // Marker nằm đúng tâm bản đồ -> bấm tâm để mở popup
+    const box = await page.locator('.leaflet-container').boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const popup = page.locator('.leaflet-popup-content');
+    await expect(popup).toBeVisible({ timeout: 15000 });
+    await expect(popup).toContainText('Nhu cầu sạc: MockBrand');
+    await expect(popup).toContainText('Người gửi: Mock Sender');
+    await expect(popup).toContainText('SĐT: 0912345678');
+    await expect(popup.locator('a[href="tel:0912345678"]')).toBeVisible();
+    await expect(popup).toContainText('Địa chỉ: Số 1 Tràng Thi, Phường Hoàn Kiếm, Thành phố Hà Nội');
   });
 
   test('manual find flies map to typed address area for pin adjust', async ({ page }) => {
@@ -164,7 +288,8 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     const base = {
       full_name: `E2E Khach ${stamp}`,
       phone,
-      province: 'Tp Hồ Chí Minh'
+      province: 'Tp Hồ Chí Minh',
+      nhom_phuong_tien: ['Xe cá nhân/Gia đình', 'Xe vận tải hàng hóa']
     };
 
     // 1. Gửi thiếu SĐT -> 400 (SĐT bắt buộc ở validator)
@@ -173,18 +298,34 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     });
     expect(missing.status(), 'thiếu SĐT phải 400').toBe(400);
 
+    // 1b. Nhóm phương tiện là multiselect BẮT BUỘC (migration 168):
+    //     mảng rỗng -> 400 (không được coi là "đã trả lời").
+    // Lưu ý: guest submit limiter 5 request/giờ/IP, nên giữ số lần POST tối thiểu.
+    const emptyGroup = await request.post(`${API}/api/ev-reports/guest`, {
+      data: { ...base, nhom_phuong_tien: [], latitude: 18.352, longitude: 105.901, hang_xe: 'VinFast' }
+    });
+    expect(emptyGroup.status(), 'mảng rỗng phải 400').toBe(400);
+
     // 2. Cùng SĐT gửi 2 vị trí khác nhau -> cả 2 đều 201
     const r1 = await request.post(`${API}/api/ev-reports/guest`, {
       data: { ...base, latitude: 18.352, longitude: 105.901, hang_xe: 'VinFast' }
     });
+    // Hãng xe tự nhập ngoài data list dm_hang_xe vẫn lưu được
     const r2 = await request.post(`${API}/api/ev-reports/guest`, {
-      data: { ...base, latitude: 18.362, longitude: 105.911, hang_xe: 'Yadea' }
+      data: { ...base, latitude: 18.362, longitude: 105.911, hang_xe: 'Geely (tự nhập)' }
     });
     expect(r1.ok(), 'gửi record 1').toBeTruthy();
     expect(r2.ok(), 'gửi record 2 cùng SĐT').toBeTruthy();
     const id1 = (await r1.json()).data.id;
     const id2 = (await r2.json()).data.id;
     expect(id1).not.toBe(id2);
+
+    // 2b. Lưu đúng mảng nhiều nhóm + hãng tự nhập
+    const list2b = await request.get(`${API}/api/ev-reports/admin/list?search=E2E Khach ${stamp}`, { headers: auth });
+    const row2 = ((await list2b.json()).data || []).find((r) => r.id === id2);
+    const cd2 = typeof row2.custom_data === 'string' ? JSON.parse(row2.custom_data) : row2.custom_data || {};
+    expect(cd2.nhom_phuong_tien, 'lưu mảng nhóm phương tiện').toEqual(base.nhom_phuong_tien);
+    expect(cd2.hang_xe, 'lưu hãng xe tự nhập').toBe('Geely (tự nhập)');
 
     // 3. Admin thấy cả 2 trong danh sách
     const list = await request.get(`${API}/api/ev-reports/admin/list?search=E2E Khach ${stamp}`, { headers: auth });
@@ -200,6 +341,13 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     const mine = pubRows.filter((r) => r.id === id1 || r.id === id2);
     expect(mine.length, 'public thấy 2 record').toBe(2);
     expect('full_name' in mine[0] || 'phone' in mine[0] || 'status' in mine[0], 'public không PII/status').toBe(false);
+
+    // 4b. Đã đăng nhập -> trả thêm tên/SĐT (popup marker hiện người gửi)
+    const authList = await request.get(`${API}/api/ev-reports`, { headers: auth });
+    const authRows = (await authList.json()).data || [];
+    const authMine = authRows.find((r) => r.id === id1);
+    expect(authMine.full_name, 'đăng nhập thấy tên người gửi').toBe(`E2E Khach ${stamp}`);
+    expect(authMine.phone, 'đăng nhập thấy SĐT người gửi').toBe(phone);
 
     // 5. Admin sửa địa chỉ record 1
     const upd = await request.put(`${API}/api/ev-reports/admin/${id1}`, {

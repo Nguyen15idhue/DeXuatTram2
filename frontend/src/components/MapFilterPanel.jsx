@@ -219,7 +219,8 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
             />
             Đề xuất
           </label>
-
+        </div>
+        <div className="map-filter-checks">
           <label className="map-filter-check">
             <input
               type="checkbox"
