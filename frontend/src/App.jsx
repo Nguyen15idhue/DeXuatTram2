@@ -16,6 +16,7 @@ const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
 const MapPage = lazy(() => import('./pages/user/MapPage'));
 const MyProposalsPage = lazy(() => import('./pages/user/MyProposalsPage'));
 const GuestProposalPage = lazy(() => import('./pages/user/GuestProposalPage'));
+const EvReportGuestPage = lazy(() => import('./pages/user/EvReportGuestPage'));
 const ProfilePage = lazy(() => import('./pages/user/ProfilePage'));
 const HelpPage = lazy(() => import('./pages/HelpPage'));
 
@@ -25,6 +26,7 @@ const AdminLeadsPage = lazy(() => import('./pages/admin/AdminLeadsPage'));
 const ReportEditorPage = lazy(() => import('./pages/admin/ReportEditorPage'));
 const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
 const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
+const AdminEvReportsPage = lazy(() => import('./pages/admin/AdminEvReportsPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
 const AdminFormsPage = lazy(() => import('./pages/admin/AdminFormsPage'));
 const AdminFormBuilderPage = lazy(() => import('./pages/admin/AdminFormBuilderPage'));
@@ -68,6 +70,7 @@ function App() {
 
           <Route element={<GuestLayout />}>
             <Route path="/de-xuat" element={<GuestProposalPage />} />
+            <Route path="/nhu-cau-sac-xe" element={<EvReportGuestPage />} />
           </Route>
 
           <Route element={<UserLayout />}>
@@ -89,6 +92,8 @@ function App() {
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<AdminProposalsPage />} />
             <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
+            <Route path="/admin/ev-reports" element={<AdminEvReportsPage />} />
+            <Route path="/admin/ev-reports/*" element={<AdminEvReportsPage />} />
             <Route path="/admin/fields" element={<RoleRoute allowed={SUPER_ONLY}><AdminFieldsPage /></RoleRoute>} />
             <Route path="/admin/forms" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormsPage /></RoleRoute>} />
             <Route path="/admin/forms/:id/edit" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormBuilderPage /></RoleRoute>} />

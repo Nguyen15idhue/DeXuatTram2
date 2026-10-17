@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
-import { stationService, proposalService } from '../services/api';
+import { stationService, proposalService, evReportService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getMarkerColor } from '../utils/mapHelpers';
 import { getStatusLabel, getStationStatuses, getProposalStatuses } from '../utils/mapStatuses';
@@ -115,6 +115,9 @@ function createNearbyPopup(title, item, status, entity) {
     addRow('Tên trạm', item.name);
     addRow('Chủ trạm', item.chu_tram);
     addRow('SĐT chủ trạm', item.sdt_chu_tram);
+  } else if (entity === 'ev_report') {
+    addRow('Hãng xe', item.hang_xe);
+    addRow('Địa chỉ', item.address);
   } else {
     addRow('Mã đề xuất', item.ma_de_xuat);
     addRow('Người đề xuất', getProposalDisplayName(item));
@@ -173,6 +176,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
   const proposalsRef = useRef([]);
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
+  const [evReports, setEvReports] = useState([]);
   const [boundaries, setBoundaries] = useState(null);
   const [provinceLabelPoints, setProvinceLabelPoints] = useState([]);
   const [provinceLabelPointsOld, setProvinceLabelPointsOld] = useState([]);
@@ -198,10 +202,11 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
     let cancelled = false;
     (async () => {
       try {
-        const [s, p] = await Promise.all([stationService.getAll(token), proposalService.getAll(token)]);
+        const [s, p, e] = await Promise.all([stationService.getAll(token), proposalService.getAll(token), evReportService.getAll().catch(() => null)]);
         if (cancelled) return;
         if (s.success) setStations(s.data);
         if (p.success) setProposals(p.data);
+        if (e && e.success) setEvReports(e.data);
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
@@ -319,6 +324,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
     };
     let nearStations = stations.map(within).filter(Boolean);
     let nearProposals = proposals.map(within).filter(Boolean);
+    let nearEvReports = evReports.map(within).filter(Boolean);
     if (filters.hideStations && filters.hideStationPlans) {
       nearStations = [];
     } else {
@@ -355,8 +361,11 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
         nearProposals = nearProposals.filter((p) => statuses.includes(p.status));
       }
     }
-    return { stations: nearStations, proposals: nearProposals };
-  }, [position, radius, stations, proposals, filters, proposalLegendStatuses, user]);
+    if (filters.hideEvReports) {
+      nearEvReports = [];
+    }
+    return { stations: nearStations, proposals: nearProposals, evReports: nearEvReports };
+  }, [position, radius, stations, proposals, evReports, filters, proposalLegendStatuses, user]);
 
   const pairs = useMemo(() => {
     if (!showDistance) return [];
@@ -365,7 +374,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
       b: { latitude: item.latitude, longitude: item.longitude },
       distance_m: item._distanceKm * 1000
     });
-    return [...nearby.stations.map(toPair), ...nearby.proposals.map(toPair)];
+    return [...nearby.stations.map(toPair), ...nearby.proposals.map(toPair), ...nearby.evReports.map(toPair)];
   }, [showDistance, nearby, position]);
 
   const fitView = useMemo(() => ({ center: position, zoom: zoomForRadius(radius) }), [position, radius]);
@@ -420,16 +429,18 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
 
   const allStationStatuses = getStationStatuses();
   const allProposalStatuses = getProposalStatuses();
-  const total = nearby.stations.length + nearby.proposals.length;
+  const total = nearby.stations.length + nearby.proposals.length + nearby.evReports.length;
   const narrowed = filters.scope === 'mine'
     || (filters.stationStatuses || []).length > 0
     || (filters.planningPriorities || []).length > 0
     || (filters.proposalStatuses || []).length > 0
-    || filters.hideStations || filters.hideStationPlans || filters.hideProposals;
+    || filters.hideStations || filters.hideStationPlans || filters.hideProposals || filters.hideEvReports;
   const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? readPriority(s) : '', _bg: getMarkerIconBg(s.status, 'station') }));
   const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') }));
+  const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
   const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');
+  const renderEvReportPopup = (item) => createNearbyPopup(item.hang_xe ? `Điểm sạc ${item.hang_xe}` : `Điểm sạc #${item.id}`, item, item.status, 'ev_report');
 
   const isMaplibre = renderer === 'maplibre';
   const currentProvider = mapConfigData ? getProviderById(mapConfigData.tile_provider_id || mapConfigData.tile_provider || 'leaflet-osm') : null;
@@ -493,6 +504,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
             apiKey={apiKey}
             stations={canvasStations}
             proposals={canvasProposals}
+            evReports={canvasEvReports}
             islandPoints={ISLAND_POINTS}
             showCluster={false}
             showStationLabels
@@ -515,6 +527,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
             onMarkerClick={onMarkerClick}
             renderStationPopup={renderStationPopup}
             renderProposalPopup={renderProposalPopup}
+            renderEvReportPopup={renderEvReportPopup}
           />
           <MapFilterPanel filters={filters} onChange={setFilters} isMobile={isMobile} />
           <div className="location-map-controls">

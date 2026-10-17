@@ -19,6 +19,11 @@ export const PROPOSAL_STATUSES = [
   { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 9 }
 ];
 
+export const EV_REPORT_STATUSES = [
+  { value: 'ACTIVE', label: 'Đang hoạt động', color: '#0d9488', show_in_legend: true, sort_order: 1 },
+  { value: 'INACTIVE', label: 'Ngưng hoạt động', color: '#9ca3af', show_in_legend: true, sort_order: 2 }
+];
+
 export const PRIORITY_OPTIONS = [
   { value: '1', label: 'Cấp 1' },
   { value: '2', label: 'Cấp 2' }
@@ -26,6 +31,7 @@ export const PRIORITY_OPTIONS = [
 
 export const STATION_STATUS_MAP = STATION_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
 export const PROPOSAL_STATUS_MAP = PROPOSAL_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
+export const EV_REPORT_STATUS_MAP = EV_REPORT_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
 
 const withDynamicFallback = (entity, defaults) => {
   const opts = getStatusOptions(entity);
@@ -44,13 +50,15 @@ const withDynamicFallback = (entity, defaults) => {
 export const getStationStatuses = () => withDynamicFallback('station', STATION_STATUSES);
 export const getProposalStatuses = () => withDynamicFallback('proposal', PROPOSAL_STATUSES);
 export const getProposalLegendStatuses = () => getProposalStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
+export const getEvReportStatuses = () => withDynamicFallback('ev_report', EV_REPORT_STATUSES);
+export const getEvReportLegendStatuses = () => getEvReportStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
 
 export const getStatusLabel = (value, entity) => {
-  const list = entity === 'station' ? getStationStatuses() : getProposalStatuses();
+  const list = entity === 'station' ? getStationStatuses() : entity === 'ev_report' ? getEvReportStatuses() : getProposalStatuses();
   return list.find((s) => s.value === value)?.label || value;
 };
 
 export const getStatusColor = (value, entity) => {
-  const list = entity === 'station' ? getStationStatuses() : getProposalStatuses();
+  const list = entity === 'station' ? getStationStatuses() : entity === 'ev_report' ? getEvReportStatuses() : getProposalStatuses();
   return list.find((s) => s.value === value)?.color || '';
 };

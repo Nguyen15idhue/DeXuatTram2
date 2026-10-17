@@ -769,7 +769,8 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
             <span className="ml-auto text-[10px]">▼</span>
           </div>
           {dropdownOpen && (
-            <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[240px] overflow-auto p-1">
+            <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[240px] flex flex-col overflow-hidden">
+              <div className="p-1 pb-0 shrink-0 bg-white">
               <input
                 ref={searchInputRef}
                 type="text"
@@ -794,8 +795,10 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                   }
                 }}
                 placeholder="Tìm kiếm..."
-                className="sticky top-0 z-10 w-full px-2 py-1.5 mb-1 text-[13px] bg-white border border-gray-200 rounded outline-none focus:border-blue-400"
+                className="w-full px-2 py-1.5 text-[13px] bg-white border border-gray-200 rounded outline-none focus:border-blue-400"
               />
+              </div>
+              <div className="overflow-auto p-1 pt-0">
               <div
                 className="px-2.5 py-1.5 cursor-pointer text-[13px] text-gray-400"
                 onClick={() => { onChange(''); setDropdownOpen(false); }}
@@ -825,6 +828,7 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
                   );
                 })
               )}
+              </div>
             </div>
           )}
         </div>

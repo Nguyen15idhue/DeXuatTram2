@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 // FE-01 smoke: tất cả routes tồn tại trong App.jsx phải load được, không trắng trang, không pageerror.
 // Protected routes chưa login sẽ redirect về /login — vẫn tính pass nếu redirect đúng.
-const PUBLIC_ROUTES = ['/login', '/register', '/de-xuat'];
+const PUBLIC_ROUTES = ['/login', '/register', '/de-xuat', '/nhu-cau-sac-xe'];
 const PROTECTED_ROUTES = [
   '/map',
   '/my-proposals',
@@ -11,6 +11,7 @@ const PROTECTED_ROUTES = [
   '/admin/users',
   '/admin/stations',
   '/admin/proposals',
+  '/admin/ev-reports',
   '/admin/fields',
   '/admin/forms',
   '/admin/views',

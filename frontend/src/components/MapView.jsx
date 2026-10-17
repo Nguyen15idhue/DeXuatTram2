@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { stationService, proposalService, api } from '../services/api';
+import { stationService, proposalService, evReportService, api } from '../services/api';
 import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import MarkerIcon, { MapBadge } from './MarkerIcon';
@@ -308,6 +308,34 @@ function createProposalPopupContent(item, user) {
   return div;
 }
 
+function createEvReportPopupContent(item, user) {
+  const div = document.createElement('div');
+  div.className = 'popup-content';
+  const h3 = document.createElement('h3');
+  h3.textContent = item.hang_xe ? `Điểm sạc ${item.hang_xe}` : `Điểm sạc #${item.id}`;
+  div.appendChild(h3);
+
+  const addRow = (label, value) => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = `${label}: `;
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(value || '_'));
+    div.appendChild(p);
+  };
+
+  addRow('Hãng xe', item.hang_xe);
+  addRow('Địa chỉ', item.address);
+  addRow('Phường/Xã', item.ward);
+  addRow('Tỉnh/Thành', item.province);
+
+  if (canOpenAdminRecord(user)) {
+    renderAdminLink(div, `/admin/ev-reports/view=${item.id}`);
+  }
+
+  return div;
+}
+
 const MapView = ({
   onMarkerClick,
   selectingLocation,
@@ -324,6 +352,7 @@ const MapView = ({
 }) => {
   const [stations, setStations] = useState([]);
   const [proposals, setProposals] = useState([]);
+  const [evReports, setEvReports] = useState([]);
   const { token } = useAuth();
   const markerIconsVersion = useMarkerIcons();
   const { stationStatuses, proposalStatuses, proposalLegendStatuses } = useMapStatuses();
@@ -583,13 +612,15 @@ const MapView = ({
 
   const fetchData = useCallback(async (signal) => {
     try {
-      const [stationsRes, proposalsRes] = await Promise.all([
+      const [stationsRes, proposalsRes, evReportsRes] = await Promise.all([
         stationService.getAll(token),
-        proposalService.getAll(token)
+        proposalService.getAll(token),
+        evReportService.getAll().catch(() => null)
       ]);
       if (!signal?.aborted) {
         if (stationsRes.success) setStations(stationsRes.data);
         if (proposalsRes.success) setProposals(proposalsRes.data);
+        if (evReportsRes && evReportsRes.success) setEvReports(evReportsRes.data);
       }
     } catch (error) {
       if (error.name !== 'AbortError') console.error('Error fetching data:', error);
@@ -787,6 +818,11 @@ const MapView = ({
     return list;
   }, [proposals, filters, user, proposalLegendStatuses]);
 
+  const visibleEvReports = useMemo(() => {
+    if (!filters || filters.hideEvReports) return [];
+    return evReports;
+  }, [evReports, filters]);
+
   const layerStations = useMemo(() => {
     if (!highlightIds) return visibleStations;
     const ids = new Set(highlightIds.stations);
@@ -807,11 +843,16 @@ const MapView = ({
     () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') })),
     [layerProposals, markerIconsVersion]
   );
+  const canvasEvReports = useMemo(
+    () => visibleEvReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') })),
+    [visibleEvReports, markerIconsVersion]
+  );
 
-  snapCandidateRef.current = { stations: canvasStations, proposals: canvasProposals, myLocation };
+  snapCandidateRef.current = { stations: canvasStations, proposals: canvasProposals, evReports: canvasEvReports, myLocation };
 
   const renderStationPopup = useCallback((item) => createStationPopupContent(item, user), [user]);
   const renderProposalPopup = useCallback((item) => createProposalPopupContent(item, user), [user]);
+  const renderEvReportPopup = useCallback((item) => createEvReportPopupContent(item, user), [user]);
   const renderDuplicatePopup = useCallback((pair) => createDuplicatePopupContent(pair), []);
   const renderSelectedPopup = useCallback(
     () => createPositionPopupContent('Vị trí đã chọn', selectedPosition || [0, 0]),
@@ -945,6 +986,7 @@ const MapView = ({
         apiKey={config.api_key || ''}
         stations={canvasStations}
         proposals={canvasProposals}
+        evReports={canvasEvReports}
         pairs={pairs}
         showCluster={showCluster}
         clusterOptions={clusterOptions}
@@ -964,6 +1006,7 @@ const MapView = ({
         onMapClick={handleMapClick}
         renderStationPopup={renderStationPopup}
         renderProposalPopup={renderProposalPopup}
+        renderEvReportPopup={renderEvReportPopup}
         renderDuplicatePopup={renderDuplicatePopup}
         renderSelectedPopup={renderSelectedPopup}
         renderMyLocationPopup={renderMyLocationPopup}
