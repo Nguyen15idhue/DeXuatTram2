@@ -312,22 +312,37 @@ function createEvReportPopupContent(item, user) {
   const div = document.createElement('div');
   div.className = 'popup-content';
   const h3 = document.createElement('h3');
-  h3.textContent = item.hang_xe ? `Điểm sạc ${item.hang_xe}` : `Điểm sạc #${item.id}`;
+  h3.textContent = 'Nhu cầu sạc xe điện';
   div.appendChild(h3);
 
   const addRow = (label, value) => {
+    if (value === undefined || value === null || value === '') return;
     const p = document.createElement('p');
     const strong = document.createElement('strong');
     strong.textContent = `${label}: `;
     p.appendChild(strong);
-    p.appendChild(document.createTextNode(value || '_'));
+    p.appendChild(document.createTextNode(value));
     div.appendChild(p);
   };
 
-  addRow('Hãng xe', item.hang_xe);
+  addRow('Nhu cầu sạc', item.hang_xe);
   addRow('Địa chỉ', item.address);
   addRow('Phường/Xã', item.ward);
   addRow('Tỉnh/Thành', item.province);
+  addRow('Người gửi', item.full_name);
+
+  // SĐT người gửi chỉ có khi đã đăng nhập (bấm gọi nhanh)
+  if (item.phone) {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = 'SĐT: ';
+    const a = document.createElement('a');
+    a.href = `tel:${item.phone}`;
+    a.textContent = item.phone;
+    p.appendChild(strong);
+    p.appendChild(a);
+    div.appendChild(p);
+  }
 
   if (canOpenAdminRecord(user)) {
     renderAdminLink(div, `/admin/ev-reports/view=${item.id}`);
@@ -615,7 +630,7 @@ const MapView = ({
       const [stationsRes, proposalsRes, evReportsRes] = await Promise.all([
         stationService.getAll(token),
         proposalService.getAll(token),
-        evReportService.getAll().catch(() => null)
+        evReportService.getAll(token).catch(() => null)
       ]);
       if (!signal?.aborted) {
         if (stationsRes.success) setStations(stationsRes.data);

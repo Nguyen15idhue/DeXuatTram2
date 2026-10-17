@@ -4,6 +4,10 @@ const proximityService = require("../services/proximityService");
 exports.getAll = async (req, res) => {
   try {
     const reports = await evReportService.getPublicReports();
+    // Tên/SĐT người gửi chỉ trả cho người đã đăng nhập (giống chu_tram của stations)
+    if (!req.user) {
+      reports.forEach((r) => { delete r.full_name; delete r.phone; });
+    }
     res.json({ success: true, data: reports });
   } catch (error) {
     console.error("Get ev reports error:", error);
@@ -18,6 +22,10 @@ exports.getById = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Không tìm thấy vị trí chia sẻ" });
+    }
+    if (!req.user) {
+      delete report.full_name;
+      delete report.phone;
     }
     res.json({ success: true, data: report });
   } catch (error) {

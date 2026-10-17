@@ -116,8 +116,12 @@ function createNearbyPopup(title, item, status, entity) {
     addRow('Chủ trạm', item.chu_tram);
     addRow('SĐT chủ trạm', item.sdt_chu_tram);
   } else if (entity === 'ev_report') {
-    addRow('Hãng xe', item.hang_xe);
+    addRow('Nhu cầu sạc', item.hang_xe);
+    addRow('Người gửi', item.full_name);
+    addRow('SĐT', item.phone);
     addRow('Địa chỉ', item.address);
+    addRow('Khoảng cách', `${Number(item._distanceKm || 0).toFixed(2)} km`);
+    return div;
   } else {
     addRow('Mã đề xuất', item.ma_de_xuat);
     addRow('Người đề xuất', getProposalDisplayName(item));
@@ -202,7 +206,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
     let cancelled = false;
     (async () => {
       try {
-        const [s, p, e] = await Promise.all([stationService.getAll(token), proposalService.getAll(token), evReportService.getAll().catch(() => null)]);
+        const [s, p, e] = await Promise.all([stationService.getAll(token), proposalService.getAll(token), evReportService.getAll(token).catch(() => null)]);
         if (cancelled) return;
         if (s.success) setStations(s.data);
         if (p.success) setProposals(p.data);
@@ -440,7 +444,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
   const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
   const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');
-  const renderEvReportPopup = (item) => createNearbyPopup(item.hang_xe ? `Điểm sạc ${item.hang_xe}` : `Điểm sạc #${item.id}`, item, item.status, 'ev_report');
+  const renderEvReportPopup = (item) => createNearbyPopup('Nhu cầu sạc xe điện', item, item.status, 'ev_report');
 
   const isMaplibre = renderer === 'maplibre';
   const currentProvider = mapConfigData ? getProviderById(mapConfigData.tile_provider_id || mapConfigData.tile_provider || 'leaflet-osm') : null;

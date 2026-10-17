@@ -27,7 +27,8 @@ import {
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 const ENTITY = "ev_charging_reports";
 const LOCATION_KEYS = ["province", "ward", "address"];
-const INFO_KEYS = ["full_name", "phone", "hang_xe"];
+const INFO_KEYS = ["full_name", "phone", "hang_xe", "nhom_phuong_tien"];
+const HANG_XE_OTHER = "__other__";
 const EMPTY_VALUES = {
   province: "",
   ward: "",
@@ -35,6 +36,8 @@ const EMPTY_VALUES = {
   full_name: "",
   phone: "",
   hang_xe: "",
+  hang_xe_khac: "",
+  nhom_phuong_tien: [],
 };
 
 const EvReportGuestPage = () => {
@@ -236,6 +239,8 @@ const EvReportGuestPage = () => {
   const handleChange = (key, value) => {
     setValues((prev) => {
       const next = { ...prev, [key]: value };
+      // Rời khỏi "Khác" thì xoá hãng xe nhập tay
+      if (key === "hang_xe" && value !== HANG_XE_OTHER) next.hang_xe_khac = "";
       // Xoá giá trị con không còn hợp lệ khi select cha đổi (cascading)
       fields.forEach((f) => {
         if (!f.parent_field) return;
@@ -251,7 +256,12 @@ const EvReportGuestPage = () => {
       });
       return next;
     });
-    setErrors((prev) => (prev[key] ? { ...prev, [key]: "" } : prev));
+    setErrors((prev) => {
+      if (!prev[key] && !(key === "hang_xe_khac" && prev.hang_xe)) return prev;
+      const next = { ...prev, [key]: "" };
+      if (key === "hang_xe_khac") next.hang_xe = "";
+      return next;
+    });
   };
 
   const applyCoords = (lat, lng) => {
@@ -381,10 +391,21 @@ const EvReportGuestPage = () => {
       const f = fieldsByKey[k];
       if (!f || !f.required) return;
       const v = values[k];
-      if (v === "" || v === null || v === undefined) {
+      if (
+        v === "" ||
+        v === null ||
+        v === undefined ||
+        (Array.isArray(v) && v.length === 0)
+      ) {
         errs[k] = `${f.label} là bắt buộc`;
       }
     });
+    if (
+      values.hang_xe === HANG_XE_OTHER &&
+      !String(values.hang_xe_khac || "").trim()
+    ) {
+      errs.hang_xe = "Vui lòng nhập hãng xe bạn đang sử dụng";
+    }
     return errs;
   };
 
@@ -409,7 +430,11 @@ const EvReportGuestPage = () => {
         longitude: mapCoords.longitude,
         full_name: values.full_name,
         phone: values.phone,
-        hang_xe: values.hang_xe,
+        hang_xe:
+          values.hang_xe === HANG_XE_OTHER
+            ? String(values.hang_xe_khac || "").trim()
+            : values.hang_xe,
+        nhom_phuong_tien: values.nhom_phuong_tien,
         province: values.province,
         ward: values.ward,
         address: values.address,
@@ -475,11 +500,15 @@ const EvReportGuestPage = () => {
       rawVal !== null &&
       rawVal !== "" &&
       !(Array.isArray(rawVal) && rawVal.length === 0);
+    let options = resolveOptions(field, values);
+    if (key === "hang_xe") {
+      options = [...options, { value: HANG_XE_OTHER, label: "Khác (nhập tay)" }];
+    }
     const fieldForRender = {
       ...field,
       placeholder: field.placeholder || "",
       required,
-      options: resolveOptions(field, values),
+      options,
     };
     return (
       <div className="form-cell-content" key={key}>
@@ -502,6 +531,15 @@ const EvReportGuestPage = () => {
             dataListOptions={dlOptions}
             formValues={values}
           />
+          {key === "hang_xe" && values.hang_xe === HANG_XE_OTHER && (
+            <input
+              type="text"
+              className="input input-bordered input-sm w-full mt-2"
+              placeholder="Nhập hãng xe bạn đang sử dụng"
+              value={values.hang_xe_khac || ""}
+              onChange={(e) => handleChange("hang_xe_khac", e.target.value)}
+            />
+          )}
           {field.help_text && (
             <div className="field-help">{field.help_text}</div>
           )}
@@ -660,6 +698,15 @@ const EvReportGuestPage = () => {
               Hãng xe: <strong>{done.hang_xe || "—"}</strong>
             </div>
             <div>
+              Nhóm phương tiện:{" "}
+              <strong>
+                {Array.isArray(done.nhom_phuong_tien) &&
+                done.nhom_phuong_tien.length > 0
+                  ? done.nhom_phuong_tien.join(", ")
+                  : done.nhom_phuong_tien || "—"}
+              </strong>
+            </div>
+            <div>
               Địa chỉ: <strong>{done.address || done.province || "—"}</strong>
             </div>
           </div>
@@ -738,6 +785,7 @@ const EvReportGuestPage = () => {
                 </legend>
                 {renderRow(["full_name", "phone"])}
                 {renderRow(["hang_xe"])}
+                {renderRow(["nhom_phuong_tien"])}
               </fieldset>
 
               <input

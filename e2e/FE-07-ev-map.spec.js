@@ -44,7 +44,7 @@ test.describe('FE-07 ev reports map layer (hidden by default, checkbox shows all
 
   test.beforeAll(async ({ request }) => {
     const res = await request.post(`${API}/api/ev-reports/guest`, {
-      data: { full_name: seedName, phone: '0909990001', latitude: 21.03, longitude: 105.85, hang_xe: 'VinFast', province: 'Thành phố Hà Nội' }
+      data: { full_name: seedName, phone: '0909990001', latitude: 21.03, longitude: 105.85, hang_xe: 'VinFast', province: 'Thành phố Hà Nội', nhom_phuong_tien: ['Xe cá nhân/Gia đình'] }
     });
     expect(res.ok(), 'seed row').toBeTruthy();
     seedId = (await res.json()).data.id;

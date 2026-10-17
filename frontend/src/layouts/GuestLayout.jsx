@@ -13,7 +13,7 @@ const GuestLayout = () => {
           <Outlet />
         </Suspense>
       </main>
-      <footer className="footer footer-center mt-20 p-4 bg-base-200 text-base-content text-sm">
+      <footer className="footer footer-center mt-auto p-4 bg-base-200 text-base-content text-sm">
         Gửi nhu cầu vị trí sạc xe
       </footer>
     </div>

@@ -318,11 +318,11 @@ export const proposalService = {
 };
 
 export const evReportService = {
-  getAll() {
-    return api.get('/ev-reports');
+  getAll(token) {
+    return token ? api.getWithAuth('/ev-reports', token) : api.get('/ev-reports');
   },
-  getById(id) {
-    return api.get(`/ev-reports/${id}`);
+  getById(id, token) {
+    return token ? api.getWithAuth(`/ev-reports/${id}`, token) : api.get(`/ev-reports/${id}`);
   },
   createGuest(data) {
     return api.post('/ev-reports/guest', data);

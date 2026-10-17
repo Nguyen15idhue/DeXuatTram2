@@ -83,6 +83,8 @@ exports.validateField = (fieldDef, value) => {
     case 'multiselect':
       if (!Array.isArray(value)) {
         errors.push(`${fieldDef.label} phải là mảng`);
+      } else if (value.length === 0) {
+        if (fieldDef.required) errors.push(`${fieldDef.label} là bắt buộc`);
       } else {
         const multiOptions = exports.parseOptions(fieldDef.options).map(o => (o && typeof o === 'object' ? (o.value ?? o.label) : o));
         if (multiOptions.length > 0) {

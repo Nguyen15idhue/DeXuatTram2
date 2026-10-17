@@ -41,7 +41,7 @@ const fail = (message, statusCode = 400) => {
 exports.getPublicReports = async () => {
   const [rows] = await pool.query(
     `SELECT r.id, r.latitude, r.longitude, r.address, r.province, r.ward,
-            r.created_at,
+            r.created_at, r.full_name, r.phone,
             JSON_UNQUOTE(JSON_EXTRACT(r.custom_data, '$.hang_xe')) AS hang_xe
        FROM ev_charging_reports r
       ORDER BY r.created_at DESC
@@ -53,7 +53,7 @@ exports.getPublicReports = async () => {
 exports.getPublicReportById = async (id) => {
   const [rows] = await pool.query(
     `SELECT r.id, r.latitude, r.longitude, r.address, r.province, r.ward,
-            r.created_at,
+            r.created_at, r.full_name, r.phone,
             JSON_UNQUOTE(JSON_EXTRACT(r.custom_data, '$.hang_xe')) AS hang_xe
        FROM ev_charging_reports r
       WHERE r.id = ?`,
