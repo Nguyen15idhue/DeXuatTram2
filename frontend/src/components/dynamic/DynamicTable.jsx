@@ -78,6 +78,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, ac
   const loadViewConfig = async () => {
     try {
       setLoading(true);
+      setError('');
       const res = await dynamicService.getViewConfig(entity, viewId);
       if (res.success) {
         setColumns(res.data.fields || []);
@@ -178,9 +179,6 @@ const toDisplayValue = (val) => {
     navigate(`/admin/${entityPath}/edit=${row.id}`);
   };
 
-  if (error) return <div className="alert alert-error"><span>{error}</span></div>;
-  if (columns.length === 0 && !loading) return <div className="text-center py-8 text-base-content/40">Chưa có cột nào được cấu hình</div>;
-
   const visibleColumns = columns.filter(c => c.visible);
   const hasFilters = visibleColumns.some(c => c.filterable);
   const pinAfterIdx = actionAfterKey
@@ -274,6 +272,9 @@ const toDisplayValue = (val) => {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, [frozenKeys, hasSelection, hasLeading, visibleColumns, pinActions, pinAfterIdx, (data || []).length]);
+
+  if (error) return <div className="alert alert-error"><span>{error}</span></div>;
+  if (columns.length === 0 && !loading) return <div className="text-center py-8 text-base-content/40">Chưa có cột nào được cấu hình</div>;
 
   const frozenCell = (key, kind, base = '', parity = 0) => {
     if (!frozenMap || !frozenMap.has(key)) return base ? { className: base } : {};
