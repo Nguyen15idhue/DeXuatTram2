@@ -19,22 +19,25 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Chia sẻ điểm sạc xe điện' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Đăng ký nhu cầu vị trí sạc xe điện' })).toBeVisible();
     await expect(page.getByText('Họ và tên')).toBeVisible({ timeout: 15000 });
 
-    const mapBox = page.locator('.leaflet-container');
-    await expect(mapBox).toBeVisible({ timeout: 20000 });
-    const locLegend = page.locator('legend.form-section-title', { hasText: 'Vị trí thường xuyên sạc' }).first();
+    const mapBox = page.locator('.evr-map-box');
+    // Chờ lớp renderer (maplibre hoặc leaflet) sẵn sàng bên trong khung bản đồ
+    await expect(page.locator('.maplibregl-canvas, .leaflet-container')).toBeVisible({ timeout: 30000 });
+    // GPS: các ô vị trí (Tỉnh/Xã/Địa chỉ) nằm DƯỚI bản đồ
+    const locField = page.locator('[data-field-key="province"]');
+    await expect(locField).toBeVisible();
     const mapY = (await mapBox.boundingBox()).y;
-    const formY = (await locLegend.boundingBox()).y;
-    expect(mapY, 'gps: bản đồ nằm trên session vị trí').toBeLessThan(formY);
+    const locY = (await locField.boundingBox()).y;
+    expect(mapY, 'gps: bản đồ nằm trên ô vị trí').toBeLessThan(locY);
 
     await page.getByRole('button', { name: 'Nhập địa chỉ' }).click();
-    const locLegend2 = page.locator('legend.form-section-title', { hasText: 'Vị trí thường xuyên sạc' }).first();
-    await expect(locLegend2).toBeVisible();
-    const formY2 = (await locLegend2.boundingBox()).y;
+    await expect(mapBox).toBeVisible({ timeout: 20000 });
+    await expect(locField).toBeVisible();
+    const locY2 = (await locField.boundingBox()).y;
     const mapY2 = (await mapBox.boundingBox()).y;
-    expect(formY2, 'manual: session vị trí nằm trên bản đồ').toBeLessThan(mapY2);
+    expect(locY2, 'manual: ô vị trí nằm trên bản đồ').toBeLessThan(mapY2);
     expect(errors, `pageerror: ${errors.join('; ')}`).toEqual([]);
   });
 
@@ -74,7 +77,7 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     expect(Math.abs(inputBox.y - dropBoxAfter.y) < 40, 'ô tìm kiếm vẫn dính đầu dropdown khi cuộn').toBe(true);
   });
 
-  test('manual mode full submit via outside save button shows thank-you', async ({ page }) => {
+  test('manual mode full submit shows thank-you', async ({ page }) => {
     await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('Họ và tên')).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: 'Nhập địa chỉ' }).click();
@@ -90,8 +93,9 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     await province.locator('.dynamic-field-select .form-control').click();
     await province.locator('.dynamic-select-dropdown').getByText('Tp Hồ Chí Minh', { exact: true }).click({ timeout: 15000 });
 
-    const mapBox = page.locator('.leaflet-container');
-    await mapBox.click({ position: { x: 200, y: 150 } });
+    const mapSurface = page.locator('.maplibregl-canvas, .leaflet-container');
+    await expect(mapSurface).toBeVisible({ timeout: 30000 });
+    await mapSurface.click({ position: { x: 200, y: 150 } });
     await expect(page.getByText(/Vĩ độ:/)).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Lưu thông tin' }).click();
