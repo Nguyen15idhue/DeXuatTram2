@@ -26,6 +26,22 @@ test.describe('FE-07 ev reports map layer (hidden by default, checkbox shows all
   let seedId = null;
   const seedName = `FE07 Seed ${Date.now()}`;
 
+  // Local cấu hình bản đồ đang là MapLibre: marker vẽ bằng symbol layer trên
+  // canvas nên KHÔNG có phần tử DOM để đếm. Ép renderer Leaflet cho test này
+  // (giữ nguyên provider/tile thật, chỉ đổi renderer) để đếm marker qua DOM.
+  test.beforeEach(async ({ page, request }) => {
+    const res = await request.get(`${API}/api/map-configs?entity=stations`);
+    const json = res.ok() ? await res.json() : { data: {} };
+    const data = { ...(json.data || {}), renderer: 'leaflet' };
+    await page.route('**/api/map-configs*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data })
+      })
+    );
+  });
+
   test.beforeAll(async ({ request }) => {
     const res = await request.post(`${API}/api/ev-reports/guest`, {
       data: { full_name: seedName, phone: '0909990001', latitude: 21.03, longitude: 105.85, hang_xe: 'VinFast', province: 'Thành phố Hà Nội' }
