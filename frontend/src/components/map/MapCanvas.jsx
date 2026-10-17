@@ -11,6 +11,7 @@ export default function MapCanvas({
   apiKey = '',
   stations = [],
   proposals = [],
+  evReports = [],
   pairs = [],
   showCluster = true,
   clusterOptions = null,
@@ -32,6 +33,7 @@ export default function MapCanvas({
   onMarkerDblClick,
   renderStationPopup,
   renderProposalPopup,
+  renderEvReportPopup,
   renderDuplicatePopup,
   renderSelectedPopup,
   renderMyLocationPopup,
@@ -54,7 +56,7 @@ export default function MapCanvas({
   const measureClickRef = useRef({ measureActive, onMeasureClick, onMeasureSnap });
   const markerClickRef = useRef(onMarkerClick);
   const markerDblClickRef = useRef(onMarkerDblClick);
-  const markersSigRef = useRef({ runtime: null, stations: null, proposals: null, cluster: null });
+  const markersSigRef = useRef({ runtime: null, stations: null, proposals: null, evReports: null, cluster: null });
   const argsRef = useRef({ center, zoom, tile, vectorStyle, apiKey });
   clickRef.current = { selectingLocation, onMapSelectClick, onMapClick };
   measureClickRef.current = { measureActive, onMeasureClick, onMeasureSnap };
@@ -133,7 +135,7 @@ export default function MapCanvas({
     if (!runtime) return;
     const sig = markersSigRef.current;
     const clusterKey = `${showCluster ? 'on' : 'off'}:${clusterSig(clusterOptions)}`;
-    const sameData = sig.runtime === runtime && sig.stations === stations && sig.proposals === proposals && sig.cluster === clusterKey;
+    const sameData = sig.runtime === runtime && sig.stations === stations && sig.proposals === proposals && sig.evReports === evReports && sig.cluster === clusterKey;
     if (sameData) {
       if (sig.labels === showStationLabels) return;
       markersSigRef.current = { ...sig, labels: showStationLabels };
@@ -142,11 +144,12 @@ export default function MapCanvas({
         return;
       }
     } else {
-      markersSigRef.current = { runtime, stations, proposals, cluster: clusterKey, labels: showStationLabels };
+      markersSigRef.current = { runtime, stations, proposals, evReports, cluster: clusterKey, labels: showStationLabels };
     }
     const items = [
       ...stations.map((s) => ({ ...s, _type: 'station', _color: s._color, _label: s.ma_tram || s.ma_tram_gen || s.name || `Trạm #${s.id}` })),
       ...proposals.map((p) => ({ ...p, _type: 'proposal', _color: p._color, _label: p.ma_de_xuat || `Đề xuất #${p.id}` })),
+      ...evReports.map((r) => ({ ...r, _type: 'ev_report', _color: r._color, _label: r.hang_xe ? `${r.hang_xe} #${r.id}` : `Điểm sạc #${r.id}` })),
     ];
     runtime.setMarkers(items, {
       cluster: showCluster,
@@ -154,9 +157,9 @@ export default function MapCanvas({
       showLabels: showStationLabels,
       onMarkerClick: (...args) => markerClickRef.current && markerClickRef.current(...args),
       onMarkerDblClick: (...args) => markerDblClickRef.current && markerDblClickRef.current(...args),
-      renderPopup: (item) => (item._type === 'station' ? renderStationPopup(item) : renderProposalPopup(item)),
+      renderPopup: (item) => (item._type === 'station' ? renderStationPopup(item) : item._type === 'ev_report' && renderEvReportPopup ? renderEvReportPopup(item) : renderProposalPopup(item)),
     });
-  }, [runtimeVersion, stations, proposals, showCluster, clusterOptions && `${clusterOptions.radius}/${clusterOptions.maxZoom}`, showStationLabels, renderStationPopup, renderProposalPopup]);
+  }, [runtimeVersion, stations, proposals, evReports, showCluster, clusterOptions && `${clusterOptions.radius}/${clusterOptions.maxZoom}`, showStationLabels, renderStationPopup, renderProposalPopup, renderEvReportPopup]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

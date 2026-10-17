@@ -24,6 +24,7 @@ export const EMPTY_MAP_FILTERS = {
   hideStations: false,
   hideStationPlans: true,
   hideProposals: false,
+  hideEvReports: true,
 };
 
 const STATUS_TO_HIDDEN_MAP = {
@@ -217,6 +218,15 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
               }
             />
             Đề xuất
+          </label>
+
+          <label className="map-filter-check">
+            <input
+              type="checkbox"
+              checked={!filters.hideEvReports}
+              onChange={(e) => set({ hideEvReports: !e.target.checked })}
+            />
+            Nhu cầu sạc xe
           </label>
         </div>
       </div>

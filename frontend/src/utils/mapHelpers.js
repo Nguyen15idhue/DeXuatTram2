@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import { mapService } from '../services/api';
-import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP, getStatusColor } from './mapStatuses';
+import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP, EV_REPORT_STATUS_MAP, getStatusColor } from './mapStatuses';
 import { iconSvgMarkup, isValidMarkerBadge, MARKER_ICON_BG } from './mapMarkerIcons';
 
 export const MARKER_COLORS = {
@@ -21,6 +21,7 @@ export const getMarkerColor = (status, entity) => {
   if (dynamic) return dynamic;
   if (entity === 'station' && STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
   if (entity === 'proposal' && PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
+  if (entity === 'ev_report' && EV_REPORT_STATUS_MAP[status]) return EV_REPORT_STATUS_MAP[status].color;
   if (STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
   if (PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
   return MARKER_COLORS[status] || '#6b7280';

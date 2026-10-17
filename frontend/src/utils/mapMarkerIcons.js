@@ -273,6 +273,18 @@ const ICONS = {
       ['circle', { cx: '16.4', cy: '17.4', r: '0.8', fill: '#e5e7eb' }],
     ],
   },
+  evCar: {
+    defs: '<linearGradient id="g-evcar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#059669"/></linearGradient>',
+    nodes: [
+      ['path', { d: 'm4.6 13.2 1.6-4.2c.4-1 1.1-1.4 2.1-1.4h7.4c1 0 1.7.4 2.1 1.4l1.6 4.2c1.2.3 2 1 2 2v2.2H2.6v-2.2c0-1 .8-1.7 2-2z', fill: 'url(#g-evcar)' }],
+      ['path', { d: 'M7.4 11.4 8.4 9c.2-.6.6-.8 1.2-.8h4.8c.6 0 1 .2 1.2.8l1 2.4z', fill: '#dbeafe' }],
+      ['path', { d: 'M13.5 2 5 13.2h5.2L9.4 22 19 10.4h-5.3z', fill: '#facc15', stroke: '#ffffff', 'stroke-width': '1.2', 'stroke-linejoin': 'round', transform: 'translate(10.5,7.5) scale(0.38)' }],
+      ['circle', { cx: '7.6', cy: '17.4', r: '2.1', fill: '#1f2937' }],
+      ['circle', { cx: '16.4', cy: '17.4', r: '2.1', fill: '#1f2937' }],
+      ['circle', { cx: '7.6', cy: '17.4', r: '0.8', fill: '#e5e7eb' }],
+      ['circle', { cx: '16.4', cy: '17.4', r: '0.8', fill: '#e5e7eb' }],
+    ],
+  },
   truck: {
     defs: '<linearGradient id="g-tr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#2563eb"/></linearGradient>',
     nodes: [
@@ -584,7 +596,7 @@ const ICONS = {
 };
 
 const GROUPS = [
-  { title: 'Trạm & năng lượng', ids: ['bolt', 'plug', 'battery', 'batteryLow', 'evStation', 'solar', 'meter', 'transformer', 'cabinet'] },
+  { title: 'Trạm & năng lượng', ids: ['bolt', 'plug', 'battery', 'batteryLow', 'evStation', 'evCar', 'solar', 'meter', 'transformer', 'cabinet'] },
   { title: 'Trạng thái & quy trình', ids: ['flag', 'flagCheck', 'wrench', 'clock', 'hourglass', 'search', 'eye', 'clipboard', 'folderCheck', 'document', 'check', 'pinCheck', 'cross', 'alert', 'info', 'play', 'pause', 'stop', 'ban', 'lock', 'bell', 'stamp', 'handshake', 'scale', 'penSign', 'calendarCheck', 'send', 'megaphone'] },
   { title: 'Địa điểm & hạ tầng', ids: ['pin', 'home', 'building', 'factory', 'warehouse', 'bank', 'hospital', 'market', 'store', 'parkingP', 'cone', 'road', 'car', 'truck', 'truckCheck'] },
   { title: 'Đánh dấu & xếp hạng', ids: ['star', 'medal', 'target', 'chartUp', 'shield', 'person', 'phone', 'receipt', 'banknote', 'keyRound', 'idCard', 'gear', 'bulb', 'bookOpen'] },
@@ -597,6 +609,7 @@ const ICON_LABELS = {
   battery: 'Pin',
   batteryLow: 'Pin yếu',
   evStation: 'Trạm sạc',
+  evCar: 'Ô tô điện',
   solar: 'Điện mặt trời',
   meter: 'Công tơ',
   transformer: 'Máy biến áp',
@@ -714,13 +727,14 @@ export const iconSvgWithBadge = (id, badge, { size = 32 } = {}) => {
 export const STATUS_ICON_DEFAULTS = {
   station: { PLANNING: 'target', ACTIVE: 'evStation', DEPLOYING: 'wrench', REJECTED: 'ban' },
   proposal: { PENDING: 'clock', REVIEWING: 'search', APPROVED: 'check', REJECTED: 'cross', CANCELLED: 'ban', CONTRACT_SIGNED: 'document', CONTRACT_FAILED: 'alert' },
+  ev_report: { ACTIVE: 'evCar', INACTIVE: 'ban' },
 };
 
-const ENTITY_TO_MAP = { stations: 'station', station_proposals: 'proposal' };
+const ENTITY_TO_MAP = { stations: 'station', station_proposals: 'proposal', ev_charging_reports: 'ev_report' };
 
 let configCache = null;
 let loadPromise = null;
-let statusOptionsCache = { station: null, proposal: null };
+let statusOptionsCache = { station: null, proposal: null, ev_report: null };
 
 const parseOptions = (raw) => {
   if (!raw) return [];
@@ -736,8 +750,8 @@ export const MARKER_ICON_BG = { CIRCLE: 'circle', FLAT: 'flat' };
 export const isValidMarkerIconBg = (b) => b === MARKER_ICON_BG.CIRCLE || b === MARKER_ICON_BG.FLAT;
 
 const extractOverrides = (defs) => {
-  const out = { station: {}, proposal: {} };
-  const bg = { station: {}, proposal: {} };
+  const out = { station: {}, proposal: {}, ev_report: {} };
+  const bg = { station: {}, proposal: {}, ev_report: {} };
   (defs || []).forEach((fd) => {
     if (!fd || fd.key !== 'status' || !ENTITY_TO_MAP[fd.entity]) return;
     parseOptions(fd.options).forEach((opt) => {
@@ -752,7 +766,7 @@ const extractOverrides = (defs) => {
 };
 
 const extractStatusOptions = (defs) => {
-  const out = { station: [], proposal: [] };
+  const out = { station: [], proposal: [], ev_report: [] };
   (defs || []).forEach((fd) => {
     if (!fd || fd.key !== 'status' || !ENTITY_TO_MAP[fd.entity]) return;
     parseOptions(fd.options).forEach((opt) => {
@@ -775,30 +789,37 @@ export const loadMarkerIconConfig = (force = false) => {
   loadPromise = Promise.all([
     fieldDefinitionService.getByEntity('stations'),
     fieldDefinitionService.getByEntity('station_proposals'),
+    fieldDefinitionService.getByEntity('ev_charging_reports'),
   ]).then((resList) => {
-    const overrides = { station: {}, proposal: {} };
-    const bgOverrides = { station: {}, proposal: {} };
-    const statusOpts = { station: [], proposal: [] };
+    const overrides = { station: {}, proposal: {}, ev_report: {} };
+    const bgOverrides = { station: {}, proposal: {}, ev_report: {} };
+    const statusOpts = { station: [], proposal: [], ev_report: [] };
     resList.forEach((res) => {
       if (res && res.success) {
         const part = extractOverrides(res.data);
         Object.assign(overrides.station, part.overrides.station || {});
         Object.assign(overrides.proposal, part.overrides.proposal || {});
+        Object.assign(overrides.ev_report, part.overrides.ev_report || {});
         Object.assign(bgOverrides.station, part.bg.station || {});
         Object.assign(bgOverrides.proposal, part.bg.proposal || {});
+        Object.assign(bgOverrides.ev_report, part.bg.ev_report || {});
         const sopts = extractStatusOptions(res.data);
         if (sopts.station.length > 0) statusOpts.station = sopts.station;
         if (sopts.proposal.length > 0) statusOpts.proposal = sopts.proposal;
+        if (sopts.ev_report.length > 0) statusOpts.ev_report = sopts.ev_report;
       }
     });
     if (statusOpts.station.length > 0) statusOptionsCache.station = statusOpts.station;
     if (statusOpts.proposal.length > 0) statusOptionsCache.proposal = statusOpts.proposal;
+    if (statusOpts.ev_report.length > 0) statusOptionsCache.ev_report = statusOpts.ev_report;
     configCache = {
       station: { ...STATUS_ICON_DEFAULTS.station, ...overrides.station },
       proposal: { ...STATUS_ICON_DEFAULTS.proposal, ...overrides.proposal },
+      ev_report: { ...STATUS_ICON_DEFAULTS.ev_report, ...overrides.ev_report },
       bg: {
         station: { ...bgOverrides.station },
         proposal: { ...bgOverrides.proposal },
+        ev_report: { ...bgOverrides.ev_report },
       },
     };
     return configCache;
@@ -806,22 +827,25 @@ export const loadMarkerIconConfig = (force = false) => {
   return loadPromise;
 };
 
+const normEntityKey = (entity) => (entity === 'station' ? 'station' : entity === 'ev_report' ? 'ev_report' : 'proposal');
+
 export const getMarkerIcon = (status, entity) => {
-  const map = configCache && configCache[entity === 'station' ? 'station' : 'proposal'];
+  const key = normEntityKey(entity);
+  const map = configCache && configCache[key];
   if (map && Object.prototype.hasOwnProperty.call(map, status)) return map[status];
-  const defaults = STATUS_ICON_DEFAULTS[entity === 'station' ? 'station' : 'proposal'];
+  const defaults = STATUS_ICON_DEFAULTS[key];
   return defaults[status] || '';
 };
 
 export const getMarkerIconBg = (status, entity) => {
-  const key = entity === 'station' ? 'station' : 'proposal';
+  const key = normEntityKey(entity);
   const map = configCache && configCache.bg && configCache.bg[key];
   if (map && Object.prototype.hasOwnProperty.call(map, status)) return map[status];
   return MARKER_ICON_BG.FLAT;
 };
 
 export const getStatusOptions = (entity) => {
-  const key = entity === 'station' ? 'station' : 'proposal';
+  const key = normEntityKey(entity);
   return statusOptionsCache[key] || null;
 };
 

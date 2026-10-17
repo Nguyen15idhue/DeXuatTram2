@@ -317,6 +317,46 @@ export const proposalService = {
   }
 };
 
+export const evReportService = {
+  getAll() {
+    return api.get('/ev-reports');
+  },
+  getById(id) {
+    return api.get(`/ev-reports/${id}`);
+  },
+  createGuest(data) {
+    return api.post('/ev-reports/guest', data);
+  },
+  checkNearbyPublic(data) {
+    return api.post('/ev-reports/check-nearby-public', data);
+  },
+  adminList(params, token) {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
+    return api.getWithAuth(`/ev-reports/admin/list${qs}`, token);
+  },
+  adminGetById(id, token) {
+    return api.getWithAuth(`/ev-reports/admin/${id}`, token);
+  },
+  adminUpdate(id, data, token) {
+    return api.putWithAuth(`/ev-reports/admin/${id}`, data, token);
+  },
+  adminDelete(id, token) {
+    return api.deleteWithAuth(`/ev-reports/admin/${id}`, token);
+  },
+  adminCreateProposal(id, token) {
+    return api.postWithAuth(`/ev-reports/admin/${id}/create-proposal`, {}, token);
+  },
+  getById(id, token) {
+    return api.getWithAuth(`/ev-reports/admin/${id}`, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/ev-reports/admin/${id}`, data, token);
+  },
+  delete(id, token) {
+    return api.deleteWithAuth(`/ev-reports/admin/${id}`, token);
+  }
+};
+
 export const adminProposalService = {
   getAll(status, token) {
     const query = status ? `?status=${status}` : '';
