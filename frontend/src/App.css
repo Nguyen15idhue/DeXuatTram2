@@ -3652,7 +3652,8 @@ fieldset.form-section,
   min-height: 0;
   width: 100%;
 }
-.location-map-measure-bar {
+.location-map-measure-bar,
+.location-map-note {
   position: absolute;
   left: 50%;
   bottom: 12px;
@@ -3686,7 +3687,8 @@ fieldset.form-section,
     height: 100dvh;
     max-height: 100dvh;
   }
-  .location-map-measure-bar {
+  .location-map-measure-bar,
+  .location-map-note {
     font-size: 11px;
     gap: 6px;
   }
