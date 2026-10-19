@@ -102,6 +102,16 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     await mapSurface.click({ position: { x: 200, y: 150 } });
     await expect(page.getByText(/Vĩ độ:/)).toBeVisible({ timeout: 15000 });
 
+    // Câu hỏi hợp tác lắp đặt trạm sạc là BẮT BUỘC (migration 170):
+    // chưa trả lời -> chặn khi lưu
+    const link = page.locator('[data-field-key="hop_tac_lap_tram"]');
+    await expect(link.locator('label'), 'nhãn câu hỏi hợp tác').toContainText(/hợp tác/i);
+    await page.getByRole('button', { name: 'Lưu thông tin' }).click();
+    await expect(link.locator('.field-error')).toHaveText(/là bắt buộc/);
+
+    await link.locator('.dynamic-field-select .form-control').click();
+    await link.locator('.dynamic-select-dropdown').getByText('Có', { exact: true }).click();
+
     await page.getByRole('button', { name: 'Lưu thông tin' }).click();
     await expect(page.getByText('Cảm ơn bạn đã chia sẻ!')).toBeVisible({ timeout: 30000 });
     await expect(page.getByRole('button', { name: 'Gửi thêm vị trí khác' })).toBeVisible();
@@ -139,6 +149,75 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     await brand.locator('.dynamic-field-select .form-control').click();
     await brand.locator('.dynamic-select-dropdown').getByText('VinFast', { exact: true }).click();
     await expect(freeText).toHaveCount(0);
+  });
+
+  test('nearby preview: search address opens 20km stations modal', async ({ page }) => {
+    // Mock geocode + stations: chỉ ACTIVE/DEPLOYING trong 20 km mới hiện
+    await page.route('**/api/geocode/search', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            found: true,
+            results: [
+              { name: 'Thạch Hà', formatted: 'Thạch Hà, Hà Tĩnh, Việt Nam', lat: 18.352, lon: 105.901 }
+            ]
+          }
+        })
+      })
+    );
+    const station = (id, status, lat, lng) => ({
+      id,
+      name: `Trạm ${id}`,
+      status,
+      latitude: lat,
+      longitude: lng,
+      address: 'Hà Tĩnh'
+    });
+    await page.route('**/api/stations*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: [
+            station(1, 'ACTIVE', 18.352, 105.901),
+            station(2, 'DEPLOYING', 18.42, 105.95),
+            station(3, 'PLANNING', 18.36, 105.91),
+            station(4, 'ACTIVE', 19.5, 105.9)
+          ]
+        })
+      })
+    );
+
+    await page.goto('/nhu-cau-sac-xe', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Họ và tên')).toBeVisible({ timeout: 15000 });
+
+    // Nút "Vị trí của tôi" nằm dòng riêng bên trái ô tìm kiếm
+    const myLoc = page.getByRole('button', { name: 'Vị trí của tôi', exact: true });
+    const searchBox = page.locator('input[placeholder="Hoặc nhập địa chỉ cần xem trạm sạc lân cận..."]');
+    await expect(myLoc).toBeVisible();
+    await expect(searchBox).toBeVisible();
+    const myLocBox = await myLoc.boundingBox();
+    const searchBoxPos = await searchBox.boundingBox();
+    expect(myLocBox.x + myLocBox.width, 'ô tìm kiếm nằm bên phải nút').toBeLessThanOrEqual(searchBoxPos.x);
+
+    await searchBox.fill('Thạch Hà, Hà Tĩnh');
+    // Tự tìm khi gõ (debounce) — không cần nút "Tìm"
+    await expect(page.getByRole('button', { name: 'Tìm', exact: true })).toHaveCount(0);
+    await page.locator('.dynamic-select-dropdown > div').first().waitFor({ state: 'visible', timeout: 20000 });
+    await page.locator('.dynamic-select-dropdown > div').first().click();
+
+    const modal = page.locator('.location-map-modal');
+    await expect(modal).toBeVisible({ timeout: 20000 });
+    await expect(modal.locator('.location-map-toolbar')).toContainText('Bán kính 20 km');
+    await expect(modal.locator('.location-map-toolbar')).toContainText('2 trạm lân cận');
+    // Legend khoá cứng 2 trạng thái: Hoạt động + Triển khai
+    await expect(modal.locator('.map-legend-item')).toHaveCount(2);
+    await expect(modal.locator('.map-legend')).toContainText('Hoạt động');
+    await expect(modal.locator('.map-legend')).toContainText('Triển khai');
   });
 
   test('admin ev-reports header links to the guest form', async ({ page, request }) => {
@@ -289,7 +368,8 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
       full_name: `E2E Khach ${stamp}`,
       phone,
       province: 'Tp Hồ Chí Minh',
-      nhom_phuong_tien: ['Xe cá nhân/Gia đình', 'Xe vận tải hàng hóa']
+      nhom_phuong_tien: ['Xe cá nhân/Gia đình', 'Xe vận tải hàng hóa'],
+      hop_tac_lap_tram: 'Có'
     };
 
     // 1. Gửi thiếu SĐT -> 400 (SĐT bắt buộc ở validator)
@@ -326,6 +406,7 @@ test.describe('FE-06 guest EV charging reports (anonymous, same phone, 2 locatio
     const cd2 = typeof row2.custom_data === 'string' ? JSON.parse(row2.custom_data) : row2.custom_data || {};
     expect(cd2.nhom_phuong_tien, 'lưu mảng nhóm phương tiện').toEqual(base.nhom_phuong_tien);
     expect(cd2.hang_xe, 'lưu hãng xe tự nhập').toBe('Geely (tự nhập)');
+    expect(cd2.hop_tac_lap_tram, 'lưu câu trả lời hợp tác lắp trạm').toBe('Có');
 
     // 3. Admin thấy cả 2 trong danh sách
     const list = await request.get(`${API}/api/ev-reports/admin/list?search=E2E Khach ${stamp}`, { headers: auth });

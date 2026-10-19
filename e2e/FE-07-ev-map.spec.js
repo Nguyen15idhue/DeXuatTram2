@@ -44,7 +44,7 @@ test.describe('FE-07 ev reports map layer (hidden by default, checkbox shows all
 
   test.beforeAll(async ({ request }) => {
     const res = await request.post(`${API}/api/ev-reports/guest`, {
-      data: { full_name: seedName, phone: '0909990001', latitude: 21.03, longitude: 105.85, hang_xe: 'VinFast', province: 'Thành phố Hà Nội', nhom_phuong_tien: ['Xe cá nhân/Gia đình'] }
+      data: { full_name: seedName, phone: '0909990001', latitude: 21.03, longitude: 105.85, hang_xe: 'VinFast', province: 'Thành phố Hà Nội', nhom_phuong_tien: ['Xe cá nhân/Gia đình'], hop_tac_lap_tram: 'Không' }
     });
     expect(res.ok(), 'seed row').toBeTruthy();
     seedId = (await res.json()).data.id;
@@ -102,9 +102,38 @@ test.describe('FE-07 ev reports map layer (hidden by default, checkbox shows all
     const row = page.locator(`tr:has-text("${seedName}")`);
     await expect(row).toBeVisible({ timeout: 15000 });
 
-    await row.getByRole('button', { name: 'Xem' }).click();
+    // Cột câu trả lời liên kết lắp đặt trạm sạc (migration 171) có trong bảng
+    const linkCol = page.locator('.dynamic-table-container thead th').filter({ hasText: /lắp đặt trạm sạc/i });
+    await expect(linkCol).toHaveCount(1, { timeout: 15000 });
+
+    // "Không" -> badge màu mặc định (xám nâu #666666)
+    const linkCell = row.locator('td').nth(5);
+    await expect(linkCell).toContainText('Không');
+    await expect(linkCell.locator('span[style]')).toHaveCSS('background-color', 'rgb(102, 102, 102)');
+
+    // "Có" -> badge xanh lá (#16a34a)
+    const upd = await page.request.put(`${API}/api/ev-reports/admin/${seedId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { hop_tac_lap_tram: 'Có' }
+    });
+    expect(upd.ok(), 'doi cau tra loi sang Co').toBeTruthy();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('input[placeholder*="Tìm theo tên"]').fill(seedName);
+    await page.waitForTimeout(600);
+    await page.getByRole('button', { name: 'Tìm' }).first().click();
+    const rowCo = page.locator(`tr:has-text("${seedName}")`);
+    await expect(rowCo).toBeVisible({ timeout: 15000 });
+    const cellCo = rowCo.locator('td').nth(5);
+    await expect(cellCo).toContainText('Có');
+    await expect(cellCo.locator('span[style]')).toHaveCSS('background-color', 'rgb(22, 163, 74)');
+
+    await rowCo.getByRole('button', { name: 'Xem' }).click();
     await expect(page.locator('.popup-detail, .legacy-modal')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('.popup-detail, .legacy-modal').getByText('VinFast').first()).toBeVisible({ timeout: 15000 });
+    // Câu hỏi liên kết lắp đặt trạm sạc (migration 170) hiện trong popup xem/sửa
+    await expect(
+      page.locator('.popup-detail, .legacy-modal').locator('[data-field-key="hop_tac_lap_tram"]')
+    ).toContainText('Có', { timeout: 15000 });
 
     expect(errors, `pageerror: ${errors.join('; ')}`).toEqual([]);
   });

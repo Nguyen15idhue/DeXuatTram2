@@ -161,6 +161,7 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
   let circleState = null;
   let enabled3d = false;
   let terrainOn = false;
+  let pendingStyleLoad = null;
   let popup = null;
   const stationDomMarkers = [];
   const provinceMarkers = [];
@@ -938,15 +939,27 @@ export async function createMaplibreRuntime({ container, center, zoom, style, ti
       const key = typeof resolved === 'string' ? resolved : JSON.stringify(resolved);
       if (key === currentStyleKey) return;
       currentStyleKey = key;
+      // MapLibre bắn 'style.load' ĐỒNG BỘ khi style là object (raster/hybrid/PMTiles):
+      // phải đăng ký listener TRƯỚC setStyle, nếu không applyAll() không bao giờ chạy
+      // → mất toàn bộ layer app (marker trạm/đề xuất, cluster, polyline, ranh giới, nhãn).
+      if (pendingStyleLoad) {
+        map.off('style.load', pendingStyleLoad);
+        pendingStyleLoad = null;
+      }
+      const onStyleLoad = () => {
+        pendingStyleLoad = null;
+        _3dApplied = false;
+        applyAll();
+      };
+      pendingStyleLoad = onStyleLoad;
+      map.once('style.load', onStyleLoad);
       try {
         map.setStyle(resolved);
       } catch (err) {
+        map.off('style.load', onStyleLoad);
+        pendingStyleLoad = null;
         console.error('[MapLibre] setStyle error:', err.message);
       }
-      map.once('style.load', () => {
-        _3dApplied = false;
-        applyAll();
-      });
     },
 
     setTileLayer(nextTile) {
