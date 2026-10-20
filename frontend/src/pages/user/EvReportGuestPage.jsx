@@ -4,29 +4,24 @@ import {
   fieldDefinitionService,
   api,
 } from "../../services/api";
-import {
-  parseGoogleMapsLink,
-  resolveGoogleMapsShortUrl,
-} from "../../utils/mapHelpers";
-import { VIETNAM_CENTER } from "../../utils/provinceData";
 import { fetchDataList, buildDataListMaps } from "../../utils/dataListCache";
 import { getDataListLabel } from "../../utils/dataListLabel";
 import DynamicField from "../../components/dynamic/DynamicField";
-import MapCanvas from "../../components/map/MapCanvas";
 import NearbyStationsModal, {
   NEARBY_RADIUS_KM,
 } from "../../components/NearbyStationsModal";
-import useMapConfig from "../../hooks/useMapConfig";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import Toast from "../../components/Toast";
 import {
   MapPin,
   LocateFixed,
-  Link2,
-  Search,
   CheckCircle2,
   PlusCircle,
   Loader2,
+  ChevronDown,
+  Car,
+  CarFront,
+  Truck,
 } from "lucide-react";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
@@ -52,39 +47,158 @@ const EMPTY_VALUES = {
   hop_tac_lap_tram: "",
 };
 
+const vehicleIconFor = (value) => {
+  const s = String(value || "").toLowerCase();
+  if (
+    s.includes("vận tải") ||
+    s.includes("hàng hóa") ||
+    s.includes("xe tải") ||
+    s.includes("van")
+  )
+    return Truck;
+  if (s.includes("kinh doanh") || s.includes("dịch vụ") || s.includes("taxi"))
+    return CarFront;
+  return Car;
+};
+
+const PlaceSearchInput = ({ onPick, placeholder, className = "" }) => {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const pickedRef = useRef("");
+  const boxRef = useRef(null);
+  const debouncedQuery = useDebouncedValue(query, 600);
+
+  // Đóng danh sách gợi ý khi bấm ra ngoài
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  // Tự tìm địa chỉ khi khách gõ (debounce) — không cần bấm nút
+  useEffect(() => {
+    const text = debouncedQuery.trim();
+    if (text.length < 3 || text === pickedRef.current) {
+      if (text.length < 3) {
+        setResults([]);
+        setOpen(false);
+        setMessage("");
+        setSearching(false);
+      }
+      return undefined;
+    }
+    let cancelled = false;
+    setSearching(true);
+    setMessage("");
+    (async () => {
+      try {
+        const res = await api.post("/geocode/search", { text, limit: 5 });
+        if (cancelled) return;
+        const list = (res && res.data && res.data.results) || [];
+        setResults(list);
+        setOpen(list.length > 0);
+        setMessage(
+          list.length === 0
+            ? "Không tìm thấy địa chỉ phù hợp — thử thêm phường/xã hoặc tỉnh/thành."
+            : "",
+        );
+      } catch {
+        if (cancelled) return;
+        setResults([]);
+        setOpen(false);
+        setMessage("Lỗi kết nối khi tìm địa chỉ");
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery]);
+
+  const pick = (item) => {
+    const label = item.formatted || item.name || "";
+    pickedRef.current = label;
+    setResults([]);
+    setOpen(false);
+    setMessage("");
+    setQuery(label);
+    onPick(item);
+  };
+
+  return (
+    <div className={`relative ${className}`} ref={boxRef}>
+      <div className="flex gap-2 items-center">
+        <input
+          type="text"
+          className="input input-bordered input-sm flex-1"
+          placeholder={placeholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (results.length > 0) pick(results[0]);
+            } else if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+        />
+        {searching && (
+          <span className="flex items-center gap-1 text-xs text-base-content/60 whitespace-nowrap">
+            <Loader2 size={14} className="animate-spin" />
+            Đang tìm...
+          </span>
+        )}
+      </div>
+      {message && (
+        <div className="text-xs text-base-content/60 mt-1">{message}</div>
+      )}
+      {open && results.length > 0 && (
+        <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[240px] overflow-auto mt-1">
+          {results.map((item, idx) => (
+            <div
+              key={`place-${idx}-${item.lat}-${item.lon}`}
+              className="px-2.5 py-1.5 cursor-pointer text-[13px] hover:bg-gray-100"
+              onClick={() => pick(item)}
+            >
+              {item.formatted || item.name || `${item.lat}, ${item.lon}`}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const EvReportGuestPage = () => {
-  const [locMode, setLocMode] = useState("gps");
   const [mapCoords, setMapCoords] = useState({ latitude: "", longitude: "" });
   const [locating, setLocating] = useState(false);
-  const [mapLink, setMapLink] = useState("");
-  const [resolvingLink, setResolvingLink] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [flyTo, setFlyTo] = useState(null);
   const [website, setWebsite] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState({ message: "", type: "success" });
   const [done, setDone] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [nearbyOpen, setNearbyOpen] = useState(false);
   const [previewCenter, setPreviewCenter] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [placeQuery, setPlaceQuery] = useState("");
-  const [placeResults, setPlaceResults] = useState([]);
-  const [placeSearching, setPlaceSearching] = useState(false);
-  const [placeOpen, setPlaceOpen] = useState(false);
-  const [placeMessage, setPlaceMessage] = useState("");
   const [values, setValues] = useState({ ...EMPTY_VALUES });
   const [errors, setErrors] = useState({});
   const [fields, setFields] = useState([]);
   const [dlOptions, setDlOptions] = useState({});
   const [loadingFields, setLoadingFields] = useState(true);
   const lastReverseKeyRef = useRef("");
-  const placeBoxRef = useRef(null);
-  const pickedPlaceRef = useRef("");
   const turnstileRef = useRef(null);
   const turnstileWidget = useRef(null);
-  const mapCfg = useMapConfig();
-  const debouncedPlaceQuery = useDebouncedValue(placeQuery, 600);
 
   const fieldsByKey = useMemo(() => {
     const map = {};
@@ -157,57 +271,6 @@ const EvReportGuestPage = () => {
       cancelled = true;
     };
   }, []);
-
-  // Đóng danh sách gợi ý địa chỉ khi bấm ra ngoài
-  useEffect(() => {
-    if (!placeOpen) return undefined;
-    const close = (e) => {
-      if (placeBoxRef.current && !placeBoxRef.current.contains(e.target)) {
-        setPlaceOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [placeOpen]);
-
-  // Tự động tìm địa chỉ khi khách gõ (debounce) — không cần bấm nút
-  useEffect(() => {
-    const text = debouncedPlaceQuery.trim();
-    if (text.length < 3 || text === pickedPlaceRef.current) {
-      if (text.length < 3) {
-        setPlaceResults([]);
-        setPlaceOpen(false);
-        setPlaceMessage("");
-        setPlaceSearching(false);
-      }
-      return undefined;
-    }
-    let cancelled = false;
-    setPlaceSearching(true);
-    setPlaceMessage("");
-    (async () => {
-      try {
-        const res = await api.post("/geocode/search", { text, limit: 5 });
-        if (cancelled) return;
-        const results = (res && res.data && res.data.results) || [];
-        setPlaceResults(results);
-        setPlaceOpen(results.length > 0);
-        setPlaceMessage(
-          results.length === 0 ? "Không tìm thấy địa chỉ phù hợp" : "",
-        );
-      } catch {
-        if (cancelled) return;
-        setPlaceResults([]);
-        setPlaceOpen(false);
-        setPlaceMessage("Lỗi kết nối khi tìm địa chỉ");
-      } finally {
-        if (!cancelled) setPlaceSearching(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedPlaceQuery]);
 
   const resolveOptions = useCallback(
     (field, vals) => {
@@ -343,7 +406,6 @@ const EvReportGuestPage = () => {
       latitude: Number(lat).toFixed(6),
       longitude: Number(lng).toFixed(6),
     });
-    setFlyTo([Number(lat), Number(lng)]);
   };
 
   const reverseFillAddress = async (lat, lng) => {
@@ -366,7 +428,7 @@ const EvReportGuestPage = () => {
         ...Object.fromEntries(Object.keys(patch).map((k) => [k, ""])),
       }));
       setToast({
-        message: "Đã cập nhật Tỉnh/Xã/địa chỉ theo vị trí trên bản đồ.",
+        message: "Đã cập nhật Tỉnh/Xã/địa chỉ theo vị trí bạn chọn.",
         type: "success",
       });
     } catch {
@@ -397,66 +459,6 @@ const EvReportGuestPage = () => {
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
-  };
-
-  const handleGoogleMapLink = async () => {
-    const url = mapLink.trim();
-    if (!url) return;
-    setError("");
-    setResolvingLink(true);
-    try {
-      let coords = parseGoogleMapsLink(url);
-      if (coords && coords.needResolve) {
-        coords = await resolveGoogleMapsShortUrl(coords.url);
-      }
-      if (coords && coords.lat != null && coords.lng != null) {
-        applyCoords(coords.lat, coords.lng);
-        setMapLink("");
-        reverseFillAddress(coords.lat, coords.lng);
-      } else {
-        setError("Không đọc được tọa độ từ link Google Maps");
-      }
-    } catch {
-      setError("Không đọc được tọa độ từ link Google Maps");
-    } finally {
-      setResolvingLink(false);
-    }
-  };
-
-  const handleFindOnMap = async () => {
-    const parts = [values.address, values.ward, values.province].filter(
-      (v) => v && String(v).trim() !== "",
-    );
-    if (parts.length === 0) {
-      setError("Vui lòng nhập Tỉnh/Xã/địa chỉ trước khi tìm");
-      return;
-    }
-    setError("");
-    setSearching(true);
-    try {
-      const res = await api.post("/geocode/search", {
-        text: `${parts.join(", ")}, Việt Nam`,
-        limit: 1,
-      });
-      const item = res && res.data && res.data.results && res.data.results[0];
-      const lat = item ? parseFloat(item.lat) : NaN;
-      const lng = item ? parseFloat(item.lon) : NaN;
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        applyCoords(lat, lng);
-        setToast({
-          message: `Đã tự động chọn vị trí: ${item.formatted || item.name || ""}. Bạn có thể bấm trực tiếp lên bản đồ để chỉnh ghim.`,
-          type: "success",
-        });
-      } else {
-        setError(
-          "Không tìm thấy vị trí cho địa chỉ đã nhập, vui lòng bấm trực tiếp lên bản đồ để ghim",
-        );
-      }
-    } catch {
-      setError("Lỗi kết nối server khi tìm địa chỉ");
-    } finally {
-      setSearching(false);
-    }
   };
 
   const handlePreviewMyLocation = () => {
@@ -491,14 +493,20 @@ const EvReportGuestPage = () => {
     const lat = parseFloat(item.lat);
     const lng = parseFloat(item.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    const label = item.formatted || item.name || "";
-    pickedPlaceRef.current = label;
-    setPlaceResults([]);
-    setPlaceOpen(false);
-    setPlaceMessage("");
-    setPlaceQuery(label);
     setPreviewCenter([lat, lng]);
     setPreviewOpen(true);
+  };
+
+  const handleRegPickPlace = (item) => {
+    const lat = parseFloat(item.lat);
+    const lng = parseFloat(item.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    applyCoords(lat, lng);
+    const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    if (key !== lastReverseKeyRef.current) {
+      lastReverseKeyRef.current = key;
+      reverseFillAddress(lat, lng);
+    }
   };
 
   const validate = () => {
@@ -529,21 +537,49 @@ const EvReportGuestPage = () => {
     e.preventDefault();
     if (submitting) return;
     setError("");
-    if (!mapCoords.latitude || !mapCoords.longitude) {
-      setError("Vui lòng chọn vị trí sạc trên bản đồ");
-      return;
-    }
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       setError("Vui lòng kiểm tra các trường bắt buộc");
       return;
     }
+    let submitLat = mapCoords.latitude;
+    let submitLng = mapCoords.longitude;
+    if (!submitLat || !submitLng) {
+      // Chưa có tọa độ (khách chỉ nhập địa chỉ) → tự geocode trước khi gửi
+      const parts = [values.address, values.ward, values.province].filter(
+        (v) => v && String(v).trim() !== "",
+      );
+      if (parts.length > 0) {
+        try {
+          const res = await api.post("/geocode/search", {
+            text: `${parts.join(", ")}, Việt Nam`,
+            limit: 1,
+          });
+          const item =
+            res && res.data && res.data.results && res.data.results[0];
+          const lat = item ? parseFloat(item.lat) : NaN;
+          const lng = item ? parseFloat(item.lon) : NaN;
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            submitLat = lat.toFixed(6);
+            submitLng = lng.toFixed(6);
+          }
+        } catch {
+          /* rơi xuống thông báo bên dưới */
+        }
+      }
+      if (!submitLat || !submitLng) {
+        setError(
+          "Vui lòng xác định vị trí sạc: bấm 'Vị trí của tôi' hoặc chọn địa chỉ từ gợi ý",
+        );
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       const res = await evReportService.createGuest({
-        latitude: mapCoords.latitude,
-        longitude: mapCoords.longitude,
+        latitude: submitLat,
+        longitude: submitLng,
         full_name: values.full_name,
         phone: values.phone,
         hang_xe:
@@ -583,28 +619,11 @@ const EvReportGuestPage = () => {
   const handleSendAnother = () => {
     setDone(null);
     setMapCoords({ latitude: "", longitude: "" });
-    setFlyTo(null);
     lastReverseKeyRef.current = "";
     setValues({ ...EMPTY_VALUES });
     setErrors({});
     setError("");
   };
-
-  const switchMode = (mode) => {
-    if (mode === locMode) return;
-    setLocMode(mode);
-    setMapCoords({ latitude: "", longitude: "" });
-    setFlyTo(null);
-    lastReverseKeyRef.current = "";
-    setValues((prev) => ({ ...prev, province: "", ward: "", address: "" }));
-    setErrors({});
-    setError("");
-  };
-
-  const center =
-    mapCoords.latitude && mapCoords.longitude
-      ? [Number(mapCoords.latitude), Number(mapCoords.longitude)]
-      : [VIETNAM_CENTER.lat, VIETNAM_CENTER.lng];
 
   const renderCell = (key) => {
     const field = fieldsByKey[key];
@@ -623,6 +642,78 @@ const EvReportGuestPage = () => {
         ...options,
         { value: HANG_XE_OTHER, label: "Khác (nhập tay)" },
       ];
+    }
+    if (key === "nhom_phuong_tien") {
+      const selected = Array.isArray(rawVal) ? rawVal : rawVal ? [rawVal] : [];
+      return (
+        <div className="form-cell-content" key={key}>
+          <div
+            className={`dynamic-form-field${filled ? " is-filled" : ""}${err ? " has-error" : ""}`}
+            data-field-key={key}
+          >
+            <label>
+              {field.label}
+              {required && <span className="text-red-600"> *</span>}
+            </label>
+            <div className="flex flex-col gap-2">
+              {options.map((o, i) => {
+                const val = o && o.value !== undefined ? o.value : o;
+                const lbl = o && o.label !== undefined ? o.label : String(o);
+                const active = selected.includes(val);
+                const Icon = vehicleIconFor(val);
+                const [optName, ...restParts] = String(lbl).split("–");
+                const desc = restParts.join("–").trim();
+                return (
+                  <button
+                    type="button"
+                    key={`${val}-${i}`}
+                    aria-pressed={active}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                      active
+                        ? "bg-green-600 border-green-600 text-white shadow-sm"
+                        : "bg-white border-base-300 text-base-content hover:border-green-500"
+                    }`}
+                    onClick={() =>
+                      handleChange(
+                        key,
+                        active
+                          ? selected.filter((v) => v !== val)
+                          : [...selected, val],
+                      )
+                    }
+                  >
+                    <Icon
+                      size={22}
+                      className={`shrink-0 ${active ? "text-white" : "text-green-600"}`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold leading-tight">
+                        {optName.trim()}
+                      </span>
+                      {desc && (
+                        <span
+                          className={`block text-[11px] leading-tight ${
+                            active ? "text-white/85" : "text-base-content/60"
+                          }`}
+                        >
+                          {desc}
+                        </span>
+                      )}
+                    </span>
+                    {active && (
+                      <CheckCircle2 size={18} className="shrink-0 text-white" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {field.help_text && (
+              <div className="field-help">{field.help_text}</div>
+            )}
+            {err && <div className="field-error">{err}</div>}
+          </div>
+        </div>
+      );
     }
     const fieldForRender = {
       ...field,
@@ -679,124 +770,48 @@ const EvReportGuestPage = () => {
     </div>
   );
 
-  const gpsControls = (
-    <div className="space-y-2 mb-2">
+  const regLocControls = (
+    <div className="flex flex-col sm:flex-row gap-2 sm:items-center mb-3">
       <button
         type="button"
-        className="btn btn-secondary btn-sm gap-1 w-full sm:w-auto"
+        className="btn btn-outline btn-sm gap-1 shrink-0"
         onClick={handleMyLocation}
         disabled={locating}
       >
         <LocateFixed size={14} />
-        {locating ? "Đang lấy vị trí..." : "Lấy vị trí của tôi"}
+        {locating ? "Đang lấy vị trí..." : "Vị trí của tôi"}
       </button>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="Hoặc dán link Google Maps..."
-          className="input input-bordered input-sm flex-1"
-          value={mapLink}
-          onChange={(e) => setMapLink(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleGoogleMapLink()}
-        />
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm gap-1"
-          onClick={handleGoogleMapLink}
-          disabled={resolvingLink || !mapLink.trim()}
-        >
-          <Link2 size={14} />
-          {resolvingLink ? "..." : "Lấy tọa độ"}
-        </button>
-      </div>
-      <p className="text-xs text-base-content/60 mb-4">
-        Lấy vị trí xong, Tỉnh/Xã/địa chỉ bên dưới sẽ tự điền — bạn vẫn chỉnh lại
-        được.
-      </p>
+      <span className="flex items-center gap-2 font-semibold text-sm">
+        Hoặc tìm địa chỉ
+      </span>
+      <PlaceSearchInput
+        className="flex-1"
+        placeholder="Nhập địa chỉ (tối thiểu 3 ký tự, chọn từ gợi ý)..."
+        onPick={handleRegPickPlace}
+      />
     </div>
   );
 
-  const manualControls = (
-    <div className="space-y-2 mb-2">
-      <button
-        type="button"
-        className="btn btn-secondary btn-sm gap-1 w-full sm:w-auto"
-        onClick={handleFindOnMap}
-        disabled={searching}
-      >
-        <Search size={14} />
-        {searching ? "Đang tìm..." : "Tìm vị trí trên bản đồ"}
-      </button>
-      <p className="text-xs text-base-content/60">
-        Nhập Tỉnh/Xã và địa chỉ chi tiết ở trên rồi bấm tìm — hệ thống tự ghim
-        vị trí, bạn có thể bấm lên bản đồ để chỉnh lại.
-      </p>
+  const coordsInfo = mapCoords.latitude && mapCoords.longitude && (
+    <div className="flex items-center gap-1.5 text-xs text-success mb-3">
+      <CheckCircle2 size={14} />
+      Đã xác định vị trí sạc: {mapCoords.latitude}, {mapCoords.longitude}
     </div>
-  );
-
-  const coordsChip = mapCoords.latitude && mapCoords.longitude && (
-    <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
-      <MapPin size={14} />
-      Vĩ độ: {mapCoords.latitude} | Kinh độ: {mapCoords.longitude}
-    </div>
-  );
-
-  const mapBlock = (
-    <>
-      {coordsChip}
-      <div
-        className="evr-map-box mt-2 rounded-lg overflow-hidden border border-base-300"
-        style={{ height: 300 }}
-      >
-        <MapCanvas
-          renderer={mapCfg.renderer}
-          center={center}
-          zoom={mapCoords.latitude ? 15 : 6}
-          tile={{
-            url: mapCfg.tileUrl,
-            attribution: mapCfg.attribution,
-            subdomains: mapCfg.subdomains,
-          }}
-          vectorStyle={mapCfg.vectorStyle}
-          apiKey={mapCfg.apiKey}
-          stations={[]}
-          proposals={[]}
-          showCluster={false}
-          showStationLabels={false}
-          showProvinceLabels={false}
-          showBoundaries={false}
-          provincePoints={[]}
-          selectingLocation
-          onMapSelectClick={(lat, lng) => {
-            applyCoords(lat, lng);
-            const key = `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
-            if (key !== lastReverseKeyRef.current) {
-              lastReverseKeyRef.current = key;
-              reverseFillAddress(lat, lng);
-            }
-          }}
-          selectedPosition={
-            mapCoords.latitude && mapCoords.longitude
-              ? [Number(mapCoords.latitude), Number(mapCoords.longitude)]
-              : null
-          }
-          locationPoint
-          flyToPosition={flyTo}
-        />
-      </div>
-      <p className="text-xs text-base-content/60 mt-1 mb-4">
-        Bấm trực tiếp lên bản đồ để di chuyển ghim tới đúng vị trí sạc.
-      </p>
-    </>
   );
 
   return (
-    <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-8 mb-12">
+    <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4 mb-8">
       <Toast
         message={toast.message}
         type={toast.type}
         onClose={() => setToast({ message: "", type: "success" })}
       />
+
+      <div className="text-center space-y-1 pt-1">
+        <h1 className="text-2xl md:text-3xl font-bold">
+          Tìm trạm sạc & đăng ký nhu cầu sạc
+        </h1>
+      </div>
 
       {previewOpen && previewCenter && (
         <NearbyStationsModal
@@ -808,88 +823,75 @@ const EvReportGuestPage = () => {
         />
       )}
 
-      <section className="text-center space-y-2">
-        <h1 className="text-2xl md:text-3xl font-bold">
-          Đăng ký nhu cầu vị trí sạc xe điện
-        </h1>
-        <p className="text-base-content/70">
-          Cho chúng tôi biết bạn thường sạc xe ở đâu để TMT-EGREEN mở thêm trạm
-          sạc gần bạn.
-        </p>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="font-bold text-lg">Kiểm tra trạm sạc ở gần bạn</h2>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            type="button"
-            className="btn btn-outline btn-sm gap-1 shrink-0"
-            onClick={handlePreviewMyLocation}
-            disabled={previewLoading}
-          >
-            <LocateFixed size={14} />
-            {previewLoading ? "Đang lấy vị trí..." : "Vị trí của tôi"}
-          </button>
-          <span className="flex items-center gap-2 font-semibold text-sm">
-            Hoặc tìm địa chỉ
+      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-hidden">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-base-200/60 transition-colors"
+          onClick={() => setNearbyOpen((v) => !v)}
+          aria-expanded={nearbyOpen}
+        >
+          <span className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold text-sm shrink-0">
+              01
+            </span>
+            <MapPin size={18} className="text-primary shrink-0" />
+            <span className="font-bold text-lg">
+              Kiểm tra trạm sạc ở gần bạn
+            </span>
           </span>
-          <div className="relative flex-1" ref={placeBoxRef}>
-            <div className="flex gap-2 items-center">
-              <input
-                type="text"
-                className="input input-bordered input-sm flex-1"
+          <ChevronDown
+            size={18}
+            className={`shrink-0 transition-transform duration-200 ${
+              nearbyOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+        {nearbyOpen && (
+          <div className="border-t border-base-200 p-4 space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                className="btn btn-outline btn-sm gap-1 shrink-0"
+                onClick={handlePreviewMyLocation}
+                disabled={previewLoading}
+              >
+                <LocateFixed size={14} />
+                {previewLoading ? "Đang lấy vị trí..." : "Vị trí của tôi"}
+              </button>
+              <span className="flex items-center gap-2 font-semibold text-sm">
+                Hoặc tìm địa chỉ
+              </span>
+              <PlaceSearchInput
+                className="flex-1"
                 placeholder="Nhập địa chỉ cần xem trạm sạc lân cận..."
-                value={placeQuery}
-                onChange={(e) => setPlaceQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    if (placeResults.length > 0)
-                      handlePickPlace(placeResults[0]);
-                  } else if (e.key === "Escape") {
-                    setPlaceOpen(false);
-                  }
-                }}
+                onPick={handlePickPlace}
               />
-              {placeSearching && (
-                <span className="flex items-center gap-1 text-xs text-base-content/60 whitespace-nowrap">
-                  <Loader2 size={14} className="animate-spin" />
-                  Đang tìm...
-                </span>
-              )}
             </div>
-            {placeMessage && (
-              <div className="text-xs text-base-content/60 mt-1">
-                {placeMessage}
-              </div>
-            )}
-            {placeOpen && placeResults.length > 0 && (
-              <div className="dynamic-select-dropdown absolute top-full left-0 right-0 z-[100] bg-white border border-gray-300 rounded-md shadow-lg max-h-[240px] overflow-auto mt-1">
-                {placeResults.map((item, idx) => (
-                  <div
-                    key={`place-${idx}-${item.lat}-${item.lon}`}
-                    className="px-2.5 py-1.5 cursor-pointer text-[13px] hover:bg-gray-100"
-                    onClick={() => handlePickPlace(item)}
-                  >
-                    {item.formatted || item.name || `${item.lat}, ${item.lon}`}
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="text-xs text-base-content/60">
+              Bấm "Vị trí của tôi" hoặc nhập địa chỉ (tối thiểu 3 ký tự, hệ thống
+              tự tìm) rồi chọn từ danh sách để xem các trạm đang hoạt động / đang
+              triển khai trong bán kính {NEARBY_RADIUS_KM} km.
+            </p>
           </div>
-        </div>
-        <p className="text-xs text-base-content/60">
-          Bấm "Vị trí của tôi" hoặc nhập địa chỉ (tối thiểu 3 ký tự, hệ thống tự
-          tìm) rồi chọn từ danh sách để xem các trạm đang hoạt động / đang triển
-          khai trong bán kính {NEARBY_RADIUS_KM} km.
-        </p>
+        )}
       </section>
 
-      {done ? (
-        <section className="card bg-base-100 shadow border border-base-300 p-5 space-y-3">
-          <h2 className="font-bold text-lg flex items-center gap-2 text-success">
-            <CheckCircle2 size={20} /> Cảm ơn bạn đã chia sẻ!
-          </h2>
+      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-base-200">
+          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold text-sm shrink-0">
+            02
+          </span>
+          <PlusCircle size={18} className="text-primary shrink-0" />
+          <span className="font-bold text-lg">
+            Đăng ký thông tin nhu cầu sạc
+          </span>
+        </div>
+        <div className={`p-4 md:p-5 ${done ? "space-y-3" : ""}`}>
+          {done ? (
+            <>
+                <h2 className="font-bold text-lg flex items-center gap-2 text-success">
+                  <CheckCircle2 size={20} /> Cảm ơn bạn đã chia sẻ!
+                </h2>
           <div className="bg-base-200 rounded-lg px-3 py-2 text-sm space-y-1">
             <div>
               Hãng xe: <strong>{done.hang_xe || "—"}</strong>
@@ -922,10 +924,13 @@ const EvReportGuestPage = () => {
               Về trang chủ
             </a>
           </div>
-        </section>
-      ) : (
-        <section className="card bg-base-100 shadow border border-base-300 p-5">
-          <h2 className="font-bold text-lg mb-3">Chọn cách nhập địa chỉ</h2>
+              </>
+            ) : (
+              <>
+                <p className="text-base-content/70 mb-4">
+                  Cho chúng tôi biết bạn thường sạc xe ở đâu để TMT-EGREEN mở
+                  thêm trạm sạc gần bạn.
+                </p>
 
           {loadingFields ? (
             <div className="empty-state">Đang tải form...</div>
@@ -938,42 +943,15 @@ const EvReportGuestPage = () => {
               {error && (
                 <div className="alert alert-error text-sm mb-3">{error}</div>
               )}
-              <div className="map-filter-seg mb-3">
-                <button
-                  type="button"
-                  className={locMode !== "manual" ? "active" : ""}
-                  onClick={() => switchMode("gps")}
-                >
-                  Lấy vị trí hiện tại
-                </button>
-                <button
-                  type="button"
-                  className={locMode === "manual" ? "active" : ""}
-                  onClick={() => switchMode("manual")}
-                >
-                  Nhập địa chỉ
-                </button>
-              </div>
               <fieldset className="form-section form-section-block form-section-block-first">
                 <legend className="form-section-title">
                   Vị trí thường xuyên sạc
                 </legend>
 
-                {locMode !== "manual" ? (
-                  <>
-                    {gpsControls}
-                    {mapBlock}
-                    {renderRow(["province", "ward"])}
-                    {renderRow(["address"])}
-                  </>
-                ) : (
-                  <>
-                    {renderRow(["province", "ward"])}
-                    {renderRow(["address"])}
-                    {manualControls}
-                    {mapBlock}
-                  </>
-                )}
+                {regLocControls}
+                {coordsInfo}
+                {renderRow(["province", "ward"])}
+                {renderRow(["address"])}
               </fieldset>
 
               <fieldset className="form-section form-section-block">
@@ -1011,12 +989,14 @@ const EvReportGuestPage = () => {
                 className="btn btn-primary w-full mt-4"
                 disabled={submitting}
               >
-                {submitting ? "Đang gửi..." : "Lưu thông tin"}
+                {submitting ? "Đang gửi..." : "Gửi thông tin đi"}
               </button>
             </form>
           )}
-        </section>
-      )}
+              </>
+            )}
+          </div>
+      </section>
     </div>
   );
 };
