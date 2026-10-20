@@ -4,11 +4,11 @@ import RouteFallback from "../components/RouteFallback";
 
 const GuestLayout = () => {
   return (
-    <div className="min-h-screen bg-base-100">
+    <div className="min-h-screen bg-base-100 flex flex-col">
       <header className="navbar bg-primary text-primary-content px-4 md:px-8">
         <p className="font-bold text-lg">TMT-EGREEN</p>
       </header>
-      <main>
+      <main className="flex-1">
         <Suspense fallback={<RouteFallback />}>
           <Outlet />
         </Suspense>
