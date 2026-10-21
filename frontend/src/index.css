@@ -172,6 +172,36 @@ html {
   scrollbar-gutter: stable;
 }
 
+/*
+ * App chỉ thiết kế cho theme sáng (daisyUI).
+ * daisyUI v5 tự đổi sang theme tối khi hệ điều hành bật "giao diện tối" qua
+ * `@media (prefers-color-scheme: dark) { :root:not([data-theme]) { ... } }`.
+ * Vì <html> đã ghim `data-theme="light"` nên khối đó không được áp dụng →
+ * màu nền/chữ giữ nguyên như thiết kế trên cả máy tính lẫn điện thoại.
+ * `color-scheme: light` giữ cho ô nhập, select và thanh cuộn luôn ở dạng sáng.
+ */
+:root,
+html,
+body {
+  color-scheme: light;
+}
+
+/* Chặn Chrome/Safari tự đảo màu (auto-dark) trong vùng form khách. */
+.form-shell,
+.form-shell * {
+  forced-color-adjust: none;
+}
+.form-shell input,
+.form-shell select,
+.form-shell textarea,
+.form-shell button {
+  -webkit-text-fill-color: inherit;
+}
+.form-shell input[type="checkbox"],
+.form-shell input[type="radio"] {
+  accent-color: #16a34a;
+}
+
 .dynamic-table-container .overflow-x-auto {
   scrollbar-gutter: stable;
 }
