@@ -75,6 +75,76 @@ function httpGetJson(url) {
 const FORWARD_CACHE_TTL_MS = 5 * 60 * 1000;
 const forwardCache = new Map();
 
+// Fallback không cần API key: Nominatim (OpenStreetMap). Dùng khi geocode_configs
+// chưa có key/bị tắt, để tìm địa chỉ vẫn chạy được ngay sau khi clone dự án.
+function nominatimSearch(q, limit) {
+  return new Promise((resolve) => {
+    const params = new URLSearchParams({
+      q,
+      format: 'jsonv2',
+      addressdetails: '1',
+      limit: String(Math.min(10, limit || 6)),
+      countrycodes: 'vn',
+      'accept-language': 'vi',
+    });
+    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+    const req = https.get(url, {
+      timeout: Number(process.env.GEOCODE_TIMEOUT_MS) || 8000,
+      headers: { 'User-Agent': 'StationManagement/1.0 (Geocode)' },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return resolve([]);
+        try {
+          const arr = JSON.parse(data);
+          resolve(Array.isArray(arr) ? arr : []);
+        } catch {
+          resolve([]);
+        }
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => { req.destroy(); resolve([]); });
+  });
+}
+
+function normalizeNominatim(item, admin) {
+  const a = (item && item.address) || {};
+  const geo = {
+    name: item.name || item.display_name || '',
+    formatted: item.display_name || '',
+    address_line1: [a.house_number, a.road].filter(Boolean).join(' '),
+    address_line2: a.suburb || a.quarter || a.city_district || '',
+    city: a.city || a.town || a.village || '',
+    county: a.county || '',
+    state: a.state || '',
+    suburb: a.suburb || a.quarter || a.neighbourhood || '',
+    district: a.city_district || a.district || '',
+    country: a.country || 'Việt Nam',
+    lat: item.lat,
+    lon: item.lon,
+  };
+  if (admin) {
+    return {
+      found: true,
+      name: geo.address_line1 || geo.name || geo.formatted,
+      formatted: geo.formatted,
+      address_line1: geo.address_line1,
+      address_line2: geo.address_line2,
+      lat: geo.lat,
+      lon: geo.lon,
+      city: geo.city,
+      county: geo.county,
+      state: geo.state,
+      suburb: geo.suburb,
+      district: geo.district,
+      country: geo.country,
+    };
+  }
+  return { found: true, ...geo };
+}
+
 function forwardCacheKey(text, lat, lng) {
   const la = Number.isFinite(lat) ? Math.round(lat * 100) / 100 : '';
   const ln = Number.isFinite(lng) ? Math.round(lng * 100) / 100 : '';
@@ -128,15 +198,45 @@ function normalizeGeoapify(props) {
   };
 }
 
+// Fallback không cần API key: Nominatim reverse (tọa độ → địa chỉ).
+function nominatimReverse(lat, lng) {
+  return new Promise((resolve) => {
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lng),
+      format: 'jsonv2',
+      addressdetails: '1',
+      'accept-language': 'vi',
+    });
+    const url = `https://nominatim.openstreetmap.org/reverse?${params.toString()}`;
+    const req = https.get(url, {
+      timeout: Number(process.env.GEOCODE_TIMEOUT_MS) || 8000,
+      headers: { 'User-Agent': 'StationManagement/1.0 (Geocode)' },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return resolve(null);
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+}
+
 exports.reverse = async (lat, lng) => {
   const config = await exports.getConfig();
-  if (!config || !Number(config.enabled)) return { found: false, disabled: true };
-  if (!config.api_key) return { found: false, disabled: true };
+  const hasKey = !!(config && Number(config.enabled) && config.api_key);
 
-  const ttlDays = Number(config.cache_ttl_days) || 30;
+  const ttlDays = Number((config && config.cache_ttl_days) || 0) || 30;
   let result = await getCached(lat, lng, ttlDays);
 
-  if (!result) {
+  if (!result && hasKey) {
     const params = new URLSearchParams({
       lat: String(lat),
       lon: String(lng),
@@ -155,6 +255,28 @@ exports.reverse = async (lat, lng) => {
       return notFound;
     }
     result = normalizeGeoapify(json.results[0]);
+  }
+
+  if (!result) {
+    // Chưa cấu hình Geoapify → dùng Nominatim (miễn phí, không cần key)
+    let item = null;
+    try {
+      item = await nominatimReverse(lat, lng);
+    } catch {
+      item = null;
+    }
+    if (!item || item.error || !item.lat) {
+      const notFound = { found: false, fallback: true };
+      await setCache(lat, lng, notFound);
+      return notFound;
+    }
+    result = normalizeNominatim(item, false);
+    result.fallback = true;
+    result.formatted = item.display_name || '';
+    const a = item.address || {};
+    result.housenumber = a.house_number || '';
+    result.street = a.road || '';
+    result.quarter = a.quarter || '';
   }
 
   if (result.found && !result.admin) {
@@ -179,9 +301,7 @@ exports.forward = async (text, opts = {}) => {
   if (q.length < 3) return { found: false, results: [] };
 
   const config = await exports.getConfig();
-  if (!config || !Number(config.enabled) || !config.api_key) {
-    return { found: false, disabled: true, results: [] };
-  }
+  const hasKey = !!(config && Number(config.enabled) && config.api_key);
 
   const lat = parseFloat(opts.lat);
   const lng = parseFloat(opts.lng);
@@ -191,6 +311,17 @@ exports.forward = async (text, opts = {}) => {
   const cached = forwardCache.get(key);
   if (cached && Date.now() - cached.t < FORWARD_CACHE_TTL_MS) {
     return cached.data;
+  }
+
+  if (!hasKey) {
+    // Chưa cấu hình Geoapify → dùng Nominatim (miễn phí, không cần key)
+    const raw = await nominatimSearch(q, limit);
+    const results = raw
+      .map((item) => normalizeNominatim(item, true))
+      .filter((r) => Number.isFinite(parseFloat(r.lat)) && Number.isFinite(parseFloat(r.lon)));
+    const data = { found: results.length > 0, fallback: true, results };
+    forwardCache.set(key, { t: Date.now(), data });
+    return data;
   }
 
   const params = new URLSearchParams({
