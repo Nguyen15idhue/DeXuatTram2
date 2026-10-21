@@ -18,7 +18,16 @@ const STATUS_TITLES = {
   SUPPLEMENT_OVERDUE: 'Đề xuất đã quá hạn bổ sung thông tin',
   INFO_COMPLETED: 'Đề xuất đã bổ sung đủ thông tin',
   INFO_REOPENED: 'Đề xuất được mở lại để bổ sung',
-  SUPPLEMENT_EXTENDED: 'Đề xuất được gia hạn bổ sung thông tin'
+  SUPPLEMENT_EXTENDED: 'Đề xuất được gia hạn bổ sung thông tin',
+  GRADING: 'Đề xuất đang được đánh giá quy hoạch và pháp lý',
+  GDTTKD_EVALUATING: 'Đề xuất chờ GĐTTKD đánh giá',
+  RE_GRADING: 'Đề xuất được yêu cầu chấm điểm lại',
+  TGD_REVIEW: 'Đề xuất đang trình Tổng giám đốc',
+  DESIGNING: 'Đề xuất đang được vẽ Layout',
+  PROPOSAL_REPORT_CREATING: 'Đề xuất đang lập tờ trình BCĐX',
+  PROPOSAL_REPORT_REVIEWING: 'Đề xuất đang duyệt BCĐX',
+  SIGNATURE_PENDING: 'Đề xuất đang trình ký',
+  COMPLETED: 'Đề xuất đã được phê duyệt'
 };
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';

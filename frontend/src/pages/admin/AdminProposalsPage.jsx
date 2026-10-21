@@ -223,7 +223,7 @@ const AdminProposalsPage = () => {
     leadService.getGdkvOptions(token)
       .then(res => { if (!cancelled && res && res.success) setDepartmentOptions(Array.from(new Set((res.data || []).map(o => o.department).filter(Boolean))).sort()); })
       .catch(() => {});
-    adminUserService.getAllWithParams('all=1&limit=1000', token)
+    adminUserService.getOptions(token)
       .then(res => { if (!cancelled && res && res.success) setOwnerOptions(res.data || []); })
       .catch(() => {});
     return () => { cancelled = true; };

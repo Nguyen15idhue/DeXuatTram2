@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager, requireProposalManager } = require('../middlewares/auth');
 const { validateUpdateProposal } = require('../middlewares/validators');
 const adminProposalController = require('../controllers/adminProposalController');
 
@@ -17,7 +17,7 @@ const adminProposalController = require('../controllers/adminProposalController'
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
+ *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, TGD_REVIEW, DESIGNING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
  *       - in: query
  *         name: uu_tien
  *         schema:
@@ -47,7 +47,7 @@ const adminProposalController = require('../controllers/adminProposalController'
   *       403:
   *         description: Không có quyền Admin
   */
-router.get('/', requireAuth, requireUserManager, adminProposalController.getAll);
+router.get('/', requireAuth, requireProposalManager, adminProposalController.getAll);
 
 /**
  * @swagger
@@ -107,7 +107,7 @@ router.post('/confirm-info-batch', requireAuth, requireSuperAdmin, adminProposal
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/duplicates', requireAuth, requireUserManager, adminProposalController.duplicates);
+router.get('/duplicates', requireAuth, requireProposalManager, adminProposalController.duplicates);
 
 /**
  * @swagger
@@ -133,7 +133,7 @@ router.get('/duplicates', requireAuth, requireUserManager, adminProposalControll
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id', requireAuth, requireUserManager, adminProposalController.getById);
+router.get('/:id', requireAuth, requireProposalManager, adminProposalController.getById);
 
 /**
  * @swagger
@@ -157,7 +157,7 @@ router.get('/:id', requireAuth, requireUserManager, adminProposalController.getB
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id/push-check', requireAuth, requireUserManager, adminProposalController.pushCheck);
+router.get('/:id/push-check', requireAuth, requireProposalManager, adminProposalController.pushCheck);
 
 /**
  * @swagger
@@ -181,7 +181,7 @@ router.get('/:id/push-check', requireAuth, requireUserManager, adminProposalCont
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id/completeness', requireAuth, requireUserManager, adminProposalController.completeness);
+router.get('/:id/completeness', requireAuth, requireProposalManager, adminProposalController.completeness);
 
 /**
  * @swagger
@@ -207,7 +207,7 @@ router.get('/:id/completeness', requireAuth, requireUserManager, adminProposalCo
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.delete('/:id', requireAuth, requireUserManager, adminProposalController.delete);
+router.delete('/:id', requireAuth, requireProposalManager, adminProposalController.delete);
 
 /**
  * @swagger
@@ -244,7 +244,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  *                 type: string
  *               status:
  *                 type: string
- *                 enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
+ *                 enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, TGD_REVIEW, DESIGNING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -255,7 +255,7 @@ router.delete('/:id', requireAuth, requireUserManager, adminProposalController.d
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id', requireAuth, requireUserManager, validateUpdateProposal, adminProposalController.update);
+router.put('/:id', requireAuth, requireProposalManager, validateUpdateProposal, adminProposalController.update);
 
 /**
  * @swagger
@@ -281,7 +281,7 @@ router.put('/:id', requireAuth, requireUserManager, validateUpdateProposal, admi
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
+ *                 enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, TGD_REVIEW, DESIGNING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -294,7 +294,7 @@ router.put('/:id', requireAuth, requireUserManager, validateUpdateProposal, admi
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id/status', requireAuth, requireUserManager, adminProposalController.updateStatus);
+router.put('/:id/status', requireAuth, requireProposalManager, adminProposalController.updateStatus);
 
 /**
  * @swagger
@@ -320,7 +320,7 @@ router.put('/:id/status', requireAuth, requireUserManager, adminProposalControll
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.post('/:id/confirm-info', requireAuth, requireUserManager, adminProposalController.confirmInfo);
+router.post('/:id/confirm-info', requireAuth, requireProposalManager, adminProposalController.confirmInfo);
 
 /**
  * @swagger
@@ -346,7 +346,7 @@ router.post('/:id/confirm-info', requireAuth, requireUserManager, adminProposalC
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.post('/:id/reopen-info', requireAuth, requireUserManager, adminProposalController.reopenInfo);
+router.post('/:id/reopen-info', requireAuth, requireProposalManager, adminProposalController.reopenInfo);
 
 /**
  * @swagger
@@ -391,7 +391,7 @@ router.post('/:id/reopen-info', requireAuth, requireUserManager, adminProposalCo
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.post('/:id/extend-deadline', requireAuth, requireUserManager, adminProposalController.extendDeadline);
+router.post('/:id/extend-deadline', requireAuth, requireProposalManager, adminProposalController.extendDeadline);
 
 /**
  * @swagger
@@ -415,7 +415,7 @@ router.post('/:id/extend-deadline', requireAuth, requireUserManager, adminPropos
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id/extend-info', requireAuth, requireUserManager, adminProposalController.extendInfo);
+router.get('/:id/extend-info', requireAuth, requireProposalManager, adminProposalController.extendInfo);
 
 /**
  * @swagger
@@ -486,6 +486,6 @@ router.post('/:id/convert-to-station', requireAuth, requireAdmin, adminProposalC
  *       403:
  *         description: Ngoài phạm vi nhánh
  */
-router.post('/reports', requireAuth, requireUserManager, adminProposalController.exportReports);
+router.post('/reports', requireAuth, requireProposalManager, adminProposalController.exportReports);
 
 module.exports = router;

@@ -20,6 +20,11 @@ import {
   History,
   BookOpen,
   ChevronDown,
+  PenTool,
+  Gavel,
+  FileCheck,
+  PenSquare,
+  Scale,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 
@@ -46,7 +51,51 @@ const mainItems = [
     path: "/admin/proposals",
     label: "Quản lý Đề xuất",
     icon: ClipboardList,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+    children: [
+      {
+        path: "/admin/proposals",
+        label: "Thông tin chung",
+        icon: FileText,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/danh-gia-quy-hoach",
+        label: "Đánh giá quy hoạch và Pháp lý",
+        icon: Scale,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/danh-gia-layout",
+        label: "Đánh giá layout",
+        icon: PenTool,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/lap-to-trinh",
+        label: "Lập tờ trình BCĐX",
+        icon: FileCheck,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/duyet-bcdx",
+        label: "Duyệt BCĐX",
+        icon: Gavel,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/trinh-ky",
+        label: "Trình ký",
+        icon: PenSquare,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+    ],
+  },
+  {
+    path: "/admin/e-sign",
+    label: "Quản lý Chữ ký số",
+    icon: File,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
   },
   {
     path: "/admin/ev-reports",
@@ -173,10 +222,16 @@ const saveCollapsed = (arr) => {
 const isItemActive = (pathname, path) =>
   pathname === path || (path !== "/admin" && pathname.startsWith(path));
 
+const isItemActiveExact = (pathname, path) => pathname === path;
+
+const filterItemsByRole = (items, role) =>
+  items.filter((item) => !item.roles || item.roles.includes(role));
+
 const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const [mainCollapsed, setMainCollapsed] = useState({});
 
   useEffect(() => {
     setCollapsed((prev) => {
@@ -203,9 +258,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     });
   };
 
-  const visibleMain = mainItems.filter(
-    (item) => !item.roles || item.roles.includes(user?.role),
-  );
+  const toggleMainItem = (itemPath) => {
+    setMainCollapsed((prev) => ({
+      ...prev,
+      [itemPath]: !prev[itemPath],
+    }));
+  };
+
+  const visibleMain = filterItemsByRole(mainItems, user?.role);
   const visibleGroups = configGroups
     .filter((g) => !g.roles || g.roles.includes(user?.role))
     .map((g) => ({
@@ -222,21 +282,74 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     }`;
 
   const renderLink = (item) => {
-    const isActive = isItemActive(location.pathname, item.path);
+    const isActive = isItemActiveExact(location.pathname, item.path);
     return (
       <Link
         key={item.path}
         to={item.path}
         className={linkClass(isActive)}
         onClick={onNavClick}
+        title={item.label}
       >
         <item.icon
           size={18}
           className={isActive ? "text-primary-content" : ""}
         />
-        <span className="truncate">{item.label}</span>
+        <span className="truncate" title={item.label}>
+          {item.label}
+        </span>
       </Link>
     );
+  };
+
+  const renderMainItem = (item) => {
+    const isActiveExact = isItemActiveExact(location.pathname, item.path);
+    const hasChildren = item.children && item.children.length > 0;
+    const isOpen = mainCollapsed[item.path];
+
+    // Parent active if exact match OR any child matches
+    let isActive = isActiveExact;
+    if (hasChildren) {
+      const visibleChildren = filterItemsByRole(item.children, user?.role);
+      isActive =
+        visibleChildren.some((c) =>
+          isItemActiveExact(location.pathname, c.path),
+        ) || isActiveExact;
+    }
+
+    if (hasChildren) {
+      const visibleChildren = filterItemsByRole(item.children, user?.role);
+      return (
+        <div key={item.path} className="mb-1">
+          <button
+            type="button"
+            onClick={() => toggleMainItem(item.path)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-200 hover:text-base-content"}`}
+            title={item.label}
+          >
+            <span className="flex items-center gap-3">
+              <item.icon
+                size={18}
+                className={isActive ? "text-primary-content" : ""}
+              />
+              <span className="truncate" title={item.label}>
+                {item.label}
+              </span>
+            </span>
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${isOpen ? "" : "-rotate-90"}`}
+            />
+          </button>
+          {isOpen && (
+            <div className="ml-2 border-b mt-1 space-y-1 border-l border-base-300 rounded-bl-xl pl-2">
+              {visibleChildren.map(renderLink)}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return renderLink(item);
   };
 
   return (
@@ -255,7 +368,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
-        {visibleMain.map(renderLink)}
+        {visibleMain.map(renderMainItem)}
         {visibleGroups.length > 0 && (
           <div className="border-t border-base-300 my-3 mx-1" />
         )}
@@ -267,8 +380,9 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
                 type="button"
                 onClick={() => toggleGroup(g.id)}
                 className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:text-base-content"
+                title={g.label}
               >
-                <span>{g.label}</span>
+                <span title={g.label}>{g.label}</span>
                 <ChevronDown
                   size={14}
                   className={`transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
@@ -283,17 +397,23 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           to="/map"
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200 hover:text-base-content transition-all duration-150 hl-dash"
           onClick={onNavClick}
+          title="Xem bản đồ"
         >
           <MapPin size={18} />
-          <span className="truncate">Xem bản đồ</span>
+          <span className="truncate" title="Xem bản đồ">
+            Xem bản đồ
+          </span>
         </Link>
         <Link
           to="/admin/huong-dan"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === "/admin/huong-dan" ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-200 hover:text-base-content"}`}
           onClick={onNavClick}
+          title="Hướng dẫn"
         >
           <BookOpen size={18} />
-          <span className="truncate">Hướng dẫn</span>
+          <span className="truncate" title="Hướng dẫn">
+            Hướng dẫn
+          </span>
         </Link>
       </nav>
 

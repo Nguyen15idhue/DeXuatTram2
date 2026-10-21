@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
+const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note'];
 
 exports.getUserProposals = async (userId, status, search, page, limit, columnFilters, extra = {}) => {
   const offset = (page - 1) * limit;
@@ -60,7 +60,7 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
-            p.pending_station_code
+            p.pending_station_code, p.note, p.chot_so_luong_tru
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -115,7 +115,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     } catch { return false; }
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
-  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description, note, chot_so_luong_tru FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -143,14 +143,16 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const prevRow = existing.length > 0 ? existing[0] : {};
   const nextLat = fixedData.latitude !== undefined ? fixedData.latitude : prevRow.latitude;
   const nextLng = fixedData.longitude !== undefined ? fixedData.longitude : prevRow.longitude;
+  const nextNote = fixedData.note !== undefined ? fixedData.note : prevRow.note;
+  const nextPole = fixedData.chot_so_luong_tru !== undefined ? fixedData.chot_so_luong_tru : prevRow.chot_so_luong_tru;
   await pool.query(
     `UPDATE station_proposals
-     SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
+     SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, custom_data = ?, status = ?, updated_at = NOW()
      ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
      WHERE id = ? AND user_id = ?`,
     resetDeadlineMinutes
-      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
-      : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
+      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
+      : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, id, userId]
   );
 
   if (wasRejected && reviewerId) {
@@ -180,6 +182,8 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       area: fixedData.area !== undefined ? fixedData.area : existing[0].area,
       land_type: fixedData.land_type !== undefined ? fixedData.land_type : existing[0].land_type,
       description: fixedData.description !== undefined ? fixedData.description : existing[0].description,
+      note: nextNote,
+      chot_so_luong_tru: nextPole,
       ...mergedDynamic
     };
     const diff = proposalLifecycle.buildDiff(oldFlat, newFlat, fieldDefs);

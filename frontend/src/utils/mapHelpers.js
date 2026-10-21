@@ -13,7 +13,16 @@ export const MARKER_COLORS = {
   REJECTED: '#ef4444',
   CANCELLED: '#6b7280',
   CONTRACT_SIGNED: '#0d9488',
-  CONTRACT_FAILED: '#f59e0b'
+  CONTRACT_FAILED: '#f59e0b',
+  GRADING: '#f59e0b',
+  GDTTKD_EVALUATING: '#7c3aed',
+  RE_GRADING: '#6366f1',
+  TGD_REVIEW: '#be123c',
+  DESIGNING: '#0891b2',
+  PROPOSAL_REPORT_CREATING: '#0d9488',
+  PROPOSAL_REPORT_REVIEWING: '#2563eb',
+  SIGNATURE_PENDING: '#9333ea',
+  COMPLETED: '#16a34a'
 };
 
 export const getMarkerColor = (status, entity) => {

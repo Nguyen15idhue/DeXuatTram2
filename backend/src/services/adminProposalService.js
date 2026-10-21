@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
+const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note'];
 
 exports.getBranchUserIds = async (salesId) => {
   const adminUserService = require('./adminUserService');
@@ -32,6 +32,12 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
       params.push(Number(scope.userId), Number(scope.userId));
     }
     where.push('(' + ors.join(' OR ') + ')');
+  }
+
+  // CTV: only see their own proposals (where they are the creator/user_id)
+  if (scope.role === 'CTV' && scope.userId) {
+    where.push('p.user_id = ?');
+    params.push(Number(scope.userId));
   }
 
   if (status) {
@@ -93,7 +99,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status, p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
-            p.pending_station_code,
+            p.pending_station_code, p.note, p.chot_so_luong_tru,
             u.full_name as user_name, u.email as user_email,
             p.journey_id,
             l.id AS lead_id, l.lead_code AS lead_code
@@ -232,7 +238,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
     dynamicData.sales_quan_ly = dynamicData.nguoi_phu_trach;
   }
 
-  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
+  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code, note, chot_so_luong_tru FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -254,12 +260,14 @@ exports.updateProposal = async (id, data, opts = {}) => {
     area: fixedData.area !== undefined ? fixedData.area : prev.area,
     land_type: fixedData.land_type !== undefined ? fixedData.land_type : prev.land_type,
     description: fixedData.description !== undefined ? fixedData.description : prev.description,
+    note: fixedData.note !== undefined ? fixedData.note : prev.note,
+    chot_so_luong_tru: fixedData.chot_so_luong_tru !== undefined ? fixedData.chot_so_luong_tru : prev.chot_so_luong_tru,
     status: prev.status
   };
 
   await pool.query(
-    `UPDATE station_proposals SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
-    [next.latitude, next.longitude, next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
+    `UPDATE station_proposals SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
+    [next.latitude, next.longitude, next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.note ?? null, dynamicUtils.toJsonParam(next.chot_so_luong_tru), next.status, customData, id]
   );
 
   try {

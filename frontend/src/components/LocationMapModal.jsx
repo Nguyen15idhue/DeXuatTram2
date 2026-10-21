@@ -4,7 +4,7 @@ import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService, evReportService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getMarkerColor } from '../utils/mapHelpers';
-import { getStatusLabel, getStationStatuses, getProposalStatuses } from '../utils/mapStatuses';
+import { getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import { getProposalDisplayName, getProposalDisplayPhone } from '../utils/proposalDisplay';
@@ -132,8 +132,9 @@ function createNearbyPopup(title, item, status, entity) {
   statusStrong.textContent = 'Trạng thái: ';
   statusP.appendChild(statusStrong);
   const span = document.createElement('span');
-  span.style.color = getMarkerColor(status, entity);
-  span.textContent = getStatusLabel(status, entity);
+  const mapStatus = entity === 'proposal' ? getProposalMapStatus(status) : status;
+  span.style.color = getMarkerColor(mapStatus, entity);
+  span.textContent = getStatusLabel(mapStatus, entity);
   statusP.appendChild(span);
   div.appendChild(statusP);
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
@@ -354,7 +355,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
       nearProposals = nearProposals.filter((p) => p.status !== 'CONTRACT_SIGNED');
       const mapSet = new Set((proposalLegendStatuses || []).map((s) => s.value));
       if (mapSet.size > 0) {
-        nearProposals = nearProposals.filter((p) => mapSet.has(p.status));
+        nearProposals = nearProposals.filter((p) => mapSet.has(getProposalMapStatus(p.status)));
       }
       if (filters.scope === 'mine' && user) {
         const uid = Number(user.id);
@@ -362,7 +363,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
       }
       const statuses = filters.proposalStatuses || [];
       if (statuses.length > 0) {
-        nearProposals = nearProposals.filter((p) => statuses.includes(p.status));
+        nearProposals = nearProposals.filter((p) => statuses.includes(getProposalMapStatus(p.status)));
       }
     }
     if (filters.hideEvReports) {
@@ -432,7 +433,7 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
   proposalsRef.current = proposals;
 
   const allStationStatuses = getStationStatuses();
-  const allProposalStatuses = getProposalStatuses();
+  const allProposalStatuses = getProposalMapStatuses();
   const total = nearby.stations.length + nearby.proposals.length + nearby.evReports.length;
   const narrowed = filters.scope === 'mine'
     || (filters.stationStatuses || []).length > 0
@@ -440,7 +441,10 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
     || (filters.proposalStatuses || []).length > 0
     || filters.hideStations || filters.hideStationPlans || filters.hideProposals || filters.hideEvReports;
   const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? readPriority(s) : '', _bg: getMarkerIconBg(s.status, 'station') }));
-  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') }));
+  const canvasProposals = nearby.proposals.map(p => {
+    const mapStatus = getProposalMapStatus(p.status);
+    return { ...p, _color: getMarkerColor(mapStatus, 'proposal'), _icon: getMarkerIcon(mapStatus, 'proposal'), _bg: getMarkerIconBg(mapStatus, 'proposal') };
+  });
   const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
   const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');

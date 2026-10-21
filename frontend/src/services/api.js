@@ -454,6 +454,9 @@ export const adminUserService = {
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/admin/users?${queryString}`, token);
   },
+  getOptions(token) {
+    return api.getWithAuth('/admin/users/options/all', token);
+  },
   getById(id, token) {
     return api.getWithAuth(`/admin/users/${id}`, token);
   },

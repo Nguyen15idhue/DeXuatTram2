@@ -76,6 +76,10 @@ export default defineConfig({
       '/tiles': {
         target: 'http://backend:3000',
         changeOrigin: true
+      },
+      '/files': {
+        target: 'http://backend:3000',
+        changeOrigin: true
       }
     }
   },

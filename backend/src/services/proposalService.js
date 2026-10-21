@@ -102,9 +102,9 @@ exports.createProposal = async (userId, data, opts = {}) => {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, supplement_deadline_at, transition_deadline_at)
-       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
-      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, supplementMinutes, transitionMinutes]
+      `INSERT INTO station_proposals (user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, note, chot_so_luong_tru, supplement_deadline_at, transition_deadline_at)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, fixedData.note ?? null, dynamicUtils.toJsonParam(fixedData.chot_so_luong_tru), supplementMinutes, transitionMinutes]
     );
 
     recordId = result.insertId;

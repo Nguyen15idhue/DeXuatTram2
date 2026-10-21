@@ -1,11 +1,16 @@
 const adminProposalService = require('../services/adminProposalService');
 const proximityService = require('../services/proximityService');
 const documentService = require('../services/documentService');
+const proposalLifecycle = require('../services/proposalLifecycle');
 
 const scopeFor = async (req) => {
-  if (req.user.role !== 'SALES') return { role: req.user.role };
-  const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
-  return { role: 'SALES', branchIds, userId: req.user.id };
+  if (req.user.role !== 'SALES' && req.user.role !== 'CTV') return { role: req.user.role };
+  if (req.user.role === 'SALES') {
+    const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
+    return { role: 'SALES', branchIds, userId: req.user.id };
+  }
+  // CTV: only see their own proposals (where they are the creator)
+  return { role: 'CTV', userId: req.user.id };
 };
 
 const isAssignee = (proposal, userId) => {
@@ -15,9 +20,16 @@ const isAssignee = (proposal, userId) => {
 };
 
 const denyOutsideBranch = (proposal, scope) => {
-  if (scope.role !== 'SALES') return false;
-  if (scope.branchIds.includes(Number(proposal.user_id))) return false;
-  return !isAssignee(proposal, scope.userId);
+  if (scope.role !== 'SALES' && scope.role !== 'CTV') return false;
+  if (scope.role === 'SALES') {
+    if (scope.branchIds.includes(Number(proposal.user_id))) return false;
+    return !isAssignee(proposal, scope.userId);
+  }
+  // CTV: only allow access to their own proposals (where they are the creator/user_id)
+  if (scope.role === 'CTV') {
+    return Number(proposal.user_id) !== Number(scope.userId);
+  }
+  return false;
 };
 
 exports.duplicates = async (req, res) => {
@@ -129,7 +141,7 @@ exports.delete = async (req, res) => {
 exports.updateStatus = async (req, res) => {
   try {
     const { status, reason, force } = req.body;
-    const validStatuses = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
+    const validStatuses = proposalLifecycle.ALL_STATUSES;
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ' });
     }

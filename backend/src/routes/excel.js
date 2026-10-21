@@ -69,7 +69,7 @@ router.get('/export/stations', requireAuth, requireAdmin, adminLimiter, excelLim
   *         name: status
   *         schema:
   *           type: string
-  *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED]
+  *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, TGD_REVIEW, DESIGNING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
   *         description: Lọc theo trạng thái (bỏ trống = tất cả)
   *       - in: query
   *         name: layout
@@ -287,7 +287,7 @@ router.get('/template/by-model', requireAuth, requireUserManager, adminLimiter, 
  *       403:
  *         description: Không có quyền
  */
-router.get('/views', requireAuth, requireLeadManager, excelService.getViewsForEntity);
+router.get('/views', requireAuth, excelService.getViewsForEntity);
 
 /**
  * @swagger

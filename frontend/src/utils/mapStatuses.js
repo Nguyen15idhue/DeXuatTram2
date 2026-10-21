@@ -16,7 +16,16 @@ export const PROPOSAL_STATUSES = [
   { value: 'ARCHIVED', label: 'Đã lưu trữ', color: '#8b5cf6', show_in_legend: true, sort_order: 6 },
   { value: 'REJECTED', label: 'Từ chối', color: '#ef4444', show_in_legend: false, sort_order: 7 },
   { value: 'CONTRACT_SIGNED', label: 'Ký thành công', color: '#0d9488', show_in_legend: false, sort_order: 8 },
-  { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 9 }
+  { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 9 },
+  { value: 'GRADING', label: 'Đang đánh giá quy hoạch và pháp lý', color: '#f59e0b', show_in_legend: false, sort_order: 10 },
+  { value: 'GDTTKD_EVALUATING', label: 'GĐTTKD đánh giá', color: '#7c3aed', show_in_legend: false, sort_order: 11 },
+  { value: 'RE_GRADING', label: 'GĐTTKD yêu cầu chấm lại', color: '#6366f1', show_in_legend: false, sort_order: 12 },
+  { value: 'TGD_REVIEW', label: 'Đang trình Tổng giám đốc', color: '#be123c', show_in_legend: false, sort_order: 13 },
+  { value: 'DESIGNING', label: 'Đang vẽ Layout', color: '#0891b2', show_in_legend: false, sort_order: 14 },
+  { value: 'PROPOSAL_REPORT_CREATING', label: 'Đang lập tờ trình BCĐX', color: '#0d9488', show_in_legend: false, sort_order: 15 },
+  { value: 'PROPOSAL_REPORT_REVIEWING', label: 'Đang duyệt BCĐX', color: '#2563eb', show_in_legend: false, sort_order: 16 },
+  { value: 'SIGNATURE_PENDING', label: 'Đang trình ký', color: '#9333ea', show_in_legend: false, sort_order: 17 },
+  { value: 'COMPLETED', label: 'Đã phê duyệt', color: '#16a34a', show_in_legend: false, sort_order: 18 }
 ];
 
 export const EV_REPORT_STATUSES = [
@@ -50,6 +59,37 @@ const withDynamicFallback = (entity, defaults) => {
 export const getStationStatuses = () => withDynamicFallback('station', STATION_STATUSES);
 export const getProposalStatuses = () => withDynamicFallback('proposal', PROPOSAL_STATUSES);
 export const getProposalLegendStatuses = () => getProposalStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
+
+// Quy trình v2: các trạng thái trung gian hiển thị trên bản đồ như "Đang xem xét"
+// (gộp nhóm để không sinh thêm legend/chip trùng lặp).
+export const PROPOSAL_MAP_STATUS_ALIAS = {
+  GRADING: 'REVIEWING',
+  GDTTKD_EVALUATING: 'REVIEWING',
+  RE_GRADING: 'REVIEWING',
+  TGD_REVIEW: 'REVIEWING',
+  DESIGNING: 'REVIEWING',
+  PROPOSAL_REPORT_CREATING: 'REVIEWING',
+  PROPOSAL_REPORT_REVIEWING: 'REVIEWING',
+  SIGNATURE_PENDING: 'REVIEWING'
+};
+
+export const getProposalMapStatus = (value) => PROPOSAL_MAP_STATUS_ALIAS[value] || value;
+
+export const getProposalMapStatuses = () => {
+  const all = getProposalStatuses();
+  const byValue = new Map(all.map((s) => [s.value, s]));
+  const seen = new Set();
+  const result = [];
+  all.forEach((s) => {
+    const value = getProposalMapStatus(s.value);
+    if (seen.has(value)) return;
+    seen.add(value);
+    result.push(byValue.get(value) || { ...s, value });
+  });
+  return result;
+};
+
+export const getProposalMapLegendStatuses = () => getProposalMapStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
 export const getEvReportStatuses = () => withDynamicFallback('ev_report', EV_REPORT_STATUSES);
 export const getEvReportLegendStatuses = () => getEvReportStatuses().filter((s) => s.show_in_legend !== false && s.show_in_legend !== 0);
 
