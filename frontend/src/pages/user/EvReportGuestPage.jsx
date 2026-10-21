@@ -671,7 +671,7 @@ const EvReportGuestPage = () => {
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
                       active
                         ? "bg-green-600 border-green-600 text-white shadow-sm"
-                        : "bg-white border-base-300 text-base-content hover:border-green-500"
+                        : "bg-white dark:bg-base-100 border-base-300 text-base-content hover:border-green-500"
                     }`}
                     onClick={() =>
                       handleChange(
@@ -703,6 +703,54 @@ const EvReportGuestPage = () => {
                     {active && (
                       <CheckCircle2 size={18} className="shrink-0 text-white" />
                     )}
+                  </button>
+                );
+              })}
+            </div>
+            {field.help_text && (
+              <div className="field-help">{field.help_text}</div>
+            )}
+            {err && <div className="field-error">{err}</div>}
+          </div>
+        </div>
+      );
+    }
+    if (key === "hop_tac_lap_tram") {
+      const choices =
+        options.length > 0
+          ? options
+          : [
+              { value: "Có", label: "Có" },
+              { value: "Không", label: "Không" },
+            ];
+      return (
+        <div className="form-cell-content" key={key}>
+          <div
+            className={`dynamic-form-field${filled ? " is-filled" : ""}${err ? " has-error" : ""}`}
+            data-field-key={key}
+          >
+            <label>
+              {field.label}
+              {required && <span className="text-red-600"> *</span>}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {choices.map((o, i) => {
+                const val = o && o.value !== undefined ? o.value : o;
+                const lbl = o && o.label !== undefined ? o.label : String(o);
+                const active = String(rawVal) === String(val);
+                return (
+                  <button
+                    type="button"
+                    key={`${val}-${i}`}
+                    aria-pressed={active}
+                    className={`px-6 py-2 rounded-lg border font-semibold transition-colors ${
+                      active
+                        ? "bg-green-600 border-green-600 text-white shadow-sm"
+                        : "bg-white dark:bg-base-100 border-base-300 text-base-content hover:border-green-500"
+                    }`}
+                    onClick={() => handleChange(key, active ? "" : val)}
+                  >
+                    {lbl}
                   </button>
                 );
               })}
@@ -800,7 +848,7 @@ const EvReportGuestPage = () => {
   );
 
   return (
-    <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4 mb-8">
+    <div className="form-shell max-w-3xl mx-auto p-4 md:p-6 space-y-4 mb-8">
       <Toast
         message={toast.message}
         type={toast.type}
@@ -823,7 +871,7 @@ const EvReportGuestPage = () => {
         />
       )}
 
-      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-hidden">
+      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-visible">
         <button
           type="button"
           className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-base-200/60 transition-colors"
@@ -876,7 +924,7 @@ const EvReportGuestPage = () => {
         )}
       </section>
 
-      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-hidden">
+      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-visible">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-base-200">
           <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold text-sm shrink-0">
             02
