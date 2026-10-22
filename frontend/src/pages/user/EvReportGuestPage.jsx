@@ -13,7 +13,6 @@ import NearbyStationsModal, {
 import useDebouncedValue from "../../hooks/useDebouncedValue";
 import Toast from "../../components/Toast";
 import {
-  MapPin,
   LocateFixed,
   CheckCircle2,
   PlusCircle,
@@ -189,6 +188,7 @@ const EvReportGuestPage = () => {
   const [done, setDone] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [nearbyOpen, setNearbyOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(true);
   const [previewCenter, setPreviewCenter] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [values, setValues] = useState({ ...EMPTY_VALUES });
@@ -819,17 +819,17 @@ const EvReportGuestPage = () => {
   );
 
   const regLocControls = (
-    <div className="flex flex-col sm:flex-row gap-2 sm:items-center mb-3">
+    <div className="flex flex-col sm:flex-row gap-3 sm:items-center mb-3">
       <button
         type="button"
-        className="btn btn-outline btn-sm gap-1 shrink-0"
+        className="btn btn-outline btn-sm gap-2 shrink-0 border-green-600 text-green-700 hover:bg-green-600 hover:text-white"
         onClick={handleMyLocation}
         disabled={locating}
       >
         <LocateFixed size={14} />
         {locating ? "Đang lấy vị trí..." : "Vị trí của tôi"}
       </button>
-      <span className="flex items-center gap-2 font-semibold text-sm">
+      <span className="flex items-center gap-2 text-sm font-medium text-base-content/70">
         Hoặc tìm địa chỉ
       </span>
       <PlaceSearchInput
@@ -841,25 +841,36 @@ const EvReportGuestPage = () => {
   );
 
   const coordsInfo = mapCoords.latitude && mapCoords.longitude && (
-    <div className="flex items-center gap-1.5 text-xs text-success mb-3">
-      <CheckCircle2 size={14} />
+    <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700 mb-3">
+      <CheckCircle2 size={16} />
       Đã xác định vị trí sạc: {mapCoords.latitude}, {mapCoords.longitude}
     </div>
   );
 
   return (
-    <div className="form-shell max-w-3xl mx-auto p-4 md:p-6 space-y-4 mb-8">
-      <Toast
-        message={toast.message}
-        type={toast.type}
-        onClose={() => setToast({ message: "", type: "success" })}
-      />
+    <div className="bg-gradient-to-b from-green-50 via-white to-white">
+      <div className="max-w-4xl mx-auto px-4 pt-6 pb-10 md:pt-10 md:pb-16 space-y-6">
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast({ message: "", type: "success" })}
+        />
 
-      <div className="text-center space-y-1 pt-1">
-        <h1 className="text-2xl md:text-3xl font-bold">
-          Tìm trạm sạc & đăng ký nhu cầu sạc
-        </h1>
-      </div>
+        <header className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white shadow-lg shadow-green-900/10">
+            <img
+              src="/icons/section-icon.png"
+              alt="Tìm trạm sạc & đăng ký nhu cầu sạc"
+              className="w-14 h-14 object-contain"
+            />
+          </div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-green-800">
+            Tìm trạm sạc & đăng ký nhu cầu sạc
+          </h1>
+          <p className="text-base md:text-lg text-base-content/70 max-w-2xl mx-auto">
+            Cho chúng tôi biết bạn thường sạc xe ở đâu, TMT-EGREEN sẽ mở thêm trạm sạc gần bạn.
+          </p>
+        </header>
 
       {previewOpen && previewCenter && (
         <NearbyStationsModal
@@ -871,18 +882,17 @@ const EvReportGuestPage = () => {
         />
       )}
 
-      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-visible">
+      <section className="rounded-2xl border border-green-100 bg-white shadow-lg shadow-green-900/5 overflow-hidden">
         <button
           type="button"
-          className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-base-200/60 transition-colors"
+          className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-green-50/60 transition-colors"
           onClick={() => setNearbyOpen((v) => !v)}
           aria-expanded={nearbyOpen}
         >
-          <span className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold text-sm shrink-0">
+          <span className="flex items-center gap-3">
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-600 text-white text-sm font-bold shrink-0 shadow-sm">
               01
             </span>
-            <MapPin size={18} className="text-primary shrink-0" />
             <span className="font-bold text-lg">
               Kiểm tra trạm sạc ở gần bạn
             </span>
@@ -895,18 +905,18 @@ const EvReportGuestPage = () => {
           />
         </button>
         {nearbyOpen && (
-          <div className="border-t border-base-200 p-4 space-y-2">
-            <div className="flex flex-col sm:flex-row gap-2">
+          <div className="border-t border-green-100 bg-green-50/30 p-5 space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
               <button
                 type="button"
-                className="btn btn-outline btn-sm gap-1 shrink-0"
+                className="btn btn-outline btn-sm gap-2 shrink-0 border-green-600 text-green-700 hover:bg-green-600 hover:text-white"
                 onClick={handlePreviewMyLocation}
                 disabled={previewLoading}
               >
                 <LocateFixed size={14} />
                 {previewLoading ? "Đang lấy vị trí..." : "Vị trí của tôi"}
               </button>
-              <span className="flex items-center gap-2 font-semibold text-sm">
+              <span className="text-sm font-medium text-base-content/70">
                 Hoặc tìm địa chỉ
               </span>
               <PlaceSearchInput
@@ -924,48 +934,48 @@ const EvReportGuestPage = () => {
         )}
       </section>
 
-      <section className="border border-base-300 rounded-lg shadow-sm bg-base-100 overflow-visible">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-base-200">
-          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold text-sm shrink-0">
-            02
+      <section className="rounded-2xl border border-green-100 bg-white shadow-lg shadow-green-900/5 overflow-hidden">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-green-50/60 transition-colors border-b border-green-100 bg-green-50/40"
+          onClick={() => setRegisterOpen((v) => !v)}
+          aria-expanded={registerOpen}
+        >
+          <span className="flex items-center gap-3">
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-600 text-white text-sm font-bold shrink-0 shadow-sm">
+              02
+            </span>
+            <span className="font-bold text-xl text-green-800">
+              Đăng ký thông tin nhu cầu sạc
+            </span>
           </span>
-          <PlusCircle size={18} className="text-primary shrink-0" />
-          <span className="font-bold text-lg">
-            Đăng ký thông tin nhu cầu sạc
-          </span>
-        </div>
-        <div className={`p-4 md:p-5 ${done ? "space-y-3" : ""}`}>
+          <ChevronDown
+            size={20}
+            className={`shrink-0 text-green-700 transition-transform duration-200 ${
+              registerOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+        {registerOpen && (
+          <div className={`p-5 md:p-6 ${done ? "space-y-4" : ""}`}>
           {done ? (
             <>
-                <h2 className="font-bold text-lg flex items-center gap-2 text-success">
-                  <CheckCircle2 size={20} /> Cảm ơn bạn đã chia sẻ!
-                </h2>
-          <div className="bg-base-200 rounded-lg px-3 py-2 text-sm space-y-1">
-            <div>
-              Hãng xe: <strong>{done.hang_xe || "—"}</strong>
-            </div>
-            <div>
-              Nhóm phương tiện:{" "}
-              <strong>
-                {Array.isArray(done.nhom_phuong_tien) &&
-                done.nhom_phuong_tien.length > 0
-                  ? done.nhom_phuong_tien.join(", ")
-                  : done.nhom_phuong_tien || "—"}
-              </strong>
-            </div>
-            <div>
-              Địa chỉ: <strong>{done.address || done.province || "—"}</strong>
-            </div>
+                <div className="flex items-center gap-3">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 text-green-600">
+                    <CheckCircle2 size={28} />
+                  </div>
+                  <h2 className="font-bold text-xl text-green-700">Cảm ơn bạn đã chia sẻ!</h2>
+                </div>
+          <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm space-y-1.5">
+            <div className="flex justify-between gap-3"><span className="text-base-content/60">Hãng xe</span><strong>{done.hang_xe || "—"}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-base-content/60">Nhóm phương tiện</span><strong>{Array.isArray(done.nhom_phuong_tien) && done.nhom_phuong_tien.length > 0 ? done.nhom_phuong_tien.join(", ") : done.nhom_phuong_tien || "—"}</strong></div>
+            <div className="flex justify-between gap-3"><span className="text-base-content/60">Địa chỉ</span><strong>{done.address || done.province || "—"}</strong></div>
           </div>
           <p className="text-sm text-base-content/70">
-            Thông tin của bạn sẽ giúp chúng tôi chọn vị trí mở trạm sạc mới. Bạn
-            có thể gửi thêm nhiều vị trí khác.
+            Thông tin của bạn sẽ giúp chúng tôi chọn vị trí mở trạm sạc mới. Bạn có thể gửi thêm nhiều vị trí khác.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="btn btn-primary gap-1"
-              onClick={handleSendAnother}
-            >
+          <div className="flex flex-wrap gap-3">
+            <button className="btn btn-primary gap-2 shadow-sm" onClick={handleSendAnother}>
               <PlusCircle size={16} /> Gửi thêm vị trí khác
             </button>
             <a className="btn btn-ghost" href="/">
@@ -991,8 +1001,8 @@ const EvReportGuestPage = () => {
               {error && (
                 <div className="alert alert-error text-sm mb-3">{error}</div>
               )}
-              <fieldset className="form-section form-section-block form-section-block-first">
-                <legend className="form-section-title">
+              <fieldset className="rounded-xl border border-base-200 bg-base-50/60 p-4 md:p-5 space-y-3">
+                <legend className="px-2 text-base font-bold text-green-700">
                   Vị trí thường xuyên sạc
                 </legend>
 
@@ -1002,8 +1012,8 @@ const EvReportGuestPage = () => {
                 {renderRow(["address"])}
               </fieldset>
 
-              <fieldset className="form-section form-section-block">
-                <legend className="form-section-title">
+              <fieldset className="rounded-xl border border-base-200 bg-base-50/60 p-4 md:p-5 space-y-3">
+                <legend className="px-2 text-base font-bold text-green-700">
                   Thông tin chia sẻ
                 </legend>
                 {renderRow(["full_name", "phone"])}
@@ -1034,7 +1044,7 @@ const EvReportGuestPage = () => {
 
               <button
                 type="submit"
-                className="btn btn-primary w-full mt-4"
+                className="btn btn-primary w-full mt-6 shadow-lg shadow-green-600/20"
                 disabled={submitting}
               >
                 {submitting ? "Đang gửi..." : "Gửi thông tin đi"}
@@ -1044,7 +1054,9 @@ const EvReportGuestPage = () => {
               </>
             )}
           </div>
+        )}
       </section>
+      </div>
     </div>
   );
 };
