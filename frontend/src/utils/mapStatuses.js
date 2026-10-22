@@ -27,6 +27,7 @@ export const PROPOSAL_STATUSES = [
   { value: 'PROPOSAL_REPORT_CREATING', label: 'Đang lập tờ trình BCĐX', color: '#0d9488', show_in_legend: false, sort_order: 15 },
   { value: 'PROPOSAL_REPORT_RE_CREATING', label: 'Yêu cầu tạo lại BCĐX', color: '#f59e0b', show_in_legend: false, sort_order: 15.5 },
   { value: 'PROPOSAL_REPORT_REVIEWING', label: 'Đang duyệt BCĐX', color: '#2563eb', show_in_legend: false, sort_order: 16 },
+  { value: 'PROPOSAL_REPORT_UPDATING', label: 'Chờ cập nhật lại BCĐX', color: '#f97316', show_in_legend: false, sort_order: 16.5 },
   { value: 'SIGNATURE_PENDING', label: 'Đang trình ký', color: '#9333ea', show_in_legend: false, sort_order: 17 },
   { value: 'COMPLETED', label: 'Đã phê duyệt', color: '#16a34a', show_in_legend: false, sort_order: 18 }
 ];
@@ -76,6 +77,7 @@ export const PROPOSAL_MAP_STATUS_ALIAS = {
   PROPOSAL_REPORT_CREATING: 'REVIEWING',
   PROPOSAL_REPORT_RE_CREATING: 'REVIEWING',
   PROPOSAL_REPORT_REVIEWING: 'REVIEWING',
+  PROPOSAL_REPORT_UPDATING: 'REVIEWING',
   SIGNATURE_PENDING: 'REVIEWING'
 };
 

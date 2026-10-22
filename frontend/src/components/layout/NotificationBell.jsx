@@ -30,6 +30,7 @@ const TYPE_COLORS = {
   PROPOSAL_REPORT_CREATING: { bg: '#ccfbf1', border: '#0d9488', text: '#0f766e' },
   PROPOSAL_REPORT_RE_CREATING: { bg: '#ffedd5', border: '#f59e0b', text: '#9a3412' },
   PROPOSAL_REPORT_REVIEWING: { bg: '#dbeafe', border: '#2563eb', text: '#1e40af' },
+  PROPOSAL_REPORT_UPDATING: { bg: '#ffedd5', border: '#f97316', text: '#9a3412' },
   SIGNATURE_PENDING: { bg: '#f3e8ff', border: '#9333ea', text: '#6b21a8' },
   COMPLETED: { bg: '#dcfce7', border: '#16a34a', text: '#166534' }
 };

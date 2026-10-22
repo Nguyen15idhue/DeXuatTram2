@@ -455,6 +455,25 @@ export const proposalReportService = {
   }
 };
 
+export const proposalApprovalService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-approvals${qs}`, token);
+  },
+  requestUpdate(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-approvals/${id}/request-update`, data || {}, token);
+  },
+  getSignatureConfig(id, token) {
+    return api.getWithAuth(`/admin/proposal-approvals/${id}/signature-config`, token);
+  },
+  getSignerCandidates(id, token) {
+    return api.getWithAuth(`/admin/proposal-approvals/${id}/signer-candidates`, token);
+  },
+  configureSignature(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-approvals/${id}/signature-config`, data || {}, token);
+  }
+};
+
 export const proposalReviewService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';

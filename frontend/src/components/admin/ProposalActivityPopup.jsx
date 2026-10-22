@@ -25,6 +25,7 @@ const STATUS_DOT = {
   PROPOSAL_REPORT_CREATING: '#0d9488',
   PROPOSAL_REPORT_RE_CREATING: '#f59e0b',
   PROPOSAL_REPORT_REVIEWING: '#2563eb',
+  PROPOSAL_REPORT_UPDATING: '#f97316',
   SIGNATURE_PENDING: '#9333ea',
   COMPLETED: '#16a34a'
 };
@@ -55,7 +56,9 @@ const ACTION_LABEL = {
   layout_supplement_requested: 'Yêu cầu bổ sung thông tin vẽ layout',
   layout_cancelled: 'Hủy đề xuất ở bước đánh giá layout',
   report_uploaded: 'Tải lên tờ trình BCĐX',
-  report_revision_requested: 'Yêu cầu tạo lại tờ trình BCĐX'
+  report_revision_requested: 'Yêu cầu tạo lại tờ trình BCĐX',
+  report_update_requested: 'Yêu cầu cập nhật thông tin BCĐX',
+  signature_configured: 'Cấu hình trình ký BCĐX'
 };
 
 const SOURCE_LABEL = {

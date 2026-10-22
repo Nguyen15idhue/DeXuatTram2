@@ -29,6 +29,7 @@ const STATUS_TITLES = {
   PROPOSAL_REPORT_CREATING: 'Đề xuất đang lập tờ trình BCĐX',
   PROPOSAL_REPORT_RE_CREATING: 'Đề xuất cần tạo lại tờ trình BCĐX',
   PROPOSAL_REPORT_REVIEWING: 'Đề xuất đang duyệt BCĐX',
+  PROPOSAL_REPORT_UPDATING: 'Đề xuất chờ cập nhật lại BCĐX',
   SIGNATURE_PENDING: 'Đề xuất đang trình ký',
   COMPLETED: 'Đề xuất đã được phê duyệt'
 };

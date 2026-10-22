@@ -7,22 +7,25 @@ const { normalizeText, parseCustomData, normalizeFileEntries, toFileSummaries } 
 const CREATING_STATUS = 'PROPOSAL_REPORT_CREATING';
 const RE_CREATING_STATUS = 'PROPOSAL_REPORT_RE_CREATING';
 const REVIEWING_STATUS = 'PROPOSAL_REPORT_REVIEWING';
+const UPDATING_STATUS = 'PROPOSAL_REPORT_UPDATING';
 const SIGNATURE_STATUS = 'SIGNATURE_PENDING';
 const COMPLETED_STATUS = 'COMPLETED';
 const CANCELLED_STATUS = 'CANCELLED';
 
 const TAB_STATUSES = {
   all: [
-    CREATING_STATUS, RE_CREATING_STATUS, REVIEWING_STATUS,
+    CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS, REVIEWING_STATUS,
     SIGNATURE_STATUS, COMPLETED_STATUS, CANCELLED_STATUS
   ],
-  pending: [CREATING_STATUS, RE_CREATING_STATUS],
+  pending: [CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS],
   completed: [REVIEWING_STATUS, SIGNATURE_STATUS, COMPLETED_STATUS, CANCELLED_STATUS]
 };
 
 const REPORT_FIELD = 'file_bc_dx';
 const LAYOUT_FIELD = 'ban_ve_layout';
 const REVISION_REQUEST_TYPE = 'REVISE_BCDX';
+const UPDATE_INFO_REQUEST_TYPE = 'UPDATE_INFO';
+const CLOSED_ON_UPLOAD_TYPES = [REVISION_REQUEST_TYPE, UPDATE_INFO_REQUEST_TYPE];
 
 const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
 
@@ -112,8 +115,10 @@ const mapReportRow = (row) => {
 exports.CREATING_STATUS = CREATING_STATUS;
 exports.RE_CREATING_STATUS = RE_CREATING_STATUS;
 exports.REVIEWING_STATUS = REVIEWING_STATUS;
+exports.UPDATING_STATUS = UPDATING_STATUS;
 exports.REPORT_FIELD = REPORT_FIELD;
 exports.REVISION_REQUEST_TYPE = REVISION_REQUEST_TYPE;
+exports.UPDATE_INFO_REQUEST_TYPE = UPDATE_INFO_REQUEST_TYPE;
 exports.TAB_STATUSES = TAB_STATUSES;
 exports.resolveScope = resolveScope;
 exports.isBackOffice = isBackOffice;
@@ -159,14 +164,14 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
             (SELECT COUNT(*) FROM proposal_requests r
               WHERE r.proposal_id = p.id AND r.request_type = ?) AS revision_request_count,
             (SELECT r.description FROM proposal_requests r
-              WHERE r.proposal_id = p.id AND r.request_type = ? AND r.status = 'OPEN'
+              WHERE r.proposal_id = p.id AND r.request_type IN (?, ?) AND r.status = 'OPEN'
               ORDER BY r.id DESC LIMIT 1) AS task_description
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
      ${whereClause}
      ORDER BY p.updated_at DESC, p.id DESC
      LIMIT ? OFFSET ?`,
-    [REVISION_REQUEST_TYPE, REVISION_REQUEST_TYPE, ...params, safeLimit, offset]
+    [REVISION_REQUEST_TYPE, REVISION_REQUEST_TYPE, UPDATE_INFO_REQUEST_TYPE, ...params, safeLimit, offset]
   );
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
@@ -343,7 +348,7 @@ exports.findGdttkdIdsByRegion = findGdttkdIdsByRegion;
 exports.uploadReport = async ({ user, id, files, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
-  if (![CREATING_STATUS, RE_CREATING_STATUS].includes(proposal.status)) {
+  if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
     throw err('Đề xuất không ở trạng thái lập tờ trình BCĐX', 400);
   }
   await assertCanUpload(scope, proposal);
@@ -382,7 +387,7 @@ exports.uploadReport = async ({ user, id, files, ip } = {}) => {
 
   await require('./proposalRequestService').closeRequests(
     proposal.id,
-    [REVISION_REQUEST_TYPE],
+    CLOSED_ON_UPLOAD_TYPES,
     { resolvedBy: user.id }
   );
 
