@@ -32,6 +32,7 @@ const AdminProposalsDanhGiaLayoutPage = lazy(() => import('./pages/admin/AdminPr
 const AdminProposalsLapToTrinhPage = lazy(() => import('./pages/admin/AdminProposalsLapToTrinhPage'));
 const AdminProposalsDuyetBCDXPage = lazy(() => import('./pages/admin/AdminProposalsDuyetBCDXPage'));
 const AdminProposalsTrinhKyPage = lazy(() => import('./pages/admin/AdminProposalsTrinhKyPage'));
+const AdminProposalSigningPage = lazy(() => import('./pages/admin/AdminProposalSigningPage'));
 const AdminESignPage = lazy(() => import('./pages/admin/AdminESignPage'));
 const AdminEvReportsPage = lazy(() => import('./pages/admin/AdminEvReportsPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
@@ -52,6 +53,7 @@ const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'];
 const PROPOSAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
+const SIGNING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const ESIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
 const PANEL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
 const HIDE_ASSISTANT_PATHS = ['/login', '/register', '/map'];
@@ -184,8 +186,24 @@ function App() {
             <Route
               path="/admin/proposals/trinh-ky"
               element={
-                <RoleRoute allowed={PROPOSAL_ROLES}>
+                <RoleRoute allowed={SIGNING_ROLES}>
                   <AdminProposalsTrinhKyPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/ky-bcdx"
+              element={
+                <RoleRoute allowed={SIGNING_ROLES}>
+                  <AdminProposalSigningPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/ky-bcdx/:id"
+              element={
+                <RoleRoute allowed={SIGNING_ROLES}>
+                  <AdminProposalSigningPage />
                 </RoleRoute>
               }
             />

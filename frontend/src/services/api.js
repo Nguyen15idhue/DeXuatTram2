@@ -474,6 +474,28 @@ export const proposalApprovalService = {
   }
 };
 
+export const proposalSignatureService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-signatures${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}`, token);
+  },
+  sign(id, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/sign`, {}, token);
+  },
+  reject(id, data, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/reject`, data || {}, token);
+  },
+  uploadSignedFile(id, data, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/signed-file`, data || {}, token);
+  },
+  getExportFile(id, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
+  }
+};
+
 export const proposalReviewService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
