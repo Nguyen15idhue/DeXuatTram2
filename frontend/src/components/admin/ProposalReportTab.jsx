@@ -18,7 +18,12 @@ import {
   getProposalLegalName,
   getProposalPhone
 } from '../../utils/proposalGrading';
-import { canUploadReport, uploadButtonLabel } from '../../utils/proposalReport';
+import {
+  canUploadReport,
+  formatCommittedPoles,
+  formatCommittedTotal,
+  uploadButtonLabel
+} from '../../utils/proposalReport';
 import { Eye, Pencil, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
@@ -104,7 +109,7 @@ const ProposalReportTab = ({ tab }) => {
     loadItems(page, pageSize);
   };
 
-  const colCount = 12;
+  const colCount = 14;
 
   return (
     <div className="space-y-2">
@@ -144,6 +149,8 @@ const ProposalReportTab = ({ tab }) => {
                   <th>Mô hình đầu tư</th>
                   <th>Địa chỉ chi tiết</th>
                   <th>Quy mô trụ đề xuất</th>
+                  <th>Số lượng trụ chốt</th>
+                  <th>Tổng giá trị chốt</th>
                   <th>Tổng chi phí dự kiến</th>
                   <th>Người đề xuất</th>
                   <th>Trạng thái</th>
@@ -174,6 +181,8 @@ const ProposalReportTab = ({ tab }) => {
                       <td>{getModelLabel(row.mo_hinh_dau_tu, modelOptions)}</td>
                       <td className="min-w-[220px]">{getProposalAddress(row)}</td>
                       <td>{formatProposalScale(row)}</td>
+                      <td className="min-w-[240px]">{formatCommittedPoles(row.chot_so_luong_tru)}</td>
+                      <td className="whitespace-nowrap">{formatCommittedTotal(row.tong_gia_tri_chot)}</td>
                       <td>{formatProposalCost(row)}</td>
                       <td>
                         <ProposalPersonLink id={row.user_id} name={row.user_name} />

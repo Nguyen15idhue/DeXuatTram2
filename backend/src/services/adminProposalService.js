@@ -105,7 +105,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.contact_1office_code, p.sync_status, p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
-            p.pending_station_code, p.note, p.chot_so_luong_tru,
+            p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
             u.full_name as user_name, u.email as user_email,
             p.journey_id,
             l.id AS lead_id, l.lead_code AS lead_code

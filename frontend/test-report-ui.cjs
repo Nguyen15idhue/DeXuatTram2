@@ -59,7 +59,8 @@ async function main() {
   // Tab 1 columns
   const headers = await page.locator('thead th').allTextContents();
   const need = ['Mã đề xuất', 'Tên pháp nhân', 'SĐT liên hệ', 'Mô hình đầu tư', 'Địa chỉ chi tiết',
-    'Quy mô trụ đề xuất', 'Tổng chi phí dự kiến', 'Người đề xuất', 'Trạng thái', 'Mô tả việc cần làm', 'Hành động'];
+    'Quy mô trụ đề xuất', 'Số lượng trụ chốt', 'Tổng giá trị chốt', 'Tổng chi phí dự kiến',
+    'Người đề xuất', 'Trạng thái', 'Mô tả việc cần làm', 'Hành động'];
   const missing = need.filter((h) => !headers.some((x) => x.includes(h)));
   log('tab1 columns', missing.length === 0, missing.join(', '));
 
@@ -95,7 +96,18 @@ async function main() {
   await page.waitForTimeout(1200);
   log('report modal opens', (await page.locator('h3:has-text("Cập nhật tờ trình BCĐX")').count()) > 0);
   log('report modal has upload', (await page.locator('.file-upload-dropzone').count()) > 0);
-  log('report modal has upload btn', (await page.locator('.modal-box button:has-text("Tải lên")').count()) > 0);
+  log('report modal has committed pole table', (await page.locator('.modal-box th:has-text("Mô hình liên kết")').count()) > 0
+    && (await page.locator('.modal-box th:has-text("Giá chốt hiện tại")').count()) > 0);
+  const reportSelects = page.locator('.modal-box select');
+  await reportSelects.nth(0).selectOption('LK');
+  await reportSelects.nth(1).selectOption({ label: 'CCS2 60kW' });
+  await page.waitForTimeout(400);
+  log('price autofills from list', (await page.locator('.modal-box td:has-text("180.000.000")').count()) > 0);
+  log('report modal has total', (await page.locator('.modal-box tfoot:has-text("Tổng giá trị chốt")').count()) > 0);
+  const poleRowsBefore = await page.locator('.modal-box tbody tr').count();
+  await page.locator('.modal-box button:has-text("Thêm dòng")').click();
+  log('can add multiple pole rows', (await page.locator('.modal-box tbody tr').count()) === poleRowsBefore + 1);
+  log('report modal has submit btn', (await page.locator('.modal-box button:has-text("Tải lên và gửi duyệt")').count()) > 0);
   await page.locator('.modal-box .btn-circle').first().click();
   await page.waitForTimeout(800);
 
@@ -122,6 +134,28 @@ async function main() {
   log('tab3 has row', (await row3.count()) > 0);
   log('tab3 no update button', (await row3.locator('button:has-text("Cập nhật")').count()) === 0);
   log('tab3 task column', (await page.locator('thead th:has-text("Mô tả việc cần làm")').count()) > 0);
+
+  // Người đề xuất cũng được nhập bảng trụ chốt trong luồng upload.
+  await setStatus(page.request, admin, 'PROPOSAL_REPORT_CREATING');
+  const owner = await login(page.request, 'ctv@gmail.com');
+  await page.goto(`${BASE}/my-proposals`);
+  await page.evaluate((t) => localStorage.setItem('token', t), owner);
+  await page.goto(`${BASE}/my-proposals`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1500);
+  const ownerReportButton = page.locator('button:has-text("Tờ trình BCĐX")');
+  log('owner sees report upload action', (await ownerReportButton.count()) > 0);
+  if ((await ownerReportButton.count()) > 0) {
+    await ownerReportButton.first().click();
+    await page.waitForTimeout(1200);
+    log('owner gets committed pole form', (await page.locator('.modal-box th:has-text("Mô hình liên kết")').count()) > 0);
+    const ownerSelects = page.locator('.modal-box select');
+    await ownerSelects.nth(0).selectOption('LK');
+    await ownerSelects.nth(1).selectOption({ label: 'CCS2 60kW' });
+    await page.waitForTimeout(300);
+    log('owner price lookup works', (await page.locator('.modal-box td:has-text("180.000.000")').count()) > 0);
+    await page.locator('.modal-box .btn-circle').first().click();
+  }
 
   log('no console error', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' || '));
 

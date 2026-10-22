@@ -56,9 +56,12 @@ router.get('/', requireAuth, requireUserManager, proposalReportController.list);
  *     tags: [Proposal Reports]
  *     summary: Tải lên file tờ trình BCĐX
  *     description: >
- *       Áp dụng cho đề xuất PROPOSAL_REPORT_CREATING hoặc PROPOSAL_REPORT_RE_CREATING.
+ *       Áp dụng cho đề xuất PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING hoặc
+ *       PROPOSAL_REPORT_UPDATING.
  *       Người tạo đề xuất hoặc GĐTTKD đúng khu vực (hoặc Admin) được tải lên.
- *       Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING và thông báo Back Office.
+ *       Bắt buộc gửi chot_so_luong_tru gồm mô hình, số lượng, loại trụ; server tự lấy giá hiện tại,
+ *       tính tổng giá trị chốt. Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING
+ *       và thông báo Back Office.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -73,6 +76,7 @@ router.get('/', requireAuth, requireUserManager, proposalReportController.list);
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [files, chot_so_luong_tru]
  *             properties:
  *               files:
  *                 type: array
@@ -81,11 +85,28 @@ router.get('/', requireAuth, requireUserManager, proposalReportController.list);
  *                   properties:
  *                     id:
  *                       type: integer
+ *               chot_so_luong_tru:
+ *                 type: array
+ *                 minItems: 1
+ *                 items:
+ *                   type: object
+ *                   required: [mo_hinh, so_luong, loai_tru]
+ *                   properties:
+ *                     mo_hinh:
+ *                       type: string
+ *                       enum: [TDT, LK, NQ, NQ_LK]
+ *                     so_luong:
+ *                       type: integer
+ *                       minimum: 1
+ *                     loai_tru:
+ *                       type: string
+ *                     gia_chot:
+ *                       type: number
  *     responses:
  *       200:
  *         description: Thành công
  *       400:
- *         description: Sai trạng thái hoặc thiếu file
+ *         description: Sai trạng thái hoặc thiếu file/dữ liệu số lượng trụ chốt
  *       403:
  *         description: Không có quyền
  *       404:

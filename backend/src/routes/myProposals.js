@@ -173,8 +173,10 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *     tags: [My Proposals]
  *     summary: Tải lên tờ trình BCĐX cho đề xuất của mình
  *     description: >
- *       Áp dụng cho đề xuất PROPOSAL_REPORT_CREATING hoặc PROPOSAL_REPORT_RE_CREATING.
- *       Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING và thông báo Back Office.
+ *       Áp dụng cho đề xuất PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING hoặc
+ *       PROPOSAL_REPORT_UPDATING. Bắt buộc gửi số lượng trụ chốt; server lấy giá hiện tại
+ *       theo loại trụ và tính tổng giá trị chốt. Sau khi tải lên, đề xuất chuyển sang
+ *       PROPOSAL_REPORT_REVIEWING và thông báo Back Office.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -189,6 +191,7 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [files, chot_so_luong_tru]
  *             properties:
  *               files:
  *                 type: array
@@ -197,6 +200,23 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *                   properties:
  *                     id:
  *                       type: integer
+ *               chot_so_luong_tru:
+ *                 type: array
+ *                 minItems: 1
+ *                 items:
+ *                   type: object
+ *                   required: [mo_hinh, so_luong, loai_tru]
+ *                   properties:
+ *                     mo_hinh:
+ *                       type: string
+ *                       enum: [TDT, LK, NQ, NQ_LK]
+ *                     so_luong:
+ *                       type: integer
+ *                       minimum: 1
+ *                     loai_tru:
+ *                       type: string
+ *                     gia_chot:
+ *                       type: number
  *     responses:
  *       200:
  *         description: Thành công

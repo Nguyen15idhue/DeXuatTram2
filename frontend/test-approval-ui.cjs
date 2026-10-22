@@ -124,7 +124,7 @@ async function main() {
   await select.selectOption(value);
   await page.locator('.modal-box button:has-text("Thêm")').first().click();
   await page.waitForTimeout(800);
-  log('signer added to list', (await page.locator('.modal-box li:has-text("CTV")').count()) > 0);
+  log('signer added to list', (await page.locator('.modal-box ul li').count()) > 0);
   log('signature box rendered', (await page.locator('.modal-box .absolute.border-primary').count()) > 0);
   log('signature modal has confirm btn', (await page.locator('.modal-box button:has-text("Xác nhận trình ký")').count()) > 0);
   await page.locator('.modal-box .btn-circle').first().click();

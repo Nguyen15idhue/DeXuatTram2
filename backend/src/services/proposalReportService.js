@@ -194,7 +194,7 @@ const loadProposal = async (id) => {
   const proposalId = Number(id);
   if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, owner_name, custom_data FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, owner_name, custom_data, chot_so_luong_tru, tong_gia_tri_chot FROM station_proposals WHERE id = ?',
     [proposalId]
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
@@ -345,7 +345,61 @@ const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) 
 exports.findGdttkdAncestorIds = findGdttkdAncestorIds;
 exports.findGdttkdIdsByRegion = findGdttkdIdsByRegion;
 
-exports.uploadReport = async ({ user, id, files, ip } = {}) => {
+const TRU_LIST_ID = 18;
+const INVESTMENT_MODELS = new Set(['TDT', 'LK', 'NQ', 'NQ_LK']);
+
+const loadTruPrices = async () => {
+  const [rows] = await pool.query(
+    'SELECT data FROM data_list_rows WHERE list_id = ?',
+    [TRU_LIST_ID]
+  );
+  const map = new Map();
+  rows.forEach((row) => {
+    const data = typeof row.data === 'string' ? parseCustomData(row.data) : (row.data || {});
+    const ten = data.ten;
+    if (!ten || data.gia === null || data.gia === undefined || data.gia === '') return;
+    const gia = Number(data.gia);
+    if (Number.isFinite(gia)) map.set(String(ten), gia);
+  });
+  return map;
+};
+
+const normalizeChotRows = (rows, prices) => {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length > 50) throw err('Số lượng dòng trụ chốt không được vượt quá 50', 400);
+  const result = [];
+  list.forEach((item, index) => {
+    const row = item && typeof item === 'object' ? item : {};
+    const moHinh = String(row.mo_hinh || '').trim();
+    if (!INVESTMENT_MODELS.has(moHinh)) {
+      throw err(`Dòng ${index + 1}: thiếu mô hình liên kết`, 400);
+    }
+    const soLuong = Number(row.so_luong);
+    if (!Number.isInteger(soLuong) || soLuong <= 0) {
+      throw err(`Dòng ${index + 1}: số lượng trụ chốt không hợp lệ`, 400);
+    }
+    const loaiTru = String(row.loai_tru || '').trim();
+    if (!loaiTru) {
+      throw err(`Dòng ${index + 1}: thiếu loại trụ`, 400);
+    }
+    const giaChot = prices.get(loaiTru);
+    if (giaChot === undefined || !Number.isFinite(giaChot) || giaChot < 0) {
+      throw err(`Dòng ${index + 1}: thiếu giá chốt cho loại trụ "${loaiTru}"`, 400);
+    }
+    result.push({
+      mo_hinh: moHinh,
+      so_luong: soLuong,
+      loai_tru: loaiTru,
+      gia_chot: giaChot,
+      thanh_tien: soLuong * giaChot
+    });
+  });
+  return result;
+};
+
+const sumChotTotal = (rows) => rows.reduce((sum, row) => sum + (Number(row.thanh_tien) || 0), 0);
+
+exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -358,13 +412,33 @@ exports.uploadReport = async ({ user, id, files, ip } = {}) => {
     throw err('Vui lòng tải lên file tờ trình BCĐX', 400);
   }
 
+  const prices = await loadTruPrices();
+  const chotRows = normalizeChotRows(chotSoLuongTru, prices);
+  if (chotRows.length === 0) {
+    throw err('Vui lòng nhập số lượng trụ chốt (mô hình liên kết, số lượng, loại trụ, giá chốt)', 400);
+  }
+  const totalValue = sumChotTotal(chotRows);
+
   const custom = parseCustomData(proposal.custom_data);
   const previous = toFileSummaries(custom[REPORT_FIELD]);
+  if ([RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
+    const existingFileIds = new Set(previous.map((file) => Number(file.id)).filter(Number.isFinite));
+    if (!reportFiles.some((file) => !existingFileIds.has(Number(file.id)))) {
+      throw err('Vui lòng tải lên file BCĐX mới theo yêu cầu cập nhật', 400);
+    }
+  }
+  const previousChotRows = Array.isArray(proposal.chot_so_luong_tru)
+    ? proposal.chot_so_luong_tru
+    : parseCustomData(proposal.chot_so_luong_tru);
+  const previousTotal = proposal.tong_gia_tri_chot;
   const nextCustom = { ...custom, [REPORT_FIELD]: reportFiles };
 
-  await pool.query('UPDATE station_proposals SET custom_data = ?, updated_at = NOW() WHERE id = ?', [
-    JSON.stringify(nextCustom), proposal.id
-  ]);
+  await pool.query(
+    `UPDATE station_proposals
+     SET custom_data = ?, chot_so_luong_tru = ?, tong_gia_tri_chot = ?, updated_at = NOW()
+     WHERE id = ?`,
+    [JSON.stringify(nextCustom), JSON.stringify(chotRows), totalValue, proposal.id]
+  );
 
   const proposalLifecycle = require('./proposalLifecycle');
   await proposalLifecycle.logActivity({
@@ -377,6 +451,18 @@ exports.uploadReport = async ({ user, id, files, ip } = {}) => {
         label: 'Tờ trình BCĐX',
         old: previous.map((file) => file.name || file.id).join(', '),
         new: reportFiles.map((file) => file.original_name || file.id).join(', ')
+      },
+      chot_so_luong_tru: {
+        label: 'Số lượng trụ chốt',
+        old: Array.isArray(previousChotRows)
+          ? previousChotRows.map((row) => `${row.mo_hinh}_${row.so_luong} ${row.loai_tru}`).join(' + ')
+          : '',
+        new: chotRows.map((row) => `${row.mo_hinh}_${row.so_luong} ${row.loai_tru}`).join(' + ')
+      },
+      tong_gia_tri_chot: {
+        label: 'Tổng giá trị chốt',
+        old: previousTotal === null || previousTotal === undefined ? '' : String(previousTotal),
+        new: String(totalValue)
       }
     },
     actorId: user.id,
@@ -410,6 +496,8 @@ exports.uploadReport = async ({ user, id, files, ip } = {}) => {
     id: proposal.id,
     status: REVIEWING_STATUS,
     report_files: reportFiles,
+    chot_so_luong_tru: chotRows,
+    tong_gia_tri_chot: totalValue,
     transition
   };
 };

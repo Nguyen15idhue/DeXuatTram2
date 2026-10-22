@@ -23,3 +23,32 @@ export const uploadButtonLabel = (row) => (
 export const getReportCost = (row) => formatProposalCost(row);
 
 export const getReportScale = (row) => formatProposalScale(row);
+
+const parseRows = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+export const formatCommittedPoles = (value) => {
+  const rows = parseRows(value);
+  if (rows.length === 0) return '-';
+  return rows.map((row) => {
+    const model = row.mo_hinh || '?';
+    const quantity = Number(row.so_luong) || 0;
+    const type = row.loai_tru || '?';
+    const unitPrice = Number(row.gia_chot);
+    return `${model} · ${quantity} × ${type}${Number.isFinite(unitPrice) ? ` (${unitPrice.toLocaleString('vi-VN')} ₫)` : ''}`;
+  }).join(' + ');
+};
+
+export const formatCommittedTotal = (value) => {
+  if (value === null || value === undefined || value === '') return '-';
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toLocaleString('vi-VN')} ₫` : '-';
+};

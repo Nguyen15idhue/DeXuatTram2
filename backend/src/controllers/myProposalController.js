@@ -13,6 +13,7 @@ exports.uploadReport = async (req, res) => {
       user: req.user,
       id,
       files: req.body ? req.body.files : [],
+      chotSoLuongTru: req.body ? req.body.chot_so_luong_tru : [],
       ip: req.ip
     });
     return res.json({

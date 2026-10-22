@@ -459,7 +459,7 @@ const MyProposalsPage = () => {
         open={reportModal.open}
         record={reportModal.record}
         onClose={() => setReportModal({ open: false, record: null })}
-        onUpload={({ files }) => myProposalService.uploadReport(reportModal.record.id, { files }, token)}
+        onUpload={(data) => myProposalService.uploadReport(reportModal.record.id, data, token)}
         onSaved={() => {
           setReportModal({ open: false, record: null });
           setToast({ message: 'Đã tải lên tờ trình BCĐX', type: 'success' });
