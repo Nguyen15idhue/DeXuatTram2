@@ -1,6 +1,13 @@
 const fileService = require('../services/fileService');
+const proposalGradingService = require('../services/proposalGradingService');
 const pool = require('../utils/db');
 const fs = require('fs');
+
+const parseUserCustomData = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return {}; }
+};
 
 const verifyMagic = (filePath, mime) => {
   let buf;
@@ -44,14 +51,16 @@ const canAccessFile = async (file, req) => {
   if (!file) return false;
   let requesterId = req.user ? req.user.id : null;
   let requesterRole = req.user ? req.user.role : null;
+  let requesterDepartment = null;
   if (requesterId) {
     try {
-      const [rows] = await pool.query('SELECT role, token_version FROM users WHERE id = ?', [requesterId]);
+      const [rows] = await pool.query('SELECT role, token_version, custom_data FROM users WHERE id = ?', [requesterId]);
       if (rows.length === 0 || (req.user.tokenVersion || 0) !== (rows[0].token_version || 0)) {
         requesterId = null;
         requesterRole = null;
       } else {
         requesterRole = rows[0].role;
+        requesterDepartment = parseUserCustomData(rows[0].custom_data).department || null;
       }
     } catch { /* silent */ }
   }
@@ -81,15 +90,19 @@ const canAccessFile = async (file, req) => {
   if (requesterId) {
     try {
       const fid = Number(file.id);
-      const [props] = await pool.query('SELECT user_id, custom_data FROM station_proposals');      let branchIds = null;
+      const [props] = await pool.query('SELECT user_id, status, custom_data FROM station_proposals');      let branchIds = null;
       if (requesterRole === 'SALES') {
         const [brows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [requesterId, requesterId]);
         branchIds = new Set(brows.map(r => Number(r.id)));
       }
+      const gradingStatuses = new Set([...proposalGradingService.DOWNSTREAM_STATUSES, 'CANCELLED']);
+      const isGradingDepartment = requesterRole === 'SALES'
+        && !!proposalGradingService.resolveGradingRole(requesterDepartment);
       for (const p of props) {
         if (!containsFileId(p.custom_data, fid)) continue;
         if (p.user_id !== null && Number(p.user_id) === Number(requesterId)) return true;
         if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
+        if (isGradingDepartment && gradingStatuses.has(p.status)) return true;
       }
       const [sts] = await pool.query('SELECT custom_data FROM stations');
       for (const s of sts) {

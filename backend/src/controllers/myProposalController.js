@@ -38,8 +38,9 @@ exports.update = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
 
-    if (existing.status !== 'PENDING' && existing.status !== 'REJECTED' && existing.status !== 'REVIEWING' && existing.status !== 'PRINCIPLE_APPROVED') {
-      return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING hoặc Duyệt chủ trương' });
+    const editableStatuses = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING'];
+    if (!editableStatuses.includes(existing.status)) {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING, Duyệt chủ trương hoặc Chờ bổ sung thông tin' });
     }
 
     const updated = await myProposalService.updateProposal(id, req.user.id, req.body, {

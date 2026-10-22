@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { adminProposalService, proposalService, excelService, formService, documentService, adminUserService, leadService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
@@ -10,6 +10,9 @@ import DuplicateCheckPanel from '../../components/DuplicateCheckPanel';
 import DeadlineCountdown from '../../components/DeadlineCountdown';
 import RecordDetailPopup from '../../components/admin/RecordDetailPopup';
 import ProposalActivityPopup from '../../components/admin/ProposalActivityPopup';
+import ProposalRequestsTab from '../../components/admin/ProposalRequestsTab';
+import ProposalCompletedTab from '../../components/admin/ProposalCompletedTab';
+import { ProposalCodeLink, ProposalPersonLink } from '../../components/admin/ProposalLinkCells';
 import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -23,6 +26,7 @@ import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
+import { getReviewLevelLabel } from '../../utils/proposalReview';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw } from 'lucide-react';
 import { oneOfficeSyncService } from '../../services/api';
@@ -36,6 +40,18 @@ const AdminProposalsPage = () => {
   const { token, isSales, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = ['all', 'requests', 'completed'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'all';
+  const changeTab = (tab) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'all') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  };
+  const openProposalPopup = (id) => {
+    if (!id) return;
+    setPopup({ open: true, record: null, mode: 'view', recordId: id });
+  };
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const { getSelectOptions, getFieldLabel } = useFieldOptions('station_proposals', ['status', 'province', 'vung_mien']);
@@ -1296,6 +1312,7 @@ const AdminProposalsPage = () => {
           <h1 className="text-2xl font-bold">Quản lý Đề xuất</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {activeTab === 'all' && (<>
           <button className="btn btn-primary btn-sm gap-1" onClick={() => openCreateForm(PROPOSALS_CREATE_FORM_ID)}>
             <Plus size={14} /> Tạo đề xuất
           </button>
@@ -1474,9 +1491,49 @@ const AdminProposalsPage = () => {
             <RotateCcw size={14} />
             <span className="hidden sm:inline">Đặt lại</span>
           </button>
+          </>)}
         </div>
       </div>
 
+      <div role="tablist" className="tabs tabs-bordered mb-4">
+        <button
+          type="button"
+          role="tab"
+          className={`tab ${activeTab === 'all' ? 'tab-active' : ''}`}
+          onClick={() => changeTab('all')}
+          title="Tất cả đề xuất trong phạm vi được phép xem"
+        >
+          Tất cả đề xuất
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`tab ${activeTab === 'requests' ? 'tab-active' : ''}`}
+          onClick={() => changeTab('requests')}
+          title="Các đề xuất đang có yêu cầu cần thực hiện"
+        >
+          Đề xuất cần thực hiện
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`tab ${activeTab === 'completed' ? 'tab-active' : ''}`}
+          onClick={() => changeTab('completed')}
+          title="Các đề xuất đã hoàn thành hoặc đã hủy"
+        >
+          Đề xuất đã hoàn thành
+        </button>
+      </div>
+
+      {activeTab === 'requests' && (
+        <ProposalRequestsTab token={token} onOpenProposal={openProposalPopup} />
+      )}
+
+      {activeTab === 'completed' && (
+        <ProposalCompletedTab token={token} onOpenProposal={openProposalPopup} />
+      )}
+
+      {activeTab === 'all' && (<>
       <div className="flex items-center gap-2 mb-3">
         <input
           type="text"
@@ -1554,6 +1611,7 @@ const AdminProposalsPage = () => {
       />
 
       {error && <ErrorMessage message={error} onRetry={() => { setError(''); loadProposals(1); }} />}
+      </>)}
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -2120,12 +2178,12 @@ const AdminProposalsPage = () => {
           allowEdit={isAdmin || isSales}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null });
-            navigate('/admin/proposals');
+            navigate(activeTab === 'all' ? '/admin/proposals' : `/admin/proposals?tab=${activeTab}`);
           }}
           onSaved={() => loadProposals(pagination.page)}
           onSwitchMode={(newMode) => {
             const id = popup.recordId || location.pathname.match(/=(\d+)/)?.[1];
-            if (id) navigate(`/admin/proposals/${newMode}=${id}`, { replace: true });
+            if (id) navigate(`/admin/proposals/${newMode}=${id}${activeTab === 'all' ? '' : `?tab=${activeTab}`}`, { replace: true });
           }}
         />
       )}
@@ -2232,7 +2290,7 @@ const AdminProposalsPage = () => {
         </dialog>
       )}
 
-      {!dupMode && (
+      {activeTab === 'all' && !dupMode && (
       <>
       {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
@@ -2254,6 +2312,15 @@ const AdminProposalsPage = () => {
         viewId={proposalsViewId}
         data={proposals}
         actions={renderActions}
+        cellRenderers={{
+          ma_de_xuat: (row, value) => <ProposalCodeLink id={row.id} code={value} onOpen={openProposalPopup} />,
+          nguoi_de_xuat: (row, value) => (
+            row.user_id
+              ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} />
+              : <span>{value || 'Khách'}</span>
+          ),
+          review_level: (row) => <span className="badge badge-ghost badge-sm">{getReviewLevelLabel(row.review_level)}</span>
+        }}
         startIndex={(pagination.page - 1) * pagination.limit}
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}

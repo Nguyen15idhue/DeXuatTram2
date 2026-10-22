@@ -406,6 +406,64 @@ export const adminProposalService = {
   }
 };
 
+export const proposalRequestService = {
+  getAll(params, token) {
+    const qs = params ? `?${params}` : '';
+    return api.getWithAuth(`/admin/proposal-requests${qs}`, token);
+  },
+  getTypes(token) {
+    return api.getWithAuth('/admin/proposal-requests/types', token);
+  }
+};
+
+export const proposalGradingService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-grading${qs}`, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-grading/${id}`, data, token);
+  }
+};
+
+export const proposalLayoutService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-layouts${qs}`, token);
+  },
+  updateLayout(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-layouts/${id}`, data || {}, token);
+  },
+  requestSupplement(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-layouts/${id}/request-supplement`, data || {}, token);
+  },
+  cancel(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-layouts/${id}/cancel`, data || {}, token);
+  }
+};
+
+export const proposalReviewService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-reviews${qs}`, token);
+  },
+  requestRegrade(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reviews/${id}/request-regrade`, data || {}, token);
+  },
+  toTgd(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reviews/${id}/to-tgd`, data || {}, token);
+  },
+  cancel(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reviews/${id}/cancel`, data || {}, token);
+  },
+  approve(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reviews/${id}/approve`, data || {}, token);
+  },
+  reject(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reviews/${id}/reject`, data || {}, token);
+  }
+};
+
 export const myProposalService = {
   getAll(status, token) {
     const query = status ? `?status=${status}` : '';

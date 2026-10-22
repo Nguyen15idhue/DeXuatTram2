@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -405,13 +405,17 @@ const toDisplayValue = (val) => {
                   const fp = frozenCell(`__d:${key}`, 'td', '', idx % 2);
                   const fpPin = (pinActions && colIdx === pinAfterIdx) ? frozenCell('__pin', 'td', '', idx % 2) : null;
                   const cell = (
-                    <FieldRenderer
-                      field={col}
-                      value={getFieldValue(row, col)}
-                      entity={entity}
-                      entityId={row.id}
-                      dataListOptions={dataListOptions}
-                    />
+                    cellRenderers && typeof cellRenderers[key] === 'function'
+                      ? cellRenderers[key](row, getFieldValue(row, col), col)
+                      : (
+                        <FieldRenderer
+                          field={col}
+                          value={getFieldValue(row, col)}
+                          entity={entity}
+                          entityId={row.id}
+                          dataListOptions={dataListOptions}
+                        />
+                      )
                   );
                   return (
                     <Fragment key={key}>

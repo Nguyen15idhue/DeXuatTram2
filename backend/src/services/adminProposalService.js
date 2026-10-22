@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note'];
+const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note', 'review_level', 'quy_hoach_score', 'quy_hoach_note', 'phap_ly_score', 'phap_ly_note'];
 
 exports.getBranchUserIds = async (salesId) => {
   const adminUserService = require('./adminUserService');
@@ -43,6 +43,11 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   if (status) {
     where.push('p.status = ?');
     params.push(status);
+  }
+
+  if (Array.isArray(extra.statuses) && extra.statuses.length > 0) {
+    where.push(`p.status IN (${extra.statuses.map(() => '?').join(',')})`);
+    params.push(...extra.statuses);
   }
 
   if (uuTien) {
@@ -99,6 +104,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status, p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
+            p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
             p.pending_station_code, p.note, p.chot_so_luong_tru,
             u.full_name as user_name, u.email as user_email,
             p.journey_id,

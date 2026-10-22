@@ -4,7 +4,8 @@ const notificationService = require('./notificationService');
 const ALL_STATUSES = [
   'PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED',
   'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED',
-  'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'TGD_REVIEW', 'DESIGNING',
+  'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING', 'TGD_REVIEW', 'DESIGNING',
+  'INFOR_WAITING',
   'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'SIGNATURE_PENDING', 'COMPLETED'
 ];
 
@@ -20,9 +21,11 @@ const ALLOWED_TRANSITIONS = {
   CANCELLED: [],
   GRADING: ['DESIGNING', 'GDTTKD_EVALUATING', 'CANCELLED'],
   GDTTKD_EVALUATING: ['RE_GRADING', 'TGD_REVIEW', 'CANCELLED'],
-  RE_GRADING: ['DESIGNING', 'GDTTKD_EVALUATING', 'CANCELLED'],
+  RE_GRADING: ['DESIGNING', 'GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING', 'CANCELLED'],
+  RE_GDTTKD_EVALUATING: ['TGD_REVIEW', 'CANCELLED'],
   TGD_REVIEW: ['DESIGNING', 'CANCELLED'],
-  DESIGNING: ['PROPOSAL_REPORT_CREATING', 'CANCELLED'],
+  DESIGNING: ['INFOR_WAITING', 'PROPOSAL_REPORT_CREATING', 'CANCELLED'],
+  INFOR_WAITING: ['DESIGNING', 'CANCELLED'],
   PROPOSAL_REPORT_CREATING: ['PROPOSAL_REPORT_REVIEWING', 'CANCELLED'],
   PROPOSAL_REPORT_REVIEWING: ['SIGNATURE_PENDING', 'PROPOSAL_REPORT_CREATING', 'CANCELLED'],
   SIGNATURE_PENDING: ['COMPLETED', 'CANCELLED'],
@@ -140,19 +143,21 @@ exports.transition = async (id, to, opts = {}) => {
       throw err('Mở lại khẩn cấp cần nhập lý do', 400);
     }
   }
+  const reasonCarriesMessage = REASON_REQUIRED.includes(to) || to === 'INFOR_WAITING';
   const cleanReason = forceOverride
     ? String(reason).trim()
-    : (REASON_REQUIRED.includes(to) ? String(reason || '').trim() : null);
+    : (reasonCarriesMessage ? (String(reason || '').trim() || null) : null);
   if (!forceOverride && REASON_REQUIRED.includes(to) && !cleanReason) {
     throw err(to === 'REJECTED' ? 'Vui lòng nhập lý do từ chối' : 'Vui lòng nhập lý do hủy', 400);
   }
   const auditReason = cleanReason || (isEmergencyReopen ? String(reason || '').trim() : null);
+  const rejectReasonValue = REASON_REQUIRED.includes(to) || forceOverride ? cleanReason : null;
 
   await pool.query(
     `UPDATE station_proposals
      SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW()
      WHERE id = ?`,
-    [to, cleanReason, actorId || null, id]
+    [to, rejectReasonValue, actorId || null, id]
   );
 
   // Đặt SONG SONG 2 mốc countdown theo rule của trạng thái đích:
@@ -171,6 +176,12 @@ exports.transition = async (id, to, opts = {}) => {
       params
     );
   } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
+
+  try {
+    const gradingService = require('./proposalGradingService');
+    if (to === 'GRADING') await gradingService.syncNoteForProposal(id);
+    else if (from === 'GRADING') await gradingService.clearGradingNote(id);
+  } catch { /* silent: khong chan chuyen trang thai vi ghi chu danh gia */ }
 
   let stationCreated = null;
   let stationCreateError = null;
@@ -204,7 +215,7 @@ exports.transition = async (id, to, opts = {}) => {
       let message = notificationService.statusMessage({
         code,
         actorName,
-        reason: REASON_REQUIRED.includes(to) ? cleanReason : null,
+        reason: reasonCarriesMessage ? cleanReason : null,
         status: to
       });
       if (stationCreateError) message += ` · Tạo trạm lỗi: ${stationCreateError}`;
@@ -221,6 +232,22 @@ exports.transition = async (id, to, opts = {}) => {
   }
 
   const overrideActive = (typeof forceOverride !== 'undefined' && forceOverride) || isEmergencyReopen;
+  try {
+    const proposalRequestService = require('./proposalRequestService');
+    if (to === 'REJECTED' && proposal.user_id) {
+      await proposalRequestService.createRequest({
+        proposalId: id,
+        type: 'UPDATE_INFO',
+        description: cleanReason,
+        requestedBy: actorId || null,
+        previousStatus: from,
+        currentStatus: to,
+        targetUserId: proposal.user_id
+      });
+    } else if (from === 'REJECTED' && to === 'PENDING') {
+      await proposalRequestService.closeRequests(id, ['UPDATE_INFO', 'SUPPLEMENT'], { resolvedBy: actorId || null });
+    }
+  } catch { /* silent: khong chan chuyen trang thai vi yeu cau de xuat */ }
   await exports.logActivity({
     proposalId: id, action: 'status_change',
     fromStatus: from, toStatus: to, reason: auditReason,
@@ -818,6 +845,20 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
     },
     reason: cleanReason, actorId, actorRole, source, ip
   });
+  try {
+    if (proposal.user_id && Number(actorId) !== Number(proposal.user_id)) {
+      await require('./proposalRequestService').createRequest({
+        proposalId: id,
+        type: 'SUPPLEMENT',
+        description: cleanReason,
+        requestedBy: actorId || null,
+        previousStatus: proposal.status,
+        currentStatus: proposal.status,
+        targetUserId: proposal.user_id,
+        note: `Gia hạn ${d} ngày ${h} giờ`
+      });
+    }
+  } catch { /* silent: khong chan gia han vi yeu cau de xuat */ }
   const code = notificationService.proposalCode(proposal.custom_data, id);
   const actorName = source === 'system_auto'
     ? 'Hệ thống'
@@ -896,6 +937,22 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
     fromStatus: proposal.status, toStatus: proposal.status,
     actorId, actorRole, source, ip
   });
+  try {
+    const proposalRequestService = require('./proposalRequestService');
+    if (completed) {
+      await proposalRequestService.closeRequests(id, ['UPDATE_INFO', 'SUPPLEMENT'], { resolvedBy: actorId || null });
+    } else if (Number(actorId) !== Number(proposal.user_id)) {
+      await proposalRequestService.createRequest({
+        proposalId: id,
+        type: 'UPDATE_INFO',
+        description: 'Yêu cầu mở lại để bổ sung thông tin',
+        requestedBy: actorId || null,
+        previousStatus: proposal.status,
+        currentStatus: proposal.status,
+        targetUserId: proposal.user_id
+      });
+    }
+  } catch { /* silent: khong chan thao tac vi yeu cau de xuat */ }
   if (completed) {
     const code = notificationService.proposalCode(proposal.custom_data, id);
     const actorName = source === 'system_auto'

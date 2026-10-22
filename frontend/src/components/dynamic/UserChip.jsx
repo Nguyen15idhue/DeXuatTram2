@@ -16,7 +16,7 @@ const resolveLabel = (value) => {
 
 const USERS_VIEW_ID = 7;
 
-const UserChip = ({ value }) => {
+const UserChip = ({ value, linkClassName = 'link link-primary' }) => {
   const { user } = useAuth();
   const [show, setShow] = useState(false);
   const uid = resolveUserId(value);
@@ -28,7 +28,7 @@ const UserChip = ({ value }) => {
     <>
       <button
         type="button"
-        className="link link-primary"
+        className={linkClassName}
         style={{ fontSize: 12 }}
         title="Xem chi tiết người dùng"
         onClick={() => setShow(true)}

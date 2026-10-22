@@ -26,6 +26,7 @@ const TYPE_COLORS = {
   RE_GRADING: { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' },
   TGD_REVIEW: { bg: '#ffe4e6', border: '#be123c', text: '#9f1239' },
   DESIGNING: { bg: '#cffafe', border: '#0891b2', text: '#155e75' },
+  INFOR_WAITING: { bg: '#ffedd5', border: '#f97316', text: '#9a3412' },
   PROPOSAL_REPORT_CREATING: { bg: '#ccfbf1', border: '#0d9488', text: '#0f766e' },
   PROPOSAL_REPORT_REVIEWING: { bg: '#dbeafe', border: '#2563eb', text: '#1e40af' },
   SIGNATURE_PENDING: { bg: '#f3e8ff', border: '#9333ea', text: '#6b21a8' },

@@ -25,6 +25,7 @@ import {
   FileCheck,
   PenSquare,
   Scale,
+  RotateCcw,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 
@@ -64,6 +65,12 @@ const mainItems = [
         label: "Đánh giá quy hoạch và Pháp lý",
         icon: Scale,
         roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/yeu-cau-cham-diem-lai",
+        label: "Yêu cầu chấm điểm lại",
+        icon: RotateCcw,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
       },
       {
         path: "/admin/proposals/danh-gia-layout",

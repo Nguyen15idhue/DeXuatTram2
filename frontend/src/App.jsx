@@ -27,6 +27,7 @@ const ReportEditorPage = lazy(() => import('./pages/admin/ReportEditorPage'));
 const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
 const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
 const AdminProposalsDanhGiaQuyHoachPage = lazy(() => import('./pages/admin/AdminProposalsDanhGiaQuyHoachPage'));
+const AdminProposalsReviewPage = lazy(() => import('./pages/admin/AdminProposalsReviewPage'));
 const AdminProposalsDanhGiaLayoutPage = lazy(() => import('./pages/admin/AdminProposalsDanhGiaLayoutPage'));
 const AdminProposalsLapToTrinhPage = lazy(() => import('./pages/admin/AdminProposalsLapToTrinhPage'));
 const AdminProposalsDuyetBCDXPage = lazy(() => import('./pages/admin/AdminProposalsDuyetBCDXPage'));
@@ -145,6 +146,14 @@ function App() {
               element={
                 <RoleRoute allowed={PROPOSAL_ROLES}>
                   <AdminProposalsDanhGiaQuyHoachPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/yeu-cau-cham-diem-lai"
+              element={
+                <RoleRoute allowed={ADMIN_AND_SALES}>
+                  <AdminProposalsReviewPage />
                 </RoleRoute>
               }
             />
