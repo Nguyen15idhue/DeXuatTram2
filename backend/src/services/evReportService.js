@@ -257,7 +257,7 @@ exports.createProposalFromReport = async (id, userId, actorRole) => {
       owner_phone: r.phone || "",
       description: `Tạo từ điểm sạc #${r.id} (hãng ${cd.hang_xe || "—"})`,
     },
-    { actorRole: actorRole || null },
+    { actorRole: actorRole || null, initialStatus: "PENDING" },
   );
   return proposal;
 };

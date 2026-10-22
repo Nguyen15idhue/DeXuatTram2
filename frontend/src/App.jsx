@@ -141,7 +141,7 @@ function App() {
             <Route path="/admin/users/*" element={<AdminUsersPage />} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
-            <Route path="/admin/proposals" element={<AdminProposalsPage />} />
+            <Route path="/admin/proposals" element={<RoleRoute allowed={PROPOSAL_ROLES}><AdminProposalsPage /></RoleRoute>} />
             <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
             <Route
               path="/admin/proposals/danh-gia-quy-hoach"

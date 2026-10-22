@@ -84,6 +84,43 @@ router.get('/', requireAuth, requireUserManager, proposalApprovalController.list
  *       404:
  *         description: Không tìm thấy đề xuất
  */
+/**
+ * @swagger
+ * /api/admin/proposal-approvals/{id}/tgd-reject:
+ *   put:
+ *     tags: [Proposal Approvals]
+ *     summary: Tổng giám đốc từ chối duyệt BCĐX (chỉ đọc + từ chối)
+ *     description: >
+ *       Chỉ Tổng giám đốc hoặc Admin. Bắt buộc lý do; đề xuất chuyển PROPOSAL_REPORT_UPDATING,
+ *       tạo Yêu cầu đề xuất REVISE_BCDX cho GĐTTKD khu vực, notify người đề xuất + GĐTTKD vùng.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Sai trạng thái hoặc thiếu lý do
+ *       403:
+ *         description: Không có quyền
+ */
+router.put('/:id/tgd-reject', requireAuth, requireUserManager, proposalApprovalController.tgdReject);
+
 router.put('/:id/request-update', requireAuth, requireUserManager, proposalApprovalController.requestUpdate);
 
 /**

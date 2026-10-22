@@ -52,6 +52,8 @@ const canAccessFile = async (file, req) => {
   let requesterId = req.user ? req.user.id : null;
   let requesterRole = req.user ? req.user.role : null;
   let requesterDepartment = null;
+  let requesterChucVu = null;
+  let requesterProfile = {};
   if (requesterId) {
     try {
       const [rows] = await pool.query('SELECT role, token_version, custom_data FROM users WHERE id = ?', [requesterId]);
@@ -60,7 +62,9 @@ const canAccessFile = async (file, req) => {
         requesterRole = null;
       } else {
         requesterRole = rows[0].role;
-        requesterDepartment = parseUserCustomData(rows[0].custom_data).department || null;
+        requesterProfile = parseUserCustomData(rows[0].custom_data);
+        requesterDepartment = requesterProfile.department || null;
+        requesterChucVu = requesterProfile.chuc_vu || null;
       }
     } catch { /* silent */ }
   }
@@ -90,7 +94,10 @@ const canAccessFile = async (file, req) => {
   if (requesterId) {
     try {
       const fid = Number(file.id);
-      const [props] = await pool.query('SELECT user_id, status, custom_data FROM station_proposals');      let branchIds = null;
+      const reviewService = require('../services/proposalReviewService');
+      const reportService = require('../services/proposalReportService');
+      const [props] = await pool.query('SELECT user_id, status, custom_data FROM station_proposals');
+      let branchIds = null;
       if (requesterRole === 'SALES') {
         const [brows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [requesterId, requesterId]);
         branchIds = new Set(brows.map(r => Number(r.id)));
@@ -98,11 +105,35 @@ const canAccessFile = async (file, req) => {
       const gradingStatuses = new Set([...proposalGradingService.DOWNSTREAM_STATUSES, 'CANCELLED']);
       const isGradingDepartment = requesterRole === 'SALES'
         && !!proposalGradingService.resolveGradingRole(requesterDepartment);
+      let requesterRoleKey = null;
+      let requesterRegion = null;
+      let isGdttkdUser = false;
+      let isTgdUser = false;
+      let isBackOfficeUser = false;
+      try {
+        requesterRoleKey = reviewService.resolveRoleKey({
+          role: requesterRole,
+          department: requesterDepartment,
+          chucVu: requesterChucVu
+        });
+        requesterRegion = reviewService.resolveRegion(requesterProfile.department)
+          || reviewService.resolveRegion(requesterProfile.vung_mien);
+        isGdttkdUser = requesterRoleKey === reviewService.REVIEW_ROLE.GDTTKD;
+        isTgdUser = requesterRoleKey === reviewService.REVIEW_ROLE.TGD;
+        isBackOfficeUser = !!reportService.isBackOffice(requesterDepartment);
+      } catch { /* silent */ }
       for (const p of props) {
         if (!containsFileId(p.custom_data, fid)) continue;
         if (p.user_id !== null && Number(p.user_id) === Number(requesterId)) return true;
         if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
         if (isGradingDepartment && gradingStatuses.has(p.status)) return true;
+        if ((isGdttkdUser || isTgdUser || isBackOfficeUser) && gradingStatuses.has(p.status)) {
+          if (isGdttkdUser && requesterRegion) {
+            const proposalRegion = reviewService.resolveRegion(parseUserCustomData(p.custom_data).vung_mien);
+            if (proposalRegion && proposalRegion !== requesterRegion) continue;
+          }
+          return true;
+        }
       }
       const [sts] = await pool.query('SELECT custom_data FROM stations');
       for (const s of sts) {

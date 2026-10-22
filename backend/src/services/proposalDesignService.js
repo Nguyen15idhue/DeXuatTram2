@@ -234,33 +234,6 @@ const notifyDesignDepartment = async ({ proposal, actorId, type = 'DESIGNING', t
   await notifyUsers(ids, { type, title, message, entityId: proposal.id, actorId });
 };
 
-const notifyRegionDirector = async ({ proposal, actorId, message }) => {
-  const proposalReviewService = require('./proposalReviewService');
-  const custom = parseCustomData(proposal.custom_data);
-  const region = proposalReviewService.resolveRegion(custom.vung_mien);
-  const ids = await findUsersByRole({ roleKey: 'GDTTKD', region });
-  await notifyUsers(ids, {
-    type: REPORT_CREATING_STATUS,
-    title: 'Đề xuất cần lập tờ trình BCĐX',
-    message,
-    entityId: proposal.id,
-    actorId
-  });
-};
-
-const notifyGdttkdSuperiors = async ({ proposal, actorId, message }) => {
-  const proposalReportService = require('./proposalReportService');
-  const ids = await proposalReportService.findGdttkdAncestorIds(proposal.user_id);
-  if (!ids || ids.length === 0) return;
-  await notifyUsers(ids, {
-    type: REPORT_CREATING_STATUS,
-    title: 'Đề xuất cần lập tờ trình BCĐX',
-    message,
-    entityId: proposal.id,
-    actorId
-  });
-};
-
 const normalizeLayoutFiles = async (value) => {
   const entries = normalizeFileEntries(value);
   const ids = [];
@@ -354,13 +327,6 @@ exports.updateLayout = async ({ user, id, files, approve = false, ip } = {}) => 
       source: 'user',
       ip
     });
-    const message = await buildMessage(proposal, user.id, {
-      status: REPORT_CREATING_STATUS,
-      actionLabel: 'Người duyệt',
-      reason: 'Bản vẽ layout đã được duyệt'
-    });
-    await notifyGdttkdSuperiors({ proposal, actorId: user.id, message });
-    await notifyRegionDirector({ proposal, actorId: user.id, message });
   }
 
   return {

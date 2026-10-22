@@ -67,11 +67,6 @@ exports.update = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
 
-    const editableStatuses = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING'];
-    if (!editableStatuses.includes(existing.status)) {
-      return res.status(400).json({ success: false, message: 'Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING, Duyệt chủ trương hoặc Chờ bổ sung thông tin' });
-    }
-
     const updated = await myProposalService.updateProposal(id, req.user.id, req.body, {
       actorRole: req.user.role || null,
       ip: req.ip || null
@@ -168,14 +163,13 @@ exports.delete = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
 
-    if (existing.status !== 'PENDING') {
-      return res.status(400).json({ success: false, message: 'Chỉ có thể xóa đề xuất đang ở trạng thái PENDING' });
-    }
-
     await myProposalService.deleteProposal(id, req.user.id);
     res.json({ success: true, message: 'Xóa đề xuất thành công' });
   } catch (error) {
     console.error('Delete my proposal error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };

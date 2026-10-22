@@ -45,7 +45,7 @@ const mapApprovalRow = (row) => {
 };
 
 const scopeClause = async (scope, params) => {
-  if (scope.isAdmin || scope.isBackOffice) return '';
+  if (scope.isAdmin || scope.isBackOffice || scope.roleKey === 'TGD') return '';
   if (scope.roleKey === 'GDTTKD' && scope.region) {
     const pattern = { Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' }[scope.region];
     if (pattern) {
@@ -234,12 +234,93 @@ exports.requestUpdate = async ({ user, id, description, ip } = {}) => {
     reason: cleanDescription
   });
   const recipientIds = await proposalReportService.findGdttkdIdsByRegion(proposalRegion(proposal.custom_data));
-  for (const userId of [...new Set([...recipientIds, proposal.user_id].filter(Boolean))]) {
+  for (const userId of [...new Set(recipientIds.filter(Boolean))]) {
     try {
       await notificationService.create({
         userId,
         type: UPDATING_STATUS,
         title: notificationService.statusTitle(UPDATING_STATUS),
+        message,
+        entityType: 'station_proposals',
+        entityId: proposal.id,
+        createdBy: user.id
+      });
+    } catch { /* silent */ }
+  }
+
+  return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
+};
+
+exports.tgdReject = async ({ user, id, reason, ip } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  if (!scope.isAdmin && scope.roleKey !== 'TGD') {
+    throw err('Chỉ Tổng giám đốc hoặc Admin được từ chối duyệt BCĐX', 403);
+  }
+  const proposal = await loadProposal(id);
+  if (proposal.status !== REVIEWING_STATUS) {
+    throw err('Đề xuất không ở trạng thái đang duyệt BCĐX', 400);
+  }
+  const cleanReason = String(reason || '').trim();
+  if (!cleanReason) {
+    throw err('Vui lòng nhập lý do từ chối duyệt', 400);
+  }
+
+  const proposalLifecycle = require('./proposalLifecycle');
+  const transition = await proposalLifecycle.transition(proposal.id, UPDATING_STATUS, {
+    reason: cleanReason,
+    actorId: user.id,
+    actorRole: user.role,
+    source: 'user',
+    ip
+  });
+
+  const [countRows] = await pool.query(
+    'SELECT COUNT(*) AS n FROM proposal_requests WHERE proposal_id = ? AND request_type = ?',
+    [proposal.id, 'REVISE_BCDX']
+  );
+  const round = Number(countRows[0]?.n || 0) + 1;
+
+  const request = await require('./proposalRequestService').createRequest({
+    proposalId: proposal.id,
+    type: 'REVISE_BCDX',
+    description: cleanReason,
+    requestedBy: user.id,
+    previousStatus: REVIEWING_STATUS,
+    currentStatus: UPDATING_STATUS,
+    targetDepartment: 'Trung tâm KD (GĐTTKD khu vực)',
+    targetTitle: 'Giám đốc Trung tâm Kinh doanh',
+    note: `Lần yêu cầu tạo lại BCĐX: ${round}`,
+    roundNo: round
+  });
+
+  await proposalLifecycle.logActivity({
+    proposalId: proposal.id,
+    action: 'report_tgd_rejected',
+    fromStatus: REVIEWING_STATUS,
+    toStatus: UPDATING_STATUS,
+    reason: cleanReason,
+    changedFields: {
+      round_no: { label: 'Số lần yêu cầu tạo lại BCĐX', old: round - 1, new: round }
+    },
+    actorId: user.id,
+    actorRole: user.role,
+    source: 'user',
+    ip
+  });
+
+  const message = await buildMessage(proposal, user.id, {
+    status: UPDATING_STATUS,
+    actionLabel: 'Tổng giám đốc',
+    reason: cleanReason
+  });
+  const regionIds = await proposalReportService.findGdttkdIdsByRegion(proposalRegion(proposal.custom_data));
+  for (const userId of [...new Set(regionIds.filter(Boolean))]) {
+    if (Number(userId) === Number(user.id)) continue;
+    try {
+      await notificationService.create({
+        userId,
+        type: UPDATING_STATUS,
+        title: 'Tổng giám đốc yêu cầu cập nhật lại BCĐX',
         message,
         entityType: 'station_proposals',
         entityId: proposal.id,

@@ -95,12 +95,46 @@ exports.getProposalByIdAndUser = async (id, userId) => {
   return existing.length > 0 ? existing[0] : null;
 };
 
+const assertOwnerEditable = (status) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  if (proposalLifecycle.OWNER_EDITABLE_STATUSES.includes(status)) return;
+  const step = proposalLifecycle.STATUS_STEP_LABELS[status];
+  const where = step ? `Đề xuất đang ở khâu ${step}` : `Đề xuất đang ở trạng thái ${status}`;
+  throw Object.assign(
+    new Error(`${where}, bạn chưa thể chỉnh sửa. Chỉ được cập nhật khi phòng ban phụ trách yêu cầu bổ sung thông tin.`),
+    { statusCode: 403 }
+  );
+};
+
+const notifyBackOfficeOfOwnerUpdate = async (id, userId, customData) => {
+  const notificationService = require('./notificationService');
+  const stepRecipients = require('./proposalStepRecipients');
+  const ids = await stepRecipients.resolveStepRecipients('PROPOSAL_REPORT_REVIEWING', { id, user_id: userId, custom_data: customData });
+  const code = notificationService.proposalCode(customData, id);
+  const actorName = (await notificationService.getUserName(userId)) || 'Người đề xuất';
+  const message = notificationService.statusMessage({ code, actorName, status: 'PROPOSAL_REPORT_REVIEWING', actionLabel: 'Người cập nhật' });
+  for (const uid of ids) {
+    if (Number(uid) === Number(userId)) continue;
+    try {
+      await notificationService.create({
+        userId: uid,
+        type: 'PROPOSAL_UPDATED',
+        title: 'Người đề xuất đã cập nhật thông tin đề xuất',
+        message,
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: userId
+      });
+    } catch { /* silent */ }
+  }
+};
+
 exports.updateProposal = async (id, userId, data, opts = {}) => {
   const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
-  const EDITABLE_STATUSES = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING'];
-  if (st.length === 0 || !EDITABLE_STATUSES.includes(st[0].status)) {
-    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING, Duyệt chủ trương hoặc Chờ bổ sung thông tin'), { statusCode: 400 });
+  if (st.length === 0) {
+    throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
   }
+  assertOwnerEditable(st[0].status);
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -171,6 +205,12 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       entityId: id,
       createdBy: userId
     });
+  }
+
+  if (existing.length > 0 && ['PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(existing[0].status)) {
+    try {
+      await notifyBackOfficeOfOwnerUpdate(id, userId, mergedDynamic);
+    } catch { /* silent: khong chan luu vi thong bao */ }
   }
 
   try {
@@ -267,5 +307,10 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
 };
 
 exports.deleteProposal = async (id, userId) => {
+  const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  if (st.length === 0) return;
+  if (!['PENDING', 'REJECTED'].includes(st[0].status)) {
+    throw Object.assign(new Error('Chỉ được xóa đề xuất đang ở trạng thái đang đề xuất hoặc bị từ chối'), { statusCode: 403 });
+  }
   await pool.query('DELETE FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
 };

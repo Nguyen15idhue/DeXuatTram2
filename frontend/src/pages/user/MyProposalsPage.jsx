@@ -15,6 +15,7 @@ import ImportErrorList from '../../components/admin/ImportErrorList';
 import { ImportSheetsSummary } from '../../components/admin/ImportViewPanel';
 import ProposalReportUpdateModal from '../../components/admin/ProposalReportUpdateModal';
 import { canUploadReport } from '../../utils/proposalReport';
+import { canOwnerDeleteProposal, canOwnerEditProposal } from '../../utils/proposalOwnerLock';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -415,7 +416,7 @@ const MyProposalsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
-      {(row.status === 'PENDING' || row.status === 'REJECTED' || row.status === 'REVIEWING' || row.status === 'PRINCIPLE_APPROVED' || row.status === 'INFOR_WAITING') && (
+      {canOwnerEditProposal(row.status) && (
         <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
       )}
       {canUploadReport(row) && (
@@ -426,7 +427,7 @@ const MyProposalsPage = () => {
           Tờ trình BCĐX
         </button>
       )}
-      {row.status === 'PENDING' && (
+      {canOwnerDeleteProposal(row.status) && (
         <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
       )}
     </div>
@@ -754,7 +755,7 @@ const MyProposalsPage = () => {
           recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
           viewId={popup.entity === 'stations' ? undefined : proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING'].includes(popup.record.status))}
+          allowEdit={isAdmin || (!!popup.record && canOwnerEditProposal(popup.record.status))}
           updateService={isAdmin ? undefined : myProposalService}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });

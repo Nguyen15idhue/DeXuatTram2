@@ -36,6 +36,31 @@ const ALLOWED_TRANSITIONS = {
 
 const REASON_REQUIRED = ['REJECTED', 'CANCELLED'];
 
+// Trang thai ma nguoi de xuat duoc tu sua noi dung. Cac khau phong ban dang lam viec
+// (GRADING..SIGNATURE_PENDING) khoa sua; chi mo khi phong ban yeu cau bo sung.
+const OWNER_EDITABLE_STATUSES = [
+  'PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED',
+  'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'
+];
+
+const STATUS_STEP_LABELS = {
+  PENDING: 'đang đề xuất',
+  GRADING: 'đánh giá Quy hoạch và Pháp lý',
+  GDTTKD_EVALUATING: 'GĐTTKD đánh giá',
+  RE_GRADING: 'chấm điểm lại Quy hoạch và Pháp lý',
+  RE_GDTTKD_EVALUATING: 'GĐTTKD xem xét lại',
+  TGD_REVIEW: 'Tổng giám đốc xem xét',
+  DESIGNING: 'vẽ Layout',
+  PROPOSAL_REPORT_CREATING: 'lập tờ trình BCĐX',
+  PROPOSAL_REPORT_REVIEWING: 'duyệt BCĐX',
+  SIGNATURE_PENDING: 'trình ký',
+  COMPLETED: 'đã phê duyệt',
+  CANCELLED: 'đã hủy'
+};
+
+exports.OWNER_EDITABLE_STATUSES = OWNER_EDITABLE_STATUSES;
+exports.STATUS_STEP_LABELS = STATUS_STEP_LABELS;
+
 // Cac dich chi duoc cap nhat tu 1Office (webhook) hoac he thong tu dong.
 // Thao tac tay tu UI (source=user) bi chan ke ca khi ma tran cho phep.
 const WEBHOOK_ONLY_TARGETS = ['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
@@ -145,7 +170,8 @@ exports.transition = async (id, to, opts = {}) => {
       throw err('Mở lại khẩn cấp cần nhập lý do', 400);
     }
   }
-  const reasonCarriesMessage = REASON_REQUIRED.includes(to) || to === 'INFOR_WAITING';
+  const reasonCarriesMessage = REASON_REQUIRED.includes(to)
+    || ['INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(to);
   const cleanReason = forceOverride
     ? String(reason).trim()
     : (reasonCarriesMessage ? (String(reason || '').trim() || null) : null);
@@ -184,6 +210,10 @@ exports.transition = async (id, to, opts = {}) => {
     if (to === 'GRADING') await gradingService.syncNoteForProposal(id);
     else if (from === 'GRADING') await gradingService.clearGradingNote(id);
   } catch { /* silent: khong chan chuyen trang thai vi ghi chu danh gia */ }
+
+  try {
+    await exports.notifyStepReceivers(id, to, { actorId, reason: cleanReason });
+  } catch { /* silent: khong chan chuyen trang thai vi thong bao */ }
 
   let stationCreated = null;
   let stationCreateError = null;
@@ -693,7 +723,7 @@ exports.getEnabledCountdownStatuses = async () => {
 exports.getEnabledSupplementStatuses = async () => {
   const cfg = await exports.getCountdownConfig();
   const list = enabledForKind(cfg.rules, 'supplement');
-  return list.length > 0 ? list : CONFIRM_STATUSES;
+  return [...new Set([...list, ...CONFIRM_STATUSES])];
 };
 
 exports.getEnabledTransitionStatuses = async () => {
@@ -911,6 +941,37 @@ const collectInfoNotifyIds = async (proposal) => {
   return userIds;
 };
 
+exports.notifyStepReceivers = async (id, to, opts = {}) => {
+  const { actorId = null, reason = null } = opts;
+  const stepRecipients = require('./proposalStepRecipients');
+  if (!stepRecipients.STEP_RECIPIENT_STATUSES.includes(to)) return [];
+  const [rows] = await pool.query('SELECT id, user_id, status, custom_data FROM station_proposals WHERE id = ?', [id]);
+  if (rows.length === 0) return [];
+  const proposal = rows[0];
+  const recipientIds = (await stepRecipients.resolveStepRecipients(to, proposal))
+    .filter((uid) => Number(uid) !== Number(actorId) && Number(uid) !== Number(proposal.user_id));
+  if (recipientIds.length === 0) return [];
+  const code = notificationService.proposalCode(proposal.custom_data, id);
+  const actorName = actorId ? ((await notificationService.getUserName(actorId)) || 'Hệ thống') : 'Hệ thống';
+  const message = notificationService.statusMessage({
+    code, actorName, status: to, actionLabel: 'Người chuyển bước', reason: reason || null
+  });
+  for (const uid of recipientIds) {
+    try {
+      await notificationService.create({
+        userId: uid,
+        type: to,
+        title: notificationService.statusTitle(to),
+        message,
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: actorId || null
+      });
+    } catch { /* silent */ }
+  }
+  return recipientIds;
+};
+
 exports.setInfoCompleted = async (id, completed, opts = {}) => {
   const { actorId, actorRole, source = 'user', ip } = opts;
   const [rows] = await pool.query(
@@ -998,5 +1059,10 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
       } catch { /* silent */ }
     }
   }
-  return { id, completed: !!completed, unchanged: false };
+  let movedTo = null;
+  if (completed && proposal.status === 'PENDING') {
+    await exports.transition(id, 'GRADING', { actorId, actorRole, source, ip });
+    movedTo = 'GRADING';
+  }
+  return { id, completed: !!completed, unchanged: false, movedTo };
 };

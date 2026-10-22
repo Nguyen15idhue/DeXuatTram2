@@ -14,8 +14,52 @@ const REQUEST_TYPE_LABELS = {
 
 const normalizeType = (type) => (REQUEST_TYPES.includes(type) ? type : 'UPDATE_INFO');
 
+const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
+
+const parseCustomData = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch { return {}; }
+};
+
+const loadUserById = async (userId) => {
+  if (!userId) return null;
+  const [rows] = await pool.query('SELECT id, role, status, custom_data FROM users WHERE id = ?', [userId]);
+  if (rows.length === 0) return null;
+  const custom = parseCustomData(rows[0].custom_data);
+  return {
+    id: Number(rows[0].id),
+    role: rows[0].role,
+    department: custom.department || null,
+    chucVu: custom.chuc_vu || null
+  };
+};
+
+// Cac loai yeu cau phu hop voi vai tro/phong ban cua mot nguoi dung
+// (RE_GRADE -> QH/PL, LAYOUT_SUPPLEMENT -> CN&QH, REVISE_BCDX -> GDTTKD/Back Office, TGD_REVIEW -> TGĐ)
+const assignedTypesForUser = (user) => {
+  if (!user) return [];
+  const reviewService = require('./proposalReviewService');
+  const gradingService = require('./proposalGradingService');
+  const reportService = require('./proposalReportService');
+  const types = [];
+  if (gradingService.resolveGradingRole(user.department)) types.push('RE_GRADE');
+  const dept = gradingService.normalizeText(user.department);
+  if (dept.includes('cong nghe') || dept.includes('quy hoach') || dept.includes('quan he')) types.push('LAYOUT_SUPPLEMENT');
+  if (reportService.isBackOffice(user.department)) types.push('REVISE_BCDX');
+  let roleKey = null;
+  try {
+    roleKey = reviewService.resolveRoleKey({ role: user.role, department: user.department, chucVu: user.chucVu });
+  } catch { roleKey = null; }
+  if (roleKey === reviewService.REVIEW_ROLE.GDTTKD && !types.includes('REVISE_BCDX')) types.push('REVISE_BCDX');
+  if (roleKey === reviewService.REVIEW_ROLE.TGD) types.push('TGD_REVIEW');
+  return types;
+};
+
 exports.REQUEST_TYPES = REQUEST_TYPES;
 exports.REQUEST_TYPE_LABELS = REQUEST_TYPE_LABELS;
+exports.assignedTypesForUser = assignedTypesForUser;
+exports.loadUserById = loadUserById;
 
 exports.createRequest = async ({
   proposalId,
@@ -103,7 +147,7 @@ const scopeClause = (scope, params) => {
   return '';
 };
 
-exports.listRequests = async ({ status = 'OPEN', type = '', search = '', page = 1, limit = 10, scope = {} } = {}) => {
+exports.listRequests = async ({ status = 'OPEN', type = '', search = '', page = 1, limit = 10, scope = {}, my = false } = {}) => {
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
   const offset = (safePage - 1) * safeLimit;
@@ -124,6 +168,19 @@ exports.listRequests = async ({ status = 'OPEN', type = '', search = '', page = 
     params.push(like, like, like);
   }
   const scoped = scopeClause(scope, params);
+  if (my && scope.userId) {
+    const me = await loadUserById(scope.userId);
+    if (me) {
+      const conds = ['r.target_user_id = ?'];
+      params.push(me.id);
+      const assignedTypes = assignedTypesForUser(me);
+      if (assignedTypes.length > 0) {
+        conds.push(`r.request_type IN (${assignedTypes.map(() => '?').join(',')})`);
+        params.push(...assignedTypes);
+      }
+      where.push(`(${conds.join(' OR ')})`);
+    }
+  }
   const whereClause = `WHERE ${where.length > 0 ? where.join(' AND ') : '1 = 1'}${scoped}`;
 
   const [countRows] = await pool.query(
@@ -138,7 +195,7 @@ exports.listRequests = async ({ status = 'OPEN', type = '', search = '', page = 
 
   const [rows] = await pool.query(
     `SELECT r.id, r.proposal_id, r.request_type, r.description, r.requested_by,
-            r.previous_status, r.current_status, r.round_no, r.note, r.status,
+            r.previous_status, r.current_status, r.round_no, r.note, r.resolution_note, r.status,
             r.created_at, r.updated_at,
             p.ma_de_xuat_gen AS ma_de_xuat, p.user_id AS owner_id,
             p.status AS proposal_status, p.updated_at AS proposal_updated_at,
@@ -161,3 +218,58 @@ exports.listRequests = async ({ status = 'OPEN', type = '', search = '', page = 
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) }
   };
 };
+
+exports.getRequestById = async (id) => {
+  const [rows] = await pool.query(
+    `SELECT r.*, p.ma_de_xuat_gen AS ma_de_xuat, p.status AS proposal_status, u.full_name AS owner_name
+     FROM proposal_requests r
+     JOIN station_proposals p ON p.id = r.proposal_id
+     LEFT JOIN users u ON u.id = p.user_id
+     WHERE r.id = ?`,
+    [id]
+  );
+  return rows[0] || null;
+};
+
+// Danh dấu yêu cầu đã hoàn thành (kèm ghi chú kết quả)
+exports.completeRequest = async (id, { user = null, resolutionNote = null } = {}) => {
+  const request = await exports.getRequestById(id);
+  if (!request) throw err('Không tìm thấy yêu cầu', 404);
+  if (request.status !== 'OPEN') throw err('Yêu cầu đã được xử lý trước đó', 400);
+  if (!user) throw err('Chưa xác thực', 401);
+  if (['CTV', 'NPP', 'MKT'].includes(user.role)) throw err('Bạn không có quyền cập nhật yêu cầu này', 403);
+
+  let allowed = ['ADMIN', 'SUPER_ADMIN'].includes(user.role);
+  if (!allowed && Number(request.target_user_id) === Number(user.id)) allowed = true;
+  if (!allowed) allowed = assignedTypesForUser(
+    await loadUserById(user.id)
+  ).includes(request.request_type);
+  if (!allowed) throw err('Bạn không phải người nhận công việc của yêu cầu này', 403);
+
+  const cleanNote = String(resolutionNote || '').trim();
+  if (!cleanNote) throw err('Vui lòng nhập ghi chú kết quả xử lý', 400);
+
+  await pool.query(
+    `UPDATE proposal_requests
+     SET status = 'DONE', resolved_by = ?, resolved_at = NOW(), resolution_note = ?
+     WHERE id = ?`,
+    [user.id, cleanNote, id]
+  );
+  try {
+    await require('./proposalLifecycle').logActivity({
+      proposalId: request.proposal_id,
+      action: 'request_completed',
+      fromStatus: request.current_status || null,
+      toStatus: request.current_status || null,
+      changedFields: {
+        request: { label: 'Yêu cầu', old: '', new: REQUEST_TYPE_LABELS[request.request_type] || request.request_type },
+        resolution_note: { label: 'Kết quả', old: '', new: cleanNote }
+      },
+      actorId: user.id,
+      actorRole: user.role || null,
+      source: 'user'
+    });
+  } catch { /* silent */ }
+  return { id: Number(id), status: 'DONE', resolution_note: cleanNote, resolved_by: Number(user.id) };
+};
+

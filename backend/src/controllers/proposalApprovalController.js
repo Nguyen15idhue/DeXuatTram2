@@ -47,6 +47,24 @@ exports.requestUpdate = async (req, res) => {
   }
 };
 
+exports.tgdReject = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.tgdReject({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã từ chối duyệt BCĐX và gửi yêu cầu cập nhật lại'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.getSignatureConfig = async (req, res) => {
   try {
     const result = await proposalApprovalService.getSignatureConfig({

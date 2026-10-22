@@ -413,6 +413,9 @@ export const proposalRequestService = {
   },
   getTypes(token) {
     return api.getWithAuth('/admin/proposal-requests/types', token);
+  },
+  complete(id, data, token) {
+    return api.postWithAuth(`/admin/proposal-requests/${id}/complete`, data || {}, token);
   }
 };
 
@@ -462,6 +465,9 @@ export const proposalApprovalService = {
   },
   requestUpdate(id, data, token) {
     return api.putWithAuth(`/admin/proposal-approvals/${id}/request-update`, data || {}, token);
+  },
+  tgdReject(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-approvals/${id}/tgd-reject`, data || {}, token);
   },
   getSignatureConfig(id, token) {
     return api.getWithAuth(`/admin/proposal-approvals/${id}/signature-config`, token);

@@ -67,6 +67,13 @@ const ProposalApprovalTab = ({ tab }) => {
   const [requestSaving, setRequestSaving] = useState(false);
   const [requestError, setRequestError] = useState('');
   const [signatureModal, setSignatureModal] = useState({ open: false, record: null });
+  const [meta, setMeta] = useState({});
+  const [rejectDialog, setRejectDialog] = useState({ open: false, row: null });
+  const [rejectSaving, setRejectSaving] = useState(false);
+  const [rejectError, setRejectError] = useState('');
+
+  const isTgdReadOnly = meta.roleKey === 'TGD' && !meta.isAdmin;
+  const canTgdReject = !!(meta.isAdmin || meta.roleKey === 'TGD');
 
   const loadItems = useCallback(async (targetPage = 1, targetSize = pageSize, targetSearch = debouncedSearch) => {
     if (!token) return;
@@ -80,6 +87,7 @@ const ProposalApprovalTab = ({ tab }) => {
       params.set('limit', targetSize);
       const res = await proposalApprovalService.getAll(params.toString(), token);
       setItems(res?.data || []);
+      setMeta(res?.meta || {});
       setPagination(res?.pagination || { page: targetPage, limit: targetSize, total: 0, totalPages: 0 });
     } catch (err) {
       setError(err?.message || 'Không tải được danh sách đề xuất');
@@ -125,6 +133,28 @@ const ProposalApprovalTab = ({ tab }) => {
       setRequestError(err?.message || 'Không gửi được yêu cầu cập nhật');
     } finally {
       setRequestSaving(false);
+    }
+  };
+
+  const openRejectDialog = (record) => {
+    setRejectError('');
+    setRejectDialog({ open: true, row: record });
+  };
+
+  const handleTgdReject = async (reason) => {
+    if (!rejectDialog.row) return;
+    setRejectSaving(true);
+    setRejectError('');
+    try {
+      const res = await proposalApprovalService.tgdReject(rejectDialog.row.id, { reason }, token);
+      setToastMessage(res?.message || 'Đã từ chối duyệt BCĐX');
+      setToastType('success');
+      setRejectDialog({ open: false, row: null });
+      loadItems(page, pageSize);
+    } catch (err) {
+      setRejectError(err?.message || 'Không từ chối duyệt được');
+    } finally {
+      setRejectSaving(false);
     }
   };
 
@@ -233,7 +263,7 @@ const ProposalApprovalTab = ({ tab }) => {
                             <Eye size={14} />
                             Xem chi tiết
                           </button>
-                          {canRequestUpdate(row) && (
+                          {!isTgdReadOnly && canRequestUpdate(row) && (
                             <button
                               type="button"
                               className="btn btn-xs btn-outline btn-warning"
@@ -243,7 +273,17 @@ const ProposalApprovalTab = ({ tab }) => {
                               Yêu cầu cập nhật thông tin
                             </button>
                           )}
-                          {canConfigureSignature(row) && (
+                          {canTgdReject && row.status === 'PROPOSAL_REPORT_REVIEWING' && (
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-outline btn-error"
+                              title="Tổng giám đốc từ chối duyệt BCĐX"
+                              onClick={() => openRejectDialog(row)}
+                            >
+                              Từ chối duyệt
+                            </button>
+                          )}
+                          {!isTgdReadOnly && canConfigureSignature(row) && (
                             <button
                               type="button"
                               className="btn btn-xs btn-success gap-1"
@@ -302,6 +342,20 @@ const ProposalApprovalTab = ({ tab }) => {
         error={requestError}
         onClose={() => setRequestDialog({ open: false, row: null })}
         onConfirm={handleRequestUpdate}
+      />
+
+      <ReviewActionDialog
+        isOpen={rejectDialog.open}
+        title="Từ chối duyệt BCĐX"
+        description={`Đề xuất ${rejectDialog.row?.ma_de_xuat || ''}: nêu lý do từ chối. Đề xuất sẽ chuyển sang chờ cập nhật lại BCĐX và thông báo cho GĐTTKD khu vực.`}
+        confirmText="Từ chối duyệt"
+        confirmClass="btn-error"
+        reasonLabel="Lý do từ chối"
+        reasonPlaceholder="Nhập lý do từ chối duyệt..."
+        saving={rejectSaving}
+        error={rejectError}
+        onClose={() => setRejectDialog({ open: false, row: null })}
+        onConfirm={handleTgdReject}
       />
 
       <ProposalSignatureConfigModal

@@ -28,6 +28,11 @@ import {
   RotateCcw,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
+import {
+  canSeeApprovalPage,
+  canSeeLayoutPage,
+  canSeeReviewRequestsPage,
+} from "../../utils/proposalAccess";
 
 const mainItems = [
   {
@@ -71,12 +76,14 @@ const mainItems = [
         label: "Yêu cầu chấm điểm lại",
         icon: RotateCcw,
         roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        access: canSeeReviewRequestsPage,
       },
       {
         path: "/admin/proposals/danh-gia-layout",
         label: "Đánh giá layout",
         icon: PenTool,
         roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        access: canSeeLayoutPage,
       },
       {
         path: "/admin/proposals/lap-to-trinh",
@@ -89,6 +96,7 @@ const mainItems = [
         label: "Duyệt BCĐX",
         icon: Gavel,
         roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        access: canSeeApprovalPage,
       },
       {
         path: "/admin/proposals/trinh-ky",
@@ -231,8 +239,9 @@ const isItemActive = (pathname, path) =>
 
 const isItemActiveExact = (pathname, path) => pathname === path;
 
-const filterItemsByRole = (items, role) =>
-  items.filter((item) => !item.roles || item.roles.includes(role));
+const filterItemsByRole = (items, user) =>
+  items.filter((item) => (!item.roles || item.roles.includes(user?.role))
+    && (!item.access || item.access(user)));
 
 const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const { user, logout } = useAuth();
@@ -272,7 +281,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     }));
   };
 
-  const visibleMain = filterItemsByRole(mainItems, user?.role);
+  const visibleMain = filterItemsByRole(mainItems, user);
   const visibleGroups = configGroups
     .filter((g) => !g.roles || g.roles.includes(user?.role))
     .map((g) => ({
@@ -317,7 +326,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     // Parent active if exact match OR any child matches
     let isActive = isActiveExact;
     if (hasChildren) {
-      const visibleChildren = filterItemsByRole(item.children, user?.role);
+      const visibleChildren = filterItemsByRole(item.children, user);
       isActive =
         visibleChildren.some((c) =>
           isItemActiveExact(location.pathname, c.path),
@@ -325,7 +334,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     }
 
     if (hasChildren) {
-      const visibleChildren = filterItemsByRole(item.children, user?.role);
+      const visibleChildren = filterItemsByRole(item.children, user);
       return (
         <div key={item.path} className="mb-1">
           <button

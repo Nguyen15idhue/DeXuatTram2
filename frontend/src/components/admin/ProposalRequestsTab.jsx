@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { proposalRequestService } from '../../services/api';
 import { getStatusColor, getStatusLabel } from '../../utils/mapStatuses';
 import Pagination from '../Pagination';
+import ReviewActionDialog from './ReviewActionDialog';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 
 const REQUEST_TYPES = [
@@ -38,6 +40,7 @@ const StatusBadge = ({ value }) => {
 };
 
 const ProposalRequestsTab = ({ token, onOpenProposal }) => {
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -46,7 +49,15 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [type, setType] = useState('');
+  const [onlyMine, setOnlyMine] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [completeDialog, setCompleteDialog] = useState({ open: false, row: null });
+  const [completeNote, setCompleteNote] = useState('');
+  const [completeSaving, setCompleteSaving] = useState(false);
+  const [completeError, setCompleteError] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+
+  const canComplete = !!user && !['CTV', 'NPP', 'MKT'].includes(user.role);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -67,6 +78,7 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
       params.set('limit', String(pageSize));
       if (search) params.set('search', search);
       if (type) params.set('type', type);
+      if (onlyMine) params.set('my', '1');
       const res = await proposalRequestService.getAll(params.toString(), token);
       if (res && res.success) {
         setItems(res.data || []);
@@ -79,9 +91,31 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, page, pageSize, search, type]);
+  }, [token, page, pageSize, search, type, onlyMine]);
 
   useEffect(() => { load(); }, [load]);
+
+  const openCompleteDialog = (row) => {
+    setCompleteNote('');
+    setCompleteError('');
+    setCompleteDialog({ open: true, row });
+  };
+
+  const handleComplete = async () => {
+    if (!completeDialog.row) return;
+    setCompleteSaving(true);
+    setCompleteError('');
+    try {
+      const res = await proposalRequestService.complete(completeDialog.row.id, { resolution_note: completeNote }, token);
+      setToastMessage(res?.message || 'Đã đánh dấu yêu cầu hoàn thành');
+      setCompleteDialog({ open: false, row: null });
+      load();
+    } catch (e) {
+      setCompleteError(e?.message || 'Không đánh dấu được yêu cầu');
+    } finally {
+      setCompleteSaving(false);
+    }
+  };
 
   return (
     <div>
@@ -103,6 +137,15 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
             <option key={t.value} value={t.value}>{t.label}</option>
           ))}
         </select>
+        <label className="label cursor-pointer gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="toggle toggle-sm toggle-primary"
+            checked={onlyMine}
+            onChange={(e) => { setOnlyMine(e.target.checked); setPage(1); }}
+          />
+          Việc của tôi
+        </label>
         <button type="button" className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
           Làm mới
         </button>
@@ -127,16 +170,17 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
               <th>Ngày cập nhật</th>
               <th className="text-center">Lần yêu cầu thứ</th>
               <th>Ghi chú</th>
+              {canComplete && <th className="text-right">Thao tác</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={10} className="text-center py-8 text-base-content/60">Đang tải...</td>
+                <td colSpan={canComplete ? 11 : 10} className="text-center py-8 text-base-content/60">Đang tải...</td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-10 text-base-content/40">
+                <td colSpan={canComplete ? 11 : 10} className="text-center py-10 text-base-content/40">
                   Không có đề xuất nào cần thực hiện
                 </td>
               </tr>
@@ -165,11 +209,45 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
                 <td className="whitespace-nowrap">{formatDateTime(row.created_at)}</td>
                 <td className="text-center">{row.round_no}</td>
                 <td className="max-w-[220px] whitespace-pre-wrap break-words">{row.note || '-'}</td>
+                {canComplete && (
+                  <td className="text-right whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline btn-success"
+                      title="Đánh dấu yêu cầu đã hoàn thành"
+                      onClick={() => openCompleteDialog(row)}
+                    >
+                      Đánh dấu đã hoàn thành
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <ReviewActionDialog
+        isOpen={completeDialog.open}
+        title="Đánh dấu đã hoàn thành"
+        description={`Yêu cầu ${completeDialog.row?.ma_de_xuat || ''} (lần ${completeDialog.row?.round_no || 1}): nhập kết quả xử lý của bạn.`}
+        confirmText="Xác nhận hoàn thành"
+        confirmClass="btn-success"
+        reasonLabel="Kết quả xử lý"
+        reasonPlaceholder="VD: Đã chấm điểm hoàn tất, đã tái trình BCĐX..."
+        saving={completeSaving}
+        error={completeError}
+        onClose={() => setCompleteDialog({ open: false, row: null })}
+        onConfirm={handleComplete}
+      />
+
+      {toastMessage && (
+        <Toast
+          message={toastMessage}
+          type="success"
+          onClose={() => setToastMessage('')}
+        />
+      )}
 
       <Pagination
         page={pagination.page}

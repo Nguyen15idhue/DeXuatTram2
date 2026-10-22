@@ -429,7 +429,7 @@ exports.reject = async ({ user, id, reason, ip } = {}) => {
   const regionIds = await proposalReportService.findGdttkdIdsByRegion(
     require('./proposalReviewService').resolveRegion(parseCustomData(proposal.custom_data).vung_mien)
   );
-  await notifyRecipients([...regionIds, proposal.user_id], {
+  await notifyRecipients(regionIds, {
     type: UPDATING_STATUS,
     title: 'Đề xuất cần tạo lại tờ trình BCĐX',
     message,
@@ -503,7 +503,7 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
     actionLabel: 'Back Office',
     reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
   });
-  await notifyRecipients([proposal.user_id, ...configs.map((config) => config.user_id)], {
+  await notifyRecipients(configs.map((config) => config.user_id), {
     type: COMPLETED,
     title: 'Đề xuất đã được phê duyệt',
     message,

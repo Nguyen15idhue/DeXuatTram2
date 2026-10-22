@@ -267,35 +267,6 @@ const notifyUsers = async (userIds, { type, title, message, entityId, actorId })
   }
 };
 
-const findUsersByDepartment = async (keyword) => {
-  const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
-  const ids = rows
-    .filter((row) => {
-      const custom = parseCustomData(row.custom_data);
-      const dept = normalizeText(custom.department);
-      return !!dept && dept.includes(keyword);
-    })
-    .map((row) => Number(row.id));
-  return [...new Set(ids)];
-};
-
-const findAdminIds = async () => {
-  const [rows] = await pool.query("SELECT id FROM users WHERE status = 'ACTIVE' AND role IN ('SUPER_ADMIN', 'ADMIN')");
-  return rows.map((row) => Number(row.id));
-};
-
-const notifyBackOffice = async ({ proposal, actorId, message, type = 'PROPOSAL_REPORT_REVIEWING' }) => {
-  let ids = await findUsersByDepartment('back office');
-  if (ids.length === 0) ids = await findAdminIds();
-  await notifyUsers(ids, {
-    type,
-    title: 'Đề xuất cần duyệt tờ trình BCĐX',
-    message,
-    entityId: proposal.id,
-    actorId
-  });
-};
-
 const findGdttkdIdsByRegion = async (region) => {
   const proposalReviewService = require('./proposalReviewService');
   const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
@@ -485,13 +456,6 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ip } = {}) => {
     ip
   });
 
-  const message = await buildMessage(proposal, user.id, {
-    status: REVIEWING_STATUS,
-    actionLabel: 'Người lập tờ trình',
-    reason: 'Đã tải lên tờ trình BCĐX'
-  });
-  await notifyBackOffice({ proposal, actorId: user.id, message });
-
   return {
     id: proposal.id,
     status: REVIEWING_STATUS,
@@ -565,7 +529,7 @@ exports.requestRevision = async ({ user, id, description, ip } = {}) => {
     reason: cleanDescription
   });
   const recipientIds = await findGdttkdIdsByRegion(proposalRegion(proposal.custom_data));
-  await notifyUsers([...recipientIds, proposal.user_id], {
+  await notifyUsers(recipientIds, {
     type: RE_CREATING_STATUS,
     title: 'Đề xuất cần tạo lại tờ trình BCĐX',
     message,

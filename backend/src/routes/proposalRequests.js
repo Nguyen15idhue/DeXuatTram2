@@ -30,6 +30,12 @@ const proposalRequestController = require('../controllers/proposalRequestControl
  *           type: string
  *         description: Tìm theo mã đề xuất, tên người đề xuất, mô tả yêu cầu
  *       - in: query
+ *         name: my
+ *         schema:
+ *           type: string
+ *           enum: ['1']
+ *         description: Nếu =1, chỉ lấy yêu cầu giao cho chính mình (theo target_user_id hoặc loại yêu cầu khớp phòng ban/chức vụ)
+ *       - in: query
  *         name: page
  *         schema:
  *           type: integer
@@ -62,5 +68,40 @@ router.get('/', requireAuth, requireProposalManager, proposalRequestController.l
  *         description: Thành công
  */
 router.get('/types', requireAuth, requireProposalManager, proposalRequestController.types);
+
+/**
+ * @swagger
+ * /api/admin/proposal-requests/{id}/complete:
+ *   post:
+ *     tags: [Proposal Requests]
+ *     summary: Đánh dấu yêu cầu đã hoàn thành (kèm ghi chú kết quả)
+ *     description: Chỉ ADMIN/SUPER hoặc người nhận công việc theo loại yêu cầu/phòng ban. Yêu cầu phải đang OPEN, bắt buộc có resolution_note.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [resolution_note]
+ *             properties:
+ *               resolution_note:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Yêu cầu đã xử lý hoặc thiếu ghi chú
+ *       403:
+ *         description: Không có quyền
+ */
+router.post('/:id/complete', requireAuth, proposalRequestController.complete);
 
 module.exports = router;
