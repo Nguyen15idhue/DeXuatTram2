@@ -188,7 +188,7 @@ const EvReportGuestPage = () => {
   const [done, setDone] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [nearbyOpen, setNearbyOpen] = useState(false);
-  const [registerOpen, setRegisterOpen] = useState(true);
+  const [registerOpen, setRegisterOpen] = useState(false);
   const [previewCenter, setPreviewCenter] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [values, setValues] = useState({ ...EMPTY_VALUES });
