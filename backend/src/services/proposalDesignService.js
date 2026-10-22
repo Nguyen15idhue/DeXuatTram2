@@ -248,6 +248,19 @@ const notifyRegionDirector = async ({ proposal, actorId, message }) => {
   });
 };
 
+const notifyGdttkdSuperiors = async ({ proposal, actorId, message }) => {
+  const proposalReportService = require('./proposalReportService');
+  const ids = await proposalReportService.findGdttkdAncestorIds(proposal.user_id);
+  if (!ids || ids.length === 0) return;
+  await notifyUsers(ids, {
+    type: REPORT_CREATING_STATUS,
+    title: 'Đề xuất cần lập tờ trình BCĐX',
+    message,
+    entityId: proposal.id,
+    actorId
+  });
+};
+
 const normalizeLayoutFiles = async (value) => {
   const entries = normalizeFileEntries(value);
   const ids = [];
@@ -346,6 +359,7 @@ exports.updateLayout = async ({ user, id, files, approve = false, ip } = {}) => 
       actionLabel: 'Người duyệt',
       reason: 'Bản vẽ layout đã được duyệt'
     });
+    await notifyGdttkdSuperiors({ proposal, actorId: user.id, message });
     await notifyRegionDirector({ proposal, actorId: user.id, message });
   }
 

@@ -1,5 +1,33 @@
 const myProposalService = require('../services/myProposalService');
 const proximityService = require('../services/proximityService');
+const proposalReportService = require('../services/proposalReportService');
+
+exports.uploadReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await myProposalService.getProposalByIdAndUser(id, req.user.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    const result = await proposalReportService.uploadReport({
+      user: req.user,
+      id,
+      files: req.body ? req.body.files : [],
+      ip: req.ip
+    });
+    return res.json({
+      success: true,
+      data: result,
+      message: 'Đã tải lên tờ trình BCĐX và chuyển sang duyệt BCĐX'
+    });
+  } catch (error) {
+    console.error('Upload BCĐX report error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    return res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
 
 exports.duplicates = async (req, res) => {
   try {

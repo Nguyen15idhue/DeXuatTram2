@@ -442,6 +442,19 @@ export const proposalLayoutService = {
   }
 };
 
+export const proposalReportService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-reports${qs}`, token);
+  },
+  upload(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token);
+  },
+  requestRevision(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token);
+  }
+};
+
 export const proposalReviewService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
@@ -496,6 +509,9 @@ export const myProposalService = {
   },
   extendInfo(id, token) {
     return api.getWithAuth(`/my-proposals/${id}/extend-info`, token);
+  },
+  uploadReport(id, data, token) {
+    return api.postWithAuth(`/my-proposals/${id}/report`, data || {}, token);
   }
 };
 

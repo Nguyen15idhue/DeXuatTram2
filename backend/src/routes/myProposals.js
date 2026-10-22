@@ -18,7 +18,7 @@ const excelService = require('../services/excelService');
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, RE_GDTTKD_EVALUATING, TGD_REVIEW, DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
+ *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, RE_GDTTKD_EVALUATING, TGD_REVIEW, DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
   *       - in: query
   *         name: filters
   *         schema:
@@ -165,6 +165,47 @@ router.post('/duplicates/export', requireAuth, (req, res) => excelService.export
  *         description: Không tìm thấy đề xuất hoặc không phải của user
  */
 router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.update);
+
+/**
+ * @swagger
+ * /api/my-proposals/{id}/report:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Tải lên tờ trình BCĐX cho đề xuất của mình
+ *     description: >
+ *       Áp dụng cho đề xuất PROPOSAL_REPORT_CREATING hoặc PROPOSAL_REPORT_RE_CREATING.
+ *       Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING và thông báo Back Office.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       400:
+ *         description: Sai trạng thái hoặc thiếu file
+ *       404:
+ *         description: Không tìm thấy đề xuất hoặc không phải của user
+ */
+router.post('/:id/report', requireAuth, myProposalController.uploadReport);
 
 /**
  * @swagger
@@ -324,7 +365,7 @@ router.delete('/:id', requireAuth, myProposalController.delete);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, RE_GDTTKD_EVALUATING, TGD_REVIEW, DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
+ *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, RE_GDTTKD_EVALUATING, TGD_REVIEW, DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED]
  *         description: Lọc theo trạng thái (bỏ trống = tất cả)
  *     responses:
  *       200:

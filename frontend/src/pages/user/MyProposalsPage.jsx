@@ -13,6 +13,8 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
 import { ImportSheetsSummary } from '../../components/admin/ImportViewPanel';
+import ProposalReportUpdateModal from '../../components/admin/ProposalReportUpdateModal';
+import { canUploadReport } from '../../utils/proposalReport';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -49,6 +51,7 @@ const MyProposalsPage = () => {
   const [pageSize, setPageSize] = useState(10);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
+  const [reportModal, setReportModal] = useState({ open: false, record: null });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -415,6 +418,14 @@ const MyProposalsPage = () => {
       {(row.status === 'PENDING' || row.status === 'REJECTED' || row.status === 'REVIEWING' || row.status === 'PRINCIPLE_APPROVED' || row.status === 'INFOR_WAITING') && (
         <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
       )}
+      {canUploadReport(row) && (
+        <button
+          className="btn btn-sm btn-info"
+          onClick={() => setReportModal({ open: true, record: row })}
+        >
+          Tờ trình BCĐX
+        </button>
+      )}
       {row.status === 'PENDING' && (
         <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
       )}
@@ -443,6 +454,18 @@ const MyProposalsPage = () => {
   return (
     <div className="p-4 md:p-6">
       <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
+
+      <ProposalReportUpdateModal
+        open={reportModal.open}
+        record={reportModal.record}
+        onClose={() => setReportModal({ open: false, record: null })}
+        onUpload={({ files }) => myProposalService.uploadReport(reportModal.record.id, { files }, token)}
+        onSaved={() => {
+          setReportModal({ open: false, record: null });
+          setToast({ message: 'Đã tải lên tờ trình BCĐX', type: 'success' });
+          loadProposals(1);
+        }}
+      />
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
