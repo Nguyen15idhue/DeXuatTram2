@@ -2563,7 +2563,7 @@ export const glyphImageId = (icon, badge) =>
 
 export const parseGlyphKey = (key) => {
   if (!key) return { icon: "", badge: "" };
-  const m = String(key).match(/^app-glyph-(.+)--b([12])$/);
+  const m = String(key).match(/^app-glyph-(.+)--b([123])$/);
   if (m) return { icon: m[1], badge: m[2] };
   if (String(key).startsWith("app-glyph-"))
     return { icon: String(key).slice(10), badge: "" };
