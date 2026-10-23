@@ -249,15 +249,17 @@ function createStationPopupContent(item, user) {
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
 
-  addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_tram] || item.mo_hinh_tram || '');
-  const truText = [item.so_luong_tru && item.loai_tru_sac ? `${item.so_luong_tru}× ${item.loai_tru_sac}` : '',
-    item.so_luong_tru && !item.loai_tru_sac ? `${item.so_luong_tru} trụ` : '',
-    !item.so_luong_tru && item.loai_tru_sac ? item.loai_tru_sac : '',
-    item.tower_type || '', item.power_capacity ? `${item.power_capacity} kW` : ''].filter(Boolean).join(' | ');
-  addRow('Trụ', truText);
-  addRow('Chủ trạm', item.chu_tram);
-  addRow('SĐT chủ trạm', item.sdt_chu_tram);
-  addRow('Mô tả', item.description);
+  if (item.status !== 'PLANNING') {
+    addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_tram] || item.mo_hinh_tram || '');
+    const truText = [item.so_luong_tru && item.loai_tru_sac ? `${item.so_luong_tru}× ${item.loai_tru_sac}` : '',
+      item.so_luong_tru && !item.loai_tru_sac ? `${item.so_luong_tru} trụ` : '',
+      !item.so_luong_tru && item.loai_tru_sac ? item.loai_tru_sac : '',
+      item.tower_type || '', item.power_capacity ? `${item.power_capacity} kW` : ''].filter(Boolean).join(' | ');
+    addRow('Trụ', truText);
+    addRow('Chủ trạm', item.chu_tram);
+    addRow('SĐT chủ trạm', item.sdt_chu_tram);
+    addRow('Mô tả', item.description);
+  }
 
   if (canOpenAdminRecord(user)) {
     renderAdminLink(div, `/admin/stations/view=${item.id}`);
@@ -851,7 +853,13 @@ const MapView = ({
   }, [visibleProposals, highlightIds]);
 
   const canvasStations = useMemo(
-    () => layerStations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '', _bg: getMarkerIconBg(s.status, 'station') })),
+    () => layerStations.map(s => {
+      const badge = s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '';
+      const isPin = s.status === 'PLANNING' && (badge === '1' || badge === '2' || badge === '3');
+      const levelColor = badge === '1' ? '#22c55e' : badge === '2' ? '#f97316' : badge === '3' ? '#ef4444' : getMarkerColor(s.status, 'station');
+      const icon = isPin ? `target${badge}` : getMarkerIcon(s.status, 'station');
+      return { ...s, _color: isPin ? levelColor : getMarkerColor(s.status, 'station'), _icon: icon, _badge: isPin ? badge : '', _bg: getMarkerIconBg(s.status, 'station') };
+    }),
     [layerStations, markerIconsVersion]
   );
   const canvasProposals = useMemo(
