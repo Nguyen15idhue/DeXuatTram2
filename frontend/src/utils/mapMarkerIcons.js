@@ -3,6 +3,29 @@ import { fieldDefinitionService } from "../services/api";
 // Bộ icon marker bản đồ — SVG dẹt tự màu (phong cách phẳng/gradient), viewBox 24.
 // Mỗi icon: { defs?: string, nodes: [[tag, attrs], ...] }
 const ICONS = {
+  // ===== Ghim bản đồ Quy hoạch (số Cấp baked-in, màu theo cấp) =====
+  mapPin: {
+    nodes: [
+      ["path", { d: "M12 22 L6 12 A6 6 0 1 1 18 12 Z", fill: "#a855f7", stroke: "#7e22ce", "stroke-width": "1.2", "stroke-linejoin": "round" }],
+      ["circle", { cx: "12", cy: "12", r: "5", fill: "#ffffff" }],
+    ],
+  },
+  mapPin1: {
+    nodes: [
+      ["path", { d: "M12 22 L6 12 A6 6 0 1 1 18 12 Z", fill: "#22c55e", stroke: "#15803d", "stroke-width": "1.2", "stroke-linejoin": "round" }],
+    ],
+  },
+  mapPin2: {
+    nodes: [
+      ["path", { d: "M12 22 L6 12 A6 6 0 1 1 18 12 Z", fill: "#f97316", stroke: "#c2410c", "stroke-width": "1.2", "stroke-linejoin": "round" }],
+    ],
+  },
+  mapPin3: {
+    nodes: [
+      ["path", { d: "M12 22 L6 12 A6 6 0 1 1 18 12 Z", fill: "#ef4444", stroke: "#b91c1c", "stroke-width": "1.2", "stroke-linejoin": "round" }],
+    ],
+  },
+  // (placeholder text node replaced below)
   // ===== Nhóm 1: Trạm & năng lượng =====
   bolt: {
     nodes: [
@@ -1246,6 +1269,108 @@ const ICONS = {
       ],
     ],
   },
+  target1: {
+    nodes: [
+      ["circle", { cx: "11", cy: "13", r: "9", fill: "#22c55e" }],
+      ["circle", { cx: "11", cy: "13", r: "6.2", fill: "#ffffff" }],
+      ["circle", { cx: "11", cy: "13", r: "3.4", fill: "#22c55e" }],
+      ["circle", { cx: "11", cy: "13", r: "1.2", fill: "#ffffff" }],
+      [
+        "path",
+        {
+          d: "M20.5 3.5L12.9 11.1",
+          stroke: "#1d4ed8",
+          "stroke-width": "2.2",
+          "stroke-linecap": "round",
+        },
+      ],
+      [
+        "path",
+        {
+          d: "M12.9 11.1l3.5-.5-2 2.9z",
+          fill: "#1d4ed8",
+          "stroke-linejoin": "round",
+        },
+      ],
+      [
+        "path",
+        {
+          d: "M20.5 3.5l-3-.3M20.5 3.5l-.4 3",
+          stroke: "#93c5fd",
+          "stroke-width": "2",
+          "stroke-linecap": "round",
+        },
+      ],
+    ],
+  },
+  target2: {
+    nodes: [
+      ["circle", { cx: "11", cy: "13", r: "9", fill: "#f97316" }],
+      ["circle", { cx: "11", cy: "13", r: "6.2", fill: "#ffffff" }],
+      ["circle", { cx: "11", cy: "13", r: "3.4", fill: "#f97316" }],
+      ["circle", { cx: "11", cy: "13", r: "1.2", fill: "#ffffff" }],
+      [
+        "path",
+        {
+          d: "M20.5 3.5L12.9 11.1",
+          stroke: "#1d4ed8",
+          "stroke-width": "2.2",
+          "stroke-linecap": "round",
+        },
+      ],
+      [
+        "path",
+        {
+          d: "M12.9 11.1l3.5-.5-2 2.9z",
+          fill: "#1d4ed8",
+          "stroke-linejoin": "round",
+        },
+      ],
+      [
+        "path",
+        {
+          d: "M20.5 3.5l-3-.3M20.5 3.5l-.4 3",
+          stroke: "#93c5fd",
+          "stroke-width": "2",
+          "stroke-linecap": "round",
+        },
+      ],
+    ],
+  },
+  target3: {
+    nodes: [
+      ["circle", { cx: "11", cy: "13", r: "9", fill: "#ef4444" }],
+      ["circle", { cx: "11", cy: "13", r: "6.2", fill: "#ffffff" }],
+      ["circle", { cx: "11", cy: "13", r: "3.4", fill: "#ef4444" }],
+      ["circle", { cx: "11", cy: "13", r: "1.2", fill: "#ffffff" }],
+      [
+        "path",
+        {
+          d: "M20.5 3.5L12.9 11.1",
+          stroke: "#1d4ed8",
+          "stroke-width": "2.2",
+          "stroke-linecap": "round",
+        },
+      ],
+      [
+        "path",
+        {
+          d: "M12.9 11.1l3.5-.5-2 2.9z",
+          fill: "#1d4ed8",
+          "stroke-linejoin": "round",
+        },
+      ],
+      [
+        "path",
+        {
+          d: "M20.5 3.5l-3-.3M20.5 3.5l-.4 3",
+          stroke: "#93c5fd",
+          "stroke-width": "2",
+          "stroke-linecap": "round",
+        },
+      ],
+    ],
+  },
   chartUp: {
     defs: '<linearGradient id="g-ch" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#15803d"/><stop offset="1" stop-color="#4ade80"/></linearGradient>',
     nodes: [
@@ -2414,7 +2539,7 @@ export const MARKER_ICON_GROUPS = GROUPS.map((g) => ({
 export const isValidMarkerIcon = (id) => !!id && id !== "none" && !!ICONS[id];
 
 export const isValidMarkerBadge = (b) =>
-  b === "1" || b === "2" || b === 1 || b === 2;
+  b === "1" || b === "2" || b === "3" || b === 1 || b === 2 || b === 3;
 
 export const iconSvgMarkup = (id, { size = 16 } = {}) => {
   if (!isValidMarkerIcon(id)) return "";

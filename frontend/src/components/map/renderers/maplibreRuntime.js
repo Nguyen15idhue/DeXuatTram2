@@ -24,7 +24,7 @@ function ensureGlyphImages(map, glyphKeys) {
     if (map.hasImage(id)) return;
     try {
       const svg = iconSvgWithBadge(icon, isValidMarkerBadge(badge) ? badge : '', { size: 44 });
-      const img = new Image(44, 44);
+      const img = new Image(66, 66); // tăng kich co len 1.5x
       img.onload = () => {
         try {
           if (!map.hasImage(id)) map.addImage(id, img, { pixelRatio: 2 });

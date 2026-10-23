@@ -113,8 +113,10 @@ function createNearbyPopup(title, item, status, entity) {
   if (entity === 'station') {
     addRow('Mã trạm', item.ma_tram || item.ma_tram_gen);
     addRow('Tên trạm', item.name);
-    addRow('Chủ trạm', item.chu_tram);
-    addRow('SĐT chủ trạm', item.sdt_chu_tram);
+    if (status !== 'PLANNING') {
+      addRow('Chủ trạm', item.chu_tram);
+      addRow('SĐT chủ trạm', item.sdt_chu_tram);
+    }
   } else if (entity === 'ev_report') {
     addRow('Nhu cầu sạc', item.hang_xe);
     addRow('Người gửi', item.full_name);
@@ -139,8 +141,10 @@ function createNearbyPopup(title, item, status, entity) {
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);
   addRow('Địa chỉ', item.address);
   const moHinh = entity === 'station' ? item.mo_hinh_tram : item.mo_hinh_dau_tu;
-  addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
-  addRow('Trụ', summarizeNearbyTru(item, entity));
+  if (status !== 'PLANNING' || entity !== 'station') {
+    addRow('Mô hình', NEARBY_MO_HINH_LABELS[moHinh] || moHinh);
+    addRow('Trụ', summarizeNearbyTru(item, entity));
+  }
   return div;
 }
 
@@ -439,7 +443,13 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
     || (filters.planningPriorities || []).length > 0
     || (filters.proposalStatuses || []).length > 0
     || filters.hideStations || filters.hideStationPlans || filters.hideProposals || filters.hideEvReports;
-  const canvasStations = nearby.stations.map(s => ({ ...s, _color: getMarkerColor(s.status, 'station'), _icon: getMarkerIcon(s.status, 'station'), _badge: s.status === 'PLANNING' ? readPriority(s) : '', _bg: getMarkerIconBg(s.status, 'station') }));
+  const canvasStations = nearby.stations.map(s => {
+    const badge = s.status === 'PLANNING' ? String(readPriority(s) || '') : '';
+    const isPin = s.status === 'PLANNING' && (badge === '1' || badge === '2' || badge === '3');
+    const levelColor = badge === '1' ? '#22c55e' : badge === '2' ? '#f97316' : badge === '3' ? '#ef4444' : getMarkerColor(s.status, 'station');
+    const icon = isPin ? `target${badge}` : getMarkerIcon(s.status, 'station');
+    return { ...s, _color: isPin ? levelColor : getMarkerColor(s.status, 'station'), _icon: icon, _badge: isPin ? badge : '', _bg: getMarkerIconBg(s.status, 'station') };
+  });
   const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') }));
   const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
