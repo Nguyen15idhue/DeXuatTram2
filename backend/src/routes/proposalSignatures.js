@@ -203,6 +203,30 @@ router.get('/:id/export', requireAuth, proposalSignatureController.exportFile);
 
 /**
  * @swagger
+ * /api/admin/proposal-signatures/{id}/signed-document:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: Tải tài liệu BCĐX đã đóng các chữ ký đã thực hiện
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: File PDF hoặc DOCX có chữ ký đã đóng lên tài liệu
+ *       400:
+ *         description: Không có file hoặc định dạng không hỗ trợ
+ *       403:
+ *         description: Không có quyền xem tài liệu
+ */
+router.get('/:id/signed-document', requireAuth, proposalSignatureController.downloadSignedDocument);
+
+/**
+ * @swagger
  * /api/admin/proposal-signatures/{id}/signature-image/{configId}:
  *   get:
  *     tags: [Proposal Signatures]

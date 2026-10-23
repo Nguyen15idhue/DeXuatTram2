@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalReportService } from '../../services/api';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -25,6 +26,7 @@ import {
   formatCommittedTotal,
   uploadButtonLabel
 } from '../../utils/proposalReport';
+import { canSeeApprovalPage } from '../../utils/proposalAccess';
 import { Eye, Pencil, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
@@ -45,7 +47,8 @@ const REPORT_COLUMNS = [
 ];
 
 const ProposalReportTab = ({ tab }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const navigate = useNavigate();
   const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
 
@@ -140,8 +143,12 @@ const ProposalReportTab = ({ tab }) => {
       <button
         type="button"
         className={PROPOSAL_VIEW_BUTTON_CLASS}
-        title="Xem chi tiết đề xuất"
-        onClick={() => openDetail(row)}
+        title={canSeeApprovalPage(user) ? 'Xem chi tiết duyệt BCĐX' : 'Xem chi tiết đề xuất'}
+        onClick={() => (
+          canSeeApprovalPage(user)
+            ? navigate(`/admin/proposals/duyet-bcdx/${row.id}`)
+            : openDetail(row)
+        )}
       >
         <Eye size={14} />
         Xem chi tiết

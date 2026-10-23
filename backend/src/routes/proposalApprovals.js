@@ -8,8 +8,9 @@ const proposalApprovalController = require('../controllers/proposalApprovalContr
  * /api/admin/proposal-approvals:
  *   get:
  *     tags: [Proposal Approvals]
- *     summary: Danh sách đề xuất cho trang Duyệt BCĐX (Back Office)
+ *     summary: Danh sách đề xuất cho trang Duyệt BCĐX
  *     description: >
+ *       Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được truy cập.
  *       tab=all: PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, COMPLETED;
  *       tab=pending: PROPOSAL_REPORT_REVIEWING; tab=updating: PROPOSAL_REPORT_UPDATING;
  *       tab=completed: SIGNATURE_PENDING, COMPLETED.
@@ -45,6 +46,31 @@ const proposalApprovalController = require('../controllers/proposalApprovalContr
  *         description: Không có quyền
  */
 router.get('/', requireAuth, requireUserManager, proposalApprovalController.list);
+
+/**
+ * @swagger
+ * /api/admin/proposal-approvals/{id}:
+ *   get:
+ *     tags: [Proposal Approvals]
+ *     summary: Chi tiết đề xuất cho trang duyệt BCĐX
+ *     description: Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được truy cập.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Chi tiết đề xuất và file BCĐX
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id', requireAuth, requireUserManager, proposalApprovalController.getProposal);
 
 /**
  * @swagger
@@ -89,9 +115,9 @@ router.get('/', requireAuth, requireUserManager, proposalApprovalController.list
  * /api/admin/proposal-approvals/{id}/tgd-reject:
  *   put:
  *     tags: [Proposal Approvals]
- *     summary: Tổng giám đốc từ chối duyệt BCĐX (chỉ đọc + từ chối)
+ *     summary: ADMIN thuộc Back Office hoặc SUPER_ADMIN từ chối duyệt BCĐX
  *     description: >
- *       Chỉ Tổng giám đốc hoặc Admin. Bắt buộc lý do; đề xuất chuyển PROPOSAL_REPORT_UPDATING,
+ *       Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office. Bắt buộc lý do; đề xuất chuyển PROPOSAL_REPORT_UPDATING,
  *       tạo Yêu cầu đề xuất REVISE_BCDX cho GĐTTKD khu vực, notify người đề xuất + GĐTTKD vùng.
  *     security:
  *       - bearerAuth: []
@@ -150,7 +176,7 @@ router.get('/:id/signature-config', requireAuth, requireUserManager, proposalApp
  * /api/admin/proposal-approvals/{id}/signer-candidates:
  *   get:
  *     tags: [Proposal Approvals]
- *     summary: Danh sách người có thể ký (người đề xuất, GĐTTKD, Tổng giám đốc)
+ *     summary: Danh sách người có thể ký liên quan đến đề xuất
  *     security:
  *       - bearerAuth: []
  *     parameters:

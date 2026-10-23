@@ -4,6 +4,7 @@ const fs = require('fs');
 const dynamicUtils = require('./dynamicUtils');
 const proposalGradingService = require('./proposalGradingService');
 const proposalReportService = require('./proposalReportService');
+const signedDocumentService = require('./signedDocumentService');
 
 const { parseCustomData, toFileSummaries } = proposalGradingService;
 
@@ -179,7 +180,7 @@ const loadProposal = async (id) => {
   const proposalId = Number(id);
   if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, owner_name, owner_phone, custom_data, chot_so_luong_tru, tong_gia_tri_chot, signed_file_id FROM station_proposals WHERE id = ?',
+    'SELECT id, ma_de_xuat_gen AS ma_de_xuat, user_id, status, owner_name, owner_phone, custom_data, chot_so_luong_tru, tong_gia_tri_chot, signed_file_id FROM station_proposals WHERE id = ?',
     [proposalId]
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
@@ -197,6 +198,7 @@ const loadConfigs = async (proposalId) => {
   );
   return rows.map((row) => ({
     id: row.id,
+    proposal_id: row.proposal_id,
     user_id: row.user_id,
     full_name: row.full_name,
     email: row.email,
@@ -332,6 +334,7 @@ exports.sign = async ({ user, id, ip } = {}) => {
     throw err('Bạn chưa tải chữ ký số trong hồ sơ cá nhân', 400);
   }
   const signature = signatureRows[0];
+  await signedDocumentService.validateSignature(signature.id);
 
   await pool.query(
     `UPDATE proposal_signature_configs
@@ -534,12 +537,33 @@ exports.getExportFile = async ({ user, id } = {}) => {
   return { file_id: fileRows[0].id, original_name: fileRows[0].original_name, mime_type: fileRows[0].mime_type };
 };
 
+exports.getSignedDocument = async ({ user, id } = {}) => {
+  const scope = await resolveScope(user);
+  const proposal = await loadProposal(id);
+  const detail = await buildDetail(proposal, scope);
+  const canView = scope.isManager || detail.can_sign || detail.is_my_signed
+    || Number(proposal.user_id) === Number(scope.userId);
+  if (!canView) {
+    throw err('Bạn không có quyền xem file BCĐX này', 403);
+  }
+  const reportFileId = detail.report_files.find((file) => Number(file.id) > 0)?.id;
+  if (!proposal.signed_file_id && !reportFileId) {
+    throw err('Đề xuất chưa có file BCĐX để xuất', 400);
+  }
+  return signedDocumentService.build({
+    reportFileId,
+    signedFileId: proposal.signed_file_id,
+    signers: detail.signers.filter((signer) => signer.status === 'SIGNED')
+  });
+};
+
 exports.getSignatureImagePath = async ({ user, id, configId } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   const detail = await buildDetail(proposal, scope);
-  if (!scope.isManager && !detail.can_sign && !detail.is_my_signed
-    && Number(proposal.user_id) !== Number(scope.userId)) {
+  const canView = scope.isManager || detail.can_sign || detail.is_my_signed
+    || Number(proposal.user_id) === Number(scope.userId);
+  if (!canView) {
     throw err('Bạn không có quyền xem chữ ký này', 403);
   }
   const config = detail.signers.find((item) => Number(item.id) === Number(configId));

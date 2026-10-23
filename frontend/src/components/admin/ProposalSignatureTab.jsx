@@ -29,7 +29,6 @@ import {
 import { Download, Eye, FileUp, PenSquare, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const SIGNATURE_COLUMNS = [
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
@@ -127,14 +126,15 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
 
   const handleExport = async (record) => {
     try {
-      const res = await proposalSignatureService.getExportFile(record.id, token);
-      const file = res?.data;
-      if (!file?.file_id) {
-        setToastType('warning');
-        setToastMessage('Đề xuất chưa có file để xuất');
-        return;
-      }
-      window.open(`${API_URL}/files/${file.file_id}/download?token=${encodeURIComponent(token || '')}`, '_blank');
+      const { blob, filename } = await proposalSignatureService.downloadSignedDocument(record.id, token);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (err) {
       setToastType('error');
       setToastMessage(err?.message || 'Không xuất được file');

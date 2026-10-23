@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
-import { useAuth } from '../../contexts/AuthContext';
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
+import { useAuth } from "../../contexts/AuthContext";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
 const getViewUrl = (file) => {
   if (file.url) return file.url;
@@ -12,41 +13,90 @@ const getViewUrl = (file) => {
 };
 
 const detectType = (file) => {
-  const mime = (file.mime_type || '').toLowerCase();
-  const name = (file.original_name || file.name || '').toLowerCase();
-  const ext = name.split('.').pop();
+  const mime = (file.mime_type || "").toLowerCase();
+  const name = (file.original_name || file.name || "").toLowerCase();
+  const ext = name.split(".").pop();
 
-  if (mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','svg','bmp','ico'].includes(ext)) return 'image';
-  if (mime.startsWith('video/') || ['mp4','webm','mov','avi','mkv'].includes(ext)) return 'video';
-  if (mime.startsWith('audio/') || ['mp3','wav','m4a','ogg','flac','aac'].includes(ext)) return 'audio';
-  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
-  if (mime.includes('word') || mime.includes('officedocument.wordprocessingml') || ['doc','docx'].includes(ext)) return 'word';
-  if (mime.includes('sheet') || mime.includes('officedocument.spreadsheetml') || mime.includes('excel') || ['xls','xlsx'].includes(ext)) return 'excel';
-  if (mime.startsWith('text/') || ['txt','csv','json','xml','md','log','css','js','html','htm'].includes(ext)) return 'text';
-  return 'unknown';
+  if (
+    mime.startsWith("image/") ||
+    ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico"].includes(ext)
+  )
+    return "image";
+  if (
+    mime.startsWith("video/") ||
+    ["mp4", "webm", "mov", "avi", "mkv"].includes(ext)
+  )
+    return "video";
+  if (
+    mime.startsWith("audio/") ||
+    ["mp3", "wav", "m4a", "ogg", "flac", "aac"].includes(ext)
+  )
+    return "audio";
+  if (mime === "application/pdf" || ext === "pdf") return "pdf";
+  if (
+    mime.includes("word") ||
+    mime.includes("officedocument.wordprocessingml") ||
+    ["doc", "docx"].includes(ext)
+  )
+    return "word";
+  if (
+    mime.includes("sheet") ||
+    mime.includes("officedocument.spreadsheetml") ||
+    mime.includes("excel") ||
+    ["xls", "xlsx"].includes(ext)
+  )
+    return "excel";
+  if (
+    mime.startsWith("text/") ||
+    [
+      "txt",
+      "csv",
+      "json",
+      "xml",
+      "md",
+      "log",
+      "css",
+      "js",
+      "html",
+      "htm",
+    ].includes(ext)
+  )
+    return "text";
+  return "unknown";
 };
 
-const FileViewer = ({ file, onClose }) => {
+const FileViewer = ({
+  file,
+  onClose,
+  inline = false,
+  overlay = null,
+  pdfPage = 1,
+}) => {
   const { token } = useAuth();
   const [zoom, setZoom] = useState(1);
   const [objectUrl, setObjectUrl] = useState(null);
-  const [htmlContent, setHtmlContent] = useState('');
-  const [textContent, setTextContent] = useState('');
+  const [htmlContent, setHtmlContent] = useState("");
+  const [textContent, setTextContent] = useState("");
   const [xlsxData, setXlsxData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [docxRenderVersion, setDocxRenderVersion] = useState(0);
+  const [docxOverlayPage, setDocxOverlayPage] = useState(null);
   const url = getViewUrl(file);
   const fileType = detectType(file);
-  const name = file.original_name || file.name || 'File';
+  const name = file.original_name || file.name || "File";
   const objectUrlRef = useRef(null);
+  const docxContainerRef = useRef(null);
 
   useEffect(() => {
-    if (!url) return;
+    if (!url) return undefined;
     setLoading(true);
-    setError('');
-    setHtmlContent('');
-    setTextContent('');
+    setError("");
+    setHtmlContent("");
+    setTextContent("");
     setXlsxData(null);
+    setDocxRenderVersion(0);
+    setDocxOverlayPage(null);
 
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
@@ -54,45 +104,69 @@ const FileViewer = ({ file, onClose }) => {
     }
     setObjectUrl(null);
 
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-    if (fileType === 'word') {
+    if (fileType === "word") {
       fetch(url, { headers })
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
-        .then(buf => mammoth.convertToHtml({ arrayBuffer: buf }))
-        .then(result => {
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.arrayBuffer();
+        })
+        .then(async (buf) => {
+          if (inline) {
+            const { renderAsync } = await import("docx-preview");
+            if (!docxContainerRef.current)
+              throw new Error("Không tìm thấy vùng xem trước tài liệu");
+            docxContainerRef.current.innerHTML = "";
+            await renderAsync(buf, docxContainerRef.current, null, {
+              className: "approval-docx",
+              breakPages: true,
+            });
+            setDocxRenderVersion((version) => version + 1);
+            return;
+          }
+          const result = await mammoth.convertToHtml({ arrayBuffer: buf });
           setHtmlContent(result.value);
         })
-        .catch(err => setError('Lỗi đọc file Word: ' + err.message))
+        .catch((err) => setError("Lỗi đọc file Word: " + err.message))
         .finally(() => setLoading(false));
-    } else if (fileType === 'excel') {
+    } else if (fileType === "excel") {
       fetch(url, { headers })
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
-        .then(buf => {
-          const wb = XLSX.read(buf, { type: 'array' });
-          const sheets = wb.SheetNames.map(name => ({
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.arrayBuffer();
+        })
+        .then((buf) => {
+          const wb = XLSX.read(buf, { type: "array" });
+          const sheets = wb.SheetNames.map((name) => ({
             name,
-            data: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 })
+            data: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 }),
           }));
           setXlsxData(sheets);
         })
-        .catch(err => setError('Lỗi đọc file Excel: ' + err.message))
+        .catch((err) => setError("Lỗi đọc file Excel: " + err.message))
         .finally(() => setLoading(false));
-    } else if (fileType === 'text') {
+    } else if (fileType === "text") {
       fetch(url, { headers })
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
-        .then(t => setTextContent(t))
-        .catch(() => setError('Không thể đọc nội dung file'))
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.text();
+        })
+        .then((t) => setTextContent(t))
+        .catch(() => setError("Không thể đọc nội dung file"))
         .finally(() => setLoading(false));
     } else {
       fetch(url, { headers })
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob(); })
-        .then(blob => {
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.blob();
+        })
+        .then((blob) => {
           const objUrl = URL.createObjectURL(blob);
           objectUrlRef.current = objUrl;
           setObjectUrl(objUrl);
         })
-        .catch(err => setError('Không thể tải file: ' + err.message))
+        .catch((err) => setError("Không thể tải file: " + err.message))
         .finally(() => setLoading(false));
     }
 
@@ -102,15 +176,31 @@ const FileViewer = ({ file, onClose }) => {
         objectUrlRef.current = null;
       }
     };
-  }, [url, fileType, token]);
+  }, [url, fileType, token, inline]);
+
+  useEffect(() => {
+    if (!inline || fileType !== "word" || !docxRenderVersion) return;
+    const pages =
+      docxContainerRef.current?.querySelectorAll("section.approval-docx") || [];
+    const page = pages[Math.max(0, Number(pdfPage) - 1)] || null;
+    if (page) page.style.position = "relative";
+    setDocxOverlayPage(page);
+  }, [docxRenderVersion, fileType, inline, pdfPage]);
 
   if (!url) {
+    if (inline) {
+      return <div className="alert alert-error">Không thể hiển thị file</div>;
+    }
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="legacy-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="text-center p-6 text-gray-400">Không thể hiển thị file</div>
+          <div className="text-center p-6 text-gray-400">
+            Không thể hiển thị file
+          </div>
           <div className="form-actions">
-            <button className="btn btn-secondary" onClick={onClose}>Đóng</button>
+            <button className="btn btn-secondary" onClick={onClose}>
+              Đóng
+            </button>
           </div>
         </div>
       </div>
@@ -118,6 +208,23 @@ const FileViewer = ({ file, onClose }) => {
   }
 
   const renderContent = () => {
+    if (inline && fileType === "word") {
+      return (
+        <>
+          <div
+            ref={docxContainerRef}
+            className="approval-docx-container min-w-full"
+          />
+          {loading && (
+            <div className="p-4 text-center text-base-content">
+              Đang render tài liệu…
+            </div>
+          )}
+          {error && <div className="alert alert-error m-3">{error}</div>}
+        </>
+      );
+    }
+
     if (loading) {
       return <div className="p-10 text-center text-white">Đang tải...</div>;
     }
@@ -130,21 +237,29 @@ const FileViewer = ({ file, onClose }) => {
     }
 
     switch (fileType) {
-      case 'image':
+      case "image":
         return objectUrl ? (
           <img
             src={objectUrl}
             alt={name}
-            style={{ maxWidth: '100%', maxHeight: '70vh', transform: `scale(${zoom})`, transformOrigin: 'center', transition: 'transform 0.2s' }}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "70vh",
+              transform: `scale(${zoom})`,
+              transformOrigin: "center",
+              transition: "transform 0.2s",
+            }}
           />
         ) : null;
 
-      case 'video':
+      case "video":
         return objectUrl ? (
-          <video src={objectUrl} controls className="max-w-full max-h-[70vh]">Trình duyệt không hỗ trợ video.</video>
+          <video src={objectUrl} controls className="max-w-full max-h-[70vh]">
+            Trình duyệt không hỗ trợ video.
+          </video>
         ) : null;
 
-      case 'audio':
+      case "audio":
         return objectUrl ? (
           <div className="p-10 text-center">
             <div className="text-5xl mb-4">🎵</div>
@@ -152,21 +267,37 @@ const FileViewer = ({ file, onClose }) => {
           </div>
         ) : null;
 
-      case 'pdf':
+      case "pdf":
         return objectUrl ? (
-          <iframe src={objectUrl} className="w-full h-[70vh] border-none" title={name} />
+          <iframe
+            src={
+              inline
+                ? `${objectUrl}#page=${pdfPage}&toolbar=0&navpanes=0&view=FitH`
+                : objectUrl
+            }
+            className={
+              inline
+                ? "h-full min-h-[420px] w-full border-none"
+                : "w-full h-[70vh] border-none"
+            }
+            title={name}
+          />
         ) : null;
 
-      case 'word':
+      case "word":
         return (
           <div className="w-full p-5 bg-white text-black overflow-auto max-h-[70vh]">
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>
         );
 
-      case 'excel':
+      case "excel":
         if (!xlsxData || xlsxData.length === 0) {
-          return <div className="p-10 text-center text-gray-400">Không có dữ liệu</div>;
+          return (
+            <div className="p-10 text-center text-gray-400">
+              Không có dữ liệu
+            </div>
+          );
         }
         return (
           <div className="w-full overflow-auto max-h-[70vh] p-2.5">
@@ -180,8 +311,11 @@ const FileViewer = ({ file, onClose }) => {
                     {sheet.data.map((row, ri) => (
                       <tr key={ri}>
                         {row.map((cell, ci) => (
-                          <td key={ci} className={`border border-gray-200 px-2 py-1 ${ri === 0 ? 'bg-gray-100' : 'bg-white'}`}>
-                            {cell != null ? String(cell) : ''}
+                          <td
+                            key={ci}
+                            className={`border border-gray-200 px-2 py-1 ${ri === 0 ? "bg-gray-100" : "bg-white"}`}
+                          >
+                            {cell != null ? String(cell) : ""}
                           </td>
                         ))}
                       </tr>
@@ -193,10 +327,20 @@ const FileViewer = ({ file, onClose }) => {
           </div>
         );
 
-      case 'text':
+      case "text":
         return (
           <div className="w-full p-5">
-            <pre style={{ margin: 0, color: '#d4d4d4', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: "'Consolas', 'Monaco', monospace" }}>
+            <pre
+              style={{
+                margin: 0,
+                color: "#d4d4d4",
+                fontSize: 13,
+                lineHeight: 1.5,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                fontFamily: "'Consolas', 'Monaco', monospace",
+              }}
+            >
               {textContent}
             </pre>
           </div>
@@ -207,8 +351,13 @@ const FileViewer = ({ file, onClose }) => {
           return (
             <div className="p-10 text-center">
               <div className="text-5xl mb-4">📁</div>
-              <p className="text-gray-300">Định dạng này không hỗ trợ xem trước</p>
-              <p className="text-gray-400 text-[13px]">File đã được tải. Bạn có thể kéo thả ra桌mình hoặc dùng nút tải xuống.</p>
+              <p className="text-gray-300">
+                Định dạng này không hỗ trợ xem trước
+              </p>
+              <p className="text-gray-400 text-[13px]">
+                File đã được tải. Bạn có thể kéo thả ra桌mình hoặc dùng nút tải
+                xuống.
+              </p>
             </div>
           );
         }
@@ -221,25 +370,104 @@ const FileViewer = ({ file, onClose }) => {
     }
   };
 
-  const bgColor = fileType === 'image' || fileType === 'pdf' ? '#525659' : '#1e1e1e';
+  const bgColor =
+    fileType === "image" || fileType === "pdf" ? "#525659" : "#1e1e1e";
+
+  if (inline) {
+    const isPdf = fileType === "pdf";
+    const isWord = fileType === "word";
+    return (
+      <div className="w-full overflow-hidden rounded-lg border bg-base-100">
+        <div className="border-b px-3 py-2 text-sm font-semibold truncate">
+          {name}
+        </div>
+        <div
+          className={`relative max-h-[75vh] min-h-[480px] overflow-auto ${isPdf ? "mx-auto" : ""} ${isWord ? "approval-docx-scroll" : ""}`}
+          style={{
+            background: bgColor,
+            minHeight: isPdf ? 420 : 360,
+            display: "flex",
+            alignItems:
+              fileType === "pdf" || fileType === "word" || fileType === "excel"
+                ? "flex-start"
+                : "center",
+            justifyContent: "center",
+            flexDirection:
+              fileType === "pdf" || fileType === "word" || fileType === "excel"
+                ? "column"
+                : "row",
+          }}
+        >
+          {renderContent()}
+          {overlay &&
+            (isWord ? (
+              docxOverlayPage ? (
+                createPortal(overlay, docxOverlayPage)
+              ) : null
+            ) : (
+              <div className="pointer-events-none absolute inset-0">
+                {overlay}
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="legacy-modal max-w-[950px] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="legacy-modal max-w-[950px] max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-between items-center mb-3">
-          <h3 className="m-0 text-base overflow-hidden text-ellipsis whitespace-nowrap flex-1">{name}</h3>
+          <h3 className="m-0 text-base overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+            {name}
+          </h3>
           <div className="flex gap-1.5 items-center">
-            {fileType === 'image' && (
+            {fileType === "image" && (
               <>
-                <button className="btn btn-sm btn-secondary" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))}>−</button>
-                <span className="text-xs text-gray-500 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
-                <button className="btn btn-sm btn-secondary" onClick={() => setZoom(z => Math.min(4, z + 0.25))}>+</button>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}
+                >
+                  −
+                </button>
+                <span className="text-xs text-gray-500 min-w-[40px] text-center">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setZoom((z) => Math.min(4, z + 0.25))}
+                >
+                  +
+                </button>
               </>
             )}
-            <button className="btn btn-sm btn-secondary" onClick={onClose}>✕</button>
+            <button className="btn btn-sm btn-secondary" onClick={onClose}>
+              ✕
+            </button>
           </div>
         </div>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(92vh - 80px)', background: bgColor, borderRadius: 8, display: 'flex', alignItems: (fileType === 'pdf' || fileType === 'word' || fileType === 'excel') ? 'flex-start' : 'center', justifyContent: 'center', flexDirection: (fileType === 'pdf' || fileType === 'word' || fileType === 'excel') ? 'column' : 'row', minHeight: 200 }}>
+        <div
+          style={{
+            overflow: "auto",
+            maxHeight: "calc(92vh - 80px)",
+            background: bgColor,
+            borderRadius: 8,
+            display: "flex",
+            alignItems:
+              fileType === "pdf" || fileType === "word" || fileType === "excel"
+                ? "flex-start"
+                : "center",
+            justifyContent: "center",
+            flexDirection:
+              fileType === "pdf" || fileType === "word" || fileType === "excel"
+                ? "column"
+                : "row",
+            minHeight: 200,
+          }}
+        >
           {renderContent()}
         </div>
       </div>

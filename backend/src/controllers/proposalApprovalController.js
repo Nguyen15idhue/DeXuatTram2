@@ -29,6 +29,18 @@ exports.list = async (req, res) => {
   }
 };
 
+exports.getProposal = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.getProposal({
+      user: req.user,
+      id: req.params.id
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.requestUpdate = async (req, res) => {
   try {
     const result = await proposalApprovalService.requestUpdate({

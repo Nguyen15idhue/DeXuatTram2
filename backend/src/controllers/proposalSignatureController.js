@@ -103,6 +103,27 @@ exports.exportFile = async (req, res) => {
   }
 };
 
+exports.downloadSignedDocument = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getSignedDocument({
+      user: req.user,
+      id: req.params.id
+    });
+    const originalName = String(result.original_name || 'BCDX');
+    const filename = originalName
+      .replace(/[\\/\r\n"]/g, '_');
+    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_');
+    const encodedFilename = encodeURIComponent(filename);
+    res.setHeader('Content-Type', result.mime_type || 'application/octet-stream');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Length', result.bytes.length);
+    res.send(result.bytes);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.signatureImage = async (req, res) => {
   try {
     const filePath = await proposalSignatureService.getSignatureImagePath({

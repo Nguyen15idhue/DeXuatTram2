@@ -9,6 +9,7 @@ import AdminLayout from './layouts/AdminLayout';
 
 import RoleRoute from './components/RoleRoute';
 import AssistantChat from './components/help/AssistantChat';
+import { canSeeApprovalPage } from './utils/proposalAccess';
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
@@ -31,6 +32,8 @@ const AdminProposalsReviewPage = lazy(() => import('./pages/admin/AdminProposals
 const AdminProposalsDanhGiaLayoutPage = lazy(() => import('./pages/admin/AdminProposalsDanhGiaLayoutPage'));
 const AdminProposalsLapToTrinhPage = lazy(() => import('./pages/admin/AdminProposalsLapToTrinhPage'));
 const AdminProposalsDuyetBCDXPage = lazy(() => import('./pages/admin/AdminProposalsDuyetBCDXPage'));
+const AdminProposalApprovalDetailPage = lazy(() => import('./pages/admin/AdminProposalApprovalDetailPage'));
+const ProposalSignatureConfigPage = lazy(() => import('./pages/admin/ProposalSignatureConfigPage'));
 const AdminProposalsTrinhKyPage = lazy(() => import('./pages/admin/AdminProposalsTrinhKyPage'));
 const AdminProposalSigningPage = lazy(() => import('./pages/admin/AdminProposalSigningPage'));
 const AdminProposalDetailPage = lazy(() => import('./pages/admin/AdminProposalDetailPage'));
@@ -143,7 +146,6 @@ function App() {
             <Route path="/admin/stations" element={<AdminStationsPage />} />
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<RoleRoute allowed={PROPOSAL_ROLES}><AdminProposalsPage /></RoleRoute>} />
-            <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
             <Route
               path="/admin/proposals/chi-tiet/:id"
               element={
@@ -187,8 +189,24 @@ function App() {
             <Route
               path="/admin/proposals/duyet-bcdx"
               element={
-                <RoleRoute allowed={PROPOSAL_ROLES}>
+                <RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']} accessCheck={canSeeApprovalPage}>
                   <AdminProposalsDuyetBCDXPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/duyet-bcdx/:id/cau-hinh-ky"
+              element={
+                <RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']} accessCheck={canSeeApprovalPage}>
+                  <ProposalSignatureConfigPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/duyet-bcdx/:id"
+              element={
+                <RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']} accessCheck={canSeeApprovalPage}>
+                  <AdminProposalApprovalDetailPage />
                 </RoleRoute>
               }
             />
@@ -216,6 +234,7 @@ function App() {
                 </RoleRoute>
               }
             />
+            <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
             <Route
               path="/admin/e-sign"
               element={

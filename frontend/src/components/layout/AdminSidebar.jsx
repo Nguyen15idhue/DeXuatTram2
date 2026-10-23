@@ -95,7 +95,7 @@ const mainItems = [
         path: "/admin/proposals/duyet-bcdx",
         label: "Duyệt BCĐX",
         icon: Gavel,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
         access: canSeeApprovalPage,
       },
       {
@@ -294,7 +294,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${
       isActive
         ? "bg-primary text-primary-content shadow-sm"
-        : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+        : "text-base-content/70 hover:bg-base-300 hover:text-base-content"
     }`;
 
   const renderLink = (item) => {
@@ -340,7 +340,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           <button
             type="button"
             onClick={() => toggleMainItem(item.path)}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-200 hover:text-base-content"}`}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-300 hover:text-base-content"}`}
             title={item.label}
           >
             <span className="flex items-center gap-3">
@@ -395,7 +395,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
               <button
                 type="button"
                 onClick={() => toggleGroup(g.id)}
-                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:text-base-content"
+                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:bg-base-200 hover:text-base-content rounded-lg transition-colors"
                 title={g.label}
               >
                 <span title={g.label}>{g.label}</span>
@@ -411,7 +411,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <div className="border-t border-base-300 my-3 mx-1" />
         <Link
           to="/map"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200 hover:text-base-content transition-all duration-150 hl-dash"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-all duration-150 hl-dash"
           onClick={onNavClick}
           title="Xem bản đồ"
         >
@@ -422,7 +422,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         </Link>
         <Link
           to="/admin/huong-dan"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === "/admin/huong-dan" ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-200 hover:text-base-content"}`}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === "/admin/huong-dan" ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-300 hover:text-base-content"}`}
           onClick={onNavClick}
           title="Hướng dẫn"
         >

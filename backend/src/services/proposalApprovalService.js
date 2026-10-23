@@ -66,9 +66,9 @@ const scopeClause = async (scope, params) => {
   return ' AND p.user_id = ?';
 };
 
-const assertCanReview = (scope) => {
-  if (scope.isAdmin || scope.isBackOffice) return;
-  throw err('Chỉ Back Office hoặc Admin được duyệt BCĐX', 403);
+const assertApprovalAccess = (scope) => {
+  if (scope.role === 'SUPER_ADMIN' || (scope.role === 'ADMIN' && scope.isBackOffice)) return;
+  throw err('Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được duyệt BCĐX', 403);
 };
 
 const loadProposal = async (id) => {
@@ -97,6 +97,7 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
   const offset = (safePage - 1) * safeLimit;
   const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
   const statuses = TAB_STATUSES[safeTab];
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
@@ -167,6 +168,29 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
   };
 };
 
+exports.getProposal = async ({ user, id } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
+  const proposal = await loadProposal(id);
+  const [rows] = await pool.query(
+    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            (SELECT COUNT(*) FROM proposal_requests r
+              WHERE r.proposal_id = p.id AND r.request_type = ?) AS update_request_count,
+            (SELECT r.description FROM proposal_requests r
+              WHERE r.proposal_id = p.id AND r.request_type IN (?, ?) AND r.status = 'OPEN'
+              ORDER BY r.id DESC LIMIT 1) AS task_description,
+            (SELECT COUNT(*) FROM proposal_signature_configs s
+              WHERE s.proposal_id = p.id AND s.status <> 'CANCELLED') AS signer_count
+     FROM station_proposals p
+     LEFT JOIN users u ON u.id = p.user_id
+     WHERE p.id = ? LIMIT 1`,
+    [UPDATE_INFO_REQUEST_TYPE, UPDATE_INFO_REQUEST_TYPE, 'REVISE_BCDX', proposal.id]
+  );
+  if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
+  const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  return mapApprovalRow(dynamicUtils.mergeData(rows[0], fieldDefs));
+};
+
 const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) => {
   const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
   const actorName = (await notificationService.getUserName(actorId)) || 'Hệ thống';
@@ -175,7 +199,7 @@ const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) 
 
 exports.requestUpdate = async ({ user, id, description, ip } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
-  assertCanReview(scope);
+  assertApprovalAccess(scope);
   const proposal = await loadProposal(id);
   if (proposal.status !== REVIEWING_STATUS) {
     throw err('Đề xuất không ở trạng thái đang duyệt BCĐX', 400);
@@ -253,9 +277,7 @@ exports.requestUpdate = async ({ user, id, description, ip } = {}) => {
 
 exports.tgdReject = async ({ user, id, reason, ip } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
-  if (!scope.isAdmin && scope.roleKey !== 'TGD') {
-    throw err('Chỉ Tổng giám đốc hoặc Admin được từ chối duyệt BCĐX', 403);
-  }
+  assertApprovalAccess(scope);
   const proposal = await loadProposal(id);
   if (proposal.status !== REVIEWING_STATUS) {
     throw err('Đề xuất không ở trạng thái đang duyệt BCĐX', 400);
@@ -346,6 +368,8 @@ const normalizeSigners = (signers) => {
 };
 
 exports.getSignatureConfig = async ({ user, id } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
   const proposal = await loadProposal(id);
   const [rows] = await pool.query(
     `SELECT s.*, u.full_name, u.role, u.email
@@ -377,11 +401,33 @@ exports.getSignatureConfig = async ({ user, id } = {}) => {
 };
 
 exports.getSignerCandidates = async ({ user, id } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
   const proposal = await loadProposal(id);
   const proposalReviewService = require('./proposalReviewService');
-  const [rows] = await pool.query("SELECT id, full_name, role, custom_data FROM users WHERE status = 'ACTIVE'");
+  const [rows] = await pool.query("SELECT id, full_name, role, parent_id, custom_data FROM users WHERE status = 'ACTIVE'");
+  const proposalCustomData = parseCustomData(proposal.custom_data);
+  const relatedIds = new Set([Number(proposal.user_id)].filter(Boolean));
+  if (proposal.user_id) {
+    const adminUserService = require('./adminUserService');
+    (await adminUserService.getAncestorIds(proposal.user_id)).forEach((id) => relatedIds.add(Number(id)));
+  }
+  ['nguoi_phu_trach', 'nguoi_giao_phu_trach', 'sales_quan_ly'].forEach((key) => {
+    const value = proposalCustomData[key];
+    const id = Number(value && typeof value === 'object' ? value.id : value);
+    if (Number.isInteger(id) && id > 0) relatedIds.add(id);
+  });
+  const proposalRegionValue = proposalRegion(proposal.custom_data);
+  const candidateRanks = {
+    'Tổng giám đốc': 0,
+    'Back Office': 1,
+    'GĐTTKD': 2,
+    'Giám đốc khu vực': 3,
+    'Sale liên quan': 4,
+    'Người đề xuất': 5
+  };
   const candidates = [];
-  const push = (row, title) => {
+  const push = (row, category, title) => {
     const custom = parseCustomData(row.custom_data);
     candidates.push({
       id: Number(row.id),
@@ -389,29 +435,56 @@ exports.getSignerCandidates = async ({ user, id } = {}) => {
       role: row.role,
       department: custom.department || null,
       chuc_vu: title || custom.chuc_vu || null,
+      category,
       is_owner: Number(row.id) === Number(proposal.user_id)
     });
   };
   rows.forEach((row) => {
     const custom = parseCustomData(row.custom_data);
-    if (Number(row.id) === Number(proposal.user_id)) {
-      push(row, 'Người đề xuất');
+    const userId = Number(row.id);
+    const department = custom.department || '';
+    const chucVu = custom.chuc_vu || '';
+    const normalizedTitle = normalizeText(chucVu);
+    const normalizedDepartment = normalizeText(department);
+    if (userId === Number(proposal.user_id)) {
+      push(row, 'Người đề xuất', 'Người đề xuất');
       return;
     }
-    const key = proposalReviewService.resolveRoleKey({
-      role: row.role,
-      department: custom.department,
-      chucVu: custom.chuc_vu
-    });
-    if (key === 'GDTTKD') push(row, 'Giám đốc Trung tâm Kinh doanh');
-    else if (key === 'TGD') push(row, 'Tổng giám đốc');
+    const isTgd = (normalizedTitle.includes('tong giam doc')
+      && !normalizedTitle.includes('pho tong giam doc'))
+      || normalizedDepartment.includes('tong giam doc');
+    if (isTgd) {
+      push(row, 'Tổng giám đốc', chucVu);
+      return;
+    }
+    if (proposalReportService.isBackOffice(department)) {
+      push(row, 'Back Office', chucVu);
+      return;
+    }
+    const isGdttkd = normalizedTitle.includes('giam doc trung tam kinh doanh')
+      || normalizedDepartment.includes('trung tam kd')
+      || normalizedDepartment.includes('trung tam kinh doanh');
+    if (isGdttkd) {
+      const userRegion = proposalReviewService.resolveRegion(department)
+        || proposalReviewService.resolveRegion(custom.vung_mien);
+      if (!proposalRegionValue || !userRegion || userRegion === proposalRegionValue) {
+        push(row, 'GĐTTKD', chucVu);
+      }
+      return;
+    }
+    if (row.role === 'SALES' && relatedIds.has(userId)) {
+      const isAreaDirector = normalizedTitle.includes('giam doc khu vuc');
+      push(row, isAreaDirector ? 'Giám đốc khu vực' : 'Sale liên quan', chucVu);
+    }
   });
+  candidates.sort((a, b) => candidateRanks[a.category] - candidateRanks[b.category]
+    || a.full_name.localeCompare(b.full_name, 'vi'));
   return { proposal_id: proposal.id, status: proposal.status, candidates };
 };
 
 exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
-  assertCanReview(scope);
+  assertApprovalAccess(scope);
   const proposal = await loadProposal(id);
   if (proposal.status !== REVIEWING_STATUS) {
     throw err('Chỉ cấu hình ký cho đề xuất đang duyệt BCĐX', 400);

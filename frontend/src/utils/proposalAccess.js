@@ -18,7 +18,10 @@ export const isLayoutDept = (user) => {
 
 export const isStrategyDept = (user) => deptOf(user).includes('chien luoc');
 
-export const isBackOfficeDept = (user) => deptOf(user).includes('back office');
+export const isBackOfficeDept = (user) => {
+  const department = deptOf(user);
+  return department.includes('back office') || department.includes('backoffice');
+};
 
 export const isGdttkdUser = (user) => {
   const title = titleOf(user);
@@ -43,5 +46,6 @@ export const canSeeReviewRequestsPage = (user) => isAdminUser(user) || isReviewU
 export const canSeeLayoutPage = (user) => isAdminUser(user) || isLayoutDept(user);
 
 export const canSeeApprovalPage = (user) => (
-  isAdminUser(user) || isBackOfficeDept(user) || isTgdUser(user) || isGdttkdUser(user) || user?.role === 'SALES'
+  user?.role === 'SUPER_ADMIN'
+  || (user?.role === 'ADMIN' && isBackOfficeDept(user))
 );

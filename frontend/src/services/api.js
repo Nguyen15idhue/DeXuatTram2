@@ -463,6 +463,9 @@ export const proposalApprovalService = {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-approvals${qs}`, token);
   },
+  getProposal(id, token) {
+    return api.getWithAuth(`/admin/proposal-approvals/${id}`, token);
+  },
   requestUpdate(id, data, token) {
     return api.putWithAuth(`/admin/proposal-approvals/${id}/request-update`, data || {}, token);
   },
@@ -499,6 +502,24 @@ export const proposalSignatureService = {
   },
   getExportFile(id, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
+  },
+  async downloadSignedDocument(id, token) {
+    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/signed-document`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Không tải được file BCĐX đã ký';
+      const body = await parseJsonSafe(response);
+      if (body?.message) message = body.message;
+      throw new Error(message);
+    }
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const extension = response.headers.get('Content-Type')?.includes('pdf') ? '.pdf' : '.docx';
+    return {
+      blob: await response.blob(),
+      filename: parseDispositionFilename(contentDisposition) || `BCDX${extension}`
+    };
   }
 };
 
