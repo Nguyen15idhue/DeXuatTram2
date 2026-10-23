@@ -93,14 +93,14 @@ const LoginPage = () => {
           </div>
         </form>
 
-        <div className="divider my-2">HOẶC</div>
+        {/* <div className="divider my-2">HOẶC</div>
 
         <p className="text-center text-sm text-base-content/60">
           Chưa có tài khoản?{' '}
           <Link to="/register" className="link link-primary font-medium">
             Đăng ký
           </Link>
-        </p>
+        </p> */}
       </div>
     </div>
   );
