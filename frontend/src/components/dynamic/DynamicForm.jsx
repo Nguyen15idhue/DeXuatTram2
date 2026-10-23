@@ -783,7 +783,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || !!field.autoLocked || scReadonly || (readOnlyKeys || []).includes(field.key)
+      readonly: field.readonly || !!field.autoLocked || scReadonly || readOnlyKeys === '*'
+        || (readOnlyKeys || []).includes(field.key)
         || !sectionEditable(fieldSectionMap[field.key])
     };
 

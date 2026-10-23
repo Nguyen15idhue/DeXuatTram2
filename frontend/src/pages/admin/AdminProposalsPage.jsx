@@ -48,9 +48,9 @@ const AdminProposalsPage = () => {
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
-  const openProposalPopup = (id) => {
+  const openProposalDetail = (id) => {
     if (!id) return;
-    setPopup({ open: true, record: null, mode: 'view', recordId: id });
+    navigate(`/admin/proposals/chi-tiet/${id}`);
   };
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const isDesktop = useMediaQuery('(min-width: 768px)');
@@ -1029,7 +1029,7 @@ const AdminProposalsPage = () => {
         setToast({ message: `${res.message || `Đã khôi phục đề xuất ${res.data.maDeXuat}`}${res.data.attachedFiles > 0 ? ` (kèm ${res.data.attachedFiles} file)` : ''}${(res.data.fileWarnings || []).length > 0 ? ` — lưu ý: ${res.data.fileWarnings.join('; ')}` : ''}`, type: (res.data.fileWarnings || []).length > 0 ? 'warning' : 'success' });
         setRestoreModal({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
         loadProposals(1);
-        navigate(`/admin/proposals/view=${res.data.proposalId}`);
+        navigate(`/admin/proposals/chi-tiet/${res.data.proposalId}`);
       } else {
         setRestoreModal(prev => ({ ...prev, loading: false, error: res.message || 'Khôi phục thất bại' }));
       }
@@ -1290,9 +1290,9 @@ const AdminProposalsPage = () => {
 
   const renderActions = (row) => (
     <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
-      <button className="btn btn-primary btn-xs gap-1 shrink-0" onClick={() => navigate(`/admin/proposals/view=${row.id}`)} title="Xem chi tiết">
-        <Eye size={12} />
-        Xem
+      <button className="btn btn-primary btn-xs gap-1 shrink-0 whitespace-nowrap" onClick={() => navigate(`/admin/proposals/chi-tiet/${row.id}`)} title="Xem chi tiết">
+        <Eye size={14} />
+        Xem chi tiết
       </button>
       {renderPrimaryAction(row)}
       {renderStatusActions(row)}
@@ -1526,11 +1526,11 @@ const AdminProposalsPage = () => {
       </div>
 
       {activeTab === 'requests' && (
-        <ProposalRequestsTab token={token} onOpenProposal={openProposalPopup} />
+        <ProposalRequestsTab token={token} />
       )}
 
       {activeTab === 'completed' && (
-        <ProposalCompletedTab token={token} onOpenProposal={openProposalPopup} />
+        <ProposalCompletedTab token={token} onOpenProposal={openProposalDetail} />
       )}
 
       {activeTab === 'all' && (<>
@@ -1599,7 +1599,7 @@ const AdminProposalsPage = () => {
       <DuplicateCheckPanel
         ref={dupRef}
         fetchDuplicates={(minM, maxM) => adminProposalService.duplicates(minM, maxM, token)}
-        getProposalViewUrl={(id) => `/admin/proposals/view=${id}`}
+        getProposalViewUrl={(id) => `/admin/proposals/chi-tiet/${id}`}
         getStationViewUrl={(id) => `/admin/stations/view=${id}`}
         onModeChange={setDupMode}
         onViewItem={(kind, id) => {
@@ -2311,9 +2311,10 @@ const AdminProposalsPage = () => {
         entity="station_proposals"
         viewId={proposalsViewId}
         data={proposals}
+        frozenColumns={3}
         actions={renderActions}
         cellRenderers={{
-          ma_de_xuat: (row, value) => <ProposalCodeLink id={row.id} code={value} onOpen={openProposalPopup} />,
+          ma_de_xuat: (row, value) => <ProposalCodeLink id={row.id} code={value} />,
           nguoi_de_xuat: (row, value) => (
             row.user_id
               ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} />

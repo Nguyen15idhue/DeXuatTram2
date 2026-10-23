@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalGradingService } from '../../services/api';
-import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
-import RecordDetailPopup from './RecordDetailPopup';
 import ProposalGradingModal from './ProposalGradingModal';
-import ProposalGradingSummary from './ProposalGradingSummary';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import Toast from '../Toast';
 import {
-  getModelLabel,
   formatScore,
   formatProposalCost,
   formatProposalScale,
@@ -21,10 +19,24 @@ import {
   getMissingLegalDocs,
   isLegalDocsComplete
 } from '../../utils/proposalGrading';
+import { ProposalModelBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
 import { Eye, Pencil, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 const DEPT_LABELS = { QH: 'Quy hoạch', PL: 'Pháp lý' };
+
+const GRADING_COLUMNS = [
+  { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
+  { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
+  { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
+  { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
+  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 140, sortable: false, filterable: false, visible: true },
+  { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'quy_hoach_status', field_key: 'quy_hoach_status', label: 'Trạng thái Quy hoạch', width: 180, sortable: false, filterable: false, visible: true },
+  { key: 'phap_ly_status', field_key: 'phap_ly_status', label: 'Trạng thái Pháp lý', width: 190, sortable: false, filterable: false, visible: true }
+];
 
 const QuyHoachStatusCell = ({ row, onShowScore }) => {
   const done = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined;
@@ -119,7 +131,7 @@ const gradeButtonTitle = (canQH, canPL) => {
 
 const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) => {
   const { token } = useAuth();
-  const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
+  const navigate = useNavigate();
   const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu']);
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
 
@@ -191,7 +203,61 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) 
     loadItems(page, pageSize);
   };
 
-  const colCount = 12;
+  const cellRenderers = {
+    ma_de_xuat: (row, value) => (
+      <ProposalCodeLink
+        id={row.id}
+        code={value || `#${row.id}`}
+      />
+    ),
+    legal_name: (row) => getProposalLegalName(row),
+    phone: (row) => getProposalPhone(row),
+    mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    scale: (row) => formatProposalScale(row),
+    cost: (row) => formatProposalCost(row),
+    user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
+    quy_hoach_status: (row) => <QuyHoachStatusCell row={row} onShowScore={setScoreDetail} />,
+    phap_ly_status: (row) => <PhapLyStatusCell row={row} onShowScore={setScoreDetail} />
+  };
+
+  const renderActions = (row) => (
+    <div className="flex gap-1">
+      {isAll && (
+        <button
+          type="button"
+          className={PROPOSAL_VIEW_BUTTON_CLASS}
+          title="Xem chi tiết đề xuất"
+          onClick={() => openDetail(row)}
+        >
+          <Eye size={14} />
+          Xem chi tiết
+        </button>
+      )}
+      {isPending && canGrade && (
+        <button
+          type="button"
+          className="btn btn-xs btn-primary gap-1"
+          title={gradeButtonTitle(canGradeQH, canGradePL)}
+          onClick={() => openScoreModal(row)}
+        >
+          <Pencil size={14} />
+          Chấm điểm
+        </button>
+      )}
+      {!isPending && canGrade && (
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs gap-1"
+          title="Cập nhật lại điểm và đánh giá"
+          onClick={() => openScoreModal(row)}
+        >
+          <Pencil size={14} />
+          Cập nhật
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-2">
@@ -234,96 +300,15 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) 
         <div className="alert alert-error text-sm">{error}</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="table table-sm table-zebra min-w-[1500px]">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Mã đề xuất</th>
-                  <th>Tên pháp nhân</th>
-                  <th>SĐT liên hệ</th>
-                  <th>Mô hình đầu tư</th>
-                  <th>Địa chỉ chi tiết</th>
-                  <th>Quy mô trụ đề xuất</th>
-                  <th>Tổng chi phí dự kiến</th>
-                  <th>Người đề xuất</th>
-                  <th>Trạng thái Quy hoạch</th>
-                  <th>Trạng thái Pháp lý</th>
-                  <th>Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={colCount} className="text-center text-base-content/60 py-6">
-                      Không có đề xuất nào phù hợp
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((row, index) => (
-                    <tr key={row.id}>
-                      <td>{(page - 1) * pageSize + index + 1}</td>
-                      <td>
-                        <ProposalCodeLink
-                          id={row.id}
-                          code={row.ma_de_xuat || `#${row.id}`}
-                          onOpen={() => openDetail(row)}
-                        />
-                      </td>
-                      <td>{getProposalLegalName(row)}</td>
-                      <td>{getProposalPhone(row)}</td>
-                      <td>{getModelLabel(row.mo_hinh_dau_tu, modelOptions)}</td>
-                      <td className="min-w-[220px]">{getProposalAddress(row)}</td>
-                      <td>{formatProposalScale(row)}</td>
-                      <td>{formatProposalCost(row)}</td>
-                      <td>
-                        <ProposalPersonLink id={row.user_id} name={row.user_name} />
-                      </td>
-                      <td><QuyHoachStatusCell row={row} onShowScore={setScoreDetail} /></td>
-                      <td><PhapLyStatusCell row={row} onShowScore={setScoreDetail} /></td>
-                      <td className="whitespace-nowrap">
-                        <div className="flex gap-1">
-                          {isAll && (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-xs gap-1"
-                              title="Xem chi tiết đề xuất"
-                              onClick={() => openDetail(row)}
-                            >
-                              <Eye size={14} />
-                              Xem chi tiết
-                            </button>
-                          )}
-                          {isPending && canGrade && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-primary gap-1"
-                              title={gradeButtonTitle(canGradeQH, canGradePL)}
-                              onClick={() => openScoreModal(row)}
-                            >
-                              <Pencil size={14} />
-                              Chấm điểm
-                            </button>
-                          )}
-                          {!isPending && canGrade && (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-xs gap-1"
-                              title="Cập nhật lại điểm và đánh giá"
-                              onClick={() => openScoreModal(row)}
-                            >
-                              <Pencil size={14} />
-                              Cập nhật
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DynamicTable
+            entity="station_proposals"
+            columns={GRADING_COLUMNS}
+            data={items}
+            startIndex={(page - 1) * pageSize}
+            cellRenderers={cellRenderers}
+            actions={renderActions}
+            frozenColumns={3}
+          />
           <Pagination
             page={pagination.page}
             totalPages={pagination.totalPages}

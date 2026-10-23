@@ -1,15 +1,18 @@
+import { useNavigate } from 'react-router-dom';
 import UserChip from '../dynamic/UserChip';
 
 export const PROPOSAL_LINK_CLASS = 'link link-primary underline cursor-pointer text-left';
 
-export const ProposalCodeLink = ({ id, code, onOpen }) => {
+export const ProposalCodeLink = ({ id, code }) => {
+  const navigate = useNavigate();
+
   if (!id) return <span className="field-empty">-</span>;
   return (
     <button
       type="button"
       className={PROPOSAL_LINK_CLASS}
       title="Xem chi tiết đề xuất"
-      onClick={() => onOpen && onOpen(id)}
+      onClick={() => navigate(`/admin/proposals/chi-tiet/${id}`)}
     >
       {code || `#${id}`}
     </button>

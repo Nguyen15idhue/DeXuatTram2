@@ -301,7 +301,7 @@ function createProposalPopupContent(item, user) {
   addRow('Trụ', proposalTru);
 
   if (canViewProposal(item, user)) {
-    renderAdminLink(div, `/admin/proposals/view=${item.id}`);
+    renderAdminLink(div, `/admin/proposals/chi-tiet/${item.id}`);
   } else if (user && (user.role === 'SALES')) {
     renderDeniedNote(div);
   }

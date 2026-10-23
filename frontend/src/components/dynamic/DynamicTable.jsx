@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, data, onRowClick, actions, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -61,13 +61,24 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, ac
     return () => clearTimeout(t);
   }, [filters, serverMode]);
 
+  const columnsPropSig = useMemo(
+    () => (Array.isArray(columnsProp) && columnsProp.length > 0 ? JSON.stringify(columnsProp) : ''),
+    [columnsProp]
+  );
+
   useEffect(() => {
+    if (Array.isArray(columnsProp) && columnsProp.length > 0) {
+      setColumns(columnsProp);
+      setLoading(false);
+      setError('');
+      return;
+    }
     if (viewId) loadViewConfig();
     else {
       setColumns([]);
       setLoading(false);
     }
-  }, [entity, viewId, configVersion]);
+  }, [entity, viewId, configVersion, columnsPropSig]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {
@@ -285,7 +296,7 @@ const toDisplayValue = (val) => {
         : kind === 'th' ? frozenBgs.head
           : (parity % 2 === 1 ? frozenBgs.row1 : frozenBgs.row0);
     return {
-      className: `${base} dt-frozen ${kind === 'th' ? 'dt-frozen-head' : kind === 'filter' ? 'dt-frozen-filter' : ''}`.trim(),
+      className: `${base} dt-frozen ${last ? 'dt-frozen-last' : ''} ${kind === 'th' ? 'dt-frozen-head' : kind === 'filter' ? 'dt-frozen-filter' : ''}`.trim(),
       style: {
         position: 'sticky',
         left,
@@ -318,7 +329,7 @@ const toDisplayValue = (val) => {
     <div className="dynamic-table-container">
       <div className="overflow-x-auto" ref={tableWrapRef}>
         {loading && <div className="px-2 py-1 text-xs text-base-content/50 border-b border-base-300">Đang tải cấu hình...</div>}
-        <table className="table table-zebra w-full text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
+        <table className="table table-zebra dynamic-table w-full text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
           <thead>
             <tr>
               {hasSelection && (
@@ -424,7 +435,9 @@ const toDisplayValue = (val) => {
                         {typeof cellFooter === 'function' ? cellFooter(row, key) : null}
                       </td>
                       {pinActions && colIdx === pinAfterIdx && (
-                        <td className={`text-center whitespace-nowrap ${fpPin.className || ''}`} style={fpPin.style}>{actions(row)}</td>
+                        <td className={`text-center whitespace-nowrap ${fpPin.className || ''}`} style={fpPin.style}>
+                          <div className="dynamic-table-actions">{actions(row)}</div>
+                        </td>
                       )}
                     </Fragment>
                   );
@@ -432,9 +445,9 @@ const toDisplayValue = (val) => {
                 {!pinActions && (
                 <td>
                   {actions ? (
-                    actions(row)
+                    <div className="dynamic-table-actions">{actions(row)}</div>
                   ) : (
-                    <div className="flex gap-1 flex-wrap">
+                    <div className="dynamic-table-actions">
                       <button className="btn btn-primary btn-xs" onClick={() => handleViewClick(row)}>Xem</button>
                       {onRowClick && (
                         <button className="btn btn-warning btn-xs" onClick={() => handleEditClick(row)}>Sửa</button>

@@ -179,7 +179,7 @@ const LeadJourneyPopup = ({ leadId, onClose, embedded = false }) => {
                           <span className="badge badge-sm" style={{ background: statusColor, color: '#fff', border: 'none' }}>{p.status}</span>
                         </button>
                         <div className="flex items-center gap-2 shrink-0">
-                          <a className="link link-primary text-xs flex items-center gap-0.5" href={`/admin/proposals/view=${p.id}`}>
+                          <a className="link link-primary text-xs flex items-center gap-0.5" href={`/admin/proposals/chi-tiet/${p.id}`}>
                             Mở đề xuất <ExternalLink size={11} />
                           </a>
                         </div>

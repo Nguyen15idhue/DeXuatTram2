@@ -4,14 +4,15 @@ import { proposalLayoutService } from '../../services/api';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
 import RecordDetailPopup from './RecordDetailPopup';
 import ReviewActionDialog from './ReviewActionDialog';
 import ProposalLayoutUpdateModal from './ProposalLayoutUpdateModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import { ProposalModelBadge, ProposalStatusBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
 import {
-  getModelLabel,
   formatProposalScale,
   getProposalAddress,
   getProposalLegalName,
@@ -22,19 +23,17 @@ import { Eye, Pencil, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
-const StatusBadge = ({ code, optionMap }) => {
-  if (!code) return <span className="field-empty">-</span>;
-  const option = optionMap[code];
-  const color = option?.color || '#64748b';
-  return (
-    <span
-      className="badge badge-sm whitespace-nowrap"
-      style={{ backgroundColor: `${color}1a`, color, borderColor: color }}
-    >
-      {option?.label || code}
-    </span>
-  );
-};
+const LAYOUT_COLUMNS = [
+  { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
+  { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
+  { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
+  { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
+  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'supplement_count', field_key: 'supplement_count', label: 'Số lần YC cập nhật thông tin', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 150, sortable: true, filterable: false, visible: true }
+];
 
 const ProposalLayoutTab = ({ tab, canManage }) => {
   const { token } = useAuth();
@@ -138,7 +137,67 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
     }
   };
 
-  const colCount = 11;
+  const cellRenderers = {
+    ma_de_xuat: (row, value) => (
+      <ProposalCodeLink
+        id={row.id}
+        code={value || `#${row.id}`}
+      />
+    ),
+    legal_name: (row) => getProposalLegalName(row),
+    phone: (row) => getProposalPhone(row),
+    mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    scale: (row) => formatProposalScale(row),
+    user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
+    supplement_count: (row) => <span className="text-center font-semibold">{getSupplementCount(row)}</span>,
+    status: (row, value) => <ProposalStatusBadge value={value} optionMap={statusOptionMap} />
+  };
+
+  const renderActions = (row) => (
+    <div className="flex flex-wrap gap-1">
+      <button
+        type="button"
+        className={PROPOSAL_VIEW_BUTTON_CLASS}
+        title="Xem chi tiết đề xuất"
+        onClick={() => openDetail(row)}
+      >
+        <Eye size={14} />
+        Xem chi tiết
+      </button>
+      {canManage && row.status === 'DESIGNING' && (
+        <>
+          <button
+            type="button"
+            className="btn btn-xs btn-primary gap-1"
+            title="Tải bản vẽ layout và duyệt"
+            onClick={() => openLayoutModal(row)}
+          >
+            <Pencil size={14} />
+            Cập nhật
+          </button>
+          <button
+            type="button"
+            className="btn btn-xs btn-outline btn-warning"
+            title="Yêu cầu người đề xuất bổ sung thông tin"
+            onClick={() => openAction(row, 'supplement')}
+          >
+            Yêu cầu bổ sung
+          </button>
+        </>
+      )}
+      {canManage && ['DESIGNING', 'INFOR_WAITING'].includes(row.status) && (
+        <button
+          type="button"
+          className="btn btn-xs btn-outline btn-error"
+          title="Hủy đề xuất"
+          onClick={() => openAction(row, 'cancel')}
+        >
+          Hủy đề xuất
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-2">
@@ -167,101 +226,15 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
         <div className="alert alert-error text-sm">{error}</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="table table-sm table-zebra min-w-[1500px]">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Mã đề xuất</th>
-                  <th>Tên pháp nhân</th>
-                  <th>SĐT liên hệ</th>
-                  <th>Mô hình đầu tư</th>
-                  <th>Địa chỉ chi tiết</th>
-                  <th>Quy mô trụ đề xuất</th>
-                  <th>Người đề xuất</th>
-                  <th className="min-w-[120px]">Số lần YC cập nhật thông tin</th>
-                  <th>Trạng thái</th>
-                  <th>Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={colCount} className="text-center text-base-content/60 py-6">
-                      Không có đề xuất nào phù hợp
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((row, index) => (
-                    <tr key={row.id}>
-                      <td>{(page - 1) * pageSize + index + 1}</td>
-                      <td>
-                        <ProposalCodeLink
-                          id={row.id}
-                          code={row.ma_de_xuat || `#${row.id}`}
-                          onOpen={() => openDetail(row)}
-                        />
-                      </td>
-                      <td>{getProposalLegalName(row)}</td>
-                      <td>{getProposalPhone(row)}</td>
-                      <td>{getModelLabel(row.mo_hinh_dau_tu, modelOptions)}</td>
-                      <td className="min-w-[220px]">{getProposalAddress(row)}</td>
-                      <td>{formatProposalScale(row)}</td>
-                      <td>
-                        <ProposalPersonLink id={row.user_id} name={row.user_name} />
-                      </td>
-                      <td className="text-center font-semibold">{getSupplementCount(row)}</td>
-                      <td><StatusBadge code={row.status} optionMap={statusOptionMap} /></td>
-                      <td className="whitespace-nowrap">
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs gap-1"
-                            title="Xem chi tiết đề xuất"
-                            onClick={() => openDetail(row)}
-                          >
-                            <Eye size={14} />
-                            Xem chi tiết
-                          </button>
-                          {canManage && row.status === 'DESIGNING' && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-primary gap-1"
-                                title="Tải bản vẽ layout và duyệt"
-                                onClick={() => openLayoutModal(row)}
-                              >
-                                <Pencil size={14} />
-                                Cập nhật
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-outline btn-warning"
-                                title="Yêu cầu người đề xuất bổ sung thông tin"
-                                onClick={() => openAction(row, 'supplement')}
-                              >
-                                Yêu cầu bổ sung
-                              </button>
-                            </>
-                          )}
-                          {canManage && ['DESIGNING', 'INFOR_WAITING'].includes(row.status) && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-outline btn-error"
-                              title="Hủy đề xuất"
-                              onClick={() => openAction(row, 'cancel')}
-                            >
-                              Hủy đề xuất
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DynamicTable
+            entity="station_proposals"
+            columns={LAYOUT_COLUMNS}
+            data={items}
+            startIndex={(page - 1) * pageSize}
+            cellRenderers={cellRenderers}
+            actions={renderActions}
+            frozenColumns={3}
+          />
           <Pagination
             page={pagination.page}
             totalPages={pagination.totalPages}

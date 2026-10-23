@@ -3,12 +3,20 @@ import { adminProposalService } from '../../services/api';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
+import useFieldOptions from '../../hooks/useFieldOptions';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import { ProposalModelBadge, ProposalStatusBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
+import { Eye } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
 const ProposalCompletedTab = ({ token, onOpenProposal }) => {
   const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
+  const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
+  const modelOptions = getSelectOptions('mo_hinh_dau_tu');
+  const statusOptionMap = Object.fromEntries(
+    getSelectOptions('status').map((option) => [option.value, option])
+  );
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,13 +63,15 @@ const ProposalCompletedTab = ({ token, onOpenProposal }) => {
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => (
-      <ProposalCodeLink id={row.id} code={value} onOpen={onOpenProposal} />
+      <ProposalCodeLink id={row.id} code={value} />
     ),
     nguoi_de_xuat: (row, value) => (
       row.user_id
         ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} />
         : <span>{value || 'Khách'}</span>
-    )
+    ),
+    mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    status: (row, value) => <ProposalStatusBadge value={value || row.status} optionMap={statusOptionMap} />
   };
 
   return (
@@ -102,13 +112,15 @@ const ProposalCompletedTab = ({ token, onOpenProposal }) => {
           data={items}
           startIndex={(pagination.page - 1) * pagination.limit}
           cellRenderers={cellRenderers}
+          frozenColumns={3}
           actions={(row) => (
             <button
               type="button"
-              className="btn btn-primary btn-xs"
+              className={PROPOSAL_VIEW_BUTTON_CLASS}
               onClick={() => onOpenProposal && onOpenProposal(row.id)}
             >
-              Xem
+              <Eye size={14} />
+              Xem chi tiết
             </button>
           )}
         />

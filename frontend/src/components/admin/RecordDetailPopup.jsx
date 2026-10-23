@@ -882,7 +882,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
               </button>
             )}
             {entity === 'stations' && linkedProposal && linkedProposal.id && (
-              <button className="btn btn-sm btn-outline btn-info gap-1" onClick={() => navigate(`/admin/proposals/view=${linkedProposal.id}`)} title="Xem đề xuất đã tạo ra trạm này">
+              <button className="btn btn-sm btn-outline btn-info gap-1" onClick={() => navigate(`/admin/proposals/chi-tiet/${linkedProposal.id}`)} title="Xem đề xuất đã tạo ra trạm này">
                 <Eye size={14} />
                 Xem đề xuất #{linkedProposal.id}
               </button>

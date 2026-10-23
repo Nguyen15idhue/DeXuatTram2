@@ -161,7 +161,7 @@ const NotificationBell = ({ mode = 'user' }) => {
     }
     setOpen(false);
     if (n.entity_type === 'station_proposals' && n.entity_id) {
-      navigate(mode === 'admin' ? `/admin/proposals/view=${n.entity_id}` : `/my-proposals/view=${n.entity_id}`);
+      navigate(mode === 'admin' ? `/admin/proposals/chi-tiet/${n.entity_id}` : `/my-proposals/view=${n.entity_id}`);
     }
   };
 

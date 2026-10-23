@@ -2,6 +2,7 @@ const adminProposalService = require('../services/adminProposalService');
 const proximityService = require('../services/proximityService');
 const documentService = require('../services/documentService');
 const proposalLifecycle = require('../services/proposalLifecycle');
+const proposalAccessService = require('../services/proposalAccessService');
 
 const scopeFor = async (req) => {
   if (req.user.role !== 'SALES' && req.user.role !== 'CTV') return { role: req.user.role };
@@ -68,12 +69,12 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const light = await adminProposalService.getProposalById(req.params.id);
+    const light = await proposalAccessService.loadAccessRow(req.params.id);
     if (!light) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    const scope = await scopeFor(req);
-    if (denyOutsideBranch(light, scope)) {
+    const allowed = await proposalAccessService.canViewProposal(req.user, light);
+    if (!allowed) {
       return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
     }
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);

@@ -33,6 +33,7 @@ const AdminProposalsLapToTrinhPage = lazy(() => import('./pages/admin/AdminPropo
 const AdminProposalsDuyetBCDXPage = lazy(() => import('./pages/admin/AdminProposalsDuyetBCDXPage'));
 const AdminProposalsTrinhKyPage = lazy(() => import('./pages/admin/AdminProposalsTrinhKyPage'));
 const AdminProposalSigningPage = lazy(() => import('./pages/admin/AdminProposalSigningPage'));
+const AdminProposalDetailPage = lazy(() => import('./pages/admin/AdminProposalDetailPage'));
 const AdminESignPage = lazy(() => import('./pages/admin/AdminESignPage'));
 const AdminEvReportsPage = lazy(() => import('./pages/admin/AdminEvReportsPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
@@ -143,6 +144,14 @@ function App() {
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<RoleRoute allowed={PROPOSAL_ROLES}><AdminProposalsPage /></RoleRoute>} />
             <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
+            <Route
+              path="/admin/proposals/chi-tiet/:id"
+              element={
+                <RoleRoute allowed={PROPOSAL_ROLES}>
+                  <AdminProposalDetailPage />
+                </RoleRoute>
+              }
+            />
             <Route
               path="/admin/proposals/danh-gia-quy-hoach"
               element={

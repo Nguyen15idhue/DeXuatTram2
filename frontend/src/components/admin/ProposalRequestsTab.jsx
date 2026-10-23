@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalRequestService } from '../../services/api';
-import { getStatusColor, getStatusLabel } from '../../utils/mapStatuses';
+import useFieldOptions from '../../hooks/useFieldOptions';
+import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
+import Toast from '../Toast';
 import ReviewActionDialog from './ReviewActionDialog';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import { ProposalStatusBadge } from './ProposalTableBadges';
 
 const REQUEST_TYPES = [
   { value: 'UPDATE_INFO', label: 'Yêu cầu cập nhật thông tin' },
@@ -26,21 +29,24 @@ const formatDateTime = (value) => {
   });
 };
 
-const StatusBadge = ({ value }) => {
-  if (!value) return <span className="field-empty">-</span>;
-  const color = getStatusColor(value, 'proposal');
-  return (
-    <span
-      className="badge badge-sm badge-outline whitespace-nowrap"
-      style={color ? { color, borderColor: color } : undefined}
-    >
-      {getStatusLabel(value, 'proposal')}
-    </span>
-  );
-};
+const REQUEST_COLUMNS = [
+  { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
+  { key: 'owner_name', field_key: 'owner_name', label: 'Người đề xuất', width: 160, sortable: true, filterable: false, visible: true },
+  { key: 'proposal_status', field_key: 'proposal_status', label: 'Trạng thái hiện tại', width: 140, sortable: true, filterable: false, visible: true },
+  { key: 'description', field_key: 'description', label: 'Mô tả công việc cần thực hiện', width: 300, sortable: false, filterable: false, visible: true },
+  { key: 'requested_by_name', field_key: 'requested_by_name', label: 'Yêu cầu cập nhật từ', width: 160, sortable: true, filterable: false, visible: true },
+  { key: 'previous_status', field_key: 'previous_status', label: 'Trạng thái trước đó', width: 140, sortable: true, filterable: false, visible: true },
+  { key: 'created_at', field_key: 'created_at', label: 'Ngày cập nhật', width: 130, sortable: true, filterable: false, visible: true },
+  { key: 'round_no', field_key: 'round_no', label: 'Lần yêu cầu thứ', width: 90, sortable: true, filterable: false, visible: true },
+  { key: 'note', field_key: 'note', label: 'Ghi chú', width: 200, sortable: false, filterable: false, visible: true }
+];
 
-const ProposalRequestsTab = ({ token, onOpenProposal }) => {
+const ProposalRequestsTab = ({ token }) => {
   const { user } = useAuth();
+  const { getSelectOptions } = useFieldOptions('station_proposals', ['status']);
+  const statusOptionMap = Object.fromEntries(
+    getSelectOptions('status').map((option) => [option.value, option])
+  );
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -117,6 +123,42 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
     }
   };
 
+  const cellRenderers = {
+    ma_de_xuat: (row, value) => <ProposalCodeLink id={row.proposal_id} code={value} />,
+    owner_name: (row, value) => (
+      row.owner_id
+        ? <ProposalPersonLink id={row.owner_id} name={value} />
+        : <span>Khách</span>
+    ),
+    proposal_status: (row, value) => <ProposalStatusBadge value={value} optionMap={statusOptionMap} />,
+    description: (row, value) => (
+      <div>
+        <div className="text-xs text-base-content/60 mb-0.5">{typeLabel(row.request_type)}</div>
+        <div className="whitespace-pre-wrap break-words">{value || '-'}</div>
+      </div>
+    ),
+    requested_by_name: (row, value) => (
+      row.requested_by
+        ? <ProposalPersonLink id={row.requested_by} name={value} />
+        : <span>Hệ thống</span>
+    ),
+    previous_status: (row, value) => <ProposalStatusBadge value={value} optionMap={statusOptionMap} />,
+    created_at: (row, value) => <span className="whitespace-nowrap">{formatDateTime(value)}</span>,
+    round_no: (row, value) => <span className="text-center">{value}</span>,
+    note: (row, value) => <span className="block max-w-[220px] whitespace-pre-wrap break-words">{value || '-'}</span>
+  };
+
+  const renderActions = (row) => (canComplete ? (
+    <button
+      type="button"
+      className="btn btn-xs btn-outline btn-success whitespace-nowrap"
+      title="Đánh dấu yêu cầu đã hoàn thành"
+      onClick={() => openCompleteDialog(row)}
+    >
+      Đánh dấu đã hoàn thành
+    </button>
+  ) : null);
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
@@ -156,76 +198,21 @@ const ProposalRequestsTab = ({ token, onOpenProposal }) => {
 
       {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
 
-      <div className="overflow-x-auto bg-base-100 border border-base-300 rounded-lg">
-        <table className="table table-sm table-zebra min-w-[1180px]">
-          <thead>
-            <tr>
-              <th className="w-14 text-center">STT</th>
-              <th>Mã đề xuất</th>
-              <th>Người đề xuất</th>
-              <th>Trạng thái hiện tại</th>
-              <th>Mô tả công việc cần thực hiện</th>
-              <th>Yêu cầu cập nhật từ</th>
-              <th>Trạng thái trước đó</th>
-              <th>Ngày cập nhật</th>
-              <th className="text-center">Lần yêu cầu thứ</th>
-              <th>Ghi chú</th>
-              {canComplete && <th className="text-right">Thao tác</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={canComplete ? 11 : 10} className="text-center py-8 text-base-content/60">Đang tải...</td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={canComplete ? 11 : 10} className="text-center py-10 text-base-content/40">
-                  Không có đề xuất nào cần thực hiện
-                </td>
-              </tr>
-            ) : items.map((row, idx) => (
-              <tr key={row.id} className="hover">
-                <td className="text-center">{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                <td className="whitespace-nowrap">
-                  <ProposalCodeLink id={row.proposal_id} code={row.ma_de_xuat} onOpen={onOpenProposal} />
-                </td>
-                <td className="whitespace-nowrap">
-                  {row.owner_id
-                    ? <ProposalPersonLink id={row.owner_id} name={row.owner_name} />
-                    : <span>Khách</span>}
-                </td>
-                <td><StatusBadge value={row.proposal_status} /></td>
-                <td className="max-w-[300px]">
-                  <div className="text-xs text-base-content/60 mb-0.5">{typeLabel(row.request_type)}</div>
-                  <div className="whitespace-pre-wrap break-words">{row.description || '-'}</div>
-                </td>
-                <td className="whitespace-nowrap">
-                  {row.requested_by
-                    ? <ProposalPersonLink id={row.requested_by} name={row.requested_by_name} />
-                    : <span>Hệ thống</span>}
-                </td>
-                <td><StatusBadge value={row.previous_status} /></td>
-                <td className="whitespace-nowrap">{formatDateTime(row.created_at)}</td>
-                <td className="text-center">{row.round_no}</td>
-                <td className="max-w-[220px] whitespace-pre-wrap break-words">{row.note || '-'}</td>
-                {canComplete && (
-                  <td className="text-right whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="btn btn-xs btn-outline btn-success"
-                      title="Đánh dấu yêu cầu đã hoàn thành"
-                      onClick={() => openCompleteDialog(row)}
-                    >
-                      Đánh dấu đã hoàn thành
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {loading && items.length === 0 ? (
+        <div className="flex justify-center py-8">
+          <span className="loading loading-spinner" />
+        </div>
+      ) : (
+        <DynamicTable
+          entity="station_proposals"
+          columns={REQUEST_COLUMNS}
+          data={items}
+          actions={renderActions}
+          cellRenderers={cellRenderers}
+          startIndex={(pagination.page - 1) * pagination.limit}
+          frozenColumns={3}
+        />
+      )}
 
       <ReviewActionDialog
         isOpen={completeDialog.open}

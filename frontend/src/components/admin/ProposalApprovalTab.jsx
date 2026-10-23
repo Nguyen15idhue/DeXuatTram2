@@ -4,6 +4,7 @@ import { proposalApprovalService } from '../../services/api';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
 import RecordDetailPopup from './RecordDetailPopup';
@@ -11,8 +12,8 @@ import ReviewActionDialog from './ReviewActionDialog';
 import ProposalApprovalSummary from './ProposalApprovalSummary';
 import ProposalSignatureConfigModal from './ProposalSignatureConfigModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import { ProposalModelBadge, ProposalStatusBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
 import {
-  getModelLabel,
   formatProposalCost,
   formatProposalScale,
   getProposalAddress,
@@ -24,19 +25,18 @@ import { Eye, PenSquare, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
-const StatusBadge = ({ code, optionMap }) => {
-  if (!code) return <span className="field-empty">-</span>;
-  const option = optionMap[code];
-  const color = option?.color || '#64748b';
-  return (
-    <span
-      className="badge badge-sm whitespace-nowrap"
-      style={{ backgroundColor: `${color}1a`, color, borderColor: color }}
-    >
-      {option?.label || code}
-    </span>
-  );
-};
+const APPROVAL_COLUMNS = [
+  { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
+  { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
+  { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
+  { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
+  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 150, sortable: false, filterable: false, visible: true },
+  { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 150, sortable: true, filterable: false, visible: true },
+  { key: 'task_description', field_key: 'task_description', label: 'Mô tả việc cần làm', width: 200, sortable: false, filterable: false, visible: true }
+];
 
 const ProposalApprovalTab = ({ tab }) => {
   const { token } = useAuth();
@@ -172,7 +172,72 @@ const ProposalApprovalTab = ({ tab }) => {
     loadItems(page, pageSize);
   };
 
-  const colCount = 12;
+  const cellRenderers = {
+    ma_de_xuat: (row, value) => (
+      <ProposalCodeLink
+        id={row.id}
+        code={value || `#${row.id}`}
+      />
+    ),
+    legal_name: (row) => getProposalLegalName(row),
+    phone: (row) => getProposalPhone(row),
+    mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    scale: (row) => formatProposalScale(row),
+    cost: (row) => formatProposalCost(row),
+    user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
+    status: (row, value) => <ProposalStatusBadge value={value} optionMap={statusOptionMap} />,
+    task_description: (row, value) => (
+      <span className="block min-w-[180px] text-sm">
+        {value ? value : <span className="text-base-content/50">-</span>}
+      </span>
+    )
+  };
+
+  const renderActions = (row) => (
+    <div className="flex flex-wrap gap-1">
+      <button
+        type="button"
+        className={PROPOSAL_VIEW_BUTTON_CLASS}
+        title="Xem chi tiết đề xuất"
+        onClick={() => openDetail(row)}
+      >
+        <Eye size={14} />
+        Xem chi tiết
+      </button>
+      {!isTgdReadOnly && canRequestUpdate(row) && (
+        <button
+          type="button"
+          className="btn btn-xs btn-outline btn-warning"
+          title="Yêu cầu cập nhật thông tin / file BCĐX"
+          onClick={() => openRequestDialog(row)}
+        >
+          Yêu cầu cập nhật thông tin
+        </button>
+      )}
+      {canTgdReject && row.status === 'PROPOSAL_REPORT_REVIEWING' && (
+        <button
+          type="button"
+          className="btn btn-xs btn-outline btn-error"
+          title="Tổng giám đốc từ chối duyệt BCĐX"
+          onClick={() => openRejectDialog(row)}
+        >
+          Từ chối duyệt
+        </button>
+      )}
+      {!isTgdReadOnly && canConfigureSignature(row) && (
+        <button
+          type="button"
+          className="btn btn-xs btn-success gap-1"
+          title="Cấu hình ký và trình ký"
+          onClick={() => openSignatureModal(row)}
+        >
+          <PenSquare size={14} />
+          Cấu hình ký
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-2">
@@ -201,107 +266,15 @@ const ProposalApprovalTab = ({ tab }) => {
         <div className="alert alert-error text-sm">{error}</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="table table-sm table-zebra min-w-[1600px]">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Mã đề xuất</th>
-                  <th>Tên pháp nhân</th>
-                  <th>SĐT liên hệ</th>
-                  <th>Mô hình đầu tư</th>
-                  <th>Địa chỉ chi tiết</th>
-                  <th>Quy mô trụ đề xuất</th>
-                  <th>Tổng chi phí dự kiến</th>
-                  <th>Người đề xuất</th>
-                  <th>Trạng thái</th>
-                  <th className="min-w-[180px]">Mô tả việc cần làm</th>
-                  <th>Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={colCount} className="text-center text-base-content/60 py-6">
-                      Không có đề xuất nào phù hợp
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((row, index) => (
-                    <tr key={row.id}>
-                      <td>{(page - 1) * pageSize + index + 1}</td>
-                      <td>
-                        <ProposalCodeLink
-                          id={row.id}
-                          code={row.ma_de_xuat || `#${row.id}`}
-                          onOpen={() => openDetail(row)}
-                        />
-                      </td>
-                      <td>{getProposalLegalName(row)}</td>
-                      <td>{getProposalPhone(row)}</td>
-                      <td>{getModelLabel(row.mo_hinh_dau_tu, modelOptions)}</td>
-                      <td className="min-w-[220px]">{getProposalAddress(row)}</td>
-                      <td>{formatProposalScale(row)}</td>
-                      <td>{formatProposalCost(row)}</td>
-                      <td>
-                        <ProposalPersonLink id={row.user_id} name={row.user_name} />
-                      </td>
-                      <td><StatusBadge code={row.status} optionMap={statusOptionMap} /></td>
-                      <td className="min-w-[180px]">
-                        {row.task_description
-                          ? <span className="text-sm">{row.task_description}</span>
-                          : <span className="text-base-content/50">-</span>}
-                      </td>
-                      <td className="whitespace-nowrap">
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs gap-1"
-                            title="Xem chi tiết đề xuất"
-                            onClick={() => openDetail(row)}
-                          >
-                            <Eye size={14} />
-                            Xem chi tiết
-                          </button>
-                          {!isTgdReadOnly && canRequestUpdate(row) && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-outline btn-warning"
-                              title="Yêu cầu cập nhật thông tin / file BCĐX"
-                              onClick={() => openRequestDialog(row)}
-                            >
-                              Yêu cầu cập nhật thông tin
-                            </button>
-                          )}
-                          {canTgdReject && row.status === 'PROPOSAL_REPORT_REVIEWING' && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-outline btn-error"
-                              title="Tổng giám đốc từ chối duyệt BCĐX"
-                              onClick={() => openRejectDialog(row)}
-                            >
-                              Từ chối duyệt
-                            </button>
-                          )}
-                          {!isTgdReadOnly && canConfigureSignature(row) && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-success gap-1"
-                              title="Cấu hình ký và trình ký"
-                              onClick={() => openSignatureModal(row)}
-                            >
-                              <PenSquare size={14} />
-                              Cấu hình ký
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DynamicTable
+            entity="station_proposals"
+            columns={APPROVAL_COLUMNS}
+            data={items}
+            startIndex={(page - 1) * pageSize}
+            cellRenderers={cellRenderers}
+            actions={renderActions}
+            frozenColumns={3}
+          />
           <Pagination
             page={pagination.page}
             totalPages={pagination.totalPages}

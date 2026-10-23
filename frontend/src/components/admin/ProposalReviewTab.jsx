@@ -4,6 +4,7 @@ import { proposalReviewService } from '../../services/api';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import RecordDetailPopup from './RecordDetailPopup';
 import ProposalGradingModal from './ProposalGradingModal';
@@ -11,20 +12,34 @@ import ProposalGradingSummary from './ProposalGradingSummary';
 import ReviewActionDialog from './ReviewActionDialog';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import Toast from '../Toast';
-import { getStatusColor, getStatusLabel } from '../../utils/mapStatuses';
 import { getReviewLevelLabel } from '../../utils/proposalReview';
 import {
   formatScore,
   formatProposalCost,
   formatProposalScale,
-  getModelLabel,
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone
 } from '../../utils/proposalGrading';
+import { ProposalModelBadge, ProposalStatusBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
 import { Check, Eye, Pencil, RotateCcw, Search, Send, X, XCircle } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
+
+const REVIEW_COLUMNS = [
+  { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 140, sortable: true, filterable: false, visible: true },
+  { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
+  { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
+  { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
+  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 160, sortable: true, filterable: false, visible: true },
+  { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 140, sortable: false, filterable: false, visible: true },
+  { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'review_level', field_key: 'review_level', label: 'Mức độ xem xét', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'quy_hoach_score', field_key: 'quy_hoach_score', label: 'Điểm Quy hoạch', width: 130, sortable: false, filterable: false, visible: true },
+  { key: 'phap_ly_score', field_key: 'phap_ly_score', label: 'Điểm Pháp lý', width: 130, sortable: false, filterable: false, visible: true }
+];
 
 const ACTION_CONFIG = {
   regrade: {
@@ -91,7 +106,7 @@ const ScoreCell = ({ score, note }) => {
 const ProposalReviewTab = ({ tab, reviewRole = '', region = '', roleKey, isAdmin = false }) => {
   const { token } = useAuth();
   const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
-  const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu']);
+  const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
 
   const canGradeQH = roleKey === 'QH' || roleKey === 'ADMIN';
@@ -213,7 +228,7 @@ const ProposalReviewTab = ({ tab, reviewRole = '', region = '', roleKey, isAdmin
     if (isPending) {
       return (
         <div className="flex flex-wrap gap-1">
-          <button type="button" className="btn btn-ghost btn-xs gap-1" onClick={() => openDetail(row)}>
+          <button type="button" className={PROPOSAL_VIEW_BUTTON_CLASS} onClick={() => openDetail(row)}>
             <Eye size={14} />
             Xem chi tiết
           </button>
@@ -293,7 +308,7 @@ const ProposalReviewTab = ({ tab, reviewRole = '', region = '', roleKey, isAdmin
 
     return (
       <div className="flex flex-wrap gap-1">
-        <button type="button" className="btn btn-ghost btn-xs gap-1" onClick={() => openDetail(row)}>
+        <button type="button" className={PROPOSAL_VIEW_BUTTON_CLASS} onClick={() => openDetail(row)}>
           <Eye size={14} />
           Xem chi tiết
         </button>
@@ -305,7 +320,29 @@ const ProposalReviewTab = ({ tab, reviewRole = '', region = '', roleKey, isAdmin
     );
   };
 
-  const colCount = 13;
+  const cellRenderers = {
+    ma_de_xuat: (row, value) => (
+      <ProposalCodeLink
+        id={row.id}
+        code={value || `#${row.id}`}
+      />
+    ),
+    status: (row, value) => <ProposalStatusBadge value={value || row.status} optionMap={getSelectOptions('status')} />,
+    legal_name: (row) => getProposalLegalName(row),
+    phone: (row) => getProposalPhone(row),
+    mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    scale: (row) => formatProposalScale(row),
+    cost: (row) => formatProposalCost(row),
+    user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
+    review_level: (row) => (
+      <span className="badge badge-ghost badge-sm whitespace-nowrap">
+        {getReviewLevelLabel(row.review_level)}
+      </span>
+    ),
+    quy_hoach_score: (row) => <ScoreCell score={row.quy_hoach_score} note={row.quy_hoach_note} />,
+    phap_ly_score: (row) => <ScoreCell score={row.phap_ly_score} note={row.phap_ly_note} />
+  };
 
   return (
     <div className="space-y-2">
@@ -334,81 +371,15 @@ const ProposalReviewTab = ({ tab, reviewRole = '', region = '', roleKey, isAdmin
         <div className="alert alert-error text-sm">{error}</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="table table-sm table-zebra min-w-[1600px]">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Mã đề xuất</th>
-                  <th>Tên pháp nhân</th>
-                  <th>SĐT liên hệ</th>
-                  <th>Mô hình đầu tư</th>
-                  <th>Địa chỉ chi tiết</th>
-                  <th>Quy mô trụ đề xuất</th>
-                  <th>Tổng chi phí dự kiến</th>
-                  <th>Người đề xuất</th>
-                  <th>Mức độ xem xét</th>
-                  <th>Điểm Quy hoạch</th>
-                  <th>Điểm Pháp lý</th>
-                  <th>Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={colCount} className="text-center text-base-content/60 py-6">
-                      Không có đề xuất nào phù hợp
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((row, index) => {
-                    const statusColor = getStatusColor(row.status);
-                    return (
-                      <tr key={row.id}>
-                        <td>{(page - 1) * pageSize + index + 1}</td>
-                        <td>
-                          <div className="flex flex-col items-start gap-1">
-                            <ProposalCodeLink
-                              id={row.id}
-                              code={row.ma_de_xuat || `#${row.id}`}
-                              onOpen={() => openDetail(row)}
-                            />
-                            <span
-                              className="badge badge-xs text-white"
-                              style={statusColor ? { backgroundColor: statusColor } : undefined}
-                            >
-                              {getStatusLabel(row.status)}
-                            </span>
-                          </div>
-                        </td>
-                        <td>{getProposalLegalName(row)}</td>
-                        <td>{getProposalPhone(row)}</td>
-                        <td>{getModelLabel(row.mo_hinh_dau_tu, modelOptions)}</td>
-                        <td className="min-w-[220px]">{getProposalAddress(row)}</td>
-                        <td>{formatProposalScale(row)}</td>
-                        <td>{formatProposalCost(row)}</td>
-                        <td>
-                          <ProposalPersonLink id={row.user_id} name={row.user_name} />
-                        </td>
-                        <td>
-                          <span className="badge badge-ghost badge-sm">
-                            {getReviewLevelLabel(row.review_level)}
-                          </span>
-                        </td>
-                        <td>
-                          <ScoreCell score={row.quy_hoach_score} note={row.quy_hoach_note} />
-                        </td>
-                        <td>
-                          <ScoreCell score={row.phap_ly_score} note={row.phap_ly_note} />
-                        </td>
-                        <td className="whitespace-nowrap">{renderActions(row)}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DynamicTable
+            entity="station_proposals"
+            columns={REVIEW_COLUMNS}
+            data={items}
+            startIndex={(page - 1) * pageSize}
+            cellRenderers={cellRenderers}
+            actions={renderActions}
+            frozenColumns={3}
+          />
           <Pagination
             page={pagination.page}
             totalPages={pagination.totalPages}
