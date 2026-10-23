@@ -10,7 +10,7 @@ const scopeFor = async (user) => {
   if (user.role === 'CTV' || user.role === 'NPP') {
     return { role: user.role, userId: user.id };
   }
-  return { role: user.role };
+  return { role: user.role, userId: user.id };
 };
 
 exports.list = async (req, res) => {

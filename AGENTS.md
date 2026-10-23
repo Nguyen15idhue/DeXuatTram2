@@ -521,6 +521,13 @@ Sau khi đổi code:
 4. Verify thủ công feature + feature cũ
 5. Swagger UI load đúng
 
+### Test E2E hợp nhất quy trình v2 (root)
+```powershell
+node e2e/full-flow-v2.js        # 93/93 PASS — toàn bộ quy trình v2: tạo → chấm → chấm lại → TGĐ → layout → BCĐX → trình ký
+```
+- API-driven (fetch + SQL qua `docker exec`), tự dựng fixture tạm (PL/TGĐ/Back Office/GĐTTKD Bắc + ảnh chữ ký) và tự dọn cuối cùng. Yêu cầu backend Docker đang chạy.
+- Docs/8/79 §15: ghi nhận hành vi — `toTgd` chỉ từ `RE_GDTTKD_EVALUATING`, đẩy lại BCĐX **bắt buộc file mới**, `PUT /my-proposals` đòi đủ 3 trường (`owner_name`/`owner_phone`/`address`), `my=1` admin giờ áp dụng `assignedTypesForUser`, chủ đề xuất là signer sẽ nhận 2 thông báo (trung tâm + signer loop), `note` chấm điểm lưu mã (`YES_QH_WAIT_PL`...) không phải nhãn.
+
 ### Playwright E2E (root)
 ```powershell
 npm run test:e2e          # playwright test e2e/FE-01-smoke.spec.js
