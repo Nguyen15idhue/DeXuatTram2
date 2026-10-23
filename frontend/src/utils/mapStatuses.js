@@ -39,7 +39,8 @@ export const EV_REPORT_STATUSES = [
 
 export const PRIORITY_OPTIONS = [
   { value: '1', label: 'Cấp 1' },
-  { value: '2', label: 'Cấp 2' }
+  { value: '2', label: 'Cấp 2' },
+  { value: '3', label: 'Cấp 3' },
 ];
 
 export const STATION_STATUS_MAP = STATION_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
