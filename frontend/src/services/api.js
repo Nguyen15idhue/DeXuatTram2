@@ -414,6 +414,15 @@ export const proposalRequestService = {
   getTypes(token) {
     return api.getWithAuth('/admin/proposal-requests/types', token);
   },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-requests/filter-options', token);
+  },
+  getUpdateContext(id, token) {
+    return api.getWithAuth(`/admin/proposal-requests/${id}/update-context`, token);
+  },
+  updateProposal(id, data, token) {
+    return api.putWithAuth(`/admin/proposal-requests/${id}/proposal`, data || {}, token);
+  },
   complete(id, data, token) {
     return api.postWithAuth(`/admin/proposal-requests/${id}/complete`, data || {}, token);
   }
@@ -423,6 +432,18 @@ export const proposalGradingService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-grading${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-grading/${id}`, token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-grading/filter-options', token);
+  },
+  saveDisplayConfig(data, token) {
+    return api.putWithAuth('/admin/proposal-grading/display-config', data || {}, token);
+  },
+  requestSupplement(id, data, token) {
+    return api.postWithAuth(`/admin/proposal-grading/${id}/request-supplement`, data || {}, token);
   },
   update(id, data, token) {
     return api.putWithAuth(`/admin/proposal-grading/${id}`, data, token);
@@ -449,6 +470,12 @@ export const proposalReportService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-reports${qs}`, token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-reports/filter-options', token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-reports/${id}`, token);
   },
   upload(id, data, token) {
     return api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token);
@@ -527,6 +554,9 @@ export const proposalReviewService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-reviews${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-reviews/${id}`, token);
   },
   requestRegrade(id, data, token) {
     return api.putWithAuth(`/admin/proposal-reviews/${id}/request-regrade`, data || {}, token);

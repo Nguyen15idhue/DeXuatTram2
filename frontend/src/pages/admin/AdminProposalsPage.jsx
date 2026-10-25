@@ -37,7 +37,7 @@ const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
 
 const AdminProposalsPage = () => {
-  const { token, isSales, isAdmin, isSuperAdmin } = useAuth();
+  const { token, user, isSales, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -47,10 +47,6 @@ const AdminProposalsPage = () => {
     if (tab === 'all') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
-  };
-  const openProposalDetail = (id) => {
-    if (!id) return;
-    navigate(`/admin/proposals/chi-tiet/${id}`);
   };
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const isDesktop = useMediaQuery('(min-width: 768px)');
@@ -1290,15 +1286,15 @@ const AdminProposalsPage = () => {
 
   const renderActions = (row) => (
     <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
-      <button className="btn btn-primary btn-xs gap-1 shrink-0 whitespace-nowrap" onClick={() => navigate(`/admin/proposals/chi-tiet/${row.id}`)} title="Xem chi tiết">
-        <Eye size={14} />
-        Xem chi tiết
-      </button>
+      {user?.role !== 'NPP' || Number(row.user_id) === Number(user.id) ? (
+        <>
       {renderPrimaryAction(row)}
       {renderStatusActions(row)}
       <button className="btn btn-ghost btn-xs btn-square shrink-0" onClick={(e) => openRowMenu(e, row.id)} title="Thao tác khác">
         <MoreVertical size={14} />
       </button>
+        </>
+      ) : null}
     </div>
   );
 
@@ -1530,7 +1526,7 @@ const AdminProposalsPage = () => {
       )}
 
       {activeTab === 'completed' && (
-        <ProposalCompletedTab token={token} onOpenProposal={openProposalDetail} />
+        <ProposalCompletedTab token={token} />
       )}
 
       {activeTab === 'all' && (<>
@@ -2292,7 +2288,7 @@ const AdminProposalsPage = () => {
 
       {activeTab === 'all' && !dupMode && (
       <>
-      {selectedIds.length > 0 && (
+      {user?.role !== 'NPP' && selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
           <span className="text-sm font-medium">Đã chọn: {selectedIds.length} đề xuất</span>
           <button className="btn btn-ghost btn-sm gap-1" onClick={() => setLogProposalId(selectedIds[0])} title="Xem lịch sử hoạt động">
@@ -2323,8 +2319,8 @@ const AdminProposalsPage = () => {
           review_level: (row) => <span className="badge badge-ghost badge-sm">{getReviewLevelLabel(row.review_level)}</span>
         }}
         startIndex={(pagination.page - 1) * pagination.limit}
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
+        selectedIds={user?.role === 'NPP' ? undefined : selectedIds}
+        onSelectionChange={user?.role === 'NPP' ? undefined : setSelectedIds}
         onColumnFiltersChange={handleColumnFiltersChange}
         cellFooter={(row, colKey) => (colKey === 'status' ? <DeadlineCountdown deadline={row.supplement_deadline_at} transitionDeadline={row.transition_deadline_at} status={row.status} completedAt={row.info_completed_at} compact /> : null)}
       />

@@ -52,6 +52,7 @@ const canViewProposal = async (user, proposal) => {
 
   if (user.role === 'CTV') return false;
   if (user.role === 'SALES' && await inBranch(user.id, ownerId)) return true;
+  if (user.role === 'NPP' && await inBranch(user.id, ownerId)) return true;
 
   if (!WORKFLOW_STATUSES.has(proposal.status)) return false;
 

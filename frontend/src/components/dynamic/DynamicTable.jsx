@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, data, onRowClick, actions, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, hiddenColumnKeys = [], data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -65,10 +65,12 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
     () => (Array.isArray(columnsProp) && columnsProp.length > 0 ? JSON.stringify(columnsProp) : ''),
     [columnsProp]
   );
+  const hiddenColumnKeysSig = useMemo(() => hiddenColumnKeys.join(','), [hiddenColumnKeys]);
+  const hiddenColumns = useMemo(() => new Set(hiddenColumnKeysSig.split(',').filter(Boolean)), [hiddenColumnKeysSig]);
 
   useEffect(() => {
     if (Array.isArray(columnsProp) && columnsProp.length > 0) {
-      setColumns(columnsProp);
+      setColumns(columnsProp.filter((column) => !hiddenColumns.has(column.key)));
       setLoading(false);
       setError('');
       return;
@@ -78,7 +80,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setColumns([]);
       setLoading(false);
     }
-  }, [entity, viewId, configVersion, columnsPropSig]);
+  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {
@@ -92,7 +94,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setError('');
       const res = await dynamicService.getViewConfig(entity, viewId);
       if (res.success) {
-        setColumns(res.data.fields || []);
+        setColumns((res.data.fields || []).filter((column) => !hiddenColumns.has(column.key)));
         if (frozenColumns === null || frozenColumns === undefined) {
           const fc = res.data && res.data.view ? res.data.view.frozen_columns : null;
           if (fc !== undefined && fc !== null && fc !== '') setFrozenN(Math.max(0, Math.floor(Number(fc) || 0)));
@@ -195,10 +197,10 @@ const toDisplayValue = (val) => {
   const pinAfterIdx = actionAfterKey
     ? visibleColumns.findIndex(c => (c.field_key || c.key) === actionAfterKey)
     : -1;
-  const pinActions = !!(actions && pinAfterIdx >= 0);
+  const pinActions = !!(showActions && actions && pinAfterIdx >= 0);
   const hasLeading = typeof leadingAction === 'function';
   const hasSelection = Array.isArray(selectedIds) && onSelectionChange;
-  const emptyColSpan = visibleColumns.length + 2 + (hasSelection ? 1 : 0) + (hasLeading ? 1 : 0);
+  const emptyColSpan = visibleColumns.length + 1 + (showActions ? 1 : 0) + (hasSelection ? 1 : 0) + (hasLeading ? 1 : 0);
   const frozenEff = Math.max(0, Math.floor(Number(frozenN) || 0));
 
   const frozenKeys = useMemo(() => {
@@ -360,7 +362,7 @@ const toDisplayValue = (val) => {
                   </Fragment>
                 );
               })}
-              {!pinActions && <th className="text-center min-w-[230px] whitespace-nowrap">Hành động</th>}
+              {!pinActions && showActions && <th className="text-center min-w-[230px] whitespace-nowrap">Hành động</th>}
             </tr>
             {hasFilters && (
               <tr className="bg-base-200">
@@ -390,7 +392,7 @@ const toDisplayValue = (val) => {
                     </Fragment>
                   );
                 })}
-                {!pinActions && <th></th>}
+                {!pinActions && showActions && <th></th>}
               </tr>
             )}
           </thead>
@@ -442,7 +444,7 @@ const toDisplayValue = (val) => {
                     </Fragment>
                   );
                 })}
-                {!pinActions && (
+                {!pinActions && showActions && (
                 <td>
                   {actions ? (
                     <div className="dynamic-table-actions">{actions(row)}</div>

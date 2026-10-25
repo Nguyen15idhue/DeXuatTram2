@@ -2,15 +2,17 @@ const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 
 const GRADING_STATUS = 'GRADING';
+const REGRADING_STATUS = 'RE_GRADING';
 const QH_ROLE = 'QH';
 const PL_ROLE = 'PL';
 const BOTH_ROLE = 'BOTH';
+const DISPLAY_CONFIG_KEY = 'proposal_grading_display_config';
 
 // Cac trang thai tu GRADING den het status flow v2.
 const DOWNSTREAM_STATUSES = [
   'GRADING',
-  'GDTTKD_EVALUATING',
   'RE_GRADING',
+  'GDTTKD_EVALUATING',
   'RE_GDTTKD_EVALUATING',
   'TGD_REVIEW',
   'DESIGNING',
@@ -124,8 +126,8 @@ const computeGradingStatus = ({ quyHoachScore, phapLyScore, legalDocsComplete })
 };
 
 const statusListForTab = (tab) => {
-  if (tab === 'pending') return [GRADING_STATUS];
-  if (tab === 'completed') return DOWNSTREAM_STATUSES.filter((s) => s !== GRADING_STATUS).concat('CANCELLED');
+  if (tab === 'pending') return [GRADING_STATUS, REGRADING_STATUS];
+  if (tab === 'completed') return [...DOWNSTREAM_STATUSES, 'CANCELLED'];
   return [...DOWNSTREAM_STATUSES, 'CANCELLED'];
 };
 
@@ -171,7 +173,16 @@ const mapGradingRow = (row) => {
     legal_docs_missing: legalDocs.missing,
     legal_docs: legalDocs.documents,
     grading_status: code,
-    grading_status_label: code ? (GRADING_NOTE_LABELS[code] || code) : null
+    grading_status_label: code ? (GRADING_NOTE_LABELS[code] || code) : null,
+    quy_hoach_regrade_pending: !!row.quy_hoach_regrade_request_id,
+    phap_ly_regrade_pending: !!row.phap_ly_regrade_request_id,
+    supplement_pending: !!row.supplement_pending,
+    quy_hoach_status_label: row.quy_hoach_regrade_request_id
+      ? 'Đang chờ Quy hoạch chấm lại'
+      : (qhScore === null ? 'Quy hoạch chưa chấm' : 'Quy hoạch đã chấm xong'),
+    phap_ly_status_label: row.phap_ly_regrade_request_id
+      ? 'Đang chờ Pháp lý chấm lại'
+      : (plScore === null ? 'Pháp lý chưa chấm' : 'Pháp lý đã chấm xong')
   };
 };
 
@@ -202,7 +213,9 @@ exports.normalizeFileEntries = normalizeFileEntries;
 exports.toFileSummaries = toFileSummaries;
 exports.computeGradingStatus = computeGradingStatus;
 
-exports.listProposals = async ({ tab = 'all', department = '', search = '', page = 1, limit = 10, scope = {} } = {}) => {
+exports.listProposals = async ({
+  tab = 'all', department = '', search = '', page = 1, limit = 10, scope = {}, filters = {}
+} = {}) => {
   const safeTab = ['all', 'pending', 'completed'].includes(tab) ? tab : 'all';
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
@@ -211,36 +224,95 @@ exports.listProposals = async ({ tab = 'all', department = '', search = '', page
   const where = [];
   const params = [];
 
-  const withoutCancelled = statuses.filter((status) => status !== 'CANCELLED');
+  const withoutCancelled = [...new Set(statuses.filter((status) => status !== 'CANCELLED'))];
   if (withoutCancelled.length > 0) {
     const placeholders = withoutCancelled.map(() => '?').join(',');
     let clause = `p.status IN (${placeholders})`;
     params.push(...withoutCancelled);
-    if (statuses.includes('CANCELLED')) {
-      const cancelledCondition = safeTab === 'completed'
-        ? '(p.quy_hoach_score IS NOT NULL AND p.phap_ly_score IS NOT NULL)'
-        : '(p.quy_hoach_score IS NOT NULL OR p.phap_ly_score IS NOT NULL)';
-      clause = `(${clause} OR (p.status = 'CANCELLED' AND ${cancelledCondition}))`;
-    }
+    if (statuses.includes('CANCELLED')) clause = `(${clause} OR p.status = 'CANCELLED')`;
     where.push(clause);
   }
 
-  if (safeTab === 'completed') {
-    where.push('p.quy_hoach_score IS NOT NULL');
-    where.push('p.phap_ly_score IS NOT NULL');
-  }
+  const dept = department || scope.gradeRole || '';
+  const qhRegradeExists = `EXISTS (
+    SELECT 1 FROM proposal_requests rq
+     WHERE rq.proposal_id = p.id AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
+       AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
+  )`;
+  const plRegradeExists = `EXISTS (
+    SELECT 1 FROM proposal_requests rp
+     WHERE rp.proposal_id = p.id AND rp.request_type = 'RE_GRADE' AND rp.status = 'OPEN'
+       AND (rp.target_department = 'PL' OR rp.target_title IN ('Pháp lý', 'Hai phòng chấm điểm'))
+  )`;
+  const supplementExists = `EXISTS (
+    SELECT 1 FROM proposal_requests rs
+     WHERE rs.proposal_id = p.id AND rs.request_type = 'SUPPLEMENT' AND rs.status = 'OPEN'
+  )`;
+  const qhDone = `(p.quy_hoach_score IS NOT NULL AND NOT ${qhRegradeExists})`;
+  const plDone = `(p.phap_ly_score IS NOT NULL AND NOT ${plRegradeExists})`;
 
   if (safeTab === 'pending') {
-    const dept = department || scope.gradeRole || '';
-    if (dept === QH_ROLE) where.push('p.quy_hoach_score IS NULL');
-    else if (dept === PL_ROLE) where.push('p.phap_ly_score IS NULL');
-    else where.push('(p.quy_hoach_score IS NULL OR p.phap_ly_score IS NULL)');
+    if (dept === QH_ROLE) {
+      where.push(`((p.status = ? AND p.quy_hoach_score IS NULL AND NOT ${supplementExists}) OR (p.status = ? AND ${qhRegradeExists}))`);
+      params.push(GRADING_STATUS, REGRADING_STATUS);
+    } else if (dept === PL_ROLE) {
+      where.push(`((p.status = ? AND p.phap_ly_score IS NULL AND NOT ${supplementExists}) OR (p.status = ? AND ${plRegradeExists}))`);
+      params.push(GRADING_STATUS, REGRADING_STATUS);
+    } else {
+      where.push(`((p.status = ? AND NOT ${supplementExists}) OR (p.status = ? AND (${qhRegradeExists} OR ${plRegradeExists})))`);
+      params.push(GRADING_STATUS, REGRADING_STATUS);
+    }
+  } else if (safeTab === 'completed') {
+    if (dept === QH_ROLE) where.push(`(p.status = 'CANCELLED' OR ${qhDone})`);
+    else if (dept === PL_ROLE) where.push(`(p.status = 'CANCELLED' OR ${plDone})`);
+    else where.push(`(p.status = 'CANCELLED' OR (${qhDone} AND ${plDone}))`);
   }
 
   if (search) {
     const like = `%${String(search).trim()}%`;
     where.push('(p.ma_de_xuat_gen LIKE ? OR p.owner_name LIKE ? OR p.owner_phone LIKE ? OR p.address LIKE ? OR u.full_name LIKE ?)');
     params.push(like, like, like, like, like);
+  }
+
+  if (filters.proposalStatus) {
+    where.push('p.status = ?');
+    params.push(String(filters.proposalStatus));
+  }
+  if (filters.model) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?");
+    params.push(String(filters.model));
+  }
+  if (filters.province) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?");
+    params.push(String(filters.province));
+  }
+  if (filters.region) {
+    const region = normalizeText(filters.region);
+    const pattern = region.includes('bac') ? '%bac%' : region.includes('trung') ? '%trung%' : region.includes('nam') ? '%nam%' : null;
+    if (pattern) {
+      where.push("LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?");
+      params.push(pattern);
+    }
+  }
+  if (filters.ownerUserId) {
+    where.push('p.user_id = ?');
+    params.push(Number(filters.ownerUserId));
+  }
+  if (filters.managerUserId) {
+    const branchIds = await require('./adminUserService').getBranchIds(Number(filters.managerUserId));
+    if (branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
+      params.push(...branchIds.map(Number));
+    }
+  }
+  if (filters.dateFrom) {
+    where.push('p.created_at >= ?');
+    params.push(`${filters.dateFrom} 00:00:00`);
+  }
+  if (filters.dateTo) {
+    where.push('p.created_at < DATE_ADD(?, INTERVAL 1 DAY)');
+    params.push(filters.dateTo);
   }
 
   const scoped = buildScopeClause(scope, params);
@@ -256,11 +328,22 @@ exports.listProposals = async ({ tab = 'all', department = '', search = '', page
   const total = Number(countRows[0]?.total || 0);
 
   const [rows] = await pool.query(
-    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email
+    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            (SELECT rq.id FROM proposal_requests rq
+              WHERE rq.proposal_id = p.id AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
+                AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
+              ORDER BY rq.created_at DESC, rq.id DESC LIMIT 1) AS quy_hoach_regrade_request_id,
+            (SELECT rp.id FROM proposal_requests rp
+              WHERE rp.proposal_id = p.id AND rp.request_type = 'RE_GRADE' AND rp.status = 'OPEN'
+                AND (rp.target_department = 'PL' OR rp.target_title IN ('Pháp lý', 'Hai phòng chấm điểm'))
+              ORDER BY rp.created_at DESC, rp.id DESC LIMIT 1) AS phap_ly_regrade_request_id,
+            (SELECT MAX(rt.created_at) FROM proposal_requests rt
+              WHERE rt.proposal_id = p.id AND rt.request_type = 'RE_GRADE' AND rt.status = 'OPEN') AS grading_task_created_at,
+            ${supplementExists} AS supplement_pending
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
      ${whereClause}
-     ORDER BY p.updated_at DESC, p.id DESC
+     ORDER BY ${safeTab === 'pending' ? 'COALESCE(grading_task_created_at, p.created_at) ASC, p.id ASC' : 'p.updated_at DESC, p.id DESC'}
      LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
   );
@@ -274,6 +357,168 @@ exports.listProposals = async ({ tab = 'all', department = '', search = '', page
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) }
   };
 };
+
+  const loadDisplayConfig = async () => {
+    const [rows] = await pool.query('SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1', [DISPLAY_CONFIG_KEY]);
+    if (!rows[0]?.value) return {};
+    try {
+      const value = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
+      return value && typeof value === 'object' ? value : {};
+    } catch {
+      return {};
+    }
+  };
+
+  exports.getProposalDetail = async (id, scope = {}) => {
+    const proposalId = Number(id);
+    if (!Number.isInteger(proposalId) || proposalId <= 0) throw Object.assign(new Error('Đề xuất không hợp lệ'), { statusCode: 400 });
+    const params = [proposalId];
+    let scopeClause = '';
+    if (scope.role === 'SALES') {
+      const ids = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
+      if (!ids.includes(Number(scope.userId))) ids.push(Number(scope.userId));
+      if (!ids.length) throw Object.assign(new Error('Bạn không có quyền xem đề xuất này'), { statusCode: 403 });
+      scopeClause = ` AND p.user_id IN (${ids.map(() => '?').join(',')})`;
+      params.push(...ids);
+    } else if (['CTV', 'NPP'].includes(scope.role)) {
+      scopeClause = ' AND p.user_id = ?';
+      params.push(Number(scope.userId));
+    }
+    const [rows] = await pool.query(
+      `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name,
+              (SELECT rq.id FROM proposal_requests rq WHERE rq.proposal_id = p.id
+                 AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
+                 AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
+                 ORDER BY rq.created_at DESC, rq.id DESC LIMIT 1) AS quy_hoach_regrade_request_id,
+              (SELECT rq.description FROM proposal_requests rq WHERE rq.proposal_id = p.id
+                 AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
+                 AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
+                 ORDER BY rq.created_at DESC, rq.id DESC LIMIT 1) AS quy_hoach_regrade_description,
+              (SELECT rp.id FROM proposal_requests rp WHERE rp.proposal_id = p.id
+                 AND rp.request_type = 'RE_GRADE' AND rp.status = 'OPEN'
+                 AND (rp.target_department = 'PL' OR rp.target_title IN ('Pháp lý', 'Hai phòng chấm điểm'))
+                 ORDER BY rp.created_at DESC, rp.id DESC LIMIT 1) AS phap_ly_regrade_request_id,
+              (SELECT rp.description FROM proposal_requests rp WHERE rp.proposal_id = p.id
+                 AND rp.request_type = 'RE_GRADE' AND rp.status = 'OPEN'
+                 AND (rp.target_department = 'PL' OR rp.target_title IN ('Pháp lý', 'Hai phòng chấm điểm'))
+                 ORDER BY rp.created_at DESC, rp.id DESC LIMIT 1) AS phap_ly_regrade_description
+         FROM station_proposals p LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.id = ?${scopeClause}`,
+      params
+    );
+    if (!rows.length) throw Object.assign(new Error('Không tìm thấy đề xuất hoặc bạn không có quyền xem đề xuất này'), { statusCode: 404 });
+    const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+    const proposal = mapGradingRow(dynamicUtils.mergeData(rows[0], fieldDefs));
+    const [requests] = await pool.query(
+      `SELECT id, request_type, description, target_department, target_title, target_user_id, status, created_at, note
+         FROM proposal_requests
+        WHERE proposal_id = ? AND status = 'OPEN' AND request_type IN ('SUPPLEMENT', 'UPDATE_INFO', 'RE_GRADE')
+        ORDER BY created_at ASC, id ASC`,
+      [proposalId]
+    );
+    const supplementPending = requests.some((request) => request.request_type === 'SUPPLEMENT');
+    const config = await loadDisplayConfig();
+    return {
+      proposal,
+      fieldDefinitions: fieldDefs,
+      displayConfig: config,
+      requests,
+      step: proposal.status === REGRADING_STATUS ? 'regrading' : 'grading',
+      permissions: {
+        canGradeQH: !supplementPending && ['GRADING', REGRADING_STATUS].includes(proposal.status)
+          && (scope.gradeRole === BOTH_ROLE || scope.gradeRole === QH_ROLE)
+          && (proposal.status !== REGRADING_STATUS || !!proposal.quy_hoach_regrade_request_id),
+        canGradePL: !supplementPending && ['GRADING', REGRADING_STATUS].includes(proposal.status)
+          && (scope.gradeRole === BOTH_ROLE || scope.gradeRole === PL_ROLE)
+          && (proposal.status !== REGRADING_STATUS || !!proposal.phap_ly_regrade_request_id),
+        canConfigure: scope.role === 'SUPER_ADMIN',
+        canRequestSupplement: !supplementPending && ['QH', 'PL', 'BOTH'].includes(scope.gradeRole)
+          && proposal.status === GRADING_STATUS
+      }
+    };
+  };
+
+  exports.getDisplayConfig = loadDisplayConfig;
+
+  exports.saveDisplayConfig = async (config, fieldDefinitions) => {
+    const validKeys = new Set(fieldDefinitions.map((field) => field.key));
+    const clean = {};
+    for (const step of ['grading', 'regrading']) {
+      const keys = Array.isArray(config?.[step]) ? config[step] : [];
+      clean[step] = [...new Set(keys.filter((key) => validKeys.has(key)))];
+    }
+    await pool.query(
+      'INSERT INTO proposal_lifecycle_configs (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = CURRENT_TIMESTAMP',
+      [DISPLAY_CONFIG_KEY, JSON.stringify(clean)]
+    );
+    return clean;
+  };
+
+  exports.requestSupplement = async ({ id, user, gradeRole, reason, ip } = {}) => {
+    const proposalId = Number(id);
+    const cleanReason = String(reason || '').trim();
+    if (!Number.isInteger(proposalId) || proposalId <= 0) {
+      throw Object.assign(new Error('Đề xuất không hợp lệ'), { statusCode: 400 });
+    }
+    if (cleanReason.length < 3 || cleanReason.length > 5000) {
+      throw Object.assign(new Error('Vui lòng mô tả thông tin cần bổ sung (3–5000 ký tự)'), { statusCode: 400 });
+    }
+    if (!['QH', 'PL', BOTH_ROLE].includes(gradeRole)) {
+      throw Object.assign(new Error('Bạn không có quyền yêu cầu bổ sung thông tin'), { statusCode: 403 });
+    }
+    const [rows] = await pool.query(
+      'SELECT id, status, user_id, custom_data FROM station_proposals WHERE id = ? LIMIT 1',
+      [proposalId]
+    );
+    const proposal = rows[0];
+    if (!proposal) throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
+    if (proposal.status !== GRADING_STATUS) {
+      throw Object.assign(new Error('Chỉ có thể yêu cầu bổ sung khi đề xuất đang ở bước chấm điểm'), { statusCode: 400 });
+    }
+    const request = await require('./proposalRequestService').createRequest({
+      proposalId,
+      type: 'SUPPLEMENT',
+      description: cleanReason,
+      requestedBy: user?.id,
+      previousStatus: proposal.status,
+      currentStatus: proposal.status,
+      targetUserId: proposal.user_id,
+      targetTitle: 'Người đề xuất'
+    });
+    const lifecycle = require('./proposalLifecycle');
+    await lifecycle.logActivity({
+      proposalId,
+      action: 'grading_supplement_requested',
+      fromStatus: proposal.status,
+      toStatus: proposal.status,
+      changedFields: { supplement_request: { label: 'Yêu cầu bổ sung thông tin', old: '', new: cleanReason } },
+      actorId: user?.id || null,
+      actorRole: user?.role || null,
+      source: 'user',
+      ip
+    });
+    if (proposal.user_id) {
+      const notificationService = require('./notificationService');
+      const code = notificationService.proposalCode(proposal.custom_data, proposalId);
+      const actorName = (await notificationService.getUserName(user?.id)) || 'Hệ thống';
+      await notificationService.create({
+        userId: proposal.user_id,
+        type: 'INFO_REOPENED',
+        title: 'Yêu cầu bổ sung thông tin đề xuất',
+        message: notificationService.statusMessage({
+          code,
+          actorName,
+          status: proposal.status,
+          actionLabel: 'Yêu cầu bổ sung',
+          reason: cleanReason
+        }),
+        entityType: 'station_proposals',
+        entityId: proposalId,
+        createdBy: user?.id || null
+      });
+    }
+    return { id: proposalId, requestId: request?.id || null, status: proposal.status };
+  };
 
 const parseScore = (value, label) => {
   if (value === null || value === undefined || value === '') return null;
@@ -319,13 +564,17 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     throw error;
   }
   const current = rows[0];
-  if (!DOWNSTREAM_STATUSES.includes(current.status)) {
-    const error = new Error('Chỉ được chấm điểm đề xuất từ trạng thái Đang đánh giá quy hoạch và pháp lý trở đi');
+  if (![GRADING_STATUS, REGRADING_STATUS].includes(current.status)) {
+    const error = new Error('Chỉ được chấm điểm khi đề xuất đang ở bước chấm điểm');
     error.statusCode = 400;
     throw error;
   }
 
-  const role = gradeRole === BOTH_ROLE ? BOTH_ROLE : (gradeRole || resolveGradingRole(await getUserDepartment(userId)));
+  const role = userRole === 'SUPER_ADMIN'
+    ? BOTH_ROLE
+    : userRole === 'ADMIN'
+      ? (gradeRole || resolveGradingRole(await getUserDepartment(userId)))
+      : null;
   const canQH = role === BOTH_ROLE || role === QH_ROLE;
   const canPL = role === BOTH_ROLE || role === PL_ROLE;
   if (!canQH && !canPL) {
@@ -338,10 +587,69 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     || Object.prototype.hasOwnProperty.call(payload, 'quy_hoach_note');
   const hasPLFields = Object.prototype.hasOwnProperty.call(payload, 'phap_ly_score')
     || Object.prototype.hasOwnProperty.call(payload, 'phap_ly_note');
+  const hasQHScore = Object.prototype.hasOwnProperty.call(payload, 'quy_hoach_score');
+  const hasPLScore = Object.prototype.hasOwnProperty.call(payload, 'phap_ly_score');
   if ((hasQHFields && !canQH) || (hasPLFields && !canPL)) {
     const error = new Error('Bạn không có quyền cập nhật điểm của phòng ban khác');
     error.statusCode = 403;
     throw error;
+  }
+
+  const isGrading = current.status === GRADING_STATUS;
+  const isReGrading = current.status === REGRADING_STATUS;
+  if (isGrading) {
+    const [supplementRows] = await pool.query(
+      "SELECT COUNT(*) AS n FROM proposal_requests WHERE proposal_id = ? AND request_type = 'SUPPLEMENT' AND status = 'OPEN'",
+      [proposalId]
+    );
+    if (Number(supplementRows[0]?.n || 0) > 0) {
+      const error = new Error('Đề xuất đang chờ bổ sung thông tin; chỉ tiếp tục chấm sau khi yêu cầu được hoàn thành');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  let activeRegradeRequests = [];
+  if (isReGrading) {
+    const [requestRows] = await pool.query(
+      `SELECT id, target_department, target_title, description, requested_by,
+              previous_status, current_status, round_no, note
+         FROM proposal_requests
+        WHERE proposal_id = ? AND request_type = 'RE_GRADE' AND status = 'OPEN'`,
+      [proposalId]
+    );
+    activeRegradeRequests = requestRows.filter((request) => {
+      const target = normalizeText(request.target_department);
+      const title = normalizeText(request.target_title);
+      return (target === 'qh' || title.includes('quy hoach') || title.includes('hai phong'))
+        || (target === 'pl' || title.includes('phap ly') || title.includes('hai phong'));
+    });
+    const activeDepartments = new Set();
+    activeRegradeRequests.forEach((request) => {
+      const target = normalizeText(request.target_department);
+      const title = normalizeText(request.target_title);
+      if (target === 'qh' || title.includes('quy hoach') || title.includes('hai phong')) activeDepartments.add(QH_ROLE);
+      if (target === 'pl' || title.includes('phap ly') || title.includes('hai phong')) activeDepartments.add(PL_ROLE);
+    });
+    if ((hasQHFields && !activeDepartments.has(QH_ROLE)) || (hasPLFields && !activeDepartments.has(PL_ROLE))) {
+      const error = new Error('Đề xuất không được yêu cầu chấm lại ở phòng ban này');
+      error.statusCode = 403;
+      throw error;
+    }
+    if (activeDepartments.size === 0) {
+      const error = new Error('Không còn yêu cầu chấm lại đang mở cho đề xuất này');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!hasQHFields && !hasPLFields) {
+      const error = new Error('Vui lòng nhập điểm của phòng được yêu cầu chấm lại');
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((hasQHFields && !hasQHScore) || (hasPLFields && !hasPLScore)) {
+      const error = new Error('Chấm lại phải gửi điểm mới của phòng được yêu cầu');
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
   const legalDocs = getLegalDocsState(current.custom_data);
@@ -392,8 +700,6 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     throw error;
   }
 
-  const isGrading = current.status === GRADING_STATUS;
-  const isReGrading = current.status === 'RE_GRADING';
   let nextNote = current.note;
   if (isGrading) {
     nextNote = computeGradingStatus({
@@ -411,6 +717,69 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     `UPDATE station_proposals SET ${updates.join(', ')} WHERE id = ?`,
     params
   );
+
+  if (isReGrading) {
+    const sharedRequests = activeRegradeRequests.filter((request) =>
+      normalizeText(request.target_title).includes('hai phong')
+    );
+    const targetedRequests = activeRegradeRequests.filter((request) => !sharedRequests.includes(request));
+    const requestTargetsDepartment = (request, department) => {
+      const target = normalizeText(request.target_department);
+      const title = normalizeText(request.target_title);
+      return department === 'QH'
+        ? target === 'qh' || title.includes('quy hoach')
+        : target === 'pl' || title.includes('phap ly');
+    };
+    const shouldCancelShared = nextQH === 0 || nextPL === 0;
+    const requestService = require('./proposalRequestService');
+
+    for (const request of sharedRequests) {
+      await pool.query(
+        `UPDATE proposal_requests SET status = ?, resolved_by = ?, resolved_at = NOW(),
+                resolution_note = ? WHERE id = ? AND status = 'OPEN'`,
+        [
+          shouldCancelShared ? 'CANCELLED' : 'DONE',
+          userId || null,
+          shouldCancelShared ? 'Đề xuất bị hủy sau khi chấm điểm' : 'Đã chuyển yêu cầu cũ thành công việc riêng theo phòng',
+          request.id
+        ]
+      );
+
+      if (shouldCancelShared) continue;
+      for (const target of [
+        { department: 'QH', title: 'Quy hoạch', submitted: hasQHScore },
+        { department: 'PL', title: 'Pháp lý', submitted: hasPLScore }
+      ]) {
+        if (target.submitted || targetedRequests.some((request) => requestTargetsDepartment(request, target.department))) continue;
+        await requestService.createRequest({
+          proposalId,
+          type: 'RE_GRADE',
+          description: request.description,
+          requestedBy: request.requested_by,
+          previousStatus: request.previous_status,
+          currentStatus: request.current_status || REGRADING_STATUS,
+          targetDepartment: target.department,
+          targetTitle: target.title,
+          note: request.note,
+          roundNo: request.round_no
+        });
+      }
+    }
+
+    const resolvedRequestIds = activeRegradeRequests
+      .filter((request) => !sharedRequests.includes(request)
+        && ((hasQHScore && requestTargetsDepartment(request, 'QH'))
+          || (hasPLScore && requestTargetsDepartment(request, 'PL'))))
+      .map((request) => Number(request.id));
+    if (resolvedRequestIds.length) {
+      await pool.query(
+        `UPDATE proposal_requests SET status = 'DONE', resolved_by = ?, resolved_at = NOW(),
+                resolution_note = 'Đã cập nhật kết quả chấm điểm lại'
+          WHERE id IN (${resolvedRequestIds.map(() => '?').join(',')}) AND status = 'OPEN'`,
+        [userId || null, ...resolvedRequestIds]
+      );
+    }
+  }
 
   const proposalLifecycle = require('./proposalLifecycle');
   await proposalLifecycle.logActivity({
@@ -431,6 +800,14 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
   if (isGrading || isReGrading) {
     let target = null;
     let reason = null;
+    let hasOpenRegrade = false;
+    if (isReGrading) {
+      const [openRows] = await pool.query(
+        "SELECT COUNT(*) AS n FROM proposal_requests WHERE proposal_id = ? AND request_type = 'RE_GRADE' AND status = 'OPEN'",
+        [proposalId]
+      );
+      hasOpenRegrade = Number(openRows[0]?.n || 0) > 0;
+    }
     if (nextQH === 0 || nextPL === 0) {
       target = 'CANCELLED';
       reason = nextQH === 0 && nextPL === 0
@@ -438,7 +815,7 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
         : nextQH === 0
           ? 'Điểm Quy hoạch bằng 0'
           : 'Điểm Pháp lý bằng 0';
-    } else if (nextQH !== null && nextPL !== null) {
+    } else if (!hasOpenRegrade && nextQH !== null && nextPL !== null) {
       const total = nextQH + nextPL;
       if (total >= 4) {
         target = 'DESIGNING';
@@ -459,6 +836,13 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
           actorRole: userRole || null,
           source: 'system_auto'
         });
+        if (target === 'CANCELLED') {
+          await require('./proposalRequestService').closeRequests(
+            proposalId,
+            ['RE_GRADE', 'SUPPLEMENT'],
+            { resolvedBy: userId || null, status: 'CANCELLED' }
+          );
+        }
 
         const reviewLevelForTarget = target === 'DESIGNING' || target === 'CANCELLED'
           ? null
@@ -494,10 +878,6 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
               targetTitle: 'Giám đốc Trung tâm Kinh doanh',
               note: `Quy hoạch: ${nextQH}/3 · Pháp lý: ${nextPL}/3`
             });
-          } catch { /* silent: khong chan ket qua cham diem */ }
-        } else if (isReGrading) {
-          try {
-            await proposalRequestService.closeRequests(proposalId, ['RE_GRADE'], { resolvedBy: userId || null });
           } catch { /* silent: khong chan ket qua cham diem */ }
         }
       } catch (error) {

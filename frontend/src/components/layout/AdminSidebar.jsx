@@ -57,19 +57,19 @@ const mainItems = [
     path: "/admin/proposals",
     label: "Quản lý Đề xuất",
     icon: ClipboardList,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
     children: [
       {
         path: "/admin/proposals",
         label: "Thông tin chung",
         icon: FileText,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/proposals/danh-gia-quy-hoach",
-        label: "Đánh giá quy hoạch và Pháp lý",
+        label: "Chấm điểm Quy hoạch và Pháp lý",
         icon: Scale,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/proposals/yeu-cau-cham-diem-lai",

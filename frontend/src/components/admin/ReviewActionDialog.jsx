@@ -9,6 +9,7 @@ const ReviewActionDialog = ({
   confirmClass = 'btn-primary',
   reasonLabel = 'Lý do',
   reasonPlaceholder = 'Nhập lý do...',
+  showDepartmentSelection = false,
   requireReason = true,
   saving = false,
   error = '',
@@ -16,14 +17,20 @@ const ReviewActionDialog = ({
   onConfirm
 }) => {
   const [reason, setReason] = useState('');
+  const [departmentSelection, setDepartmentSelection] = useState('');
 
   useEffect(() => {
-    if (isOpen) setReason('');
+    if (isOpen) {
+      setReason('');
+      setDepartmentSelection('BOTH');
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const disabled = saving || (requireReason && !reason.trim());
+  const disabled = saving
+    || (requireReason && !reason.trim())
+    || (showDepartmentSelection && !departmentSelection);
 
   return (
     <dialog className="modal modal-open">
@@ -51,6 +58,22 @@ const ReviewActionDialog = ({
           />
         </label>
 
+        {showDepartmentSelection && (
+          <label className="form-control w-full mt-3">
+            <span className="label-text font-medium mb-2">Phòng cần chấm lại *</span>
+            <select
+              className="select select-bordered"
+              value={departmentSelection}
+              onChange={(event) => setDepartmentSelection(event.target.value)}
+            >
+              <option value="" disabled>Chọn phòng cần chấm lại</option>
+              <option value="QH">Quy hoạch</option>
+              <option value="PL">Pháp lý</option>
+              <option value="BOTH">Cả Quy hoạch và Pháp lý</option>
+            </select>
+          </label>
+        )}
+
         {error && (
           <div className="alert alert-error py-2 mt-3 text-sm">
             <AlertTriangle size={16} />
@@ -65,7 +88,9 @@ const ReviewActionDialog = ({
           <button
             type="button"
             className={`btn ${confirmClass}`}
-            onClick={() => onConfirm(reason.trim())}
+            onClick={() => onConfirm(reason.trim(), {
+              departments: departmentSelection === 'BOTH' ? ['QH', 'PL'] : [departmentSelection]
+            })}
             disabled={disabled}
           >
             {saving ? <span className="loading loading-spinner loading-sm" /> : null}

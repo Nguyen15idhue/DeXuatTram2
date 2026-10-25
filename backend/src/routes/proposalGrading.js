@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireProposalManager } = require('../middlewares/auth');
+const { requireAuth, requireProposalInfoManager, requireProposalManager, requireSuperAdmin } = require('../middlewares/auth');
 const proposalGradingController = require('../controllers/proposalGradingController');
 
 /**
@@ -8,11 +8,11 @@ const proposalGradingController = require('../controllers/proposalGradingControl
  * /api/admin/proposal-grading:
  *   get:
  *     tags: [Proposal Grading]
- *     summary: Danh sách đề xuất cho trang Đánh giá Quy hoạch và Pháp lý
+ *     summary: Danh sách đề xuất cho trang Chấm điểm Quy hoạch và Pháp lý
  *     description: >
  *       tab=all: từ GRADING đến hết status flow (không gồm PENDING);
- *       tab=pending: đề xuất GRADING mà phòng của người dùng chưa chấm;
- *       tab=completed: đã chấm xong cả Quy hoạch và Pháp lý, từ sau GRADING đến hết flow.
+ *       tab=pending: công việc của phòng chưa chấm hoặc đang được yêu cầu chấm lại;
+ *       tab=completed: phần việc đã hoàn thành riêng theo phòng; CANCELLED xuất hiện ở cả hai phòng.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -27,7 +27,7 @@ const proposalGradingController = require('../controllers/proposalGradingControl
  *         schema:
  *           type: string
  *           enum: [QH, PL]
- *         description: Dùng cho ADMIN/SUPER_ADMIN khi xem tab pending (bỏ trống = cả 2 phòng)
+ *         description: Bộ lọc tương thích cho ADMIN/SUPER_ADMIN; UI tự xác định theo phòng ban.
  *       - in: query
  *         name: search
  *         schema:
@@ -51,7 +51,108 @@ const proposalGradingController = require('../controllers/proposalGradingControl
  *       403:
  *         description: Không có quyền
  */
-router.get('/', requireAuth, requireProposalManager, proposalGradingController.list);
+router.get('/', requireAuth, requireProposalInfoManager, proposalGradingController.list);
+
+/**
+ * @swagger
+ * /api/admin/proposal-grading/filter-options:
+ *   get:
+ *     tags: [Proposal Grading]
+ *     summary: Tùy chọn bộ lọc danh sách chấm điểm
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Danh sách người đề xuất, người phụ trách, miền, tỉnh và mô hình trong phạm vi
+ */
+router.get('/filter-options', requireAuth, requireProposalInfoManager, proposalGradingController.filterOptions);
+
+/**
+ * @swagger
+ * /api/admin/proposal-grading/{id}:
+ *   get:
+ *     tags: [Proposal Grading]
+ *     summary: Chi tiết đề xuất và cấu hình hiển thị theo bước chấm điểm
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Chi tiết đề xuất
+ *       403:
+ *         description: Không có quyền
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id', requireAuth, requireProposalInfoManager, proposalGradingController.detail);
+
+/**
+ * @swagger
+ * /api/admin/proposal-grading/display-config:
+ *   put:
+ *     tags: [Proposal Grading]
+ *     summary: Lưu cấu hình trường hiển thị riêng cho chấm điểm và chấm điểm lại
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               grading:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               regrading:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Đã lưu cấu hình
+ *       403:
+ *         description: Chỉ SUPER_ADMIN được phép
+ */
+router.put('/display-config', requireAuth, requireSuperAdmin, proposalGradingController.saveDisplayConfig);
+
+/**
+ * @swagger
+ * /api/admin/proposal-grading/{id}/request-supplement:
+ *   post:
+ *     tags: [Proposal Grading]
+ *     summary: Yêu cầu người đề xuất bổ sung thông tin khi đề xuất đang ở bước GRADING
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Đã tạo yêu cầu bổ sung
+ *       400:
+ *         description: Đề xuất không ở bước chấm điểm hoặc lý do không hợp lệ
+ */
+router.post('/:id/request-supplement', requireAuth, requireProposalManager, proposalGradingController.requestSupplement);
 
 /**
  * @swagger
@@ -60,9 +161,9 @@ router.get('/', requireAuth, requireProposalManager, proposalGradingController.l
  *     tags: [Proposal Grading]
  *     summary: Cập nhật điểm / đánh giá Quy hoạch hoặc Pháp lý
  *     description: >
- *       Phòng Quy hoạch chỉ cập nhật quy_hoach_score/quy_hoach_note;
- *       Phòng Pháp lý chỉ cập nhật phap_ly_score/phap_ly_note;
- *       ADMIN/SUPER_ADMIN cập nhật được cả 2. Khi cả 2 phòng đã chấm, hệ thống tự chuyển trạng thái.
+ *       ADMIN thuộc phòng Quy hoạch chỉ cập nhật quy_hoach_score/quy_hoach_note;
+ *       ADMIN thuộc phòng Pháp lý chỉ cập nhật phap_ly_score/phap_ly_note;
+ *       SUPER_ADMIN được cập nhật cả hai. Khi chấm lại, chỉ phòng được giao mới được cập nhật.
  *     security:
  *       - bearerAuth: []
  *     parameters:

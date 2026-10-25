@@ -10,7 +10,12 @@ import {
 } from '../../utils/proposalReport';
 import { getProposalLegalName } from '../../utils/proposalGrading';
 
-const FILE_ACCEPT = 'application/pdf,.pdf,.doc,.docx,.xls,.xlsx,image/*';
+const FILE_ACCEPT = 'application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx';
+const REPORT_FILE_TYPES = {
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+};
 const TRU_LIST_ID = 18;
 const MODEL_OPTIONS = [
   { value: 'TDT', label: 'Tự đầu tư (TDT)' },
@@ -20,6 +25,11 @@ const MODEL_OPTIONS = [
 ];
 
 const emptyRow = () => ({ mo_hinh: '', so_luong: '', loai_tru: '', gia_chot: '' });
+
+const isAllowedReportFile = (file) => {
+  const extension = `.${String(file?.name || '').split('.').pop()}`.toLowerCase();
+  return REPORT_FILE_TYPES[extension] === String(file?.type || '').toLowerCase();
+};
 
 const toUploadValue = (row) => getReportFiles(row)
   .filter((file) => file.id)
@@ -40,6 +50,40 @@ const parseRows = (value) => {
     }
   }
   return [];
+};
+
+const getCustomData = (record) => {
+  if (record?.custom_data && typeof record.custom_data === 'object') return record.custom_data;
+  if (typeof record?.custom_data === 'string') {
+    try { return JSON.parse(record.custom_data); } catch { return {}; }
+  }
+  return {};
+};
+
+const getProposedPoleRows = (record) => {
+  const customData = getCustomData(record);
+  const modelValue = record?.mo_hinh_dau_tu ?? customData.mo_hinh_dau_tu;
+  const model = typeof modelValue === 'object'
+    ? String(modelValue.value || modelValue.label || '').toUpperCase()
+    : String(modelValue || '').toUpperCase();
+  const sourceTables = [
+    { model: 'TDT', key: 'tdt_tru' },
+    { model: 'NQ', key: 'loai_tru_nq' },
+    { model: 'LK', key: 'loai_tru_lk' }
+  ].filter((source) => !model
+    || source.model === model
+    || (model === 'NQ_LK' && ['NQ', 'LK'].includes(source.model)));
+  const rows = sourceTables.flatMap((source) => {
+    const proposedRows = parseRows(record?.[source.key] ?? customData[source.key]);
+    return proposedRows
+      .filter((row) => Number(row?.so_luong) > 0)
+      .map((row) => ({
+        mo_hinh: source.model,
+        so_luong: row.so_luong,
+        loai_tru: row.loai_tru || row.khoan_muc || ''
+      }));
+  });
+  return rows.length > 0 ? rows : [emptyRow()];
 };
 
 const formatMoney = (value) => {
@@ -86,7 +130,7 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
         loai_tru: row.loai_tru || '',
         gia_chot: row.gia_chot ?? ''
       }))
-      : [emptyRow()]);
+      : getProposedPoleRows(record));
     setError('');
     setSaving(false);
     setLoadingTypes(true);
@@ -203,6 +247,7 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
               entityType="station_proposals"
               multiple
               accept={FILE_ACCEPT}
+              validateFile={isAllowedReportFile}
               disabled={saving}
               fileConfig={{ maxSize: 20 }}
             />
@@ -212,7 +257,9 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 className="font-semibold">Số lượng trụ chốt *</h4>
-                <p className="text-xs text-base-content/60">Giá chốt được lấy từ giá hiện tại trong danh mục loại trụ.</p>
+                <p className="text-xs text-base-content/60">
+                  Số lượng và loại trụ mặc định lấy từ đề xuất; có thể chỉnh sửa. Giá chốt lấy từ danh mục hiện tại.
+                </p>
               </div>
               <button
                 type="button"

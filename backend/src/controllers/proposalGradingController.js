@@ -3,13 +3,13 @@ const adminProposalService = require('../services/adminProposalService');
 
 const scopeFor = async (user) => {
   if (!user) return { role: null };
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
+  if (user.role === 'SUPER_ADMIN') {
     return { all: true, gradeRole: proposalGradingService.BOTH_ROLE };
   }
   const department = await proposalGradingService.getUserDepartment(user.id);
   const gradeRole = proposalGradingService.resolveGradingRole(department);
-  if (gradeRole) {
-    return { all: true, gradeRole, department };
+  if (user.role === 'ADMIN') {
+    return { all: true, role: user.role, userId: user.id, gradeRole, department };
   }
   if (user.role === 'SALES') {
     const branchIds = await adminProposalService.getBranchUserIds(user.id);
@@ -23,7 +23,10 @@ const scopeFor = async (user) => {
 
 exports.list = async (req, res) => {
   try {
-    const { tab = 'all', department = '', search = '', page = 1, limit = 10 } = req.query;
+    const {
+      tab = 'all', department = '', search = '', page = 1, limit = 10,
+      proposal_status, model, province, region, owner_user_id, manager_user_id, date_from, date_to
+    } = req.query;
     const scope = await scopeFor(req.user);
     const dept = scope.gradeRole && scope.gradeRole !== proposalGradingService.BOTH_ROLE
       ? scope.gradeRole
@@ -34,7 +37,17 @@ exports.list = async (req, res) => {
       search,
       page,
       limit,
-      scope
+      scope,
+      filters: {
+        proposalStatus: proposal_status,
+        model,
+        province,
+        region,
+        ownerUserId: owner_user_id,
+        managerUserId: manager_user_id,
+        dateFrom: date_from,
+        dateTo: date_to
+      }
     });
     res.json({
       success: true,
@@ -45,6 +58,38 @@ exports.list = async (req, res) => {
   } catch (error) {
     console.error('List proposal grading error:', error);
     res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.detail = async (req, res) => {
+  try {
+    const scope = await scopeFor(req.user);
+    const data = await proposalGradingService.getProposalDetail(req.params.id, scope);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.filterOptions = async (req, res) => {
+  try {
+    const scope = await scopeFor(req.user);
+    const data = await require('../services/proposalRequestService').getFilterOptions(scope);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Proposal grading filter options error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.saveDisplayConfig = async (req, res) => {
+  try {
+    const fields = await require('../services/dynamicUtils').getFieldDefinitionsByEntity('station_proposals');
+    const data = await proposalGradingService.saveDisplayConfig(req.body || {}, fields);
+    res.json({ success: true, data, message: 'Đã lưu cấu hình hiển thị' });
+  } catch (error) {
+    console.error('Save proposal grading display config error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };
 
@@ -75,5 +120,21 @@ exports.update = async (req, res) => {
       success: false,
       message: error.message || 'Lỗi server'
     });
+  }
+};
+
+exports.requestSupplement = async (req, res) => {
+  try {
+    const scope = await scopeFor(req.user);
+    const data = await proposalGradingService.requestSupplement({
+      id: req.params.id,
+      user: req.user,
+      gradeRole: scope.gradeRole,
+      reason: req.body?.reason,
+      ip: req.ip
+    });
+    res.json({ success: true, data, message: 'Đã gửi yêu cầu bổ sung thông tin' });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

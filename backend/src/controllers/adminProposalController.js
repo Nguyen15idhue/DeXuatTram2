@@ -5,10 +5,10 @@ const proposalLifecycle = require('../services/proposalLifecycle');
 const proposalAccessService = require('../services/proposalAccessService');
 
 const scopeFor = async (req) => {
-  if (req.user.role !== 'SALES' && req.user.role !== 'CTV') return { role: req.user.role };
-  if (req.user.role === 'SALES') {
+  if (req.user.role !== 'SALES' && req.user.role !== 'CTV' && req.user.role !== 'NPP') return { role: req.user.role };
+  if (req.user.role === 'SALES' || req.user.role === 'NPP') {
     const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
-    return { role: 'SALES', branchIds, userId: req.user.id };
+    return { role: req.user.role, branchIds, userId: req.user.id };
   }
   // CTV: only see their own proposals (where they are the creator)
   return { role: 'CTV', userId: req.user.id };
@@ -50,14 +50,14 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, statuses, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, date_from, date_to, date_field, lead_link } = req.query;
+    const { status, statuses, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, manager_user_id, model, date_from, date_to, date_field, lead_link } = req.query;
     const scope = await scopeFor(req);
     const statusList = String(statuses || '')
       .split(',')
       .map((s) => s.trim())
       .filter((s) => proposalLifecycle.ALL_STATUSES.includes(s));
     const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters, {
-      province, region, department, ownerUserId: owner_user_id, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link,
+      province, region, department, ownerUserId: owner_user_id, managerUserId: manager_user_id, model, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link,
       statuses: statusList
     });
     res.json({ success: true, data: result.proposals, pagination: result.pagination });

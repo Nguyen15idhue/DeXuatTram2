@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireProposalManager } = require('../middlewares/auth');
+const { requireAuth, requireProposalInfoManager } = require('../middlewares/auth');
+const { validateUpdateProposal } = require('../middlewares/validators');
 const proposalRequestController = require('../controllers/proposalRequestController');
 
 /**
@@ -9,7 +10,7 @@ const proposalRequestController = require('../controllers/proposalRequestControl
  *   get:
  *     tags: [Proposal Requests]
  *     summary: Danh sách yêu cầu đề xuất (tab "Đề xuất cần thực hiện")
- *     description: ADMIN/SUPER xem tất cả; SALES xem theo nhánh; CTV/NPP chỉ xem đề xuất của mình.
+ *     description: ADMIN/SUPER xem toàn bộ; SALES/NPP xem theo nhánh được phép; CTV chỉ xem yêu cầu của mình.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -36,6 +37,50 @@ const proposalRequestController = require('../controllers/proposalRequestControl
  *           enum: ['1']
  *         description: Nếu =1, chỉ lấy yêu cầu giao cho chính mình (theo target_user_id hoặc loại yêu cầu khớp phòng ban/chức vụ)
  *       - in: query
+ *         name: work_scope
+ *         schema:
+ *           type: string
+ *           enum: [mine, subordinates, all]
+ *           default: mine
+ *         description: Phạm vi công việc; cấp quản lý chỉ thấy cấp dưới trong nhánh, GĐTTKD còn thấy yêu cầu theo miền.
+ *       - in: query
+ *         name: proposal_status
+ *         schema:
+ *           type: string
+ *         description: Lọc theo trạng thái đề xuất đang được yêu cầu xử lý.
+ *       - in: query
+ *         name: model
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: province
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: region
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: owner_user_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: manager_user_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Ngày tạo yêu cầu từ ngày này.
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Ngày tạo yêu cầu đến ngày này.
+ *       - in: query
  *         name: page
  *         schema:
  *           type: integer
@@ -53,7 +98,7 @@ const proposalRequestController = require('../controllers/proposalRequestControl
  *       403:
  *         description: Không có quyền
  */
-router.get('/', requireAuth, requireProposalManager, proposalRequestController.list);
+router.get('/', requireAuth, requireProposalInfoManager, proposalRequestController.list);
 
 /**
  * @swagger
@@ -67,7 +112,72 @@ router.get('/', requireAuth, requireProposalManager, proposalRequestController.l
  *       200:
  *         description: Thành công
  */
-router.get('/types', requireAuth, requireProposalManager, proposalRequestController.types);
+router.get('/types', requireAuth, requireProposalInfoManager, proposalRequestController.types);
+/**
+ * @swagger
+ * /api/admin/proposal-requests/filter-options:
+ *   get:
+ *     tags: [Proposal Requests]
+ *     summary: Danh sách giá trị lọc trong phạm vi người dùng được xem
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền
+ */
+router.get('/filter-options', requireAuth, requireProposalInfoManager, proposalRequestController.filterOptions);
+
+/**
+ * @swagger
+ * /api/admin/proposal-requests/{id}/update-context:
+ *   get:
+ *     tags: [Proposal Requests]
+ *     summary: Lấy thông tin yêu cầu và đề xuất để cập nhật
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thành công
+ *       403:
+ *         description: Không có quyền xử lý yêu cầu
+ */
+router.get('/:id/update-context', requireAuth, requireProposalInfoManager, proposalRequestController.getUpdateContext);
+
+/**
+ * @swagger
+ * /api/admin/proposal-requests/{id}/proposal:
+ *   put:
+ *     tags: [Proposal Requests]
+ *     summary: Cập nhật đề xuất theo yêu cầu, có ghi nhận actor thực tế
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ *       403:
+ *         description: Không có quyền cập nhật thay người đề xuất
+ */
+router.put('/:id/proposal', requireAuth, requireProposalInfoManager, validateUpdateProposal, proposalRequestController.updateProposalForRequest);
 
 /**
  * @swagger
@@ -75,7 +185,7 @@ router.get('/types', requireAuth, requireProposalManager, proposalRequestControl
  *   post:
  *     tags: [Proposal Requests]
  *     summary: Đánh dấu yêu cầu đã hoàn thành (kèm ghi chú kết quả)
- *     description: Chỉ ADMIN/SUPER hoặc người nhận công việc theo loại yêu cầu/phòng ban. Yêu cầu phải đang OPEN, bắt buộc có resolution_note.
+ *     description: SUPER_ADMIN xử lý toàn hệ thống; ADMIN xử lý việc được giao; người tạo, cấp trên hợp lệ hoặc người nhận theo phòng ban có thể xử lý trong phạm vi. Yêu cầu phải đang OPEN, bắt buộc có resolution_note.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -102,6 +212,6 @@ router.get('/types', requireAuth, requireProposalManager, proposalRequestControl
  *       403:
  *         description: Không có quyền
  */
-router.post('/:id/complete', requireAuth, proposalRequestController.complete);
+router.post('/:id/complete', requireAuth, requireProposalInfoManager, proposalRequestController.complete);
 
 module.exports = router;

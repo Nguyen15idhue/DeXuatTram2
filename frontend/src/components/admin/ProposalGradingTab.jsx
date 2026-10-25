@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalGradingService } from '../../services/api';
-import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useMediaQuery from '../../hooks/useMediaQuery';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
-import ProposalGradingModal from './ProposalGradingModal';
+import ProposalAdvancedFilters from './ProposalAdvancedFilters';
+import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
-import Toast from '../Toast';
 import {
   formatScore,
   formatProposalCost,
@@ -19,11 +19,8 @@ import {
   getMissingLegalDocs,
   isLegalDocsComplete
 } from '../../utils/proposalGrading';
-import { ProposalModelBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
-import { Eye, Pencil, Search, X } from 'lucide-react';
-
-const PROPOSALS_VIEW_ID = 8;
-const DEPT_LABELS = { QH: 'Quy hoạch', PL: 'Pháp lý' };
+import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
+import { Pencil, RotateCcw, Search, X } from 'lucide-react';
 
 const GRADING_COLUMNS = [
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
@@ -34,12 +31,21 @@ const GRADING_COLUMNS = [
   { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 140, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 170, sortable: false, filterable: false, visible: true },
   { key: 'quy_hoach_status', field_key: 'quy_hoach_status', label: 'Trạng thái Quy hoạch', width: 180, sortable: false, filterable: false, visible: true },
-  { key: 'phap_ly_status', field_key: 'phap_ly_status', label: 'Trạng thái Pháp lý', width: 190, sortable: false, filterable: false, visible: true }
+  { key: 'phap_ly_status', field_key: 'phap_ly_status', label: 'Trạng thái Pháp lý', width: 190, sortable: false, filterable: false, visible: true },
+  { key: 'grading_result', field_key: 'grading_result', label: 'Trạng thái chấm điểm', width: 150, sortable: false, filterable: false, visible: true }
 ];
 
 const QuyHoachStatusCell = ({ row, onShowScore }) => {
   const done = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined;
+  if (row.quy_hoach_regrade_pending) {
+    return done ? (
+      <button type="button" className="link link-warning underline" onClick={() => onShowScore({ open: true, dept: 'QH', title: 'Quy hoạch', row })}>
+        Đang chờ Quy hoạch chấm lại
+      </button>
+    ) : <span className="badge badge-warning badge-sm">Đang chờ Quy hoạch chấm lại</span>;
+  }
   if (done) {
     return (
       <button
@@ -58,6 +64,13 @@ const QuyHoachStatusCell = ({ row, onShowScore }) => {
 const PhapLyStatusCell = ({ row, onShowScore }) => {
   const complete = isLegalDocsComplete(row);
   const done = row.phap_ly_score !== null && row.phap_ly_score !== undefined;
+  if (row.phap_ly_regrade_pending) {
+    return done ? (
+      <button type="button" className="link link-warning underline" onClick={() => onShowScore({ open: true, dept: 'PL', title: 'Pháp lý', row })}>
+        Đang chờ Pháp lý chấm lại
+      </button>
+    ) : <span className="badge badge-warning badge-sm">Đang chờ Pháp lý chấm lại</span>;
+  }
   if (done) {
     return (
       <button
@@ -124,20 +137,16 @@ const ScoreDetailDialog = ({ detail, onClose }) => {
   );
 };
 
-const gradeButtonTitle = (canQH, canPL) => {
-  if (canQH && canPL) return 'Chấm / cập nhật điểm của 2 phòng';
-  return canQH ? 'Chấm điểm Quy hoạch' : 'Chấm điểm Pháp lý';
-};
-
-const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) => {
+const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
   const { token } = useAuth();
   const navigate = useNavigate();
-  const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu']);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { getSelectOptions } = useFieldOptions('station_proposals', ['status', 'mo_hinh_dau_tu']);
+  const statusOptions = getSelectOptions('status');
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
 
   const isPending = tab === 'pending';
   const isAll = tab === 'all';
-  const showDeptFilter = isPending && canGradeQH && canGradePL;
   const canGrade = canGradeQH || canGradePL;
 
   const [items, setItems] = useState([]);
@@ -145,26 +154,38 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) 
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const debouncedSearch = useDebouncedValue(search, 400);
-  const [departmentFilter, setDepartmentFilter] = useState(defaultDepartment || '');
+  const [showFilter, setShowFilter] = useState(false);
+  const [filters, setFilters] = useState({});
+  const [appliedFilters, setAppliedFilters] = useState({});
+  const [filterOptions, setFilterOptions] = useState({});
+  const [filterOptionsError, setFilterOptionsError] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState('success');
 
-  const [scoreModal, setScoreModal] = useState({ open: false, record: null });
   const [scoreDetail, setScoreDetail] = useState({ open: false, dept: null, title: '', row: null });
-  const [detailPopup, setDetailPopup] = useState({ open: false, record: null });
 
-  const loadItems = useCallback(async (targetPage = 1, targetSize = pageSize, targetSearch = debouncedSearch, targetDept = departmentFilter) => {
+  const loadItems = useCallback(async (targetPage = 1, targetSize = pageSize, targetSearch = search, targetFilters = appliedFilters) => {
     if (!token) return;
     setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams();
       params.set('tab', tab);
-      if (isPending && targetDept) params.set('department', targetDept);
       if (targetSearch) params.set('search', targetSearch);
+      const filterKeys = {
+        proposalStatus: 'proposal_status',
+        model: 'model',
+        province: 'province',
+        region: 'region',
+        ownerUserId: 'owner_user_id',
+        managerUserId: 'manager_user_id',
+        dateFrom: 'date_from',
+        dateTo: 'date_to'
+      };
+      Object.entries(filterKeys).forEach(([key, queryKey]) => {
+        if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+      });
       params.set('page', targetPage);
       params.set('limit', targetSize);
       const res = await proposalGradingService.getAll(params.toString(), token);
@@ -176,38 +197,55 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) 
     } finally {
       setLoading(false);
     }
-  }, [token, tab, isPending, pageSize, debouncedSearch, departmentFilter]);
+  }, [token, tab, pageSize, search, appliedFilters]);
+
+  useEffect(() => {
+    let cancelled = false;
+    proposalGradingService.getFilterOptions(token)
+      .then((response) => {
+        if (!cancelled) {
+          setFilterOptions(response?.data || {});
+          setFilterOptionsError('');
+        }
+      })
+      .catch((optionsError) => {
+        if (!cancelled) setFilterOptionsError(optionsError?.message || 'Không tải được tùy chọn bộ lọc');
+      });
+    return () => { cancelled = true; };
+  }, [token]);
 
   useEffect(() => {
     setPage(1);
     loadItems(1);
-  }, [tab, debouncedSearch, departmentFilter]);
+  }, [loadItems]);
 
-  const openDetail = (record) => setDetailPopup({ open: true, record });
-
-  const openScoreModal = (record) => {
-    setDetailPopup({ open: false, record: null });
-    setScoreModal({ open: true, record });
+  const handleSearch = () => {
+    setPage(1);
+    setSearch(searchInput.trim());
   };
 
-  const handleSaved = (result, message) => {
-    setScoreModal({ open: false, record: null });
-    const transition = result?.transition;
-    let extra = '';
-    if (transition?.status === 'CANCELLED') extra = ' — Đề xuất bị hủy vì có điểm 0';
-    else if (transition?.status === 'DESIGNING') extra = ' — Đề xuất chuyển sang Đang vẽ Layout';
-    else if (transition?.status === 'GDTTKD_EVALUATING') extra = ' — Đề xuất chuyển sang GĐTTKD đánh giá';
-    else if (result?.transitionError) extra = ` — ${result.transitionError}`;
-    setToastMessage((message || 'Đã cập nhật đánh giá') + extra);
-    setToastType(result?.transitionError ? 'warning' : 'success');
-    loadItems(page, pageSize);
+  const handleResetFilters = () => {
+    setSearch('');
+    setSearchInput('');
+    setFilters({});
+    setAppliedFilters({});
+    setPage(1);
   };
+
+  const applyFilters = () => {
+    setAppliedFilters(filters);
+    setPage(1);
+    setShowFilter(false);
+  };
+
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => (
       <ProposalCodeLink
         id={row.id}
         code={value || `#${row.id}`}
+        to={`/admin/proposals/danh-gia-quy-hoach/${row.id}`}
       />
     ),
     legal_name: (row) => getProposalLegalName(row),
@@ -217,80 +255,87 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) 
     scale: (row) => formatProposalScale(row),
     cost: (row) => formatProposalCost(row),
     user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
+    status: (row, value) => <ProposalStatusBadge value={value || row.status} optionMap={statusOptions} />,
     quy_hoach_status: (row) => <QuyHoachStatusCell row={row} onShowScore={setScoreDetail} />,
-    phap_ly_status: (row) => <PhapLyStatusCell row={row} onShowScore={setScoreDetail} />
+    phap_ly_status: (row) => <PhapLyStatusCell row={row} onShowScore={setScoreDetail} />,
+    grading_result: (row) => {
+      const cancelled = row.status === 'CANCELLED' || row.quy_hoach_score === 0 || row.phap_ly_score === 0;
+      const complete = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined
+        && row.phap_ly_score !== null && row.phap_ly_score !== undefined
+        && !row.quy_hoach_regrade_pending && !row.phap_ly_regrade_pending;
+      const label = cancelled ? 'Đã hủy' : complete ? 'Đã hoàn thành' : 'Đang làm';
+      return <span className={`badge badge-sm ${cancelled ? 'badge-error' : complete ? 'badge-success' : 'badge-warning'}`}>{label}</span>;
+    }
   };
 
-  const renderActions = (row) => (
-    <div className="flex gap-1">
-      {isAll && (
-        <button
-          type="button"
-          className={PROPOSAL_VIEW_BUTTON_CLASS}
-          title="Xem chi tiết đề xuất"
-          onClick={() => openDetail(row)}
-        >
-          <Eye size={14} />
-          Xem chi tiết
-        </button>
-      )}
-      {isPending && canGrade && (
-        <button
-          type="button"
-          className="btn btn-xs btn-primary gap-1"
-          title={gradeButtonTitle(canGradeQH, canGradePL)}
-          onClick={() => openScoreModal(row)}
-        >
-          <Pencil size={14} />
-          Chấm điểm
-        </button>
-      )}
-      {!isPending && canGrade && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-xs gap-1"
-          title="Cập nhật lại điểm và đánh giá"
-          onClick={() => openScoreModal(row)}
-        >
-          <Pencil size={14} />
-          Cập nhật
-        </button>
-      )}
-    </div>
-  );
+  const renderActions = (row) => {
+    const active = ['GRADING', 'RE_GRADING'].includes(row.status);
+    const rowCanGrade = (canGradeQH && (row.status === 'GRADING'
+      ? row.quy_hoach_score === null || row.quy_hoach_score === undefined
+      : row.quy_hoach_regrade_pending))
+      || (canGradePL && (row.status === 'GRADING'
+        ? row.phap_ly_score === null || row.phap_ly_score === undefined
+        : row.phap_ly_regrade_pending));
+    const bothScored = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined
+      && row.phap_ly_score !== null && row.phap_ly_score !== undefined;
+    const rowCanAct = !row.supplement_pending && (row.status === 'GRADING' ? canGrade : rowCanGrade);
+    const showAction = active && canGrade && (
+      isPending ? rowCanGrade : isAll ? (!bothScored || row.status === 'RE_GRADING') && rowCanAct : rowCanAct
+    );
+    if (!showAction) return null;
+    return (
+      <button
+        type="button"
+        className={`btn btn-xs gap-1 ${isPending ? 'btn-primary' : 'btn-ghost'}`}
+        onClick={() => navigate(`/admin/proposals/danh-gia-quy-hoach/${row.id}`)}
+      >
+        <Pencil size={14} />
+        {isPending ? 'Xem và chấm điểm' : 'Cập nhật'}
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="input input-bordered flex items-center gap-2 input-sm w-64">
-          <Search size={14} />
+      <div className="flex items-center gap-2 mb-3">
           <input
-            className="grow"
+            type="search"
+            className="input input-bordered input-sm flex-1 min-w-0"
             placeholder="Tìm mã, tên, SĐT, địa chỉ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && handleSearch()}
           />
-          {search && (
-            <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setSearch('')}>
-              <X size={14} />
-            </button>
-          )}
-        </label>
-        {showDeptFilter && (
-          <label className="flex items-center gap-1 text-sm">
-            <span className="whitespace-nowrap">Phòng ban:</span>
-            <select
-              className="select select-bordered select-sm"
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-            >
-              <option value="">Cả 2 phòng</option>
-              <option value="QH">Quy hoạch</option>
-              <option value="PL">Pháp lý</option>
-            </select>
-          </label>
-        )}
+        <button type="button" className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter((value) => !value)} count={activeFilterCount} />
       </div>
+      <FilterBody
+        open={showFilter}
+        isDesktop={isDesktop}
+        onClose={() => setShowFilter(false)}
+        onApply={applyFilters}
+        onReset={handleResetFilters}
+        title="Bộ lọc đề xuất"
+      >
+        <ProposalAdvancedFilters
+          values={filters}
+          onChange={setFilters}
+          options={filterOptions}
+        />
+        {isDesktop && (
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={handleResetFilters}>
+              <RotateCcw size={14} /> Xóa lọc
+            </button>
+            <button type="button" className="btn btn-primary btn-sm gap-1" onClick={applyFilters}>
+              <Search size={14} /> Áp dụng
+            </button>
+          </div>
+        )}
+      </FilterBody>
+      {filterOptionsError && <div className="alert alert-warning py-2 text-sm">{filterOptionsError}</div>}
 
       {loading ? (
         <div className="flex justify-center py-8">
@@ -320,41 +365,11 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL, defaultDepartment }) 
         </>
       )}
 
-      {detailPopup.open && (
-        <RecordDetailPopup
-          entity="station_proposals"
-          record={detailPopup.record}
-          viewId={viewId}
-          mode="view"
-          allowEdit={false}
-          beforeActions={(ctx) => (
-            <ProposalGradingSummary
-              formData={ctx?.formData || detailPopup.record}
-              record={detailPopup.record}
-              canGradeQH={canGradeQH}
-              canGradePL={canGradePL}
-              onUpdate={() => openScoreModal(detailPopup.record)}
-            />
-          )}
-          onClose={() => setDetailPopup({ open: false, record: null })}
-        />
-      )}
-
-      <ProposalGradingModal
-        open={scoreModal.open}
-        record={scoreModal.record}
-        canGradeQH={canGradeQH}
-        canGradePL={canGradePL}
-        onClose={() => setScoreModal({ open: false, record: null })}
-        onSaved={handleSaved}
-      />
-
       <ScoreDetailDialog
         detail={scoreDetail}
         onClose={() => setScoreDetail({ open: false, dept: null, title: '', row: null })}
       />
 
-      <Toast message={toastMessage} type={toastType} onClose={() => setToastMessage('')} />
     </div>
   );
 };

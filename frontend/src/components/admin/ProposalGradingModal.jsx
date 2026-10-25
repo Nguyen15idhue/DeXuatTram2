@@ -175,7 +175,7 @@ const ProposalGradingModal = ({ open, record, canGradeQH, canGradePL, onClose, o
       <div className="modal-box max-w-2xl">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div>
-            <h3 className="font-bold text-lg">Đánh giá Quy hoạch và Pháp lý</h3>
+            <h3 className="font-bold text-lg">Chấm điểm Quy hoạch và Pháp lý</h3>
             <p className="text-sm text-base-content/70">
               {record.ma_de_xuat || `#${record.id}`}{record.user_name ? ` · ${record.user_name}` : ''}
             </p>

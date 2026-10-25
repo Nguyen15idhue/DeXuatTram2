@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {}, uploadUrl = '/files/upload', invalid = false, validationError = '' }) => {
+const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {}, uploadUrl = '/files/upload', invalid = false, validationError = '', validateFile = null }) => {
   const { token } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -32,6 +32,13 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
 
   const handleFiles = async (fileList) => {
     setError('');
+    if (typeof validateFile === 'function') {
+      const rejected = fileList.find((file) => !validateFile(file));
+      if (rejected) {
+        setError(`File "${rejected.name}" không đúng định dạng được chấp nhận`);
+        return;
+      }
+    }
     const max_size = (fileConfig.maxSize || 10) * 1024 * 1024;
     for (const f of fileList) {
       if (f.size > max_size) {

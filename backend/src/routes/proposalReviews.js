@@ -24,22 +24,45 @@ const proposalReviewController = require('../controllers/proposalReviewControlle
  *           enum: [all, pending, completed]
  *           default: all
  *       - in: query
- *         name: reviewRole
+ *         name: search
  *         schema:
  *           type: string
- *           enum: [GDTTKD, QH, PL, TGD]
- *         description: Chỉ ADMIN/SUPER_ADMIN dùng để xem thay một vai trò xử lý
+ *         description: Tìm mã đề xuất, pháp nhân, SĐT, địa chỉ, người đề xuất
+ *       - in: query
+ *         name: proposal_status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: model
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: province
+ *         schema:
+ *           type: string
  *       - in: query
  *         name: region
  *         schema:
  *           type: string
  *           enum: [Bac, Trung, Nam]
- *         description: Lọc miền khi ADMIN/SUPER_ADMIN xem thay GĐTTKD
  *       - in: query
- *         name: search
+ *         name: owner_user_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: manager_user_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: date_from
  *         schema:
  *           type: string
- *         description: Tìm mã đề xuất, pháp nhân, SĐT, địa chỉ, người đề xuất
+ *           format: date
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
  *       - in: query
  *         name: page
  *         schema:
@@ -59,6 +82,30 @@ const proposalReviewController = require('../controllers/proposalReviewControlle
  *         description: Không có quyền
  */
 router.get('/', requireAuth, requireUserManager, proposalReviewController.list);
+
+/**
+ * @swagger
+ * /api/admin/proposal-reviews/{id}:
+ *   get:
+ *     tags: [Proposal Reviews]
+ *     summary: Chi tiết đề xuất, kết quả xem xét và các yêu cầu chấm lại
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Chi tiết đề xuất trong phạm vi người dùng được phép xem
+ *       403:
+ *         description: Không có quyền xem đề xuất này
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.get('/:id', requireAuth, requireUserManager, proposalReviewController.detail);
 
 /**
  * @swagger
@@ -213,7 +260,7 @@ router.put('/:id/approve', requireAuth, requireUserManager, proposalReviewContro
  * /api/admin/proposal-reviews/{id}/reject:
  *   put:
  *     tags: [Proposal Reviews]
- *     summary: Tổng giám đốc không duyệt đề xuất
+ *     summary: Tổng giám đốc xác nhận hủy đề xuất
  *     description: Chỉ áp dụng cho đề xuất TGD_REVIEW. Bắt buộc nhập lý do; chuyển sang CANCELLED.
  *     security:
  *       - bearerAuth: []

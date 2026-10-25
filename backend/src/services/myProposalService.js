@@ -106,15 +106,15 @@ const assertOwnerEditable = (status) => {
   );
 };
 
-const notifyBackOfficeOfOwnerUpdate = async (id, userId, customData) => {
+const notifyBackOfficeOfOwnerUpdate = async (id, ownerId, actorId, customData) => {
   const notificationService = require('./notificationService');
   const stepRecipients = require('./proposalStepRecipients');
-  const ids = await stepRecipients.resolveStepRecipients('PROPOSAL_REPORT_REVIEWING', { id, user_id: userId, custom_data: customData });
+  const ids = await stepRecipients.resolveStepRecipients('PROPOSAL_REPORT_REVIEWING', { id, user_id: ownerId, custom_data: customData });
   const code = notificationService.proposalCode(customData, id);
-  const actorName = (await notificationService.getUserName(userId)) || 'Người đề xuất';
+  const actorName = (await notificationService.getUserName(actorId)) || 'Người cập nhật';
   const message = notificationService.statusMessage({ code, actorName, status: 'PROPOSAL_REPORT_REVIEWING', actionLabel: 'Người cập nhật' });
   for (const uid of ids) {
-    if (Number(uid) === Number(userId)) continue;
+    if (Number(uid) === Number(actorId)) continue;
     try {
       await notificationService.create({
         userId: uid,
@@ -123,18 +123,29 @@ const notifyBackOfficeOfOwnerUpdate = async (id, userId, customData) => {
         message,
         entityType: 'station_proposals',
         entityId: id,
-        createdBy: userId
+        createdBy: actorId
       });
     } catch { /* silent */ }
   }
 };
 
 exports.updateProposal = async (id, userId, data, opts = {}) => {
+  const actorId = Number(opts.actorId) || Number(userId);
   const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   if (st.length === 0) {
     throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
   }
-  assertOwnerEditable(st[0].status);
+  let gradingSupplementUpdate = false;
+  if (opts.deferRequestCompletion && opts.requestId && opts.requestType === 'SUPPLEMENT'
+    && ['GRADING', 'RE_GRADING'].includes(st[0].status)) {
+    const request = await require('./proposalRequestService').getRequestById(opts.requestId);
+    gradingSupplementUpdate = !!request
+      && Number(request.proposal_id) === Number(id)
+      && Number(request.owner_id) === Number(userId)
+      && request.request_type === 'SUPPLEMENT'
+      && request.status === 'OPEN';
+  }
+  if (!gradingSupplementUpdate) assertOwnerEditable(st[0].status);
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -195,7 +206,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
 
   if (wasRejected && reviewerId) {
     const code = notificationService.proposalCode(customData, id);
-    const actorName = await notificationService.getUserName(userId);
+    const actorName = await notificationService.getUserName(actorId);
     await notificationService.create({
       userId: reviewerId,
       type: 'RESUBMITTED',
@@ -203,13 +214,13 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       message: notificationService.statusMessage({ code, actorName, status: 'RESUBMITTED' }),
       entityType: 'station_proposals',
       entityId: id,
-      createdBy: userId
+      createdBy: actorId
     });
   }
 
   if (existing.length > 0 && ['PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(existing[0].status)) {
     try {
-      await notifyBackOfficeOfOwnerUpdate(id, userId, mergedDynamic);
+      await notifyBackOfficeOfOwnerUpdate(id, userId, actorId, mergedDynamic);
     } catch { /* silent: khong chan luu vi thong bao */ }
   }
 
@@ -235,12 +246,12 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       await proposalLifecycle.logActivity({
         proposalId: id, action: 'updated', changedFields: diff,
         fromStatus: existing[0].status, toStatus: nextStatus,
-        actorId: userId, actorRole: opts.actorRole || null,
+        actorId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
       const journeySyncService = require('./journeySyncService');
       await journeySyncService.onProposalUpdated(id, {
-        changedFields: diff, actorId: userId, actorRole: opts.actorRole || null,
+        changedFields: diff, actorId, actorRole: opts.actorRole || null,
         source: 'user', ip: opts.ip || null
       });
     }
@@ -248,19 +259,21 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       await proposalLifecycle.logActivity({
         proposalId: id, action: 'status_change',
         fromStatus: 'REJECTED', toStatus: 'PENDING',
-        actorId: userId, actorRole: opts.actorRole || null,
+        actorId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
     }
     if (wasWaitingInfo) {
-      await require('./proposalRequestService').closeRequests(id, ['LAYOUT_SUPPLEMENT'], { resolvedBy: userId });
+      if (!opts.deferRequestCompletion) {
+        await require('./proposalRequestService').closeRequests(id, ['LAYOUT_SUPPLEMENT'], { resolvedBy: actorId });
+      }
       await proposalLifecycle.logActivity({
         proposalId: id, action: 'status_change',
         fromStatus: 'INFOR_WAITING', toStatus: 'DESIGNING',
-        actorId: userId, actorRole: opts.actorRole || null,
+        actorId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
-      await require('./proposalDesignService').notifyInfoSupplemented({ proposalId: id, actorId: userId });
+      await require('./proposalDesignService').notifyInfoSupplemented({ proposalId: id, actorId });
     }
   } catch { /* silent: khong chan luu vi log */ }
 
@@ -291,17 +304,19 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   }
 
   let infoCompleted = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
-      actorId: userId, purpose: 'view', ip: opts.ip || null
-    });
-  } catch { infoCompleted = null; }
+  if (!opts.deferRequestCompletion) {
+    try {
+      const proposalLifecycle = require('./proposalLifecycle');
+      infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
+        actorId, purpose: 'view', ip: opts.ip || null
+      });
+    } catch { infoCompleted = null; }
+  }
 
   let autoPush = null;
   try {
     const proposalLifecycle = require('./proposalLifecycle');
-    autoPush = await proposalLifecycle.autoPushOnUpdate(id, userId);
+    autoPush = await proposalLifecycle.autoPushOnUpdate(id, actorId);
   } catch { autoPush = null; }
   return { autoPush, infoCompleted };
 };

@@ -3,7 +3,7 @@ import UserChip from '../dynamic/UserChip';
 
 export const PROPOSAL_LINK_CLASS = 'link link-primary underline cursor-pointer text-left';
 
-export const ProposalCodeLink = ({ id, code }) => {
+export const ProposalCodeLink = ({ id, code, to }) => {
   const navigate = useNavigate();
 
   if (!id) return <span className="field-empty">-</span>;
@@ -12,7 +12,7 @@ export const ProposalCodeLink = ({ id, code }) => {
       type="button"
       className={PROPOSAL_LINK_CLASS}
       title="Xem chi tiết đề xuất"
-      onClick={() => navigate(`/admin/proposals/chi-tiet/${id}`)}
+      onClick={() => navigate(to || `/admin/proposals/chi-tiet/${id}`)}
     >
       {code || `#${id}`}
     </button>

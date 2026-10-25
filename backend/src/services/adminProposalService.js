@@ -34,6 +34,14 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     where.push('(' + ors.join(' OR ') + ')');
   }
 
+  if (scope.role === 'NPP' && scope.branchIds) {
+    if (scope.branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${scope.branchIds.map(() => '?').join(',')})`);
+      params.push(...scope.branchIds.map(Number));
+    }
+  }
+
   // CTV: only see their own proposals (where they are the creator/user_id)
   if (scope.role === 'CTV' && scope.userId) {
     where.push('p.user_id = ?');
@@ -84,8 +92,17 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   else if (extra.leadLink === 'no') { where.push('p.journey_id IS NULL'); }
   if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?"); params.push(extra.province); }
   if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
+  if (extra.model) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?"); params.push(extra.model); }
   if (extra.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) = ?"); params.push(extra.department); }
   if (extra.ownerUserId) { where.push('p.user_id = ?'); params.push(Number(extra.ownerUserId)); }
+  if (extra.managerUserId) {
+    const branchIds = await require('./adminUserService').getBranchIds(Number(extra.managerUserId));
+    if (branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
+      params.push(...branchIds.map(Number));
+    }
+  }
   const dateField = extra.dateField === 'updated_at' ? 'p.updated_at' : 'p.created_at';
   if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
   if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }

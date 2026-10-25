@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { proposalReviewService } from "../../services/api";
-import useDefaultViewId from "../../hooks/useDefaultViewId";
-import useDebouncedValue from "../../hooks/useDebouncedValue";
+import { proposalRequestService, proposalReviewService } from "../../services/api";
 import useFieldOptions from "../../hooks/useFieldOptions";
+import useMediaQuery from "../../hooks/useMediaQuery";
 import DynamicTable from "../dynamic/DynamicTable";
 import Pagination from "../Pagination";
-import RecordDetailPopup from "./RecordDetailPopup";
-import ProposalGradingModal from "./ProposalGradingModal";
-import ProposalGradingSummary from "./ProposalGradingSummary";
 import ReviewActionDialog from "./ReviewActionDialog";
 import { ProposalCodeLink, ProposalPersonLink } from "./ProposalLinkCells";
 import Toast from "../Toast";
-import { getReviewLevelLabel } from "../../utils/proposalReview";
 import {
   formatScore,
   formatProposalCost,
@@ -24,20 +19,17 @@ import {
 import {
   ProposalModelBadge,
   ProposalStatusBadge,
-  PROPOSAL_VIEW_BUTTON_CLASS,
 } from "./ProposalTableBadges";
+import ProposalAdvancedFilters from "./ProposalAdvancedFilters";
+import { FilterBody, FilterToggle } from "../ui/FilterPanel";
 import {
   Check,
-  Eye,
-  Pencil,
   RotateCcw,
   Search,
   Send,
   X,
   XCircle,
 } from "lucide-react";
-
-const PROPOSALS_VIEW_ID = 8;
 
 const REVIEW_COLUMNS = [
   {
@@ -154,7 +146,7 @@ const ACTION_CONFIG = {
   regrade: {
     title: "Yêu cầu đánh giá lại",
     description:
-      "Đề xuất sẽ chuyển sang trạng thái Yêu cầu chấm điểm lại và gửi thông báo tới Phòng Quy hoạch và Phòng Pháp lý.",
+      "Chọn phòng cần chấm lại. Điểm hiện tại sẽ được giữ nguyên cho đến khi phòng được chọn nhập điểm mới.",
     confirmText: "Gửi yêu cầu",
     confirmClass: "btn-warning",
     reasonLabel: "Lý do yêu cầu đánh giá lại",
@@ -173,10 +165,10 @@ const ACTION_CONFIG = {
     api: proposalReviewService.toTgd,
   },
   cancel: {
-    title: "Xác nhận hủy đề xuất",
+    title: "Đồng ý hủy đề xuất",
     description:
       "Đề xuất sẽ bị hủy và không tiếp tục quy trình. Vui lòng nhập lý do cụ thể.",
-    confirmText: "Xác nhận hủy",
+    confirmText: "Đồng ý hủy",
     confirmClass: "btn-error",
     reasonLabel: "Lý do hủy đề xuất",
     reasonPlaceholder: "Nhập lý do hủy đề xuất...",
@@ -192,66 +184,62 @@ const ACTION_CONFIG = {
     api: proposalReviewService.approve,
   },
   reject: {
-    title: "Không duyệt đề xuất",
+    title: "Đồng ý hủy đề xuất",
     description: "Đề xuất sẽ bị hủy. Vui lòng nhập lý do cụ thể.",
-    confirmText: "Không duyệt",
+    confirmText: "Đồng ý hủy",
     confirmClass: "btn-error",
-    reasonLabel: "Lý do không duyệt đề xuất",
-    reasonPlaceholder: "Nhập lý do không duyệt đề xuất...",
+    reasonLabel: "Lý do hủy đề xuất",
+    reasonPlaceholder: "Nhập lý do hủy đề xuất...",
     api: proposalReviewService.reject,
   },
 };
 
 const ScoreCell = ({ score, note }) => {
   if (score === null || score === undefined) {
-    return <span className="text-base-content/60">Chưa chấm</span>;
+    return (
+      <div className="min-w-24">
+        <span className="text-base-content/60">Chưa chấm</span>
+        {note && <p className="mt-1 whitespace-pre-wrap text-xs text-base-content/70">{note}</p>}
+      </div>
+    );
   }
   const scoreNum = Number(score);
   if (Number.isNaN(scoreNum)) {
     return <span className="text-base-content/60">Chưa chấm</span>;
   }
   return (
-    <span
-      className={
-        "badge badge-sm " +
-        (scoreNum === 0
-          ? "badge-soft"
-          : scoreNum === 1
-            ? "badge-error"
-            : scoreNum === 2
-              ? "badge-warning"
-              : "badge-success")
-      }
-      title={note || "Chưa có đánh giá chi tiết"}
-    >
-      {formatScore(scoreNum)}
-    </span>
+    <div className="min-w-24">
+      <span
+        className={
+          "badge badge-sm " +
+          (scoreNum === 0
+            ? "badge-soft"
+            : scoreNum === 1
+              ? "badge-error"
+              : scoreNum === 2
+                ? "badge-warning"
+                : "badge-success")
+        }
+      >
+        {formatScore(scoreNum)}
+      </span>
+      {note && <p className="mt-1 whitespace-pre-wrap text-xs text-base-content/70">{note}</p>}
+    </div>
   );
 };
 
-const ProposalReviewTab = ({
-  tab,
-  reviewRole = "",
-  region = "",
-  roleKey,
-  isAdmin = false,
-}) => {
+const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
   const { token } = useAuth();
-  const viewId = useDefaultViewId("station_proposals", PROPOSALS_VIEW_ID);
+  const isDesktop = useMediaQuery("(min-width: 768px)");
   const { getSelectOptions } = useFieldOptions("station_proposals", [
     "mo_hinh_dau_tu",
     "status",
   ]);
   const modelOptions = getSelectOptions("mo_hinh_dau_tu");
 
-  const canGradeQH = roleKey === "QH" || roleKey === "ADMIN";
-  const canGradePL = roleKey === "PL" || roleKey === "ADMIN";
-  const canGrade = canGradeQH || canGradePL;
-  const canActAsGdttkd = roleKey === "GDTTKD" || roleKey === "ADMIN";
-  const canActAsGrading =
-    roleKey === "QH" || roleKey === "PL" || roleKey === "ADMIN";
-  const canActAsTgd = roleKey === "TGD" || roleKey === "ADMIN";
-  const isPending = tab === "pending";
+  const canActAsGdttkd = roleKey === "GDTTKD" || isSuperAdmin;
+  const canActAsTgd = roleKey === "TGD" || isSuperAdmin;
+  const isCompleted = tab === "completed";
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -259,7 +247,12 @@ const ProposalReviewTab = ({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebouncedValue(search, 400);
+  const [searchInput, setSearchInput] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
+  const [filters, setFilters] = useState({});
+  const [appliedFilters, setAppliedFilters] = useState({});
+  const [filterOptions, setFilterOptions] = useState({});
+  const [filterOptionsError, setFilterOptionsError] = useState("");
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -269,9 +262,6 @@ const ProposalReviewTab = ({
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("success");
 
-  const [detailPopup, setDetailPopup] = useState({ open: false, record: null });
-  const [editPopup, setEditPopup] = useState({ open: false, record: null });
-  const [scoreModal, setScoreModal] = useState({ open: false, record: null });
   const [actionDialog, setActionDialog] = useState({
     open: false,
     type: null,
@@ -284,7 +274,8 @@ const ProposalReviewTab = ({
     async (
       targetPage = 1,
       targetSize = pageSize,
-      targetSearch = debouncedSearch,
+      targetSearch = search,
+      targetFilters = appliedFilters,
     ) => {
       if (!token) return;
       setLoading(true);
@@ -292,9 +283,20 @@ const ProposalReviewTab = ({
       try {
         const params = new URLSearchParams();
         params.set("tab", tab);
-        if (reviewRole) params.set("reviewRole", reviewRole);
-        if (region) params.set("region", region);
         if (targetSearch) params.set("search", targetSearch);
+        const filterKeys = {
+          proposalStatus: "proposal_status",
+          model: "model",
+          province: "province",
+          region: "region",
+          ownerUserId: "owner_user_id",
+          managerUserId: "manager_user_id",
+          dateFrom: "date_from",
+          dateTo: "date_to",
+        };
+        Object.entries(filterKeys).forEach(([key, queryKey]) => {
+          if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+        });
         params.set("page", targetPage);
         params.set("limit", targetSize);
         const res = await proposalReviewService.getAll(
@@ -317,24 +319,48 @@ const ProposalReviewTab = ({
         setLoading(false);
       }
     },
-    [token, tab, reviewRole, region, pageSize, debouncedSearch],
+    [token, tab, pageSize, search, appliedFilters],
   );
 
   useEffect(() => {
     setPage(1);
     loadItems(1);
-  }, [tab, reviewRole, region, debouncedSearch]);
+  }, [tab, search, appliedFilters]);
 
-  const openDetail = (record) => setDetailPopup({ open: true, record });
+  useEffect(() => {
+    let cancelled = false;
+    proposalRequestService.getFilterOptions(token)
+      .then((response) => {
+        if (cancelled) return;
+        setFilterOptions(response?.data || {});
+        setFilterOptionsError("");
+      })
+      .catch((optionsError) => {
+        if (!cancelled) setFilterOptionsError(optionsError?.message || "Không tải được tùy chọn bộ lọc");
+      });
+    return () => { cancelled = true; };
+  }, [token]);
 
-  const openEditOrGrade = (record) => {
-    setDetailPopup({ open: false, record: null });
-    if (canGrade) {
-      setScoreModal({ open: true, record });
-    } else {
-      setEditPopup({ open: true, record });
-    }
+  const handleSearch = () => {
+    setPage(1);
+    setSearch(searchInput.trim());
   };
+
+  const applyFilters = () => {
+    setAppliedFilters(filters);
+    setPage(1);
+    setShowFilter(false);
+  };
+
+  const resetFilters = () => {
+    setSearch("");
+    setSearchInput("");
+    setFilters({});
+    setAppliedFilters({});
+    setPage(1);
+  };
+
+  const activeFilterCount = Object.values(appliedFilters).filter(Boolean).length;
 
   const openAction = (row, type) => {
     setActionDialog({ open: true, type, row, error: "", saving: false });
@@ -350,12 +376,12 @@ const ProposalReviewTab = ({
     });
   };
 
-  const runAction = async (reason) => {
+  const runAction = async (reason, options = {}) => {
     const config = ACTION_CONFIG[actionDialog.type];
     if (!config || !actionDialog.row) return;
     setActionDialog((prev) => ({ ...prev, saving: true, error: "" }));
     try {
-      const res = await config.api(actionDialog.row.id, { reason }, token);
+      const res = await config.api(actionDialog.row.id, { reason, ...options }, token);
       const roundNo = res?.data?.roundNo;
       const suffix =
         actionDialog.type === "regrade" && roundNo
@@ -374,142 +400,55 @@ const ProposalReviewTab = ({
     }
   };
 
-  const handleGradeSaved = (result, message) => {
-    setScoreModal({ open: false, record: null });
-    const transition = result?.transition;
-    let extra = "";
-    if (transition?.status === "CANCELLED")
-      extra = " — Đề xuất bị hủy vì có điểm 0";
-    else if (transition?.status === "DESIGNING")
-      extra = " — Đề xuất chuyển sang Đang vẽ Layout";
-    else if (transition?.status === "RE_GDTTKD_EVALUATING")
-      extra = " — Đề xuất chuyển sang GĐTTKD xem xét lại";
-    else if (transition?.status === "GDTTKD_EVALUATING")
-      extra = " — Đề xuất chuyển sang GĐTTKD đánh giá";
-    else if (result?.transitionError) extra = ` — ${result.transitionError}`;
-    setToastMessage((message || "Đã cập nhật đánh giá") + extra);
-    setToastType(result?.transitionError ? "warning" : "success");
-    loadItems(page, pageSize);
-  };
-
-  const handleEditSaved = () => {
-    setEditPopup({ open: false, record: null });
-    setToastMessage("Đã cập nhật thông tin đề xuất");
-    setToastType("success");
-    loadItems(page, pageSize);
-  };
-
   const renderActions = (row) => {
-    if (isPending) {
-      return (
-        <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            className={PROPOSAL_VIEW_BUTTON_CLASS}
-            onClick={() => openDetail(row)}
-          >
-            <Eye size={14} />
-            Xem chi tiết
-          </button>
-          {canActAsGdttkd && row.status === "GDTTKD_EVALUATING" && (
-            <>
-              <button
-                type="button"
-                className="btn btn-warning btn-xs gap-1"
-                onClick={() => openAction(row, "regrade")}
-              >
-                <RotateCcw size={14} />
-                Yêu cầu đánh giá lại
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs text-error gap-1"
-                onClick={() => openAction(row, "cancel")}
-              >
-                <XCircle size={14} />
-                Xác nhận hủy
-              </button>
-            </>
-          )}
-          {canActAsGdttkd && row.status === "RE_GDTTKD_EVALUATING" && (
-            <>
-              <button
-                type="button"
-                className="btn btn-primary btn-xs gap-1"
-                onClick={() => openAction(row, "toTgd")}
-              >
-                <Send size={14} />
-                Trình TGĐ xem xét
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs text-error gap-1"
-                onClick={() => openAction(row, "cancel")}
-              >
-                <XCircle size={14} />
-                Xác nhận hủy
-              </button>
-            </>
-          )}
-          {canActAsGrading && row.status === "RE_GRADING" && (
-            <button
-              type="button"
-              className="btn btn-primary btn-xs gap-1"
-              onClick={() => setScoreModal({ open: true, record: row })}
-            >
-              <Pencil size={14} />
-              Chấm điểm lại
-            </button>
-          )}
-          {canActAsTgd && row.status === "TGD_REVIEW" && (
-            <>
-              <button
-                type="button"
-                className="btn btn-success btn-xs gap-1"
-                onClick={() => openAction(row, "approve")}
-              >
-                <Check size={14} />
-                Duyệt đề xuất
-              </button>
-              <button
-                type="button"
-                className="btn btn-error btn-xs gap-1"
-                onClick={() => openAction(row, "reject")}
-              >
-                <X size={14} />
-                Không duyệt đề xuất
-              </button>
-            </>
-          )}
-        </div>
-      );
-    }
+    if (isCompleted) return null;
+    const level = Number(row.review_level);
+    const isGdttkdReview = canActAsGdttkd
+      && row.status === "GDTTKD_EVALUATING" && level === 1;
+    const isGdttkdResubmissionReview = canActAsGdttkd
+      && row.status === "RE_GDTTKD_EVALUATING" && level === 2;
+    const isTgdReview = canActAsTgd
+      && row.status === "TGD_REVIEW" && level === 3;
 
+    if (!isGdttkdReview && !isGdttkdResubmissionReview && !isTgdReview) return null;
     return (
-      <div className="flex flex-wrap gap-1">
-        <button
-          type="button"
-          className={PROPOSAL_VIEW_BUTTON_CLASS}
-          onClick={() => openDetail(row)}
-        >
-          <Eye size={14} />
-          Xem chi tiết
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-xs gap-1"
-          onClick={() => openEditOrGrade(row)}
-        >
-          <Pencil size={14} />
-          Cập nhật
-        </button>
+      <div className="flex min-w-44 flex-wrap gap-1">
+        {isGdttkdReview && (
+          <button type="button" className="btn btn-warning btn-xs gap-1" onClick={() => openAction(row, "regrade")}>
+            <RotateCcw size={14} /> Yêu cầu đánh giá lại
+          </button>
+        )}
+        {isGdttkdReview && (
+          <button type="button" className="btn btn-ghost btn-xs gap-1 text-error" onClick={() => openAction(row, "cancel")}>
+            <XCircle size={14} /> Đồng ý hủy
+          </button>
+        )}
+        {isGdttkdResubmissionReview && (
+          <button type="button" className="btn btn-primary btn-xs gap-1" onClick={() => openAction(row, "toTgd")}>
+            <Send size={14} /> Trình TGĐ xem xét
+          </button>
+        )}
+        {(isGdttkdResubmissionReview || isTgdReview) && (
+          <button type="button" className="btn btn-ghost btn-xs gap-1 text-error" onClick={() => openAction(row, isTgdReview ? "reject" : "cancel")}>
+            <XCircle size={14} /> Đồng ý hủy
+          </button>
+        )}
+        {isTgdReview && (
+          <button type="button" className="btn btn-success btn-xs gap-1" onClick={() => openAction(row, "approve")}>
+            <Check size={14} /> Duyệt đề xuất
+          </button>
+        )}
       </div>
     );
   };
 
   const cellRenderers = {
     ma_de_xuat: (row, value) => (
-      <ProposalCodeLink id={row.id} code={value || `#${row.id}`} />
+      <ProposalCodeLink
+        id={row.id}
+        code={value || `#${row.id}`}
+        to={`/admin/proposals/yeu-cau-cham-diem-lai/${row.id}`}
+      />
     ),
     status: (row, value) => (
       <ProposalStatusBadge
@@ -530,11 +469,6 @@ const ProposalReviewTab = ({
     user_name: (row, value) => (
       <ProposalPersonLink id={row.user_id} name={value} />
     ),
-    review_level: (row) => (
-      <span className="badge badge-ghost badge-sm whitespace-nowrap">
-        {getReviewLevelLabel(row.review_level)}
-      </span>
-    ),
     quy_hoach_score: (row) => (
       <ScoreCell score={row.quy_hoach_score} note={row.quy_hoach_note} />
     ),
@@ -551,20 +485,58 @@ const ProposalReviewTab = ({
           <input
             className="grow"
             placeholder="Tìm mã, pháp nhân, SĐT, địa chỉ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleSearch();
+            }}
           />
-          {search && (
+          {searchInput && (
             <button
               type="button"
               aria-label="Xóa tìm kiếm"
-              onClick={() => setSearch("")}
+              onClick={() => {
+                setSearchInput("");
+                setSearch("");
+              }}
             >
               <X size={14} />
             </button>
           )}
         </label>
+        <button type="button" className="btn btn-primary btn-sm gap-1" onClick={handleSearch}>
+          <Search size={14} /> Tìm kiếm
+        </button>
+        <FilterToggle
+          open={showFilter}
+          onToggle={() => setShowFilter((value) => !value)}
+          count={activeFilterCount}
+        />
       </div>
+
+      {filterOptionsError && <div className="alert alert-warning py-2 text-sm">{filterOptionsError}</div>}
+
+      <FilterBody
+        open={showFilter}
+        isDesktop={isDesktop}
+        title="Bộ lọc yêu cầu chấm điểm lại"
+        onClose={() => setShowFilter(false)}
+        onApply={applyFilters}
+        onReset={resetFilters}
+      >
+        <ProposalAdvancedFilters
+          values={filters}
+          onChange={setFilters}
+          options={filterOptions}
+          dateLabel="Ngày tạo đề xuất"
+        />
+        {isDesktop && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={resetFilters}>Xóa lọc</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={applyFilters}>Áp dụng</button>
+          </div>
+        )}
+      </FilterBody>
 
       {loading ? (
         <div className="flex justify-center py-8">
@@ -580,7 +552,8 @@ const ProposalReviewTab = ({
             data={items}
             startIndex={(page - 1) * pageSize}
             cellRenderers={cellRenderers}
-            actions={renderActions}
+            actions={isCompleted ? undefined : renderActions}
+            showActions={!isCompleted}
             frozenColumns={3}
           />
           <Pagination
@@ -593,53 +566,13 @@ const ProposalReviewTab = ({
             }}
             pageSize={pageSize}
             onPageSizeChange={(s) => {
+              setPage(1);
               setPageSize(s);
               loadItems(1, s);
             }}
           />
         </>
       )}
-
-      {detailPopup.open && (
-        <RecordDetailPopup
-          entity="station_proposals"
-          record={detailPopup.record}
-          viewId={viewId}
-          mode="view"
-          allowEdit={false}
-          beforeActions={(ctx) => (
-            <ProposalGradingSummary
-              formData={ctx?.formData || detailPopup.record}
-              record={detailPopup.record}
-              canGradeQH={canGradeQH}
-              canGradePL={canGradePL}
-              onUpdate={() => openEditOrGrade(detailPopup.record)}
-            />
-          )}
-          onClose={() => setDetailPopup({ open: false, record: null })}
-        />
-      )}
-
-      {editPopup.open && (
-        <RecordDetailPopup
-          entity="station_proposals"
-          record={editPopup.record}
-          viewId={viewId}
-          mode="edit"
-          allowEdit
-          onSaved={handleEditSaved}
-          onClose={() => setEditPopup({ open: false, record: null })}
-        />
-      )}
-
-      <ProposalGradingModal
-        open={scoreModal.open}
-        record={scoreModal.record}
-        canGradeQH={canGradeQH}
-        canGradePL={canGradePL}
-        onClose={() => setScoreModal({ open: false, record: null })}
-        onSaved={handleGradeSaved}
-      />
 
       <ReviewActionDialog
         isOpen={actionDialog.open}
@@ -655,6 +588,7 @@ const ProposalReviewTab = ({
         reasonPlaceholder={
           ACTION_CONFIG[actionDialog.type]?.reasonPlaceholder || "Nhập lý do..."
         }
+        showDepartmentSelection={actionDialog.type === "regrade"}
         requireReason
         saving={actionDialog.saving}
         error={actionDialog.error}

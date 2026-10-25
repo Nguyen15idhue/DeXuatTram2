@@ -64,7 +64,11 @@ const getUserProfile = async (userId) => {
 };
 
 const resolveRoleKey = ({ role, department, chucVu }) => {
-  if (['SUPER_ADMIN', 'ADMIN'].includes(role)) return REVIEW_ROLE.ADMIN;
+  const normalizedDepartment = normalizeText(department);
+  if (role === 'SUPER_ADMIN') return REVIEW_ROLE.ADMIN;
+  if (role === 'ADMIN') {
+    return normalizedDepartment.includes('ban tong giam doc') ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN;
+  }
   if (isTgdTitle(department, chucVu)) return REVIEW_ROLE.TGD;
   const gradingRole = resolveGradingRole(department);
   if (gradingRole) return gradingRole;
@@ -89,6 +93,7 @@ const resolveReviewer = async (user) => {
     : null;
   return {
     isAdmin: ['SUPER_ADMIN', 'ADMIN'].includes(user && user.role),
+    isSuperAdmin: user?.role === 'SUPER_ADMIN',
     roleKey,
     roleLabel: REVIEW_ROLE_LABELS[roleKey] || null,
     region,
@@ -99,19 +104,7 @@ const resolveReviewer = async (user) => {
   };
 };
 
-const resolveListScope = async (user, { reviewRole = '', region = '' } = {}) => {
-  const scope = await resolveReviewer(user);
-  if (!scope.isAdmin) return scope;
-  const override = REVIEWER_KEYS.includes(reviewRole) ? reviewRole : REVIEW_ROLE.ADMIN;
-  const overrideRegion = override === REVIEW_ROLE.GDTTKD ? resolveRegion(region) : null;
-  return {
-    ...scope,
-    roleKey: override,
-    roleLabel: REVIEW_ROLE_LABELS[override] || null,
-    region: overrideRegion,
-    regionLabel: REGION_LABELS[overrideRegion] || null
-  };
-};
+const resolveListScope = (user) => resolveReviewer(user);
 
 const proposalRegion = (customData) => resolveRegion(parseCustomData(customData).vung_mien);
 
@@ -150,9 +143,8 @@ const mapReviewRow = (row) => {
 const listReviews = async ({
   user,
   tab = 'all',
-  reviewRole = '',
-  region = '',
   search = '',
+  filters = {},
   page = 1,
   limit = 10
 } = {}) => {
@@ -160,7 +152,7 @@ const listReviews = async ({
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
   const offset = (safePage - 1) * safeLimit;
-  const scope = await resolveListScope(user, { reviewRole, region });
+  const scope = await resolveListScope(user);
   const canReview = scope.isAdmin || REVIEWER_KEYS.includes(scope.roleKey);
 
   if (!canReview) {
@@ -186,8 +178,8 @@ const listReviews = async ({
     where.push('p.review_level IS NOT NULL');
   } else if (safeTab === 'pending') {
     if (scope.roleKey === REVIEW_ROLE.GDTTKD) {
-      where.push(`p.status IN (${GDTTKD_STATUSES.map(() => '?').join(',')})`);
-      params.push(...GDTTKD_STATUSES);
+      where.push(`((p.status = ? AND p.review_level = 1) OR (p.status = ? AND p.review_level = 2))`);
+      params.push('GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING');
       const clause = regionClause(scope.region, params);
       if (clause) where.push(clause.replace(/^ AND /, ''));
     } else if (scope.roleKey === REVIEW_ROLE.QH || scope.roleKey === REVIEW_ROLE.PL) {
@@ -210,6 +202,11 @@ const listReviews = async ({
     }
   }
 
+  if (scope.roleKey === REVIEW_ROLE.GDTTKD && scope.region && safeTab !== 'pending') {
+    const clause = regionClause(scope.region, params);
+    if (clause) where.push(clause.replace(/^ AND /, ''));
+  }
+
   if (search) {
     const like = `%${String(search).trim()}%`;
     where.push(`(
@@ -219,6 +216,48 @@ const listReviews = async ({
       OR JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nq_ten_khach_hang')) LIKE ?
     )`);
     params.push(like, like, like, like, like, like, like);
+  }
+
+  if (filters.proposalStatus) {
+    where.push('p.status = ?');
+    params.push(String(filters.proposalStatus));
+  }
+  if (filters.model) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?");
+    params.push(String(filters.model));
+  }
+  if (filters.province) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?");
+    params.push(String(filters.province));
+  }
+  if (filters.region) {
+    const selectedRegion = resolveRegion(filters.region);
+    if (selectedRegion) {
+      const clause = regionClause(selectedRegion, params);
+      if (clause) where.push(clause.replace(/^ AND /, ''));
+    }
+  }
+  if (filters.ownerUserId) {
+    where.push('p.user_id = ?');
+    params.push(Number(filters.ownerUserId));
+  }
+  if (filters.managerUserId) {
+    const adminUserService = require('./adminUserService');
+    const branchIds = await adminUserService.getBranchIds(Number(filters.managerUserId));
+    if (branchIds.length) {
+      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
+      params.push(...branchIds.map(Number));
+    } else {
+      where.push('1 = 0');
+    }
+  }
+  if (filters.dateFrom) {
+    where.push('p.created_at >= ?');
+    params.push(`${String(filters.dateFrom).slice(0, 10)} 00:00:00`);
+  }
+  if (filters.dateTo) {
+    where.push('p.created_at < DATE_ADD(?, INTERVAL 1 DAY)');
+    params.push(String(filters.dateTo).slice(0, 10));
   }
 
   const whereClause = `WHERE ${where.length > 0 ? where.join(' AND ') : '1 = 1'}`;
@@ -237,9 +276,12 @@ const listReviews = async ({
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
      ${whereClause}
-     ORDER BY p.updated_at DESC, p.id DESC
+     ORDER BY
+       CASE WHEN ? = 'pending' THEN p.updated_at END ASC,
+       CASE WHEN ? <> 'pending' THEN p.updated_at END DESC,
+       p.id ASC
      LIMIT ? OFFSET ?`,
-    [...params, safeLimit, offset]
+    [...params, safeTab, safeTab, safeLimit, offset]
   );
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
@@ -251,11 +293,73 @@ const listReviews = async ({
     meta: {
       canReview: true,
       isAdmin: !!scope.isAdmin,
+      isSuperAdmin: !!scope.isSuperAdmin,
       reviewRole: scope.roleKey,
       reviewRoleLabel: scope.roleLabel,
       region: scope.region,
       regionLabel: scope.regionLabel,
       reviewLevelLabels: REVIEW_LEVEL_LABELS
+    }
+  };
+};
+
+const getReviewDetail = async (id, user) => {
+  const scope = await resolveReviewer(user);
+  const proposalId = Number(id);
+  if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
+  if (!scope.isAdmin && !REVIEWER_KEYS.includes(scope.roleKey)) {
+    throw err('Bạn không có quyền xem đề xuất này', 403);
+  }
+
+  const [rows] = await pool.query(
+    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email
+       FROM station_proposals p
+       LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.id = ? AND p.review_level IS NOT NULL
+      LIMIT 1`,
+    [proposalId]
+  );
+  if (!rows.length) throw err('Không tìm thấy đề xuất', 404);
+  const row = rows[0];
+  if (!scope.isAdmin && scope.roleKey === REVIEW_ROLE.GDTTKD) assertRegion(scope, row);
+
+  const [requests] = await pool.query(
+    `SELECT r.id, r.request_type, r.description, r.requested_by, r.previous_status,
+            r.current_status, r.target_department, r.target_title, r.target_user_id,
+            r.round_no, r.note, r.status, r.created_at, r.resolved_at,
+            requester.full_name AS requested_by_name, resolver.full_name AS resolved_by_name
+       FROM proposal_requests r
+       LEFT JOIN users requester ON requester.id = r.requested_by
+       LEFT JOIN users resolver ON resolver.id = r.resolved_by
+      WHERE r.proposal_id = ? AND r.request_type IN ('RE_GRADE', 'TGD_REVIEW')
+      ORDER BY r.created_at ASC, r.id ASC`,
+    [proposalId]
+  );
+  const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const proposal = mapReviewRow(dynamicUtils.mergeData(row, fieldDefinitions));
+  const isGdttkd = scope.roleKey === REVIEW_ROLE.GDTTKD || scope.isSuperAdmin;
+  const isTgd = scope.roleKey === REVIEW_ROLE.TGD || scope.isSuperAdmin;
+  const status = proposal.status;
+  const reviewLevel = proposal.review_level;
+
+  return {
+    proposal,
+    fieldDefinitions,
+    requests,
+    permissions: {
+      canRequestRegrade: isGdttkd && status === 'GDTTKD_EVALUATING' && reviewLevel === 1,
+      canCancelGdttkd: isGdttkd
+        && ((status === 'GDTTKD_EVALUATING' && reviewLevel === 1)
+          || (status === 'RE_GDTTKD_EVALUATING' && reviewLevel === 2)),
+      canSubmitToTgd: isGdttkd && status === 'RE_GDTTKD_EVALUATING' && reviewLevel === 2,
+      canCancelTgd: isTgd && status === TGD_STATUS && reviewLevel === 3,
+      canApproveTgd: isTgd && status === TGD_STATUS && reviewLevel === 3
+    },
+    viewer: {
+      roleKey: scope.roleKey,
+      isAdmin: scope.isAdmin,
+      isSuperAdmin: scope.isSuperAdmin,
+      region: scope.region
     }
   };
 };
@@ -273,7 +377,7 @@ const loadProposal = async (id) => {
 };
 
 const assertRole = (scope, allowed) => {
-  if (scope.isAdmin) return;
+  if (scope.isSuperAdmin) return;
   if (!scope.roleKey || !allowed.includes(scope.roleKey)) {
     throw err('Bạn không có quyền thực hiện thao tác này', 403);
   }
@@ -286,7 +390,7 @@ const assertStatus = (proposal, allowed) => {
 };
 
 const assertRegion = (scope, proposal) => {
-  if (scope.isAdmin || scope.roleKey !== REVIEW_ROLE.GDTTKD || !scope.region) return;
+  if (scope.isSuperAdmin || scope.roleKey !== REVIEW_ROLE.GDTTKD || !scope.region) return;
   const region = proposalRegion(proposal.custom_data);
   if (region !== scope.region) {
     const label = REGION_LABELS[scope.region] || scope.region;
@@ -359,20 +463,25 @@ const messageFor = async (proposal, actorId, { status, actionLabel, reason }) =>
 
 const countRegradeRound = async (proposalId) => {
   const [rows] = await pool.query(
-    `SELECT COUNT(*) AS n FROM proposal_requests
-     WHERE proposal_id = ? AND request_type = 'RE_GRADE' AND note LIKE 'Lần chấm lại:%'`,
+    `SELECT COALESCE(MAX(round_no), 0) AS n FROM proposal_requests
+     WHERE proposal_id = ? AND request_type = 'RE_GRADE'`,
     [proposalId]
   );
   return Number(rows[0]?.n || 0) + 1;
 };
 
-const requestRegrade = async ({ user, id, reason, ip }) => {
+const requestRegrade = async ({ user, id, reason, departments, ip }) => {
   const scope = await resolveReviewer(user);
   assertRole(scope, [REVIEW_ROLE.GDTTKD]);
   const proposal = await loadProposal(id);
   assertStatus(proposal, ['GDTTKD_EVALUATING']);
+  if (Number(proposal.review_level) !== 1) throw err('Đề xuất không ở mức GĐTTKD xem xét', 400);
   assertRegion(scope, proposal);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do yêu cầu đánh giá lại');
+  const targets = [...new Set(Array.isArray(departments) ? departments : [])];
+  if (targets.length === 0 || targets.some((department) => !['QH', 'PL'].includes(department))) {
+    throw err('Vui lòng chọn Quy hoạch, Pháp lý hoặc cả hai phòng cần chấm lại', 400);
+  }
 
   const transition = await require('./proposalLifecycle').transition(proposal.id, REGRADING_STATUS, {
     reason: cleanReason,
@@ -386,18 +495,27 @@ const requestRegrade = async ({ user, id, reason, ip }) => {
   await require('./proposalRequestService').closeRequests(proposal.id, ['RE_GRADE'], { resolvedBy: user.id });
 
   const round = await countRegradeRound(proposal.id);
-  const request = await require('./proposalRequestService').createRequest({
-    proposalId: proposal.id,
-    type: 'RE_GRADE',
-    description: cleanReason,
-    requestedBy: user.id,
-    previousStatus: 'GDTTKD_EVALUATING',
-    currentStatus: REGRADING_STATUS,
-    targetDepartment: 'Phòng quan hệ và Quy hoạch; Phòng Chiến lược KD',
-    targetTitle: 'Hai phòng chấm điểm',
-    note: `Lần chấm lại: ${round}`,
-    roundNo: round
-  });
+  const requestService = require('./proposalRequestService');
+  const targetDetails = {
+    QH: { department: 'QH', title: 'Quy hoạch', role: REVIEW_ROLE.QH },
+    PL: { department: 'PL', title: 'Pháp lý', role: REVIEW_ROLE.PL }
+  };
+  const requests = [];
+  for (const department of targets) {
+    const target = targetDetails[department];
+    requests.push(await requestService.createRequest({
+      proposalId: proposal.id,
+      type: 'RE_GRADE',
+      description: cleanReason,
+      requestedBy: user.id,
+      previousStatus: 'GDTTKD_EVALUATING',
+      currentStatus: REGRADING_STATUS,
+      targetDepartment: target.department,
+      targetTitle: target.title,
+      note: `Lần chấm lại: ${round}`,
+      roundNo: round
+    }));
+  }
 
   await logReview({
     proposalId: proposal.id,
@@ -407,7 +525,8 @@ const requestRegrade = async ({ user, id, reason, ip }) => {
     reason: cleanReason,
     changedFields: {
       review_level: { label: 'Mức độ xem xét', old: proposal.review_level ?? '', new: 2 },
-      round_no: { label: 'Lần chấm lại', old: '', new: round }
+      round_no: { label: 'Lần chấm lại', old: '', new: round },
+      departments: { label: 'Phòng cần chấm lại', old: '', new: targets.join(', ') }
     },
     actorId: user.id,
     actorRole: user.role,
@@ -419,7 +538,7 @@ const requestRegrade = async ({ user, id, reason, ip }) => {
     actionLabel: 'Người yêu cầu',
     reason: `${cleanReason} · Lần chấm lại: ${round}`
   });
-  await notifyByRoleKeys([REVIEW_ROLE.QH, REVIEW_ROLE.PL], {
+  await notifyByRoleKeys(targets.map((department) => targetDetails[department].role), {
     type: 'RE_GRADING',
     title: 'Đề xuất được yêu cầu chấm điểm lại',
     message,
@@ -428,7 +547,7 @@ const requestRegrade = async ({ user, id, reason, ip }) => {
     actorId: user.id
   });
 
-  return { id: proposal.id, status: REGRADING_STATUS, review_level: 2, roundNo: round, request, transition };
+  return { id: proposal.id, status: REGRADING_STATUS, review_level: 2, roundNo: round, requests, transition };
 };
 
 const toTgd = async ({ user, id, reason, ip }) => {
@@ -436,6 +555,7 @@ const toTgd = async ({ user, id, reason, ip }) => {
   assertRole(scope, [REVIEW_ROLE.GDTTKD]);
   const proposal = await loadProposal(id);
   assertStatus(proposal, ['RE_GDTTKD_EVALUATING']);
+  if (Number(proposal.review_level) !== 2) throw err('Đề xuất không ở mức GĐTTKD xem xét lại', 400);
   assertRegion(scope, proposal);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do trình Tổng giám đốc');
 
@@ -496,6 +616,9 @@ const cancelAtGdttkd = async ({ user, id, reason, ip }) => {
   assertRole(scope, [REVIEW_ROLE.GDTTKD]);
   const proposal = await loadProposal(id);
   assertStatus(proposal, GDTTKD_STATUSES);
+  const allowedGdttkdStatus = (proposal.status === 'GDTTKD_EVALUATING' && Number(proposal.review_level) === 1)
+    || (proposal.status === 'RE_GDTTKD_EVALUATING' && Number(proposal.review_level) === 2);
+  if (!allowedGdttkdStatus) throw err('Đề xuất không ở mức xem xét phù hợp để hủy', 400);
   assertRegion(scope, proposal);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do hủy đề xuất');
 
@@ -530,6 +653,7 @@ const approveByTgd = async ({ user, id, reason, ip }) => {
   assertRole(scope, [REVIEW_ROLE.TGD]);
   const proposal = await loadProposal(id);
   assertStatus(proposal, [TGD_STATUS]);
+  if (Number(proposal.review_level) !== 3) throw err('Đề xuất không ở mức Tổng Giám đốc xem xét', 400);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do duyệt đề xuất');
 
   await require('./proposalRequestService').closeRequests(proposal.id, ['TGD_REVIEW'], { resolvedBy: user.id });
@@ -560,6 +684,7 @@ const rejectByTgd = async ({ user, id, reason, ip }) => {
   assertRole(scope, [REVIEW_ROLE.TGD]);
   const proposal = await loadProposal(id);
   assertStatus(proposal, [TGD_STATUS]);
+  if (Number(proposal.review_level) !== 3) throw err('Đề xuất không ở mức Tổng Giám đốc xem xét', 400);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do không duyệt đề xuất');
 
   await require('./proposalRequestService').closeRequests(proposal.id, ['TGD_REVIEW'], {
@@ -596,6 +721,7 @@ exports.resolveRegion = resolveRegion;
 exports.resolveRoleKey = resolveRoleKey;
 exports.resolveReviewer = resolveReviewer;
 exports.listReviews = listReviews;
+exports.getReviewDetail = getReviewDetail;
 exports.requestRegrade = requestRegrade;
 exports.toTgd = toTgd;
 exports.cancelAtGdttkd = cancelAtGdttkd;

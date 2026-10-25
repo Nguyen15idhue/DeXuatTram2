@@ -9,7 +9,7 @@ import AdminLayout from './layouts/AdminLayout';
 
 import RoleRoute from './components/RoleRoute';
 import AssistantChat from './components/help/AssistantChat';
-import { canSeeApprovalPage } from './utils/proposalAccess';
+import { canSeeApprovalPage, canSeeReviewRequestsPage } from './utils/proposalAccess';
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
@@ -28,15 +28,19 @@ const ReportEditorPage = lazy(() => import('./pages/admin/ReportEditorPage'));
 const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
 const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
 const AdminProposalsDanhGiaQuyHoachPage = lazy(() => import('./pages/admin/AdminProposalsDanhGiaQuyHoachPage'));
+const AdminProposalGradingDetailPage = lazy(() => import('./pages/admin/AdminProposalGradingDetailPage'));
 const AdminProposalsReviewPage = lazy(() => import('./pages/admin/AdminProposalsReviewPage'));
+const AdminProposalReviewDetailPage = lazy(() => import('./pages/admin/AdminProposalReviewDetailPage'));
 const AdminProposalsDanhGiaLayoutPage = lazy(() => import('./pages/admin/AdminProposalsDanhGiaLayoutPage'));
 const AdminProposalsLapToTrinhPage = lazy(() => import('./pages/admin/AdminProposalsLapToTrinhPage'));
+const AdminProposalReportDetailPage = lazy(() => import('./pages/admin/AdminProposalReportDetailPage'));
 const AdminProposalsDuyetBCDXPage = lazy(() => import('./pages/admin/AdminProposalsDuyetBCDXPage'));
 const AdminProposalApprovalDetailPage = lazy(() => import('./pages/admin/AdminProposalApprovalDetailPage'));
 const ProposalSignatureConfigPage = lazy(() => import('./pages/admin/ProposalSignatureConfigPage'));
 const AdminProposalsTrinhKyPage = lazy(() => import('./pages/admin/AdminProposalsTrinhKyPage'));
 const AdminProposalSigningPage = lazy(() => import('./pages/admin/AdminProposalSigningPage'));
 const AdminProposalDetailPage = lazy(() => import('./pages/admin/AdminProposalDetailPage'));
+const AdminProposalRequestUpdatePage = lazy(() => import('./pages/admin/AdminProposalRequestUpdatePage'));
 const AdminESignPage = lazy(() => import('./pages/admin/AdminESignPage'));
 const AdminEvReportsPage = lazy(() => import('./pages/admin/AdminEvReportsPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
@@ -57,6 +61,7 @@ const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'];
 const PROPOSAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
+const PROPOSAL_INFO_ROLES = [...PROPOSAL_ROLES, 'NPP'];
 const SIGNING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const ESIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
 const PANEL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
@@ -145,20 +150,44 @@ function App() {
             <Route path="/admin/users/*" element={<AdminUsersPage />} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
-            <Route path="/admin/proposals" element={<RoleRoute allowed={PROPOSAL_ROLES}><AdminProposalsPage /></RoleRoute>} />
+            <Route path="/admin/proposals" element={<RoleRoute allowed={PROPOSAL_INFO_ROLES}><AdminProposalsPage /></RoleRoute>} />
             <Route
               path="/admin/proposals/chi-tiet/:id"
               element={
-                <RoleRoute allowed={PROPOSAL_ROLES}>
+                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
                   <AdminProposalDetailPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/yeu-cau-cap-nhat/:id"
+              element={
+                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
+                  <AdminProposalRequestUpdatePage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/danh-gia-quy-hoach/:id"
+              element={
+                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
+                  <AdminProposalGradingDetailPage />
                 </RoleRoute>
               }
             />
             <Route
               path="/admin/proposals/danh-gia-quy-hoach"
               element={
-                <RoleRoute allowed={PROPOSAL_ROLES}>
+                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
                   <AdminProposalsDanhGiaQuyHoachPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/yeu-cau-cham-diem-lai/:id"
+              element={
+                <RoleRoute allowed={ADMIN_AND_SALES} accessCheck={canSeeReviewRequestsPage}>
+                  <AdminProposalReviewDetailPage />
                 </RoleRoute>
               }
             />
@@ -179,9 +208,17 @@ function App() {
               }
             />
             <Route
+              path="/admin/proposals/lap-to-trinh/:id"
+              element={
+                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
+                  <AdminProposalReportDetailPage />
+                </RoleRoute>
+              }
+            />
+            <Route
               path="/admin/proposals/lap-to-trinh"
               element={
-                <RoleRoute allowed={PROPOSAL_ROLES}>
+                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
                   <AdminProposalsLapToTrinhPage />
                 </RoleRoute>
               }
@@ -234,7 +271,7 @@ function App() {
                 </RoleRoute>
               }
             />
-            <Route path="/admin/proposals/*" element={<AdminProposalsPage />} />
+            <Route path="/admin/proposals/*" element={<RoleRoute allowed={PROPOSAL_ROLES}><AdminProposalsPage /></RoleRoute>} />
             <Route
               path="/admin/e-sign"
               element={

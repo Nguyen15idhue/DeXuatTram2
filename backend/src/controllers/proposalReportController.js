@@ -10,13 +10,26 @@ const sendError = (res, error) => {
 
 exports.list = async (req, res) => {
   try {
-    const { tab = 'all', search = '', page = 1, limit = 10 } = req.query;
+    const {
+      tab = 'all', search = '', page = 1, limit = 10,
+      proposal_status, model, province, region, owner_user_id, manager_user_id, date_from, date_to
+    } = req.query;
     const result = await proposalReportService.listProposals({
       user: req.user,
       tab,
       search,
       page,
-      limit
+      limit,
+      filters: {
+        proposalStatus: proposal_status,
+        model,
+        province,
+        region,
+        ownerUserId: owner_user_id,
+        managerUserId: manager_user_id,
+        dateFrom: date_from,
+        dateTo: date_to
+      }
     });
     res.json({
       success: true,
@@ -24,6 +37,24 @@ exports.list = async (req, res) => {
       pagination: result.pagination,
       meta: result.meta
     });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.filterOptions = async (req, res) => {
+  try {
+    const data = await proposalReportService.getFilterOptions(req.user);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.detail = async (req, res) => {
+  try {
+    const data = await proposalReportService.getProposalDetail({ user: req.user, id: req.params.id });
+    res.json({ success: true, data });
   } catch (error) {
     sendError(res, error);
   }

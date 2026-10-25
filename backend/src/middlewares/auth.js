@@ -106,6 +106,16 @@ const requireProposalManager = (req, res, next) => {
   next();
 };
 
+const requireProposalInfoManager = (req, res, next) => {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES', 'CTV', 'NPP'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
 // Middleware: Quyen quan ly Lead/Report rieng (contract docs/8/mkt/04) — khong mo rong requireUserManager
 const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MKT', 'SALES'];
 
@@ -177,6 +187,7 @@ module.exports = {
   requireSuperAdmin,
   requireUserManager,
   requireProposalManager,
+  requireProposalInfoManager,
   requireLeadManager,
   requireLeadWriter,
   requireReportViewer,

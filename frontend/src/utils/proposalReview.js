@@ -54,11 +54,20 @@ const isTgdTitle = (department, chucVu) => {
 
 export const resolveReviewRole = (user) => {
   if (!user) return { roleKey: null, region: null, isAdmin: false };
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
-    return { roleKey: REVIEW_ROLE.ADMIN, region: null, isAdmin: true };
+  if (user.role === 'SUPER_ADMIN') {
+    return { roleKey: REVIEW_ROLE.ADMIN, region: null, isAdmin: true, isSuperAdmin: true };
   }
   const department = user.department || user.custom_data?.department || '';
   const chucVu = user.chuc_vu || user.custom_data?.chuc_vu || '';
+  if (user.role === 'ADMIN') {
+    const isTgdDepartment = normalizeText(department).includes('ban tong giam doc');
+    return {
+      roleKey: isTgdDepartment ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN,
+      region: null,
+      isAdmin: true,
+      isSuperAdmin: false
+    };
+  }
   if (isTgdTitle(department, chucVu)) {
     return { roleKey: REVIEW_ROLE.TGD, region: null, isAdmin: false };
   }

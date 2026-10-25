@@ -98,9 +98,9 @@ const canAccessFile = async (file, req) => {
       const reportService = require('../services/proposalReportService');
       const [props] = await pool.query('SELECT user_id, status, custom_data FROM station_proposals');
       let branchIds = null;
-      if (requesterRole === 'SALES') {
-        const [brows] = await pool.query('SELECT id FROM users WHERE id = ? OR parent_id = ?', [requesterId, requesterId]);
-        branchIds = new Set(brows.map(r => Number(r.id)));
+      if (requesterRole === 'SALES' || requesterRole === 'NPP') {
+        const ids = await require('../services/adminUserService').getBranchIds(requesterId);
+        branchIds = new Set(ids.map(Number));
       }
       const gradingStatuses = new Set([...proposalGradingService.DOWNSTREAM_STATUSES, 'CANCELLED']);
       const isGradingDepartment = requesterRole === 'SALES'

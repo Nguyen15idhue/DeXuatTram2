@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager, requireProposalManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireSuperAdmin, requireUserManager, requireProposalManager, requireProposalInfoManager } = require('../middlewares/auth');
 const { validateUpdateProposal } = require('../middlewares/validators');
 const adminProposalController = require('../controllers/adminProposalController');
 
@@ -30,6 +30,42 @@ const adminProposalController = require('../controllers/adminProposalController'
  *           enum: ['1', '2']
  *         description: Lọc theo loại ưu tiên (1 = Cấp 1/TDT, 2 = Cấp 2/LK/NQ)
   *       - in: query
+  *         name: search
+  *         schema:
+  *           type: string
+  *         description: Tìm theo mã đề xuất, người đề xuất hoặc địa chỉ.
+  *       - in: query
+  *         name: model
+  *         schema:
+  *           type: string
+  *         description: Mô hình đầu tư.
+  *       - in: query
+  *         name: province
+  *         schema:
+  *           type: string
+  *       - in: query
+  *         name: region
+  *         schema:
+  *           type: string
+  *       - in: query
+  *         name: owner_user_id
+  *         schema:
+  *           type: integer
+  *       - in: query
+  *         name: manager_user_id
+  *         schema:
+  *           type: integer
+  *       - in: query
+  *         name: date_from
+  *         schema:
+  *           type: string
+  *           format: date
+  *       - in: query
+  *         name: date_to
+  *         schema:
+  *           type: string
+  *           format: date
+  *       - in: query
   *         name: filters
   *         schema:
   *           type: string
@@ -52,7 +88,7 @@ const adminProposalController = require('../controllers/adminProposalController'
   *       403:
   *         description: Không có quyền Admin
   */
-router.get('/', requireAuth, requireProposalManager, adminProposalController.getAll);
+router.get('/', requireAuth, requireProposalInfoManager, adminProposalController.getAll);
 
 /**
  * @swagger
@@ -138,7 +174,7 @@ router.get('/duplicates', requireAuth, requireProposalManager, adminProposalCont
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id', requireAuth, requireProposalManager, adminProposalController.getById);
+router.get('/:id', requireAuth, requireProposalInfoManager, adminProposalController.getById);
 
 /**
  * @swagger
