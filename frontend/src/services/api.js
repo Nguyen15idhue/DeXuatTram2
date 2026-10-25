@@ -524,6 +524,9 @@ export const proposalSignatureService = {
   reject(id, data, token) {
     return api.postWithAuth(`/admin/proposal-signatures/${id}/reject`, data || {}, token);
   },
+  requestRework(id, data, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/request-rework`, data || {}, token);
+  },
   uploadSignedFile(id, data, token) {
     return api.postWithAuth(`/admin/proposal-signatures/${id}/signed-file`, data || {}, token);
   },

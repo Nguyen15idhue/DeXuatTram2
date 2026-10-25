@@ -359,12 +359,12 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     if (!hasTable) return;
     const loadAll = async () => {
       try {
-        const res = await fieldDefinitionService.getAll(`entity=${entity}&limit=100`, token);
+        const res = await fieldDefinitionService.getByEntity(entity);
         if (res.success) setAllEntityFields(res.data || []);
       } catch {}
     };
     loadAll();
-  }, [entity, fields, token]);
+  }, [entity, fields]);
 
   useEffect(() => {
     if (!initialData || fields.length === 0) return;

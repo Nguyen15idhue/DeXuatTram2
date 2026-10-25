@@ -88,7 +88,18 @@ exports.SIGN_STATUS = SIGN_STATUS;
 exports.SIGN_STATUS_LABELS = SIGN_STATUS_LABELS;
 exports.TAB_STATUSES = TAB_STATUSES;
 
-exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit = 10 } = {}) => {
+const SIGN_STATUS_CASE_SQL = `(CASE WHEN p.signed_file_id IS NOT NULL THEN 'CEO_SIGNED' WHEN (${SIGNER_TOTAL_SQL}) = 0 OR (${SIGNER_SIGNED_SQL}) = 0 THEN 'PENDING' WHEN (${SIGNER_SIGNED_SQL}) < (${SIGNER_TOTAL_SQL}) THEN 'DOING' ELSE 'DONE' END)`;
+
+exports.listProposals = async ({
+  user,
+  tab = 'all',
+  search = '',
+  page = 1,
+  limit = 10,
+  signStatus = '',
+  myStatus = '',
+  moHinh = ''
+} = {}) => {
   const safeTab = Object.prototype.hasOwnProperty.call(TAB_STATUSES, tab) ? tab : 'all';
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
@@ -105,22 +116,20 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
       params.push(scope.userId);
     }
   } else if (safeTab === 'pending') {
-    if (scope.isManager) {
-      // Back Office / Admin / Tổng giám đốc: toàn bộ hồ sơ đang trình ký.
-    } else {
-      where.push(`${MY_CONFIG_SQL} > 0 AND ${MY_SIGNED_SQL} = 0`);
-      params.push(scope.userId, scope.userId);
+    if (!scope.isManager) {
+      where.push(`${MY_CONFIG_SQL} > 0`);
+      params.push(scope.userId);
     }
+    // Người đã ký của mình chuyển sang tab Đã hoàn thành (kể cả Back Office/Admin/TGĐ).
+    where.push(`${MY_SIGNED_SQL} = 0`);
+    params.push(scope.userId);
   } else if (safeTab === 'chairman') {
     where.push(`${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}`);
     where.push('p.signed_file_id IS NULL');
   } else if (safeTab === 'completed') {
-    if (scope.isManager) {
-      where.push(`(p.status = 'COMPLETED' OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}))`);
-    } else {
-      where.push(`(${MY_SIGNED_SQL} > 0 OR p.status = 'COMPLETED')`);
-      params.push(scope.userId);
-    }
+    // Hồ sơ tôi đã ký, hoặc hồ sơ đã đủ chữ ký / đã hoàn thành chung.
+    where.push(`(p.status = 'COMPLETED' OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}) OR ${MY_SIGNED_SQL} > 0)`);
+    params.push(scope.userId);
   }
 
   if (search) {
@@ -130,6 +139,26 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
       OR u.full_name LIKE ?
     )`);
     params.push(like, like, like, like, like);
+  }
+
+  const cleanSignStatus = Object.values(SIGN_STATUS).includes(signStatus) ? signStatus : '';
+  if (cleanSignStatus) {
+    where.push(`${SIGN_STATUS_CASE_SQL} = ?`);
+    params.push(cleanSignStatus);
+  }
+
+  const cleanMyStatus = myStatus === 'my_pending' || myStatus === 'my_signed' ? myStatus : '';
+  if (cleanMyStatus === 'my_pending') {
+    where.push(`${MY_CONFIG_SQL} > 0 AND ${MY_SIGNED_SQL} = 0`);
+    params.push(scope.userId, scope.userId);
+  } else if (cleanMyStatus === 'my_signed') {
+    where.push(`${MY_SIGNED_SQL} > 0`);
+    params.push(scope.userId);
+  }
+
+  if (moHinh) {
+    where.push(`JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?`);
+    params.push(String(moHinh));
   }
 
   const whereClause = `WHERE ${where.join(' AND ')}`;
@@ -143,6 +172,10 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
   );
   const total = Number(countRows[0]?.total || 0);
 
+  const orderBy = safeTab === 'all'
+    ? 'p.updated_at DESC, p.id DESC'
+    : 'p.updated_at ASC, p.id ASC';
+
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
             p.signed_file_id,
@@ -155,7 +188,7 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
      ${whereClause}
-     ORDER BY p.updated_at DESC, p.id DESC
+     ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
     [scope.userId, scope.userId, ...params, safeLimit, offset]
   );
@@ -180,7 +213,7 @@ const loadProposal = async (id) => {
   const proposalId = Number(id);
   if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
   const [rows] = await pool.query(
-    'SELECT id, ma_de_xuat_gen AS ma_de_xuat, user_id, status, owner_name, owner_phone, custom_data, chot_so_luong_tru, tong_gia_tri_chot, signed_file_id FROM station_proposals WHERE id = ?',
+    'SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat FROM station_proposals p WHERE p.id = ?',
     [proposalId]
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
@@ -217,10 +250,27 @@ const loadConfigs = async (proposalId) => {
   }));
 };
 
+const loadRevisionRequests = async (proposalId) => {
+  const [rows] = await pool.query(
+    `SELECT r.id, r.request_type, r.description, r.status, r.round_no, r.note, r.target_user_id,
+            r.requested_by, r.previous_status, r.current_status, r.created_at,
+            u.full_name AS requested_by_name
+     FROM proposal_requests r
+     LEFT JOIN users u ON u.id = r.requested_by
+     WHERE r.proposal_id = ? AND r.request_type IN ('RE_GRADE', 'REVISE_BCDX')
+     ORDER BY r.id DESC
+     LIMIT 10`,
+    [proposalId]
+  );
+  return rows;
+};
+
 const buildDetail = async (proposal, scope) => {
   const configs = await loadConfigs(proposal.id);
   const custom = parseCustomData(proposal.custom_data);
   const reportFiles = toFileSummaries(custom[REPORT_FIELD]);
+  const layoutFiles = toFileSummaries(custom['ban_ve_layout']);
+  const revisionRequests = await loadRevisionRequests(proposal.id);
   const myConfig = configs.find((config) => Number(config.user_id) === Number(scope.userId));
   return {
     id: proposal.id,
@@ -229,10 +279,24 @@ const buildDetail = async (proposal, scope) => {
     user_id: proposal.user_id,
     owner_name: proposal.owner_name,
     owner_phone: proposal.owner_phone,
+    address: proposal.address || '',
+    mo_hinh_dau_tu: custom.mo_hinh_dau_tu || '',
+    vung_mien: custom.vung_mien || '',
+    created_at: proposal.created_at,
+    updated_at: proposal.updated_at,
+    review_level: proposal.review_level || null,
+    quy_hoach_score: proposal.quy_hoach_score ?? null,
+    quy_hoach_note: proposal.quy_hoach_note || '',
+    phap_ly_score: proposal.phap_ly_score ?? null,
+    phap_ly_note: proposal.phap_ly_note || '',
+    note: proposal.note || '',
+    custom_data: custom,
     chot_so_luong_tru: proposal.chot_so_luong_tru,
     tong_gia_tri_chot: proposal.tong_gia_tri_chot,
     signed_file_id: proposal.signed_file_id,
     report_files: reportFiles,
+    layout_files: layoutFiles,
+    revision_requests: revisionRequests,
     signers: configs,
     signer_total: configs.length,
     signer_signed: configs.filter((config) => config.status === 'SIGNED').length,
@@ -259,6 +323,8 @@ exports.getDetail = async ({ user, id } = {}) => {
     sign_status_label: SIGN_STATUS_LABELS[detail.sign_status],
     can_reject: !!scope.isAdmin || !!scope.isTgd,
     can_upload_signed: !!scope.isAdmin || !!scope.isBackOffice,
+    can_request_rework: (!!scope.isAdmin || !!scope.isTgd || !!scope.isBackOffice) && !detail.is_my_signed
+      && proposal.status === SIGNATURE_PENDING,
     can_view: scope.isManager || !!detail.can_sign || Number(proposal.user_id) === Number(scope.userId)
   };
 };
@@ -287,13 +353,15 @@ const notifyRecipients = async (userIds, { type, title, message, entityId, actor
   }
 };
 
+const backOfficeUserIds = async () => {
+  const [rows] = await pool.query("SELECT id, custom_data FROM users WHERE status = 'ACTIVE'");
+  return rows
+    .filter((row) => proposalReportService.isBackOffice(parseCustomData(row.custom_data).department))
+    .map((row) => Number(row.id));
+};
+
 const notifyBackOfficeAndSigners = async ({ proposal, actorId, message, type = SIGNATURE_PENDING }) => {
-  const backOfficeIds = (await (async () => {
-    const [rows] = await pool.query("SELECT id, custom_data FROM users WHERE status = 'ACTIVE'");
-    return rows
-      .filter((row) => proposalReportService.isBackOffice(parseCustomData(row.custom_data).department))
-      .map((row) => Number(row.id));
-  })());
+  const backOfficeIds = await backOfficeUserIds();
   const configs = await loadConfigs(proposal.id);
   const signerIds = configs.map((config) => Number(config.user_id));
   await notifyRecipients([...backOfficeIds, ...signerIds], {
@@ -365,6 +433,19 @@ exports.sign = async ({ user, id, ip } = {}) => {
   });
   await notifyBackOfficeAndSigners({ proposal, actorId: user.id, message });
 
+  const finalConfigs = await loadConfigs(proposal.id);
+  if (finalConfigs.length > 0 && finalConfigs.every((config) => config.status === 'SIGNED')) {
+    const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
+    const actorName = (await notificationService.getUserName(user.id)) || 'Hệ thống';
+    await notifyRecipients((await backOfficeUserIds()), {
+      type: SIGN_STATUS.DONE,
+      title: 'Đã đủ chữ ký — trình chủ tịch',
+      message: `${code} đã đủ chữ ký (${actorName}). Back Office vui lòng xuất file và trình chủ tịch ký phê duyệt.`,
+      entityId: proposal.id,
+      actorId: user.id
+    });
+  }
+
   const updated = await loadProposal(id);
   return buildDetail(updated, scope);
 };
@@ -435,6 +516,82 @@ exports.reject = async ({ user, id, reason, ip } = {}) => {
   await notifyRecipients(regionIds, {
     type: UPDATING_STATUS,
     title: 'Đề xuất cần tạo lại tờ trình BCĐX',
+    message,
+    entityId: proposal.id,
+    actorId: user.id
+  });
+
+  return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
+};
+
+exports.requestRework = async ({ user, id, reason, ip } = {}) => {
+  const scope = await resolveScope(user);
+  if (!scope.isAdmin && !scope.isTgd && !scope.isBackOffice) {
+    throw err('Chỉ Back Office, Tổng giám đốc hoặc Admin được yêu cầu làm lại BCĐX', 403);
+  }
+  const proposal = await loadProposal(id);
+  if (proposal.status !== SIGNATURE_PENDING) {
+    throw err('Đề xuất không ở trạng thái trình ký', 400);
+  }
+  const cleanReason = String(reason || '').trim();
+  if (!cleanReason) throw err('Vui lòng nhập lý do yêu cầu làm lại BCĐX', 400);
+
+  const proposalLifecycle = require('./proposalLifecycle');
+  const transition = await proposalLifecycle.transition(proposal.id, UPDATING_STATUS, {
+    reason: cleanReason,
+    actorId: user.id,
+    actorRole: user.role,
+    source: 'user',
+    ip
+  });
+
+  const [countRows] = await pool.query(
+    'SELECT COUNT(*) AS n FROM proposal_requests WHERE proposal_id = ? AND request_type = ?',
+    [proposal.id, REVISION_REQUEST_TYPE]
+  );
+  const round = Number(countRows[0]?.n || 0) + 1;
+
+  const request = await require('./proposalRequestService').createRequest({
+    proposalId: proposal.id,
+    type: REVISION_REQUEST_TYPE,
+    description: cleanReason,
+    requestedBy: user.id,
+    previousStatus: SIGNATURE_PENDING,
+    currentStatus: UPDATING_STATUS,
+    targetUserId: proposal.user_id || null,
+    targetTitle: 'Người đề xuất',
+    note: `Lần yêu cầu làm lại BCĐX: ${round}`,
+    roundNo: round
+  });
+
+  await proposalLifecycle.logActivity({
+    proposalId: proposal.id,
+    action: 'signature_rework_requested',
+    fromStatus: SIGNATURE_PENDING,
+    toStatus: UPDATING_STATUS,
+    reason: cleanReason,
+    changedFields: {
+      round_no: { label: 'Số lần yêu cầu làm lại BCĐX', old: round - 1, new: round }
+    },
+    actorId: user.id,
+    actorRole: user.role,
+    source: 'user',
+    ip
+  });
+
+  const message = await buildMessage(proposal, user.id, {
+    status: UPDATING_STATUS,
+    actionLabel: 'Back Office',
+    reason: cleanReason
+  });
+  const adminUserService = require('./adminUserService');
+  const ancestorIds = proposal.user_id ? await adminUserService.getAncestorIds(proposal.user_id) : [];
+  const regionIds = await proposalReportService.findGdttkdIdsByRegion(
+    require('./proposalReviewService').resolveRegion(parseCustomData(proposal.custom_data).vung_mien)
+  );
+  await notifyRecipients([proposal.user_id, ...ancestorIds, ...regionIds], {
+    type: UPDATING_STATUS,
+    title: 'Đề xuất cần làm lại tờ trình BCĐX',
     message,
     entityId: proposal.id,
     actorId: user.id

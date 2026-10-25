@@ -39,6 +39,7 @@ const AdminProposalApprovalDetailPage = lazy(() => import('./pages/admin/AdminPr
 const ProposalSignatureConfigPage = lazy(() => import('./pages/admin/ProposalSignatureConfigPage'));
 const AdminProposalsTrinhKyPage = lazy(() => import('./pages/admin/AdminProposalsTrinhKyPage'));
 const AdminProposalSigningPage = lazy(() => import('./pages/admin/AdminProposalSigningPage'));
+const AdminProposalSignDetailPage = lazy(() => import('./pages/admin/AdminProposalSignDetailPage'));
 const AdminProposalDetailPage = lazy(() => import('./pages/admin/AdminProposalDetailPage'));
 const AdminProposalRequestUpdatePage = lazy(() => import('./pages/admin/AdminProposalRequestUpdatePage'));
 const AdminESignPage = lazy(() => import('./pages/admin/AdminESignPage'));
@@ -252,6 +253,14 @@ function App() {
               element={
                 <RoleRoute allowed={SIGNING_ROLES}>
                   <AdminProposalsTrinhKyPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/admin/proposals/trinh-ky/:id"
+              element={
+                <RoleRoute allowed={SIGNING_ROLES}>
+                  <AdminProposalSignDetailPage />
                 </RoleRoute>
               }
             />

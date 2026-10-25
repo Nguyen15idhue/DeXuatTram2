@@ -8,10 +8,10 @@ import useFieldOptions from '../../hooks/useFieldOptions';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
-import ProposalSignatureDetailModal from './ProposalSignatureDetailModal';
+import FilterBar from '../ui/FilterBar';
 import ProposalSignedFileModal from './ProposalSignedFileModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
-import { ProposalColorBadge, ProposalModelBadge, ProposalStatusBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
+import { ProposalColorBadge, ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import {
   formatProposalCost,
   formatProposalScale,
@@ -20,17 +20,19 @@ import {
   getProposalPhone
 } from '../../utils/proposalGrading';
 import {
-  formatChotTotal,
-  formatChotTruRows,
   getSignStatusColor,
   getSignStatusLabel,
+  SIGN_STATUS,
+  SIGN_STATUS_LABELS,
   SIGN_STATUS_HINTS
 } from '../../utils/proposalSignature';
 import { Download, Eye, FileUp, PenSquare, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
-const SIGNATURE_COLUMNS = [
+const SIGN_STATUS_FILTER_OPTIONS = Object.values(SIGN_STATUS);
+
+const signColumns = (tab) => ([
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
   { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
@@ -40,8 +42,10 @@ const SIGNATURE_COLUMNS = [
   { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 150, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'status', field_key: 'status', label: 'Trạng thái', width: 150, sortable: true, filterable: false, visible: true },
-  { key: 'sign_status', field_key: 'sign_status', label: 'Ghi chú', width: 150, sortable: false, filterable: false, visible: true }
-];
+  ...(tab === 'chairman'
+    ? []
+    : [{ key: 'sign_status', field_key: 'sign_status', label: 'Trạng thái ký duyệt', width: 150, sortable: false, filterable: false, visible: true }])
+]);
 
 const SignStatusBadge = ({ code }) => {
   return (
@@ -74,22 +78,27 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
+  const [filters, setFilters] = useState({ signStatus: '', myStatus: '', moHinh: '' });
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
 
-  const [detailModal, setDetailModal] = useState({ open: false, record: null, initialReject: false });
   const [signedModal, setSignedModal] = useState({ open: false, record: null });
   const [meta, setMeta] = useState({ isAdmin: false, isBackOffice: false, isTgd: false, isManager: false });
 
-  const loadItems = useCallback(async (targetPage = 1, targetSize = pageSize, targetSearch = debouncedSearch) => {
+  const columns = useMemo(() => signColumns(tab), [tab]);
+
+  const loadItems = useCallback(async (targetPage = 1, targetSize = pageSize) => {
     if (!token) return;
     setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams();
       params.set('tab', tab);
-      if (targetSearch) params.set('search', targetSearch);
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (filters.signStatus) params.set('sign_status', filters.signStatus);
+      if (filters.myStatus) params.set('my_status', filters.myStatus);
+      if (filters.moHinh) params.set('mo_hinh', filters.moHinh);
       params.set('page', targetPage);
       params.set('limit', targetSize);
       const res = await proposalSignatureService.getAll(params.toString(), token);
@@ -111,18 +120,14 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, tab, pageSize, debouncedSearch]);
+  }, [token, tab, pageSize, debouncedSearch, filters, onMeta]);
 
   useEffect(() => {
     setPage(1);
-    loadItems(1);
-  }, [tab, debouncedSearch]);
+    loadItems(1, pageSize);
+  }, [tab, debouncedSearch, filters, pageSize]);
 
-  const openDetail = (record) => setDetailModal({ open: true, record, initialReject: false });
-
-  const openReject = (record) => setDetailModal({ open: true, record, initialReject: true });
-
-  const goSigning = (record) => navigate(`/admin/proposals/ky-bcdx/${record.id}`);
+  const goDetail = (record) => navigate(`/admin/proposals/trinh-ky/${record.id}`);
 
   const handleExport = async (record) => {
     try {
@@ -141,13 +146,6 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     }
   };
 
-  const handleRejected = () => {
-    setDetailModal({ open: false, record: null });
-    setToastType('success');
-    setToastMessage('Đã từ chối duyệt và gửi yêu cầu cập nhật lại BCĐX');
-    loadItems(page, pageSize);
-  };
-
   const handleSignedFileUploaded = () => {
     setSignedModal({ open: false, record: null });
     setToastType('success');
@@ -160,6 +158,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       <ProposalCodeLink
         id={row.id}
         code={value || `#${row.id}`}
+        to={`/admin/proposals/trinh-ky/${row.id}`}
       />
     ),
     legal_name: (row) => getProposalLegalName(row),
@@ -173,80 +172,79 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     sign_status: (row) => <SignStatusBadge code={row.sign_status} />
   };
 
-  const renderActions = (row) => (
-    <div className="flex flex-wrap gap-1">
-      <button
-        type="button"
-        className={PROPOSAL_VIEW_BUTTON_CLASS}
-        title="Xem chi tiết hồ sơ trình ký"
-        onClick={() => openDetail(row)}
-      >
-        <Eye size={14} />
-        Xem chi tiết
-      </button>
-      {tab === 'pending' && row.status === 'SIGNATURE_PENDING' && (
+  const renderActions = (row) => {
+    const canSignRow = row.can_sign && row.status === 'SIGNATURE_PENDING';
+
+    if (tab === 'completed') return null;
+
+    const buttons = [];
+
+    if (tab === 'all' && canSignRow) {
+      buttons.push(
         <button
+          key="view-sign"
           type="button"
           className="btn btn-xs btn-primary gap-1"
-          title="Ký ngay BCĐX"
-          onClick={() => goSigning(row)}
+          title="Xem chi tiết và ký duyệt BCĐX"
+          onClick={() => goDetail(row)}
+        >
+          <Eye size={14} />
+          Xem &amp; ký duyệt
+        </button>
+      );
+    }
+
+    if (tab === 'pending' && canSignRow) {
+      buttons.push(
+        <button
+          key="sign"
+          type="button"
+          className="btn btn-xs btn-primary gap-1"
+          title="Ký duyệt BCĐX"
+          onClick={() => goDetail(row)}
         >
           <PenSquare size={14} />
-          Ký ngay
+          Ký duyệt
         </button>
-      )}
-      {tab === 'all' && row.status === 'SIGNATURE_PENDING' && (
-        <>
-          <button
-            type="button"
-            className="btn btn-xs btn-success gap-1"
-            title="Ký duyệt BCĐX"
-            onClick={() => goSigning(row)}
-          >
-            <PenSquare size={14} />
-            Ký duyệt
-          </button>
-          {(meta.isAdmin || meta.isTgd) && (
-            <button
-              type="button"
-              className="btn btn-xs btn-outline btn-error"
-              title="Từ chối duyệt BCĐX"
-              onClick={() => openReject(row)}
-            >
-              Từ chối duyệt
-            </button>
-          )}
-        </>
-      )}
-      {tab === 'chairman' && (
-        <>
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs gap-1"
-            title="Xuất file PDF đã ký"
-            onClick={() => handleExport(row)}
-          >
-            <Download size={14} />
-            Xuất file PDF
-          </button>
-          <button
-            type="button"
-            className="btn btn-xs btn-primary gap-1"
-            title="Tải lên file BCĐX chủ tịch đã ký"
-            onClick={() => setSignedModal({ open: true, record: row })}
-          >
-            <FileUp size={14} />
-            Upload file đã ký
-          </button>
-        </>
-      )}
-    </div>
-  );
+      );
+    }
+
+    if (tab === 'chairman') {
+      buttons.push(
+        <button
+          key="export"
+          type="button"
+          className="btn btn-ghost btn-xs gap-1"
+          title="Xuất file PDF đã ký"
+          onClick={() => handleExport(row)}
+        >
+          <Download size={14} />
+          Xuất file PDF
+        </button>,
+        <button
+          key="upload"
+          type="button"
+          className="btn btn-xs btn-primary gap-1"
+          title="Tải lên file BCĐX chủ tịch đã ký"
+          onClick={() => setSignedModal({ open: true, record: row })}
+        >
+          <FileUp size={14} />
+          Upload file đã ký
+        </button>
+      );
+    }
+
+    if (buttons.length === 0) return null;
+
+    return <div className="flex flex-wrap gap-1">{buttons}</div>;
+  };
+
+  const hasActiveFilters = filters.signStatus || filters.myStatus || filters.moHinh || search;
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="input input-bordered flex items-center gap-2 input-sm w-64">
+      <FilterBar>
+        <label className="input input-bordered flex items-center gap-2 input-sm w-72">
           <Search size={14} />
           <input
             className="grow"
@@ -260,7 +258,49 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
             </button>
           )}
         </label>
-      </div>
+        <select
+          className="select select-bordered select-sm w-44"
+          value={filters.signStatus}
+          onChange={(e) => setFilters((current) => ({ ...current, signStatus: e.target.value }))}
+        >
+          <option value="">Kết quả ký: Tất cả</option>
+          {SIGN_STATUS_FILTER_OPTIONS.map((code) => (
+            <option key={code} value={code}>{SIGN_STATUS_LABELS[code]}</option>
+          ))}
+        </select>
+        <select
+          className="select select-bordered select-sm w-40"
+          value={filters.myStatus}
+          onChange={(e) => setFilters((current) => ({ ...current, myStatus: e.target.value }))}
+        >
+          <option value="">Của tôi: Tất cả</option>
+          <option value="my_pending">Tôi cần ký</option>
+          <option value="my_signed">Tôi đã ký</option>
+        </select>
+        <select
+          className="select select-bordered select-sm w-44"
+          value={filters.moHinh}
+          onChange={(e) => setFilters((current) => ({ ...current, moHinh: e.target.value }))}
+        >
+          <option value="">Mô hình: Tất cả</option>
+          {(modelOptions || []).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm gap-1"
+            onClick={() => {
+              setSearch('');
+              setFilters({ signStatus: '', myStatus: '', moHinh: '' });
+            }}
+          >
+            <X size={14} />
+            Xóa bộ lọc
+          </button>
+        )}
+      </FilterBar>
 
       {loading ? (
         <div className="flex justify-center py-8">
@@ -272,11 +312,12 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
         <>
           <DynamicTable
             entity="station_proposals"
-            columns={SIGNATURE_COLUMNS}
+            columns={columns}
             data={items}
             startIndex={(page - 1) * pageSize}
             cellRenderers={cellRenderers}
-            actions={renderActions}
+            actions={tab === 'completed' ? undefined : renderActions}
+            showActions={tab !== 'completed'}
             frozenColumns={3}
           />
           <Pagination
@@ -289,14 +330,6 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
           />
         </>
       )}
-
-      <ProposalSignatureDetailModal
-        open={detailModal.open}
-        record={detailModal.record}
-        initialReject={detailModal.initialReject}
-        onClose={() => setDetailModal({ open: false, record: null, initialReject: false })}
-        onRejected={handleRejected}
-      />
 
       <ProposalSignedFileModal
         open={signedModal.open}

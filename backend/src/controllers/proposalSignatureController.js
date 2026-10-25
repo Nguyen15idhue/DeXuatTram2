@@ -10,13 +10,16 @@ const sendError = (res, error) => {
 
 exports.list = async (req, res) => {
   try {
-    const { tab = 'all', search = '', page = 1, limit = 10 } = req.query;
+    const { tab = 'all', search = '', page = 1, limit = 10, sign_status = '', my_status = '', mo_hinh = '' } = req.query;
     const result = await proposalSignatureService.listProposals({
       user: req.user,
       tab,
       search,
       page,
-      limit
+      limit,
+      signStatus: sign_status,
+      myStatus: my_status,
+      moHinh: mo_hinh
     });
     res.json({
       success: true,
@@ -54,8 +57,7 @@ exports.sign = async (req, res) => {
   }
 };
 
-exports.reject = async (req, res) => {
-  try {
+exports.reject = async (req, res) => {  try {
     const result = await proposalSignatureService.reject({
       user: req.user,
       id: req.params.id,
@@ -66,6 +68,24 @@ exports.reject = async (req, res) => {
       success: true,
       data: result,
       message: 'Đã từ chối duyệt và gửi yêu cầu cập nhật lại BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.requestRework = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.requestRework({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã yêu cầu làm lại BCĐX và chuyển đề xuất về bước lập BCĐX'
     });
   } catch (error) {
     sendError(res, error);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Check, FileText, Plus, Send, Trash2 } from "lucide-react";
 import PageHeader from "../../components/ui/PageHeader";
-import FileViewer from "../../components/dynamic/FileViewer";
+import ProposalDocumentPages from "../../components/admin/ProposalDocumentPages";
 import { useAuth } from "../../contexts/AuthContext";
 import { proposalApprovalService } from "../../services/api";
 import {
@@ -16,7 +16,7 @@ const ProposalSignatureConfigPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { token } = useAuth();
-  const canvasRef = useRef(null);
+  const docPagesRef = useRef(null);
   const [proposal, setProposal] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [signers, setSigners] = useState([]);
@@ -74,22 +74,28 @@ const ProposalSignatureConfigPage = () => {
   useEffect(() => {
     if (!drag) return undefined;
     const onMove = (event) => {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const dx = (event.clientX - drag.startX) / rect.width;
-      const dy = (event.clientY - drag.startY) / rect.height;
+      const dx = (event.clientX - drag.startX) / (drag.pageWidth || 1);
+      const dy = (event.clientY - drag.startY) / (drag.pageHeight || 1);
       setSigners((current) =>
         current.map((signer) => {
           if (
-            signer.user_id !== drag.userId ||
-            Number(signer.page) !== activePage
+            Number(signer.user_id) !== Number(drag.userId) ||
+            Number(signer.page) !== Number(drag.page)
           )
             return signer;
           if (drag.mode === "resize") {
             return {
               ...signer,
-              box_width: clamp(drag.origWidth + dx, 0.05, 1 - signer.pos_x),
-              box_height: clamp(drag.origHeight + dy, 0.02, 1 - signer.pos_y),
+              box_width: clamp(
+                drag.origWidth + dx,
+                0.05,
+                1 - signer.pos_x,
+              ),
+              box_height: clamp(
+                drag.origHeight + dy,
+                0.02,
+                1 - signer.pos_y,
+              ),
             };
           }
           return {
@@ -107,7 +113,7 @@ const ProposalSignatureConfigPage = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [activePage, drag]);
+  }, [drag]);
 
   const reportFiles = useMemo(() => getReportFiles(proposal), [proposal]);
   const selectedFile = reportFiles.find(
@@ -122,9 +128,26 @@ const ProposalSignatureConfigPage = () => {
     });
     return [...groups.entries()];
   }, [candidates]);
-  const pageSigners = signers.filter(
-    (signer) => Number(signer.page) === activePage,
-  );
+
+  const startDrag = (event, signer, mode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const pageEl = event.currentTarget.closest?.("[data-proposal-page]") || null;
+    const rect = pageEl?.getBoundingClientRect();
+    setDrag({
+      userId: signer.user_id,
+      page: signer.page,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      pageWidth: rect?.width || 1,
+      pageHeight: rect?.height || 1,
+      origPosX: signer.pos_x,
+      origPosY: signer.pos_y,
+      origWidth: signer.box_width,
+      origHeight: signer.box_height,
+    });
+  };
 
   const addSigner = (candidateId) => {
     const candidate = candidates.find(
@@ -145,6 +168,7 @@ const ProposalSignatureConfigPage = () => {
         full_name: candidate.full_name,
         signer_title: candidate.chuc_vu || candidate.department || null,
         ...DEFAULT_SIGNER_BOX,
+        page: activePage,
       },
     ]);
   };
@@ -158,6 +182,10 @@ const ProposalSignatureConfigPage = () => {
       ),
     );
   };
+
+  useEffect(() => {
+    docPagesRef.current?.scrollToPage?.(activePage);
+  }, [activePage]);
 
   const submit = async () => {
     setError("");
@@ -232,6 +260,7 @@ const ProposalSignatureConfigPage = () => {
             <h2 className="font-semibold">Danh sách người ký</h2>
             <p className="mt-1 text-xs text-base-content/60">
               Chọn người thuộc các nhóm có liên quan đến đề xuất để thêm ô ký.
+              Người ký mới sẽ được gắn vào trang đang chỉnh.
             </p>
           </div>
 
@@ -367,7 +396,7 @@ const ProposalSignatureConfigPage = () => {
             </label>
           </div>
 
-          {pageSigners.length > 0 && (
+          {signers.length > 0 && (
             <label className="flex items-center gap-2 text-sm">
               Trang đang chỉnh
               <select
@@ -394,65 +423,47 @@ const ProposalSignatureConfigPage = () => {
             <>
               <p className="text-xs text-base-content/60">
                 Kéo khung để đổi vị trí; kéo nút ở góc dưới bên phải để đổi kích
-                thước.
+                thước. Đổi "Trang" của người ký để đưa ô ký sang trang khác.
               </p>
-              <FileViewer
+              <ProposalDocumentPages
+                ref={docPagesRef}
                 file={{
                   id: selectedFile.id,
                   original_name: selectedFile.name,
                   mime_type: selectedFile.mime_type,
                 }}
-                inline
-                pdfPage={activePage}
-                overlay={
-                  <div
-                    ref={canvasRef}
-                    className="pointer-events-none absolute inset-0"
-                  >
-                    {pageSigners.map((signer) => (
+                showPageLabel
+                activePage={activePage}
+                renderPageOverlay={(pageNumber) =>
+                  signers
+                    .filter((signer) => Number(signer.page) === pageNumber)
+                    .map((signer) => (
                       <div
                         key={signer.user_id}
-                        className="pointer-events-auto absolute cursor-move border-2 border-primary bg-primary/20"
+                        className="pointer-events-auto absolute z-30 cursor-move border-2 border-primary bg-primary/20"
                         style={{
                           left: `${signer.pos_x * 100}%`,
                           top: `${signer.pos_y * 100}%`,
                           width: `${signer.box_width * 100}%`,
                           height: `${signer.box_height * 100}%`,
+                          minHeight: 24,
                           touchAction: "none",
                         }}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          setDrag({
-                            userId: signer.user_id,
-                            mode: "move",
-                            startX: event.clientX,
-                            startY: event.clientY,
-                            origPosX: signer.pos_x,
-                            origPosY: signer.pos_y,
-                          });
-                        }}
+                        onPointerDown={(event) =>
+                          startDrag(event, signer, "move")
+                        }
                       >
                         <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-primary px-1 text-[10px] text-primary-content">
                           {signer.full_name}
                         </span>
                         <span
                           className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize border border-white bg-primary"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setDrag({
-                              userId: signer.user_id,
-                              mode: "resize",
-                              startX: event.clientX,
-                              startY: event.clientY,
-                              origWidth: signer.box_width,
-                              origHeight: signer.box_height,
-                            });
-                          }}
+                          onPointerDown={(event) =>
+                            startDrag(event, signer, "resize")
+                          }
                         />
                       </div>
-                    ))}
-                  </div>
+                    ))
                 }
               />
             </>

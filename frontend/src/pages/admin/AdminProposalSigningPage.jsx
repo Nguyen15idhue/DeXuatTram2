@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalSignatureService } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Toast from '../../components/Toast';
 import {
   formatChotTotal,
@@ -13,17 +14,19 @@ import {
   getSignStatusColor,
   getSignStatusLabel
 } from '../../utils/proposalSignature';
-import { ArrowLeft, CheckCircle2, Download } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Crosshair, Download } from 'lucide-react';
 
 const AdminProposalSigningPage = () => {
   const { id } = useParams();
   const { token } = useAuth();
   const navigate = useNavigate();
+  const docRef = useRef(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [signing, setSigning] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [noSignature, setNoSignature] = useState(false);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   const loadDetail = useCallback(async () => {
@@ -48,11 +51,24 @@ const AdminProposalSigningPage = () => {
     setSigning(true);
     setToast({ message: '', type: 'success' });
     try {
-      await proposalSignatureService.sign(id, token);
+      const response = await proposalSignatureService.sign(id, token);
+      if (response && response.success === false) {
+        if (String(response?.message || '').includes('chưa tải chữ ký số')) {
+          setNoSignature(true);
+        } else {
+          setToast({ message: response?.message || 'Không ký được', type: 'error' });
+        }
+        return;
+      }
       setToast({ message: 'Đã ký BCĐX', type: 'success' });
       await loadDetail();
     } catch (err) {
-      setToast({ message: err?.message || 'Không ký được', type: 'error' });
+      const message = err?.message || 'Không ký được';
+      if (String(message).includes('chưa tải chữ ký số')) {
+        setNoSignature(true);
+      } else {
+        setToast({ message, type: 'error' });
+      }
     } finally {
       setSigning(false);
     }
@@ -171,17 +187,35 @@ const AdminProposalSigningPage = () => {
             <div className="card-body space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="card-title text-base">Tài liệu BCĐX và vị trí ký</h3>
-                {detail.can_sign && (
-                  <span className="badge badge-success badge-sm gap-1">
-                    <CheckCircle2 size={12} />
-                    Bạn được phân công ký
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {detail.can_sign && detail.my_config && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-xs gap-1"
+                      title={`Cuộn tới ô ký của bạn ở trang ${detail.my_config.page || 1}`}
+                      onClick={() =>
+                        docRef.current?.scrollToOverlay?.(
+                          Number(detail.my_config?.page) || 1,
+                        )
+                      }
+                    >
+                      <Crosshair size={13} />
+                      Đến vị trí ký của tôi
+                    </button>
+                  )}
+                  {detail.can_sign && (
+                    <span className="badge badge-success badge-sm gap-1">
+                      <CheckCircle2 size={12} />
+                      Bạn được phân công ký
+                    </span>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-base-content/60">
                 Nhấn "Ký ngay" tại ô ký của bạn để đóng dấu chữ ký số đã tải trong hồ sơ cá nhân.
               </p>
               <ProposalSigningDocument
+                ref={docRef}
                 file={detail.report_files?.[0] || null}
                 proposalId={detail.id}
                 myConfig={detail.my_config}
@@ -195,6 +229,19 @@ const AdminProposalSigningPage = () => {
         </div>
       )}
 
+      <ConfirmDialog
+        isOpen={noSignature}
+        title="Bạn chưa có chữ ký số"
+        message="Vui lòng tải lên ảnh chữ ký số trong phần Quản lý chữ ký số, sau đó quay lại đây để ký BCĐX."
+        cancelText="Để sau"
+        confirmText="Cấu hình ngay"
+        type="warning"
+        onCancel={() => setNoSignature(false)}
+        onConfirm={() => {
+          setNoSignature(false);
+          navigate('/admin/e-sign');
+        }}
+      />
       <Toast
         message={toast.message}
         type={toast.type}
