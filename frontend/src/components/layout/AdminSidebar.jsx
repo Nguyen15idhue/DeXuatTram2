@@ -2,6 +2,19 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useState, useEffect } from "react";
 import {
+  proposalApprovalService,
+  proposalGradingService,
+  proposalLayoutService,
+  proposalReportService,
+  proposalRequestService,
+  proposalReviewService,
+  proposalSignatureService,
+} from "../../services/api";
+import {
+  PROPOSAL_GRADING_TASKS_CHANGED_EVENT,
+  resolveGradingRole,
+} from "../../utils/proposalGrading";
+import {
   BarChart3,
   Users,
   Zap,
@@ -216,6 +229,16 @@ const configGroups = [
   },
 ];
 
+const proposalTaskKeyByPath = {
+  "/admin/proposals": "requests",
+  "/admin/proposals/danh-gia-quy-hoach": "grading",
+  "/admin/proposals/yeu-cau-cham-diem-lai": "review",
+  "/admin/proposals/danh-gia-layout": "layout",
+  "/admin/proposals/lap-to-trinh": "reports",
+  "/admin/proposals/duyet-bcdx": "approval",
+  "/admin/proposals/trinh-ky": "signatures",
+};
+
 const STORAGE_KEY = "admin-sidebar-groups";
 
 const loadCollapsed = () => {
@@ -235,19 +258,37 @@ const saveCollapsed = (arr) => {
 };
 
 const isItemActive = (pathname, path) =>
-  pathname === path || (path !== "/admin" && pathname.startsWith(path));
+  pathname === path || (path !== "/admin" && pathname.startsWith(`${path}/`));
 
 const isItemActiveExact = (pathname, path) => pathname === path;
+
+const getActivePath = (pathname, items) =>
+  items
+    .filter((item) => isItemActive(pathname, item.path))
+    .reduce((activePath, item) => (
+      !activePath || item.path.length > activePath.length ? item.path : activePath
+    ), null);
 
 const filterItemsByRole = (items, user) =>
   items.filter((item) => (!item.roles || item.roles.includes(user?.role))
     && (!item.access || item.access(user)));
 
 const AdminSidebar = ({ onNavClick, showBell = true }) => {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [mainCollapsed, setMainCollapsed] = useState({});
+  const [proposalTaskCounts, setProposalTaskCounts] = useState(null);
+  const gradingRole = resolveGradingRole(user?.department);
+  const canSeeProposalMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
+  const canSeeGradingTaskCount = user?.role === "SUPER_ADMIN"
+    || (user?.role === "ADMIN" && ["QH", "PL"].includes(gradingRole));
+  const proposalTaskTotal = proposalTaskCounts
+    ? Object.values(proposalTaskCounts).every(Number.isFinite)
+      ? Object.values(proposalTaskCounts).reduce((total, count) => total + count, 0)
+      : null
+    : null;
+  const formatTaskCount = (count) => count > 99 ? "99+" : count;
 
   useEffect(() => {
     setCollapsed((prev) => {
@@ -263,6 +304,123 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       return prev;
     });
   }, [location.pathname]);
+
+  useEffect(() => {
+    const proposalItem = mainItems.find((item) => item.path === "/admin/proposals");
+    const activeChildPath = getActivePath(
+      location.pathname,
+      filterItemsByRole(proposalItem?.children || [], user),
+    );
+    if (!activeChildPath) return;
+
+    setMainCollapsed((current) => (
+      current[proposalItem.path]
+        ? current
+        : { ...current, [proposalItem.path]: true }
+    ));
+  }, [location.pathname, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProposalTaskCounts = async () => {
+      if (!token || !canSeeProposalMenu) {
+        setProposalTaskCounts(null);
+        return;
+      }
+
+      const sources = [{
+        key: "requests",
+        load: () => proposalRequestService.getAll(
+          "status=OPEN&work_scope=mine&page=1&limit=1",
+          token,
+        ),
+      }];
+
+      if (canSeeGradingTaskCount) {
+        sources.push({
+          key: "grading",
+          load: () => proposalGradingService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (canSeeReviewRequestsPage(user)) {
+        sources.push({
+          key: "review",
+          load: () => proposalReviewService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (canSeeLayoutPage(user)) {
+        sources.push({
+          key: "layout",
+          load: () => proposalLayoutService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV"].includes(user.role)) {
+        sources.push({
+          key: "reports",
+          load: () => proposalReportService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (canSeeApprovalPage(user)) {
+        sources.push({
+          key: "approval",
+          load: () => proposalApprovalService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV"].includes(user.role)) {
+        sources.push({
+          key: "signatures",
+          load: () => proposalSignatureService.getAll(
+            "tab=pending&my_status=my_pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+
+      const results = await Promise.all(sources.map(async ({ key, load }) => {
+        try {
+          const response = await load();
+          const total = Number(response?.pagination?.total);
+          if (!Number.isFinite(total) || total < 0) {
+            throw new Error(`Invalid task count response for ${key}`);
+          }
+          return [key, total];
+        } catch (error) {
+          console.error(`Load proposal ${key} task count error:`, error);
+          return [key, null];
+        }
+      }));
+
+      if (!cancelled) setProposalTaskCounts(Object.fromEntries(results));
+    };
+
+    loadProposalTaskCounts();
+    window.addEventListener("focus", loadProposalTaskCounts);
+    window.addEventListener(PROPOSAL_GRADING_TASKS_CHANGED_EVENT, loadProposalTaskCounts);
+    const intervalId = window.setInterval(loadProposalTaskCounts, 30000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", loadProposalTaskCounts);
+      window.removeEventListener(PROPOSAL_GRADING_TASKS_CHANGED_EVENT, loadProposalTaskCounts);
+      window.clearInterval(intervalId);
+    };
+  }, [canSeeGradingTaskCount, canSeeProposalMenu, location.pathname, token, user]);
 
   const toggleGroup = (id) => {
     setCollapsed((prev) => {
@@ -297,8 +455,12 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         : "text-base-content/70 hover:bg-base-300 hover:text-base-content"
     }`;
 
-  const renderLink = (item) => {
-    const isActive = isItemActiveExact(location.pathname, item.path);
+  const renderLink = (item, activePath = null) => {
+    const isActive = activePath
+      ? activePath === item.path
+      : isItemActiveExact(location.pathname, item.path);
+    const taskKey = proposalTaskKeyByPath[item.path];
+    const taskCount = taskKey ? proposalTaskCounts?.[taskKey] : null;
     return (
       <Link
         key={item.path}
@@ -314,6 +476,15 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <span className="truncate" title={item.label}>
           {item.label}
         </span>
+        {Number.isFinite(taskCount) && taskCount > 0 && (
+          <span
+            className="badge badge-error badge-sm ml-auto h-5 min-w-5 flex-shrink-0 rounded-full px-1 text-white"
+            title={`${taskCount} công việc cần thực hiện`}
+            aria-label={`${taskCount} công việc cần thực hiện`}
+          >
+            {formatTaskCount(taskCount)}
+          </span>
+        )}
       </Link>
     );
   };
@@ -321,20 +492,18 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const renderMainItem = (item) => {
     const isActiveExact = isItemActiveExact(location.pathname, item.path);
     const hasChildren = item.children && item.children.length > 0;
-    const isOpen = mainCollapsed[item.path];
+    const visibleChildren = filterItemsByRole(item.children || [], user);
 
     // Parent active if exact match OR any child matches
     let isActive = isActiveExact;
+    let activeChildPath = null;
     if (hasChildren) {
-      const visibleChildren = filterItemsByRole(item.children, user);
-      isActive =
-        visibleChildren.some((c) =>
-          isItemActiveExact(location.pathname, c.path),
-        ) || isActiveExact;
+      activeChildPath = getActivePath(location.pathname, visibleChildren);
+      isActive = !!activeChildPath || isActiveExact;
     }
+    const isOpen = mainCollapsed[item.path] ?? !!activeChildPath;
 
     if (hasChildren) {
-      const visibleChildren = filterItemsByRole(item.children, user);
       return (
         <div key={item.path} className="mb-1">
           <button
@@ -352,14 +521,25 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
                 {item.label}
               </span>
             </span>
-            <ChevronDown
-              size={14}
-              className={`transition-transform ${isOpen ? "" : "-rotate-90"}`}
-            />
+            <span className="flex items-center gap-2">
+              {Number.isFinite(proposalTaskTotal) && proposalTaskTotal > 0 && (
+                <span
+                  className="badge badge-error badge-sm h-5 min-w-5 rounded-full px-1 text-white"
+                  title={`${proposalTaskTotal} công việc cần thực hiện trong Quản lý Đề xuất`}
+                  aria-label={`${proposalTaskTotal} công việc cần thực hiện trong Quản lý Đề xuất`}
+                >
+                  {formatTaskCount(proposalTaskTotal)}
+                </span>
+              )}
+              <ChevronDown
+                size={14}
+                className={`transition-transform ${isOpen ? "" : "-rotate-90"}`}
+              />
+            </span>
           </button>
           {isOpen && (
             <div className="ml-2 border-b mt-1 space-y-1 border-l border-base-300 rounded-bl-xl pl-2">
-              {visibleChildren.map(renderLink)}
+              {visibleChildren.map((child) => renderLink(child, activeChildPath))}
             </div>
           )}
         </div>

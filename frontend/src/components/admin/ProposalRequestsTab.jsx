@@ -10,6 +10,13 @@ import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import { ProposalStatusBadge } from './ProposalTableBadges';
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell
+} from './ProposalTableCells';
 import { RotateCcw, Search } from 'lucide-react';
 
 const REQUEST_TYPES = [
@@ -25,7 +32,8 @@ const REQUEST_TYPES = [
 const REQUEST_COLUMNS = [
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
   { key: 'owner_name', field_key: 'owner_name', label: 'Người đề xuất', width: 160, sortable: true, filterable: false, visible: true },
-  { key: 'proposal_status', field_key: 'proposal_status', label: 'Trạng thái hiện tại', width: 140, sortable: true, filterable: false, visible: true },
+  ...PROPOSAL_CONTEXT_COLUMNS,
+  { key: 'proposal_status', field_key: 'proposal_status', label: 'Trạng thái Quy trình', width: 140, sortable: true, filterable: false, visible: true },
   { key: 'description', field_key: 'description', label: 'Mô tả công việc cần thực hiện', width: 300, sortable: false, filterable: false, visible: true },
   { key: 'requested_by_name', field_key: 'requested_by_name', label: 'Yêu cầu cập nhật từ', width: 160, sortable: true, filterable: false, visible: true },
   { key: 'previous_status', field_key: 'previous_status', label: 'Trạng thái trước đó', width: 140, sortable: true, filterable: false, visible: true },
@@ -55,7 +63,7 @@ const ProposalRequestsTab = ({ token }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [type, setType] = useState('');
@@ -63,7 +71,7 @@ const ProposalRequestsTab = ({ token }) => {
   const [showFilter, setShowFilter] = useState(false);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], workScopes: [] });
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [completeDialog, setCompleteDialog] = useState({ open: false, row: null });
   const [completeNote, setCompleteNote] = useState('');
   const [completeSaving, setCompleteSaving] = useState(false);
@@ -186,6 +194,10 @@ const ProposalRequestsTab = ({ token }) => {
     owner_name: (row, value) => (
       row.owner_id ? <ProposalPersonLink id={row.owner_id} name={value} /> : <span>Khách</span>
     ),
+    manager_name: (row) => <ProposalManagerCell row={row} />,
+    vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
+    province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
+    address: (row, value) => <ProposalAddressCell row={row} value={value || row.address} />,
     proposal_status: (row, value) => <ProposalStatusBadge value={value} />,
     description: (row, value) => (
       <div>
@@ -298,6 +310,7 @@ const ProposalRequestsTab = ({ token }) => {
       ) : (
         <DynamicTable
           entity="station_proposals"
+          density="compact"
           columns={REQUEST_COLUMNS}
           data={items}
           actions={renderActions}

@@ -371,6 +371,12 @@ export const adminProposalService = {
   updateStatus(id, status, token, reason, force) {
     return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token);
   },
+  pauseProposal(id, reason, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/pause`, { reason }, token);
+  },
+  resumeProposal(id, token) {
+    return api.postWithAuth(`/admin/proposals/${id}/resume`, {}, token);
+  },
   convertToStation(id, data, token) {
     return api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token);
   },
@@ -454,6 +460,12 @@ export const proposalLayoutService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-layouts${qs}`, token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-layouts/filter-options', token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-layouts/${id}`, token);
   },
   updateLayout(id, data, token) {
     return api.putWithAuth(`/admin/proposal-layouts/${id}`, data || {}, token);

@@ -272,9 +272,11 @@ const listReviews = async ({
   const total = Number(countRows[0]?.total || 0);
 
   const [rows] = await pool.query(
-    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email
+    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN users manager ON manager.id = u.parent_id
      ${whereClause}
      ORDER BY
        CASE WHEN ? = 'pending' THEN p.updated_at END ASC,

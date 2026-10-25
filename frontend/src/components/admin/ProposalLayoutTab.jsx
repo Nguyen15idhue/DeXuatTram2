@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalLayoutService } from '../../services/api';
-import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useMediaQuery from '../../hooks/useMediaQuery';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
-import RecordDetailPopup from './RecordDetailPopup';
 import ReviewActionDialog from './ReviewActionDialog';
 import ProposalLayoutUpdateModal from './ProposalLayoutUpdateModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
-import { ProposalModelBadge, ProposalStatusBadge, PROPOSAL_VIEW_BUTTON_CLASS } from './ProposalTableBadges';
+import ProposalAdvancedFilters from './ProposalAdvancedFilters';
+import { FilterBody, FilterToggle } from '../ui/FilterPanel';
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell
+} from './ProposalTableCells';
+import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import {
   formatProposalScale,
   getProposalAddress,
@@ -19,25 +27,34 @@ import {
   getProposalPhone
 } from '../../utils/proposalGrading';
 import { getSupplementCount } from '../../utils/proposalDesign';
-import { Eye, Pencil, Search, X } from 'lucide-react';
+import { Pencil, RotateCcw, Search } from 'lucide-react';
 
-const PROPOSALS_VIEW_ID = 8;
+const EMPTY_FILTERS = {
+  proposalStatus: '',
+  model: '',
+  province: '',
+  region: '',
+  ownerUserId: '',
+  managerUserId: '',
+  dateFrom: '',
+  dateTo: ''
+};
 
 const LAYOUT_COLUMNS = [
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
   { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
-  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'supplement_count', field_key: 'supplement_count', label: 'Số lần YC cập nhật thông tin', width: 160, sortable: false, filterable: false, visible: true },
-  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 150, sortable: true, filterable: false, visible: true }
+  { key: 'status', field_key: 'status', label: 'Trạng thái Quy trình', width: 150, sortable: true, filterable: false, visible: true }
 ];
 
 const ProposalLayoutTab = ({ tab, canManage }) => {
   const { token } = useAuth();
-  const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
 
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
@@ -52,20 +69,30 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
+  const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], provinces: [], models: [], regions: [] });
+  const [filterOptionsError, setFilterOptionsError] = useState('');
+  const [showFilter, setShowFilter] = useState(false);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
 
-  const [detailPopup, setDetailPopup] = useState({ open: false, record: null });
   const [layoutModal, setLayoutModal] = useState({ open: false, record: null });
   const [actionDialog, setActionDialog] = useState({ open: false, type: null, row: null });
   const [actionSaving, setActionSaving] = useState(false);
   const [actionError, setActionError] = useState('');
 
-  const loadItems = useCallback(async (targetPage = 1, targetSize = pageSize, targetSearch = debouncedSearch) => {
+  const loadItems = useCallback(async (
+    targetPage = 1,
+    targetSize = pageSize,
+    targetSearch = debouncedSearch,
+    targetFilters = appliedFilters
+  ) => {
     if (!token) return;
     setLoading(true);
     setError('');
@@ -73,6 +100,19 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
       const params = new URLSearchParams();
       params.set('tab', tab);
       if (targetSearch) params.set('search', targetSearch);
+      const filterKeys = {
+        proposalStatus: 'proposal_status',
+        model: 'model',
+        province: 'province',
+        region: 'region',
+        ownerUserId: 'owner_user_id',
+        managerUserId: 'manager_user_id',
+        dateFrom: 'date_from',
+        dateTo: 'date_to'
+      };
+      Object.entries(filterKeys).forEach(([key, queryKey]) => {
+        if (targetFilters[key]) params.set(queryKey, targetFilters[key]);
+      });
       params.set('page', targetPage);
       params.set('limit', targetSize);
       const res = await proposalLayoutService.getAll(params.toString(), token);
@@ -84,17 +124,32 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, tab, pageSize, debouncedSearch]);
+  }, [token, tab, pageSize, debouncedSearch, appliedFilters]);
 
   useEffect(() => {
     setPage(1);
     loadItems(1);
-  }, [tab, debouncedSearch]);
+  }, [loadItems]);
 
-  const openDetail = (record) => setDetailPopup({ open: true, record });
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) return () => { cancelled = true; };
+    proposalLayoutService.getFilterOptions(token)
+      .then((response) => {
+        if (!cancelled) {
+          setFilterOptions(response?.data || {});
+          setFilterOptionsError('');
+        }
+      })
+      .catch((filterError) => {
+        if (!cancelled) {
+          setFilterOptionsError(filterError?.message || 'Không tải được tùy chọn bộ lọc');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [token]);
 
   const openLayoutModal = (record) => {
-    setDetailPopup({ open: false, record: null });
     setLayoutModal({ open: true, record });
   };
 
@@ -107,8 +162,8 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
     setLayoutModal({ open: false, record: null });
     setToastType('success');
     if (approve) setToastMessage('Đã duyệt bản vẽ layout — đề xuất chuyển sang Lập tờ trình BCĐX');
-    else setToastMessage('Đã lưu bản vẽ layout');
-    loadItems(page, pageSize);
+    else setToastMessage('Đã lưu nháp bản vẽ layout');
+    loadItems(page, pageSize, debouncedSearch, appliedFilters);
   };
 
   const handleActionConfirm = async (value) => {
@@ -129,7 +184,7 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
       }
       setToastType('success');
       setActionDialog({ open: false, type: null, row: null });
-      loadItems(page, pageSize);
+      loadItems(page, pageSize, debouncedSearch, appliedFilters);
     } catch (err) {
       setActionError(err?.message || 'Không thực hiện được thao tác');
     } finally {
@@ -142,12 +197,16 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
       <ProposalCodeLink
         id={row.id}
         code={value || `#${row.id}`}
+        to={`/admin/proposals/danh-gia-layout/${row.id}`}
       />
     ),
     legal_name: (row) => getProposalLegalName(row),
     phone: (row) => getProposalPhone(row),
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
-    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    manager_name: (row) => <ProposalManagerCell row={row} />,
+    vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
+    province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
+    address: (row, value) => <ProposalAddressCell row={row} value={value || getProposalAddress(row)} />,
     scale: (row) => formatProposalScale(row),
     user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
     supplement_count: (row) => <span className="text-center font-semibold">{getSupplementCount(row)}</span>,
@@ -156,15 +215,6 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
 
   const renderActions = (row) => (
     <div className="flex flex-wrap gap-1">
-      <button
-        type="button"
-        className={PROPOSAL_VIEW_BUTTON_CLASS}
-        title="Xem chi tiết đề xuất"
-        onClick={() => openDetail(row)}
-      >
-        <Eye size={14} />
-        Xem chi tiết
-      </button>
       {canManage && row.status === 'DESIGNING' && (
         <>
           <button
@@ -199,24 +249,68 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
     </div>
   );
 
+  const handleSearch = () => {
+    setPage(1);
+    setSearch(searchInput.trim());
+  };
+
+  const resetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
+    setPage(1);
+  };
+
+  const applyFilters = () => {
+    setAppliedFilters(filters);
+    setPage(1);
+    setShowFilter(false);
+  };
+
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="input input-bordered flex items-center gap-2 input-sm w-64">
-          <Search size={14} />
-          <input
-            className="grow"
-            placeholder="Tìm mã, pháp nhân, SĐT, địa chỉ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setSearch('')}>
-              <X size={14} />
-            </button>
-          )}
-        </label>
+        <input
+          type="search"
+          className="input input-bordered input-sm flex-1 min-w-0"
+          placeholder="Tìm mã, pháp nhân, SĐT, địa chỉ..."
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          onKeyDown={(event) => event.key === 'Enter' && handleSearch()}
+        />
+        <button type="button" className="btn btn-primary btn-sm gap-1 shrink-0" onClick={handleSearch}>
+          <Search size={14} /> <span className="hidden sm:inline">Tìm</span>
+        </button>
+        <FilterToggle open={showFilter} onToggle={() => setShowFilter((value) => !value)} count={activeFilterCount} />
       </div>
+
+      <FilterBody
+        open={showFilter}
+        isDesktop={isDesktop}
+        onClose={() => setShowFilter(false)}
+        onApply={applyFilters}
+        onReset={resetFilters}
+        title="Bộ lọc đề xuất"
+      >
+        <ProposalAdvancedFilters
+          values={filters}
+          onChange={setFilters}
+          options={filterOptions}
+          dateLabel="Ngày tạo đề xuất"
+        />
+        {isDesktop && (
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={resetFilters}>
+              <RotateCcw size={14} /> Xóa lọc
+            </button>
+            <button type="button" className="btn btn-primary btn-sm gap-1" onClick={applyFilters}>
+              <Search size={14} /> Áp dụng
+            </button>
+          </div>
+        )}
+      </FilterBody>
+      {filterOptionsError && <div className="alert alert-warning py-2 text-sm">{filterOptionsError}</div>}
 
       {loading ? (
         <div className="flex justify-center py-8">
@@ -228,6 +322,7 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
         <>
           <DynamicTable
             entity="station_proposals"
+            density="compact"
             columns={LAYOUT_COLUMNS}
             data={items}
             startIndex={(page - 1) * pageSize}
@@ -239,22 +334,11 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
             page={pagination.page}
             totalPages={pagination.totalPages}
             total={pagination.total}
-            onPageChange={(p) => { setPage(p); loadItems(p); }}
+            onPageChange={(nextPage) => { setPage(nextPage); loadItems(nextPage); }}
             pageSize={pageSize}
-            onPageSizeChange={(s) => { setPageSize(s); loadItems(1, s); }}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
           />
         </>
-      )}
-
-      {detailPopup.open && (
-        <RecordDetailPopup
-          entity="station_proposals"
-          record={detailPopup.record}
-          viewId={viewId}
-          mode="view"
-          allowEdit={false}
-          onClose={() => setDetailPopup({ open: false, record: null })}
-        />
       )}
 
       <ProposalLayoutUpdateModal

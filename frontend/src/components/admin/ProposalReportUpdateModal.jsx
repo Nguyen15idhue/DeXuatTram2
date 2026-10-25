@@ -40,16 +40,18 @@ const toUploadValue = (row) => getReportFiles(row)
   }));
 
 const parseRows = (value) => {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string') {
+  let parsed = value;
+  for (let attempt = 0; attempt < 2 && typeof parsed === 'string'; attempt += 1) {
     try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
+      parsed = JSON.parse(parsed);
     } catch {
       return [];
     }
   }
-  return [];
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== 'object') return [];
+  const rows = parsed.rows ?? parsed.data ?? parsed.items ?? parsed.value;
+  return rows === parsed ? [] : parseRows(rows);
 };
 
 const getCustomData = (record) => {
@@ -60,30 +62,69 @@ const getCustomData = (record) => {
   return {};
 };
 
+const normalizeModel = (value) => {
+  const candidates = value && typeof value === 'object'
+    ? [value.value, value.code, value.label, value.name, value.id]
+    : [value];
+  for (const candidate of candidates) {
+    const normalized = String(candidate || '').trim().toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/\s+/g, ' ');
+    if (normalized === 'nq_lk' || normalized.includes('nq_lk') || (normalized.includes('nhuong quyen') && normalized.includes('lien ket'))) {
+      return 'NQ_LK';
+    }
+    if (normalized === 'tdt' || normalized.includes('tu dau tu')) return 'TDT';
+    if (normalized === 'nq' || normalized.includes('nhuong quyen')) return 'NQ';
+    if (normalized === 'lk' || normalized.includes('lien ket')) return 'LK';
+  }
+  return '';
+};
+
+const getTableCellValue = (value) => {
+  if (value && typeof value === 'object') {
+    return value.value ?? value.code ?? value.label ?? value.name ?? '';
+  }
+  return value ?? '';
+};
+
 const getProposedPoleRows = (record) => {
   const customData = getCustomData(record);
-  const modelValue = record?.mo_hinh_dau_tu ?? customData.mo_hinh_dau_tu;
-  const model = typeof modelValue === 'object'
-    ? String(modelValue.value || modelValue.label || '').toUpperCase()
-    : String(modelValue || '').toUpperCase();
-  const sourceTables = [
+  const model = normalizeModel(record?.mo_hinh_dau_tu ?? customData.mo_hinh_dau_tu);
+  const allSourceTables = [
     { model: 'TDT', key: 'tdt_tru' },
     { model: 'NQ', key: 'loai_tru_nq' },
     { model: 'LK', key: 'loai_tru_lk' }
-  ].filter((source) => !model
-    || source.model === model
-    || (model === 'NQ_LK' && ['NQ', 'LK'].includes(source.model)));
+  ];
+  const sourceTables = model === 'NQ_LK'
+    ? allSourceTables.filter((source) => ['NQ', 'LK'].includes(source.model))
+    : model
+      ? allSourceTables.filter((source) => source.model === model)
+      : allSourceTables;
   const rows = sourceTables.flatMap((source) => {
     const proposedRows = parseRows(record?.[source.key] ?? customData[source.key]);
     return proposedRows
-      .filter((row) => Number(row?.so_luong) > 0)
-      .map((row) => ({
-        mo_hinh: source.model,
-        so_luong: row.so_luong,
-        loai_tru: row.loai_tru || row.khoan_muc || ''
-      }));
+      .map((row) => {
+        const quantity = getTableCellValue(row?.so_luong);
+        return {
+          mo_hinh: source.model,
+          so_luong: quantity,
+          loai_tru: String(getTableCellValue(row?.loai_tru ?? row?.khoan_muc) || '')
+        };
+      })
+      .filter((row) => Number(row.so_luong) > 0);
   });
-  return rows.length > 0 ? rows : [emptyRow()];
+  if (rows.length > 0) return rows;
+
+  const legacyPoleType = String(getTableCellValue(record?.loai_tru ?? customData.loai_tru) || '').trim();
+  if (!legacyPoleType) return [emptyRow()];
+  const legacyQuantity = getTableCellValue(record?.so_luong_tru ?? customData.so_luong_tru);
+  return [{
+    mo_hinh: model,
+    so_luong: Number(legacyQuantity) > 0 ? legacyQuantity : 1,
+    loai_tru: legacyPoleType
+  }];
 };
 
 const formatMoney = (value) => {
@@ -254,22 +295,11 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
           </section>
 
           <section className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h4 className="font-semibold">Số lượng trụ chốt *</h4>
-                <p className="text-xs text-base-content/60">
-                  Số lượng và loại trụ mặc định lấy từ đề xuất; có thể chỉnh sửa. Giá chốt lấy từ danh mục hiện tại.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="btn btn-outline btn-primary btn-sm gap-1"
-                onClick={() => setChotRows((current) => [...current, emptyRow()])}
-                disabled={saving || chotRows.length >= 50}
-              >
-                <Plus size={15} />
-                Thêm dòng
-              </button>
+            <div>
+              <h4 className="font-semibold">Số lượng trụ chốt *</h4>
+              <p className="text-xs text-base-content/60">
+                Số lượng và loại trụ mặc định lấy từ đề xuất; có thể chỉnh sửa. Giá chốt lấy từ danh mục hiện tại.
+              </p>
             </div>
 
             {loadingTypes ? (
@@ -362,6 +392,17 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
                 </table>
               </div>
             )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="btn btn-outline btn-primary btn-sm gap-1"
+                onClick={() => setChotRows((current) => [...current, emptyRow()])}
+                disabled={saving || chotRows.length >= 50}
+              >
+                <Plus size={15} />
+                Thêm dòng
+              </button>
+            </div>
           </section>
 
           {error ? <div className="alert alert-error text-sm py-2">{error}</div> : null}

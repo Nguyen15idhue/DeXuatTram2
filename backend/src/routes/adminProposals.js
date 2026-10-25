@@ -17,7 +17,7 @@ const adminProposalController = require('../controllers/adminProposalController'
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, RE_GDTTKD_EVALUATING, TGD_REVIEW, DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING, PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, COMPLETED]
+ *           enum: [PENDING, REVIEWING, PRINCIPLE_APPROVED, APPROVED, REJECTED, CANCELLED, CONTRACT_SIGNED, CONTRACT_FAILED, ARCHIVED, GRADING, GDTTKD_EVALUATING, RE_GRADING, RE_GDTTKD_EVALUATING, TGD_REVIEW, DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING, PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, COMPLETED, PAUSED]
  *       - in: query
  *         name: statuses
  *         schema:
@@ -336,6 +336,68 @@ router.put('/:id', requireAuth, requireProposalManager, validateUpdateProposal, 
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id/status', requireAuth, requireProposalManager, adminProposalController.updateStatus);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/pause:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Tạm dừng đề xuất, giữ lại trạng thái trước đó
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Đề xuất đã được tạm dừng
+ *       400:
+ *         description: Trạng thái hoặc lý do không hợp lệ
+ *       403:
+ *         description: Không có quyền tạm dừng đề xuất
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/pause', requireAuth, requireProposalManager, adminProposalController.pause);
+
+/**
+ * @swagger
+ * /api/admin/proposals/{id}/resume:
+ *   post:
+ *     tags: [Admin - Proposals]
+ *     summary: Tiếp tục đề xuất về trạng thái trước khi tạm dừng
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Đề xuất đã được tiếp tục
+ *       400:
+ *         description: Đề xuất không ở trạng thái tạm dừng
+ *       403:
+ *         description: Không có quyền tiếp tục đề xuất
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/resume', requireAuth, requireProposalManager, adminProposalController.resume);
 
 /**
  * @swagger

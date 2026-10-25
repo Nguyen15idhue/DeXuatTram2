@@ -329,6 +329,7 @@ exports.listProposals = async ({
 
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             (SELECT rq.id FROM proposal_requests rq
               WHERE rq.proposal_id = p.id AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
                 AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
@@ -342,6 +343,7 @@ exports.listProposals = async ({
             ${supplementExists} AS supplement_pending
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN users manager ON manager.id = u.parent_id
      ${whereClause}
      ORDER BY ${safeTab === 'pending' ? 'COALESCE(grading_task_created_at, p.created_at) ASC, p.id ASC' : 'p.updated_at DESC, p.id DESC'}
      LIMIT ? OFFSET ?`,

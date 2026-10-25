@@ -1,4 +1,9 @@
 export const GRADING_ROLE = { QH: 'QH', PL: 'PL', BOTH: 'BOTH' };
+export const PROPOSAL_GRADING_TASKS_CHANGED_EVENT = 'proposal-grading:tasks-changed';
+
+export const notifyProposalGradingTasksChanged = () => {
+  window.dispatchEvent(new Event(PROPOSAL_GRADING_TASKS_CHANGED_EVENT));
+};
 
 export const GRADING_ROLE_LABELS = {
   QH: 'Quy hoạch',

@@ -4,10 +4,10 @@ import PageHeader from '../../components/ui/PageHeader';
 import ProposalSignatureTab from '../../components/admin/ProposalSignatureTab';
 
 const TABS = [
+  { key: 'pending', label: 'Các đề xuất cần thực hiện' },
+  { key: 'completed', label: 'Các đề xuất đã hoàn thành' },
   { key: 'all', label: 'Tất cả đề xuất' },
-  { key: 'pending', label: 'Đề xuất cần thực hiện' },
-  { key: 'chairman', label: 'Đề xuất trình chủ tịch', backOfficeOnly: true },
-  { key: 'completed', label: 'Đề xuất đã hoàn thành' }
+  { key: 'chairman', label: 'Đề xuất trình chủ tịch', backOfficeOnly: true }
 ];
 
 const AdminProposalsTrinhKyPage = () => {
@@ -23,11 +23,11 @@ const AdminProposalsTrinhKyPage = () => {
 
   const activeTab = visibleTabs.some((tab) => tab.key === searchParams.get('tab'))
     ? searchParams.get('tab')
-    : 'all';
+    : 'pending';
 
   const changeTab = (tab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'all') next.delete('tab');
+    if (tab === 'pending') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
@@ -40,13 +40,13 @@ const AdminProposalsTrinhKyPage = () => {
       />
 
       <div className="space-y-3">
-        <div role="tablist" className="tabs tabs-bordered">
+        <div role="tablist" className="proposal-workflow-tabs">
           {visibleTabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               role="tab"
-              className={`tab ${activeTab === tab.key ? 'tab-active font-semibold' : ''}`}
+              className={`proposal-workflow-tab ${activeTab === tab.key ? 'is-active' : ''}`}
               onClick={() => changeTab(tab.key)}
             >
               {tab.label}

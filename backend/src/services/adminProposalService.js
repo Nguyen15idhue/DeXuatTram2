@@ -121,13 +121,16 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.custom_data, p.created_at, p.user_id,
             p.contact_1office_code, p.sync_status, p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
+            p.paused_from_status, p.paused_at,
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
             p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
             u.full_name as user_name, u.email as user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             p.journey_id,
             l.id AS lead_id, l.lead_code AS lead_code
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
+    LEFT JOIN users manager ON manager.id = u.parent_id
     LEFT JOIN leads l ON l.journey_id = p.journey_id AND l.deleted_at IS NULL
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -147,7 +150,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
 
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT id, user_id,
+    `SELECT id, user_id, status,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id
      FROM station_proposals WHERE id = ?`, [id]);
@@ -195,6 +198,27 @@ exports.updateStatus = async (id, status, opts = {}) => {
     ip: opts.ip || null,
     isSuperAdmin: opts.isSuperAdmin === true,
     force: opts.force === true
+  });
+};
+
+exports.pauseProposal = async (id, opts = {}) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  return proposalLifecycle.pauseProposal(id, {
+    reason: opts.reason,
+    actorId: opts.reviewerId || null,
+    actorRole: opts.actorRole || null,
+    source: 'user',
+    ip: opts.ip || null
+  });
+};
+
+exports.resumeProposal = async (id, opts = {}) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  return proposalLifecycle.resumeProposal(id, {
+    actorId: opts.reviewerId || null,
+    actorRole: opts.actorRole || null,
+    source: 'user',
+    ip: opts.ip || null
   });
 };
 

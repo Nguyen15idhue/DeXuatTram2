@@ -9,6 +9,14 @@ import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_MONEY_COLUMN_KEYS,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell
+} from './ProposalTableCells';
 import { RotateCcw, Search } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
@@ -32,13 +40,13 @@ const ProposalCompletedTab = ({ token }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], provinces: [], models: [], regions: [] });
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [showFilter, setShowFilter] = useState(false);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -100,6 +108,10 @@ const ProposalCompletedTab = ({ token }) => {
       row.user_id ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} /> : <span>{value || 'Khách'}</span>
     ),
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    manager_name: (row) => <ProposalManagerCell row={row} />,
+    vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
+    province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
+    address: (row, value) => <ProposalAddressCell row={row} value={value || row.address} />,
     status: (row, value) => <ProposalStatusBadge value={value || row.status} optionMap={statusOptionMap} />
   };
 
@@ -172,7 +184,17 @@ const ProposalCompletedTab = ({ token }) => {
         <DynamicTable
           entity="station_proposals"
           viewId={viewId}
-          hiddenColumnKeys={['review_level']}
+          showActions={false}
+          columnLabelOverrides={{
+            status: 'Trạng thái Quy trình',
+            manager_name: 'Người phụ trách',
+            vung_mien: 'Miền',
+            province: 'Tỉnh/Thành phố',
+            address: 'Địa chỉ chi tiết'
+          }}
+          additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
+          hiddenColumnKeys={['review_level', ...PROPOSAL_MONEY_COLUMN_KEYS]}
+          density="compact"
           data={items}
           startIndex={(pagination.page - 1) * pagination.limit}
           cellRenderers={cellRenderers}

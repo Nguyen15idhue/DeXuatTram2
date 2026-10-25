@@ -14,6 +14,14 @@ import ProposalRequestsTab from '../../components/admin/ProposalRequestsTab';
 import ProposalCompletedTab from '../../components/admin/ProposalCompletedTab';
 import { ProposalCodeLink, ProposalPersonLink } from '../../components/admin/ProposalLinkCells';
 import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_MONEY_COLUMN_KEYS,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell
+} from '../../components/admin/ProposalTableCells';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -26,9 +34,9 @@ import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
-import { getReviewLevelLabel } from '../../utils/proposalReview';
+import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play } from 'lucide-react';
 import { oneOfficeSyncService } from '../../services/api';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 import { pollSyncJobs as startSyncJobPoll, parseJobPayload as parsePayload, collectSkippedFiles, buildPushDoneMessage } from '../../utils/syncJobPoll';
@@ -38,13 +46,15 @@ const PROPOSALS_CREATE_FORM_ID = 13;
 
 const AdminProposalsPage = () => {
   const { token, user, isSales, isAdmin, isSuperAdmin } = useAuth();
+  const reviewRole = resolveReviewRole(user).roleKey;
+  const canPauseProposals = isSuperAdmin || [REVIEW_ROLE.GDTTKD, REVIEW_ROLE.TGD].includes(reviewRole);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = ['all', 'requests', 'completed'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'all';
+  const activeTab = ['all', 'requests', 'completed'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'requests';
   const changeTab = (tab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'all') next.delete('tab');
+    if (tab === 'requests') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
@@ -75,8 +85,8 @@ const AdminProposalsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-  const [pageSize, setPageSize] = useState(10);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [pageSize, setPageSize] = useState(20);
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null });
   const [logProposalId, setLogProposalId] = useState(null);
   const [rowMenu, setRowMenu] = useState(null);
@@ -112,6 +122,7 @@ const AdminProposalsPage = () => {
   const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [cancelModal, setCancelModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
+  const [pauseModal, setPauseModal] = useState({ open: false, id: null, action: 'pause', reason: '', saving: false });
   const [forceModal, setForceModal] = useState({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
   const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
   const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
@@ -478,6 +489,31 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
       setReopenModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleConfirmPauseAction = async () => {
+    if (pauseModal.action === 'pause' && !pauseModal.reason.trim()) return;
+    setPauseModal(prev => ({ ...prev, saving: true }));
+    try {
+      const res = pauseModal.action === 'pause'
+        ? await adminProposalService.pauseProposal(pauseModal.id, pauseModal.reason.trim(), token)
+        : await adminProposalService.resumeProposal(pauseModal.id, token);
+      if (res.success) {
+        setToast({
+          message: pauseModal.action === 'pause' ? 'Đã tạm dừng đề xuất' : 'Đã tiếp tục đề xuất',
+          type: 'success'
+        });
+        setPauseModal({ open: false, id: null, action: 'pause', reason: '', saving: false });
+        notifyBellRefresh();
+        loadProposals(pagination.page);
+      } else {
+        setError(res.message || 'Không thể cập nhật trạng thái tạm dừng');
+        setPauseModal(prev => ({ ...prev, saving: false }));
+      }
+    } catch (e) {
+      setError(e?.message || 'Lỗi kết nối server');
+      setPauseModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -1283,11 +1319,36 @@ const AdminProposalsPage = () => {
   };
 
   const menuRow = rowMenu ? proposals.find(p => p.id === rowMenu.id) : null;
+  const pauseProposalRow = pauseModal.id
+    ? proposals.find((proposal) => Number(proposal.id) === Number(pauseModal.id))
+    : null;
+  const resumeStatusLabel = pauseProposalRow
+    ? statusOptions.find((option) => option.value === pauseProposalRow.paused_from_status)?.label
+      || pauseProposalRow.paused_from_status
+      || 'trước khi tạm dừng'
+    : 'trước khi tạm dừng';
 
   const renderActions = (row) => (
     <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
       {user?.role !== 'NPP' || Number(row.user_id) === Number(user.id) ? (
         <>
+      {canPauseProposals && row.status && !['COMPLETED', 'CANCELLED'].includes(row.status) && (
+        <button
+          type="button"
+          className={`btn btn-xs gap-1 shrink-0 ${row.status === 'PAUSED' ? 'btn-success' : 'btn-warning'}`}
+          onClick={() => setPauseModal({
+            open: true,
+            id: row.id,
+            action: row.status === 'PAUSED' ? 'resume' : 'pause',
+            reason: '',
+            saving: false
+          })}
+          title={row.status === 'PAUSED' ? 'Tiếp tục về trạng thái trước khi dừng' : 'Tạm dừng đề xuất'}
+        >
+          {row.status === 'PAUSED' ? <Play size={12} /> : <Pause size={12} />}
+          {row.status === 'PAUSED' ? 'Tiếp tục' : 'Tạm dừng'}
+        </button>
+      )}
       {renderPrimaryAction(row)}
       {renderStatusActions(row)}
       <button className="btn btn-ghost btn-xs btn-square shrink-0" onClick={(e) => openRowMenu(e, row.id)} title="Thao tác khác">
@@ -1491,33 +1552,33 @@ const AdminProposalsPage = () => {
         </div>
       </div>
 
-      <div role="tablist" className="tabs tabs-bordered mb-4">
+      <div role="tablist" className="proposal-workflow-tabs mb-4">
         <button
           type="button"
           role="tab"
-          className={`tab ${activeTab === 'all' ? 'tab-active' : ''}`}
+          className={`proposal-workflow-tab ${activeTab === 'requests' ? 'is-active' : ''}`}
+          onClick={() => changeTab('requests')}
+          title="Các đề xuất đang có yêu cầu cần thực hiện"
+        >
+          Các đề xuất cần thực hiện
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`proposal-workflow-tab ${activeTab === 'completed' ? 'is-active' : ''}`}
+          onClick={() => changeTab('completed')}
+          title="Các đề xuất đã hoàn thành hoặc đã hủy"
+        >
+          Các đề xuất đã hoàn thành
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`proposal-workflow-tab ${activeTab === 'all' ? 'is-active' : ''}`}
           onClick={() => changeTab('all')}
           title="Tất cả đề xuất trong phạm vi được phép xem"
         >
           Tất cả đề xuất
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={`tab ${activeTab === 'requests' ? 'tab-active' : ''}`}
-          onClick={() => changeTab('requests')}
-          title="Các đề xuất đang có yêu cầu cần thực hiện"
-        >
-          Đề xuất cần thực hiện
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={`tab ${activeTab === 'completed' ? 'tab-active' : ''}`}
-          onClick={() => changeTab('completed')}
-          title="Các đề xuất đã hoàn thành hoặc đã hủy"
-        >
-          Đề xuất đã hoàn thành
         </button>
       </div>
 
@@ -2230,6 +2291,68 @@ const AdminProposalsPage = () => {
         </dialog>
       )}
 
+      {pauseModal.open && (
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+          <div className="modal-box max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`font-bold text-lg ${pauseModal.action === 'pause' ? 'text-warning' : 'text-success'}`}>
+                {pauseModal.action === 'pause' ? 'Tạm dừng đề xuất' : 'Tiếp tục đề xuất'}
+              </h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                disabled={pauseModal.saving}
+                onClick={() => setPauseModal({ open: false, id: null, action: 'pause', reason: '', saving: false })}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {pauseModal.action === 'pause' ? (
+              <>
+                <p className="text-sm text-base-content/70 mb-3">
+                  Đề xuất sẽ dừng tại trạng thái hiện tại. Countdown được đóng băng và tiếp tục khi đề xuất được mở lại.
+                </p>
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Lý do tạm dừng *</span></label>
+                  <textarea
+                    className="textarea textarea-bordered"
+                    rows={4}
+                    value={pauseModal.reason}
+                    onChange={(e) => setPauseModal(prev => ({ ...prev, reason: e.target.value }))}
+                    placeholder="Nhập lý do tạm dừng đề xuất..."
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-base-content/70">
+                Đề xuất sẽ tiếp tục từ trạng thái <b>{resumeStatusLabel}</b>. Countdown sẽ tiếp tục từ thời gian còn lại.
+              </p>
+            )}
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={pauseModal.saving}
+                onClick={() => setPauseModal({ open: false, id: null, action: 'pause', reason: '', saving: false })}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${pauseModal.action === 'pause' ? 'btn-warning' : 'btn-success'}`}
+                disabled={pauseModal.saving || (pauseModal.action === 'pause' && !pauseModal.reason.trim())}
+                onClick={handleConfirmPauseAction}
+              >
+                {pauseModal.saving
+                  ? 'Đang xử lý...'
+                  : pauseModal.action === 'pause' ? 'Xác nhận tạm dừng' : 'Tiếp tục đề xuất'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
+
       {rowMenu && menuRow && createPortal(
         <>
           <div data-testid="rowmenu-backdrop" className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} />
@@ -2306,6 +2429,16 @@ const AdminProposalsPage = () => {
         ref={tableRef}
         entity="station_proposals"
         viewId={proposalsViewId}
+        columnLabelOverrides={{
+          status: 'Trạng thái Quy trình',
+          manager_name: 'Người phụ trách',
+          vung_mien: 'Miền',
+          province: 'Tỉnh/Thành phố',
+          address: 'Địa chỉ chi tiết'
+        }}
+        additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
+        hiddenColumnKeys={PROPOSAL_MONEY_COLUMN_KEYS}
+        density="compact"
         data={proposals}
         frozenColumns={3}
         actions={renderActions}
@@ -2316,6 +2449,10 @@ const AdminProposalsPage = () => {
               ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} />
               : <span>{value || 'Khách'}</span>
           ),
+          manager_name: (row) => <ProposalManagerCell row={row} />,
+          vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
+          province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
+          address: (row, value) => <ProposalAddressCell row={row} value={value || row.address} />,
           review_level: (row) => <span className="badge badge-ghost badge-sm">{getReviewLevelLabel(row.review_level)}</span>
         }}
         startIndex={(pagination.page - 1) * pagination.limit}

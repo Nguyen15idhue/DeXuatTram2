@@ -31,7 +31,8 @@ const STATUS_TITLES = {
   PROPOSAL_REPORT_REVIEWING: 'Đề xuất đang duyệt BCĐX',
   PROPOSAL_REPORT_UPDATING: 'Đề xuất chờ cập nhật lại BCĐX',
   SIGNATURE_PENDING: 'Đề xuất đang trình ký',
-  COMPLETED: 'Đề xuất đã được phê duyệt'
+  COMPLETED: 'Đề xuất đã được phê duyệt',
+  PAUSED: 'Đề xuất đã tạm dừng'
 };
 
 exports.statusTitle = (status) => STATUS_TITLES[status] || 'Cập nhật đề xuất';

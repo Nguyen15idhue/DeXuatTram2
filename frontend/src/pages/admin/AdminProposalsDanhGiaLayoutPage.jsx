@@ -6,10 +6,10 @@ import { canManageLayout } from '../../utils/proposalDesign';
 import { ShieldAlert } from 'lucide-react';
 
 const TABS = [
-  { key: 'all', label: 'Tất cả đề xuất' },
   { key: 'pending', label: 'Đề xuất cần thực hiện' },
-  { key: 'waiting', label: 'Đề xuất đang chờ bổ sung' },
-  { key: 'layout', label: 'Đề xuất đã có bản vẽ layout' }
+  { key: 'waiting', label: 'Đề xuất đang chờ thông tin' },
+  { key: 'layout', label: 'Đề xuất đã có bản vẽ layout' },
+  { key: 'all', label: 'Tất cả đề xuất' }
 ];
 
 const AdminProposalsDanhGiaLayoutPage = () => {
@@ -17,13 +17,13 @@ const AdminProposalsDanhGiaLayoutPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = TABS.some((tab) => tab.key === searchParams.get('tab'))
     ? searchParams.get('tab')
-    : 'all';
+    : 'pending';
 
   const canManage = canManageLayout(user);
 
   const changeTab = (tab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'all') next.delete('tab');
+    if (tab === 'pending') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
@@ -45,13 +45,13 @@ const AdminProposalsDanhGiaLayoutPage = () => {
         </div>
       ) : (
         <div className="space-y-3">
-          <div role="tablist" className="tabs tabs-bordered">
+          <div role="tablist" className="proposal-workflow-tabs">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 role="tab"
-                className={`tab ${activeTab === tab.key ? 'tab-active font-semibold' : ''}`}
+                className={`proposal-workflow-tab ${activeTab === tab.key ? 'is-active' : ''}`}
                 onClick={() => changeTab(tab.key)}
               >
                 {tab.label}

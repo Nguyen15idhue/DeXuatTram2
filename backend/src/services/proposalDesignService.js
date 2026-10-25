@@ -73,10 +73,17 @@ exports.SUPPLEMENT_REQUEST_TYPE = SUPPLEMENT_REQUEST_TYPE;
 exports.TAB_STATUSES = TAB_STATUSES;
 exports.resolveDesignRole = resolveDesignRole;
 
-exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit = 10 } = {}) => {
+exports.listProposals = async ({
+  user,
+  tab = 'all',
+  search = '',
+  page = 1,
+  limit = 20,
+  filters = {}
+} = {}) => {
   const safeTab = Object.prototype.hasOwnProperty.call(TAB_STATUSES, tab) ? tab : 'all';
   const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
+  const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
   const offset = (safePage - 1) * safeLimit;
   const scope = await resolveScope(user);
 
@@ -117,6 +124,49 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
     params.push(like, like, like, like, like, like, like);
   }
 
+  if (filters.proposalStatus) {
+    where.push('p.status = ?');
+    params.push(String(filters.proposalStatus));
+  }
+  if (filters.model) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?");
+    params.push(String(filters.model));
+  }
+  if (filters.province) {
+    where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?");
+    params.push(String(filters.province));
+  }
+  if (filters.region) {
+    const region = normalizeText(filters.region);
+    const pattern = region.includes('bac') ? '%bac%'
+      : region.includes('trung') ? '%trung%'
+        : region.includes('nam') ? '%nam%' : null;
+    if (pattern) {
+      where.push("LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?");
+      params.push(pattern);
+    }
+  }
+  if (filters.ownerUserId) {
+    where.push('p.user_id = ?');
+    params.push(Number(filters.ownerUserId));
+  }
+  if (filters.managerUserId) {
+    const branchIds = await require('./adminUserService').getBranchIds(Number(filters.managerUserId));
+    if (branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
+      params.push(...branchIds.map(Number));
+    }
+  }
+  if (filters.dateFrom) {
+    where.push('p.created_at >= ?');
+    params.push(`${String(filters.dateFrom).slice(0, 10)} 00:00:00`);
+  }
+  if (filters.dateTo) {
+    where.push('p.created_at < DATE_ADD(?, INTERVAL 1 DAY)');
+    params.push(String(filters.dateTo).slice(0, 10));
+  }
+
   const whereClause = `WHERE ${where.length > 0 ? where.join(' AND ') : '1 = 1'}`;
 
   const [countRows] = await pool.query(
@@ -130,10 +180,12 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
 
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             (SELECT COUNT(*) FROM proposal_requests r
               WHERE r.proposal_id = p.id AND r.request_type = ?) AS supplement_request_count
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN users manager ON manager.id = u.parent_id
      ${whereClause}
      ORDER BY p.updated_at DESC, p.id DESC
      LIMIT ? OFFSET ?`,
@@ -148,6 +200,90 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) },
     meta: { canManage: true, isAdmin: !!scope.isAdmin, department: scope.department }
   };
+};
+
+exports.getFilterOptions = async ({ user } = {}) => {
+  const scope = await resolveScope(user);
+  assertCanManage(scope);
+  const statuses = TAB_STATUSES.all;
+  const statusClause = `p.status IN (${statuses.map(() => '?').join(',')})`;
+  const [owners] = await pool.query(
+    `SELECT DISTINCT p.user_id AS id, u.full_name AS name,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS model,
+            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS region
+       FROM station_proposals p
+       LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.user_id IS NOT NULL
+        AND (${statusClause} OR (p.status = 'CANCELLED' AND EXISTS (
+          SELECT 1 FROM proposal_activity_logs l
+           WHERE l.proposal_id = p.id AND l.action = 'layout_approved'
+        )))
+      ORDER BY u.full_name`,
+    statuses
+  );
+  const ownerIds = owners.map((owner) => Number(owner.id)).filter(Boolean);
+  const managers = ownerIds.length > 0
+    ? await pool.query(
+      `WITH RECURSIVE user_chain AS (
+         SELECT id, parent_id, 0 AS depth
+           FROM users
+          WHERE id IN (${ownerIds.map(() => '?').join(',')})
+         UNION ALL
+         SELECT parent.id, parent.parent_id, child.depth + 1
+           FROM users parent
+           JOIN user_chain child ON parent.id = child.parent_id
+          WHERE child.depth < 20
+       )
+       SELECT DISTINCT u.id, u.full_name AS name
+         FROM user_chain chain
+         JOIN users u ON u.id = chain.id
+        WHERE u.id NOT IN (${ownerIds.map(() => '?').join(',')})
+        ORDER BY u.full_name`,
+      [...ownerIds, ...ownerIds]
+    ).then(([rows]) => rows)
+    : [];
+  const uniqueValues = (key) => [...new Set(owners.map((owner) => owner[key]).filter(Boolean))].sort();
+  return {
+    owners: owners.filter((owner) => owner.id).map(({ id, name }) => ({ id: Number(id), name })),
+    managers,
+    provinces: uniqueValues('province'),
+    models: uniqueValues('model'),
+    regions: uniqueValues('region')
+  };
+};
+
+exports.getProposalDetail = async ({ user, id } = {}) => {
+  const scope = await resolveScope(user);
+  assertCanManage(scope);
+  const proposalId = Number(id);
+  if (!Number.isInteger(proposalId) || proposalId <= 0) {
+    throw err('Đề xuất không hợp lệ', 400);
+  }
+  const statuses = TAB_STATUSES.all;
+  const statusPlaceholders = statuses.map(() => '?').join(',');
+  const [rows] = await pool.query(
+    `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat,
+            u.full_name AS user_name, u.email AS user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name,
+            (SELECT COUNT(*) FROM proposal_requests r
+              WHERE r.proposal_id = p.id AND r.request_type = ?) AS supplement_request_count
+       FROM station_proposals p
+       LEFT JOIN users u ON u.id = p.user_id
+       LEFT JOIN users manager ON manager.id = u.parent_id
+      WHERE p.id = ?
+        AND (p.status IN (${statusPlaceholders}) OR (p.status = 'CANCELLED' AND EXISTS (
+          SELECT 1 FROM proposal_activity_logs l
+           WHERE l.proposal_id = p.id AND l.action = 'layout_approved'
+        )))
+      LIMIT 1`,
+    [SUPPLEMENT_REQUEST_TYPE, proposalId, ...statuses]
+  );
+  if (rows.length === 0) throw err('Không tìm thấy đề xuất trong phạm vi đánh giá layout', 404);
+
+  const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+  const proposal = mapLayoutRow(dynamicUtils.mergeData(rows[0], fieldDefinitions));
+  return { proposal, fieldDefinitions };
 };
 
 const loadProposal = async (id) => {

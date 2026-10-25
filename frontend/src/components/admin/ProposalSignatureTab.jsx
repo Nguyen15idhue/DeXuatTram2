@@ -11,9 +11,15 @@ import Toast from '../Toast';
 import FilterBar from '../ui/FilterBar';
 import ProposalSignedFileModal from './ProposalSignedFileModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell
+} from './ProposalTableCells';
 import { ProposalColorBadge, ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import {
-  formatProposalCost,
   formatProposalScale,
   getProposalAddress,
   getProposalLegalName,
@@ -37,11 +43,10 @@ const signColumns = (tab) => ([
   { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
-  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
-  { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 150, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
-  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 150, sortable: true, filterable: false, visible: true },
+  { key: 'status', field_key: 'status', label: 'Trạng thái Quy trình', width: 150, sortable: true, filterable: false, visible: true },
   ...(tab === 'chairman'
     ? []
     : [{ key: 'sign_status', field_key: 'sign_status', label: 'Trạng thái ký duyệt', width: 150, sortable: false, filterable: false, visible: true }])
@@ -75,11 +80,11 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [filters, setFilters] = useState({ signStatus: '', myStatus: '', moHinh: '' });
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
 
@@ -164,9 +169,11 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     legal_name: (row) => getProposalLegalName(row),
     phone: (row) => getProposalPhone(row),
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
-    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    manager_name: (row) => <ProposalManagerCell row={row} />,
+    vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
+    province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
+    address: (row, value) => <ProposalAddressCell row={row} value={value || getProposalAddress(row)} />,
     scale: (row) => formatProposalScale(row),
-    cost: (row) => formatProposalCost(row),
     user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
     status: (row, value) => <ProposalStatusBadge value={value} optionMap={statusOptionMap} />,
     sign_status: (row) => <SignStatusBadge code={row.sign_status} />
@@ -312,6 +319,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
         <>
           <DynamicTable
             entity="station_proposals"
+            density="compact"
             columns={columns}
             data={items}
             startIndex={(page - 1) * pageSize}

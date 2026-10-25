@@ -223,7 +223,7 @@ exports.listProposals = async ({
 
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
-            u.parent_id AS owner_parent_id,
+            u.parent_id AS owner_parent_id, u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             (SELECT COUNT(*) FROM proposal_requests r
               WHERE r.proposal_id = p.id AND r.request_type = ?) AS revision_request_count,
             (SELECT r.description FROM proposal_requests r
@@ -231,6 +231,7 @@ exports.listProposals = async ({
               ORDER BY r.id DESC LIMIT 1) AS task_description
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN users manager ON manager.id = u.parent_id
      ${whereClause}
      ORDER BY p.updated_at DESC, p.id DESC
      LIMIT ? OFFSET ?`,

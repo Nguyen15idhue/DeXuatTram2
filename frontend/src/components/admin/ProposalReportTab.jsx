@@ -9,11 +9,17 @@ import Pagination from '../Pagination';
 import Toast from '../Toast';
 import ProposalReportUpdateModal from './ProposalReportUpdateModal';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
+import {
+  PROPOSAL_CONTEXT_COLUMNS,
+  ProposalAddressCell,
+  ProposalManagerCell,
+  ProposalProvinceCell,
+  ProposalRegionCell
+} from './ProposalTableCells';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import ProposalAdvancedFilters from './ProposalAdvancedFilters';
 import {
-  formatProposalCost,
   formatProposalScale,
   getProposalAddress,
   getProposalLegalName,
@@ -22,7 +28,6 @@ import {
 import {
   canUploadReport,
   formatCommittedPoles,
-  formatCommittedTotal,
   uploadButtonLabel
 } from '../../utils/proposalReport';
 import { Pencil, RotateCcw, Search } from 'lucide-react';
@@ -42,13 +47,11 @@ const REPORT_COLUMNS = [
   { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
-  { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true },
+  ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'chot_so_luong_tru', field_key: 'chot_so_luong_tru', label: 'Số lượng trụ chốt', width: 240, sortable: false, filterable: false, visible: true },
-  { key: 'tong_gia_tri_chot', field_key: 'tong_gia_tri_chot', label: 'Tổng giá trị chốt', width: 150, sortable: false, filterable: false, visible: true },
-  { key: 'cost', field_key: 'cost', label: 'Tổng chi phí dự kiến', width: 150, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
-  { key: 'status', field_key: 'status', label: 'Trạng thái', width: 150, sortable: true, filterable: false, visible: true },
+  { key: 'status', field_key: 'status', label: 'Trạng thái Quy trình', width: 150, sortable: true, filterable: false, visible: true },
   { key: 'task_description', field_key: 'task_description', label: 'Mô tả việc cần làm', width: 200, sortable: false, filterable: false, visible: true }
 ];
 
@@ -76,7 +79,7 @@ const ProposalReportTab = ({ tab }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
@@ -85,7 +88,7 @@ const ProposalReportTab = ({ tab }) => {
   const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], provinces: [], models: [], regions: [] });
   const [filterOptionsError, setFilterOptionsError] = useState('');
   const [showFilter, setShowFilter] = useState(false);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
 
@@ -172,11 +175,12 @@ const ProposalReportTab = ({ tab }) => {
     legal_name: (row) => getProposalLegalName(row),
     phone: (row) => getProposalPhone(row),
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
-    address: (row) => <span className="block min-w-[220px]">{getProposalAddress(row)}</span>,
+    manager_name: (row) => <ProposalManagerCell row={row} />,
+    vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
+    province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
+    address: (row, value) => <ProposalAddressCell row={row} value={value || getProposalAddress(row)} />,
     scale: (row) => formatProposalScale(row),
     chot_so_luong_tru: (row) => <span className="block min-w-[240px]">{formatCommittedPoles(row.chot_so_luong_tru)}</span>,
-    tong_gia_tri_chot: (row) => <span className="whitespace-nowrap">{formatCommittedTotal(row.tong_gia_tri_chot)}</span>,
-    cost: (row) => formatProposalCost(row),
     user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
     status: (row, value) => <ProposalStatusBadge value={value} optionMap={statusOptionMap} />,
     task_description: (row, value) => (
@@ -278,6 +282,7 @@ const ProposalReportTab = ({ tab }) => {
         <>
           <DynamicTable
             entity="station_proposals"
+            density="compact"
             columns={columns}
             data={items}
             startIndex={(page - 1) * pageSize}

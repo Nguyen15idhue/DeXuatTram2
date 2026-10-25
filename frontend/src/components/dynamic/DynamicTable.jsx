@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, hiddenColumnKeys = [], data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], hiddenColumnKeys = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -67,10 +67,38 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
   );
   const hiddenColumnKeysSig = useMemo(() => hiddenColumnKeys.join(','), [hiddenColumnKeys]);
   const hiddenColumns = useMemo(() => new Set(hiddenColumnKeysSig.split(',').filter(Boolean)), [hiddenColumnKeysSig]);
+  const columnLabelOverridesSig = useMemo(
+    () => JSON.stringify(columnLabelOverrides || {}),
+    [columnLabelOverrides]
+  );
+  const additionalColumnsSig = useMemo(
+    () => JSON.stringify(additionalColumns || []),
+    [additionalColumns]
+  );
+
+  const prepareColumns = (sourceColumns) => {
+    const labelOverrides = JSON.parse(columnLabelOverridesSig);
+    const extras = JSON.parse(additionalColumnsSig);
+    const mergedColumns = [...sourceColumns];
+    const knownKeys = new Set(mergedColumns.map((column) => column.field_key || column.key));
+    extras.forEach((column) => {
+      const key = column.field_key || column.key;
+      if (key && !knownKeys.has(key)) {
+        mergedColumns.push(column);
+        knownKeys.add(key);
+      }
+    });
+    return mergedColumns
+      .filter((column) => !hiddenColumns.has(column.key) && !hiddenColumns.has(column.field_key))
+      .map((column) => {
+        const key = column.field_key || column.key;
+        return labelOverrides[key] ? { ...column, label: labelOverrides[key] } : column;
+      });
+  };
 
   useEffect(() => {
     if (Array.isArray(columnsProp) && columnsProp.length > 0) {
-      setColumns(columnsProp.filter((column) => !hiddenColumns.has(column.key)));
+      setColumns(prepareColumns(columnsProp));
       setLoading(false);
       setError('');
       return;
@@ -80,7 +108,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setColumns([]);
       setLoading(false);
     }
-  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns]);
+  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, columnLabelOverridesSig, additionalColumnsSig]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {
@@ -94,7 +122,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setError('');
       const res = await dynamicService.getViewConfig(entity, viewId);
       if (res.success) {
-        setColumns((res.data.fields || []).filter((column) => !hiddenColumns.has(column.key)));
+        setColumns(prepareColumns(res.data.fields || []));
         if (frozenColumns === null || frozenColumns === undefined) {
           const fc = res.data && res.data.view ? res.data.view.frozen_columns : null;
           if (fc !== undefined && fc !== null && fc !== '') setFrozenN(Math.max(0, Math.floor(Number(fc) || 0)));
@@ -331,7 +359,7 @@ const toDisplayValue = (val) => {
     <div className="dynamic-table-container">
       <div className="overflow-x-auto" ref={tableWrapRef}>
         {loading && <div className="px-2 py-1 text-xs text-base-content/50 border-b border-base-300">Đang tải cấu hình...</div>}
-        <table className="table table-zebra dynamic-table w-full text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
+        <table className={`table table-zebra dynamic-table w-full text-sm${density === 'compact' ? ' proposal-table-compact' : ''}`} style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
           <thead>
             <tr>
               {hasSelection && (

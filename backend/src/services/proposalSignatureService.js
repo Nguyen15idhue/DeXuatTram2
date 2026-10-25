@@ -178,6 +178,7 @@ exports.listProposals = async ({
 
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             p.signed_file_id,
             ${SIGNER_TOTAL_SQL} AS signer_total,
             ${SIGNER_SIGNED_SQL} AS signer_signed,
@@ -187,6 +188,7 @@ exports.listProposals = async ({
               WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'SIGNED') AS my_signed_count
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN users manager ON manager.id = u.parent_id
      ${whereClause}
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,

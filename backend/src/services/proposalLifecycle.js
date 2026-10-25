@@ -6,7 +6,8 @@ const ALL_STATUSES = [
   'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED',
   'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING', 'TGD_REVIEW', 'DESIGNING',
   'INFOR_WAITING',
-  'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING', 'COMPLETED'
+  'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING', 'COMPLETED',
+  'PAUSED'
 ];
 
 const ALLOWED_TRANSITIONS = {
@@ -55,6 +56,7 @@ const STATUS_STEP_LABELS = {
   PROPOSAL_REPORT_REVIEWING: 'duyệt BCĐX',
   SIGNATURE_PENDING: 'trình ký',
   COMPLETED: 'đã phê duyệt',
+  PAUSED: 'đang tạm dừng',
   CANCELLED: 'đã hủy'
 };
 
@@ -103,8 +105,8 @@ exports.ALLOWED_TRANSITIONS = ALLOWED_TRANSITIONS;
 
 const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
 
-exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changedFields, reason, actorId, actorRole, source, manualOverride, ip }) => {
-  await pool.query(
+exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changedFields, reason, actorId, actorRole, source, manualOverride, ip, connection = pool }) => {
+  await connection.query(
     `INSERT INTO proposal_activity_logs
       (proposal_id, action, from_status, to_status, changed_fields, reject_reason, actor_id, actor_role, source, manual_override, ip)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -119,12 +121,17 @@ exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changed
 };
 
 exports.transition = async (id, to, opts = {}) => {
-  const { reason, actorId, actorRole, source = 'user', manualOverride = false, ip, isSuperAdmin = false, force = false } = opts;
+  const {
+    reason, actorId, actorRole, source = 'user', manualOverride = false, ip,
+    isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false
+  } = opts;
   if (!ALL_STATUSES.includes(to)) {
     throw err('Trạng thái không hợp lệ', 400);
   }
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, journey_id, contact_1office_code, custom_data, supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id = ?',
+    `SELECT id, user_id, status, journey_id, contact_1office_code, custom_data,
+            supplement_deadline_at, transition_deadline_at, paused_from_status, paused_at
+       FROM station_proposals WHERE id = ?`,
     [id]
   );
   if (rows.length === 0) {
@@ -132,8 +139,33 @@ exports.transition = async (id, to, opts = {}) => {
   }
   const proposal = rows[0];
   const from = proposal.status;
+  const isPauseTransition = pauseAction === true && to === 'PAUSED';
+  const isResumeTransition = resumeAction === true
+    && from === 'PAUSED'
+    && proposal.paused_from_status === to
+    && Boolean(proposal.paused_at);
+  const isPausedCancellation = from === 'PAUSED' && to === 'CANCELLED';
   if (from === to) {
+    if (to === 'PAUSED') throw err('Đề xuất đã tạm dừng', 409);
     return { id, status: to, prevStatus: from, unchanged: true, autoPush: null };
+  }
+  if ((from === 'PAUSED' || to === 'PAUSED')
+    && !isPauseTransition && !isResumeTransition && !isPausedCancellation) {
+    await exports.logActivity({
+      proposalId: id, action: 'status_change_denied',
+      fromStatus: from, toStatus: to,
+      actorId, actorRole, source, ip
+    });
+    throw err('Đề xuất đang tạm dừng; hãy dùng thao tác tiếp tục để khôi phục trạng thái trước đó', 400);
+  }
+  if (isPauseTransition && ['COMPLETED', 'CANCELLED'].includes(from)) {
+    throw err('Không thể tạm dừng đề xuất đã kết thúc', 400);
+  }
+  if (isPauseTransition && (proposal.paused_from_status || proposal.paused_at)) {
+    throw err('Đề xuất đã có thông tin tạm dừng chưa được xử lý', 409);
+  }
+  if (resumeAction && !isResumeTransition) {
+    throw err('Không tìm thấy trạng thái cần khôi phục cho đề xuất', 409);
   }
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
   const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
@@ -141,7 +173,8 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Ghi đè trạng thái cần nhập lý do', 400);
   }
   if (!forceOverride) {
-    if (!(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen) {
+    if (!isPauseTransition && !isResumeTransition && !isPausedCancellation
+      && !(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen) {
       await exports.logActivity({
         proposalId: id, action: 'status_change_denied',
         fromStatus: from, toStatus: to,
@@ -149,7 +182,7 @@ exports.transition = async (id, to, opts = {}) => {
       });
       throw err(`Không thể chuyển trạng thái từ "${from}" sang "${to}"`, 400);
     }
-    if (WEBHOOK_ONLY_TARGETS.includes(to) && source === 'user') {
+    if (!isResumeTransition && WEBHOOK_ONLY_TARGETS.includes(to) && source === 'user') {
       await exports.logActivity({
         proposalId: id, action: 'status_change_denied',
         fromStatus: from, toStatus: to,
@@ -157,7 +190,7 @@ exports.transition = async (id, to, opts = {}) => {
       });
       throw err('Trạng thái này chỉ được cập nhật tự động từ 1Office', 400);
     }
-    if (from === 'PENDING' && to === 'REVIEWING' && source === 'user') {
+    if (!isResumeTransition && from === 'PENDING' && to === 'REVIEWING' && source === 'user') {
       const { checkCompleteness } = require('./proposalCompleteness');
       const check = await checkCompleteness(id);
       if (!check.complete) {
@@ -170,7 +203,7 @@ exports.transition = async (id, to, opts = {}) => {
       throw err('Mở lại khẩn cấp cần nhập lý do', 400);
     }
   }
-  const reasonCarriesMessage = REASON_REQUIRED.includes(to)
+  const reasonCarriesMessage = isPauseTransition || REASON_REQUIRED.includes(to)
     || ['INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(to);
   const cleanReason = forceOverride
     ? String(reason).trim()
@@ -178,38 +211,96 @@ exports.transition = async (id, to, opts = {}) => {
   if (!forceOverride && REASON_REQUIRED.includes(to) && !cleanReason) {
     throw err(to === 'REJECTED' ? 'Vui lòng nhập lý do từ chối' : 'Vui lòng nhập lý do hủy', 400);
   }
+  if (isPauseTransition && !cleanReason) {
+    throw err('Vui lòng nhập lý do tạm dừng đề xuất', 400);
+  }
   const auditReason = cleanReason || (isEmergencyReopen ? String(reason || '').trim() : null);
   const rejectReasonValue = REASON_REQUIRED.includes(to) || forceOverride ? cleanReason : null;
 
-  await pool.query(
-    `UPDATE station_proposals
-     SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW()
-     WHERE id = ?`,
-    [to, rejectReasonValue, actorId || null, id]
-  );
+  let statusActivityLogged = false;
+  let updateResult;
+  if (isPauseTransition || isResumeTransition) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      if (isPauseTransition) {
+        [updateResult] = await connection.query(
+          `UPDATE station_proposals
+              SET status = 'PAUSED', paused_from_status = ?, paused_at = NOW()
+            WHERE id = ? AND status = ? AND paused_at IS NULL`,
+          [from, id, from]
+        );
+      } else {
+        [updateResult] = await connection.query(
+          `UPDATE station_proposals
+              SET supplement_deadline_at = CASE
+                    WHEN supplement_deadline_at IS NULL THEN NULL
+                    ELSE TIMESTAMPADD(SECOND, GREATEST(TIMESTAMPDIFF(SECOND, paused_at, NOW()), 0), supplement_deadline_at)
+                  END,
+                  transition_deadline_at = CASE
+                    WHEN transition_deadline_at IS NULL THEN NULL
+                    ELSE TIMESTAMPADD(SECOND, GREATEST(TIMESTAMPDIFF(SECOND, paused_at, NOW()), 0), transition_deadline_at)
+                  END,
+                  updated_at = TIMESTAMPADD(SECOND, GREATEST(TIMESTAMPDIFF(SECOND, paused_at, NOW()), 0), updated_at),
+                  status = ?, paused_from_status = NULL, paused_at = NULL
+            WHERE id = ? AND status = 'PAUSED' AND paused_from_status = ? AND paused_at IS NOT NULL`,
+          [to, id, to]
+        );
+      }
+      if (updateResult.affectedRows !== 1) {
+        throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+      }
+      await exports.logActivity({
+        proposalId: id, action: 'status_change',
+        fromStatus: from, toStatus: to, reason: auditReason,
+        actorId, actorRole, source, manualOverride, ip,
+        connection
+      });
+      await connection.commit();
+      statusActivityLogged = true;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } else {
+    [updateResult] = await pool.query(
+      `UPDATE station_proposals
+       SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW(),
+           paused_from_status = CASE WHEN ? = 1 THEN NULL ELSE paused_from_status END,
+           paused_at = CASE WHEN ? = 1 THEN NULL ELSE paused_at END
+       WHERE id = ?`,
+      [to, rejectReasonValue, actorId || null, isPausedCancellation ? 1 : 0, isPausedCancellation ? 1 : 0, id]
+    );
+  }
 
   // Đặt SONG SONG 2 mốc countdown theo rule của trạng thái đích:
   //   supplement_deadline_at (bổ sung thông tin) + transition_deadline_at (chuyển trạng thái).
-  try {
-    const suppMinutes = await exports.getDeadlineMinutes(to, 'supplement');
-    const transMinutes = await exports.getDeadlineMinutes(to, 'transition');
-    const suppSet = suppMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
-    const transSet = transMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
-    const params = [];
-    if (suppMinutes) params.push(suppMinutes);
-    if (transMinutes) params.push(transMinutes);
-    params.push(id);
-    await pool.query(
-      `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet}, info_completed_at = NULL WHERE id = ?`,
-      params
-    );
-  } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
+  if (!isPauseTransition && !isResumeTransition) {
+    try {
+      const suppMinutes = await exports.getDeadlineMinutes(to, 'supplement');
+      const transMinutes = await exports.getDeadlineMinutes(to, 'transition');
+      const suppSet = suppMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+      const transSet = transMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
+      const params = [];
+      if (suppMinutes) params.push(suppMinutes);
+      if (transMinutes) params.push(transMinutes);
+      params.push(id);
+      await pool.query(
+        `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet}, info_completed_at = NULL WHERE id = ?`,
+        params
+      );
+    } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
+  }
 
-  try {
-    const gradingService = require('./proposalGradingService');
-    if (to === 'GRADING') await gradingService.syncNoteForProposal(id);
-    else if (from === 'GRADING') await gradingService.clearGradingNote(id);
-  } catch { /* silent: khong chan chuyen trang thai vi ghi chu danh gia */ }
+  if (!isPauseTransition && !isResumeTransition) {
+    try {
+      const gradingService = require('./proposalGradingService');
+      if (to === 'GRADING') await gradingService.syncNoteForProposal(id);
+      else if (from === 'GRADING') await gradingService.clearGradingNote(id);
+    } catch { /* silent: khong chan chuyen trang thai vi ghi chu danh gia */ }
+  }
 
   try {
     await exports.notifyStepReceivers(id, to, { actorId, reason: cleanReason });
@@ -217,7 +308,7 @@ exports.transition = async (id, to, opts = {}) => {
 
   let stationCreated = null;
   let stationCreateError = null;
-  if (to === 'CONTRACT_SIGNED') {
+  if (!isResumeTransition && to === 'CONTRACT_SIGNED') {
     try {
       const stationService = require('./stationService');
       const r = await stationService.convertProposalToStation(id, { actorId, actorRole, source, ip, skipNotify: true });
@@ -266,7 +357,7 @@ exports.transition = async (id, to, opts = {}) => {
   const overrideActive = (typeof forceOverride !== 'undefined' && forceOverride) || isEmergencyReopen;
   try {
     const proposalRequestService = require('./proposalRequestService');
-    if (to === 'REJECTED' && proposal.user_id) {
+    if (!isPauseTransition && !isResumeTransition && to === 'REJECTED' && proposal.user_id) {
       await proposalRequestService.createRequest({
         proposalId: id,
         type: 'UPDATE_INFO',
@@ -276,16 +367,18 @@ exports.transition = async (id, to, opts = {}) => {
         currentStatus: to,
         targetUserId: proposal.user_id
       });
-    } else if (from === 'REJECTED' && to === 'PENDING') {
+    } else if (!isPauseTransition && !isResumeTransition && from === 'REJECTED' && to === 'PENDING') {
       await proposalRequestService.closeRequests(id, ['UPDATE_INFO', 'SUPPLEMENT'], { resolvedBy: actorId || null });
     }
   } catch { /* silent: khong chan chuyen trang thai vi yeu cau de xuat */ }
-  await exports.logActivity({
-    proposalId: id, action: 'status_change',
-    fromStatus: from, toStatus: to, reason: auditReason,
-    actorId, actorRole, source: overrideActive ? 'admin_override' : source,
-    manualOverride: manualOverride || overrideActive, ip
-  });
+  if (!statusActivityLogged) {
+    await exports.logActivity({
+      proposalId: id, action: 'status_change',
+      fromStatus: from, toStatus: to, reason: auditReason,
+      actorId, actorRole, source: overrideActive ? 'admin_override' : source,
+      manualOverride: manualOverride || overrideActive, ip
+    });
+  }
 
   try {
     if (proposal.journey_id) {
@@ -298,16 +391,16 @@ exports.transition = async (id, to, opts = {}) => {
   } catch { /* silent: khong chan chuyen trang thai vi journey */ }
 
   let autoPush = null;
-  if (to === 'REVIEWING' && from !== 'REVIEWING') {
+  if (!isResumeTransition && to === 'REVIEWING' && from !== 'REVIEWING') {
     autoPush = await autoPushOnReview(id, actorId || null);
   }
 
   let autoSync = null;
-  if (to === 'APPROVED' && from !== 'APPROVED') {
+  if (!isResumeTransition && to === 'APPROVED' && from !== 'APPROVED') {
     autoSync = await autoSyncOnApproved(id, actorId || null);
   }
 
-  if (to === 'PRINCIPLE_APPROVED' && from !== 'PRINCIPLE_APPROVED') {
+  if (!isResumeTransition && to === 'PRINCIPLE_APPROVED' && from !== 'PRINCIPLE_APPROVED') {
     await reservePendingStationCode(id, actorId, actorRole, source, ip).catch(() => {});
   }
 
@@ -316,6 +409,25 @@ exports.transition = async (id, to, opts = {}) => {
     stationCreated: stationCreated ? { id: stationCreated.id, name: stationCreated.name, ma_tram: stationCreated.ma_tram || null } : null,
     stationCreateError
   };
+};
+
+exports.pauseProposal = async (id, opts = {}) => exports.transition(id, 'PAUSED', {
+  ...opts,
+  pauseAction: true
+});
+
+exports.resumeProposal = async (id, opts = {}) => {
+  const [rows] = await pool.query(
+    'SELECT paused_from_status FROM station_proposals WHERE id = ? AND status = ?',
+    [id, 'PAUSED']
+  );
+  if (rows.length === 0 || !rows[0].paused_from_status) {
+    throw err('Đề xuất không ở trạng thái tạm dừng hoặc thiếu trạng thái cần khôi phục', 400);
+  }
+  return exports.transition(id, rows[0].paused_from_status, {
+    ...opts,
+    resumeAction: true
+  });
 };
 
 async function reservePendingStationCode(id, actorId, actorRole, source, ip) {
@@ -704,7 +816,9 @@ exports.getDeadlineParts = async (status, kind = 'supplement') => {
 
 exports.getDeadlineMinutes = async (status, kind = 'supplement') => exports.getDeadlineParts(status, kind);
 
-const enabledForKind = (rules, kind) => rules.filter((r) => r[kind] && r[kind].enabled).map((r) => r.status);
+const enabledForKind = (rules, kind) => rules
+  .filter((r) => r.status !== 'PAUSED' && r[kind] && r[kind].enabled)
+  .map((r) => r.status);
 
 // Danh muc status duoc xac nhan/hoan tat thong tin (muc nghiep vu, doc lap voi
 // config countdown): PENDING / REVIEWING / PRINCIPLE_APPROVED.

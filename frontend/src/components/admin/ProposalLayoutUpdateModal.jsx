@@ -114,7 +114,7 @@ const ProposalLayoutUpdateModal = ({ open, record, onClose, onSaved }) => {
         <div className="modal-action">
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>Hủy</button>
           <button type="button" className="btn btn-outline btn-primary" onClick={() => submit(false)} disabled={saving}>
-            Lưu
+            Lưu nháp
           </button>
           <button type="button" className="btn btn-success gap-1" onClick={() => submit(true)} disabled={saving}>
             <CheckCircle2 size={16} />

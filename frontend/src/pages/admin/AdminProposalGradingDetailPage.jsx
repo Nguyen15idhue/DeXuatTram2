@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Save } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalGradingService } from '../../services/api';
+import { notifyProposalGradingTasksChanged } from '../../utils/proposalGrading';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalGradingModal from '../../components/admin/ProposalGradingModal';
 import Toast from '../../components/Toast';
@@ -139,6 +140,7 @@ const AdminProposalGradingDetailPage = () => {
   const canRequestSupplement = !!detail?.permissions?.canRequestSupplement;
 
   const handleScoreSaved = async (result, message) => {
+    notifyProposalGradingTasksChanged();
     setScoreOpen(false);
     const transition = result?.transition;
     const extra = transition?.status === 'CANCELLED'
@@ -162,6 +164,7 @@ const AdminProposalGradingDetailPage = () => {
         { reason: supplementReason.trim() },
         token
       );
+      notifyProposalGradingTasksChanged();
       setSupplementOpen(false);
       setSupplementReason('');
       setToast(response?.message || 'Đã gửi yêu cầu bổ sung thông tin');

@@ -34,7 +34,7 @@ const CountdownConfigPanel = () => {
   const [maxDaysPerTime, setMaxDaysPerTime] = useState(30);
   const [autoPush, setAutoPush] = useState(true);
 
-  const statuses = getProposalStatuses();
+  const statuses = getProposalStatuses().filter((status) => status.value !== 'PAUSED');
   const displayRows = buildDisplayRows(statuses);
 
   useEffect(() => {

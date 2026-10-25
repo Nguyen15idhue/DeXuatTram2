@@ -290,6 +290,7 @@ exports.listRequests = async ({
     where.push('r.status = ?');
     params.push(status);
   }
+  if (status === 'OPEN') where.push("p.status <> 'PAUSED'");
   if (type && REQUEST_TYPES.includes(type)) {
     where.push('r.request_type = ?');
     params.push(type);
@@ -345,12 +346,15 @@ exports.listRequests = async ({
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS vung_mien,
-            u.full_name AS owner_name,
+            p.address AS address,
+            u.full_name AS owner_name, u.parent_id AS manager_user_id,
+            manager.full_name AS manager_name,
             ru.full_name AS requested_by_name,
             tu.full_name AS target_user_name
      FROM proposal_requests r
      JOIN station_proposals p ON p.id = r.proposal_id
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN users manager ON manager.id = u.parent_id
      LEFT JOIN users ru ON ru.id = r.requested_by
      LEFT JOIN users tu ON tu.id = r.target_user_id
      ${whereClause}
@@ -555,6 +559,7 @@ exports.completeRequest = async (id, { user = null, resolutionNote = null } = {}
   const request = await exports.getRequestById(id);
   if (!request) throw err('Không tìm thấy yêu cầu', 404);
   if (request.status !== 'OPEN') throw err('Yêu cầu đã được xử lý trước đó', 400);
+  if (request.proposal_status === 'PAUSED') throw err('Đề xuất đang tạm dừng; không thể hoàn thành yêu cầu trước khi tiếp tục', 400);
   if (!user) throw err('Chưa xác thực', 401);
   if (!await canActOnRequest(user, request)) throw err('Bạn không phải người nhận công việc của yêu cầu này', 403);
   if (request.request_type === 'RE_GRADE') throw err('Yêu cầu chấm lại chỉ được hoàn thành khi phòng nhập điểm mới', 400);

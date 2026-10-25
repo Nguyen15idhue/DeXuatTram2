@@ -8,9 +8,9 @@ import {
 } from '../../utils/proposalReview';
 
 const TABS = [
-  { key: 'all', label: 'Tất cả đề xuất' },
   { key: 'pending', label: 'Các đề xuất cần thực hiện' },
-  { key: 'completed', label: 'Đề xuất đã hoàn thành' }
+  { key: 'completed', label: 'Các đề xuất đã hoàn thành' },
+  { key: 'all', label: 'Tất cả đề xuất' }
 ];
 
 const AdminProposalsReviewPage = () => {
@@ -18,7 +18,7 @@ const AdminProposalsReviewPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = ['all', 'pending', 'completed'].includes(searchParams.get('tab'))
     ? searchParams.get('tab')
-    : 'all';
+    : 'pending';
 
   const roleInfo = useMemo(() => resolveReviewRole(user), [user]);
   const effectiveRole = roleInfo.roleKey;
@@ -26,7 +26,7 @@ const AdminProposalsReviewPage = () => {
 
   const changeTab = (tab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'all') next.delete('tab');
+    if (tab === 'pending') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
@@ -52,13 +52,13 @@ const AdminProposalsReviewPage = () => {
         subtitle="GĐTTKD xem xét, yêu cầu chấm lại, trình Tổng giám đốc và theo dõi kết quả"
       />
 
-      <div role="tablist" className="tabs tabs-bordered mb-4">
+      <div role="tablist" className="proposal-workflow-tabs mb-4">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             role="tab"
-            className={`tab ${activeTab === tab.key ? 'tab-active' : ''}`}
+            className={`proposal-workflow-tab ${activeTab === tab.key ? 'is-active' : ''}`}
             onClick={() => changeTab(tab.key)}
           >
             {tab.label}

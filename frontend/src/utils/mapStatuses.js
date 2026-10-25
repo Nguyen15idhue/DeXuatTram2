@@ -10,7 +10,7 @@ export const STATION_STATUSES = [
 export const PROPOSAL_STATUSES = [
   { value: 'PENDING', label: 'Đang đề xuất', color: '#f97316', show_in_legend: true, sort_order: 1 },
   { value: 'REVIEWING', label: 'Đang xem xét', color: '#3b82f6', show_in_legend: true, sort_order: 2 },
-  { value: 'PRINCIPLE_APPROVED', label: 'Duyệt chủ trương', color: '#6366f1', show_in_legend: true, sort_order: 3 },
+  // { value: 'PRINCIPLE_APPROVED', label: 'Duyệt chủ trương', color: '#6366f1', show_in_legend: true, sort_order: 3 },
   { value: 'APPROVED', label: 'Đã duyệt BCĐX', color: '#22c55e', show_in_legend: true, sort_order: 4 },
   { value: 'CANCELLED', label: 'Đã hủy', color: '#6b7280', show_in_legend: true, sort_order: 5 },
   { value: 'ARCHIVED', label: 'Đã lưu trữ', color: '#8b5cf6', show_in_legend: true, sort_order: 6 },
@@ -29,7 +29,8 @@ export const PROPOSAL_STATUSES = [
   { value: 'PROPOSAL_REPORT_REVIEWING', label: 'Đang duyệt BCĐX', color: '#2563eb', show_in_legend: false, sort_order: 16 },
   { value: 'PROPOSAL_REPORT_UPDATING', label: 'Chờ cập nhật lại BCĐX', color: '#f97316', show_in_legend: false, sort_order: 16.5 },
   { value: 'SIGNATURE_PENDING', label: 'Đang trình ký', color: '#9333ea', show_in_legend: false, sort_order: 17 },
-  { value: 'COMPLETED', label: 'Đã phê duyệt', color: '#16a34a', show_in_legend: false, sort_order: 18 }
+  { value: 'COMPLETED', label: 'Đã phê duyệt', color: '#16a34a', show_in_legend: false, sort_order: 18 },
+  { value: 'PAUSED', label: 'Tạm dừng', color: '#64748b', show_in_legend: false, sort_order: 19 }
 ];
 
 export const EV_REPORT_STATUSES = [
@@ -82,6 +83,8 @@ export const PROPOSAL_MAP_STATUS_ALIAS = {
   SIGNATURE_PENDING: 'REVIEWING'
 };
 
+const HIDDEN_PROPOSAL_MAP_STATUSES = new Set(['PRINCIPLE_APPROVED', 'PAUSED']);
+
 export const getProposalMapStatus = (value) => PROPOSAL_MAP_STATUS_ALIAS[value] || value;
 
 export const getProposalMapStatuses = () => {
@@ -90,6 +93,7 @@ export const getProposalMapStatuses = () => {
   const seen = new Set();
   const result = [];
   all.forEach((s) => {
+    if (HIDDEN_PROPOSAL_MAP_STATUSES.has(s.value)) return;
     const value = getProposalMapStatus(s.value);
     if (seen.has(value)) return;
     seen.add(value);

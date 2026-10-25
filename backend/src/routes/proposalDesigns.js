@@ -29,6 +29,40 @@ const proposalDesignController = require('../controllers/proposalDesignControlle
  *           type: string
  *         description: Tìm mã đề xuất, pháp nhân, SĐT, địa chỉ, người đề xuất
  *       - in: query
+ *         name: proposal_status
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: model
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: province
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: region
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: owner_user_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: manager_user_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
  *         name: page
  *         schema:
  *           type: integer
@@ -37,7 +71,7 @@ const proposalDesignController = require('../controllers/proposalDesignControlle
  *         name: limit
  *         schema:
  *           type: integer
- *           default: 10
+ *           default: 20
  *     responses:
  *       200:
  *         description: Thành công
@@ -47,6 +81,46 @@ const proposalDesignController = require('../controllers/proposalDesignControlle
  *         description: Không có quyền
  */
 router.get('/', requireAuth, requireUserManager, proposalDesignController.list);
+
+/**
+ * @swagger
+ * /api/admin/proposal-layouts/filter-options:
+ *   get:
+ *     tags: [Proposal Layouts]
+ *     summary: Tùy chọn bộ lọc cho trang Đánh giá layout
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Danh sách người đề xuất, người phụ trách, miền, tỉnh và mô hình
+ *       403:
+ *         description: Không có quyền xem hoặc quản lý đánh giá layout
+ */
+router.get('/filter-options', requireAuth, requireUserManager, proposalDesignController.filterOptions);
+
+/**
+ * @swagger
+ * /api/admin/proposal-layouts/{id}:
+ *   get:
+ *     tags: [Proposal Layouts]
+ *     summary: Chi tiết đề xuất trong bước đánh giá layout
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Thông tin chi tiết đề xuất và cấu hình trường
+ *       403:
+ *         description: Không có quyền xem hoặc quản lý đánh giá layout
+ *       404:
+ *         description: Không tìm thấy đề xuất trong phạm vi đánh giá layout
+ */
+router.get('/:id', requireAuth, requireUserManager, proposalDesignController.detail);
 
 /**
  * @swagger
