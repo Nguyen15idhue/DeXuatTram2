@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { AGGS, CHART_TYPES } from '../../utils/reportModel';
 
-const HIDDEN = new Set(['oneoffice_mirror', 'automation_runs']);
 const SORTS = [['value_desc', 'Giá trị giảm'], ['value_asc', 'Giá trị tăng'], ['dim_asc', 'Nhóm A→Z'], ['dim_desc', 'Nhóm Z→A']];
 
-const dsVisible = (catalog) => Object.entries(catalog || {}).filter(([k]) => !HIDDEN.has(k));
+const dsVisible = (catalog) => Object.entries(catalog || {});
 
 export default function ReportConfigPanel({ widget, name, page, catalog, onRename, onUpdateData, onUpdateVisual, onUpdateWidget, onRestoreLayout, onDelete, onDuplicate }) {
   const [sub, setSub] = useState('setup');

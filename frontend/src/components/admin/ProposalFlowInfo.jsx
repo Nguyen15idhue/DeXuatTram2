@@ -4,21 +4,21 @@ const STEPS = [
   {
     color: '#facc15', title: '1. Đang đề xuất',
     desc: 'Điểm bắt đầu khi tạo đề xuất mới. Người tạo được xem / sửa / xóa.',
-    next: ['Duyệt & đẩy → Đang xem xét (đẩy sang 1Office)', 'Từ chối → yêu cầu sửa lại', 'Hủy → kết thúc']
+    next: ['Duyệt → Đang xem xét', 'Từ chối → yêu cầu sửa lại', 'Hủy → kết thúc']
   },
   {
     color: '#3b82f6', title: '2. Đang xem xét',
-    desc: 'Đề xuất đã được đẩy sang 1Office, chờ phản hồi. Người tạo vẫn được sửa để bổ sung thông tin (không được xóa).',
-    next: ['Duyệt chủ trương → chờ cập nhật thông tin', '1Office duyệt (webhook/demo) → Đã duyệt BCĐX', 'Lưu trữ → ưu tiên thấp, cất kho', 'Hủy → kết thúc']
+    desc: 'Đề xuất đang được xem xét. Người tạo vẫn được sửa để bổ sung thông tin (không được xóa).',
+    next: ['Duyệt chủ trương → chờ cập nhật thông tin', 'Duyệt BCĐX → chuyển sang ký', 'Lưu trữ → ưu tiên thấp, cất kho', 'Hủy → kết thúc']
   },
   {
     color: '#6366f1', title: '3. Duyệt chủ trương',
-    desc: 'Đã duyệt chủ trương, chờ 1Office báo đã duyệt BCĐX. Người tạo vẫn được sửa để cập nhật thông tin (không được xóa).',
-    next: ['1Office báo đã duyệt (webhook) → Đã duyệt BCĐX', 'Hủy → kết thúc']
+    desc: 'Đã duyệt chủ trương, chờ hoàn thiện các bước nghiệp vụ tiếp theo. Người tạo vẫn được sửa để cập nhật thông tin (không được xóa).',
+    next: ['Tiếp tục quy trình nội bộ', 'Hủy → kết thúc']
   },
   {
     color: '#16a34a', title: '4. Đã duyệt BCĐX',
-    desc: '1Office đã duyệt. Ký hợp đồng để đi tiếp.',
+    desc: 'BCĐX đã được duyệt. Ký hợp đồng để đi tiếp.',
     next: ['Ký thành công', 'Ký thất bại', 'Hủy → kết thúc']
   },
   {
@@ -80,9 +80,6 @@ const ProposalFlowInfo = ({ onClose }) => (
             </div>
           </div>
         ))}
-      </div>
-      <div className="alert py-2 px-3 mt-2 text-xs">
-        <span>Lưu ý: nút "Lấy về từ 1Office" chỉ đồng bộ dữ liệu liên hệ, <b>không</b> làm đổi trạng thái.</span>
       </div>
       <div className="modal-action">
         <button className="btn btn-primary btn-sm" onClick={onClose}>Đã hiểu</button>

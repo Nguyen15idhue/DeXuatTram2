@@ -285,7 +285,7 @@ cmd_push() {
   if [ "$MERGE" = 1 ]; then
     log "Hoan tat: da THEM du lieu tu dev. Ban ghi trung PK/unique giu theo VPS, khong ghi de."
   else
-    log "Hoan tat. Luu y bao mat: hash mat khau + token 1Office da copy tu dev."
+    log "Hoan tat. Kiem tra pham vi du lieu da dong bo va bao ve file dump."
     log "Hay doi mat khau admin va rotate token tren VPS (xem docs/6/Huong_dan_deploy_va_cap_nhat_VPS.md muc 8)."
   fi
 }

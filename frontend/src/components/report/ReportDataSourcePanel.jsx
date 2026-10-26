@@ -1,14 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Search, Database, ChevronRight, ChevronDown } from 'lucide-react';
 
-const HIDDEN = new Set(['oneoffice_mirror', 'automation_runs']);
-
 export default function ReportDataSourcePanel({ catalog, onPickField }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState('leads');
 
   const datasets = useMemo(() => Object.entries(catalog || {})
-    .filter(([key]) => !HIDDEN.has(key))
     .map(([key, ds]) => ({ key, ...ds })), [catalog]);
 
   const filtered = useMemo(() => {

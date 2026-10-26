@@ -35,7 +35,6 @@ const ENTITY_LABEL = { lead: 'Lead', proposal: 'Đề xuất', station: 'Trạm'
 const SOURCE_LABEL = {
   user: 'Người dùng',
   admin: 'Admin',
-  webhook: 'Webhook 1Office',
   system_auto: 'Tự động',
   admin_override: 'Admin ghi đè',
   import: 'Nhập Excel'

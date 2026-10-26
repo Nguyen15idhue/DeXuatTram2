@@ -193,7 +193,7 @@ const AdminProposalApprovalDetailPage = () => {
                       mime_type: file.mime_type
                     })}
                   >
-                    <Eye size={15} /> Xem ở popup
+                    <Eye size={15} /> Xem bằng modal
                   </button>
                   <a
                     className="btn btn-ghost btn-sm gap-1"
@@ -258,7 +258,13 @@ const AdminProposalApprovalDetailPage = () => {
         onClose={() => { if (!saving) setDialogType(''); }}
         onConfirm={submitAction}
       />
-      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
+      {fileViewing && (
+        <FileViewer
+          file={fileViewing}
+          onClose={() => setFileViewing(null)}
+          maximizable
+        />
+      )}
     </div>
   );
 };

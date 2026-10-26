@@ -222,20 +222,6 @@ export const groupsGuide = {
           expected: 'Biết ngay hôm nay có bao nhiêu đề xuất chờ xử lý.',
           image: '/help/admin-data/b01_dashboard.jpg', route: '/admin', tags: ['dashboard'],
         },
-        {
-          id: 'G41', title: 'Audit Log (nhật ký đồng bộ)',
-          purpose: 'Theo dõi mọi lệnh đẩy/lấy dữ liệu với 1Office và xử lý lệnh kẹt/lỗi.',
-          audience: 'ADMIN, SUPER_ADMIN; SALES chỉ thấy log của chính mình.',
-          substeps: [
-            'Mở Audit Log từ menu quản trị.',
-            'Lọc theo trạng thái, hướng (Push → 1Office / Pull ← 1Office) hoặc Action; bấm Lọc / Xóa bộ lọc / Làm mới.',
-            'Bấm biểu tượng mắt ở dòng lệnh để xem chi tiết nội dung đã gửi và kết quả trả về.',
-            'Lệnh lỗi hoặc treo: chỉ SUPER_ADMIN thấy nút Retry (chạy lại) và Cancel (bỏ lệnh).',
-          ],
-          expected: 'Biết đề xuất nào đã đẩy thành công, lệnh nào đang chờ hay lỗi và vì sao.',
-          errors: ['Không thấy nút Retry/Cancel: hai nút này chỉ hiện cho SUPER_ADMIN.'],
-          image: '/help/admin-data/b10_audit.jpg', route: '/admin/audit-log', tags: ['audit', 'log', 'retry', 'queue'], related: ['G36', 'G38'],
-        },
       ],
     },
     {
@@ -273,24 +259,6 @@ export const groupsGuide = {
           errors: ['Sai định dạng email/SĐT, trùng email, thiếu cột vai trò — sửa trong file rồi import lại.'],
           image: '/help/admin-data/b04_import-export.jpg', route: '/admin/users', tags: ['import', 'export'],
         },
-        {
-          id: 'G42', title: 'Gán mã nhân sự 1Office cho user',
-          purpose: 'Liên kết tài khoản trong app với người thật bên 1Office, để khi đẩy đề xuất các ô "Người phụ trách" khớp đúng người.',
-          audience: 'ADMIN, SUPER_ADMIN.',
-          prereq: 'Danh sách nhân sự 1Office đã được đồng bộ (Cấu hình API → cấu hình loại Nhân sự → Đồng bộ — xem G36).',
-          substeps: [
-            'Mở Xem chi tiết một người dùng ở trang Quản lý Users.',
-            'Kéo xuống mục "Liên kết hệ thống": giữ nguyên hệ thống "1office", chọn nhân sự theo "Mã NS - Tên" rồi bấm Lưu.',
-            'Người bị xám trong danh sách (kèm chữ "chưa có tài khoản 1Office") là người chưa có tài khoản bên đó — không gán và không giao việc được.',
-            'Đổi liên kết: bấm Xóa ở dòng liên kết cũ rồi gán người mới.',
-          ],
-          expected: 'User này chọn được trong ô nhân sự của đề xuất và đẩy sang 1Office đúng người.',
-          errors: [
-            'Danh sách nhân sự trống: vào Cấu hình API → loại "1office nhân sự" → bấm Đồng bộ trước.',
-            'Vẫn báo lỗi người phụ trách khi đẩy: người đó có thể đổi mã bên 1Office — đồng bộ nhân sự rồi gán lại.',
-          ],
-          image: '/help/admin-data/g42_gan-ma-ns.jpg', route: '/admin/users', tags: ['nhân sự', '1office', 'liên kết', 'external'], related: ['G36', 'G26'],
-        },
       ],
     },
     {
@@ -323,25 +291,21 @@ export const groupsGuide = {
         {
           id: 'G25', title: 'Danh sách & lọc',
           purpose: 'Tìm đề xuất cần duyệt theo trạng thái và mức ưu tiên.',
-          substeps: ['Mở Quản lý Đề xuất.', 'Lọc theo trạng thái (nhãn tiếng Việt: chờ duyệt/đang xem xét/đã duyệt/từ chối) và Cấp 1/Cấp 2.', 'Bấm dòng để Xem/Sửa/Xóa; cột mã 1Office cho biết đã liên kết chưa.'],
+          substeps: ['Mở Quản lý Đề xuất.', 'Lọc theo trạng thái (nhãn tiếng Việt: chờ duyệt/đang xem xét/đã duyệt/từ chối) và Cấp 1/Cấp 2.', 'Bấm dòng để Xem/Sửa/Xóa.'],
           expected: 'Danh sách chờ duyệt gọn gàng, xử lý từng cái nhanh.',
           image: '/help/admin-data/b07_proposals.jpg', route: '/admin/proposals', tags: ['đề xuất', 'proposals'], related: ['G26'],
         },
         {
           id: 'G26', title: 'Duyệt / Đổi trạng thái / Từ chối',
-          purpose: 'Xét duyệt đề xuất: cho qua (tự gửi 1Office) hoặc trả về kèm lý do.',
+          purpose: 'Xét duyệt đề xuất hoặc trả về kèm lý do.',
           audience: 'SALES (nhánh mình), ADMIN, SUPER_ADMIN.',
           substeps: [
             'Trong bảng, đổi trạng thái ở cột trạng thái của dòng cần duyệt.',
-            'Chọn Duyệt: hiện popup xác nhận (không thể hoàn tác) — bấm Duyệt & gửi 1Office. Hệ thống tự tạo lệnh đẩy sang 1Office, theo dõi trong Audit Log.',
+            'Chọn Duyệt để chuyển đề xuất sang trạng thái được duyệt.',
             'Chọn Từ chối: bắt buộc nhập lý do để người gửi biết đường sửa.',
           ],
-          expected: 'Chủ đề xuất nhận thông báo; đề xuất được duyệt có lệnh đẩy 1Office (chưa thành trạm thật).',
-          errors: [
-            'Duyệt bị chặn kèm cảnh báo thiếu "Người đang phụ trách" / "Người giao phụ trách": mở Sửa đề xuất, chọn đủ 2 ô nhân sự rồi duyệt lại (nhân sự phải đã gán mã 1Office — xem G42).',
-            'Duyệt xong không thấy lệnh 1Office: chưa có cấu hình API hoạt động — đẩy thủ công ở F4.',
-          ],
-          image: '/help/admin-data/b08_trang-thai.jpg', route: '/admin/proposals', tags: ['duyệt', 'từ chối', '1office'], related: ['S04', 'G25'],
+          expected: 'Chủ đề xuất nhận thông báo; đề xuất được duyệt chưa thành trạm thật.',
+          image: '/help/admin-data/b08_trang-thai.jpg', route: '/admin/proposals', tags: ['duyệt', 'từ chối'], related: ['S04', 'G25'],
         },
         {
           id: 'G40', title: 'Excel: Template / Export / Import theo bộ cột',
@@ -495,32 +459,16 @@ export const groupsGuide = {
           image: '/help/admin-config/c09_roles.jpg', route: '/admin/roles', tags: ['phân quyền', 'role'], related: ['S02'],
         },
         {
-          id: 'G36', title: 'API Configs (1Office)',
-          purpose: 'Kết nối hệ thống với 1Office để đẩy đề xuất và đồng bộ nhân sự.',
-          substeps: ['Mở API Configs, bấm Thêm API (loại Liên hệ hoặc Nhân sự), nhập địa chỉ + token.', 'Bấm Test để kiểm tra kết nối.', 'Với loại Nhân sự: bấm Đồng bộ để lấy danh sách nhân sự về.'],
-          expected: 'Duyệt đề xuất thì tự đẩy được sang 1Office (F4).',
-          errors: ['Test báo token sai đối tượng: token Liên hệ và token Nhân sự là 2 token khác nhau.'],
-          image: '/help/admin-config/c10_api-configs.jpg', route: '/admin/api-configs', tags: ['api', '1office'],
-        },
-        {
-          id: 'G37', title: 'Field Mapping',
-          purpose: 'Ghép từng ô dữ liệu trong app với ô tương ứng bên 1Office để đẩy đúng chỗ.',
-          substeps: ['Mở Field Mapping trong API Configs.', 'Kéo/gán trường app ↔ trường 1Office (Desc và File đã ghép sẵn).', 'Lưu.'],
-          expected: 'Đề xuất đẩy sang 1Office đầy đủ thông tin, đúng ô.',
-          image: '/help/admin-config/c11_mapping.jpg', route: '/admin/api-configs', tags: ['mapping', 'ghép trường'],
-        },
-        {
           id: 'G38', title: 'Swagger + File bản ghi',
           purpose: 'Tra cứu tài liệu API và xem file đính kèm của từng bản ghi.',
           substeps: [
             'Mở /api-docs để xem toàn bộ API (cho kỹ thuật).',
             'Trong chi tiết bản ghi, mở danh sách file để xem ngay trong trình duyệt (ảnh/video/PDF/Word/Excel) hoặc Tải.',
             'Trang "Tệp của bản ghi" trong menu quản trị liệt kê mọi file của một bản ghi: tải từng file hoặc tải tất cả cùng lúc.',
-            'Lệnh đẩy 1Office theo dõi ở Audit Log (F4).',
           ],
           expected: 'Tìm được API cần dùng; xem/tải được file đính kèm mà không cần mở từng cái một.',
           errors: ['Tải lên bị chặn: mỗi file tối đa 10MB; định dạng thực thi/HTML/SVG bị từ chối vì bảo mật — đổi sang PDF/ảnh rồi tải lại.'],
-          image: '/help/admin-config/c12_swagger.jpg', route: '/admin/api-configs', tags: ['swagger', 'file'],
+          image: '/help/admin-config/c12_swagger.jpg', route: '/admin/help', tags: ['swagger', 'file'],
         },
       ],
     },
@@ -531,7 +479,7 @@ export const groupsGuide = {
       steps: [
         {
           id: 'Q01', title: 'Duyệt xong sao đề xuất chưa thành trạm?',
-          text: 'Được duyệt nghĩa là hồ sơ đạt và đã có lệnh tự đẩy sang 1Office — chưa phải trạm thật. Trạm thật tạo riêng ở Quản lý Trạm hoặc nút "Tạo trạm nhanh" trên bản đồ (F3).',
+          text: 'Được duyệt nghĩa là hồ sơ đạt — chưa phải trạm thật. Trạm thật tạo riêng ở Quản lý Trạm hoặc nút "Tạo trạm nhanh" trên bản đồ (F3).',
           tags: ['trạm', 'duyệt'], related: ['S04', 'G24'],
         },
         {
@@ -563,11 +511,6 @@ export const groupsGuide = {
           id: 'Q07', title: 'Tệp đính kèm không tải lên được?',
           text: 'Mỗi file tối đa 10MB; chỉ nhận tài liệu/ảnh/pdf thông dụng — file thực thi, HTML, SVG bị chặn vì bảo mật. Nén, đổi sang PDF, hoặc tách nhỏ rồi tải lại.',
           tags: ['file', '10MB', 'upload'], related: ['G13', 'G38'],
-        },
-        {
-          id: 'Q08', title: 'Bấm Duyệt bị chặn, báo thiếu nhân sự?',
-          text: 'Đề xuất còn trống "Người phụ trách" hoặc "Người giao phụ trách" — bắt buộc phải có trước khi đẩy sang 1Office. Mở Sửa, chọn đủ 2 ô; nếu danh sách nhân sự trống thì admin phải gán mã 1Office trước (G42).',
-          tags: ['duyệt', 'nhân sự', '1office'], related: ['G26', 'G42'],
         },
         {
           id: 'Q09', title: 'Chọn "Nhượng quyền + Liên kết" sao form lạ hẳn?',

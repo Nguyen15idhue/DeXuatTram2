@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
@@ -73,9 +74,11 @@ const FileViewer = ({
   inlineActions = null,
   overlay = null,
   pdfPage = 1,
+  maximizable = false,
 }) => {
   const { token } = useAuth();
   const [zoom, setZoom] = useState(1);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [objectUrl, setObjectUrl] = useState(null);
   const [htmlContent, setHtmlContent] = useState("");
   const [textContent, setTextContent] = useState("");
@@ -246,7 +249,7 @@ const FileViewer = ({
             alt={name}
             style={{
               maxWidth: "100%",
-              maxHeight: "70vh",
+              maxHeight: isMaximized ? "calc(100vh - 100px)" : "70vh",
               transform: `scale(${zoom})`,
               transformOrigin: "center",
               transition: "transform 0.2s",
@@ -256,7 +259,11 @@ const FileViewer = ({
 
       case "video":
         return objectUrl ? (
-          <video src={objectUrl} controls className="max-w-full max-h-[70vh]">
+          <video
+            src={objectUrl}
+            controls
+            className={`max-w-full ${isMaximized ? "max-h-full" : "max-h-[70vh]"}`}
+          >
             Trình duyệt không hỗ trợ video.
           </video>
         ) : null;
@@ -280,7 +287,7 @@ const FileViewer = ({
             className={
               inline
                 ? "h-full min-h-[420px] w-full border-none"
-                : "w-full h-[70vh] border-none"
+                : `w-full ${isMaximized ? "h-full" : "h-[70vh]"} border-none`
             }
             title={name}
           />
@@ -288,7 +295,7 @@ const FileViewer = ({
 
       case "word":
         return (
-          <div className="w-full p-5 bg-white text-black overflow-auto max-h-[70vh]">
+          <div className={`w-full p-5 bg-white text-black overflow-auto ${isMaximized ? "h-full" : "max-h-[70vh]"}`}>
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>
         );
@@ -302,7 +309,7 @@ const FileViewer = ({
           );
         }
         return (
-          <div className="w-full overflow-auto max-h-[70vh] p-2.5">
+          <div className={`w-full overflow-auto p-2.5 ${isMaximized ? "h-full" : "max-h-[70vh]"}`}>
             {xlsxData.map((sheet, si) => (
               <div key={si} className="mb-5">
                 <div className="font-semibold text-white mb-2 px-2 py-1 bg-indigo-500 rounded inline-block">
@@ -423,6 +430,18 @@ const FileViewer = ({
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="legacy-modal max-w-[950px] max-h-[92vh]"
+        style={isMaximized ? {
+          position: "fixed",
+          inset: 8,
+          width: "auto",
+          maxWidth: "none",
+          height: "auto",
+          maxHeight: "none",
+          padding: 16,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-3">
@@ -430,6 +449,17 @@ const FileViewer = ({
             {name}
           </h3>
           <div className="flex gap-1.5 items-center">
+            {maximizable && (
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => setIsMaximized((value) => !value)}
+                title={isMaximized ? "Thu nhỏ cửa sổ xem" : "Phóng to toàn màn hình"}
+                aria-label={isMaximized ? "Thu nhỏ cửa sổ xem" : "Phóng to toàn màn hình"}
+              >
+                {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
+            )}
             {fileType === "image" && (
               <>
                 <button
@@ -457,10 +487,12 @@ const FileViewer = ({
         <div
           style={{
             overflow: "auto",
-            maxHeight: "calc(92vh - 80px)",
+            maxHeight: isMaximized ? "none" : "calc(92vh - 80px)",
             background: bgColor,
             borderRadius: 8,
             display: "flex",
+            flex: isMaximized ? 1 : undefined,
+            minHeight: isMaximized ? 0 : 200,
             alignItems:
               fileType === "pdf" || fileType === "word" || fileType === "excel"
                 ? "flex-start"
@@ -470,7 +502,6 @@ const FileViewer = ({
               fileType === "pdf" || fileType === "word" || fileType === "excel"
                 ? "column"
                 : "row",
-            minHeight: 200,
           }}
         >
           {renderContent()}

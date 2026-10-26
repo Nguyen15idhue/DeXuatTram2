@@ -63,14 +63,9 @@ const STATUS_STEP_LABELS = {
 exports.OWNER_EDITABLE_STATUSES = OWNER_EDITABLE_STATUSES;
 exports.STATUS_STEP_LABELS = STATUS_STEP_LABELS;
 
-// Cac dich chi duoc cap nhat tu 1Office (webhook) hoac he thong tu dong.
-// Thao tac tay tu UI (source=user) bi chan ke ca khi ma tran cho phep.
-const WEBHOOK_ONLY_TARGETS = ['PRINCIPLE_APPROVED', 'APPROVED', 'ARCHIVED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED'];
-
 const SKIP_DIFF_KEYS = new Set([
   'id', 'user_id', 'created_at', 'updated_at', 'custom_data', 'status',
-  'submission_source', 'submitter_ip', 'contact_1office_id', 'contact_1office_code',
-  'last_synced_at', 'last_synced_data', 'sync_status', 'ma_de_xuat_gen',
+  'submission_source', 'submitter_ip', 'ma_de_xuat_gen',
   'reviewed_by', 'reviewed_at', 'reject_reason', 'supplement_deadline_at', 'transition_deadline_at', 'info_completed_at'
 ]);
 
@@ -129,7 +124,7 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Trạng thái không hợp lệ', 400);
   }
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, journey_id, contact_1office_code, custom_data,
+    `SELECT id, user_id, status, journey_id, custom_data,
             supplement_deadline_at, transition_deadline_at, paused_from_status, paused_at
        FROM station_proposals WHERE id = ?`,
     [id]
@@ -147,7 +142,7 @@ exports.transition = async (id, to, opts = {}) => {
   const isPausedCancellation = from === 'PAUSED' && to === 'CANCELLED';
   if (from === to) {
     if (to === 'PAUSED') throw err('Đề xuất đã tạm dừng', 409);
-    return { id, status: to, prevStatus: from, unchanged: true, autoPush: null };
+    return { id, status: to, prevStatus: from, unchanged: true };
   }
   if ((from === 'PAUSED' || to === 'PAUSED')
     && !isPauseTransition && !isResumeTransition && !isPausedCancellation) {
@@ -181,14 +176,6 @@ exports.transition = async (id, to, opts = {}) => {
         actorId, actorRole, source, ip
       });
       throw err(`Không thể chuyển trạng thái từ "${from}" sang "${to}"`, 400);
-    }
-    if (!isResumeTransition && WEBHOOK_ONLY_TARGETS.includes(to) && source === 'user') {
-      await exports.logActivity({
-        proposalId: id, action: 'status_change_denied',
-        fromStatus: from, toStatus: to,
-        actorId, actorRole, source, ip
-      });
-      throw err('Trạng thái này chỉ được cập nhật tự động từ 1Office', 400);
     }
     if (!isResumeTransition && from === 'PENDING' && to === 'REVIEWING' && source === 'user') {
       const { checkCompleteness } = require('./proposalCompleteness');
@@ -322,7 +309,7 @@ exports.transition = async (id, to, opts = {}) => {
     const code = notificationService.proposalCode(proposal.custom_data, id);
     let actorName;
     if (source === 'system_auto') actorName = 'Hệ thống';
-    else actorName = (await notificationService.getUserName(actorId)) || (source === 'webhook' ? '1Office' : 'Hệ thống');
+    else actorName = (await notificationService.getUserName(actorId)) || 'Hệ thống';
     if (stationCreated) {
       const createdMaTram = stationCreated.ma_tram || '';
       await notificationService.create({
@@ -390,22 +377,12 @@ exports.transition = async (id, to, opts = {}) => {
     }
   } catch { /* silent: khong chan chuyen trang thai vi journey */ }
 
-  let autoPush = null;
-  if (!isResumeTransition && to === 'REVIEWING' && from !== 'REVIEWING') {
-    autoPush = await autoPushOnReview(id, actorId || null);
-  }
-
-  let autoSync = null;
-  if (!isResumeTransition && to === 'APPROVED' && from !== 'APPROVED') {
-    autoSync = await autoSyncOnApproved(id, actorId || null);
-  }
-
   if (!isResumeTransition && to === 'PRINCIPLE_APPROVED' && from !== 'PRINCIPLE_APPROVED') {
     await reservePendingStationCode(id, actorId, actorRole, source, ip).catch(() => {});
   }
 
   return {
-    id, status: to, prevStatus: from, autoPush, autoSync,
+    id, status: to, prevStatus: from,
     stationCreated: stationCreated ? { id: stationCreated.id, name: stationCreated.name, ma_tram: stationCreated.ma_tram || null } : null,
     stationCreateError
   };
@@ -468,137 +445,6 @@ async function reservePendingStationCode(id, actorId, actorRole, source, ip) {
   });
 }
 
-async function autoSyncOnApproved(id, actorId) {
-  try {
-    const apiConfigService = require('./apiConfigService');
-    const syncService = require('./syncService');
-    const config = await apiConfigService.getDefaultPushConfig();
-    if (!config) {
-      return { synced: false, queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
-    }
-    const results = await syncService.pushTo1Office([id], config.id, actorId, {
-      allowStatuses: ['APPROVED'],
-      setStatus: 'Đang triển khai'
-    });
-    const first = results && results[0];
-    if (!first || !first.success) {
-      try {
-        await exports.logActivity({
-          proposalId: id, action: 'sync_push', source: 'system_auto',
-          actorId: actorId || null,
-          changedFields: { error: (first && first.error) || 'Không tạo được lệnh đồng bộ', final: true }
-        });
-      } catch { /* silent */ }
-      return { synced: false, queued: false, reason: (first && first.error) || 'Không tạo được lệnh đồng bộ' };
-    }
-    return { synced: true, queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id, warnings: first.warnings || [], droppedFields: first.droppedFields || [] };
-  } catch (e) {
-    return { synced: false, queued: false, reason: e.message || 'Lỗi tạo lệnh đồng bộ' };
-  }
-}
-
-async function autoPushOnReview(id, reviewerId) {
-  try {
-    const apiConfigService = require('./apiConfigService');
-    const syncService = require('./syncService');
-    const config = await apiConfigService.getDefaultPushConfig();
-    if (!config) {
-      return { queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
-    }
-    const results = await syncService.pushTo1Office([id], config.id, reviewerId);
-    const first = results && results[0];
-    if (!first || !first.success) {
-      return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đẩy' };
-    }
-    if (!first.isUpdate && !first.deduped) {
-      try {
-        const workAutomationService = require('./workAutomationService');
-        const autos = await workAutomationService.getByType('assign_process');
-        for (const auto of autos) {
-          if (!auto.enabled) continue;
-          await workAutomationService.createPendingRun({
-            automationId: auto.id,
-            proposalId: id,
-            proposalCode: (first.contactData && first.contactData.code) || null,
-            trigger: 'auto',
-          });
-        }
-      } catch { /* silent: khong chan luong duyet */ }
-    }
-    return { queued: true, jobId: first.jobId, isUpdate: !!first.isUpdate, apiConfigId: config.id, warnings: first.warnings || [], droppedFields: first.droppedFields || [] };
-  } catch (e) {
-    return { queued: false, reason: e.message || 'Lỗi tạo lệnh đẩy' };
-  }
-}
-
-const AUTO_PUSH_ON_UPDATE_KEY = 'auto_push_on_update';
-const AUTO_PUSH_EXCLUDED_STATUSES = ['CANCELLED'];
-
-exports.isAutoPushOnUpdateEnabled = async () => {
-  try {
-    const [rows] = await pool.query(
-      'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
-      [AUTO_PUSH_ON_UPDATE_KEY]
-    );
-    if (!rows[0] || rows[0].value === null || rows[0].value === undefined || rows[0].value === '') return true;
-    return !['0', 'false', 'off', 'no'].includes(String(rows[0].value).toLowerCase());
-  } catch { return true; }
-};
-
-exports.saveAutoPushOnUpdate = async (enabled) => {
-  const value = enabled ? '1' : '0';
-  await pool.query(
-    'INSERT INTO proposal_lifecycle_configs (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = CURRENT_TIMESTAMP',
-    [AUTO_PUSH_ON_UPDATE_KEY, value]
-  );
-  return { auto_push_on_update: enabled === true };
-};
-
-async function autoPushOnUpdate(id, actorId) {
-  try {
-    if (!(await exports.isAutoPushOnUpdateEnabled())) {
-      return { queued: false, skipped: 'config_off' };
-    }
-    const apiConfigService = require('./apiConfigService');
-    const syncService = require('./syncService');
-    const config = await apiConfigService.getDefaultPushConfig();
-    if (!config) {
-      return { queued: false, reason: 'Chưa có cấu hình API 1Office đang hoạt động' };
-    }
-    const [rows] = await pool.query('SELECT status, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
-    if (rows.length === 0) {
-      return { queued: false, skipped: 'not_found' };
-    }
-    if (!rows[0].contact_1office_code) {
-      return { queued: false, skipped: 'not_linked' };
-    }
-    if (AUTO_PUSH_EXCLUDED_STATUSES.includes(rows[0].status)) {
-      return { queued: false, skipped: 'status_excluded' };
-    }
-    const results = await syncService.pushTo1Office([id], config.id, actorId, { allowAllStatuses: true });
-    const first = results && results[0];
-    if (!first || !first.success) {
-      try {
-        await exports.logActivity({
-          proposalId: id, action: 'sync_push', source: 'system_auto',
-          actorId: actorId || null,
-          changedFields: { error: (first && first.error) || 'Không tạo được lệnh đồng bộ', final: true }
-        });
-      } catch { /* silent */ }
-      return { queued: false, reason: (first && first.error) || 'Không tạo được lệnh đồng bộ' };
-    }
-    return {
-      queued: true, jobId: first.jobId, deduped: !!first.deduped, payloadRefreshed: !!first.payload_refreshed,
-      isUpdate: !!first.isUpdate, apiConfigId: config.id,
-      warnings: first.warnings || [], droppedFields: first.droppedFields || []
-    };
-  } catch (e) {
-    return { queued: false, reason: e.message || 'Lỗi tạo lệnh đồng bộ' };
-  }
-}
-
-exports.autoPushOnUpdate = autoPushOnUpdate;
-
 // ===== Kế hoạch 71 (F) — Tự xác nhận "đủ thông tin" =====
 
 const parseCfg = (cfg) => {
@@ -620,7 +466,6 @@ exports.checkInfoComplete = async (flatData, opts = {}) => {
   const { purpose = 'view', formId = null } = opts || {};
   const dynamicUtils = require('./dynamicUtils');
   const validators = require('../middlewares/validators');
-  const fieldMapper = require('./fieldMapper');
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const labelOf = (key) => (fieldDefs.find((f) => f.key === key) || {}).label || key;
@@ -640,7 +485,9 @@ exports.checkInfoComplete = async (flatData, opts = {}) => {
     if (!f.required && !special) continue;
     if (!special && applicable.size > 0 && !applicable.has(f.key)) continue;
     if (special || f.type === 'user') {
-      if (fieldMapper.resolveUserId(flatData[f.key]) === null) missing.add(labelOf(f.key));
+      const value = flatData[f.key];
+      const userId = value && typeof value === 'object' ? Number(value.id) : Number(value);
+      if (!Number.isInteger(userId) || userId <= 0) missing.add(labelOf(f.key));
     } else if (isEmptyValue(flatData[f.key])) {
       missing.add(labelOf(f.key));
     }
@@ -777,7 +624,7 @@ exports.getCountdownConfig = async () => {
       return { status: d.status, supplement: supp, transition: clonePart(d.transition) };
     });
   }
-  return { warn_hours: warnHours, rules, auto_push_on_update: await exports.isAutoPushOnUpdateEnabled(), ...(await exports.getExtendLimits()) };
+  return { warn_hours: warnHours, rules, ...(await exports.getExtendLimits()) };
 };
 
 exports.saveCountdownConfig = async (config) => {
@@ -797,10 +644,7 @@ exports.saveCountdownConfig = async (config) => {
       maxDaysPerTime: config.extend_max_days_per_time !== undefined ? config.extend_max_days_per_time : current.maxDaysPerTime
     });
   }
-  if (config && config.auto_push_on_update !== undefined) {
-    await exports.saveAutoPushOnUpdate(!!config.auto_push_on_update);
-  }
-  return { warn_hours: warnHours, rules, auto_push_on_update: await exports.isAutoPushOnUpdateEnabled(), ...(limits || await exports.getExtendLimits()) };
+  return { warn_hours: warnHours, rules, ...(limits || await exports.getExtendLimits()) };
 };
 
 exports.getDeadlineParts = async (status, kind = 'supplement') => {

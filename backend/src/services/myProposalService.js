@@ -161,7 +161,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     } catch { return false; }
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
-  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description, note, chot_so_luong_tru FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description, note, chot_so_luong_tru FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -284,8 +284,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
     const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
-  const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
-  const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
+  const exclude = (driversChanged || !codeValid) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });
   const finalDynamic = { ...mergedDynamic, ...postResults };
   let filesRenamed = 0;
@@ -317,12 +316,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     } catch { infoCompleted = null; }
   }
 
-  let autoPush = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    autoPush = await proposalLifecycle.autoPushOnUpdate(id, actorId);
-  } catch { autoPush = null; }
-  return { autoPush, infoCompleted };
+  return { infoCompleted };
 };
 
 exports.deleteProposal = async (id, userId) => {

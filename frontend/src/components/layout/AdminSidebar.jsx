@@ -201,12 +201,6 @@ const configGroups = [
         roles: ["SUPER_ADMIN"],
       },
       {
-        path: "/admin/api-configs",
-        label: "Kết nối API",
-        icon: Settings,
-        roles: ["SUPER_ADMIN"],
-      },
-      {
         path: "/admin/documents",
         label: "Quản lý tài liệu",
         icon: FileText,

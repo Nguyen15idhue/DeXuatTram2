@@ -28,17 +28,17 @@ const AdminFormsPage = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, name: '' });
-  const [syncModal, setSyncModal] = useState({ isOpen: false, form: null, plan: null, loading: false, error: '', syncDesc: true, submitting: false });
+  const [syncModal, setSyncModal] = useState({ isOpen: false, form: null, plan: null, loading: false, error: '', submitting: false });
 
-  const closeSyncModal = () => setSyncModal({ isOpen: false, form: null, plan: null, loading: false, error: '', syncDesc: true, submitting: false });
+  const closeSyncModal = () => setSyncModal({ isOpen: false, form: null, plan: null, loading: false, error: '', submitting: false });
 
   const openSyncModal = async (form) => {
     setError('');
-    setSyncModal({ isOpen: true, form, plan: null, loading: true, error: '', syncDesc: true, submitting: false });
+    setSyncModal({ isOpen: true, form, plan: null, loading: true, error: '', submitting: false });
     try {
       const res = await formService.syncPreview(form.id, token);
       if (res.success) {
-        setSyncModal(prev => ({ ...prev, plan: res.data, loading: false, syncDesc: !!res.data.descConfig }));
+        setSyncModal(prev => ({ ...prev, plan: res.data, loading: false }));
       } else {
         setSyncModal(prev => ({ ...prev, loading: false, error: res.message || 'Không xem trước được cấu hình' }));
       }
@@ -48,16 +48,16 @@ const AdminFormsPage = () => {
   };
 
   const handleConfirmSync = async () => {
-    const { form, syncDesc } = syncModal;
+    const { form } = syncModal;
     if (!form) return;
     setSyncModal(prev => ({ ...prev, submitting: true }));
     try {
-      const res = await formService.syncFromCreate(form.id, { syncDesc }, token);
+      const res = await formService.syncFromCreate(form.id, token);
       if (res.success) {
         const s = res.data.summary || {};
         const extra = (s.parkedFromSource || 0) + (s.extraOnly || 0);
         setToast({
-          message: `Đã đồng bộ ${s.newFieldCount || 0} trường từ form Nhập liệu${extra ? `, ${extra} trường vào section riêng` : ''}${res.data.descConfig ? ', cập nhật mô tả 1Office' : ''}`,
+          message: `Đã đồng bộ ${s.newFieldCount || 0} trường từ form Nhập liệu${extra ? `, ${extra} trường vào section riêng` : ''}`,
           type: 'success'
         });
         closeSyncModal();
@@ -261,20 +261,6 @@ const AdminFormsPage = () => {
                 )}
               </div>
             </div>
-
-            {syncModal.plan.descConfig && (
-              <label className="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg p-3">
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-sm checkbox-primary"
-                  checked={syncModal.syncDesc}
-                  onChange={(e) => setSyncModal(prev => ({ ...prev, syncDesc: e.target.checked }))}
-                />
-                <span className="text-sm">
-                  Cập nhật luôn mẫu <b>Mô tả đẩy sang 1Office</b> ({syncModal.plan.descConfig.name} — {syncModal.plan.descConfig.sectionCount} section)
-                </span>
-              </label>
-            )}
 
             {syncModal.error && <div className="text-error text-xs">{syncModal.error}</div>}
 

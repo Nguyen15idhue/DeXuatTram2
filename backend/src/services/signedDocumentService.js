@@ -11,6 +11,7 @@ const signerTextLayout = require('../../assets/signatureTextLayout.json');
 const IMAGE_HEIGHT_RATIO = signerTextLayout.imageHeightRatio;
 const SIGNER_TEXT_DENSITY = 288;
 const PDF_POINTS_PER_CSS_PIXEL = 0.75;
+const POINTS_TO_CSS_PIXELS = 1 / PDF_POINTS_PER_CSS_PIXEL;
 const SIGNATURE_BLOCK_MARKER = 'TMT-EGREEN-SIGNATURE-BLOCK-V3';
 
 const xmlEscape = (value) => String(value || '')
@@ -66,10 +67,31 @@ const formatSignedTime = (value) => {
 };
 
 const fontPaths = () => {
-  const fontDirectory = path.join(__dirname, '..', '..', 'assets', 'fonts');
+  const fontDirectories = [
+    process.env.SIGNATURE_FONT_DIR,
+    ...(process.platform === 'win32' ? ['C:\\Windows\\Fonts'] : []),
+    '/usr/share/fonts/truetype/msttcorefonts'
+  ].filter(Boolean);
+  const findFont = (fileNames) => {
+    for (const directory of fontDirectories) {
+      for (const fileName of fileNames) {
+        const candidate = path.join(directory, fileName);
+        if (fs.existsSync(candidate)) return candidate;
+      }
+    }
+    return path.join(fontDirectories[0] || '/app/signature-fonts', fileNames[0]);
+  };
   return {
-    regular: path.join(fontDirectory, 'NotoSans-Regular.ttf'),
-    bold: path.join(fontDirectory, 'NotoSans-SemiBold.ttf')
+    regular: process.env.SIGNATURE_FONT_REGULAR || findFont([
+      'times.ttf',
+      'Times_New_Roman.ttf',
+      'Times New Roman.ttf'
+    ]),
+    bold: process.env.SIGNATURE_FONT_BOLD || findFont([
+      'timesbd.ttf',
+      'Times_New_Roman_Bold.ttf',
+      'Times New Roman Bold.ttf'
+    ])
   };
 };
 
@@ -79,7 +101,9 @@ const getSignerFonts = async () => {
   for (const font of ['regular', 'bold']) {
     const filePath = paths[font];
     if (!fs.existsSync(filePath)) {
-      throw new Error(`Không tìm thấy font Unicode: ${path.basename(filePath)}`);
+      throw new Error(
+        `Không tìm thấy font Times New Roman (${font}). Hãy mount thư mục font hợp lệ vào SIGNATURE_FONT_DIR hoặc cấu hình SIGNATURE_FONT_${font.toUpperCase()}.`
+      );
     }
     const fontBytes = await fs.promises.readFile(filePath);
     fonts[font] = fontkit.create(fontBytes);
@@ -114,6 +138,7 @@ const createSignerDetailsImage = async (signer, widthPoints, heightPoints, fonts
   const widthPx = widthPoints / PDF_POINTS_PER_CSS_PIXEL;
   const heightPx = heightPoints / PDF_POINTS_PER_CSS_PIXEL;
   const textByKey = {
+    title: signer.signer_title || '',
     name: signer.full_name || '',
     time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
   };
@@ -122,11 +147,15 @@ const createSignerDetailsImage = async (signer, widthPoints, heightPoints, fonts
     widthPx - signerTextLayout.leftPaddingPx - signerTextLayout.rightPaddingPx
   );
   const lineFont = fonts.regular;
+  const maxFontSizePx = Math.max(...signerTextLayout.segments.map(
+    (segment) => segment.fontSizePt * POINTS_TO_CSS_PIXELS
+  ));
+  const lineHeightPx = signerTextLayout.lineHeightPt * POINTS_TO_CSS_PIXELS;
   const lineMetricHeight = ((lineFont.ascent - lineFont.descent) / lineFont.unitsPerEm)
-    * signerTextLayout.fontSizePx;
+    * maxFontSizePx;
   const baselineY = signerTextLayout.topPaddingPx
-    + (signerTextLayout.lineHeightPx - lineMetricHeight) / 2
-    + (lineFont.ascent / lineFont.unitsPerEm) * signerTextLayout.fontSizePx;
+    + (lineHeightPx - lineMetricHeight) / 2
+    + (lineFont.ascent / lineFont.unitsPerEm) * maxFontSizePx;
   let textCursorX = signerTextLayout.leftPaddingPx;
   const paths = [];
   for (const segment of signerTextLayout.segments) {
@@ -137,10 +166,10 @@ const createSignerDetailsImage = async (signer, widthPoints, heightPoints, fonts
       font,
       textByKey[segment.key],
       segment.separatorAfter,
-      segment.fontSizePx,
+      segment.fontSizePt * POINTS_TO_CSS_PIXELS,
       maxWidthPx
     );
-    const scale = segment.fontSizePx / font.unitsPerEm;
+    const scale = segment.fontSizePt * POINTS_TO_CSS_PIXELS / font.unitsPerEm;
     let glyphCursorX = 0;
     const glyphPaths = run.glyphs.map((glyph, index) => {
       const position = run.positions[index];
@@ -252,18 +281,18 @@ const textDrawing = ({ signer, drawingId, pageWidth, pageHeight }) => {
   const width = Math.max(1, Math.round(box.width * pageWidth));
   const height = Math.max(1, Math.round(box.height * (1 - IMAGE_HEIGHT_RATIO) * pageHeight));
   const textByKey = {
+    title: signer.signer_title || '',
     name: signer.full_name || '',
     time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
   };
   const runs = signerTextLayout.segments.map((segment) => {
     const text = textByKey[segment.key] || '';
     const value = text ? `${text}${segment.separatorAfter}` : '';
-    const fontSize = Math.round(segment.fontSizePx * 1.5);
-    return `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial"/><w:sz w:val="${fontSize}"/>${segment.font === 'bold' ? '<w:b/>' : ''}</w:rPr><w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r>`;
+    const fontSize = Math.round(segment.fontSizePt * 2);
+    const fontFamily = xmlEscape(signerTextLayout.fontFamily);
+    return `<w:r><w:rPr><w:rFonts w:ascii="${fontFamily}" w:hAnsi="${fontFamily}" w:eastAsia="${fontFamily}" w:cs="${fontFamily}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/><w:lang w:val="vi-VN"/>${segment.font === 'bold' ? '<w:b/>' : ''}</w:rPr><w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r>`;
   }).join('');
-  const lineHeightTwips = Math.round(
-    signerTextLayout.lineHeightPx * PDF_POINTS_PER_CSS_PIXEL * 20
-  );
+  const lineHeightTwips = Math.round(signerTextLayout.lineHeightPt * 20);
   const paragraphs = `<w:p><w:pPr><w:jc w:val="left"/><w:spacing w:before="0" w:after="0" w:line="${lineHeightTwips}" w:lineRule="exact"/></w:pPr>${runs}</w:p>`;
   const drawingName = xmlEscape(`Thông tin người ký ${signer.full_name || signer.user_id}`);
   const inset = Math.round(signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 20);

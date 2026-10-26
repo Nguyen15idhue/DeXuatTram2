@@ -178,30 +178,6 @@ router.get('/:id', requireAuth, requireProposalInfoManager, adminProposalControl
 
 /**
  * @swagger
- * /api/admin/proposals/{id}/push-check:
- *   get:
- *     tags: [Admin - Proposals]
- *     summary: Kiểm tra liên kết 1Office của người phụ trách trước khi duyệt/đẩy
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Trả về missing (chưa gán) và unlinked (đã gán nhưng chưa liên kết / chưa có tài khoản 1Office)
- *       403:
- *         description: Không có quyền
- *       404:
- *         description: Không tìm thấy đề xuất
- */
-router.get('/:id/push-check', requireAuth, requireProposalManager, adminProposalController.pushCheck);
-
-/**
- * @swagger
  * /api/admin/proposals/{id}/completeness:
  *   get:
  *     tags: [Admin - Proposals]
@@ -303,7 +279,7 @@ router.put('/:id', requireAuth, requireProposalManager, validateUpdateProposal, 
  * /api/admin/proposals/{id}/status:
  *   put:
  *     tags: [Admin - Proposals]
-  *     summary: Cập nhật trạng thái đề xuất theo ma trận (Duyệt REVIEWING tự tạo lệnh đẩy 1Office)
+  *     summary: Cập nhật trạng thái đề xuất theo ma trận
  *     security:
  *       - bearerAuth: []
  *     parameters:

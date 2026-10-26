@@ -82,7 +82,7 @@ exports.onProposalTransition = async (proposalId, { from, to, actorId, actorRole
       status_before: from || null,
       status_after: to || null,
       actor_id: actorId || null,
-      actor_role: actorRole || (source === 'webhook' ? '1Office' : null),
+      actor_role: actorRole || null,
       source: source || 'user',
       ip: ip || null,
     });
@@ -153,7 +153,7 @@ exports.onStationStatus = async (stationId, { from, to, actorId, actorRole, sour
       status_before: from || null,
       status_after: to || null,
       actor_id: actorId || null,
-      actor_role: actorRole || (source === 'webhook' ? '1Office' : null),
+      actor_role: actorRole || null,
       source: source || 'user',
       ip: ip || null,
     });
@@ -184,35 +184,6 @@ exports.onStationUpdated = async (stationId, { changedFields, actorId, actorRole
       source: source || 'user',
       ip: ip || null,
     });
-    return journeyId;
-  } catch { return null; }
-};
-
-exports.upsertExternalRef = async ({ journeyId, system, refType, externalId, externalCode } = {}) => {
-  try {
-    if (!journeyId || !system || !refType || !externalId) return null;
-    await pool.query(
-      `INSERT INTO journey_external_refs (journey_id, \`system\`, ref_type, external_id, external_code, last_synced_at)
-       VALUES (?, ?, ?, ?, ?, NOW())
-       ON DUPLICATE KEY UPDATE external_code = VALUES(external_code), last_synced_at = NOW()`,
-      [journeyId, system, refType, String(externalId), externalCode ? String(externalCode) : null]
-    );
-    return true;
-  } catch { return null; }
-};
-
-exports.linkAutomationRun = async ({ runId, proposalId, processId } = {}) => {
-  try {
-    if (!proposalId) return null;
-    const [rows] = await pool.query('SELECT journey_id FROM station_proposals WHERE id = ? LIMIT 1', [proposalId]);
-    const journeyId = rows[0] && rows[0].journey_id;
-    if (!journeyId) return null;
-    if (runId) {
-      await exports.upsertExternalRef({ journeyId, system: 'automation', refType: 'run', externalId: String(runId) });
-    }
-    if (processId) {
-      await exports.upsertExternalRef({ journeyId, system: 'automation', refType: 'process', externalId: String(processId) });
-    }
     return journeyId;
   } catch { return null; }
 };

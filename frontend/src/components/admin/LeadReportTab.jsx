@@ -18,27 +18,6 @@ const Section = ({ title, right, children }) => (
   </div>
 );
 
-const MilestoneTable = ({ milestones }) => {
-  if (!milestones || milestones.length === 0) return <p className="text-xs opacity-60">Chưa có dữ liệu mốc 1Office</p>;
-  return (
-    <div className="overflow-x-auto">
-      <table className="table table-xs w-full">
-        <thead><tr><th>Mốc</th><th>Trạng thái</th><th>Kế hoạch</th><th>Thực tế</th></tr></thead>
-        <tbody>
-          {milestones.map((m, i) => (
-            <tr key={i}>
-              <td>{m.title}</td>
-              <td><span className="badge badge-xs badge-ghost">{m.status || '—'}</span></td>
-              <td>{m.plan ? fmtDateTime(m.plan) : '—'}</td>
-              <td>{m.real ? fmtDateTime(m.real) : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
 const HistoryList = ({ history, note }) => {
   if (!history || history.length === 0) {
     return (
@@ -85,20 +64,6 @@ const HistoryList = ({ history, note }) => {
       {note ? <p className="text-xs mt-1"><b>Ghi chú:</b> {note}</p> : null}
     </div>
   );
-};
-
-const MirrorBlock = ({ mirror }) => {
-  if (!mirror || mirror.length === 0) return <p className="text-xs opacity-60 mt-1">Chưa khớp được quy trình 1Office (chưa liên kết)</p>;
-  return mirror.map((m, i) => (
-    <div key={i} className="mt-2">
-      <div className="flex items-center gap-2 text-xs flex-wrap">
-        <span className="badge badge-xs badge-info">{m.kind === 'on_station' ? 'Quy trình ON trạm' : m.kind === 'proposal' ? 'Quy trình đề xuất' : 'Quy trình khác'}</span>
-        <span className="opacity-60">Quy trình #{m.process_id} · Bản {m.version}</span>
-        {m.drift ? <span className="badge badge-xs badge-warning">lệch ánh xạ</span> : null}
-      </div>
-      <MilestoneTable milestones={m.milestones} />
-    </div>
-  ));
 };
 
 const LeadReportTab = ({ leadId, onClose }) => {
@@ -187,7 +152,6 @@ const LeadReportTab = ({ leadId, onClose }) => {
               <span className="badge badge-xs badge-ghost">{p.status}</span>
               {p.station ? <span className="text-xs opacity-70">→ {p.station.name} ({p.station.status})</span> : <span className="text-xs opacity-60">Chưa có trạm</span>}
             </div>
-            <MirrorBlock mirror={(p.mirror || []).filter((m) => m.kind !== 'on_station')} />
           </div>
         ))}
       </Section>
@@ -202,7 +166,6 @@ const LeadReportTab = ({ leadId, onClose }) => {
               <span className="badge badge-xs badge-ghost">{s.status}</span>
               <span className="text-xs opacity-60">từ {s.proposal_code}</span>
             </div>
-            <MirrorBlock mirror={s.on_mirror || []} />
           </div>
         ))}
       </Section>
@@ -212,25 +175,9 @@ const LeadReportTab = ({ leadId, onClose }) => {
         <ProcessTimeline events={data.timeline || []} />
       </Section>
     ),
-    sync: data && (
-      <Section
-        key="sync"
-        title="Đồng bộ 1Office"
-        right={data.syncHealth.mirror_synced_at ? <span className="badge badge-xs badge-ghost">Gương lúc {fmtDateTime(data.syncHealth.mirror_synced_at)}</span> : null}
-      >
-        <div className="text-xs space-y-1">
-          <p>Bản chụp đã khớp lead này: <b>{data.syncHealth.matched_snapshots}</b></p>
-          {(data.syncHealth.automations || []).map((a, i) => (
-            <p key={i} className="opacity-70">
-              {a.automation_key} · Bản {a.version}: {a.total} quy trình ({a.linked} đã khớp, {a.unlinked} chưa) · đồng bộ {a.last_synced_at ? fmtDateTime(a.last_synced_at) : '—'}
-            </p>
-          ))}
-        </div>
-      </Section>
-    ),
   };
 
-  const order = sections || ['header', 'durations', 'cskh', 'tvbh', 'proposals', 'stations', 'timeline', 'sync'];
+  const order = sections || ['header', 'durations', 'cskh', 'tvbh', 'proposals', 'stations', 'timeline'];
 
   return (
     <dialog className="modal modal-open" onClick={(e) => e.stopPropagation()}>

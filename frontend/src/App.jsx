@@ -54,7 +54,6 @@ const AdminRecordFilesPage = lazy(() => import('./pages/admin/AdminRecordFilesPa
 const AdminDataListsPage = lazy(() => import('./pages/admin/AdminDataListsPage'));
 const AdminMapConfigPage = lazy(() => import('./pages/admin/AdminMapConfigPage'));
 const AdminRolesPage = lazy(() => import('./pages/admin/AdminRolesPage'));
-const AdminApiConfigPage = lazy(() => import('./pages/admin/AdminApiConfigPage'));
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'));
 const AdminHelpPage = lazy(() => import('./pages/admin/AdminHelpPage'));
 const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage'));
@@ -310,7 +309,6 @@ function App() {
             <Route path="/admin/data-lists/:id" element={<RoleRoute allowed={SUPER_ONLY}><AdminDataListsPage /></RoleRoute>} />
             <Route path="/admin/map-config" element={<RoleRoute allowed={SUPER_ONLY}><AdminMapConfigPage /></RoleRoute>} />
             <Route path="/admin/roles" element={<RoleRoute allowed={SUPER_ONLY}><AdminRolesPage /></RoleRoute>} />
-            <Route path="/admin/api-configs" element={<RoleRoute allowed={SUPER_ONLY}><AdminApiConfigPage /></RoleRoute>} />
             <Route path="/admin/help" element={<RoleRoute allowed={SUPER_ONLY}><AdminHelpPage /></RoleRoute>} />
             <Route path="/admin/documents" element={<RoleRoute allowed={SUPER_ONLY}><AdminDocumentsPage /></RoleRoute>} />
             <Route path="/admin/audit-log" element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminAuditLogPage /></RoleRoute>} />

@@ -111,7 +111,7 @@ router.get('/quick-create', requireAuth, formController.getQuickCreate);
  *     description: >
  *       Trả về diff khi đồng bộ cấu hình: field lấy từ form Nhập liệu, field riêng của form Xem/sửa
  *       (hoặc field không có vị trí trong form Nhập liệu) sẽ được gom vào section riêng
- *       "Trường riêng form xem/sửa", kèm mẫu mô tả 1Office sinh ra tương ứng.
+ *       "Trường riêng form xem/sửa".
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -140,7 +140,7 @@ router.get('/:id/sync-preview', requireAuth, requireSuperAdmin, formController.s
  *     description: >
  *       Ghi đè layout + field của form Xem/sửa bằng form Nhập liệu mặc định cùng entity.
  *       Field chỉ có ở form Xem/sửa (hoặc không có vị trí trong form Nhập liệu) được đưa vào
- *       section riêng. Khi syncDesc = true, mẫu mô tả 1Office cũng được sinh lại theo form Nhập liệu.
+ *       section riêng.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -149,16 +149,6 @@ router.get('/:id/sync-preview', requireAuth, requireSuperAdmin, formController.s
  *         required: true
  *         schema:
  *           type: integer
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               syncDesc:
- *                 type: boolean
- *                 default: false
- *                 description: Đồng bộ luôn mẫu mô tả đẩy sang 1Office
  *     responses:
  *       200:
  *         description: Đồng bộ thành công

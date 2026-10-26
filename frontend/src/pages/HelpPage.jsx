@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpen, Search, X, ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
-  ExternalLink, Link2, LayoutGrid, Route as RouteIcon, Plug, Flag,
+  ExternalLink, Link2, LayoutGrid, Route as RouteIcon, Flag,
   BarChart3, Users, Zap, FileText, File, List, ShieldCheck, HelpCircle,
   User, Map as MapIcon, ClipboardList, Send, Database, Settings,
   Eye, WifiOff,
@@ -12,12 +12,12 @@ import { GUIDE, resolveFlowStep } from '../help/guideData';
 import { helpApi, clearHelpCache } from '../services/helpApi';
 import { VideoBlock, Gallery } from '../components/help/HelpMedia';
 
-const SECTION_ICONS = { User, Map: MapIcon, ClipboardList, Send, Database, Settings, Book: BookOpen, Flag, Chart: BarChart3, Users, Zap, FileText, File, LayoutGrid, List, Shield: ShieldCheck, Help: HelpCircle, Route: RouteIcon, Plug };
+const SECTION_ICONS = { User, Map: MapIcon, ClipboardList, Send, Database, Settings, Book: BookOpen, Flag, Chart: BarChart3, Users, Zap, FileText, File, LayoutGrid, List, Shield: ShieldCheck, Help: HelpCircle, Route: RouteIcon };
 const ICON_BY_SLUG = {
   'bat-dau': 'Book', 'tai-khoan': 'User', 'ban-do': 'Map', 'de-xuat-cua-toi': 'ClipboardList',
   khach: 'Send', dash: 'Chart', users: 'Users', stations: 'Zap', proposals: 'ClipboardList',
   fields: 'FileText', forms: 'File', views: 'LayoutGrid', 'data-lists': 'List', mapcfg: 'Map',
-  'roles-api': 'Shield', faq: 'Help', 'luong-thuc-hien': 'Route', 'tich-hop': 'Plug',
+  'roles-api': 'Shield', faq: 'Help', 'luong-thuc-hien': 'Route',
 };
 
 const PANEL_SECTIONS = ['dash', 'users', 'stations', 'proposals'];
@@ -29,7 +29,7 @@ const TOC_GROUPS = [
   { label: 'Quản lý cấu hình', ids: SUPER_SECTIONS },
   { label: 'Hỗ trợ', ids: ['faq'] },
 ];
-const FLOW_CATEGORY_SLUGS = ['luong-thuc-hien', 'tich-hop'];
+const FLOW_CATEGORY_SLUGS = ['luong-thuc-hien'];
 const PANE_CLASS = 'lg:h-full lg:overflow-y-auto lg:pr-2 lg:pb-4 min-h-0';
 const TOC_CLASS = 'hidden lg:block w-60 shrink-0 lg:h-full lg:overflow-y-auto lg:pb-2 min-h-0';
 
@@ -333,7 +333,7 @@ const HelpPage = () => {
   const [params] = useSearchParams();
   const tabParam = params.get('tab');
   const sectionParam = params.get('s');
-  const [tab, setTab] = useState(tabParam === 'flows' || tabParam === 'integrations' ? tabParam : 'groups');
+  const [tab, setTab] = useState(tabParam === 'flows' ? tabParam : 'groups');
   const [q, setQ] = useState('');
   const [selectedSection, setSelectedSection] = useState(sectionParam || '');
   const [selectedFlow, setSelectedFlow] = useState('');
@@ -347,7 +347,7 @@ const HelpPage = () => {
   const apiMode = !help.loading && !help.offline && help.articles.length > 0;
 
   useEffect(() => {
-    if (tabParam === 'flows' || tabParam === 'integrations' || tabParam === 'groups') setTab(tabParam);
+    if (tabParam === 'flows' || tabParam === 'groups') setTab(tabParam);
   }, [tabParam]);
 
   useEffect(() => {
@@ -403,12 +403,11 @@ const HelpPage = () => {
     if (!apiMode) return [];
     return apiSections.filter((s) => FLOW_CATEGORY_SLUGS.includes(s.id));
   }, [apiMode, apiSections]);
-  const legacyFlowList = tab === 'integrations' ? GUIDE.integrations.flows : GUIDE.flows.flows;
+  const legacyFlowList = GUIDE.flows.flows;
   const flowList = useMemo(() => {
     if (!apiMode) return legacyFlowList;
-    if (tab === 'integrations') return apiFlows.filter((s) => s.id === 'tich-hop');
     return apiFlows.filter((s) => s.id === 'luong-thuc-hien');
-  }, [apiMode, legacyFlowList, apiFlows, tab]);
+  }, [apiMode, legacyFlowList, apiFlows]);
   const activeFlowId = selectedFlow && flowList.some((f) => f.id === selectedFlow) ? selectedFlow : flowList[0]?.id || '';
   const activeFlow = flowList.find((f) => f.id === activeFlowId);
   const activeFlowSteps = useMemo(() => {
@@ -454,10 +453,9 @@ const HelpPage = () => {
       const sec = stepToSection[hash] || stepToSection[String(hash).toUpperCase()];
       if (!sec) return;
       if (FLOW_CATEGORY_SLUGS.includes(sec)) {
-        const t = sec === 'tich-hop' ? 'integrations' : 'flows';
-        setTab(t);
+        setTab('flows');
         setQ('');
-        navigate({ pathname: location.pathname, search: `?tab=${t}`, hash: window.location.hash || '' });
+        navigate({ pathname: location.pathname, search: '?tab=flows', hash: window.location.hash || '' });
       } else if (sec !== activeSectionId) {
         pickSection(sec);
       }
@@ -553,7 +551,6 @@ const HelpPage = () => {
     const art = help.articles.find((a) => a.slug === step.slug);
     if (art) helpApi.trackView(art.id);
   };
-  const showIntegrations = apiMode ? apiSections.some((s) => s.id === 'tich-hop') : canAccessPanel;
 
   const renderStepCard = (step, idx, extra) => {
     const withSection = extra && extra.sectionId ? extra : { ...extra, sectionId: step.sectionId || activeSectionId };
@@ -605,11 +602,6 @@ const HelpPage = () => {
           <button type="button" role="tab" className={`tab gap-1 ${tab === 'flows' ? 'tab-active' : ''}`} onClick={() => switchTab('flows')}>
             <RouteIcon size={14} /> II. Luồng thực hiện
           </button>
-          {showIntegrations && (
-            <button type="button" role="tab" className={`tab gap-1 ${tab === 'integrations' ? 'tab-active' : ''}`} onClick={() => switchTab('integrations')}>
-              <Plug size={14} /> III. Tích hợp
-            </button>
-          )}
         </div>
         <div className="relative sm:ml-auto sm:w-72">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
@@ -689,13 +681,13 @@ const HelpPage = () => {
         </div>
       )}
 
-      {(tab === 'flows' || tab === 'integrations') && (
+      {tab === 'flows' && (
         <div className="flex gap-6 items-start lg:items-stretch flex-1 min-h-0 lg:overflow-hidden">
           <aside className={TOC_CLASS}>
             <div className="card bg-base-100 border border-base-300">
               <div className="card-body p-3">
                 <p className="text-xs font-bold uppercase text-base-content/50 px-2 pb-2">
-                  {tab === 'flows' ? 'Các luồng' : 'Tích hợp'}
+                  Các luồng
                 </p>
                 {flowList.map((f) => (
                   <button
@@ -719,7 +711,6 @@ const HelpPage = () => {
                 ))}
               </select>
             </div>
-            {tab === 'integrations' && !apiMode && <p className="text-sm text-base-content/60">{GUIDE.integrations.title}</p>}
             {activeFlow && (
               <section key={activeFlow.id}>
                 <div className="flex items-center gap-2 flex-wrap mb-1">

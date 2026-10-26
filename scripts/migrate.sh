@@ -5,9 +5,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 MYSQL_CONTAINER="${MYSQL_CONTAINER:-station-mysql}"
 DB_DIR="database"
 SKIP_FILE="01-create-tables.sql"
+DESTRUCTIVE_MIGRATION="187-remove-oneoffice-integration.sql"
 
 FORCE=0
 YES=0
+ALLOW_DESTRUCTIVE=0
 
 log() { echo "[migrate] $1"; }
 die() { echo "[migrate] LOI: $1" >&2; exit "${2:-1}"; }
@@ -15,7 +17,7 @@ die() { echo "[migrate] LOI: $1" >&2; exit "${2:-1}"; }
 usage() {
   echo "Cach dung:"
   echo "  scripts/migrate.sh status"
-  echo "  scripts/migrate.sh run [--force]"
+  echo "  scripts/migrate.sh run [--force] [--allow-destructive]"
   echo "  scripts/migrate.sh mark-all --yes"
   echo "  scripts/migrate.sh mark <file>"
   echo "  scripts/migrate.sh unmark <file>"
@@ -28,6 +30,7 @@ FILE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=1 ;;
+    --allow-destructive) ALLOW_DESTRUCTIVE=1 ;;
     --yes) YES=1 ;;
     -h|--help) usage ;;
     *) FILE_ARG="$1" ;;
@@ -154,7 +157,7 @@ cmd_run() {
     echo "[migrate] Chay: scripts/migrate.sh mark-all --yes (sau khi xac minh schema), roi chay lai." >&2
     exit 2
   fi
-  local done_n=0 fail=0 f sum old
+  local done_n=0 fail=0 skipped_destructive=0 f sum old
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     if grep -Fxq "$f" <(awk '{print $1}' "$applied_file"); then
@@ -168,6 +171,15 @@ cmd_run() {
     if [ "$f" = "$SKIP_FILE" ]; then
       log "Bo qua $f (chi dung khoi tao thu cong)."
       continue
+    fi
+    if [ "$f" = "$DESTRUCTIVE_MIGRATION" ]; then
+      if [ "$ALLOW_DESTRUCTIVE" != "1" ]; then
+        log "Tam dung truoc migration pha huy $f. Sao luu du lieu tich hop se bi xoa; chay lai voi --allow-destructive sau khi da xac nhan."
+        skipped_destructive=1
+        break
+      fi
+      log "Tao ban sao DB truoc migration pha huy du lieu 1Office..."
+      bash scripts/backup-before-oneoffice-removal.sh
     fi
     log "Chay $f ..."
     if run_one_file "$f"; then
@@ -184,7 +196,11 @@ cmd_run() {
   if [ "$fail" = "1" ]; then
     die "Dung lai do loi. Sua script roi chay lai." 1
   fi
-  log "Hoan tat. Da chay them $done_n file."
+  if [ "$skipped_destructive" = "1" ]; then
+    log "Da chay them $done_n file; con migration pha huy chua duoc ap dung."
+  else
+    log "Hoan tat. Da chay them $done_n file."
+  fi
 }
 
 cmd_mark_all() {

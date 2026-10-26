@@ -13,6 +13,8 @@ const INCLUDE_DIRS = ['docs'];
 const EXCLUDE_PATH = [
   /(^|\/)docs\/0\//i,
   /(^|\/)docs\/6\//i,
+  /(^|\/)docs\/5\/(?:27\.TichHopAPI1Office|28\.TichHop1Office|29\.RedesignFieldMapping|30\.TypeUser_MappingUser1Office|31\.APINhanSu1Office)/i,
+  /(^|\/)docs\/8\/(?:48\.Webhook1Office|64\.KhoiPhucDeXuatTu1Office|65\.WebhookTram|66\.AutomationGanQuyTrinh|67\.DongBoBaoCaoQuyTrinh_GoogleSheet|71\.AutoPushKhiLuu|72\.Countdown.*LienKet1Office)/i,
   /secret/i,
   /credential/i,
   /password/i,
@@ -20,6 +22,8 @@ const EXCLUDE_PATH = [
   /docker-compose/i,
   /node_modules/i,
 ];
+
+const RETIRED_INTEGRATION_CONTENT = /1\s*office|oneoffice|google\s*sheets?|api_configs|api_queue_logs|api_field_mappings|external_id|external_users|user_external_map|journey_external_refs|contact_1office|last_synced_(?:data|at)|work_automations|work_automation_runs|automation_(?:sheet|sync|field|special|process)/i;
 
 const SECRET_PATTERNS = [
   [/AIza[0-9A-Za-z\-_]{20,}/g, '[REDACTED_API_KEY]'],
@@ -80,6 +84,7 @@ function chunkMarkdown(relPath, raw) {
   const flush = () => {
     const text = buf.join('\n').trim();
     if (!text) { buf = []; return; }
+    if (RETIRED_INTEGRATION_CONTENT.test(text)) { buf = []; return; }
     if (text.length <= MAX_CHUNK) {
       chunks.push({ heading, content: redact(text) });
     } else {

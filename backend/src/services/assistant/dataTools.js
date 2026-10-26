@@ -148,7 +148,7 @@ async function getFormFields(nq) {
 }
 
 const COUNT_RE = /(bao nhieu|tong so|so luong|\bdem\b|co may|tong cong|bao gom bao nhieu)/;
-const SENSITIVE_RE = /(user|nguoi dung|tai khoan|nhan su|nhan vien|thanh vien|tram\b|tram sac|station|de xuat|proposal|danh muc du lieu|data ?list|datalist|\btep\b|\bfile\b|thong bao|notification|nhat ky|\blog\b|api config|cau hinh api|geocode cache|external|contact|1office)/;
+const SENSITIVE_RE = /(user|nguoi dung|tai khoan|nhan su|nhan vien|thanh vien|tram\b|tram sac|station|de xuat|proposal|danh muc du lieu|data ?list|datalist|\btep\b|\bfile\b|thong bao|notification|nhat ky|\blog\b|geocode cache)/;
 
 const COUNT_TARGETS = [
   { id: 'help_articles', label: 'bài hướng dẫn', re: /(bai huong dan|bai viet huong dan|huong dan)/, sql: "SELECT COUNT(*) AS n FROM help_articles WHERE status = 'published'" },

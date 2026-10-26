@@ -11,10 +11,9 @@ import {
 } from "../../utils/proposalApproval";
 import { normalizeSignerBox } from "../../utils/proposalSignature";
 import signerTextLayout from "../../utils/signatureTextLayout.json";
+import SignerDetailsText from "../../components/admin/SignerDetailsText";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const signerNameLayout = signerTextLayout.segments.find((segment) => segment.key === "name");
-const signerTimeLayout = signerTextLayout.segments.find((segment) => segment.key === "time");
 
 const ProposalSignatureConfigPage = () => {
   const { id } = useParams();
@@ -441,25 +440,7 @@ const ProposalSignatureConfigPage = () => {
                           Ảnh chữ ký
                         </div>
                         <div className="min-h-0 w-full flex-1 overflow-hidden text-left">
-                          <div
-                            className="truncate"
-                            style={{
-                              fontSize: `${signerNameLayout.fontSizePx}px`,
-                              fontWeight: signerNameLayout.fontWeight,
-                              lineHeight: `${signerTextLayout.lineHeightPx}px`,
-                            }}
-                          >
-                            {signer.full_name}
-                          </div>
-                          <div
-                            className="truncate text-base-content/70"
-                            style={{
-                              fontSize: `${signerTimeLayout.fontSizePx}px`,
-                              lineHeight: `${signerTextLayout.lineHeightPx}px`,
-                            }}
-                          >
-                            Thời gian ký
-                          </div>
+                          <SignerDetailsText signer={signer} timeText="Thời gian ký" />
                         </div>
                         <span
                           className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize border border-white bg-primary"

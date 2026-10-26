@@ -163,9 +163,8 @@ exports.syncPreview = async (req, res) => {
 
 exports.syncFromCreate = async (req, res) => {
   try {
-    const { syncDesc } = req.body || {};
-    const data = await formSyncService.syncFromCreate(req.params.id, { syncDesc });
-    res.json({ success: true, data, message: 'Đồng bộ cấu hình từ form Nhập liệu thành công' });
+    const data = await formSyncService.syncFromCreate(req.params.id);
+    res.json({ success: true, data, message: 'Đồng bộ cấu hình form thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });

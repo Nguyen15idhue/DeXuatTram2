@@ -38,32 +38,21 @@ const dataListsPublicRoutes = require('./routes/dataListsPublic');
 const formulasRoutes = require('./routes/formulas');
 const mapConfigsRoutes = require('./routes/mapConfigs');
 const tilesRoutes = require('./routes/tiles');
-const apiConfigRoutes = require('./routes/apiConfigs');
-const fieldMappingRoutes = require('./routes/fieldMappings');
-const queueLogsRoutes = require('./routes/queueLogs');
-const externalUsersRoutes = require('./routes/externalUsers');
 const notificationsRoutes = require('./routes/notifications');
-const oneOfficeSyncRoutes = require('./routes/oneOfficeSync');
 const geocodeRoutes = require('./routes/geocode');
 const adminGeocodeConfigRoutes = require('./routes/adminGeocodeConfig');
-const webhooksRoutes = require('./routes/webhooks');
 const proposalActivityRoutes = require('./routes/proposalActivity');
-const webhookConfigsRoutes = require('./routes/webhookConfigs');
 const lifecycleConfigRoutes = require('./routes/lifecycleConfig');
 const helpPublicRoutes = require('./routes/helpPublic');
 const adminHelpRoutes = require('./routes/adminHelp');
 const adminAssistantRoutes = require('./routes/adminAssistant');
-const adminAutomationsRoutes = require('./routes/adminAutomations');
 const adminDocumentsRoutes = require('./routes/adminDocuments');
 const adminHelpVideosRoutes = require('./routes/adminHelpVideos');
 const assistantRoutes = require('./routes/assistant');
 const evReportsRoutes = require('./routes/evReports');
 const signaturesRoutes = require('./routes/signatures');
-const queueWorker = require('./workers/queueWorker');
-const personnelSyncWorker = require('./workers/personnelSyncWorker');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 const importWorker = require('./workers/importWorker');
-const workAutomationWorker = require('./workers/workAutomationWorker');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -87,7 +76,7 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Body parse lỗi (vd webhook 1Office gửi JSON sai cú pháp) -> trả JSON thay vì trang HTML mặc định của Express
+// Body parse errors return JSON instead of the default Express HTML page.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err && err.status === 400 && (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && 'body' in err))) {
@@ -163,23 +152,15 @@ app.use('/api/admin/data-lists', adminLimiter, dataListsRoutes);
 app.use('/api/data-lists', dataListsPublicRoutes);
 app.use('/api/formulas', formulasRoutes);
 app.use('/api/map-configs', mapConfigsRoutes);
-app.use('/api/admin/api-configs', adminLimiter, apiConfigRoutes);
-app.use('/api/admin/field-mappings', adminLimiter, fieldMappingRoutes);
-app.use('/api/admin/queue-logs', adminLimiter, queueLogsRoutes);
-app.use('/api/admin/external-users', adminLimiter, externalUsersRoutes);
 app.use('/api/notifications', notificationsRoutes);
-app.use('/api/admin/1office', adminLimiter, oneOfficeSyncRoutes);
 app.use('/api/geocode', geocodeRoutes);
 app.use('/api/admin/geocode-config', adminLimiter, adminGeocodeConfigRoutes);
-app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/admin/proposal-logs', adminLimiter, proposalActivityRoutes);
-app.use('/api/admin/webhook-configs', adminLimiter, webhookConfigsRoutes);
 app.use('/api/admin/lifecycle-config', adminLimiter, lifecycleConfigRoutes);
 app.use('/api/help', helpPublicRoutes);
 app.use('/api/admin/help', adminLimiter, adminHelpRoutes);
 app.use('/api/admin/help/videos', adminLimiter, adminHelpVideosRoutes);
 app.use('/api/admin/assistant', adminLimiter, adminAssistantRoutes);
-app.use('/api/admin/automations', adminLimiter, adminAutomationsRoutes);
 app.use('/api/admin/documents', adminLimiter, adminDocumentsRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/tiles', tilesRoutes);
@@ -193,20 +174,11 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
-  queueWorker.start().catch((err) => {
-    console.error('[QueueWorker] start error:', err.message);
-  });
-  personnelSyncWorker.start().catch((err) => {
-    console.error('[PersonnelSync] start error:', err.message);
-  });
   proposalLifecycleWorker.start().catch((err) => {
     console.error('[LifecycleWorker] start error:', err.message);
   });
   importWorker.start().catch((err) => {
     console.error('[ImportWorker] start error:', err.message);
-  });
-  workAutomationWorker.start().catch((err) => {
-    console.error('[AutomationWorker] start error:', err.message);
   });
 });
 

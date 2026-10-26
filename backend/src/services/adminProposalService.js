@@ -119,7 +119,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
-            p.contact_1office_code, p.sync_status, p.station_id,
+            p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.paused_from_status, p.paused_at,
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
@@ -285,7 +285,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
     dynamicData.sales_quan_ly = dynamicData.nguoi_phu_trach;
   }
 
-  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code, note, chot_so_luong_tru FROM station_proposals WHERE id = ?', [id]);
+  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, note, chot_so_luong_tru FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -358,8 +358,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
     const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
-  const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
-  const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
+  const exclude = (driversChanged || !codeValid) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, null, null, { excludeKeys: exclude });
   const finalDynamic = { ...mergedDynamic, ...postResults };
   let filesRenamed = 0;
@@ -389,10 +388,5 @@ exports.updateProposal = async (id, data, opts = {}) => {
     });
   } catch { infoCompleted = null; }
 
-  let autoPush = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    autoPush = await proposalLifecycle.autoPushOnUpdate(id, opts.actorId || null);
-  } catch { autoPush = null; }
-  return { autoPush, infoCompleted };
+  return { infoCompleted };
 };

@@ -32,7 +32,6 @@ const CountdownConfigPanel = () => {
   const [rules, setRules] = useState(DEFAULT_RULES);
   const [maxTimes, setMaxTimes] = useState(3);
   const [maxDaysPerTime, setMaxDaysPerTime] = useState(30);
-  const [autoPush, setAutoPush] = useState(true);
 
   const statuses = getProposalStatuses().filter((status) => status.value !== 'PAUSED');
   const displayRows = buildDisplayRows(statuses);
@@ -48,7 +47,6 @@ const CountdownConfigPanel = () => {
         setRules(Array.isArray(res.data.rules) && res.data.rules.length > 0 ? res.data.rules : DEFAULT_RULES);
         if (res.data.maxTimes !== undefined) setMaxTimes(res.data.maxTimes);
         if (res.data.maxDaysPerTime !== undefined) setMaxDaysPerTime(res.data.maxDaysPerTime);
-        if (res.data.auto_push_on_update !== undefined) setAutoPush(!!res.data.auto_push_on_update);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -84,7 +82,6 @@ const CountdownConfigPanel = () => {
         warn_hours: Number(warnHours) || 24,
         extend_max_times: Number(maxTimes),
         extend_max_days_per_time: Number(maxDaysPerTime),
-        auto_push_on_update: !!autoPush,
         rules: displayRows.flatMap((row) => {
           const r = ensureRule(row);
           const norm = (part) => ({
@@ -202,16 +199,6 @@ const CountdownConfigPanel = () => {
                 />
                 <span>ngày</span>
               </div>
-              <label className="flex items-center gap-2 py-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-xs"
-                  checked={autoPush}
-                  onChange={(e) => setAutoPush(e.target.checked)}
-                />
-                <span>Tự động đẩy sang 1Office khi lưu đề xuất</span>
-                <span className="text-xs text-gray-500">(bỏ qua khi đề xuất chưa liên kết 1Office)</span>
-              </label>
               <table className="table table-xs w-full">
                 <thead>
                   <tr>

@@ -4,15 +4,12 @@ import { formatSignedTime, normalizeSignerBox } from '../../utils/proposalSignat
 import { PenSquare } from 'lucide-react';
 import ProposalDocumentPages from './ProposalDocumentPages';
 import signerTextLayout from '../../utils/signatureTextLayout.json';
+import SignerDetailsText from './SignerDetailsText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, onSign, signing }) => {
   const signer = normalizeSignerBox(sourceSigner);
-  const textByKey = {
-    name: signer.full_name,
-    time: signer.status === 'SIGNED' ? formatSignedTime(signer.signed_at) : 'Chờ ký'
-  };
   return (
     <div
       data-signer-overlay=""
@@ -46,27 +43,13 @@ const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, on
         className="min-h-0 w-full flex-1 overflow-hidden text-left"
         style={{
           paddingTop: `${signerTextLayout.topPaddingPx}px`,
-          fontFamily: 'TmtSignatureNoto, sans-serif',
-          fontSize: `${signerTextLayout.fontSizePx}px`,
-          lineHeight: `${signerTextLayout.lineHeightPx}px`
+          fontFamily: `"${signerTextLayout.fontFamily}", serif`
         }}
       >
-        {signerTextLayout.segments.map((segment) => (
-          <div
-            key={segment.key}
-            style={{
-              color: segment.color,
-              fontSize: `${segment.fontSizePx}px`,
-              fontWeight: segment.fontWeight,
-              lineHeight: `${signerTextLayout.lineHeightPx}px`,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {textByKey[segment.key]}
-          </div>
-        ))}
+        <SignerDetailsText
+          signer={signer}
+          timeText={signer.status === 'SIGNED' ? formatSignedTime(signer.signed_at) : 'Chờ ký'}
+        />
       </div>
       {canSign && (
         <button

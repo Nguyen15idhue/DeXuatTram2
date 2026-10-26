@@ -20,11 +20,6 @@ const METRIC_REGISTRY = [
   'unassigned_leads',
   'proposals_without_lead',
   'stations_without_proposal',
-  'journey_sync_errors',
-  'oneoffice_coverage',
-  'stuck_node',
-  'sync_staleness',
-  'automation_failures',
   'lead360_sections',
 ];
 
@@ -344,17 +339,6 @@ async function datasetStationsWithoutProposal(sw) {
   return { total: Number(total), items: rows };
 }
 
-async function datasetJourneySyncErrors(pw) {
-  const cond = [...pw.where, `p.sync_status = 'error'`];
-  const whereSql = `WHERE ${cond.join(' AND ')}`;
-  const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM station_proposals p ${whereSql}`, pw.params);
-  const rows = await q(
-    `SELECT p.id, p.ma_de_xuat_gen AS code, p.sync_status, p.last_synced_at FROM station_proposals p ${whereSql} ORDER BY p.last_synced_at DESC LIMIT ${SAMPLE_LIMIT}`,
-    pw.params
-  );
-  return { total: Number(total), items: rows };
-}
-
 exports.METRIC_REGISTRY = METRIC_REGISTRY;
 exports.NON_TERMINAL_PROPOSAL = NON_TERMINAL_PROPOSAL;
 
@@ -386,11 +370,6 @@ exports.getPipeline = async (query, user) => {
   if (need('unassigned_leads')) tasks.unassigned_leads = datasetUnassignedLeads(lw);
   if (need('proposals_without_lead')) tasks.proposals_without_lead = datasetProposalsWithoutLead(pw);
   if (need('stations_without_proposal')) tasks.stations_without_proposal = datasetStationsWithoutProposal(sw);
-  if (need('journey_sync_errors')) tasks.journey_sync_errors = datasetJourneySyncErrors(pw);
-  if (need('oneoffice_coverage')) tasks.oneoffice_coverage = datasetOneofficeCoverage(scope, user, filters);
-  if (need('stuck_node')) tasks.stuck_node = datasetStuckNode(scope, user, filters);
-  if (need('sync_staleness')) tasks.sync_staleness = datasetSyncStaleness();
-  if (need('automation_failures')) tasks.automation_failures = datasetAutomationFailures(scope, user, filters);
   if (need('lead360_sections')) tasks.lead360_sections = datasetLead360Sections();
 
   const keys = Object.keys(tasks);
@@ -676,136 +655,14 @@ exports.getStageDurations = async (query, user) => {
   return { ...result, cached: false };
 };
 
-async function inScopeProposalCodes(scope, user, f, limit) {
-  if (!scope || (scope.role !== 'SALES' && scope.role !== 'MKT')) return null;
-  const pw = proposalWhere(scope, user, f, 'p');
-  const cap = Math.min(Math.max(Number(limit) || 2000, 1), 5000);
-  const rows = await q(
-    `SELECT DISTINCT p.ma_de_xuat_gen AS code FROM station_proposals p WHERE ${pw.where.join(' AND ')} AND p.ma_de_xuat_gen IS NOT NULL AND p.ma_de_xuat_gen <> '' LIMIT ${cap}`,
-    pw.params
-  );
-  return rows.map((r) => r.code);
-}
-
-async function datasetOneofficeCoverage(scope, user, f) {
-  const pw = proposalWhere(scope, user, f, 'p');
-  const sw = stationWhere(scope, user, f);
-  const pcond = pw.where.length > 0 ? `WHERE ${pw.where.join(' AND ')}` : '';
-  const scond = sw.where.length > 0 ? `WHERE ${sw.where.join(' AND ')}` : '';
-  const [[pc]] = await pool.query(`SELECT COUNT(*) AS total FROM station_proposals p ${pcond}`, pw.params);
-  const [[sc]] = await pool.query(`SELECT COUNT(*) AS total FROM stations s ${scond}`, sw.params);
-  let linkedCodes = [];
-  const scopedCodes = await inScopeProposalCodes(scope, user, f, 2000);
-  if (scopedCodes === null) {
-    const rows = await q('SELECT DISTINCT proposal_code AS code FROM automation_sync_snapshots WHERE proposal_code IS NOT NULL LIMIT 2000', []);
-    linkedCodes = rows.map((r) => r.code);
-  } else if (scopedCodes.length > 0) {
-    const rows = await q(
-      `SELECT DISTINCT proposal_code AS code FROM automation_sync_snapshots WHERE proposal_code IN (${scopedCodes.map(() => '?').join(',')})`,
-      scopedCodes
-    );
-    linkedCodes = rows.map((r) => r.code);
-  }
-  let stationsLinked = 0;
-  if (linkedCodes.length > 0) {
-    const [[sr]] = await pool.query(
-      `SELECT COUNT(DISTINCT s.id) AS total FROM stations s ${scond}${scond ? ' AND' : ' WHERE'} EXISTS (SELECT 1 FROM station_proposals p WHERE p.station_id = s.id AND p.ma_de_xuat_gen IN (${linkedCodes.map(() => '?').join(',')}))`,
-      [...sw.params, ...linkedCodes]
-    );
-    stationsLinked = Number(sr.total);
-  }
-  const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
-  return {
-    proposals_total: Number(pc.total),
-    proposals_linked: linkedCodes.length,
-    proposals_coverage: pct(linkedCodes.length, Number(pc.total)),
-    stations_total: Number(sc.total),
-    stations_linked: stationsLinked,
-    stations_coverage: pct(stationsLinked, Number(sc.total)),
-  };
-}
-
-async function datasetStuckNode(scope, user, f) {
-  const reportMirrorService = require('./reportMirrorService');
-  const scopedCodes = await inScopeProposalCodes(scope, user, f, 2000);
-  let snapshots = [];
-  if (scopedCodes === null) {
-    const [rows] = await pool.query(
-      `SELECT automation_id, version, process_id, cells_json, proposal_code, contact_code, station_code, updated_at
-       FROM automation_sync_snapshots WHERE proposal_code IS NOT NULL ORDER BY updated_at DESC LIMIT 2000`
-    );
-    snapshots = await reportMirrorService.enrichSnapshots(rows);
-  } else if (scopedCodes.length > 0) {
-    snapshots = await reportMirrorService.getSnapshotsByProposalCodes(scopedCodes);
-  }
-  const now = Date.now();
-  const items = [];
-  snapshots.forEach((s) => {
-    (s.milestones || []).forEach((m) => {
-      if (!m.plan || m.real) return;
-      const t = new Date(m.plan).getTime();
-      if (!Number.isFinite(t) || t >= now) return;
-      items.push({
-        proposal_code: s.proposal_code,
-        automation_key: s.automation_key,
-        kind: s.kind,
-        version: s.version,
-        process_id: s.process_id,
-        node: m.title,
-        plan: m.plan,
-        days_overdue: Math.round(((now - t) / 86400000) * 10) / 10,
-      });
-    });
-  });
-  items.sort((a, b) => b.days_overdue - a.days_overdue);
-  return { total: items.length, items: items.slice(0, SAMPLE_LIMIT) };
-}
-
-async function datasetSyncStaleness() {
-  const reportMirrorService = require('./reportMirrorService');
-  const stats = await reportMirrorService.getMirrorStats();
-  const now = Date.now();
-  const rows = stats.map((s) => {
-    const t = s.last_synced_at ? new Date(s.last_synced_at).getTime() : null;
-    return { ...s, hours_old: t === null || !Number.isFinite(t) ? null : Math.round(((now - t) / 3600000) * 10) / 10 };
-  });
-  const max = rows.reduce((mx, r) => (r.hours_old !== null && (mx === null || r.hours_old > mx) ? r.hours_old : mx), null);
-  return { max_hours_old: max, automations: rows, generated_at: new Date().toISOString() };
-}
-
-async function datasetAutomationFailures(scope, user, f) {
-  const cond = ["r.status = 'failed'", 'r.finished_at >= NOW() - INTERVAL 7 DAY'];
-  const params = [];
-  const scopedCodes = await inScopeProposalCodes(scope, user, f, 2000);
-  if (scopedCodes !== null) {
-    if (scopedCodes.length === 0) return { total_7d: 0, items: [] };
-    cond.push(`r.proposal_code IN (${scopedCodes.map(() => '?').join(',')})`);
-    params.push(...scopedCodes);
-  }
-  const whereSql = `WHERE ${cond.join(' AND ')}`;
-  const [[{ total }]] = await pool.query(
-    `SELECT COUNT(*) AS total FROM work_automation_runs r ${whereSql}`,
-    params
-  );
-  const rows = await q(
-    `SELECT r.id, a.automation_key, r.action, r.proposal_code, r.contact_code, r.process_id, r.trigger, r.attempt,
-       LEFT(r.error, 300) AS error, r.started_at, r.finished_at
-     FROM work_automation_runs r LEFT JOIN work_automations a ON a.id = r.automation_id
-     ${whereSql} ORDER BY r.finished_at DESC LIMIT 20`,
-    params
-  );
-  return { total_7d: Number(total), items: rows };
-}
-
 const LEAD360_DEFAULT_SECTIONS = [
   { key: 'header', title: 'Thông tin chung', visible: true, order: 1 },
   { key: 'durations', title: 'Thời gian chuyển giai đoạn', visible: true, order: 2 },
   { key: 'cskh', title: 'Chăm sóc khách hàng', visible: true, order: 3 },
   { key: 'tvbh', title: 'Tư vấn bán hàng', visible: true, order: 4 },
-  { key: 'proposals', title: 'Đề xuất + gương 1Office', visible: true, order: 5 },
-  { key: 'stations', title: 'Trạm + gương ON', visible: true, order: 6 },
+  { key: 'proposals', title: 'Đề xuất', visible: true, order: 5 },
+  { key: 'stations', title: 'Trạm', visible: true, order: 6 },
   { key: 'timeline', title: 'Dòng thời gian', visible: true, order: 7 },
-  { key: 'sync', title: 'Đồng bộ 1Office', visible: true, order: 8 },
 ];
 
 async function datasetLead360Sections() {
@@ -1012,25 +869,6 @@ exports.getLead360 = async (leadId, user) => {
   }));
 
   const proposals = await leadService.getJourneyProposals(lead.journey_id);
-  const codes = [...new Set(proposals.map((p) => String(p.ma_de_xuat || '').trim()).filter(Boolean))];
-  const reportMirrorService = require('./reportMirrorService');
-  const mirrorRows = codes.length > 0 ? await reportMirrorService.getSnapshotsByProposalCodes(codes) : [];
-  const mirrorByCode = new Map();
-  mirrorRows.forEach((m) => {
-    if (!m.proposal_code) return;
-    if (!mirrorByCode.has(m.proposal_code)) mirrorByCode.set(m.proposal_code, []);
-    mirrorByCode.get(m.proposal_code).push({
-      automation_key: m.automation_key,
-      kind: m.kind,
-      version: m.version,
-      process_id: m.process_id,
-      contact_code: m.contact_code,
-      drift: m.drift,
-      synced_at: m.synced_at,
-      milestones: m.milestones,
-    });
-  });
-
   const proposalBlocks = proposals.map((p) => ({
     id: p.id,
     code: p.ma_de_xuat,
@@ -1042,7 +880,6 @@ exports.getLead360 = async (leadId, user) => {
       status: p.station_status,
       code: p.station_code,
     } : null,
-    mirror: mirrorByCode.get(String(p.ma_de_xuat || '').trim()) || [],
   }));
 
   const stationBlocks = [];
@@ -1051,16 +888,8 @@ exports.getLead360 = async (leadId, user) => {
     stationBlocks.push({
       ...p.station,
       proposal_code: p.code,
-      on_mirror: (p.mirror || []).filter((m) => m.kind === 'on_station'),
     });
   });
-
-  const stats = await reportMirrorService.getMirrorStats();
-  const matched = mirrorRows.length;
-  const mirrorSyncedAt = mirrorRows.reduce((mx, m) => {
-    if (!m.synced_at) return mx;
-    return !mx || new Date(m.synced_at) > new Date(mx) ? m.synced_at : mx;
-  }, null);
 
   return {
     header: {
@@ -1093,11 +922,6 @@ exports.getLead360 = async (leadId, user) => {
     proposals: proposalBlocks,
     stations: stationBlocks,
     timeline,
-    syncHealth: {
-      automations: stats,
-      matched_snapshots: matched,
-      mirror_synced_at: mirrorSyncedAt,
-    },
     counts: {
       proposals: proposalBlocks.length,
       stations: stationBlocks.length,
@@ -1128,7 +952,6 @@ exports.lead360Csv = async (leadId, user) => {
     'duration_contract_to_station_days', 'duration_station_to_on_days',
     'cskh_count', 'tvbh_count',
     'proposal_code', 'proposal_status', 'station_name', 'station_status', 'on',
-    'mirror_kinds', 'mirror_synced_at',
   ];
   const base = {
     lead_code: d.header.lead_code,
@@ -1150,7 +973,6 @@ exports.lead360Csv = async (leadId, user) => {
     cskh_count: d.cskh.count,
     tvbh_count: d.tvbh.count,
     on: d.counts.on ? 'YES' : 'NO',
-    mirror_synced_at: d.syncHealth.mirror_synced_at || '',
   };
   const rows = d.proposals.length === 0 ? [{ ...base }] : d.proposals.map((p) => ({
     ...base,
@@ -1158,7 +980,6 @@ exports.lead360Csv = async (leadId, user) => {
     proposal_status: p.status,
     station_name: p.station ? p.station.name : '',
     station_status: p.station ? p.station.status : '',
-    mirror_kinds: (p.mirror || []).map((m) => `${m.kind}#${m.process_id}`).join(' | '),
   }));
   return { filename: `lead360_${d.header.lead_code || leadId}.csv`, csv: toCsv(headers, rows) };
 };
@@ -1174,7 +995,6 @@ exports.builderCsv = async (widget, user) => {
 exports.leadWhereClause = leadWhere;
 exports.proposalWhereClause = proposalWhere;
 exports.stationWhereClause = stationWhere;
-exports.inScopeProposalCodes = inScopeProposalCodes;
 exports.SIZE_WHITELIST = SIZE_WHITELIST;
 exports.LEAD360_KEYS = LEAD360_DEFAULT_SECTIONS.map((s) => s.key);
 exports.LEAD360_DEFAULT_SECTIONS = LEAD360_DEFAULT_SECTIONS;

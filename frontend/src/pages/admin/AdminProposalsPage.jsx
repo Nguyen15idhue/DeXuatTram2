@@ -36,10 +36,8 @@ import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, Link, Unlink, ArrowDownToLine, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play } from 'lucide-react';
-import { oneOfficeSyncService } from '../../services/api';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play } from 'lucide-react';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
-import { pollSyncJobs as startSyncJobPoll, parseJobPayload as parsePayload, collectSkippedFiles, buildPushDoneMessage } from '../../utils/syncJobPoll';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
@@ -114,8 +112,6 @@ const AdminProposalsPage = () => {
     }
   };
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [linkModal, setLinkModal] = useState({ open: false, proposalId: null, code: '' });
-  const [restoreModal, setRestoreModal] = useState({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmInfoBatchOpen, setConfirmInfoBatchOpen] = useState(false);
   const [batchConfirmLoading, setBatchConfirmLoading] = useState(false);
@@ -124,10 +120,7 @@ const AdminProposalsPage = () => {
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [pauseModal, setPauseModal] = useState({ open: false, id: null, action: 'pause', reason: '', saving: false });
   const [forceModal, setForceModal] = useState({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
-  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
-  const approveRow = approveModal.id ? proposals.find(p => p.id === approveModal.id) : null;
-  const [pushConfirm, setPushConfirm] = useState({ open: false, blocked: [] });
-  const [blockModal, setBlockModal] = useState({ open: false, missing: [], id: null });
+  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, incomplete: [], checking: false });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -169,16 +162,6 @@ const AdminProposalsPage = () => {
   };
   const dupRef = useRef(null);
   const tableRef = useRef(null);
-  const syncPollRef = useRef(null);
-
-  useEffect(() => {
-    return () => {
-      if (syncPollRef.current) {
-        clearInterval(syncPollRef.current);
-        syncPollRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -306,46 +289,6 @@ const AdminProposalsPage = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showMoreMenu]);
 
-  const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
-
-  const pushUserValue = (row, key) => {
-    const custom = (row && row.custom_data) || {};
-    const direct = row ? row[key] : null;
-    const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
-    if (!v) return null;
-    if (typeof v === 'object') return v.label || (v.id ? `User #${v.id}` : null);
-    return String(v);
-  };
-
-  const pushUserRows = (row) => PUSH_USER_KEYS.map(key => ({
-    key,
-    label: getFieldLabel(key),
-    value: pushUserValue(row, key),
-  }));
-
-  const missingUserFieldLabels = (row) => {
-    const custom = (row && row.custom_data) || {};
-    const labels = [];
-    for (const key of PUSH_USER_KEYS) {
-      const direct = row ? row[key] : null;
-      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
-      const idVal = v && typeof v === 'object' ? (v.id ?? v.user_id) : v;
-      if (!idVal) labels.push(getFieldLabel(key));
-    }
-    return labels;
-  };
-
-  const unlinkedUserLabels = async (row) => {
-    if (!row || !row.id) return { missing: [], unlinked: [] };
-    try {
-      const res = await adminProposalService.pushCheck(row.id, token);
-      const data = res && res.data ? res.data : res;
-      return { missing: data.missing || [], unlinked: data.unlinked || [] };
-    } catch {
-      return { missing: [], unlinked: [] };
-    }
-  };
-
   const handleStatusChange = async (id, newStatus) => {
     if (newStatus === 'REJECTED') {
       setRejectModal({ open: true, id, reason: '', saving: false });
@@ -356,17 +299,13 @@ const AdminProposalsPage = () => {
       return;
     }
     if (newStatus === 'REVIEWING') {
-      setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], incomplete: [], checking: true });
+      setApproveModal({ open: true, id, saving: false, incomplete: [], checking: true });
       try {
-        const row = proposals.find(p => p.id === id);
-        const [check, comp] = await Promise.all([
-          unlinkedUserLabels(row),
-          adminProposalService.getCompleteness(id, token).catch(() => null)
-        ]);
+        const comp = await adminProposalService.getCompleteness(id, token).catch(() => null);
         const incomplete = comp && comp.success && comp.data && Array.isArray(comp.data.missing) ? comp.data.missing : [];
-        setApproveModal({ open: true, id, saving: false, warnings: check.unlinked, missing: check.missing, incomplete, checking: false });
+        setApproveModal({ open: true, id, saving: false, incomplete, checking: false });
       } catch {
-        setApproveModal({ open: true, id, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
+        setApproveModal({ open: true, id, saving: false, incomplete: [], checking: false });
       }
       return;
     }
@@ -410,33 +349,10 @@ const AdminProposalsPage = () => {
     try {
       const res = await adminProposalService.updateStatus(id, 'REVIEWING', token);
       if (res.success) {
-        const auto = res.autoPush;
-        let msg = 'Đã duyệt — đề xuất chuyển sang Đang xem xét';
-        if (auto && auto.queued) {
-          msg += ' — đã tạo lệnh đẩy sang 1Office, theo dõi trong Audit Log';
-        } else if (auto && !auto.queued) {
-          msg += ` — chưa đẩy được sang 1Office (${auto.reason || 'thiếu cấu hình'}), hãy đẩy thủ công`;
-        }
-        const preWarns = (auto && auto.warnings) || [];
-        if (preWarns.length > 0) msg += ` — lưu ý: ${preWarns.slice(0, 3).join('; ')}${preWarns.length > 3 ? ` (+${preWarns.length - 3})` : ''}`;
-        setToast({ message: msg, type: (auto && auto.queued === false) || preWarns.length > 0 ? 'warning' : 'success' });
-        setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false });
+        setToast({ message: 'Đã duyệt — đề xuất chuyển sang Đang xem xét', type: 'success' });
+        setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false });
         notifyBellRefresh();
         loadProposals(pagination.page);
-        if (auto && auto.queued && auto.jobId) {
-          pollSyncJobs([auto.jobId], (jobs) => {
-            const ok = jobs.filter(j => j.status === 'completed').length;
-            const bad = jobs.filter(j => j.status !== 'completed').length;
-            const skipped = collectSkippedFiles(jobs);
-            let doneMsg = ok > 0 ? 'Đẩy sang 1Office thành công' : `Đẩy sang 1Office thất bại (${bad}) — xem Audit Log để Retry`;
-            if (skipped.length > 0) doneMsg += ` — ${skipped.length} file bị bỏ qua: ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''} (xem log đề xuất)`;
-            setToast({
-              message: doneMsg,
-              type: ok > 0 ? (skipped.length > 0 ? 'warning' : 'success') : 'error'
-            });
-            loadProposals(pagination.page);
-          });
-        }
       } else {
         const errs = Array.isArray(res.errors) && res.errors.length > 0 ? res.errors : null;
         if (errs) {
@@ -523,37 +439,10 @@ const AdminProposalsPage = () => {
     try {
       const res = await adminProposalService.updateStatus(forceModal.id, forceModal.status, token, forceModal.reason.trim(), true);
       if (res.success) {
-        const sync = res.autoSync;
-        let msg = 'Đã ghi đè trạng thái (log admin)';
-        if (sync) {
-          if (sync.queued && sync.jobId) {
-            msg += ' — đã tạo lệnh đồng bộ 1Office + chuyển contact sang Đang triển khai';
-          } else if (!sync.queued) {
-            msg += ` — chưa đồng bộ được sang 1Office (${sync.reason || 'thiếu cấu hình'})`;
-          }
-        }
-        setToast({ message: msg, type: 'warning' });
+        setToast({ message: 'Đã ghi đè trạng thái (log admin)', type: 'warning' });
         setForceModal({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
         notifyBellRefresh();
         loadProposals(pagination.page);
-        if (sync && sync.queued && sync.jobId) {
-          pollSyncJobs([sync.jobId], (jobs) => {
-            const j = jobs[0] || {};
-            let doneMsg = 'Trạng thái đã đồng bộ';
-            if (j.status === 'completed') {
-              const p = parsePayload(j);
-              doneMsg = p.status_updated
-                ? `Đã đồng bộ 1Office + contact chuyển sang ${p.contact_status || 'Đang triển khai'}`
-                : 'Đã đồng bộ 1Office (contact đã có, kiểm tra trạng thái trong Audit Log)';
-            } else {
-              doneMsg = 'Đồng bộ 1Office thất bại — xem Audit Log để Retry';
-            }
-            const skipped = collectSkippedFiles(jobs);
-            if (skipped.length > 0) doneMsg += ` — ${skipped.length} file bị bỏ qua (xem log đề xuất)`;
-            setToast({ message: doneMsg, type: j.status === 'completed' ? 'success' : 'error' });
-            loadProposals(pagination.page);
-          });
-        }
       } else {
         setError(res.message || 'Đổi trạng thái thất bại');
         setForceModal(prev => ({ ...prev, saving: false }));
@@ -575,15 +464,8 @@ const AdminProposalsPage = () => {
     }
     setBatchLoading(true);
     const ok = [];
-    const unlinked = [];
     const failed = [];
     for (const row of pendings) {
-      try {
-        const check = await unlinkedUserLabels(row);
-        if (check.unlinked.length > 0) {
-          unlinked.push(`#${row.id}: ${check.unlinked.map(w => w.label || w).join(', ')}`);
-        }
-      } catch { /* silent: vẫn duyệt, bỏ qua cảnh báo */ }
       try {
         const res = await adminProposalService.updateStatus(row.id, 'REVIEWING', token);
         if (res.success) ok.push(row.id);
@@ -593,11 +475,10 @@ const AdminProposalsPage = () => {
       }
     }
     const parts = [];
-    if (ok.length > 0) parts.push(`Đã duyệt & đẩy ${ok.length} đề xuất (sang Đang xem xét)`);
-    if (unlinked.length > 0) parts.push(`${unlinked.length} có người chưa liên kết 1Office: ${unlinked.join('; ')}`);
+    if (ok.length > 0) parts.push(`Đã duyệt ${ok.length} đề xuất (sang Đang xem xét)`);
     if (failed.length > 0) parts.push(`${failed.length} lỗi: ${failed.join('; ')}`);
     if (ok.length > 0) {
-      setToast({ message: `${parts.join(' — ')} — theo dõi lệnh đẩy trong Audit Log`, type: unlinked.length + failed.length > 0 ? 'warning' : 'success' });
+      setToast({ message: parts.join(' — '), type: failed.length > 0 ? 'warning' : 'success' });
     } else {
       setError(parts.join(' — '));
     }
@@ -856,220 +737,6 @@ const AdminProposalsPage = () => {
     }
   };
 
-  const pollSyncJobs = (jobIds, onDone) => {
-    if (!jobIds || jobIds.length === 0) return;
-    if (syncPollRef.current) clearInterval(syncPollRef.current);
-    syncPollRef.current = startSyncJobPoll({
-      jobIds,
-      token,
-      onDone,
-      onTimeout: () => setToast({ message: 'Lệnh vẫn đang xử lý — theo dõi trong Audit Log', type: 'info' })
-    });
-  };
-
-  const openPushConfirm = () => {
-    const blocked = selectedIds
-      .map(id => proposals.find(p => p.id === id))
-      .filter(Boolean)
-      .map(row => ({ id: row.id, missing: missingUserFieldLabels(row) }))
-      .filter(x => x.missing.length > 0);
-    setPushConfirm({ open: true, blocked });
-  };
-
-  const handleBatchPush = async () => {
-    setPushConfirm({ open: false, blocked: [] });
-    if (selectedIds.length === 0) return;
-    setBatchLoading(true);
-    try {
-      const res = await oneOfficeSyncService.push({ proposalIds: selectedIds, apiConfigId: 3 }, token);
-      if (res.success && Array.isArray(res.data)) {
-        const queued = res.data.filter(r => r.success);
-        const failed = res.data.filter(r => !r.success);
-        const queuedNew = queued.filter(r => !r.isUpdate).length;
-        const queuedUpd = queued.filter(r => r.isUpdate).length;
-        const deduped = queued.filter(r => r.deduped).length;
-        const parts = [];
-        if (queuedNew > 0) parts.push(`${queuedNew} đẩy mới`);
-        if (queuedUpd > 0) parts.push(`${queuedUpd} cập nhật đã liên kết`);
-        if (deduped > 0) parts.push(`${deduped} gộp vào lệnh đang chờ`);
-        if (queued.length > 0) {
-          const preWarns = queued.flatMap(r => (r.warnings || []).map(w => `#${r.proposalId}: ${w}`));
-          setToast({
-            message: `Đã tạo ${queued.length} lệnh (${parts.join(', ')}) — theo dõi trong Audit Log${failed.length > 0 ? `; ${failed.length} không đẩy được: ${failed.map(f => `#${f.proposalId}: ${f.error}`).join('; ')}` : ''}${preWarns.length > 0 ? `; lưu ý: ${preWarns.slice(0, 3).join('; ')}${preWarns.length > 3 ? ` (+${preWarns.length - 3})` : ''}` : ''}`,
-            type: (failed.length > 0 || preWarns.length > 0) ? 'warning' : 'success'
-          });
-          pollSyncJobs(queued.map(r => r.jobId), (jobs) => {
-            const ok = jobs.filter(j => j.status === 'completed');
-            const bad = jobs.filter(j => j.status !== 'completed');
-            let created = 0, updated = 0, recreated = 0;
-            ok.forEach(j => {
-              const p = parsePayload(j);
-              if (p.contact_recreated) recreated++;
-              else if (p.contact_updated) updated++;
-              else created++;
-            });
-            const msgParts = [];
-            if (created > 0) msgParts.push(`${created} tạo mới`);
-            if (updated > 0) msgParts.push(`${updated} cập nhật`);
-            if (recreated > 0) msgParts.push(`${recreated} tạo lại (contact từng bị xóa bên 1Office)`);
-            const skipped = collectSkippedFiles(jobs);
-            if (ok.length > 0) {
-              setToast({ message: `Đẩy xong: ${msgParts.join(', ')}${bad.length > 0 ? `; ${bad.length} thất bại (xem Audit Log)` : ''}${skipped.length > 0 ? `; ${skipped.length} file bị bỏ qua: ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}` : ''}`, type: (bad.length > 0 || skipped.length > 0) ? 'warning' : 'success' });
-            } else {
-              setError(`Đẩy thất bại cả ${bad.length} lệnh (xem Audit Log)`);
-            }
-            loadProposals(pagination.page);
-          });
-        } else {
-          setError(`Không tạo được lệnh đẩy: ${failed.map(f => `#${f.proposalId}: ${f.error}`).join('; ')}`);
-        }
-        setSelectedIds([]);
-        loadProposals(pagination.page);
-      } else {
-        setError(res.message || 'Đẩy thất bại');
-      }
-    } catch {
-      setError('Lỗi khi đẩy sang 1Office');
-    }
-    setBatchLoading(false);
-  };
-
-  const handleBatchPull = async () => {
-    setBatchLoading(true);
-    try {
-      const res = await oneOfficeSyncService.pull({ apiConfigId: 3 }, token);
-      if (res.success) {
-        const jobId = res.data && res.data.jobId;
-        setToast({ message: 'Đã tạo lệnh lấy về từ 1Office (theo dõi trong Audit Log)', type: 'success' });
-        if (jobId) {
-          pollSyncJobs([jobId], (jobs) => {
-            const job = jobs[0];
-            if (job.status === 'completed') {
-              const p = parsePayload(job);
-              const d = (p.details && p.details.dangling) || [];
-              setToast({
-                message: `Lấy về xong: ${p.updated || 0} cập nhật, ${p.skipped || 0} bỏ qua${d.length > 0 ? `, ${d.length} link treo (contact bị xóa bên 1Office: ${d.map(x => `#${x.proposalId}`).join(', ')})` : ''}`,
-                type: d.length > 0 ? 'warning' : 'success'
-              });
-            } else {
-              setError('Lệnh lấy về thất bại (xem Audit Log)');
-            }
-            loadProposals(pagination.page);
-          });
-        }
-        loadProposals(pagination.page);
-      } else {
-        setError(res.message || 'Lấy về thất bại');
-      }
-    } catch {
-      setError('Lỗi khi lấy về từ 1Office');
-    }
-    setBatchLoading(false);
-  };
-
-  const handleLinkSubmit = async () => {
-    if (!linkModal.proposalId || !linkModal.code.trim()) return;
-    setBatchLoading(true);
-    try {
-      const res = await oneOfficeSyncService.link({ proposalId: linkModal.proposalId, contactCode: linkModal.code.trim(), apiConfigId: 3 }, token);
-      if (res.success) {
-        const data = res.data || {};
-        const auto = data.autoPush;
-        let msg = `Đã liên kết đề xuất #${linkModal.proposalId} với mã ${data.contactCode || linkModal.code.trim()}`;
-        let type = 'success';
-        if (auto && auto.queued) {
-          msg += ' — đã tạo lệnh đồng bộ sang 1Office';
-        } else if (auto && auto.reason) {
-          msg += ` — chưa đẩy được sang 1Office (${auto.reason})`;
-          type = 'warning';
-        }
-        setToast({ message: msg, type });
-        setLinkModal({ open: false, proposalId: null, code: '' });
-        loadProposals(pagination.page);
-        if (auto && auto.queued && auto.jobId) {
-          pollSyncJobs([auto.jobId], (jobs) => {
-            const r = buildPushDoneMessage(jobs);
-            setToast({ message: r.msg, type: r.type });
-            loadProposals(pagination.page);
-          });
-        }
-      } else {
-        setError(res.message || 'Liên kết thất bại');
-      }
-    } catch {
-      setError('Lỗi khi liên kết với 1Office');
-    }
-    setBatchLoading(false);
-  };
-
-  const handleUnlink = async (proposalId) => {
-    setBatchLoading(true);
-    try {
-      const res = await oneOfficeSyncService.unlink({ proposalId }, token);
-      if (res.success) {
-        setToast({ message: `Đã hủy liên kết đề xuất #${proposalId}`, type: 'success' });
-        loadProposals(pagination.page);
-      } else {
-        setError(res.message || 'Hủy liên kết thất bại');
-      }
-    } catch {
-      setError('Lỗi khi hủy liên kết');
-    }
-    setBatchLoading(false);
-  };
-
-  const openRestoreModal = () => {
-    setRestoreModal({ open: true, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
-  };
-
-  const handleRestorePreview = async () => {
-    if (!restoreModal.code.trim()) return;
-    setRestoreModal(prev => ({ ...prev, loading: true, error: '' }));
-    try {
-      const res = await oneOfficeSyncService.restorePreview(restoreModal.code.trim(), token);
-      if (res.success) {
-        const pv = res.data;
-        setRestoreModal(prev => ({
-          ...prev,
-          loading: false,
-          step: 'preview',
-          preview: pv,
-          overrides: {
-            latitude: (pv.fixedData && pv.fixedData.latitude) || '',
-            longitude: (pv.fixedData && pv.fixedData.longitude) || '',
-            owner_name: (pv.fixedData && pv.fixedData.owner_name) || '',
-            province: (pv.dynamicData && pv.dynamicData.province) || ''
-          }
-        }));
-      } else {
-        setRestoreModal(prev => ({ ...prev, loading: false, error: res.message || 'Không tìm thấy dữ liệu khôi phục' }));
-      }
-    } catch (err) {
-      setRestoreModal(prev => ({ ...prev, loading: false, error: (err && err.message) || 'Lỗi khi tìm trên 1Office' }));
-    }
-  };
-
-  const handleRestoreConfirm = async () => {
-    setRestoreModal(prev => ({ ...prev, loading: true, error: '' }));
-    try {
-      const ov = {};
-      Object.entries(restoreModal.overrides).forEach(([k, v]) => {
-        if (v !== undefined && v !== null && String(v).trim() !== '') ov[k] = v;
-      });
-      const res = await oneOfficeSyncService.restoreConfirm(restoreModal.code.trim(), ov, token, 3, restoreModal.fileAssignments);
-      if (res.success) {
-        setToast({ message: `${res.message || `Đã khôi phục đề xuất ${res.data.maDeXuat}`}${res.data.attachedFiles > 0 ? ` (kèm ${res.data.attachedFiles} file)` : ''}${(res.data.fileWarnings || []).length > 0 ? ` — lưu ý: ${res.data.fileWarnings.join('; ')}` : ''}`, type: (res.data.fileWarnings || []).length > 0 ? 'warning' : 'success' });
-        setRestoreModal({ open: false, step: 'code', code: '', loading: false, error: '', preview: null, overrides: { latitude: '', longitude: '', owner_name: '', province: '' }, fileAssignments: {} });
-        loadProposals(1);
-        navigate(`/admin/proposals/chi-tiet/${res.data.proposalId}`);
-      } else {
-        setRestoreModal(prev => ({ ...prev, loading: false, error: res.message || 'Khôi phục thất bại' }));
-      }
-    } catch (err) {
-      setRestoreModal(prev => ({ ...prev, loading: false, error: (err && err.message) || 'Lỗi khi khôi phục' }));
-    }
-  };
-
   const handleConfirmInfoBatch = async () => {
     setBatchConfirmLoading(true);
     try {
@@ -1209,9 +876,9 @@ const AdminProposalsPage = () => {
     switch (row.status) {
       case 'PENDING':
         return (
-          <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('REVIEWING')} title="Duyệt và đẩy sang 1Office (sang Đang xem xét)">
+          <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('REVIEWING')} title="Duyệt đề xuất sang trạng thái Đang xem xét">
             <CheckCircle2 size={12} />
-            Duyệt & đẩy
+            Duyệt
           </button>
         );
       case 'REVIEWING':
@@ -1271,13 +938,6 @@ const AdminProposalsPage = () => {
       dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
     }
     dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));
-    if (isAdmin) {
-      if (row.contact_1office_code) {
-        dangerItems.push(item('unlink', <Unlink size={14} />, `Hủy link (${row.contact_1office_code})`, () => handleUnlink(row.id)));
-      } else {
-        dangerItems.push(item('link', <Link size={14} />, 'Link 1Office', () => setLinkModal({ open: true, proposalId: row.id, code: '' })));
-      }
-    }
     return (
       <>
         {items}
@@ -1398,16 +1058,7 @@ const AdminProposalsPage = () => {
                     disabled={selectedIds.length === 0 || batchLoading}
                   >
                     <CheckCircle2 size={14} className="text-success" />
-                    Duyệt và đẩy
-                    {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
-                  </button>
-                  <button
-                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
-                    onClick={() => { setShowMoreMenu(false); openPushConfirm(); }}
-                    disabled={selectedIds.length === 0 || batchLoading}
-                  >
-                    <Upload size={14} className="text-success" />
-                    Đồng bộ sang 1Office
+                    Duyệt
                     {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
                   </button>
                   <button
@@ -1418,22 +1069,6 @@ const AdminProposalsPage = () => {
                     <Download size={14} className="text-primary" />
                     Xuất báo cáo đề xuất
                     {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
-                  </button>
-                  <button
-                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
-                    onClick={() => { setShowMoreMenu(false); handleBatchPull(); }}
-                    disabled={batchLoading}
-                  >
-                    <ArrowDownToLine size={14} className="text-info" />
-                    Đồng bộ từ 1Office về
-                  </button>
-                  <button
-                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2"
-                    onClick={() => { setShowMoreMenu(false); openRestoreModal(); }}
-                    disabled={batchLoading}
-                  >
-                    <RotateCcw size={14} className="text-warning" />
-                    Khôi phục từ 1Office
                   </button>
                   <div className="border-t border-base-200 my-1" />
                   <button
@@ -1680,143 +1315,6 @@ const AdminProposalsPage = () => {
         type="danger"
       />
 
-      {linkModal.open && (
-        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
-          <div className="modal-box max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Liên kết đề xuất #{linkModal.proposalId}</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setLinkModal({ open: false, proposalId: null, code: '' })}>
-                <X size={18} />
-              </button>
-            </div>
-            <label className="label">
-              <span className="label-text">Mã contact 1Office</span>
-            </label>
-            <input
-              type="text"
-              className="input input-bordered w-full"
-              placeholder="Nhập mã contact trên 1Office..."
-              value={linkModal.code}
-              onChange={(e) => setLinkModal({ ...linkModal, code: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && handleLinkSubmit()}
-            />
-            <div className="modal-action">
-              <button type="button" className="btn btn-ghost" onClick={() => setLinkModal({ open: false, proposalId: null, code: '' })}>Hủy</button>
-              <button type="button" className="btn btn-primary gap-1" onClick={handleLinkSubmit} disabled={!linkModal.code.trim() || batchLoading}>
-                <Link size={14} /> Liên kết
-              </button>
-            </div>
-          </div>
-          <div className="modal-backdrop" />
-        </dialog>
-      )}
-
-      {restoreModal.open && (
-        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
-          <div className="modal-box max-w-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Khôi phục đề xuất từ 1Office</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setRestoreModal(prev => ({ ...prev, open: false }))}>
-                <X size={18} />
-              </button>
-            </div>
-            {restoreModal.step === 'code' && (
-              <>
-                <p className="text-sm text-base-content/70 mb-3">Nhập mã đề xuất (mã contact bên 1Office). Hệ thống sẽ tìm contact còn trên 1Office và dựng lại đề xuất.</p>
-                <label className="label">
-                  <span className="label-text">Mã đề xuất</span>
-                </label>
-                <input
-                  type="text"
-                  className="input input-bordered w-full"
-                  placeholder="VD: NQ_LK_BNI_0001"
-                  value={restoreModal.code}
-                  onChange={(e) => setRestoreModal(prev => ({ ...prev, code: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && handleRestorePreview()}
-                />
-                {restoreModal.error && <div className="alert alert-error text-sm mt-3"><span>{restoreModal.error}</span></div>}
-                <div className="modal-action">
-                  <button type="button" className="btn btn-ghost" onClick={() => setRestoreModal(prev => ({ ...prev, open: false }))}>Hủy</button>
-                  <button type="button" className="btn btn-primary gap-1" onClick={handleRestorePreview} disabled={!restoreModal.code.trim() || restoreModal.loading}>
-                    {restoreModal.loading ? <span className="loading loading-spinner loading-xs" /> : <Search size={14} />} Tìm trên 1Office
-                  </button>
-                </div>
-              </>
-            )}
-            {restoreModal.step === 'preview' && restoreModal.preview && (
-              <>
-                <div className="alert alert-info text-sm mb-3">
-                  <span>Tìm thấy contact <b>{restoreModal.preview.contact.code}</b> ({restoreModal.preview.contact.name || 'không tên'}) — dựng được {restoreModal.preview.mappedCount} trường{restoreModal.preview.unmappedCount > 0 ? `, ${restoreModal.preview.unmappedCount} trường bên 1Office không có mapping` : ''}{restoreModal.preview.descStats && restoreModal.preview.descStats.parsed > 0 ? ` (gồm ${restoreModal.preview.descStats.parsed} trường tách từ mô tả)` : ''}. Vui lòng kiểm tra và bổ sung các ô còn thiếu.</span>
-                </div>
-                {restoreModal.preview.files && restoreModal.preview.files.total > 0 && (
-                  <div className="alert text-sm mb-3">
-                    <span>1Office còn giữ {restoreModal.preview.files.total} file đính kèm — sẽ tự tải về khi khôi phục: {restoreModal.preview.files.assigned.map(a => `${a.names.length} vào "${a.fieldLabel}"`).join(', ')}{restoreModal.preview.files.unassigned.length > 0 ? `; ${restoreModal.preview.files.unassigned.length} file chưa xác định được ô (gán tay bên dưới hoặc tải sau)` : ''}.</span>
-                  </div>
-                )}
-                {restoreModal.preview.files && restoreModal.preview.files.unassigned.length > 0 && (
-                  <div className="mb-3">
-                    <div className="font-medium text-sm mb-1">Gán ô cho file chưa xác định ({restoreModal.preview.files.unassigned.length})</div>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {restoreModal.preview.files.unassigned.map((f) => (
-                        <div key={f.name} className="flex items-center gap-2 text-sm">
-                          {f.url ? (
-                            <a href={f.url} target="_blank" rel="noreferrer" className="link link-primary truncate flex-1" title={f.name}>{f.name}</a>
-                          ) : (
-                            <span className="truncate flex-1" title={f.name}>{f.name}</span>
-                          )}
-                          <select
-                            className="select select-bordered select-sm w-48 shrink-0"
-                            value={restoreModal.fileAssignments[f.name] || ''}
-                            onChange={(e) => setRestoreModal(prev => {
-                              const next = { ...prev.fileAssignments };
-                              if (e.target.value) next[f.name] = e.target.value;
-                              else delete next[f.name];
-                              return { ...prev, fileAssignments: next };
-                            })}
-                          >
-                            <option value="">Bỏ qua</option>
-                            {(restoreModal.preview.files.fileFields || []).map(ff => (
-                              <option key={ff.key} value={ff.key}>{ff.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label"><span className="label-text">Vĩ độ *</span></label>
-                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.latitude} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, latitude: e.target.value } }))} />
-                  </div>
-                  <div>
-                    <label className="label"><span className="label-text">Kinh độ *</span></label>
-                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.longitude} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, longitude: e.target.value } }))} />
-                  </div>
-                  <div>
-                    <label className="label"><span className="label-text">Tên khách hàng *</span></label>
-                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.owner_name} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, owner_name: e.target.value } }))} />
-                  </div>
-                  <div>
-                    <label className="label"><span className="label-text">Tỉnh/Thành phố *</span></label>
-                    <input type="text" className="input input-bordered w-full" value={restoreModal.overrides.province} onChange={(e) => setRestoreModal(prev => ({ ...prev, overrides: { ...prev.overrides, province: e.target.value } }))} />
-                  </div>
-                </div>
-                <p className="text-xs text-base-content/60 mt-3">File đính kèm không kéo về được từ 1Office — bổ sung lại sau khi khôi phục. Đề xuất mới tạo ở trạng thái PENDING, giữ nguyên mã và tự liên kết contact cũ.</p>
-                {restoreModal.error && <div className="alert alert-error text-sm mt-3"><span>{restoreModal.error}</span></div>}
-                <div className="modal-action">
-                  <button type="button" className="btn btn-ghost" onClick={() => setRestoreModal(prev => ({ ...prev, step: 'code', preview: null, error: '' }))}>Quay lại</button>
-                  <button type="button" className="btn btn-primary gap-1" onClick={handleRestoreConfirm} disabled={restoreModal.loading}>
-                    {restoreModal.loading ? <span className="loading loading-spinner loading-xs" /> : <RotateCcw size={14} />} Khôi phục
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="modal-backdrop" />
-        </dialog>
-      )}
-
       <ConfirmDialog
         isOpen={confirmBulkDelete}
         title="Xóa nhiều đề xuất"
@@ -1836,125 +1334,20 @@ const AdminProposalsPage = () => {
         confirmText={batchConfirmLoading ? 'Đang quét...' : 'Chạy'}
       />
 
-      {pushConfirm.open && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Đẩy sang 1Office</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setPushConfirm({ open: false, blocked: [] })}>
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-sm text-base-content/80">Đề xuất gửi sang 1Office <b>không thể hoàn tác</b>. Hãy xác nhận chắc chắn muốn gửi đề xuất này rồi mới thực hiện.</p>
-            <p className="text-sm text-base-content/60 mt-2">Số đề xuất đã chọn: <b>{selectedIds.length}</b></p>
-            <div className="mt-3 border border-base-300 rounded-lg p-3 max-h-56 overflow-y-auto">
-              <p className="text-xs font-bold uppercase text-base-content/50 mb-2">Thông tin gửi sang 1Office</p>
-              {selectedIds.map(id => {
-                const row = proposals.find(p => p.id === id);
-                if (!row) return null;
-                return (
-                  <div key={id} className="mb-2 last:mb-0">
-                    <p className="text-sm font-semibold">#{row.id}{row.ma_de_xuat ? ` · ${row.ma_de_xuat}` : ''}</p>
-                    {pushUserRows(row).map(r => (
-                      <div key={r.key} className="flex justify-between gap-2 text-sm py-0.5">
-                        <span className="text-base-content/70">{r.label}</span>
-                        <span className={`font-medium ${r.value ? '' : 'text-error'}`}>{r.value || 'Thiếu'}</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-            {pushConfirm.blocked.length > 0 && (
-              <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
-                <div>
-                  <p className="font-bold mb-1">{pushConfirm.blocked.length} đề xuất sẽ bị chặn (thiếu thông tin):</p>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    {pushConfirm.blocked.map(b => (
-                      <li key={b.id}>#{b.id}: thiếu {b.missing.map(m => `"${m}"`).join(', ')}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setPushConfirm({ open: false, blocked: [] })}>Hủy</button>
-              <button className="btn btn-success btn-sm" disabled={batchLoading} onClick={handleBatchPush}>
-                {batchLoading ? 'Đang gửi...' : 'Xác nhận gửi 1Office'}
-              </button>
-            </div>
-          </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setPushConfirm({ open: false, blocked: [] })} />
-        </dialog>
-      )}
-
-      {blockModal.open && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Chưa thể duyệt</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setBlockModal({ open: false, missing: [], id: null })}>
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-sm text-base-content/80">Đề xuất thiếu thông tin bắt buộc để gửi sang 1Office:</p>
-            <ul className="list-disc pl-6 mt-2 text-sm font-semibold text-error">
-              {blockModal.missing.map((m, i) => <li key={i}>{m}</li>)}
-            </ul>
-            <p className="text-sm text-base-content/70 mt-3">Vui lòng cập nhật các trường trên trước khi duyệt đề xuất.</p>
-            <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setBlockModal({ open: false, missing: [], id: null })}>Đã hiểu</button>
-              {blockModal.id && (
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => { const editId = blockModal.id; setBlockModal({ open: false, missing: [], id: null }); navigate(`/admin/proposals/edit=${editId}`); }}
-                >
-                  Sửa ngay
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setBlockModal({ open: false, missing: [], id: null })} />
-        </dialog>
-      )}
-
       {approveModal.open && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Duyệt và đẩy sang 1Office</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false })}>
+              <h3 className="font-bold text-lg">Duyệt đề xuất</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false })}>
                 <X size={18} />
               </button>
             </div>
-            <p className="text-sm text-base-content/80">Đề xuất sẽ chuyển sang <b>Đang xem xét</b> và tạo lệnh đẩy sang 1Office (<b>không thể hoàn tác</b>). Hãy xác nhận chắc chắn rồi mới thực hiện.</p>
-            {approveRow && (
-              <div className="mt-3 border border-base-300 rounded-lg p-3">
-                <p className="text-xs font-bold uppercase text-base-content/50 mb-2">Thông tin gửi sang 1Office</p>
-                {pushUserRows(approveRow).map(r => (
-                  <div key={r.key} className="flex justify-between gap-2 text-sm py-0.5">
-                    <span className="text-base-content/70">{r.label}</span>
-                    <span className={`font-medium ${r.value ? '' : 'text-error'}`}>{r.value || 'Chưa gán'}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="text-sm text-base-content/80">Đề xuất sẽ chuyển sang <b>Đang xem xét</b>. Hãy xác nhận để tiếp tục.</p>
             {approveModal.checking && (
-              <p className="text-xs text-base-content/60 mt-3">Đang kiểm tra liên kết 1Office...</p>
+              <p className="text-xs text-base-content/60 mt-3">Đang kiểm tra thông tin...</p>
             )}
-            {approveModal.missing && approveModal.missing.length > 0 && (
-              <div className="alert alert-error py-2 px-3 mt-3 text-xs">
-                <div>
-                  <p className="font-bold mb-1">Chưa thể đẩy — thiếu người phụ trách:</p>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    {approveModal.missing.map((m, i) => (
-                      <li key={i}>{m.label || m} chưa được gán — duyệt sẽ bị chặn, hãy gán trước</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            {approveModal.incomplete && approveModal.incomplete.length > 0 && (
+            {approveModal.incomplete.length > 0 && (
               <div className="alert alert-error py-2 px-3 mt-3 text-xs">
                 <div>
                   <p className="font-bold mb-1">Thông tin chưa đầy đủ — hãy sửa đề xuất bổ sung:</p>
@@ -1966,37 +1359,19 @@ const AdminProposalsPage = () => {
                 </div>
               </div>
             )}
-            {approveModal.warnings && approveModal.warnings.length > 0 && (
-              <div className="alert alert-warning py-2 px-3 mt-3 text-xs">
-                <div>
-                  <p className="font-bold mb-1">Cảnh báo:</p>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    {approveModal.warnings.map((w, i) => (
-                      <li key={typeof w === 'string' ? w : w.key}>
-                        {typeof w === 'string'
-                          ? <>{w} chưa liên kết với 1Office — sẽ bị bỏ qua khi đẩy</>
-                          : w.reason === 'no_account'
-                            ? <>{w.label} ({w.userName}) đã liên kết nhưng chưa có tài khoản 1Office — sẽ bị bỏ qua khi đẩy</>
-                            : <>{w.label} ({w.userName}) chưa liên kết với 1Office — sẽ bị bỏ qua khi đẩy</>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
             <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false })}>Hủy</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false })}>Hủy</button>
               <button
                 className="btn btn-success btn-sm"
-                disabled={approveModal.saving || approveModal.checking || (approveModal.missing && approveModal.missing.length > 0) || (approveModal.incomplete && approveModal.incomplete.length > 0)}
-                title={(approveModal.missing && approveModal.missing.length > 0) ? 'Thiếu người phụ trách — hãy gán trước khi duyệt' : ((approveModal.incomplete && approveModal.incomplete.length > 0) ? 'Thông tin chưa đầy đủ — hãy sửa đề xuất trước khi duyệt' : '')}
+                disabled={approveModal.saving || approveModal.checking || approveModal.incomplete.length > 0}
+                title={approveModal.incomplete.length > 0 ? 'Thông tin chưa đầy đủ — hãy sửa đề xuất trước khi duyệt' : ''}
                 onClick={handleConfirmApprove}
               >
-                {approveModal.saving ? 'Đang duyệt...' : 'Duyệt & đẩy 1Office'}
+                {approveModal.saving ? 'Đang duyệt...' : 'Duyệt'}
               </button>
             </div>
           </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false, warnings: [], missing: [], incomplete: [], checking: false })} />
+          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false })} />
         </dialog>
       )}
 

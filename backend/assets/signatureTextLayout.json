@@ -1,22 +1,30 @@
 {
+  "fontFamily": "Times New Roman",
   "imageHeightRatio": 0.35,
   "leftPaddingPx": 6,
   "rightPaddingPx": 6,
   "topPaddingPx": 2,
-  "fontSizePx": 12,
-  "lineHeightPx": 12,
+  "lineHeightPt": 14,
   "segments": [
     {
+      "key": "title",
+      "fontSizePt": 12,
+      "font": "regular",
+      "fontWeight": 400,
+      "color": "#111827",
+      "separatorAfter": " "
+    },
+    {
       "key": "name",
-      "fontSizePx": 12,
+      "fontSizePt": 12,
       "font": "bold",
-      "fontWeight": 600,
+      "fontWeight": 700,
       "color": "#111827",
       "separatorAfter": " "
     },
     {
       "key": "time",
-      "fontSizePx": 12,
+      "fontSizePt": 11,
       "font": "regular",
       "fontWeight": 400,
       "color": "#374151",

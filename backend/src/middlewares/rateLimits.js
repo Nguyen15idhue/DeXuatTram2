@@ -64,14 +64,6 @@ const geocodeLimiter = rateLimit({
   legacyHeaders: false
 });
 
-const webhookLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 60 : 120,
-  message: { success: false, message: 'Quá nhiều yêu cầu webhook, vui lòng thử lại sau' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
 const assistantLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 30,
@@ -88,4 +80,4 @@ const assistantFileLimiter = rateLimit({
   legacyHeaders: false
 });
 
-module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, webhookLimiter, assistantLimiter, assistantFileLimiter };
+module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, assistantLimiter, assistantFileLimiter };

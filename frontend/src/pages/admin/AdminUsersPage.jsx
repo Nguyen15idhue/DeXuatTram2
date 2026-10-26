@@ -378,7 +378,7 @@ const [viewMode, setViewMode] = useState('table');
     const colEntries = Object.entries(columnFilters).filter(([, v]) => String(v ?? '').trim());
     let list = users;
     if (q || colEntries.length > 0) {
-      const matchSearch = (u) => !q || [u.full_name, u.email, u.phone, u.external_id].some(v => (v || '').toLowerCase().includes(q));
+      const matchSearch = (u) => !q || [u.full_name, u.email, u.phone].some(v => (v || '').toLowerCase().includes(q));
       const matchColumns = (u) => colEntries.every(([k, fv]) => {
         const val = displayUserValue(getUserFieldValue(u, k));
         if (val === null || val === undefined) return false;
@@ -589,11 +589,10 @@ const [viewMode, setViewMode] = useState('table');
       phone: formData.phone || '',
       password: formData.password || '123456',
       role: formData.role === 'USER' ? 'CTV' : (formData.role || createRole || 'CTV'),
-      status: formData.status || 'ACTIVE',
-      external_id: formData.external_id || null
+      status: formData.status || 'ACTIVE'
     };
     const customData = {};
-    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status', 'external_id'];
+    const fixedKeys = ['full_name', 'email', 'phone', 'password', 'role', 'status'];
     Object.keys(formData).forEach(k => {
       if (!fixedKeys.includes(k) && formData[k] !== undefined && formData[k] !== '') {
         customData[k] = formData[k];

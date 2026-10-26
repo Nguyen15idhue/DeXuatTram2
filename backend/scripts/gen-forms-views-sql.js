@@ -136,7 +136,7 @@ const stationSections = [
 ];
 
 const userSections = [
-  { title: 'Thông tin tài khoản', fields: ['employee_code', 'full_name', 'email', 'phone', 'password', 'external_id', 'role', 'status', 'department', 'chuc_vu', 'avatar'] },
+  { title: 'Thông tin tài khoản', fields: ['employee_code', 'full_name', 'email', 'phone', 'password', 'role', 'status', 'department', 'chuc_vu', 'avatar'] },
 ];
 
 const proposalView = [
@@ -153,9 +153,6 @@ const proposalView = [
   { key: 'nguon_dien', width: 110 },
   { key: 'dien_tich_mat_bang', width: 110 },
   { key: 'nguoi_de_xuat', width: 150 },
-  { key: 'id_1office', width: 120, visible: 0, sortable: 0 },
-  { key: 'he_thong_nguon', width: 110, visible: 0, sortable: 0 },
-  { key: 'nhom_nguoi_tao', width: 110, visible: 0, sortable: 0 },
   { key: 'sales_quan_ly', width: 130, visible: 0, sortable: 0 },
   { key: 'nguoi_phu_trach', width: 130, visible: 0, sortable: 0 },
   { key: 'nguoi_giao_phu_trach', width: 140, visible: 0, sortable: 0 },
@@ -190,7 +187,6 @@ const userView = [
   { key: 'department', width: 120 },
   { key: 'chuc_vu', width: 120 },
   { key: 'employee_code', width: 100 },
-  { key: 'external_id', width: 100 },
 ];
 
 const header = [
