@@ -98,7 +98,7 @@ function App() {
         <Routes>
           <Route element={<PublicLayout />}>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            {/* <Route path="/register" element={<RegisterPage />} /> */}
           </Route>
 
           <Route element={<GuestLayout />}>
