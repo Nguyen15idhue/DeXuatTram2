@@ -1,18 +1,20 @@
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const JSZip = require('jszip');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, rgb } = require('pdf-lib');
 const fontkit = require('@pdf-lib/fontkit');
-const sharp = require('sharp');
 const pool = require('../utils/db');
 const fileService = require('./fileService');
 const signerTextLayout = require('../../assets/signatureTextLayout.json');
 
+const execFileAsync = promisify(execFile);
 const IMAGE_HEIGHT_RATIO = signerTextLayout.imageHeightRatio;
-const SIGNER_TEXT_DENSITY = 288;
 const PDF_POINTS_PER_CSS_PIXEL = 0.75;
-const POINTS_TO_CSS_PIXELS = 1 / PDF_POINTS_PER_CSS_PIXEL;
 const SIGNATURE_BLOCK_MARKER = 'TMT-EGREEN-SIGNATURE-BLOCK-V3';
+const IMAGE_CONVERT_TIMEOUT_MS = 15000;
+const MAX_CONVERTED_IMAGE_BYTES = 32 * 1024 * 1024;
 
 const xmlEscape = (value) => String(value || '')
   .replace(/&/g, '&amp;')
@@ -95,9 +97,10 @@ const fontPaths = () => {
   };
 };
 
-const getSignerFonts = async () => {
+const getSignerFonts = async (pdf) => {
   const paths = fontPaths();
   const fonts = {};
+  pdf.registerFontkit(fontkit);
   for (const font of ['regular', 'bold']) {
     const filePath = paths[font];
     if (!fs.existsSync(filePath)) {
@@ -106,83 +109,118 @@ const getSignerFonts = async () => {
       );
     }
     const fontBytes = await fs.promises.readFile(filePath);
-    fonts[font] = fontkit.create(fontBytes);
+    fonts[font] = {
+      metrics: fontkit.create(fontBytes),
+      embedded: await pdf.embedFont(fontBytes, { subset: true })
+    };
   }
   return fonts;
 };
 
-const fitSignerSegment = (font, value, separator, fontSizePx, maxWidthPx) => {
+const fitSignerSegment = (font, value, separator, fontSizePt, maxWidthPt) => {
   const text = String(value || '').normalize('NFC');
   const completeText = text ? `${text}${separator}` : '';
-  const completeRun = font.layout(completeText);
-  const maxWidth = Math.max(0, maxWidthPx) * font.unitsPerEm / fontSizePx;
-  if (completeRun.advanceWidth <= maxWidth) {
-    return { run: completeRun, truncated: false };
+  const completeWidth = font.widthOfTextAtSize(completeText, fontSizePt);
+  if (completeWidth <= maxWidthPt) {
+    return { text: completeText, width: completeWidth, truncated: false };
   }
 
   let visible = Array.from(text);
   while (visible.length > 0) {
     const candidate = `${visible.join('')}…`;
-    const run = font.layout(candidate);
-    if (run.advanceWidth <= maxWidth) return { run, truncated: true };
+    const width = font.widthOfTextAtSize(candidate, fontSizePt);
+    if (width <= maxWidthPt) return { text: candidate, width, truncated: true };
     visible = visible.slice(0, -1);
   }
 
-  const ellipsis = font.layout('…');
-  return ellipsis.advanceWidth <= maxWidth
-    ? { run: ellipsis, truncated: true }
-    : { run: font.layout(''), truncated: true };
+  const ellipsisWidth = font.widthOfTextAtSize('…', fontSizePt);
+  return ellipsisWidth <= maxWidthPt
+    ? { text: '…', width: ellipsisWidth, truncated: true }
+    : { text: '', width: 0, truncated: true };
 };
 
-const createSignerDetailsImage = async (signer, widthPoints, heightPoints, fonts) => {
-  const widthPx = widthPoints / PDF_POINTS_PER_CSS_PIXEL;
-  const heightPx = heightPoints / PDF_POINTS_PER_CSS_PIXEL;
+const parseColor = (hex) => {
+  const value = String(hex || '').replace(/^#/, '');
+  if (!/^[\da-f]{6}$/i.test(value)) {
+    throw new Error(`Màu chữ ký không hợp lệ: ${hex}`);
+  }
+  return rgb(
+    Number.parseInt(value.slice(0, 2), 16) / 255,
+    Number.parseInt(value.slice(2, 4), 16) / 255,
+    Number.parseInt(value.slice(4, 6), 16) / 255
+  );
+};
+
+const drawSignerDetails = (page, signer, box, pageWidth, pageHeight, fonts) => {
   const textByKey = {
     title: signer.signer_title || '',
     name: signer.full_name || '',
     time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
   };
-  const textWidthPx = Math.max(
-    0,
-    widthPx - signerTextLayout.leftPaddingPx - signerTextLayout.rightPaddingPx
-  );
-  const lineFont = fonts.regular;
-  const maxFontSizePx = Math.max(...signerTextLayout.segments.map(
-    (segment) => segment.fontSizePt * POINTS_TO_CSS_PIXELS
-  ));
-  const lineHeightPx = signerTextLayout.lineHeightPt * POINTS_TO_CSS_PIXELS;
+  const widthPoints = box.width * pageWidth;
+  const textAreaHeight = box.height * pageHeight * (1 - IMAGE_HEIGHT_RATIO);
+  const leftPadding = signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
+  const rightPadding = signerTextLayout.rightPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
+  const topPadding = signerTextLayout.topPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
+  const textWidth = Math.max(0, widthPoints - leftPadding - rightPadding);
+  const lineFont = fonts.regular.metrics;
+  const maxFontSize = Math.max(...signerTextLayout.segments.map((segment) => segment.fontSizePt));
   const lineMetricHeight = ((lineFont.ascent - lineFont.descent) / lineFont.unitsPerEm)
-    * maxFontSizePx;
-  const baselineY = signerTextLayout.topPaddingPx
-    + (lineHeightPx - lineMetricHeight) / 2
-    + (lineFont.ascent / lineFont.unitsPerEm) * maxFontSizePx;
-  let textCursorX = signerTextLayout.leftPaddingPx;
-  const paths = [];
+    * maxFontSize;
+  const baselineFromTop = topPadding
+    + (signerTextLayout.lineHeightPt - lineMetricHeight) / 2
+    + (lineFont.ascent / lineFont.unitsPerEm) * maxFontSize;
+  const boxBottom = pageHeight - (box.posY * pageHeight) - (box.height * pageHeight);
+  const baselineY = boxBottom + textAreaHeight - baselineFromTop;
+  const startX = box.posX * pageWidth + leftPadding;
+  let textCursorX = startX;
+
   for (const segment of signerTextLayout.segments) {
     const font = fonts[segment.font];
-    const maxWidthPx = textWidthPx - (textCursorX - signerTextLayout.leftPaddingPx);
-    if (maxWidthPx <= 0) break;
-    const { run, truncated } = fitSignerSegment(
-      font,
+    const maxWidth = textWidth - (textCursorX - startX);
+    if (maxWidth <= 0) break;
+    const { text, width, truncated } = fitSignerSegment(
+      font.embedded,
       textByKey[segment.key],
       segment.separatorAfter,
-      segment.fontSizePt * POINTS_TO_CSS_PIXELS,
-      maxWidthPx
+      segment.fontSizePt,
+      maxWidth
     );
-    const scale = segment.fontSizePt * POINTS_TO_CSS_PIXELS / font.unitsPerEm;
-    let glyphCursorX = 0;
-    const glyphPaths = run.glyphs.map((glyph, index) => {
-      const position = run.positions[index];
-      const markup = `<path d="${glyph.path.toSVG()}" transform="translate(${glyphCursorX + position.xOffset} ${position.yOffset})"/>`;
-      glyphCursorX += position.xAdvance;
-      return markup;
-    }).join('');
-    paths.push(`<g fill="${segment.color}" transform="translate(${textCursorX} ${baselineY}) scale(${scale} ${-scale})">${glyphPaths}</g>`);
-    textCursorX += run.advanceWidth * scale;
+    if (text) {
+      page.drawText(text, {
+        x: textCursorX,
+        y: baselineY,
+        size: segment.fontSizePt,
+        font: font.embedded,
+        color: parseColor(segment.color)
+      });
+    }
+    textCursorX += width;
     if (truncated) break;
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}px" height="${heightPx}px" viewBox="0 0 ${widthPx} ${heightPx}">${paths.join('')}</svg>`;
-  return sharp(Buffer.from(svg), { density: SIGNER_TEXT_DENSITY }).png().toBuffer();
+};
+
+const convertSignatureImage = async (filePath) => {
+  const inputPath = `${path.resolve(filePath)}[0]`;
+  const { stdout } = await execFileAsync('convert', [
+    '-limit', 'thread', '1',
+    '-limit', 'memory', '64MiB',
+    '-limit', 'map', '128MiB',
+    '-limit', 'disk', '256MiB',
+    inputPath,
+    '-auto-orient',
+    '-strip',
+    '-resize', '2048x2048>',
+    'png:-'
+  ], {
+    encoding: 'buffer',
+    maxBuffer: MAX_CONVERTED_IMAGE_BYTES,
+    timeout: IMAGE_CONVERT_TIMEOUT_MS
+  });
+  if (!Buffer.isBuffer(stdout) || stdout.length === 0) {
+    throw invalidDocument('Không thể chuyển đổi ảnh chữ ký');
+  }
+  return stdout;
 };
 
 const readSignature = async (signer) => {
@@ -196,8 +234,14 @@ const readSignature = async (signer) => {
   }
   let bytes;
   try {
-    bytes = await sharp(filePath).rotate().png().toBuffer();
-  } catch {
+    bytes = await convertSignatureImage(filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new Error('Không tìm thấy ImageMagick trong image backend', { cause: error });
+    }
+    if (error.killed || error.code === 'ETIMEDOUT') {
+      throw new Error('Xử lý ảnh chữ ký vượt quá thời gian cho phép', { cause: error });
+    }
     throw invalidDocument(`Ảnh chữ ký của ${signer.full_name || 'người ký'} không hợp lệ`);
   }
   return { bytes, extension: 'png', contentType: 'image/png' };
@@ -212,7 +256,7 @@ const stampPdf = async (source, signers, { includeImages = true } = {}) => {
   } catch {
     throw invalidDocument('Không đọc được file PDF BCĐX');
   }
-  const fonts = await getSignerFonts();
+  const fonts = await getSignerFonts(pdf);
   const keywords = String(pdf.getKeywords() || '')
     .split(/\s+/)
     .filter(Boolean);
@@ -245,21 +289,14 @@ const stampPdf = async (source, signers, { includeImages = true } = {}) => {
         height: drawHeight
       });
     }
-    const textAreaHeight = box.height * height * (1 - IMAGE_HEIGHT_RATIO);
-    const textImageBytes = await createSignerDetailsImage(
+    drawSignerDetails(
+      page,
       signer,
-      box.width * width,
-      textAreaHeight,
+      box,
+      width,
+      height,
       fonts
     );
-    const textImage = await pdf.embedPng(textImageBytes);
-    const boxBottom = height - (box.posY * height) - (box.height * height);
-    page.drawImage(textImage, {
-      x: box.posX * width,
-      y: boxBottom,
-      width: box.width * width,
-      height: textAreaHeight
-    });
   }
   return Buffer.from(await pdf.save());
 };

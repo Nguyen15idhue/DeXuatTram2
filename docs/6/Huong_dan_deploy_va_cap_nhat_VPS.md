@@ -41,6 +41,7 @@ git pull && ./update.sh
 | `scripts/migrate.sh` | Quản lý migration `database/*.sql` (tracking bảng `schema_migrations`). |
 | `scripts/sync-data.sh` | Đồng bộ dữ liệu dev → VPS (chạy trên máy dev). |
 | `docker-compose.simple.yml` | Stack production: `frontend` (nginx `:80`), `backend` (`Dockerfile.prod`, `:3000`), `mysql` (`8.0.44-debian`). |
+| `backend/Dockerfile` / `backend/Dockerfile.prod` | Cài ImageMagick bên trong backend image và kiểm tra khả năng chuyển đổi JPEG/PNG/GIF/WebP khi build; không cần cài thêm phần mềm trên host VPS. |
 | `docker/mysql-datadir.tar.gz` | Datadir MySQL init sẵn (khởi động nhanh, **không chứa bảng app**). |
 | `docker/station_lite_dump.sql` | **Base schema + data cấu hình + 4 user seed** (xem mục 7). |
 | `docker/mysql-init/01-app-user.sh` | Tạo user `station_app` (chỉ chạy khi volume MySQL trống hoàn toàn). |
@@ -121,6 +122,7 @@ docker exec station-backend date          # phải hiện +07 (TZ Asia/Ho_Chi_Mi
 
 # API sống
 curl -s -o /dev/null -w "api=%{http_code}\n" http://127.0.0.1:8081/api/test   # mong đợi 200
+docker exec station-backend convert -version  # ImageMagick có sẵn trong container backend
 
 # DB: kiểm tra schema và các cột nghiệp vụ chính
 docker exec -i station-mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" station_management' <<'SQL'
