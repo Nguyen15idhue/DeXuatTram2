@@ -2,6 +2,19 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useState, useEffect } from "react";
 import {
+  proposalApprovalService,
+  proposalGradingService,
+  proposalLayoutService,
+  proposalReportService,
+  proposalRequestService,
+  proposalReviewService,
+  proposalSignatureService,
+} from "../../services/api";
+import {
+  resolveGradingRole,
+} from "../../utils/proposalGrading";
+import { PROPOSAL_TASK_COUNTS_CHANGED_EVENT } from "../../utils/proposalTaskCounts";
+import {
   BarChart3,
   Users,
   Zap,
@@ -20,8 +33,19 @@ import {
   History,
   BookOpen,
   ChevronDown,
+  PenTool,
+  Gavel,
+  FileCheck,
+  PenSquare,
+  Scale,
+  RotateCcw,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
+import {
+  canSeeApprovalPage,
+  canSeeLayoutPage,
+  canSeeReviewRequestsPage,
+} from "../../utils/proposalAccess";
 
 const mainItems = [
   {
@@ -31,10 +55,63 @@ const mainItems = [
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
-    path: "/admin/users",
-    label: "Quản lý Users",
-    icon: Users,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+    path: "/admin/proposals",
+    label: "Quản lý Đề xuất",
+    icon: ClipboardList,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
+    children: [
+      {
+        path: "/admin/proposals",
+        label: "Thông tin chung",
+        icon: FileText,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
+      },
+      {
+        path: "/admin/proposals/danh-gia-quy-hoach",
+        label: "Chấm điểm Quy hoạch và Pháp lý",
+        icon: Scale,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
+      },
+      {
+        path: "/admin/proposals/yeu-cau-cham-diem-lai",
+        label: "Yêu cầu chấm điểm lại",
+        icon: RotateCcw,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        access: canSeeReviewRequestsPage,
+      },
+      {
+        path: "/admin/proposals/danh-gia-layout",
+        label: "Đánh giá layout",
+        icon: PenTool,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        access: canSeeLayoutPage,
+      },
+      {
+        path: "/admin/proposals/lap-to-trinh",
+        label: "Lập tờ trình BCĐX",
+        icon: FileCheck,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+      {
+        path: "/admin/proposals/duyet-bcdx",
+        label: "Duyệt BCĐX",
+        icon: Gavel,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        access: canSeeApprovalPage,
+      },
+      {
+        path: "/admin/proposals/trinh-ky",
+        label: "Trình ký",
+        icon: PenSquare,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+      },
+    ],
+  },
+  {
+    path: "/admin/e-sign",
+    label: "Quản lý Chữ ký số",
+    icon: File,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
   },
   {
     path: "/admin/stations",
@@ -43,9 +120,9 @@ const mainItems = [
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
-    path: "/admin/proposals",
-    label: "Quản lý Đề xuất",
-    icon: ClipboardList,
+    path: "/admin/users",
+    label: "Quản lý Users",
+    icon: Users,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
@@ -124,12 +201,6 @@ const configGroups = [
         roles: ["SUPER_ADMIN"],
       },
       {
-        path: "/admin/api-configs",
-        label: "Kết nối API",
-        icon: Settings,
-        roles: ["SUPER_ADMIN"],
-      },
-      {
         path: "/admin/documents",
         label: "Quản lý tài liệu",
         icon: FileText,
@@ -152,6 +223,16 @@ const configGroups = [
   },
 ];
 
+const proposalTaskKeyByPath = {
+  "/admin/proposals": "requests",
+  "/admin/proposals/danh-gia-quy-hoach": "grading",
+  "/admin/proposals/yeu-cau-cham-diem-lai": "review",
+  "/admin/proposals/danh-gia-layout": "layout",
+  "/admin/proposals/lap-to-trinh": "reports",
+  "/admin/proposals/duyet-bcdx": "approval",
+  "/admin/proposals/trinh-ky": "signatures",
+};
+
 const STORAGE_KEY = "admin-sidebar-groups";
 
 const loadCollapsed = () => {
@@ -171,12 +252,37 @@ const saveCollapsed = (arr) => {
 };
 
 const isItemActive = (pathname, path) =>
-  pathname === path || (path !== "/admin" && pathname.startsWith(path));
+  pathname === path || (path !== "/admin" && pathname.startsWith(`${path}/`));
+
+const isItemActiveExact = (pathname, path) => pathname === path;
+
+const getActivePath = (pathname, items) =>
+  items
+    .filter((item) => isItemActive(pathname, item.path))
+    .reduce((activePath, item) => (
+      !activePath || item.path.length > activePath.length ? item.path : activePath
+    ), null);
+
+const filterItemsByRole = (items, user) =>
+  items.filter((item) => (!item.roles || item.roles.includes(user?.role))
+    && (!item.access || item.access(user)));
 
 const AdminSidebar = ({ onNavClick, showBell = true }) => {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const [mainCollapsed, setMainCollapsed] = useState({});
+  const [proposalTaskCounts, setProposalTaskCounts] = useState(null);
+  const gradingRole = resolveGradingRole(user?.department);
+  const canSeeProposalMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
+  const canSeeGradingTaskCount = user?.role === "SUPER_ADMIN"
+    || (user?.role === "ADMIN" && ["QH", "PL"].includes(gradingRole));
+  const proposalTaskTotal = proposalTaskCounts
+    ? Object.values(proposalTaskCounts).every(Number.isFinite)
+      ? Object.values(proposalTaskCounts).reduce((total, count) => total + count, 0)
+      : null
+    : null;
+  const formatTaskCount = (count) => count > 99 ? "99+" : count;
 
   useEffect(() => {
     setCollapsed((prev) => {
@@ -193,6 +299,127 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     });
   }, [location.pathname]);
 
+  useEffect(() => {
+    const proposalItem = mainItems.find((item) => item.path === "/admin/proposals");
+    const activeChildPath = getActivePath(
+      location.pathname,
+      filterItemsByRole(proposalItem?.children || [], user),
+    );
+    if (!activeChildPath) return;
+
+    setMainCollapsed((current) => (
+      current[proposalItem.path]
+        ? current
+        : { ...current, [proposalItem.path]: true }
+    ));
+  }, [location.pathname, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loadSequence = 0;
+
+    const loadProposalTaskCounts = async () => {
+      const currentSequence = ++loadSequence;
+      if (!token || !canSeeProposalMenu) {
+        setProposalTaskCounts(null);
+        return;
+      }
+
+      const sources = [{
+        key: "requests",
+        load: () => proposalRequestService.getAll(
+          "status=OPEN&work_scope=mine&page=1&limit=1",
+          token,
+        ),
+      }];
+
+      if (canSeeGradingTaskCount) {
+        sources.push({
+          key: "grading",
+          load: () => proposalGradingService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (canSeeReviewRequestsPage(user)) {
+        sources.push({
+          key: "review",
+          load: () => proposalReviewService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (canSeeLayoutPage(user)) {
+        sources.push({
+          key: "layout",
+          load: () => proposalLayoutService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV"].includes(user.role)) {
+        sources.push({
+          key: "reports",
+          load: () => proposalReportService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (canSeeApprovalPage(user)) {
+        sources.push({
+          key: "approval",
+          load: () => proposalApprovalService.getAll(
+            "tab=pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV"].includes(user.role)) {
+        sources.push({
+          key: "signatures",
+          load: () => proposalSignatureService.getAll(
+            "tab=pending&my_status=my_pending&page=1&limit=1",
+            token,
+          ),
+        });
+      }
+
+      const results = await Promise.all(sources.map(async ({ key, load }) => {
+        try {
+          const response = await load();
+          const total = Number(response?.pagination?.total);
+          if (!Number.isFinite(total) || total < 0) {
+            throw new Error(`Invalid task count response for ${key}`);
+          }
+          return [key, total];
+        } catch (error) {
+          console.error(`Load proposal ${key} task count error:`, error);
+          return [key, null];
+        }
+      }));
+
+      if (!cancelled && currentSequence === loadSequence) {
+        setProposalTaskCounts(Object.fromEntries(results));
+      }
+    };
+
+    loadProposalTaskCounts();
+    window.addEventListener("focus", loadProposalTaskCounts);
+    window.addEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, loadProposalTaskCounts);
+    const intervalId = window.setInterval(loadProposalTaskCounts, 30000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", loadProposalTaskCounts);
+      window.removeEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, loadProposalTaskCounts);
+      window.clearInterval(intervalId);
+    };
+  }, [canSeeGradingTaskCount, canSeeProposalMenu, location.pathname, token, user]);
+
   const toggleGroup = (id) => {
     setCollapsed((prev) => {
       const next = prev.includes(id)
@@ -203,9 +430,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     });
   };
 
-  const visibleMain = mainItems.filter(
-    (item) => !item.roles || item.roles.includes(user?.role),
-  );
+  const toggleMainItem = (itemPath) => {
+    setMainCollapsed((prev) => ({
+      ...prev,
+      [itemPath]: !prev[itemPath],
+    }));
+  };
+
+  const visibleMain = filterItemsByRole(mainItems, user);
   const visibleGroups = configGroups
     .filter((g) => !g.roles || g.roles.includes(user?.role))
     .map((g) => ({
@@ -218,25 +450,100 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${
       isActive
         ? "bg-primary text-primary-content shadow-sm"
-        : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+        : "text-base-content/70 hover:bg-base-300 hover:text-base-content"
     }`;
 
-  const renderLink = (item) => {
-    const isActive = isItemActive(location.pathname, item.path);
+  const renderLink = (item, activePath = null) => {
+    const isActive = activePath
+      ? activePath === item.path
+      : isItemActiveExact(location.pathname, item.path);
+    const taskKey = proposalTaskKeyByPath[item.path];
+    const taskCount = taskKey ? proposalTaskCounts?.[taskKey] : null;
     return (
       <Link
         key={item.path}
         to={item.path}
         className={linkClass(isActive)}
         onClick={onNavClick}
+        title={item.label}
       >
         <item.icon
           size={18}
           className={isActive ? "text-primary-content" : ""}
         />
-        <span className="truncate">{item.label}</span>
+        <span className="truncate" title={item.label}>
+          {item.label}
+        </span>
+        {Number.isFinite(taskCount) && taskCount > 0 && (
+          <span
+            className="badge badge-error badge-sm ml-auto h-5 min-w-5 flex-shrink-0 rounded-full px-1 text-white"
+            title={`${taskCount} công việc cần thực hiện`}
+            aria-label={`${taskCount} công việc cần thực hiện`}
+          >
+            {formatTaskCount(taskCount)}
+          </span>
+        )}
       </Link>
     );
+  };
+
+  const renderMainItem = (item) => {
+    const isActiveExact = isItemActiveExact(location.pathname, item.path);
+    const hasChildren = item.children && item.children.length > 0;
+    const visibleChildren = filterItemsByRole(item.children || [], user);
+
+    // Parent active if exact match OR any child matches
+    let isActive = isActiveExact;
+    let activeChildPath = null;
+    if (hasChildren) {
+      activeChildPath = getActivePath(location.pathname, visibleChildren);
+      isActive = !!activeChildPath || isActiveExact;
+    }
+    const isOpen = mainCollapsed[item.path] ?? !!activeChildPath;
+
+    if (hasChildren) {
+      return (
+        <div key={item.path} className="mb-1">
+          <button
+            type="button"
+            onClick={() => toggleMainItem(item.path)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-300 hover:text-base-content"}`}
+            title={item.label}
+          >
+            <span className="flex items-center gap-3">
+              <item.icon
+                size={18}
+                className={isActive ? "text-primary-content" : ""}
+              />
+              <span className="truncate" title={item.label}>
+                {item.label}
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              {Number.isFinite(proposalTaskTotal) && proposalTaskTotal > 0 && (
+                <span
+                  className="badge badge-error badge-sm h-5 min-w-5 rounded-full px-1 text-white"
+                  title={`${proposalTaskTotal} công việc cần thực hiện trong Quản lý Đề xuất`}
+                  aria-label={`${proposalTaskTotal} công việc cần thực hiện trong Quản lý Đề xuất`}
+                >
+                  {formatTaskCount(proposalTaskTotal)}
+                </span>
+              )}
+              <ChevronDown
+                size={14}
+                className={`transition-transform ${isOpen ? "" : "-rotate-90"}`}
+              />
+            </span>
+          </button>
+          {isOpen && (
+            <div className="ml-2 border-b mt-1 space-y-1 border-l border-base-300 rounded-bl-xl pl-2">
+              {visibleChildren.map((child) => renderLink(child, activeChildPath))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return renderLink(item);
   };
 
   return (
@@ -255,7 +562,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
-        {visibleMain.map(renderLink)}
+        {visibleMain.map(renderMainItem)}
         {visibleGroups.length > 0 && (
           <div className="border-t border-base-300 my-3 mx-1" />
         )}
@@ -266,9 +573,10 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
               <button
                 type="button"
                 onClick={() => toggleGroup(g.id)}
-                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:text-base-content"
+                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:bg-base-200 hover:text-base-content rounded-lg transition-colors"
+                title={g.label}
               >
-                <span>{g.label}</span>
+                <span title={g.label}>{g.label}</span>
                 <ChevronDown
                   size={14}
                   className={`transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
@@ -281,19 +589,25 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <div className="border-t border-base-300 my-3 mx-1" />
         <Link
           to="/map"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-200 hover:text-base-content transition-all duration-150 hl-dash"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-all duration-150 hl-dash"
           onClick={onNavClick}
+          title="Xem bản đồ"
         >
           <MapPin size={18} />
-          <span className="truncate">Xem bản đồ</span>
+          <span className="truncate" title="Xem bản đồ">
+            Xem bản đồ
+          </span>
         </Link>
         <Link
           to="/admin/huong-dan"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === "/admin/huong-dan" ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-200 hover:text-base-content"}`}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === "/admin/huong-dan" ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-300 hover:text-base-content"}`}
           onClick={onNavClick}
+          title="Hướng dẫn"
         >
           <BookOpen size={18} />
-          <span className="truncate">Hướng dẫn</span>
+          <span className="truncate" title="Hướng dẫn">
+            Hướng dẫn
+          </span>
         </Link>
       </nav>
 

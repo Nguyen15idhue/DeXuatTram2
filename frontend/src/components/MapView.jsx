@@ -5,7 +5,7 @@ import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
-import { getStatusLabel } from '../utils/mapStatuses';
+import { getStatusLabel, getProposalMapStatus, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getProposalDisplayName, getProposalDisplayPhone, isProposalAssignee } from '../utils/proposalDisplay';
 import { PROVINCES, ISLAND_POINTS, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
@@ -293,16 +293,18 @@ function createProposalPopupContent(item, user) {
   statusStrong.textContent = 'Trạng thái: ';
   statusP.appendChild(statusStrong);
   const statusSpan = document.createElement('span');
-  statusSpan.style.color = getMarkerColor(item.status, 'proposal');
-  statusSpan.textContent = getStatusLabel(item.status, 'proposal');
+  const mapStatus = getProposalMapStatus(item.status);
+  statusSpan.style.color = getMarkerColor(mapStatus, 'proposal');
+  statusSpan.textContent = getStatusLabel(mapStatus, 'proposal');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
+  addRow('Trạng thái đề xuất', getStatusLabel(item.status, 'proposal'));
   addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_dau_tu] || item.mo_hinh_dau_tu || '');
   const proposalTru = pickProposalTru(item);
   addRow('Trụ', proposalTru);
 
   if (canViewProposal(item, user)) {
-    renderAdminLink(div, `/admin/proposals/view=${item.id}`);
+    renderAdminLink(div, `/admin/proposals/chi-tiet/${item.id}`);
   } else if (user && (user.role === 'SALES')) {
     renderDeniedNote(div);
   }
@@ -822,7 +824,7 @@ const MapView = ({
     list = list.filter(p => p.status !== 'CONTRACT_SIGNED');
     const mapSet = new Set((proposalLegendStatuses || []).map(s => s.value));
     if (mapSet.size > 0) {
-      list = list.filter(p => mapSet.has(p.status));
+      list = list.filter(p => mapSet.has(getProposalMapStatus(p.status)));
     }
     if (filters.scope === 'mine' && user) {
       const uid = Number(user.id);
@@ -830,7 +832,7 @@ const MapView = ({
     }
     const statuses = filters.proposalStatuses || [];
     if (statuses.length > 0) {
-      list = list.filter(p => statuses.includes(p.status));
+      list = list.filter(p => statuses.includes(getProposalMapStatus(p.status)));
     }
     return list;
   }, [proposals, filters, user, proposalLegendStatuses]);
@@ -856,14 +858,17 @@ const MapView = ({
     () => layerStations.map(s => {
       const badge = s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '';
       const isPin = s.status === 'PLANNING' && (badge === '1' || badge === '2' || badge === '3');
-      const levelColor = badge === '1' ? '#22c55e' : badge === '2' ? '#f97316' : badge === '3' ? '#ef4444' : getMarkerColor(s.status, 'station');
+      const levelColor = PLANNING_PRIORITY_COLORS[badge] || getMarkerColor(s.status, 'station');
       const icon = isPin ? `target${badge}` : getMarkerIcon(s.status, 'station');
       return { ...s, _color: isPin ? levelColor : getMarkerColor(s.status, 'station'), _icon: icon, _badge: isPin ? badge : '', _bg: getMarkerIconBg(s.status, 'station') };
     }),
     [layerStations, markerIconsVersion]
   );
   const canvasProposals = useMemo(
-    () => layerProposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') })),
+    () => layerProposals.map(p => {
+      const mapStatus = getProposalMapStatus(p.status);
+      return { ...p, _color: getMarkerColor(mapStatus, 'proposal'), _icon: getMarkerIcon(mapStatus, 'proposal'), _bg: getMarkerIconBg(mapStatus, 'proposal') };
+    }),
     [layerProposals, markerIconsVersion]
   );
   const canvasEvReports = useMemo(

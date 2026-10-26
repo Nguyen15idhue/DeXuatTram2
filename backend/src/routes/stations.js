@@ -104,7 +104,7 @@ router.get('/:id', optionalAuth, stationController.getById);
  * /api/stations/{id}/activity:
  *   get:
  *     tags: [Stations]
- *     summary: Timeline hoạt động trạm (đổi trạng thái, đổi trường, nội dung 1Office)
+ *     summary: Timeline hoạt động trạm
  *     security:
  *       - bearerAuth: []
  *     parameters:

@@ -195,9 +195,6 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
         if (fixedData.role === 'SUPER_ADMIN' && user.role !== 'SUPER_ADMIN') {
           throw new Error('Không được import tài khoản Super Admin');
         }
-        if (fixedData.external_id !== undefined && String(fixedData.external_id).trim() === '') {
-          delete fixedData.external_id;
-        }
       }
 
       if (entity === 'station_proposals') {

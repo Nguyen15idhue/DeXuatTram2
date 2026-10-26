@@ -181,9 +181,8 @@ router.post('/export/excel', requireAuth, requireReportViewer, adminReportContro
  *     tags: [Reports]
  *     summary: Báo cáo chi tiết 1 Lead (Lead 360)
  *     description: |
- *       Một API call trả header, durations, CSKH/TVBH, proposals kèm gương
- *       process 1Office, stations kèm gương ON trạm, timeline, syncHealth,
- *       counts. Ngoài scope Lead → 403 (không 404 để chống oracle IDOR).
+ *       Một API call trả header, durations, CSKH/TVBH, proposals, stations,
+ *       timeline và counts. Ngoài scope Lead → 403 (không 404 để chống oracle IDOR).
  *     security:
  *       - bearerAuth: []
  *     parameters:

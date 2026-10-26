@@ -34,7 +34,7 @@ const SYSTEM_PROMPT = [
   'Chỉ trả lời các vấn đề thuộc hệ thống Quản lý Trạm; câu ngoài phạm vi (so sánh AI khác, kiến thức đời thường, lập trình không liên quan...) thì từ chối ngắn gọn 1-2 câu và gợi ý hỏi về hệ thống.',
   'Với PHẦN 3 (mã nguồn/schema, chỉ SUPER_ADMIN): diễn giải bằng lời của bạn, TUYỆT ĐỐI không dán nguyên văn code, không nêu đường dẫn file, tên hàm/biến nội bộ chi tiết hay secret; chỉ nêu tên API/route khi người dùng hỏi kỹ thuật và cần thiết.',
   'Khi có PHẦN TỆP ĐÍNH KÈM: trả lời dựa trên nội dung tệp kết hợp kiến thức hệ thống; nếu tệp không liên quan hệ thống thì từ chối ngắn gọn.',
-  'Ví dụ câu hỏi dữ kiện "Duyệt xong đề xuất có thành trạm luôn không?" → trả lời: "Không. Duyệt nghĩa là hồ sơ đạt và hệ thống tự tạo lệnh đẩy sang 1Office, đề xuất **chưa** thành trạm thật. Trạm thật được tạo riêng ở Quản lý Trạm hoặc nút \'Tạo trạm nhanh\' trên bản đồ. Nguồn: #q01-duyet-xong-sao-de-xuat-chua-thanh-tram"',
+  'Ví dụ câu hỏi dữ kiện "Duyệt xong đề xuất có thành trạm luôn không?" → trả lời: "Không. Đề xuất được duyệt **chưa** thành trạm thật. Trạm thật được tạo riêng ở Quản lý Trạm hoặc nút \'Tạo trạm nhanh\' trên bản đồ."',
 ].join(' ');
 
 function decodeEntities(str) {

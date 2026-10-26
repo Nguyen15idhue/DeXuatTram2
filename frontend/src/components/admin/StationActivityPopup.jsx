@@ -17,12 +17,11 @@ const ACTION_LABEL = {
   status_change: 'Đổi trạng thái',
   status_change_denied: 'Đổi trạng thái bị chặn',
   station_created: 'Tạo trạm',
-  note: 'Ghi chú từ 1Office'
+  note: 'Ghi chú'
 };
 
 const SOURCE_LABEL = {
   user: 'Người dùng',
-  webhook: 'Webhook 1Office',
   script: 'Script demo',
   system_auto: 'Tự động',
   admin_override: 'Admin ghi đè',
@@ -41,7 +40,6 @@ const RAW_LABELS = {
   ma_tram: 'Mã trạm',
   station_id: 'Trạm',
   station_name: 'Tên trạm',
-  _inbound: 'Nội dung 1Office'
 };
 
 const fmtRawValue = (key, v) => {

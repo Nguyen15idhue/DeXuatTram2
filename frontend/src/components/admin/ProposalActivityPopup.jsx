@@ -14,7 +14,20 @@ const STATUS_DOT = {
   CONTRACT_SIGNED: '#0d9488',
   CONTRACT_FAILED: '#f59e0b',
   ARCHIVED: '#8b5cf6',
-  PRINCIPLE_APPROVED: '#6366f1'
+  PRINCIPLE_APPROVED: '#6366f1',
+  GRADING: '#f59e0b',
+  GDTTKD_EVALUATING: '#7c3aed',
+  RE_GRADING: '#6366f1',
+  RE_GDTTKD_EVALUATING: '#8b5cf6',
+  TGD_REVIEW: '#be123c',
+  DESIGNING: '#0891b2',
+  INFOR_WAITING: '#f97316',
+  PROPOSAL_REPORT_CREATING: '#0d9488',
+  PROPOSAL_REPORT_RE_CREATING: '#f59e0b',
+  PROPOSAL_REPORT_REVIEWING: '#2563eb',
+  PROPOSAL_REPORT_UPDATING: '#f97316',
+  SIGNATURE_PENDING: '#9333ea',
+  COMPLETED: '#16a34a'
 };
 
 const ACTION_LABEL = {
@@ -26,16 +39,28 @@ const ACTION_LABEL = {
   auto_failed: 'Tự động thất bại',
   info_completed: 'Xác nhận đủ thông tin',
   info_reopened: 'Mở lại bổ sung',
-  sync_push: 'Đồng bộ lên 1Office',
-  sync_pull: 'Lấy dữ liệu từ 1Office',
   deadline_extended: 'Gia hạn bổ sung',
   deadline_expiring: 'Sắp hết hạn bổ sung',
-  deadline_overdue: 'Quá hạn bổ sung'
+  deadline_overdue: 'Quá hạn bổ sung',
+  grading_updated: 'Chấm điểm Quy hoạch / Pháp lý',
+  review_regrade_requested: 'Yêu cầu chấm điểm lại',
+  review_to_tgd: 'Trình Tổng giám đốc',
+  review_cancelled: 'Xác nhận hủy đề xuất',
+  review_approved: 'Tổng giám đốc duyệt đề xuất',
+  review_rejected: 'Tổng giám đốc không duyệt',
+  review_level_changed: 'Cập nhật mức độ xem xét',
+  layout_updated: 'Cập nhật bản vẽ layout',
+  layout_approved: 'Duyệt bản vẽ layout',
+  layout_supplement_requested: 'Yêu cầu bổ sung thông tin vẽ layout',
+  layout_cancelled: 'Hủy đề xuất ở bước đánh giá layout',
+  report_uploaded: 'Tải lên tờ trình BCĐX',
+  report_revision_requested: 'Yêu cầu tạo lại tờ trình BCĐX',
+  report_update_requested: 'Yêu cầu cập nhật thông tin BCĐX',
+  signature_configured: 'Cấu hình trình ký BCĐX'
 };
 
 const SOURCE_LABEL = {
   user: 'Người dùng',
-  webhook: 'Webhook 1Office',
   script: 'Script demo',
   system_auto: 'Tự động',
   admin_override: 'Admin ghi đè',
@@ -51,9 +76,6 @@ const fmtTime = (t) => {
 };
 
 const RAW_LABELS = {
-  contact_code: 'Mã liên hệ 1Office',
-  files_sent: 'File đã đẩy',
-  files_skipped: 'File bị bỏ qua',
   fields_updated: 'Trường đã cập nhật',
   old_deadline: 'Hạn cũ',
   new_deadline: 'Hạn mới',

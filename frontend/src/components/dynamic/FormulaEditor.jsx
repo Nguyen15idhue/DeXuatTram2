@@ -93,7 +93,6 @@ const POST_METADATA = [
   { key: 'user_name', label: '{user_name}', desc: 'Tên người tạo (trống với khách)' },
   { key: 'user_role', label: '{user_role}', desc: 'Vai trò người tạo' },
   { key: 'sales_name', label: '{sales_name}', desc: 'Tên Sales quản lý (trống nếu không có)' },
-  { key: 'id_1office', label: '{id_1office}', desc: 'Mã liên kết 1Office (trống nếu chưa liên kết)' },
 ];
 
 const OUTPUT_TYPES = [

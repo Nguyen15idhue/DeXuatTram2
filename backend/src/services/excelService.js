@@ -25,7 +25,7 @@ const ENTITY_TABLE_MAP = {
 const VALID_STATUSES = {
   stations: ['PLANNING', 'ACTIVE', 'DEPLOYING', 'REJECTED'],
   users: ['ACTIVE', 'LOCKED'],
-  station_proposals: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'],
+  station_proposals: ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED', 'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING', 'TGD_REVIEW', 'DESIGNING', 'INFOR_WAITING', 'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING', 'COMPLETED'],
   leads: ['NEW', 'ASSIGNED', 'CSKH', 'QUALIFIED', 'TVBH', 'PROPOSAL', 'STATION', 'ON', 'UNQUALIFIED', 'LOST']
 };
 
@@ -71,7 +71,6 @@ const MAX_LENGTHS = {
   'users.full_name': 100,
   'users.email': 100,
   'users.phone': 20,
-  'users.external_id': 100,
   'stations.name': 200,
   'stations.address': 255,
   'station_proposals.owner_name': 100,
@@ -549,7 +548,7 @@ function getAllData(entity, filters = {}) {
     if (search) { where.push('(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)'); params.push(like, like, like); }
     if (status) { where.push('status = ?'); params.push(status); }
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
-    return pool.query(`SELECT id, full_name, email, phone, role, status, parent_id, external_id, custom_data, created_at, updated_at FROM users ${whereClause} ORDER BY id DESC`, params);
+    return pool.query(`SELECT id, full_name, email, phone, role, status, parent_id, custom_data, created_at, updated_at FROM users ${whereClause} ORDER BY id DESC`, params);
   }
   if (entity === 'leads') {
     const where = ['deleted_at IS NULL'];
@@ -1488,25 +1487,18 @@ exports.importPreviewDynamic = async (req, res) => {
     }
 
     if (entity === 'users') {
-      const [existingUsers] = await pool.query('SELECT LOWER(email) AS email, external_id FROM users');
+      const [existingUsers] = await pool.query('SELECT LOWER(email) AS email FROM users');
       const usedEmails = new Set(existingUsers.map(r => (r.email || '').toLowerCase()).filter(Boolean));
-      const usedExt = new Set(existingUsers.map(r => r.external_id).filter(v => v !== null && v !== ''));
       const fileEmails = new Set();
-      const fileExt = new Set();
       const isSuper = req.user && req.user.role === 'SUPER_ADMIN';
       const keptRows = [];
       for (const vr of validRows) {
         const email = String(vr.fixedData.email || '').trim().toLowerCase();
-        const ext = String(vr.fixedData.external_id || '').trim();
         const role = String(vr.fixedData.role || 'CTV').toUpperCase();
         const rowErrors = [];
         if (email) {
           if (usedEmails.has(email) || fileEmails.has(email)) rowErrors.push(`Email "${vr.fixedData.email}" đã tồn tại, không cho import`);
           else fileEmails.add(email);
-        }
-        if (ext) {
-          if (usedExt.has(ext) || fileExt.has(ext)) rowErrors.push(`Mã ngoài "${ext}" đã tồn tại, không cho import`);
-          else fileExt.add(ext);
         }
         if (role === 'SUPER_ADMIN' && !isSuper) rowErrors.push('Không được import tài khoản Super Admin');
         if (rowErrors.length > 0) { errors.push({ row: vr.rowNumber, errors: rowErrors }); continue; }

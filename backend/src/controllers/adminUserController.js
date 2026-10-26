@@ -67,7 +67,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data, parent_id } = req.body;
     const creatorRole = req.user.role;
 
     const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP', 'MKT'];
@@ -121,16 +121,9 @@ exports.create = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email đã tồn tại' });
     }
 
-    if (external_id) {
-      const extCheck = await adminUserService.findByExternalId(external_id);
-      if (extCheck) {
-        return res.status(400).json({ success: false, message: 'Mã ngoài đã tồn tại' });
-      }
-    }
-
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data, parentId, external_id || null);
+    const user = await adminUserService.createUser(full_name, email, phone, hashedPassword, role, status, custom_data, parentId);
     res.status(201).json({ success: true, data: user, message: 'Tạo user thành công' });
   } catch (error) {
     console.error('Admin create user error:', error);
@@ -140,7 +133,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    let { full_name, email, phone, password, role, status, custom_data, external_id, parent_id } = req.body;
+    let { full_name, email, phone, password, role, status, custom_data, parent_id } = req.body;
     const { id } = req.params;
     const editorRole = req.user.role;
     const targetId = parseInt(id);
@@ -191,15 +184,7 @@ exports.update = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email đã tồn tại' });
     }
 
-    if (external_id) {
-      const extCheck = await adminUserService.findByExternalIdExceptId(external_id, targetId);
-      if (extCheck) {
-        return res.status(400).json({ success: false, message: 'Mã ngoài đã tồn tại' });
-      }
-    }
-
     const cd = custom_data !== undefined ? custom_data : existing.custom_data;
-    const ext = external_id === undefined ? existing.external_id : (external_id || null);
     const finalStatus = status !== undefined ? status : existing.status;
 
     let parentId = undefined;
@@ -225,9 +210,9 @@ exports.update = async (req, res) => {
       }
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
-      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, finalStatus, cd, ext, parentId);
+      await adminUserService.updateUserWithPassword(targetId, full_name, email, phone, hashedPassword, role, finalStatus, cd, parentId);
     } else {
-      await adminUserService.updateUser(targetId, full_name, email, phone, role, finalStatus, cd, ext, parentId);
+      await adminUserService.updateUser(targetId, full_name, email, phone, role, finalStatus, cd, parentId);
     }
 
     const user = await adminUserService.findById(targetId);
@@ -390,47 +375,5 @@ exports.changePassword = async (req, res) => {
   } catch (error) {
     console.error('Admin change password error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
-  }
-};
-
-exports.getExternal = async (req, res) => {
-  try {
-    const targetId = parseInt(req.params.id);
-    const user = await adminUserService.findById(targetId);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
-    }
-    const mappings = await adminUserService.getExternalMappings(targetId);
-    res.json({ success: true, data: mappings });
-  } catch (error) {
-    console.error('Admin get external mappings error:', error);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
-  }
-};
-
-exports.setExternal = async (req, res) => {
-  try {
-    const targetId = parseInt(req.params.id);
-    const { system, external_id } = req.body || {};
-    const mapping = await adminUserService.setExternalMapping(targetId, system, external_id);
-    res.json({ success: true, data: mapping, message: 'Lưu liên kết hệ ngoài thành công' });
-  } catch (error) {
-    console.error('Admin set external mapping error:', error);
-    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
-  }
-};
-
-exports.deleteExternal = async (req, res) => {
-  try {
-    const targetId = parseInt(req.params.id);
-    const { system } = req.body || {};
-    const deleted = await adminUserService.deleteExternalMapping(targetId, system);
-    if (!deleted) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy liên kết' });
-    }
-    res.json({ success: true, message: 'Xóa liên kết thành công' });
-  } catch (error) {
-    console.error('Admin delete external mapping error:', error);
-    res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };

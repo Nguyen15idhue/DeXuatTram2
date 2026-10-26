@@ -12,9 +12,9 @@ const DEFAULT_STATION_STATUSES = ["ACTIVE", "DEPLOYING"];
 const DEFAULT_PROPOSAL_STATUSES = [
   "PENDING",
   "REVIEWING",
-  "PRINCIPLE_APPROVED",
   "APPROVED",
 ];
+const DEFAULT_PLANNING_PRIORITIES = PRIORITY_OPTIONS.map((option) => option.value);
 
 export const EMPTY_MAP_FILTERS = {
   scope: "all",
@@ -201,7 +201,7 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
                 set({
                   hideStationPlans: !checked,
                   planningPriorities: checked
-                    ? [...(filters.planningPriorities || [])]
+                    ? [...DEFAULT_PLANNING_PRIORITIES]
                     : [],
                 });
               }}

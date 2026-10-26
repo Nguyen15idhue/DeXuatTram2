@@ -13,6 +13,9 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
 import ImportErrorList from '../../components/admin/ImportErrorList';
 import { ImportSheetsSummary } from '../../components/admin/ImportViewPanel';
+import ProposalReportUpdateModal from '../../components/admin/ProposalReportUpdateModal';
+import { canUploadReport } from '../../utils/proposalReport';
+import { canOwnerDeleteProposal, canOwnerEditProposal } from '../../utils/proposalOwnerLock';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -49,6 +52,7 @@ const MyProposalsPage = () => {
   const [pageSize, setPageSize] = useState(10);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [popup, setPopup] = useState({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });
+  const [reportModal, setReportModal] = useState({ open: false, record: null });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -412,10 +416,18 @@ const MyProposalsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
-      {(row.status === 'PENDING' || row.status === 'REJECTED' || row.status === 'REVIEWING' || row.status === 'PRINCIPLE_APPROVED') && (
+      {canOwnerEditProposal(row.status) && (
         <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
       )}
-      {row.status === 'PENDING' && (
+      {canUploadReport(row) && (
+        <button
+          className="btn btn-sm btn-info"
+          onClick={() => setReportModal({ open: true, record: row })}
+        >
+          Tờ trình BCĐX
+        </button>
+      )}
+      {canOwnerDeleteProposal(row.status) && (
         <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id)}>Xóa</button>
       )}
     </div>
@@ -443,6 +455,18 @@ const MyProposalsPage = () => {
   return (
     <div className="p-4 md:p-6">
       <Toast message={toast.message} type={toast.type} duration={toast.duration} action={toast.action} onClose={() => setToast({ message: '', type: 'success' })} />
+
+      <ProposalReportUpdateModal
+        open={reportModal.open}
+        record={reportModal.record}
+        onClose={() => setReportModal({ open: false, record: null })}
+        onUpload={(data) => myProposalService.uploadReport(reportModal.record.id, data, token)}
+        onSaved={() => {
+          setReportModal({ open: false, record: null });
+          setToast({ message: 'Đã tải lên tờ trình BCĐX', type: 'success' });
+          loadProposals(1);
+        }}
+      />
 
       <ConfirmDialog
         isOpen={confirmDelete.isOpen}
@@ -731,7 +755,7 @@ const MyProposalsPage = () => {
           recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
           viewId={popup.entity === 'stations' ? undefined : proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin || (!!popup.record && ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED'].includes(popup.record.status))}
+          allowEdit={isAdmin || (!!popup.record && canOwnerEditProposal(popup.record.status))}
           updateService={isAdmin ? undefined : myProposalService}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });

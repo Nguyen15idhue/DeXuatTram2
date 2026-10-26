@@ -202,6 +202,16 @@ exports.validateData = async (entity, data, fieldDefs) => {
   return allErrors;
 };
 
+exports.toJsonParam = (value) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return null;
+    try { JSON.parse(text); return text; } catch { return null; }
+  }
+  try { return JSON.stringify(value); } catch { return null; }
+};
+
 exports.splitData = (entity, data, fieldDefs) => {
   const fixedData = {};
   const dynamicData = {};
@@ -246,6 +256,9 @@ exports.mergeData = (row, fieldDefs) => {
   fieldDefs.forEach(fd => {
     if (result[fd.key] === undefined && result.custom_data[fd.key] !== undefined) {
       result[fd.key] = result.custom_data[fd.key];
+    }
+    if (typeof result[fd.key] === 'string' && (fd.type === 'table' || fd.type === 'multiselect')) {
+      try { result[fd.key] = JSON.parse(result[fd.key]); } catch { /* giu nguyen */ }
     }
   });
 

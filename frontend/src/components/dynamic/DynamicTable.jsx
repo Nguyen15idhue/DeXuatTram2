@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], hiddenColumnKeys = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -61,13 +61,54 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, ac
     return () => clearTimeout(t);
   }, [filters, serverMode]);
 
+  const columnsPropSig = useMemo(
+    () => (Array.isArray(columnsProp) && columnsProp.length > 0 ? JSON.stringify(columnsProp) : ''),
+    [columnsProp]
+  );
+  const hiddenColumnKeysSig = useMemo(() => hiddenColumnKeys.join(','), [hiddenColumnKeys]);
+  const hiddenColumns = useMemo(() => new Set(hiddenColumnKeysSig.split(',').filter(Boolean)), [hiddenColumnKeysSig]);
+  const columnLabelOverridesSig = useMemo(
+    () => JSON.stringify(columnLabelOverrides || {}),
+    [columnLabelOverrides]
+  );
+  const additionalColumnsSig = useMemo(
+    () => JSON.stringify(additionalColumns || []),
+    [additionalColumns]
+  );
+
+  const prepareColumns = (sourceColumns) => {
+    const labelOverrides = JSON.parse(columnLabelOverridesSig);
+    const extras = JSON.parse(additionalColumnsSig);
+    const mergedColumns = [...sourceColumns];
+    const knownKeys = new Set(mergedColumns.map((column) => column.field_key || column.key));
+    extras.forEach((column) => {
+      const key = column.field_key || column.key;
+      if (key && !knownKeys.has(key)) {
+        mergedColumns.push(column);
+        knownKeys.add(key);
+      }
+    });
+    return mergedColumns
+      .filter((column) => !hiddenColumns.has(column.key) && !hiddenColumns.has(column.field_key))
+      .map((column) => {
+        const key = column.field_key || column.key;
+        return labelOverrides[key] ? { ...column, label: labelOverrides[key] } : column;
+      });
+  };
+
   useEffect(() => {
+    if (Array.isArray(columnsProp) && columnsProp.length > 0) {
+      setColumns(prepareColumns(columnsProp));
+      setLoading(false);
+      setError('');
+      return;
+    }
     if (viewId) loadViewConfig();
     else {
       setColumns([]);
       setLoading(false);
     }
-  }, [entity, viewId, configVersion]);
+  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, columnLabelOverridesSig, additionalColumnsSig]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {
@@ -81,7 +122,7 @@ const DynamicTable = forwardRef(({ entity, viewId, data, onRowClick, actions, ac
       setError('');
       const res = await dynamicService.getViewConfig(entity, viewId);
       if (res.success) {
-        setColumns(res.data.fields || []);
+        setColumns(prepareColumns(res.data.fields || []));
         if (frozenColumns === null || frozenColumns === undefined) {
           const fc = res.data && res.data.view ? res.data.view.frozen_columns : null;
           if (fc !== undefined && fc !== null && fc !== '') setFrozenN(Math.max(0, Math.floor(Number(fc) || 0)));
@@ -184,10 +225,10 @@ const toDisplayValue = (val) => {
   const pinAfterIdx = actionAfterKey
     ? visibleColumns.findIndex(c => (c.field_key || c.key) === actionAfterKey)
     : -1;
-  const pinActions = !!(actions && pinAfterIdx >= 0);
+  const pinActions = !!(showActions && actions && pinAfterIdx >= 0);
   const hasLeading = typeof leadingAction === 'function';
   const hasSelection = Array.isArray(selectedIds) && onSelectionChange;
-  const emptyColSpan = visibleColumns.length + 2 + (hasSelection ? 1 : 0) + (hasLeading ? 1 : 0);
+  const emptyColSpan = visibleColumns.length + 1 + (showActions ? 1 : 0) + (hasSelection ? 1 : 0) + (hasLeading ? 1 : 0);
   const frozenEff = Math.max(0, Math.floor(Number(frozenN) || 0));
 
   const frozenKeys = useMemo(() => {
@@ -285,7 +326,7 @@ const toDisplayValue = (val) => {
         : kind === 'th' ? frozenBgs.head
           : (parity % 2 === 1 ? frozenBgs.row1 : frozenBgs.row0);
     return {
-      className: `${base} dt-frozen ${kind === 'th' ? 'dt-frozen-head' : kind === 'filter' ? 'dt-frozen-filter' : ''}`.trim(),
+      className: `${base} dt-frozen ${last ? 'dt-frozen-last' : ''} ${kind === 'th' ? 'dt-frozen-head' : kind === 'filter' ? 'dt-frozen-filter' : ''}`.trim(),
       style: {
         position: 'sticky',
         left,
@@ -318,7 +359,7 @@ const toDisplayValue = (val) => {
     <div className="dynamic-table-container">
       <div className="overflow-x-auto" ref={tableWrapRef}>
         {loading && <div className="px-2 py-1 text-xs text-base-content/50 border-b border-base-300">Đang tải cấu hình...</div>}
-        <table className="table table-zebra w-full text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
+        <table className={`table table-zebra dynamic-table w-full text-sm${density === 'compact' ? ' proposal-table-compact' : ''}`} style={{ borderCollapse: 'separate', borderSpacing: 0, overflow: 'visible' }}>
           <thead>
             <tr>
               {hasSelection && (
@@ -349,7 +390,7 @@ const toDisplayValue = (val) => {
                   </Fragment>
                 );
               })}
-              {!pinActions && <th className="text-center min-w-[230px] whitespace-nowrap">Hành động</th>}
+              {!pinActions && showActions && <th className="text-center min-w-[230px] whitespace-nowrap">Hành động</th>}
             </tr>
             {hasFilters && (
               <tr className="bg-base-200">
@@ -379,7 +420,7 @@ const toDisplayValue = (val) => {
                     </Fragment>
                   );
                 })}
-                {!pinActions && <th></th>}
+                {!pinActions && showActions && <th></th>}
               </tr>
             )}
           </thead>
@@ -405,13 +446,17 @@ const toDisplayValue = (val) => {
                   const fp = frozenCell(`__d:${key}`, 'td', '', idx % 2);
                   const fpPin = (pinActions && colIdx === pinAfterIdx) ? frozenCell('__pin', 'td', '', idx % 2) : null;
                   const cell = (
-                    <FieldRenderer
-                      field={col}
-                      value={getFieldValue(row, col)}
-                      entity={entity}
-                      entityId={row.id}
-                      dataListOptions={dataListOptions}
-                    />
+                    cellRenderers && typeof cellRenderers[key] === 'function'
+                      ? cellRenderers[key](row, getFieldValue(row, col), col)
+                      : (
+                        <FieldRenderer
+                          field={col}
+                          value={getFieldValue(row, col)}
+                          entity={entity}
+                          entityId={row.id}
+                          dataListOptions={dataListOptions}
+                        />
+                      )
                   );
                   return (
                     <Fragment key={key}>
@@ -420,17 +465,19 @@ const toDisplayValue = (val) => {
                         {typeof cellFooter === 'function' ? cellFooter(row, key) : null}
                       </td>
                       {pinActions && colIdx === pinAfterIdx && (
-                        <td className={`text-center whitespace-nowrap ${fpPin.className || ''}`} style={fpPin.style}>{actions(row)}</td>
+                        <td className={`text-center whitespace-nowrap ${fpPin.className || ''}`} style={fpPin.style}>
+                          <div className="dynamic-table-actions">{actions(row)}</div>
+                        </td>
                       )}
                     </Fragment>
                   );
                 })}
-                {!pinActions && (
+                {!pinActions && showActions && (
                 <td>
                   {actions ? (
-                    actions(row)
+                    <div className="dynamic-table-actions">{actions(row)}</div>
                   ) : (
-                    <div className="flex gap-1 flex-wrap">
+                    <div className="dynamic-table-actions">
                       <button className="btn btn-primary btn-xs" onClick={() => handleViewClick(row)}>Xem</button>
                       {onRowClick && (
                         <button className="btn btn-warning btn-xs" onClick={() => handleEditClick(row)}>Sửa</button>

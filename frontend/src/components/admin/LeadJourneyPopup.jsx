@@ -20,7 +20,11 @@ const stageIndex = (stage) => STAGE_RAIL.findIndex(s => s.match.includes(stage))
 const STATUS_COLOR = {
   PENDING: '#facc15', REVIEWING: '#3b82f6', PRINCIPLE_APPROVED: '#6366f1',
   APPROVED: '#16a34a', REJECTED: '#dc2626', CANCELLED: '#6b7280',
-  CONTRACT_SIGNED: '#0d9488', CONTRACT_FAILED: '#f59e0b', ARCHIVED: '#8b5cf6'
+  CONTRACT_SIGNED: '#0d9488', CONTRACT_FAILED: '#f59e0b', ARCHIVED: '#8b5cf6',
+  GRADING: '#f59e0b', GDTTKD_EVALUATING: '#7c3aed', RE_GRADING: '#6366f1',
+  TGD_REVIEW: '#be123c', DESIGNING: '#0891b2', INFOR_WAITING: '#f97316', PROPOSAL_REPORT_CREATING: '#0d9488',
+  PROPOSAL_REPORT_RE_CREATING: '#f59e0b', PROPOSAL_REPORT_UPDATING: '#f97316',
+  PROPOSAL_REPORT_REVIEWING: '#2563eb', SIGNATURE_PENDING: '#9333ea', COMPLETED: '#16a34a'
 };
 
 const ENTITY_FILTERS = [
@@ -175,7 +179,7 @@ const LeadJourneyPopup = ({ leadId, onClose, embedded = false }) => {
                           <span className="badge badge-sm" style={{ background: statusColor, color: '#fff', border: 'none' }}>{p.status}</span>
                         </button>
                         <div className="flex items-center gap-2 shrink-0">
-                          <a className="link link-primary text-xs flex items-center gap-0.5" href={`/admin/proposals/view=${p.id}`}>
+                          <a className="link link-primary text-xs flex items-center gap-0.5" href={`/admin/proposals/chi-tiet/${p.id}`}>
                             Mở đề xuất <ExternalLink size={11} />
                           </a>
                         </div>

@@ -54,7 +54,7 @@ git pull && ./update.sh
 
 - Ubuntu 22.04 / 24.04 LTS, tối thiểu **2 vCPU / 2 GB RAM** (1 GB thì bắt buộc thêm swap — Vite build dễ OOM), 40 GB SSD.
 - Docker Engine + Compose plugin.
-- Mở **outbound 443** (backend gọi 1Office / Turnstile / geocode / tile proxy).
+- Mở **outbound 443** (backend gọi Turnstile / geocode / tile proxy).
 - Mở **inbound** đúng 1 cổng web (`WEB_PORT`, mặc định `8081`) — **không** mở 3000/3306.
 
 Swap (nếu RAM ≤ 2 GB):
@@ -97,12 +97,20 @@ Kết thúc script in ra link `http://<IP>:<WEB_PORT>` và tài khoản `admin@s
 3. Nếu volume MySQL **chưa có datadir** → nạp `docker/mysql-datadir.tar.gz` (chown `999:999`) → MySQL khởi động tức thì.
 4. Khởi động MySQL, chờ `healthy` (tối đa ~6 phút).
 5. Nếu DB **chưa có bảng `users`** → import `docker/station_lite_dump.sql`.
-6. **Áp migration còn thiếu**: đánh dấu các file `database/*.sql` có số **≤ `DUMP_MAX_MIGRATION` (mặc định 44)** là "đã có trong dump", rồi chạy `migrate.sh run` cho phần **> 44** (45→mới nhất). Nhờ vậy DB mới khớp hoàn toàn với mã nguồn.
+6. **Áp migration còn thiếu**: đánh dấu các file `database/*.sql` có số **≤ `DUMP_MAX_MIGRATION` (mặc định 44)** là "đã có trong dump", rồi chạy `migrate.sh run` cho phần **> 44**. Migration 187 là migration phá hủy nên bị bỏ qua mặc định; chỉ áp dụng sau khi đã xác nhận bản sao lưu.
 7. Chạy backend + frontend.
 
 Idempotent: chạy lại không mất dữ liệu và bỏ qua các bước đã làm.
 
-> **Vì sao cần bước 6?** `docker/station_lite_dump.sql` là *base* (schema tới mốc ~44 + data cấu hình), không phải bản dump đầy đủ. Các migration 45+ tạo thêm `notifications`, `user_external_map`, `external_users`, `geocode_configs`, `geocode_cache` và các cột mới (duyệt đề xuất, cấu hình bản đồ). Xem mục 7 để biết khi nào cần cập nhật `DUMP_MAX_MIGRATION`.
+> **Vì sao cần bước 6?** `docker/station_lite_dump.sql` là *base* (schema tới mốc ~44 + data cấu hình), không phải bản dump đầy đủ. Các migration 45+ tạo thêm bảng nghiệp vụ, cấu hình geocode và các cột mới (duyệt đề xuất, cấu hình bản đồ). Migration 187 tự tạo bản sao DB đã nén trước khi loại bỏ schema tích hợp cũ.
+
+Để xác nhận và áp dụng migration 187 thủ công:
+
+```bash
+bash scripts/migrate.sh run --allow-destructive
+```
+
+Runner sẽ tạo file dump gzip và SHA-256 trong `backups/pre-oneoffice-removal/` trước khi chạy migration. Nếu dump lỗi hoặc container MySQL không sẵn sàng, migration sẽ không chạy. Sao chép backup ra nơi lưu trữ an toàn sau khi xác minh.
 
 ### 3.4 Kiểm tra sau deploy
 
@@ -114,7 +122,7 @@ docker exec station-backend date          # phải hiện +07 (TZ Asia/Ho_Chi_Mi
 # API sống
 curl -s -o /dev/null -w "api=%{http_code}\n" http://127.0.0.1:8081/api/test   # mong đợi 200
 
-# DB: kỳ vọng tracked=137, tables=48
+# DB: kiểm tra schema và các cột nghiệp vụ chính
 docker exec -i station-mysql sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" station_management' <<'SQL'
 SELECT COUNT(*) AS tracked FROM schema_migrations;
 SELECT COUNT(*) AS tables FROM information_schema.tables WHERE table_schema='station_management';
@@ -132,8 +140,7 @@ SELECT COUNT(*) AS has_help_tables FROM information_schema.tables
 SQL
 ```
 
-> `tracked` = số file migration trong `database/` (hiện **137**, đánh số 1→139, thiếu 34/51/52). `tables` = **48**. Nếu thiếu số nhiều → DB chưa chạy đủ migration, xem mục 7.
-> Trên VPS đang vận hành, `tracked` có thể là **139** (dư 2 dòng so với số file hiện có — dấu vết các file migration cũ đã đổi tên, không ảnh hưởng).
+> Số migration/bảng phụ thuộc lịch sử DB và việc có áp dụng migration 187 hay chưa; không dùng số đếm cố định để kết luận schema đã đủ.
 
 Sau đó mở web bằng trình duyệt: login, vào `/map`, `/admin/proposals`, chuông thông báo, `/admin/map-config` — đảm bảo không lỗi console.
 
@@ -149,7 +156,7 @@ git pull origin ui-redesign
 ./update.sh
 ```
 
-`update.sh` tự: `migrate.sh run` (áp file migration mới) → build lại → `up -d` (backend, frontend, mysql). Dữ liệu giữ nguyên.
+`update.sh` tự: `migrate.sh run` (áp migration thường; migration 187 cần xác nhận riêng) → build lại → `up -d` (backend, frontend, mysql). Dữ liệu giữ nguyên.
 
 > **Seed template BCĐX + index kho tri thức chatbot đã TẮT mặc định** (update nhanh, ổn định). Khi cần chạy 2 bước này: `RUN_EXTRAS=1 ./update.sh`.
 > **Build**: `update.sh` build trực tiếp bằng `docker build --provenance=false -f frontend/Dockerfile.prod` và `-f backend/Dockerfile.prod` (lấy tên image từ `docker compose config --images`), fallback `COMPOSE_BAKE=false docker compose build`. Cách này tránh lỗi `DeadlineExceeded: context deadline exceeded` của `docker compose build` (bake) hay gặp trên VPS chậm.
@@ -227,7 +234,7 @@ bash scripts/sync-data.sh import dev.sql.gz --yes   # nhập vào dev
 
 ## 7. Ghi chú về seed DB (quan trọng)
 
-- `docker/station_lite_dump.sql` = **base dump**: schema tới **mốc migration 44** + data cấu hình (forms/views/field_definitions/data_lists/map_configs/proposal_sequences) + **4 user seed** (SUPER_ADMIN/ADMIN/SALES/CTV). **Không chứa** token 1Office, API key geocode, hay dữ liệu nghiệp vụ.
+- `docker/station_lite_dump.sql` = **base dump**: schema tới **mốc migration 44** + data cấu hình (forms/views/field_definitions/data_lists/map_configs/proposal_sequences) + **4 user seed** (SUPER_ADMIN/ADMIN/SALES/CTV). Không chứa thông tin xác thực bên ngoài hay dữ liệu nghiệp vụ.
 - `deploy.sh` hoàn thiện schema bằng cách chạy các migration **> `DUMP_MAX_MIGRATION`**. Hằng số này nằm ở đầu `deploy.sh`:
 
   ```bash
@@ -235,12 +242,12 @@ bash scripts/sync-data.sh import dev.sql.gz --yes   # nhập vào dev
   ```
 
 - **Khi nào tăng `DUMP_MAX_MIGRATION`?** Khi bạn thay `docker/station_lite_dump.sql` bằng bản base mới (đã bao gồm thêm migration). Nếu **không** thay dump thì **không cần** đổi — cứ để 44, các migration mới tự chạy.
-- **Tuyệt đối không** `mysqldump` toàn bộ DB dev rồi commit: sẽ lộ token 1Office (`api_configs`), API key geocode (`geocode_configs`), và dữ liệu/PII thật.
+- **Tuyệt đối không** `mysqldump` toàn bộ DB dev rồi commit: dump có thể chứa API key geocode (`geocode_configs`) và dữ liệu/PII thật.
 - `database/baseline/station_management_baseline.sql` là **artifact cũ** (16 bảng, mốc ~44), **không dùng** cho deploy hiện tại.
 
 ### 7.1 Vá VPS deploy bằng bản cũ (thiếu bảng)
 
-Bản `deploy.sh` cũ chạy `mark-all` nên đánh dấu 45→67 là "đã chạy" mà **không thực thi** → DB thiếu `notifications`, `user_external_map`, `external_users`, `geocode_configs`, `geocode_cache` và các cột mới. Trên VPS đó, sau `git pull` chạy:
+Bản `deploy.sh` cũ chạy `mark-all` nên đánh dấu 45→67 là "đã chạy" mà **không thực thi** → DB thiếu một số bảng thông báo/cấu hình, geocode và các cột mới. Trên VPS đó, sau `git pull` chạy:
 
 ```bash
 cd ~/DeXuatTram2
@@ -322,11 +329,11 @@ Từ mốc **104** trở đi, schema có thêm nhiều bảng mới (hướng d�
 | 115 | xác nhận hoàn thiện thông tin (`info_completed_at`, auto-hủy quá hạn) | ✅ migration |
 | 116 | giới hạn gia hạn (`extend_max_times`/`extend_max_days_per_time`) | ✅ migration |
 | 117–123 | import jobs (`import_jobs`/`import_jobs_rows`), activity station (`station_activity_logs`), trường triển khai trạm, mã trạm chờ (`pending_station_code`) | ✅ migration |
-| 124–132 | automation 1Office (`work_automations`, `work_automation_runs`, `work_automation_queue`/mappings/snapshots, token, template scan) | ✅ migration |
+| 124–132 | Các bảng automation lịch sử; schema/dữ liệu tích hợp đã được gỡ bởi migration 187 | ✅ migration lịch sử |
 | 133 | `proposal-transition-deadline` | ✅ migration |
 | 134–137 | Leads/Journey (`business_journeys`, `leads`, `lead_assignments`, liên kết activity↔proposal) | ✅ migration |
 | 138–139 | seed options MKT + role `MKT` | ✅ migration |
-| 140–141 | **KHÔNG phải Leads** — thuộc kế hoạch 71/72: countdown 2 mốc + auto-push on update | ✅ migration |
+| 140–141 | Countdown 2 mốc; migration 141 là cấu hình cũ được dọn bởi migration 187 | ✅ migration lịch sử |
 | 142–148 | Lead fields/forms/views, `leads.custom_data`, `customer_type`/`source` nullable, `created_at`/`updated_at` (read-only), công thức Tỉnh→Phường/Xã, `lead_code` UNIQUE + read-only (MKT pipeline) | ✅ migration |
 
 **Riêng `document_templates` cần thêm file `.docx` mẫu** — migration chỉ tạo bảng, không tạo template. `deploy.sh` tự chạy bước **seed best-effort** sau khi `up -d`; **`update.sh` không còn chạy mặc định** (chạy `RUN_EXTRAS=1 ./update.sh`, hoặc chạy tay):
@@ -474,11 +481,10 @@ docker run --rm -v dexuattram2_uploads_data:/data -v /root/backups:/backup busyb
 ## 10. Bảo mật (VPS public)
 
 1. Đổi mật khẩu `admin@station.com` **ngay**; xoá/khoá tài khoản test (`*@example.com`, `sales_test@...`).
-2. **Rotate token 1Office** (từng lộ trong lịch sử git) và cập nhật vào bảng `api_configs` (qua UI `/admin/api-configs`).
-3. Đổi mật khẩu MySQL mặc định (`RootPass2026!`, `AppPass2026!`) nếu muốn.
-4. Giữ `ENABLE_SWAGGER=false`.
-5. Không mở MySQL (3306) / backend (3000) ra ngoài.
-6. Giữ `CAPTCHA_ENABLED=false` chỉ khi chưa cần; bật khi public rộng.
+2. Đổi mật khẩu MySQL mặc định (`RootPass2026!`, `AppPass2026!`) nếu muốn.
+3. Giữ `ENABLE_SWAGGER=false`.
+4. Không mở MySQL (3306) / backend (3000) ra ngoài.
+5. Giữ `CAPTCHA_ENABLED=false` chỉ khi chưa cần; bật khi public rộng.
 
 ---
 

@@ -22,13 +22,12 @@
 | 3 | `frontend/nginx.conf` | `frontend/nginx.conf` | Bắt buộc | ✅ |
 | 4 | `frontend/.env.production` (captcha tắt) | `frontend/.env.production` | Bắt buộc | ✅ |
 | 5 | `docker-compose.prod.yml` | `docker-compose.prod.yml` | Bắt buộc | ✅ |
-| 6 | `trust proxy` (+ fix crash-loop queueWorker) | `backend/src/app.js` | Bắt buộc (bảo mật) | ✅ |
+| 6 | `trust proxy` | `backend/src/app.js` | Bắt buộc (bảo mật) | ✅ |
 | 7 | Fix tile self-hosted `http→https` | `backend/src/services/mapConfigService.js`, `frontend/src/utils/tileProviders.js` | Cao | ✅ |
 | 8 | Fix link file Excel + `BASE_URL` | `backend/src/services/excelService.js` | Cao | ✅ |
 | 9 | Tắt/chặn Swagger production (+ fix YAML) | `backend/src/app.js`, `backend/src/routes/forms.js` | Cao (bảo mật) | ✅ |
 | 10 | Chuẩn hóa `backend/Dockerfile` (+ fix lockfile) | `backend/Dockerfile.prod`, `backend/package-lock.json` | Trung bình | ✅ |
 | 11 | Cập nhật `.env.example` | `.env.example` | Trung bình | ✅ |
-| 12 | Rotate token 1Office + xóa seed | `database/37-seed-1office-api-config.sql` | Khẩn (bảo mật) | ✅ code / ⏳ rotate thủ công |
 | 13 | Đổi mật khẩu tài khoản seed | DB runtime | Khẩn (bảo mật) | ⏳ chờ mật khẩu mới |
 | 14 | (Tùy chọn) MySQL user riêng cho app | `.env` + DB runtime | Thấp | ⬜ (bỏ qua) |
 | 15 | Tắt Captcha (tạm thời) | `.env`, `frontend/.env.production` | Bắt buộc | ✅ |
@@ -228,8 +227,7 @@ VITE_TURNSTILE_SITE_KEY=
 
 ### Ghi chú
 - Khác biệt cốt lõi so với `docker-compose.yml` dev: build static + `npm start`, không hot reload.
-- **PHÁT HIỆN 1 (cần xử lý):** Trên DB trống, backend **crash-loop** vì `queueWorker.start()` (`app.js:106`) gọi `requeuePending()` khi bảng `api_queue_logs` chưa tồn tại → unhandled rejection làm tiến trình thoát. Trên VPS nếu `up` trước khi init DB sẽ thấy restart liên tục (tự phục hồi sau khi có schema). Đề xuất: bọc `queueWorker.start().catch(...)` (thực hiện ở bước 6 khi sửa `app.js`).
-- **PHÁT HIỆN 2 (quan trọng):** Chạy tuần tự `database/01→44` trên DB trống phát sinh lỗi FK `form_fields`/`view_fields` (script 19, 22, 26, 28, 31, 41) và lỗi cú pháp `CREATE INDEX IF NOT EXISTS` trong `36-1office-api-configs.sql:101` (MySQL 8.0 không hỗ trợ). Nghĩa là **DB mới KHÔNG giống hệt DB dev** (một số form_fields/view_fields không được tạo). Cần đối chiếu/đưa dữ liệu còn thiếu vào script trước khi deploy. *(Ghi nhận, chưa sửa vì ngoài phạm vi bước 5.)*
+- **PHÁT HIỆN 2 (quan trọng):** Chạy tuần tự `database/01→44` trên DB trống phát sinh lỗi FK `form_fields`/`view_fields` (script 19, 22, 26, 28, 31, 41). Nghĩa là **DB mới KHÔNG giống hệt DB dev** (một số form_fields/view_fields không được tạo). Cần đối chiếu/đưa dữ liệu còn thiếu vào script trước khi deploy. *(Ghi nhận, chưa sửa vì ngoài phạm vi bước 5.)*
 - **PHÁT HIỆN 3:** Swagger báo lỗi YAML ở `backend/src/routes/forms.js:30` (`description` chứa dấu `:`), spec swagger không đầy đủ. Liên quan bước 9.
 
 ---
@@ -257,7 +255,6 @@ VITE_TURNSTILE_SITE_KEY=
 | 10/09/2026 | ✅ PASS | Spam login 35 lần cùng IP giả lập `198.51.100.99`: 30 lần đầu `400`, 5 lần sau `429` → rate limit theo IP hoạt động đúng. |
 | 10/09/2026 | ✅ PASS | Guest upload IP `203.0.113.10` → `GET /api/files/:id/image` từ IP `203.0.113.11` → **403**; đúng IP `203.0.113.10` → **200**. Ownership theo IP đúng. File test đã xoá. |
 | 10/09/2026 | ✅ PASS | Không còn log `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`. |
-| 10/09/2026 | ✅ PASS | Fix kèm (Phát hiện 1): `queueWorker.start().catch(...)` tại `app.js` → không còn unhandled rejection làm crash backend khi bảng chưa tồn tại. |
 
 ### Ghi chú
 - Thiếu dòng này là lỗi bảo mật/phân quyền nghiêm trọng sau reverse proxy.
@@ -432,33 +429,6 @@ Kèm ghi chú tạo `frontend/.env.production`.
 
 ---
 
-## 12. Rotate token 1Office + xóa khỏi seed (KHẨN)
-
-### Yêu cầu cần đạt
-- Không còn token thật trong repo.
-- Token đang dùng đã bị vô hiệu hóa và thay mới trong DB.
-
-### Các bước chi tiết
-1. Vào hệ thống 1Office → tạo token mới, thu hồi token cũ (token cũ đã bị lộ trong git).
-2. Xóa/placeholder token trong `database/37-seed-1office-api-config.sql`.
-3. Cập nhật token mới trực tiếp trong DB `api_configs` (không commit).
-
-### Checklist test
-- [x] `git grep "<token cũ đã lộ>"` không còn kết quả.
-- [ ] Sync 1Office push/pull thành công với token mới.
-- [ ] Token cũ trả 401 khi gọi API.
-
-### Kết quả sau test
-| Lần test | Kết quả | Ghi chú |
-|---|---|---|
-| 10/09/2026 | ✅ PASS | Thay token trong `database/37-seed-1office-api-config.sql` bằng `CHANGE_ME_1OFFICE_TOKEN`. Quét toàn working tree (trừ `node_modules/.git`): **không còn token**. `git grep` → sạch. |
-| 10/09/2026 | ✅ PASS | Dọn thêm token trong `test_files/1office/*.js` + `TEST_PLAN.md` → chuyển sang `process.env.ONE_OFFICE_TOKEN`. |
-| | ⏳ Chờ thủ công | **Cần người dùng**: (a) thu hồi token cũ trên 1Office + tạo token mới; (b) cập nhật token mới vào DB `api_configs`. DB dev hiện vẫn giữ token cũ (`api_configs` id=3) — chưa đổi để không phá sync dev. |
-| | ⚠️ Cảnh báo | Token vẫn tồn tại trong **lịch sử git**; nếu repo từng public cần coi token cũ đã lộ. Không push cho tới khi xử lý xong. |
-
-### Ghi chú
-- Đây là secret đã lộ trong lịch sử git → nên cân nhắc viết lại lịch sử hoặc chấp nhận rằng token đã bị lộ và đã rotate.
-
 ---
 
 ## 13. Đổi mật khẩu tài khoản seed (KHẨN)
@@ -598,7 +568,7 @@ FRONTEND_URL=https://yourdomain.com
 
 ## 17. Ghi chú chung & thứ tự thực hiện đề xuất
 
-1. **Trước khi code**: mục 12 (rotate token) — bảo mật, độc lập.
+1. **Trước khi code**: rà soát các hạng mục bảo mật còn hiệu lực.
 2. **Nhóm file hạ tầng**: mục 1 → 2 → 3 → 4 → 5 → 10 (tạo file + compose).
 3. **Nhóm sửa code backend**: mục 6 → 7 → 8 → 9.
 4. **Nhóm tài liệu/cấu hình**: mục 11 → 15 (tắt captcha).
@@ -616,7 +586,6 @@ FRONTEND_URL=https://yourdomain.com
 | Ngày | Người test | Hạng mục | Kết quả | Ghi chú |
 |---|---|---|---|---|
 | 10/09/2026 | Agent | 1-11, 15 | ✅ PASS | Chi tiết ở từng mục. Test trong stack cách ly `-p stationprodt` + script Playwright tiếng Việt. |
-| 10/09/2026 | Agent | 12 | ✅ code / ⏳ manual | Đã xoá token khỏi mã nguồn; cần rotate trên 1Office + cập nhật DB. |
 | 10/09/2026 | Agent | 13 | ⏳ manual | Audit 16/17 tài khoản dùng `123456`; cần mật khẩu mới do người dùng chọn. |
 | 10/09/2026 | Agent | 16 | ✅ code / ⏳ ops | Code sẵn sàng (không hardcode domain); cần làm trên VPS + Cloudflare. |
 
@@ -630,9 +599,8 @@ FRONTEND_URL=https://yourdomain.com
 | Không phá vỡ chức năng hiện có | ✅ | Map (step 7), export (step 8), guest submit (step 15) hoạt động. |
 
 ### Việc còn lại (thủ công, ngoài môi trường này)
-1. **Rotate token 1Office** + cập nhật `api_configs` (mục 12).
-2. **Đổi mật khẩu/xoá tài khoản seed** trên VPS (mục 13).
-3. **Tạo `.env` VPS** từ `.env.example` (điền secret mạnh, `ENABLE_SWAGGER=false`, `BASE_URL`/`CORS_ORIGINS`/`FRONTEND_URL` = domain).
-4. **Cloudflare**: A record + proxy + SSL Full(strict)/Tunnel; cấu hình `real_ip`/`trust proxy` nếu cần (mục 16).
-5. **Init DB trên VPS** theo `01→44` và xử lý **Phát hiện 2** (lỗi FK form_fields/view_fields + lỗi cú pháp `36-...:101`) trước khi coi là hoàn tất.
-6. **Commit thay đổi** (KHÔNG push theo yêu cầu).
+1. **Đổi mật khẩu/xoá tài khoản seed** trên VPS (mục 13).
+2. **Tạo `.env` VPS** từ `.env.example` (điền secret mạnh, `ENABLE_SWAGGER=false`, `BASE_URL`/`CORS_ORIGINS`/`FRONTEND_URL` = domain).
+3. **Cloudflare**: A record + proxy + SSL Full(strict)/Tunnel; cấu hình `real_ip`/`trust proxy` nếu cần (mục 16).
+4. **Init DB trên VPS** theo `01→44` và xử lý **Phát hiện 2** (lỗi FK form_fields/view_fields) trước khi coi là hoàn tất.
+5. **Commit thay đổi** (KHÔNG push theo yêu cầu).

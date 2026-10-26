@@ -9,7 +9,7 @@ const proposalActivityController = require('../controllers/proposalActivityContr
  *   get:
  *     tags: [Proposal Activity]
  *     summary: Log hoạt động đề xuất (tab mới trong Audit Log)
- *     description: Phân quyền y hệt lịch sử đồng bộ 1Office (ADMIN/SUPER tất cả, SALES theo nhánh).
+ *     description: ADMIN/SUPER xem toàn bộ, SALES chỉ xem hoạt động trong nhánh của mình.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -41,7 +41,7 @@ const proposalActivityController = require('../controllers/proposalActivityContr
  *         name: source
  *         schema:
  *           type: string
- *           enum: [user, webhook, script, system_auto, admin_override]
+ *           enum: [user, script, system_auto, admin_override]
  *       - in: query
  *         name: date_from
  *         schema:

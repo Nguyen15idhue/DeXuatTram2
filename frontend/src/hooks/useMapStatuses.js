@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadMarkerIconConfig, MARKER_ICONS_REFRESH_EVENT } from '../utils/mapMarkerIcons';
-import { getStationStatuses, getProposalStatuses, getProposalLegendStatuses, getEvReportStatuses, getEvReportLegendStatuses } from '../utils/mapStatuses';
+import { getStationStatuses, getProposalMapStatuses, getProposalMapLegendStatuses, getEvReportStatuses, getEvReportLegendStatuses } from '../utils/mapStatuses';
 
 export default function useMapStatuses() {
   const [version, setVersion] = useState(0);
@@ -22,8 +22,8 @@ export default function useMapStatuses() {
   }, []);
   return {
     stationStatuses: getStationStatuses(),
-    proposalStatuses: getProposalStatuses(),
-    proposalLegendStatuses: getProposalLegendStatuses(),
+    proposalStatuses: getProposalMapStatuses(),
+    proposalLegendStatuses: getProposalMapLegendStatuses(),
     evReportStatuses: getEvReportStatuses(),
     evReportLegendStatuses: getEvReportLegendStatuses(),
     version

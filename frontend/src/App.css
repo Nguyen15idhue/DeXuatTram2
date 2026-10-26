@@ -1,3 +1,19 @@
+@font-face {
+  font-family: 'TmtSignatureNoto';
+  src: url('/fonts/NotoSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TmtSignatureNoto';
+  src: url('/fonts/NotoSans-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* App.css — wrapped in @layer base so Tailwind utilities can override */
 @layer base {
 /* Reset & Base */
@@ -2441,14 +2457,32 @@ fieldset.form-section,
 }
 .dynamic-table {
   width: 100%;
-  border-collapse: collapse;
+  border: 1px solid #d1d5db;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 .dynamic-table th,
 .dynamic-table td {
-  padding: 10px 12px;
+  padding: 0.2rem 0.5rem;
   text-align: left;
-  border-bottom: 1px solid #f0f0f0;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
   font-size: 14px;
+}
+.dynamic-table .dt-frozen-last {
+  border-right: 2px solid #b4b4b4 !important;
+}
+.dynamic-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.dynamic-table-actions .btn:not(.btn-square) {
+  min-height: 1.5rem;
+  height: 1.5rem;
+  padding-inline: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 .dynamic-table th {
   background: #f8f9fa;

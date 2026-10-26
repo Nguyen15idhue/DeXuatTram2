@@ -4,7 +4,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
-import UserExternalPanel from './UserExternalPanel';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
 import StationActivityPopup from './StationActivityPopup';
@@ -15,21 +14,10 @@ import ConfirmDialog from '../ConfirmDialog';
 import ExtendDeadlineDialog from './ExtendDeadlineDialog';
 import { loadCountdownConfig, getSupplementStatuses, getCountdownFlags, COUNTDOWN_CONFIG_EVENT, FALLBACK_SUPPLEMENT_STATUSES } from '../../utils/countdownConfig';
 import useDataListMap from '../../hooks/useDataListMap';
-import useFieldOptions from '../../hooks/useFieldOptions';
 import DeadlineCountdown from '../DeadlineCountdown';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
 import Toast from '../Toast';
 import { computeFormulaValue } from '../../utils/formulaEngine';
-import { pollSyncJobs, buildPushDoneMessage } from '../../utils/syncJobPoll';
-
-const PUSH_USER_KEYS = ['nguoi_phu_trach', 'nguoi_giao_phu_trach'];
-
-const resolveUserId = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  const raw = (typeof value === 'object' && value !== null) ? (value.id ?? value.user_id ?? value.value) : value;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
 
 const ENTITY_LABELS = {
   stations: 'Trạm',
@@ -48,7 +36,6 @@ const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8, leads: 0
 const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null, beforeActions = null }) => {
   const { token, user: authUser } = useAuth();
   const navigate = useNavigate();
-  const { getFieldLabel } = useFieldOptions('station_proposals', PUSH_USER_KEYS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -72,7 +59,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const [countdownFlags, setCountdownFlags] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ open: false, action: null });
   const [confirming, setConfirming] = useState(false);
-  const syncPollRef = useRef(null);
   const [extendOpen, setExtendOpen] = useState(false);
   const [extending, setExtending] = useState(false);
   const [extendLimits, setExtendLimits] = useState(null);
@@ -276,25 +262,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     return null;
   };
 
-  const missingPushUserLabels = (rec) => {
-    if (!rec || entity !== 'station_proposals') return [];
-    const status = rec.status;
-    if (status !== 'PENDING' && status !== 'REVIEWING') return [];
-    const custom = (rec && rec.custom_data) || {};
-    const labels = [];
-    for (const key of PUSH_USER_KEYS) {
-      const direct = rec ? rec[key] : null;
-      const v = (direct !== undefined && direct !== null && direct !== '') ? direct : custom[key];
-      const idVal = resolveUserId(v);
-      if (!idVal) labels.push(getFieldLabel(key));
-    }
-    return labels;
-  };
-
-  const pushUserWarnings = () => {
-    return [];
-  };
-
   const infoSvc = (updateService && updateService.confirmInfo) ? updateService : adminProposalService;
   const showInfoConfirm = entity === 'station_proposals'
     && record && record.id
@@ -430,10 +397,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     return [...opts, { value: current, label: current }];
   };
 
-  useEffect(() => () => {
-    if (syncPollRef.current) clearInterval(syncPollRef.current);
-  }, []);
-
   const handleSave = async () => {
     try {
       setError('');
@@ -479,40 +442,15 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
             msg = 'Đã lưu nội dung nhưng gửi lại thất bại — hãy thử lại';
           }
         }
-        const auto = res.autoPush;
         let toastMsg = msg;
-        let toastType = 'success';
-        if (auto && auto.queued) {
-          toastMsg += ' — đã tạo lệnh đẩy sang 1Office';
-          const preWarns = auto.warnings || [];
-          if (preWarns.length > 0) {
-            toastMsg += ` — lưu ý: ${preWarns.slice(0, 3).join('; ')}${preWarns.length > 3 ? ` (+${preWarns.length - 3})` : ''}`;
-            toastType = 'warning';
-          }
-        } else if (auto && !auto.queued && auto.reason) {
-          toastMsg += ` — chưa đẩy được sang 1Office (${auto.reason})`;
-          toastType = 'warning';
-        }
         if (res.infoCompleted && res.infoCompleted.confirmed) {
           toastMsg += ' · Đã tự xác nhận đủ thông tin';
         }
-        setToast({ message: toastMsg, type: toastType });
+        setToast({ message: toastMsg, type: 'success' });
         setRecord({ ...record, ...formData, ...saved });
         setMode('view');
         notifyBellRefresh();
         if (onSaved) onSaved();
-        if (auto && auto.queued && auto.jobId) {
-          if (syncPollRef.current) clearInterval(syncPollRef.current);
-          syncPollRef.current = pollSyncJobs({
-            jobIds: [auto.jobId],
-            token,
-            onDone: (jobs) => {
-              syncPollRef.current = null;
-              const r = buildPushDoneMessage(jobs);
-              setToast({ message: r.msg, type: r.type });
-            }
-          });
-        }
       } else {
         setError(res.message || 'Lỗi cập nhật');
       }
@@ -600,16 +538,17 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       ? allFields.filter(f => visibleFieldKeys.has(f.key))
       : allFields;
     fieldsToCheck.forEach(f => {
-      if (!f.required) return;
       if (f.type === 'formula') return;
       const val = formData[f.key];
       const label = f.field_label || f.label || f.key;
-      if (f.type === 'multiselect' && Array.isArray(val) && val.length === 0) {
-        newErrors[f.key] = `${label} là bắt buộc`;
-      } else if (f.type === 'table' && Array.isArray(val) && val.length === 0) {
-        newErrors[f.key] = `${label} phải có ít nhất 1 dòng`;
-      } else if (val === '' || val === null || val === undefined) {
-        newErrors[f.key] = `${label} là bắt buộc`;
+      if (f.required) {
+        if (f.type === 'multiselect' && Array.isArray(val) && val.length === 0) {
+          newErrors[f.key] = `${label} là bắt buộc`;
+        } else if (f.type === 'table' && Array.isArray(val) && val.length === 0) {
+          newErrors[f.key] = `${label} phải có ít nhất 1 dòng`;
+        } else if (val === '' || val === null || val === undefined) {
+          newErrors[f.key] = `${label} là bắt buộc`;
+        }
       }
       if (f.type === 'table' && Array.isArray(val) && val.length > 0) {
         const tc = (() => {
@@ -882,7 +821,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
               </button>
             )}
             {entity === 'stations' && linkedProposal && linkedProposal.id && (
-              <button className="btn btn-sm btn-outline btn-info gap-1" onClick={() => navigate(`/admin/proposals/view=${linkedProposal.id}`)} title="Xem đề xuất đã tạo ra trạm này">
+              <button className="btn btn-sm btn-outline btn-info gap-1" onClick={() => navigate(`/admin/proposals/chi-tiet/${linkedProposal.id}`)} title="Xem đề xuất đã tạo ra trạm này">
                 <Eye size={14} />
                 Xem đề xuất #{linkedProposal.id}
               </button>
@@ -964,21 +903,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
             </div>
           )}
 
-          {entity === 'station_proposals' && mode === 'view' && missingPushUserLabels(record).length > 0 && (
-            <div className="form-error-summary" style={{ marginBottom: 12 }}>
-              <div className="form-error-summary-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={16} />
-                <span>Cần cập nhật trước khi duyệt — thiếu {missingPushUserLabels(record).length} trường:</span>
-              </div>
-              <ul>
-                {missingPushUserLabels(record).map((label, i) => (
-                  <li key={i}>
-                    <button type="button" onClick={() => { if (allowEdit) handleSwitchMode('edit'); }}>{label} — chưa được gán</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {submitAttempted && getOrderedErrorKeys(formErrors).length > 0 && (
             <div className="form-error-summary" data-error-summary style={{ marginBottom: 12 }}>
@@ -1007,7 +931,6 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
               {otherFields.length > 0 && renderFieldSection(otherFields, 'Thông tin khác')}
             </>
           )}
-          {entity === 'users' && record?.id && <UserExternalPanel userId={record.id} />}
           {typeof beforeActions === 'function' ? beforeActions({ formData, setFormData, mode, record }) : beforeActions}
         </div>
 

@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
+const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note'];
 
 exports.getUserProposals = async (userId, status, search, page, limit, columnFilters, extra = {}) => {
   const offset = (page - 1) * limit;
@@ -60,7 +60,7 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
-            p.pending_station_code
+            p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -95,11 +95,57 @@ exports.getProposalByIdAndUser = async (id, userId) => {
   return existing.length > 0 ? existing[0] : null;
 };
 
-exports.updateProposal = async (id, userId, data, opts = {}) => {
-  const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
-  if (st.length === 0 || (st[0].status !== 'PENDING' && st[0].status !== 'REJECTED' && st[0].status !== 'REVIEWING' && st[0].status !== 'PRINCIPLE_APPROVED')) {
-    throw Object.assign(new Error('Chỉ có thể chỉnh sửa đề xuất đang ở trạng thái PENDING, REJECTED, REVIEWING hoặc Duyệt chủ trương'), { statusCode: 400 });
+const assertOwnerEditable = (status) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  if (proposalLifecycle.OWNER_EDITABLE_STATUSES.includes(status)) return;
+  const step = proposalLifecycle.STATUS_STEP_LABELS[status];
+  const where = step ? `Đề xuất đang ở khâu ${step}` : `Đề xuất đang ở trạng thái ${status}`;
+  throw Object.assign(
+    new Error(`${where}, bạn chưa thể chỉnh sửa. Chỉ được cập nhật khi phòng ban phụ trách yêu cầu bổ sung thông tin.`),
+    { statusCode: 403 }
+  );
+};
+
+const notifyBackOfficeOfOwnerUpdate = async (id, ownerId, actorId, customData) => {
+  const notificationService = require('./notificationService');
+  const stepRecipients = require('./proposalStepRecipients');
+  const ids = await stepRecipients.resolveStepRecipients('PROPOSAL_REPORT_REVIEWING', { id, user_id: ownerId, custom_data: customData });
+  const code = notificationService.proposalCode(customData, id);
+  const actorName = (await notificationService.getUserName(actorId)) || 'Người cập nhật';
+  const message = notificationService.statusMessage({ code, actorName, status: 'PROPOSAL_REPORT_REVIEWING', actionLabel: 'Người cập nhật' });
+  for (const uid of ids) {
+    if (Number(uid) === Number(actorId)) continue;
+    try {
+      await notificationService.create({
+        userId: uid,
+        type: 'PROPOSAL_UPDATED',
+        title: 'Người đề xuất đã cập nhật thông tin đề xuất',
+        message,
+        entityType: 'station_proposals',
+        entityId: id,
+        createdBy: actorId
+      });
+    } catch { /* silent */ }
   }
+};
+
+exports.updateProposal = async (id, userId, data, opts = {}) => {
+  const actorId = Number(opts.actorId) || Number(userId);
+  const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  if (st.length === 0) {
+    throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
+  }
+  let gradingSupplementUpdate = false;
+  if (opts.deferRequestCompletion && opts.requestId && opts.requestType === 'SUPPLEMENT'
+    && ['GRADING', 'RE_GRADING'].includes(st[0].status)) {
+    const request = await require('./proposalRequestService').getRequestById(opts.requestId);
+    gradingSupplementUpdate = !!request
+      && Number(request.proposal_id) === Number(id)
+      && Number(request.owner_id) === Number(userId)
+      && request.request_type === 'SUPPLEMENT'
+      && request.status === 'OPEN';
+  }
+  if (!gradingSupplementUpdate) assertOwnerEditable(st[0].status);
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
@@ -115,7 +161,7 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     } catch { return false; }
   }).map(f => f.key));
   Object.keys(dynamicData).forEach(k => { if (postKeys.has(k)) delete dynamicData[k]; });
-  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, contact_1office_code, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  const [existing] = await pool.query('SELECT latitude, longitude, custom_data, status, reviewed_by, owner_name, owner_phone, address, area, land_type, description, note, chot_so_luong_tru FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -125,7 +171,10 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const customData = Object.keys(mergedDynamic).length > 0 ? JSON.stringify(mergedDynamic) : null;
 
   const wasRejected = existing.length > 0 && existing[0].status === 'REJECTED';
-  const nextStatus = wasRejected ? 'PENDING' : (existing.length > 0 ? existing[0].status : 'PENDING');
+  const wasWaitingInfo = existing.length > 0 && existing[0].status === 'INFOR_WAITING';
+  const nextStatus = wasRejected
+    ? 'PENDING'
+    : (wasWaitingInfo ? 'DESIGNING' : (existing.length > 0 ? existing[0].status : 'PENDING'));
   const reviewerId = existing.length > 0 ? existing[0].reviewed_by : null;
 
   let resetDeadlineMinutes = null;
@@ -143,19 +192,25 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const prevRow = existing.length > 0 ? existing[0] : {};
   const nextLat = fixedData.latitude !== undefined ? fixedData.latitude : prevRow.latitude;
   const nextLng = fixedData.longitude !== undefined ? fixedData.longitude : prevRow.longitude;
+  const nextNote = fixedData.note !== undefined ? fixedData.note : prevRow.note;
+  const submittedPoleRows = fixedData.chot_so_luong_tru;
+  const nextPole = submittedPoleRows === undefined
+    || (Array.isArray(submittedPoleRows) && submittedPoleRows.length === 0)
+    ? prevRow.chot_so_luong_tru
+    : submittedPoleRows;
   await pool.query(
     `UPDATE station_proposals
-     SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, custom_data = ?, status = ?, updated_at = NOW()
+     SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, custom_data = ?, status = ?, updated_at = NOW()
      ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
      WHERE id = ? AND user_id = ?`,
     resetDeadlineMinutes
-      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
-      : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, nextStatus, id, userId]
+      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
+      : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, id, userId]
   );
 
   if (wasRejected && reviewerId) {
     const code = notificationService.proposalCode(customData, id);
-    const actorName = await notificationService.getUserName(userId);
+    const actorName = await notificationService.getUserName(actorId);
     await notificationService.create({
       userId: reviewerId,
       type: 'RESUBMITTED',
@@ -163,8 +218,14 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       message: notificationService.statusMessage({ code, actorName, status: 'RESUBMITTED' }),
       entityType: 'station_proposals',
       entityId: id,
-      createdBy: userId
+      createdBy: actorId
     });
+  }
+
+  if (existing.length > 0 && ['PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(existing[0].status)) {
+    try {
+      await notifyBackOfficeOfOwnerUpdate(id, userId, actorId, mergedDynamic);
+    } catch { /* silent: khong chan luu vi thong bao */ }
   }
 
   try {
@@ -180,6 +241,8 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       area: fixedData.area !== undefined ? fixedData.area : existing[0].area,
       land_type: fixedData.land_type !== undefined ? fixedData.land_type : existing[0].land_type,
       description: fixedData.description !== undefined ? fixedData.description : existing[0].description,
+      note: nextNote,
+      chot_so_luong_tru: nextPole,
       ...mergedDynamic
     };
     const diff = proposalLifecycle.buildDiff(oldFlat, newFlat, fieldDefs);
@@ -187,12 +250,12 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       await proposalLifecycle.logActivity({
         proposalId: id, action: 'updated', changedFields: diff,
         fromStatus: existing[0].status, toStatus: nextStatus,
-        actorId: userId, actorRole: opts.actorRole || null,
+        actorId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
       const journeySyncService = require('./journeySyncService');
       await journeySyncService.onProposalUpdated(id, {
-        changedFields: diff, actorId: userId, actorRole: opts.actorRole || null,
+        changedFields: diff, actorId, actorRole: opts.actorRole || null,
         source: 'user', ip: opts.ip || null
       });
     }
@@ -200,17 +263,28 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
       await proposalLifecycle.logActivity({
         proposalId: id, action: 'status_change',
         fromStatus: 'REJECTED', toStatus: 'PENDING',
-        actorId: userId, actorRole: opts.actorRole || null,
+        actorId, actorRole: opts.actorRole || null,
         source: 'user', manualOverride: false, ip: opts.ip || null
       });
+    }
+    if (wasWaitingInfo) {
+      if (!opts.deferRequestCompletion) {
+        await require('./proposalRequestService').closeRequests(id, ['LAYOUT_SUPPLEMENT'], { resolvedBy: actorId });
+      }
+      await proposalLifecycle.logActivity({
+        proposalId: id, action: 'status_change',
+        fromStatus: 'INFOR_WAITING', toStatus: 'DESIGNING',
+        actorId, actorRole: opts.actorRole || null,
+        source: 'user', manualOverride: false, ip: opts.ip || null
+      });
+      await require('./proposalDesignService').notifyInfoSupplemented({ proposalId: id, actorId });
     }
   } catch { /* silent: khong chan luu vi log */ }
 
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
     const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
-  const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
-  const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
+  const exclude = (driversChanged || !codeValid) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, userId, null, { excludeKeys: exclude });
   const finalDynamic = { ...mergedDynamic, ...postResults };
   let filesRenamed = 0;
@@ -233,21 +307,23 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   }
 
   let infoCompleted = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
-      actorId: userId, purpose: 'view', ip: opts.ip || null
-    });
-  } catch { infoCompleted = null; }
+  if (!opts.deferRequestCompletion) {
+    try {
+      const proposalLifecycle = require('./proposalLifecycle');
+      infoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(id, {
+        actorId, purpose: 'view', ip: opts.ip || null
+      });
+    } catch { infoCompleted = null; }
+  }
 
-  let autoPush = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    autoPush = await proposalLifecycle.autoPushOnUpdate(id, userId);
-  } catch { autoPush = null; }
-  return { autoPush, infoCompleted };
+  return { infoCompleted };
 };
 
 exports.deleteProposal = async (id, userId) => {
+  const [st] = await pool.query('SELECT status FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
+  if (st.length === 0) return;
+  if (!['PENDING', 'REJECTED'].includes(st[0].status)) {
+    throw Object.assign(new Error('Chỉ được xóa đề xuất đang ở trạng thái đang đề xuất hoặc bị từ chối'), { statusCode: 403 });
+  }
   await pool.query('DELETE FROM station_proposals WHERE id = ? AND user_id = ?', [id, userId]);
 };

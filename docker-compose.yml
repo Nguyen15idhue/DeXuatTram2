@@ -25,8 +25,9 @@ services:
       - "3000:3000"
     volumes:
       - ./backend/src:/app/src
+      - ./backend/assets:/app/assets:ro
       - ./backend/storage/uploads:/app/storage/uploads
-      - ./test_files/ggsheet/egreen-510714-2480e9fde603.json:/app/secrets/ggsheet-sa.json:ro
+      - ${SIGNATURE_FONT_HOST_DIR:-C:/Windows/Fonts}:/app/signature-fonts:ro
     environment:
       - PORT=3000
       - DB_HOST=mysql
@@ -34,19 +35,19 @@ services:
       - DB_USER=root
       - DB_PASSWORD=password
       - DB_NAME=station_management
+      - SIGNATURE_FONT_DIR=/app/signature-fonts
+      - SIGNATURE_FONT_REGULAR=${SIGNATURE_FONT_REGULAR:-}
+      - SIGNATURE_FONT_BOLD=${SIGNATURE_FONT_BOLD:-}
       - JWT_SECRET=station-mgmt-dev-secret-2024-xK9mPz
       - CAPTCHA_ENABLED=false
       - TURNSTILE_SECRET_KEY=
       - ORPHAN_FILE_TTL_HOURS=24
-      - ONEOFFICE_WEBHOOK_SECRET=dev-webhook-secret-46
-      - ONEOFFICE_WEBHOOK_SECRET_STAGING=ffcf330f1bb1f9325e1de499e20077763f18ba3033e2bfba5cb47853a75890c2
       - TZ=Asia/Ho_Chi_Minh
       - ASSISTANT_ENABLED=${ASSISTANT_ENABLED:-true}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-google/gemini-2.0-flash-001}
-      - GGSA_KEY_PATH=/app/secrets/ggsheet-sa.json
     depends_on:
       mysql:
         condition: service_healthy
@@ -81,5 +82,3 @@ volumes:
 networks:
   station-network:
     driver: bridge
-
-

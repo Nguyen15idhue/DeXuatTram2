@@ -31,7 +31,7 @@ const CASES = [
   { q: 'Mô hình tự đầu tư cần nhập thông tin gì', cat: 'de-xuat', type: 'data', re: /Tự đầu tư|TDT|Danh sách trụ/i },
   { q: 'Đề xuất NQ_LK cần nhập thông tin gì', cat: 'de-xuat', type: 'data', re: /Nhượng quyền|Liên kết|Chính sách/i },
   { q: 'Khi nào thì được duyệt một đề xuất?', cat: 'de-xuat', type: 'doc', re: /SALES|ADMIN|SUPER_ADMIN|duyệt/i, slugs: ['g26-duyet-doi-trang-thai-tu-choi', 'f2-vong-doi-de-xuat-xem-sua-duyet'] },
-  { q: 'Duyệt xong đề xuất có thành trạm luôn không?', cat: 'de-xuat', type: 'doc', re: /chưa|không|trạm thật|1Office/i, slugs: ['q01-duyet-xong-sao-de-xuat-chua-thanh-tram'] },
+  { q: 'Duyệt xong đề xuất có thành trạm luôn không?', cat: 'de-xuat', type: 'doc', re: /chưa|không|trạm thật/i, slugs: ['q01-duyet-xong-sao-de-xuat-chua-thanh-tram'] },
   { q: 'Vì sao đề xuất không còn nút Sửa?', cat: 'de-xuat', type: 'doc', re: /trạng thái|sửa|chờ duyệt|từ chối/i, slugs: ['q03-vi-sao-de-xuat-khong-con-nut-sua'] },
   { q: 'Sửa và gửi lại đề xuất thế nào?', cat: 'de-xuat', type: 'doc', re: /Sửa|Gửi lại|từ chối|chờ duyệt/i, slugs: ['g14-sua-gui-lai'] },
   { q: 'Xóa đề xuất khác gì hủy đề xuất?', cat: 'de-xuat', type: 'doc', re: /xóa|hủy|hoàn tác|tra cứu/i, slugs: ['g15-xoa-de-xuat', 'huy-de-xuat-cancelled'] },
@@ -66,7 +66,6 @@ const CASES = [
   // E. Người dùng / phân quyền
   { q: 'Tạo user thế nào?', cat: 'nguoi-dung', type: 'doc', re: /Tạo user|họ tên|email|vai trò/i, slugs: ['g21-tao-user'] },
   { q: 'Import export users thế nào?', cat: 'nguoi-dung', type: 'doc', re: /import|export|Excel|tệp/i, slugs: ['g22-import-export-users'] },
-  { q: 'Gán mã nhân sự 1Office cho user thế nào?', cat: 'nguoi-dung', type: 'doc', re: /1Office|mã nhân sự|external/i, slugs: ['g42-gan-ma-nhan-su-1office-cho-user'] },
   { q: 'Cây phân cấp nhân sự hoạt động thế nào?', cat: 'nguoi-dung', type: 'doc', re: /GĐKV|GĐTT|CTV|nhánh|cây/i, slugs: ['g20-danh-sach-cay-phan-cap', 'cay-nhan-su-gdkv-gdtt'] },
   { q: 'Khi tạo user thì gán nhanh cho ai?', cat: 'nguoi-dung', type: 'doc', re: /GĐKV|GĐTT|CTV|parent|phòng ban/i, slugs: ['cay-nhan-su-gdkv-gdtt'] },
   { q: 'Phân quyền gồm những vai trò gì?', cat: 'nguoi-dung', type: 'doc', re: /SUPER_ADMIN|ADMIN|SALES|CTV|NPP/i, slugs: ['g35-phan-quyen', 's02-ban-la-ai-trong-he-thong'] },
@@ -103,16 +102,12 @@ const CASES = [
   { q: 'Mục lục hướng dẫn có gì?', cat: 'cau-hinh', type: 'data', re: /chuyên mục|bài|Tài khoản|Bản đồ/i },
   { q: 'Hôm nay là ngày bao nhiêu?', cat: 'cau-hinh', type: 'data', re: /Thời gian|ngày|20\d\d/i },
 
-  // H. 1Office / tích hợp
-  { q: 'API Configs 1Office là gì?', cat: 'tich-hop', type: 'doc', re: /1Office|api|config|token/i, slugs: ['g36-api-configs-1office'] },
-  { q: 'Field Mapping dùng để làm gì?', cat: 'tich-hop', type: 'doc', re: /mapping|trường|1Office|đích|nguồn/i, slugs: ['g37-field-mapping'] },
-  { q: 'Swagger và file bản ghi ở đâu?', cat: 'tich-hop', type: 'doc', re: /swagger|file|bản ghi|api-docs/i, slugs: ['g38-swagger-file-ban-ghi'] },
-  { q: 'Audit log đồng bộ là gì?', cat: 'tich-hop', type: 'doc', re: /audit|log|đồng bộ|queue/i, slugs: ['g41-audit-log-nhat-ky-dong-bo'] },
-  { q: 'Đẩy 1Office rồi kiểm tra mở 1Office thế nào?', cat: 'tich-hop', type: 'doc', re: /1Office|đẩy|kiểm tra|đồng bộ/i, slugs: ['f4-day-1office-kiem-tra-mo-1office'] },
-  { q: 'Excel template export import theo bộ cột thế nào?', cat: 'tich-hop', type: 'doc', re: /Excel|template|export|import|bộ cột/i, slugs: ['g40-excel-template-export-import-theo-bo-cot'] },
-  { q: 'Trang quản trị tổng quan có gì?', cat: 'tich-hop', type: 'doc', re: /tổng quan|thống kê|dashboard|quản trị/i, slugs: ['g19-tong-quan'] },
-  { q: 'Chuông thông báo hoạt động thế nào?', cat: 'tich-hop', type: 'doc', re: /thông báo|chuông|chưa đọc|30 giây|polling/i, slugs: ['g16-chuong-thong-bao'] },
-  { q: 'Tab Tất cả trong chuông thông báo là gì?', cat: 'tich-hop', type: 'doc', re: /Tất cả|gộp|người nhận|ADMIN/i, slugs: ['chuong-thong-bao-gop'] },
+  // H. Hệ thống và hỗ trợ
+  { q: 'Swagger và file bản ghi ở đâu?', cat: 'cau-hinh', type: 'doc', re: /swagger|file|bản ghi|api-docs/i, slugs: ['g38-swagger-file-ban-ghi'] },
+  { q: 'Excel template export import theo bộ cột thế nào?', cat: 'cau-hinh', type: 'doc', re: /Excel|template|export|import|bộ cột/i, slugs: ['g40-excel-template-export-import-theo-bo-cot'] },
+  { q: 'Trang quản trị tổng quan có gì?', cat: 'tong-quan', type: 'doc', re: /tổng quan|thống kê|dashboard|quản trị/i, slugs: ['g19-tong-quan'] },
+  { q: 'Chuông thông báo hoạt động thế nào?', cat: 'tong-quan', type: 'doc', re: /thông báo|chuông|chưa đọc|30 giây|polling/i, slugs: ['g16-chuong-thong-bao'] },
+  { q: 'Tab Tất cả trong chuông thông báo là gì?', cat: 'tong-quan', type: 'doc', re: /Tất cả|gộp|người nhận|ADMIN/i, slugs: ['chuong-thong-bao-gop'] },
   { q: 'Tin thông báo cũ đâu mất rồi?', cat: 'tich-hop', type: 'doc', re: /7 ngày|lưu|thông báo cũ|retention/i, slugs: ['q06-tin-thong-bao-cu-dau-mat-roi'] },
 
   // I. Nhạy cảm / deny

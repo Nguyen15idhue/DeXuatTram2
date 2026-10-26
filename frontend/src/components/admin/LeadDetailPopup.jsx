@@ -249,7 +249,7 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
         const pid = res.data && res.data.id;
         setToast({ message: res.message || 'Tạo đề xuất thành công', type: 'success' });
         setShowCreateProposal(false);
-        if (pid) navigate(`/admin/proposals/view=${pid}`);
+        if (pid) navigate(`/admin/proposals/chi-tiet/${pid}`);
       } else {
         throw new Error(res.message || 'Tạo đề xuất thất bại');
       }

@@ -1,0 +1,158 @@
+const proposalSignatureService = require('../services/proposalSignatureService');
+
+const sendError = (res, error) => {
+  console.error('Proposal signature error:', error);
+  res.status(error.statusCode || 500).json({
+    success: false,
+    message: error.message || 'Lỗi server'
+  });
+};
+
+exports.list = async (req, res) => {
+  try {
+    const { tab = 'all', search = '', page = 1, limit = 10, sign_status = '', my_status = '', mo_hinh = '' } = req.query;
+    const result = await proposalSignatureService.listProposals({
+      user: req.user,
+      tab,
+      search,
+      page,
+      limit,
+      signStatus: sign_status,
+      myStatus: my_status,
+      moHinh: mo_hinh
+    });
+    res.json({
+      success: true,
+      data: result.proposals,
+      pagination: result.pagination,
+      meta: result.meta
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.detail = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getDetail({
+      user: req.user,
+      id: req.params.id
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.sign = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.sign({
+      user: req.user,
+      id: req.params.id,
+      ip: req.ip
+    });
+    res.json({ success: true, data: result, message: 'Đã ký BCĐX' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.reject = async (req, res) => {  try {
+    const result = await proposalSignatureService.reject({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã từ chối duyệt và gửi yêu cầu cập nhật lại BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.requestRework = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.requestRework({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã yêu cầu làm lại BCĐX và chuyển đề xuất về bước lập BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.uploadSignedFile = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await proposalSignatureService.uploadSignedFile({
+      user: req.user,
+      id: req.params.id,
+      files: body.files,
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.exportFile = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getExportFile({
+      user: req.user,
+      id: req.params.id
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.downloadSignedDocument = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.getSignedDocument({
+      user: req.user,
+      id: req.params.id
+    });
+    const originalName = String(result.original_name || 'BCDX');
+    const filename = originalName
+      .replace(/[\\/\r\n"]/g, '_');
+    const safeFilename = filename.replace(/[^\x20-\x7E]/g, '_');
+    const encodedFilename = encodeURIComponent(filename);
+    res.setHeader('Content-Type', result.mime_type || 'application/octet-stream');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    res.setHeader('Content-Length', result.bytes.length);
+    res.send(result.bytes);
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.signatureImage = async (req, res) => {
+  try {
+    const filePath = await proposalSignatureService.getSignatureImagePath({
+      user: req.user,
+      id: req.params.id,
+      configId: req.params.configId
+    });
+    res.sendFile(filePath);
+  } catch (error) {
+    sendError(res, error);
+  }
+};

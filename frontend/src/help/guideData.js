@@ -1,12 +1,10 @@
 import { groupsGuide } from './guideData.groups';
 import { flowsGuide } from './guideData.flows';
-import { integrationsGuide } from './guideData.integrations';
 import { startGuide } from './guideData.start';
 
 export const GUIDE = {
   groups: { ...groupsGuide, sections: [startGuide, ...groupsGuide.sections] },
   flows: flowsGuide,
-  integrations: integrationsGuide,
 };
 
 const stepById = {};

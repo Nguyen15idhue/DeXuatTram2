@@ -1,4 +1,12 @@
+import { notifyProposalTaskCountsChanged } from '../utils/proposalTaskCounts';
+
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+const runProposalTaskMutation = async (request) => {
+  const response = await request();
+  if (response?.success === true) notifyProposalTaskCountsChanged();
+  return response;
+};
 
 const fileStamp = () => {
   const d = new Date();
@@ -369,16 +377,22 @@ export const adminProposalService = {
     return api.getWithAuth(`/admin/proposals/${id}`, token);
   },
   updateStatus(id, status, token, reason, force) {
-    return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token));
+  },
+  pauseProposal(id, reason, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/pause`, { reason }, token));
+  },
+  resumeProposal(id, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/resume`, {}, token));
   },
   convertToStation(id, data, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token));
   },
   update(id, data, token) {
-    return api.putWithAuth(`/admin/proposals/${id}`, data, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposals/${id}`, data, token));
   },
   delete(id, token) {
-    return api.deleteWithAuth(`/admin/proposals/${id}`, token);
+    return runProposalTaskMutation(() => api.deleteWithAuth(`/admin/proposals/${id}`, token));
   },
   duplicates(minM, maxM, token) {
     return api.getWithAuth(`/admin/proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
@@ -390,19 +404,197 @@ export const adminProposalService = {
     return api.getWithAuth(`/admin/proposals/${id}/completeness`, token);
   },
   confirmInfo(id, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/confirm-info`, {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/confirm-info`, {}, token));
   },
   reopenInfo(id, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/reopen-info`, {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/reopen-info`, {}, token));
   },
   extendDeadline(id, data, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token));
   },
   extendInfo(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}/extend-info`, token);
   },
   confirmInfoBatch(token, limit) {
-    return api.postWithAuth('/admin/proposals/confirm-info-batch', { limit: limit || 500 }, token);
+    return runProposalTaskMutation(() => api.postWithAuth('/admin/proposals/confirm-info-batch', { limit: limit || 500 }, token));
+  }
+};
+
+export const proposalRequestService = {
+  getAll(params, token) {
+    const qs = params ? `?${params}` : '';
+    return api.getWithAuth(`/admin/proposal-requests${qs}`, token);
+  },
+  getTypes(token) {
+    return api.getWithAuth('/admin/proposal-requests/types', token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-requests/filter-options', token);
+  },
+  getUpdateContext(id, token) {
+    return api.getWithAuth(`/admin/proposal-requests/${id}/update-context`, token);
+  },
+  updateProposal(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-requests/${id}/proposal`, data || {}, token));
+  },
+  complete(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-requests/${id}/complete`, data || {}, token));
+  }
+};
+
+export const proposalGradingService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-grading${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-grading/${id}`, token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-grading/filter-options', token);
+  },
+  saveDisplayConfig(data, token) {
+    return api.putWithAuth('/admin/proposal-grading/display-config', data || {}, token);
+  },
+  requestSupplement(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-grading/${id}/request-supplement`, data || {}, token));
+  },
+  update(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-grading/${id}`, data, token));
+  }
+};
+
+export const proposalLayoutService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-layouts${qs}`, token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-layouts/filter-options', token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-layouts/${id}`, token);
+  },
+  updateLayout(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-layouts/${id}`, data || {}, token));
+  },
+  requestSupplement(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-layouts/${id}/request-supplement`, data || {}, token));
+  },
+  cancel(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-layouts/${id}/cancel`, data || {}, token));
+  }
+};
+
+export const proposalReportService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-reports${qs}`, token);
+  },
+  getFilterOptions(token) {
+    return api.getWithAuth('/admin/proposal-reports/filter-options', token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-reports/${id}`, token);
+  },
+  upload(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token));
+  },
+  requestRevision(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token));
+  }
+};
+
+export const proposalApprovalService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-approvals${qs}`, token);
+  },
+  getProposal(id, token) {
+    return api.getWithAuth(`/admin/proposal-approvals/${id}`, token);
+  },
+  requestUpdate(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/request-update`, data || {}, token));
+  },
+  tgdReject(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/tgd-reject`, data || {}, token));
+  },
+  getSignatureConfig(id, token) {
+    return api.getWithAuth(`/admin/proposal-approvals/${id}/signature-config`, token);
+  },
+  getSignerCandidates(id, token) {
+    return api.getWithAuth(`/admin/proposal-approvals/${id}/signer-candidates`, token);
+  },
+  configureSignature(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/signature-config`, data || {}, token));
+  }
+};
+
+export const proposalSignatureService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-signatures${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}`, token);
+  },
+  sign(id, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/sign`, {}, token));
+  },
+  reject(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/reject`, data || {}, token));
+  },
+  requestRework(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/request-rework`, data || {}, token));
+  },
+  uploadSignedFile(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/signed-file`, data || {}, token));
+  },
+  getExportFile(id, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
+  },
+  async downloadSignedDocument(id, token) {
+    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/signed-document`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = 'Không tải được file BCĐX đã ký';
+      const body = await parseJsonSafe(response);
+      if (body?.message) message = body.message;
+      throw new Error(message);
+    }
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const extension = response.headers.get('Content-Type')?.includes('pdf') ? '.pdf' : '.docx';
+    return {
+      blob: await response.blob(),
+      filename: parseDispositionFilename(contentDisposition) || `BCDX${extension}`
+    };
+  }
+};
+
+export const proposalReviewService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/proposal-reviews${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/proposal-reviews/${id}`, token);
+  },
+  requestRegrade(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/request-regrade`, data || {}, token));
+  },
+  toTgd(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/to-tgd`, data || {}, token));
+  },
+  cancel(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/cancel`, data || {}, token));
+  },
+  approve(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/approve`, data || {}, token));
+  },
+  reject(id, data, token) {
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/reject`, data || {}, token));
   }
 };
 
@@ -438,6 +630,9 @@ export const myProposalService = {
   },
   extendInfo(id, token) {
     return api.getWithAuth(`/my-proposals/${id}/extend-info`, token);
+  },
+  uploadReport(id, data, token) {
+    return api.postWithAuth(`/my-proposals/${id}/report`, data || {}, token);
   }
 };
 
@@ -453,6 +648,9 @@ export const adminUserService = {
   },
   getAllWithParams(queryString, token) {
     return api.getWithAuth(`/admin/users?${queryString}`, token);
+  },
+  getOptions(token) {
+    return api.getWithAuth('/admin/users/options/all', token);
   },
   getById(id, token) {
     return api.getWithAuth(`/admin/users/${id}`, token);
@@ -570,8 +768,8 @@ export const formService = {
   syncPreview(id, token) {
     return api.getWithAuth(`/forms/${id}/sync-preview`, token);
   },
-  syncFromCreate(id, data, token) {
-    return api.postWithAuth(`/forms/${id}/sync-from-create`, data, token);
+  syncFromCreate(id, token) {
+    return api.postWithAuth(`/forms/${id}/sync-from-create`, {}, token);
   }
 };
 
@@ -905,209 +1103,6 @@ export const formulaService = {
   }
 };
 
-export const apiConfigService = {
-  getAll(queryString, token) {
-    return api.getWithAuth(`/admin/api-configs?${queryString || ''}`, token);
-  },
-  getById(id, token) {
-    return api.getWithAuth(`/admin/api-configs/${id}`, token);
-  },
-  create(data, token) {
-    return api.postWithAuth('/admin/api-configs', data, token);
-  },
-  update(id, data, token) {
-    return api.putWithAuth(`/admin/api-configs/${id}`, data, token);
-  },
-  delete(id, token) {
-    return api.deleteWithAuth(`/admin/api-configs/${id}`, token);
-  },
-  testConnection(id, token) {
-    return api.postWithAuth(`/admin/api-configs/${id}/test`, {}, token);
-  },
-  syncPersonnel(id, token) {
-    return api.postWithAuth(`/admin/api-configs/${id}/sync-personnel`, {}, token);
-  },
-  rotateWebhookSecret(id, token) {
-    return api.postWithAuth(`/admin/api-configs/${id}/webhook-secret/rotate`, {}, token);
-  },
-  testWebhook(id, data, token) {
-    return api.postWithAuth(`/admin/api-configs/${id}/webhook-test`, data, token);
-  }
-};
-
-export const webhookConfigService = {
-  list(token) {
-    return api.getWithAuth('/admin/webhook-configs', token);
-  },
-  create(data, token) {
-    return api.postWithAuth('/admin/webhook-configs', data, token);
-  },
-  rotate(id, token) {
-    return api.postWithAuth(`/admin/webhook-configs/${id}/rotate`, {}, token);
-  },
-  setActive(id, isActive, token) {
-    return api.putWithAuth(`/admin/webhook-configs/${id}/active`, { is_active: isActive }, token);
-  },
-  remove(id, token) {
-    return api.deleteWithAuth(`/admin/webhook-configs/${id}`, token);
-  },
-  testSend(data, token) {
-    return api.postWithAuth('/admin/webhook-configs/test-send', data, token);
-  },
-  testSendWork(data, token) {
-    return api.postWithAuth('/admin/webhook-configs/test-send-work', data, token);
-  },
-  inboundLogs(params, token) {
-    const qs = new URLSearchParams();
-    Object.entries(params || {}).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
-    });
-    return api.getWithAuth(`/admin/webhook-configs/inbound-logs?${qs.toString()}`, token);
-  }
-};
-
-export const automationService = {
-  list(token) {
-    return api.getWithAuth('/admin/automations', token);
-  },
-  listByType(type, token) {
-    return api.getWithAuth(`/admin/automations/type/${type}`, token);
-  },
-  create(data, token) {
-    return api.postWithAuth('/admin/automations', data, token);
-  },
-  get(key, token) {
-    return api.getWithAuth(`/admin/automations/${key}`, token);
-  },
-  update(key, data, token) {
-    return api.putWithAuth(`/admin/automations/${key}`, data, token);
-  },
-  testLogin(key, data, token) {
-    return api.postWithAuth(`/admin/automations/${key}/test-login`, data || {}, token);
-  },
-  runManual(key, proposalCode, token) {
-    return api.postWithAuth(`/admin/automations/${key}/run`, { proposal_code: proposalCode }, token);
-  },
-  runs(key, params, token) {
-    const qs = new URLSearchParams();
-    Object.entries(params || {}).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
-    });
-    return api.getWithAuth(`/admin/automations/${key}/runs?${qs.toString()}`, token);
-  },
-  runDetail(key, id, token) {
-    return api.getWithAuth(`/admin/automations/${key}/runs/${id}`, token);
-  },
-  getByKey(key, token) {
-    return api.getWithAuth(`/admin/automations/${key}`, token);
-  },
-  syncVersions(key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.getWithAuth(`/admin/automations/sync/versions${qs}`, token);
-  },
-  syncRefreshAll(key, templateNames, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    const body = templateNames && templateNames.length > 0 ? { template_names: templateNames } : {};
-    return api.postWithAuth(`/admin/automations/sync/refresh-all${qs}`, body, token);
-  },
-  syncFields(version, refresh, key, token) {
-    let qs = `?version=${encodeURIComponent(version)}`;
-    if (refresh) qs += '&refresh=1';
-    if (key) qs += `&key=${encodeURIComponent(key)}`;
-    return api.getWithAuth(`/admin/automations/sync/fields${qs}`, token);
-  },
-  syncMappingsGet(version, key, token) {
-    let qs = `?version=${encodeURIComponent(version)}`;
-    if (key) qs += `&key=${encodeURIComponent(key)}`;
-    return api.getWithAuth(`/admin/automations/sync/mappings${qs}`, token);
-  },
-  syncMappingsPut(version, items, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.putWithAuth(`/admin/automations/sync/mappings?version=${encodeURIComponent(version)}${key ? `&key=${encodeURIComponent(key)}` : ''}`, { items }, token);
-  },
-  syncCopyMap(fromVersion, toVersion, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/copy-map${qs}`, { from_version: fromVersion, to_version: toVersion }, token);
-  },
-  syncAutoMatch(version, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/auto-match${qs}`, { version }, token);
-  },
-  specialNodesList(token) {
-    return api.getWithAuth('/admin/automations/special-nodes', token);
-  },
-  specialNodesCreate(data, token) {
-    return api.postWithAuth('/admin/automations/special-nodes', data, token);
-  },
-  specialNodesUpdate(key, data, token) {
-    return api.putWithAuth(`/admin/automations/special-nodes/${encodeURIComponent(key)}`, data, token);
-  },
-  specialNodesDelete(key, token) {
-    return api.deleteWithAuth(`/admin/automations/special-nodes/${encodeURIComponent(key)}`, token);
-  },
-  syncBulkPlan(fromVersion, toVersions, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/bulk-plan${qs}`, { from_version: fromVersion, to_versions: toVersions }, token);
-  },
-  syncBulkApply(fromVersion, toVersions, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/bulk-apply${qs}`, { from_version: fromVersion, to_versions: toVersions, mode: 'merge' }, token);
-  },
-  syncMappingsDelete(version, key, token) {
-    let qs = `?version=${encodeURIComponent(version)}`;
-    if (key) qs += `&key=${encodeURIComponent(key)}`;
-    return api.deleteWithAuth(`/admin/automations/sync/mappings${qs}`, token);
-  },
-  syncSheetHeaders(tab, key, token) {
-    let qs = `?tab=${encodeURIComponent(tab)}`;
-    if (key) qs += `&key=${encodeURIComponent(key)}`;
-    return api.getWithAuth(`/admin/automations/sync/sheet-headers${qs}`, token);
-  },
-  syncSheetAddColumn(tab, header, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/sheet-column${qs}`, { tab, header }, token);
-  },
-  syncSheetInsertColumn(tab, index, header, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/sheet-column-insert${qs}`, { tab, index, header }, token);
-  },
-  syncTest(data, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/test${qs}`, data || {}, token);
-  },
-  syncRun(version, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/run${qs}`, version ? { version } : {}, token);
-  },
-  syncRuns(params, key, token) {
-    const qs = new URLSearchParams();
-    Object.entries(params || {}).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') qs.set(k, v);
-    });
-    if (key) qs.set('key', key);
-    return api.getWithAuth(`/admin/automations/sync/runs?${qs.toString()}`, token);
-  },
-  syncRunDetail(id, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.getWithAuth(`/admin/automations/sync/runs/${id}${qs}`, token);
-  },
-  syncListTemplates(key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.getWithAuth(`/admin/automations/sync/templates${qs}`, token);
-  },
-  syncGetTemplateVersions(processIds, key, token) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : '';
-    return api.postWithAuth(`/admin/automations/sync/template-versions${qs}`, { process_ids: processIds }, token);
-  }
-};
-
-export const externalUserService = {
-  getAll(system, token) {
-    const qs = system ? `?system=${encodeURIComponent(system)}` : '';
-    return api.getWithAuth(`/admin/external-users${qs}`, token);
-  }
-};
-
 export const notificationService = {
   getAll(page = 1, limit = 20, token) {
     return api.getWithAuth(`/notifications?page=${page}&limit=${limit}`, token);
@@ -1123,102 +1118,6 @@ export const notificationService = {
   },
   markAllRead(token) {
     return api.putWithAuth('/notifications/read-all', {}, token);
-  }
-};
-
-export const fieldMappingService = {
-  getTypes(token, configId) {
-    const url = configId ? `/admin/field-mappings/types?configId=${configId}` : '/admin/field-mappings/types';
-    return api.getWithAuth(url, token);
-  },
-  getAllByConfig(configId, token) {
-    return api.getWithAuth(`/admin/field-mappings/${configId}`, token);
-  },
-  getById(id, token) {
-    return api.getWithAuth(`/admin/field-mappings/detail/${id}`, token);
-  },
-  create(configId, data, token) {
-    return api.postWithAuth(`/admin/field-mappings/${configId}`, data, token);
-  },
-  update(id, data, token) {
-    return api.putWithAuth(`/admin/field-mappings/${id}`, data, token);
-  },
-  delete(id, token) {
-    return api.deleteWithAuth(`/admin/field-mappings/${id}`, token);
-  },
-  preview(data, token) {
-    return api.postWithAuth('/admin/field-mappings/preview', data, token);
-  },
-  updateMetadata(configId, metadata, token) {
-    return api.putWithAuth(`/admin/field-mappings/metadata/${configId}`, metadata, token);
-  },
-  getSelectedFields(configId, token) {
-    return api.getWithAuth(`/admin/field-mappings/selected-fields/${configId}`, token);
-  },
-  updateSelectedFields(configId, fields, token) {
-    return api.putWithAuth(`/admin/field-mappings/selected-fields/${configId}`, fields, token);
-  },
-  getUsedInDesc(configId, token) {
-    return api.getWithAuth(`/admin/field-mappings/used-in-desc/${configId}`, token);
-  }
-};
-
-export const oneOfficeSyncService = {
-  push(data, token) {
-    return api.postWithAuth('/admin/1office/push', data, token);
-  },
-  pull(data, token) {
-    return api.postWithAuth('/admin/1office/pull', data, token);
-  },
-  link(data, token) {
-    return api.postWithAuth('/admin/1office/link', data, token);
-  },
-  unlink(data, token) {
-    return api.postWithAuth('/admin/1office/unlink', data, token);
-  },
-  searchContacts(configId, query, token) {
-    return api.getWithAuth(`/admin/1office/contacts/search?configId=${configId}&q=${encodeURIComponent(query || '')}`, token);
-  },
-  getJobDetail(jobId, token) {
-    return api.getWithAuth(`/admin/queue-logs/${jobId}`, token);
-  },
-  getTemplate(configId, token) {
-    return api.getWithAuth(`/admin/1office/template?configId=${configId}`, token);
-  },
-  updateTemplate(configId, template, token) {
-    return api.putWithAuth('/admin/1office/template', { configId, template }, token);
-  },
-  previewDesc(configId, proposalId, token) {
-    return api.postWithAuth('/admin/1office/preview', { apiConfigId: configId, proposalId }, token);
-  },
-  restorePreview(code, token, apiConfigId = 3) {
-    return api.postWithAuth('/admin/1office/restore/preview', { code, apiConfigId }, token);
-  },
-  restoreConfirm(code, overrides, token, apiConfigId = 3, fileAssignments = {}) {
-    return api.postWithAuth('/admin/1office/restore/confirm', { code, overrides, apiConfigId, fileAssignments }, token);
-  }
-};
-
-export const queueLogService = {
-  getAll(filters, token) {
-    const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') params.set(k, v);
-    });
-    return api.getWithAuth(`/admin/queue-logs?${params.toString()}`, token);
-  },
-  getStats(apiConfigId, token) {
-    const q = apiConfigId ? `?api_config_id=${apiConfigId}` : '';
-    return api.getWithAuth(`/admin/queue-logs/stats${q}`, token);
-  },
-  getById(id, token) {
-    return api.getWithAuth(`/admin/queue-logs/${id}`, token);
-  },
-  retry(id, token) {
-    return api.postWithAuth(`/admin/queue-logs/${id}/retry`, {}, token);
-  },
-  cancel(id, token) {
-    return api.postWithAuth(`/admin/queue-logs/${id}/cancel`, {}, token);
   }
 };
 

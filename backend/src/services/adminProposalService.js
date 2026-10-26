@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code'];
+const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note', 'review_level', 'quy_hoach_score', 'quy_hoach_note', 'phap_ly_score', 'phap_ly_note'];
 
 exports.getBranchUserIds = async (salesId) => {
   const adminUserService = require('./adminUserService');
@@ -34,9 +34,28 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     where.push('(' + ors.join(' OR ') + ')');
   }
 
+  if (scope.role === 'NPP' && scope.branchIds) {
+    if (scope.branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${scope.branchIds.map(() => '?').join(',')})`);
+      params.push(...scope.branchIds.map(Number));
+    }
+  }
+
+  // CTV: only see their own proposals (where they are the creator/user_id)
+  if (scope.role === 'CTV' && scope.userId) {
+    where.push('p.user_id = ?');
+    params.push(Number(scope.userId));
+  }
+
   if (status) {
     where.push('p.status = ?');
     params.push(status);
+  }
+
+  if (Array.isArray(extra.statuses) && extra.statuses.length > 0) {
+    where.push(`p.status IN (${extra.statuses.map(() => '?').join(',')})`);
+    params.push(...extra.statuses);
   }
 
   if (uuTien) {
@@ -73,8 +92,17 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   else if (extra.leadLink === 'no') { where.push('p.journey_id IS NULL'); }
   if (extra.province) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) = ?"); params.push(extra.province); }
   if (extra.region) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) = ?"); params.push(extra.region); }
+  if (extra.model) { where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) = ?"); params.push(extra.model); }
   if (extra.department) { where.push("JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) = ?"); params.push(extra.department); }
   if (extra.ownerUserId) { where.push('p.user_id = ?'); params.push(Number(extra.ownerUserId)); }
+  if (extra.managerUserId) {
+    const branchIds = await require('./adminUserService').getBranchIds(Number(extra.managerUserId));
+    if (branchIds.length === 0) where.push('1 = 0');
+    else {
+      where.push(`p.user_id IN (${branchIds.map(() => '?').join(',')})`);
+      params.push(...branchIds.map(Number));
+    }
+  }
   const dateField = extra.dateField === 'updated_at' ? 'p.updated_at' : 'p.created_at';
   if (extra.dateFrom) { where.push(`${dateField} >= ?`); params.push(`${String(extra.dateFrom).slice(0, 10)} 00:00:00`); }
   if (extra.dateTo) { where.push(`${dateField} <= ?`); params.push(`${String(extra.dateTo).slice(0, 10)} 23:59:59`); }
@@ -91,14 +119,18 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
-            p.contact_1office_code, p.sync_status, p.station_id,
+            p.station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
-            p.pending_station_code,
+            p.paused_from_status, p.paused_at,
+            p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
+            p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
             u.full_name as user_name, u.email as user_email,
+            u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             p.journey_id,
             l.id AS lead_id, l.lead_code AS lead_code
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
+    LEFT JOIN users manager ON manager.id = u.parent_id
     LEFT JOIN leads l ON l.journey_id = p.journey_id AND l.deleted_at IS NULL
     ${whereClause}
     ORDER BY p.created_at DESC
@@ -118,7 +150,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
 
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT id, user_id,
+    `SELECT id, user_id, status,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id
      FROM station_proposals WHERE id = ?`, [id]);
@@ -166,6 +198,27 @@ exports.updateStatus = async (id, status, opts = {}) => {
     ip: opts.ip || null,
     isSuperAdmin: opts.isSuperAdmin === true,
     force: opts.force === true
+  });
+};
+
+exports.pauseProposal = async (id, opts = {}) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  return proposalLifecycle.pauseProposal(id, {
+    reason: opts.reason,
+    actorId: opts.reviewerId || null,
+    actorRole: opts.actorRole || null,
+    source: 'user',
+    ip: opts.ip || null
+  });
+};
+
+exports.resumeProposal = async (id, opts = {}) => {
+  const proposalLifecycle = require('./proposalLifecycle');
+  return proposalLifecycle.resumeProposal(id, {
+    actorId: opts.reviewerId || null,
+    actorRole: opts.actorRole || null,
+    source: 'user',
+    ip: opts.ip || null
   });
 };
 
@@ -232,7 +285,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
     dynamicData.sales_quan_ly = dynamicData.nguoi_phu_trach;
   }
 
-  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, contact_1office_code FROM station_proposals WHERE id = ?', [id]);
+  const [existing] = await pool.query('SELECT user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, status, custom_data, note, chot_so_luong_tru FROM station_proposals WHERE id = ?', [id]);
   const current = existing.length > 0 && existing[0].custom_data
     ? (typeof existing[0].custom_data === 'string' ? JSON.parse(existing[0].custom_data) : existing[0].custom_data)
     : {};
@@ -254,12 +307,14 @@ exports.updateProposal = async (id, data, opts = {}) => {
     area: fixedData.area !== undefined ? fixedData.area : prev.area,
     land_type: fixedData.land_type !== undefined ? fixedData.land_type : prev.land_type,
     description: fixedData.description !== undefined ? fixedData.description : prev.description,
+    note: fixedData.note !== undefined ? fixedData.note : prev.note,
+    chot_so_luong_tru: fixedData.chot_so_luong_tru !== undefined ? fixedData.chot_so_luong_tru : prev.chot_so_luong_tru,
     status: prev.status
   };
 
   await pool.query(
-    `UPDATE station_proposals SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
-    [next.latitude, next.longitude, next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.status, customData, id]
+    `UPDATE station_proposals SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, status = ?, custom_data = ?, updated_at = NOW() WHERE id = ?`,
+    [next.latitude, next.longitude, next.owner_name, next.owner_phone, next.address, next.area, next.land_type, next.description || '', next.note ?? null, dynamicUtils.toJsonParam(next.chot_so_luong_tru), next.status, customData, id]
   );
 
   try {
@@ -303,8 +358,7 @@ exports.updateProposal = async (id, data, opts = {}) => {
   const CODE_DRIVERS = ['mo_hinh_dau_tu', 'ma_tinh', 'province'];
   const driversChanged = CODE_DRIVERS.some(k => dynamicData[k] !== undefined && String(dynamicData[k] ?? '') !== String(current[k] ?? ''));
     const codeValid = typeof current.ma_de_xuat === 'string' && /^[A-Z0-9_]+_\d{4}$/.test(current.ma_de_xuat);
-  const isLinked = existing.length > 0 && !!existing[0].contact_1office_code;
-  const exclude = (!isLinked && (driversChanged || !codeValid)) ? [] : ['ma_de_xuat'];
+  const exclude = (driversChanged || !codeValid) ? [] : ['ma_de_xuat'];
   const postResults = await dynamicEngineService.computePostFormulas('station_proposals', id, mergedDynamic, null, null, { excludeKeys: exclude });
   const finalDynamic = { ...mergedDynamic, ...postResults };
   let filesRenamed = 0;
@@ -334,10 +388,5 @@ exports.updateProposal = async (id, data, opts = {}) => {
     });
   } catch { infoCompleted = null; }
 
-  let autoPush = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    autoPush = await proposalLifecycle.autoPushOnUpdate(id, opts.actorId || null);
-  } catch { autoPush = null; }
-  return { autoPush, infoCompleted };
+  return { infoCompleted };
 };

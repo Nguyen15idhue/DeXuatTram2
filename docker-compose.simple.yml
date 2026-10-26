@@ -24,9 +24,12 @@ services:
       - .env
     environment:
       - TZ=Asia/Ho_Chi_Minh
+      - SIGNATURE_FONT_DIR=/app/signature-fonts
+      - SIGNATURE_FONT_REGULAR=${SIGNATURE_FONT_REGULAR:-}
+      - SIGNATURE_FONT_BOLD=${SIGNATURE_FONT_BOLD:-}
     volumes:
       - uploads_data:/app/storage/uploads
-      - ./secrets:/app/secrets:ro
+      - ${SIGNATURE_FONT_HOST_DIR:-/usr/share/fonts/truetype/msttcorefonts}:/app/signature-fonts:ro
     depends_on:
       mysql:
         condition: service_healthy

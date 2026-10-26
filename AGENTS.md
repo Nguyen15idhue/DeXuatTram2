@@ -1,20 +1,15 @@
 # AGENTS.md
-
 ## 1. Project Overview
-
 ```
 Project: TMT-EGREEN System
 Purpose: Quản lý trạm sạc, hiển thị trên bản đồ, đề xuất vị trí trạm
 Stack:   React 18 + Vite | Node.js 20 + Express | MySQL 8 | Leaflet | Docker Compose
 Repo:    https://github.com/Nguyen15idhue/DeXuatTram2
 ```
-
 ## 2. Architecture
-
 ```
 Browser → Frontend (Vite, :5173) → REST API (/api) → Backend (Express, :3000) → MySQL (:3306)
 ```
-
 ```
 /frontend    React + Vite (JS, không TypeScript)
 /backend     Node.js + Express
@@ -26,53 +21,44 @@ Browser → Frontend (Vite, :5173) → REST API (/api) → Backend (Express, :30
 /docs        Tài liệu theo mốc (0–8)
 Swagger UI:  http://localhost:3000/api-docs
 ```
-
 ## 3. Business Entities
-
 ### User
 - Roles: `SUPER_ADMIN`, `ADMIN`, `SALES`, `CTV`, `NPP`, `MKT` (file 25, thay `USER`/`ADMIN` cũ; `NPP` thêm ở migration `77` — **hoạt động y hệt `CTV`**, không có RBAC riêng; `MKT` thêm ở migration `139` — quản lý Leads qua `requireLeadManager`, xem báo cáo qua `requireReportViewer`, KHÔNG vào Dashboard)
 - Cây 2 tầng: `CTV`/`NPP.parent_id` → `SALES` (GĐKV) → `SALES` (GĐTT cùng Trung tâm) — migration 90–92 + script `seed-sales-tree.js`. Gán cây: form **tạo user tự gợi ý parent** theo phòng ban + chức vụ (GĐKV mới → GĐTT cùng trung tâm; CTV/NPP → GĐKV cùng phòng ban, tự chọn khi duy nhất; vẫn sửa tay được); popup view/edit user cũng có mục Phân nhánh cho target GĐKV. Scope nhánh **đệ quy** (`adminUserService.getBranchIds`): GĐTT thấy mình + GĐKV + CTV dưới quyền; GĐKV thấy mình + CTV trực tiếp. **Xem ngược lên**: SALES được `GET /admin/users/:id` của cấp trên trong chuỗi `parent_id` (`getAncestorIds`, chỉ xem — `PUT` ngoài nhánh vẫn 403, trả `_scope: 'branch'|'ancestor'`); danh sách user của SALES (`getAllUsers`) gồm nhánh + cấp trên (cây hiện GĐTT phía trên; nút Sửa/Khóa/Xóa vẫn gate theo rank nên cấp trên chỉ Xem); options user (`/options/all`) của SALES = nhánh + cấp trên, của CTV/NPP = mình + cấp trên (để field `user` như GĐTTKD hiện tên ở form edit; `UserField` tự fetch bù user theo id khi vắng trong options)
-- `external_id` map hệ ngoài (unique, = Mã NV 1Office)
 - Field `department` (Phòng ban) + `chuc_vu` (Chức vụ): select options thủ công từ Excel nhân sự (10 PB / 16 CD); `chuc_vu` dùng phân biệt GĐTT/GĐKV trong hiển thị
 - `token_version` tăng khi đổi mật khẩu → revoke JWT cũ
 - Status: `ACTIVE`, `LOCKED`
-
 ### Station (trạm đã có thật)
 - Status: `PLANNING`, `ACTIVE`, `DEPLOYING`, `REJECTED` (`REJECTED` của trạm **tách biệt** `REJECTED` của proposal)
 - `mo_hinh_tram`: select TDT/LK/NQ/**NQ_LK** (migration `86` thêm `NQ_LK` "Nhượng quyền + Liên kết" để map 1:1 với đề xuất; label đầy đủ, value viết tắt)
 - `loai_uu_tien`: formula post — TDT→1 (Cấp 1), LK/NQ/NQ_LK/trống→2 (Cấp 2)
-
 ### Station Proposal (đề xuất trạm mới)
-- Status: **8 giá trị** `PENDING`, `REVIEWING`, `APPROVED`, `REJECTED`, `CANCELLED` (Đã hủy, terminal), `CONTRACT_SIGNED` (Ký thành công), `CONTRACT_FAILED` (Ký thất bại), `ARCHIVED` (Đã lưu trữ, ngang hàng `APPROVED`: duyệt nhưng ưu tiên thấp, cất kho; vào từ `REVIEWING`, ra `CONTRACT_SIGNED`/`CANCELLED`) — migration `86` (7 status) + `94` (`ARCHIVED`). Ma trận cứng trong `proposalLifecycle.js` (đường duy nhất đổi status, sai → 400 + log denied); `PUT /admin/proposals/:id` cấm đổi `status`. **`CANCELLED` vào được từ MỌI trạng thái chưa kết thúc** (`PENDING`, `REVIEWING`, `PRINCIPLE_APPROVED`, `APPROVED`, `ARCHIVED`, `CONTRACT_SIGNED`, `CONTRACT_FAILED`, `REJECTED`) — menu 3 chấm ở bảng đề xuất luôn có "Hủy đề xuất" (bắt buộc nhập lý do), trừ chính `CANCELLED` (terminal, chỉ SUPER_ADMIN "Mở lại khẩn cấp")
+- Status: **22 giá trị** — 9 cũ: `PENDING`, `REVIEWING`, `PRINCIPLE_APPROVED`, `APPROVED`, `REJECTED`, `CANCELLED` (Đã hủy, terminal), `CONTRACT_SIGNED` (Ký thành công), `CONTRACT_FAILED` (Ký thất bại), `ARCHIVED` (Đã lưu trữ, ngang hàng `APPROVED`: duyệt nhưng ưu tiên thấp, cất kho; vào từ `REVIEWING`, ra `CONTRACT_SIGNED`/`CANCELLED`) — migration `86` (7 status) + `94` (`ARCHIVED`); **13 mới của quy trình v2**: `GRADING`, `GDTTKD_EVALUATING`, `RE_GRADING`, `RE_GDTTKD_EVALUATING` (GĐTTKD xem xét lại, migration `177`), `TGD_REVIEW`, `DESIGNING`, `INFOR_WAITING` (Chờ bổ sung thông tin để vẽ layout, migration `178`), `PROPOSAL_REPORT_CREATING`, `PROPOSAL_REPORT_RE_CREATING` (Yêu cầu tạo lại BCĐX, migration `179`), `PROPOSAL_REPORT_REVIEWING`, `PROPOSAL_REPORT_UPDATING` (Chờ cập nhật lại BCĐX, migration `180`), `SIGNATURE_PENDING`, `COMPLETED` — migration `174` + `177` + `178` + `179` + `180` (enum + option nhãn/màu/icon + ma trận chuyển; hành vi chấm điểm/review ở `docs/8/79`). Ma trận cứng trong `proposalLifecycle.js` (đường duy nhất đổi status, sai → 400 + log denied); `PUT /admin/proposals/:id` cấm đổi `status`. **`CANCELLED` vào được từ MỌI trạng thái chưa kết thúc** (`PENDING`, `REVIEWING`, `PRINCIPLE_APPROVED`, `APPROVED`, `ARCHIVED`, `CONTRACT_SIGNED`, `CONTRACT_FAILED`, `REJECTED`, `GRADING`, `GDTTKD_EVALUATING`, `RE_GRADING`, `RE_GDTTKD_EVALUATING`, `TGD_REVIEW`, `DESIGNING`, `INFOR_WAITING`, `PROPOSAL_REPORT_CREATING`, `PROPOSAL_REPORT_RE_CREATING`, `PROPOSAL_REPORT_REVIEWING`, `PROPOSAL_REPORT_UPDATING`, `SIGNATURE_PENDING`) — menu 3 chấm ở bảng đề xuất luôn có "Hủy đề xuất" (bắt buộc nhập lý do), trừ chính `CANCELLED` (terminal, chỉ SUPER_ADMIN "Mở lại khẩn cấp")
+- `note` (TEXT, nullable — ghi chú / trạng thái chi tiết của từng mốc lớn), `chot_so_luong_tru` (JSON nullable: mảng `{mo_hinh, so_luong, loai_tru, gia_chot, thanh_tien}`), `tong_gia_tri_chot` (DECIMAL nullable) — `note`/`chot_so_luong_tru` migration `174`; bảng chốt + tổng giá trị migration `181`. Modal upload BCĐX bắt buộc nhập bảng trụ chốt; giá lấy từ danh mục hiện tại `dm_loai_tru`, thành tiền = số lượng × giá, tổng được backend tính và lưu. Form Xem/sửa 14 chỉ hiển thị read-only (migration `182`).
+- `review_level` (TINYINT nullable — **Mức độ xem xét**: `1` = GĐTTKD xem xét, `2` = Quy hoạch + Pháp lý chấm lại, `3` = TGĐ xem xét) — migration `177`; field def khóa + cột trong view 8 (`AdminProposalsPage` render nhãn qua `utils/proposalReview.js`); `proposal_requests` đếm lần chấm lại (`RE_GRADE` + `note 'Lần chấm lại: N'`)
+- **Điểm vào (entry-flow)** (`proposalService.resolveInitialStatus`): form tạo đầy đủ → `GRADING` ngay (log `created` ghi `to_status=GRADING` + `syncNoteForProposal` + notify người nhận khâu); **tạo nhanh** (form `purpose='create'` `is_default=0`), guest, tạo từ Lead, tạo từ Điểm sạc EV → `PENDING`. Kiểm tra **tự xác nhận đủ thông tin lúc tạo** dùng bộ trường của **form tạo đầy đủ** (không theo form tạo nhanh). "Xác nhận đã đủ thông tin" ở `PENDING` → tự chuyển `GRADING` (`setInfoCompleted(true)` → `transition`). Luồng v2 chạy nội bộ; `COMPLETED` KHÔNG tự tạo trạm (bước riêng, phiên bản sau)
 - `station_id` FK → `stations.id` (dấu hiệu đề xuất đã thành trạm; proposal giữ `CONTRACT_SIGNED`)
 - `loai_uu_tien`: formula post theo `mo_hinh_dau_tu` — TDT→1, LK/NQ/NQ_LK/trống→2
 - `mo_hinh_dau_tu`: **4 giá trị** `NQ`/`TDT`/`LK`/`NQ_LK` (migration 76). Chọn `NQ_LK` → form hiện **tab lồng** "Nhượng quyền và Liên kết" gồm 2 tab con "Nhượng quyền"/"Liên kết" (xem mục 11 — `layout_config.type:'tabs'`). Mã đề xuất dạng `NQ_LK_HCM_0001` (regex mã cho phép prefix nhiều nhóm `_`)
 - `submission_source`: `user` | `guest`; `tracking_code`, `submitter_ip`
-- Sync 1Office: `contact_1office_id`, `contact_1office_code`, `sync_status`, `last_synced_at`, `last_synced_data`
 - `ma_de_xuat_gen` là cột generated từ `custom_data`
 - `land_type` (Loại đất) là field `fixed` type `select`, 6 lựa chọn (Đất thương mại dịch vụ / khu công nghiệp / giao thông-Bến bãi-Điểm dừng nghỉ / ở / nông nghiệp / khác-chưa xác định) — migration `75`
 - Liên hệ chủ trạm: `chu_tram` (text/json) + `sdt_chu_tram` (phone/json) — migration `103`; map-mode + `GET /stations` trả khi đã đăng nhập (`optionalAuth`), ẩn khi public
-
 ### Lead & Journey (MKT, migration 134–148, xem docs/8/68–69)
 - `business_journeys`: `journey_code` UUID unique (mã chung Lead↔Proposal↔Station), `current_stage` (NEW→ASSIGNED→…→PROPOSAL→STATION→ON, chỉ nâng không hạ; terminal UNQUALIFIED/LOST không bị ghi đè)
 - `leads`: `lead_code` tuần tự `LD-%06d` (UNIQUE + read-only, migration 148), stage/classification/sales_outcome (`sales_outcome=SUCCESS` mới được tạo đề xuất), `assigned_user_id`/`assigned_department`, `custom_data` (bảng `cskh_history`/`tvbh_history` + note), soft delete (`deleted_at`); tạo Lead tự tạo journey + log `lead_created`
 - `lead_assignments`: lịch sử phân chia (đóng cũ bằng `ended_at`, không ghi đè); auto-routing theo Data List `MKT Lead Routing` (vùng→phòng ban) khi classification `TIEM_NANG`
 - `journey_activity_logs`: timeline hợp nhất Lead/Proposal/Station (`lead_created/updated/assigned/classification_changed/stage_changed/proposal_created/proposal_status_changed/proposal_updated/station_created/station_status_changed/station_updated`)
-- `journey_external_refs`: map journey ↔ 1Office (`system/ref_type/external_id` unique, `external_code`)
 - Proposal từ Lead: `POST /api/admin/leads/:id/create-proposal` (prefill 8 field, idempotency key); `station_proposals.journey_id` NULLABLE (migration 137)
-
 ### Dynamic config entities
 - **Field Definition**: 13 types chuẩn (`text`, `textarea`, `number`, `email`, `phone`, `url`, `date`, `datetime`, `boolean`, `select`, `multiselect`, `file`, `formula`) + type `user`. `source` = `fixed` (cột DB) hoặc `json` (trong `custom_data`)
 - **Form**: gắn 1 entity, có `purpose` (`all`/`create`/`view`), field theo `order_index`, section trong `layout_config`
 - **View**: gắn 1 entity, columns có `width`, `sortable`, `filterable`, `visible`
 - **Data List**: `columns_config` JSON `[{key,label,type}]`; rows `data` JSON `{column_key:value}`; hierarchy qua `parent_row_id`
-
 **QUAN TRỌNG:**
 - `Station` và `Station Proposal` là hai entity ĐỘC LẬP — KHÔNG merge, KHÔNG thêm status `PROPOSAL` vào Station
 - `Station` là trạm đã có thật; `Station Proposal` là đề xuất chưa được duyệt
-
 ## 4. Business Rules
-
 ### 4.1. Permissions & Roles
 1. CTV chỉ xem/sửa/xóa proposal của chính mình (theo `user_id`)
 2. SUPER_ADMIN quản lý tất cả; ADMIN quản lý tất cả **trừ tài khoản `SUPER_ADMIN`** (list/get/update/delete/lock đều chặn ở API + ẩn ở UI)
@@ -81,47 +67,51 @@ Swagger UI:  http://localhost:3000/api-docs
 5. SALES chỉ xem trạm (không nút Sửa) dùng `allowEdit={!isSales}` trong `RecordDetailPopup`
 6. SALES đổi trạng thái proposal qua `PUT /admin/proposals/:id/status`; `PUT /admin/proposals/:id` là `requireUserManager` (SALES sửa nội dung đề xuất trong nhánh, chặn ngoài nhánh qua `denyOutsideBranch`, cấm đổi `status`); `POST /admin/proposals/:id/convert-to-station` vẫn `requireAdmin`
 7. Route `/admin/audit-log` cho `ADMIN` + `SALES` (sales chỉ thấy log của mình); `/admin/:entity/:id/files` bọc `RoleRoute` ADMIN_AND_SALES (chặn entity `users` với non-admin)
-8. Nút Retry/Cancel queue chỉ render cho `SUPER_ADMIN`
-9. Tạo trạm từ đề xuất `POST /admin/proposals/:id/convert-to-station` là `requireAdmin` (chỉ `ADMIN`/`SUPER_ADMIN`); tab "Hoạt động đề xuất" (`GET /api/admin/proposal-logs`) phân quyền y hệt lịch sử đồng bộ 1Office
+9. Tạo trạm từ đề xuất `POST /admin/proposals/:id/convert-to-station` là `requireAdmin` (chỉ `ADMIN`/`SUPER_ADMIN`); nhật ký hoạt động đề xuất (`GET /api/admin/proposal-logs`) được phân quyền theo vai trò
 10. MKT (`requireLeadManager` = SUPER_ADMIN/ADMIN/MKT/SALES): quản lý Leads + Excel leads; CTV/NPP gọi `/admin/leads` → 403. MKT vào `/admin` → redirect `/admin/leads` (không thấy Dashboard). Cấu hình báo cáo chỉ SUPER_ADMIN (`requireReportConfigurator`). **Tạo/sửa/xóa Lead** (`POST /`, `DELETE /:id`, `POST /bulk-delete`, import Excel entity `leads`) dùng `requireLeadWriter` = SUPER_ADMIN/ADMIN/MKT (**SALES 403**; Export leads SALES vẫn được trong scope; UI ẩn nút Thêm/Nhập/Xóa/File mẫu với SALES). **Phân chia Lead** (`POST /:id/assign`, `/bulk-assign`, field `assigned_user_id` trong section TVBH): chỉ SUPER_ADMIN/ADMIN/SALES-GĐTT (**MKT 403**; UI ẩn nút Phân chia với MKT). `sameValue` coi mọi giá trị rỗng (`null`/`''`/`[]`/`{}`) là bằng nhau để PUT full-form không 403 ma; đổi `assigned_user_id` qua PUT chỉ check `TIEM_NANG` khi đổi thật
-11. Báo cáo (`/api/admin/reports/*`): aggregate 1 call + scope theo role (SALES theo nhánh được giao; ngoài scope 403, không 404); metric whitelist trong registry (lạ → 400); báo cáo Lead 360 đọc gương 1Office `automation_sync_snapshots` (không đọc live), UI hiện badge giờ sync
+11. Báo cáo (`/api/admin/reports/*`): aggregate 1 call + scope theo role (SALES theo nhánh được giao; ngoài scope 403, không 404); metric whitelist trong registry (lạ → 400); báo cáo Lead 360 chỉ đọc dữ liệu nghiệp vụ nội bộ
 12. `/admin/reports` có 2 phần: **Biểu đồ dữ liệu** (nút "Cài đặt" → chuyển trang sang **edit mode tại chỗ** kiểu Looker Studio: click/chuột phải chọn phần tử, panel Thuộc tính bên phải mặc định thu gọn [tab Thiết lập/Style], thêm/xóa/sửa + lưu/hủy; widget có `dataset`=builder, không có `dataset`=chỉ số hệ thống) và **Hành trình leads** (chọn Lead → `LeadJourneyPopup` inline, không popup). Sửa layout chỉ `SUPER_ADMIN` (`requireReportConfigurator`). Không còn trang `/admin/reports/builder`; mini-builder engine ở `reportBuilderService` (`/builder/datasets|preview`)
-
 ### 4.2. Proposal Lifecycle & Notification
 - Từ chối/hủy đề xuất: **bắt buộc** `reason` (`reject_reason`); lưu `reviewed_by`, `reviewed_at` (`proposalLifecycle.transition`)
-- Duyệt + đẩy (`PENDING → REVIEWING`, lần đầu) → **tự tạo lệnh đẩy 1Office** (queue push, config contact active mặc định; vào lại `REVIEWING` không tạo lệnh mới). FE nút "Duyệt & đẩy" + toast lệnh chờ; push thủ công (`POST /push`, `allowAllStatuses`) mọi trạng thái đều được, auto-push giữ gate (`PENDING`/`REVIEWING`, riêng `APPROVED` qua `allowStatuses`). **Chống đẩy trùng**: `pushTo1Office` trả job đang chờ sẵn (`deduped: true`) thay vì tạo job mới khi đã có push `pending/processing` cùng đề xuất + config; worker gộp `status_id` vào đúng 1 call `contact/update` khi contact đã tồn tại (contact mới giữ 2 bước insert rồi set status), mỗi job chỉ tạo 1 quy trình bên 1Office. Được duyệt **chưa thành trạm thật**
-- **`APPROVED` và `CONTRACT_*` tạm cho chỉnh tay** (nút demo, log `manual_override=1`); chính thức do webhook 1Office gọi `POST /api/webhooks/oneoffice/proposal-status` (secret `ONEOFFICE_WEBHOOK_SECRET`, idempotent `event_id`, response đóng băng cho BPA Success path, log inbound không qua worker)
 - Auto vòng đời (`proposalLifecycleWorker`, cron `lifecycle_check_cron` mặc định `*/5 * * * *`): `CONTRACT_FAILED` quá 30 ngày → `CANCELLED`; `CONTRACT_SIGNED` quá 90 ngày + `station_id IS NULL` → tạo `stations` (`DEPLOYING`, tên `Trạm {mã đề xuất}`, mô hình 1:1). Thất bại → log `auto_failed`, retry tới `lifecycle_max_retries` (mặc định 5) rồi notify ADMIN/SUPER kiểm tra tay (config ở `proposal_lifecycle_configs`)
 - Đổi status → tạo `notifications` cho chủ đề xuất (luôn tạo). **11 loại** + màu: `REJECTED` đỏ, `APPROVED` xanh lá, `PENDING` vàng, `REVIEWING` xanh lam, `RESUBMITTED` vàng, `CANCELLED` xám, `CONTRACT_SIGNED` teal, `CONTRACT_FAILED` cam, `ARCHIVED` tím, `INFO_COMPLETED` teal (xác nhận đủ thông tin), `INFO_REOPENED` vàng (mở lại bổ sung), `SUPPLEMENT_EXTENDED` xanh dương (gia hạn).
-- Nội dung thông báo rõ ràng: `notificationService.statusMessage` ghép `Mã đề xuất: {ma_de_xuat} · Người thực hiện/Người từ chối/Người hủy/Người tạo: {tên} · Lý do: ...`; tạo đề xuất → thông báo cho `parent_id` của người tạo; webhook → actor `1Office`; auto → `Hệ thống`
-- **Chặn đẩy 1Office khi thiếu `nguoi_phu_trach`/`nguoi_giao_phu_trach`** (`syncService.getMissingPushUserFieldLabels`, dùng `label` từ `field_definitions`): duyệt bị chặn 400 + popup cảnh báo FE; push thủ công trả lỗi từng đề xuất. Cả 2 nút (Đẩy sang 1Office + Duyệt) đều có popup xác nhận
-- CTV sửa được khi `PENDING`/`REJECTED`; khi `REJECTED` nút lưu đổi thành **"Gửi lại"** → lưu xong reset `REJECTED → PENDING` + notify `RESUBMITTED` cho người đã từ chối (`myProposalService`, kèm log activity; admin không resubmit hộ qua PUT generic)
+- Nội dung thông báo rõ ràng: `notificationService.statusMessage` ghép `Mã đề xuất: {ma_de_xuat} · Người thực hiện/Người từ chối/Người hủy/Người tạo: {tên} · Lý do: ...`; tạo đề xuất → thông báo cho `parent_id` của người tạo; actor được ghi nhận theo tài khoản thực hiện; auto → `Hệ thống`
+- **CTV/owner sửa đề xuất bị khóa theo trạng thái (§11, `OWNER_EDITABLE_STATUSES`)**: nguồn sự thật `proposalLifecycle.OWNER_EDITABLE_STATUSES` (BE) + `frontend/src/utils/proposalOwnerLock.js`. Cho sửa: `PENDING`, `REJECTED` (nút "Gửi lại"), `REVIEWING`, `PRINCIPLE_APPROVED` (luồng cũ), `INFOR_WAITING` (lưu tự về `DESIGNING`), `PROPOSAL_REPORT_UPDATING`, `PROPOSAL_REPORT_RE_CREATING` (notify Back Office `PROPOSAL_UPDATED`); chặn sửa (403 + message nêu khâu qua `STATUS_STEP_LABELS`): các khâu phòng ban (`GRADING`…`SIGNATURE_PENDING`) + `COMPLETED`/`CANCELLED`. Delete chỉ cho `PENDING`/`REJECTED` (403). Controller `myProposalController` KHÔNG giữ bản sao danh sách trạng thái (service là nguồn duy nhất); FE ẩn nút Sửa/Xóa qua `canOwnerEditProposal`/`canOwnerDeleteProposal`
 - CTV/owner lưu sửa qua `myProposalService` (RecordDetailPopup `updateService`), KHÔNG dùng admin API
 - `PUT /my-proposals/:id` gắn `validateUpdateProposal`; `PUT /admin/proposals/:id` merge giá trị cũ khi field vắng (chống ghi NULL) + từ chối đổi `status` (400, ép dùng `/status`)- Trang `/admin/proposals` có bộ lọc **trạng thái (nhãn tiếng Việt)** + **Loại ưu tiên Cấp 1/Cấp 2** (`GET /admin/proposals?status=&uu_tien=`); options nhãn trạng thái lưu ở `field_definitions.options` (migration 73)
-- **Countdown 2 mốc — chính sách mới (kế hoạch 72, migration `140-countdown-two-transition-rules.sql`)**: mỗi status có 2 loại countdown cấu hình ở panel Countdown `/admin/forms` (`supplement_countdown_config`): `supplement` (quá hạn chưa xác nhận đủ thông tin → hủy) và `transition` (quá hạn chưa chuyển trạng thái tiếp theo → hủy). **Mặc định chỉ bật 2 mốc `transition`**: `PENDING` = 3 ngày, `APPROVED` = 15 ngày; toàn bộ `supplement` **tắt** (giữ `warn_hours=6`). `transition()` luôn đặt lại **cả 2 cột** theo rule của status đích (`NULL` nếu tắt). Worker vòng đời chỉ auto-hủy theo 2 mốc đang bật (`PENDING`/`APPROVED`), `REVIEWING`/`PRINCIPLE_APPROVED` không bị đụng. Panel FE tách riêng từng status (không còn "dùng chung 1 mốc"); `countdownConfig.js` fallback khi chưa load: `FALLBACK_COUNTDOWN_STATUSES=[PENDING,APPROVED]`, `FALLBACK_FLAGS={supplement:false,transition:true}`.
-- **Xác nhận hoàn thiện thông tin** (migration `115`, cột `info_completed_at`) — **tách khỏi công tắc countdown** (kế hoạch 72, Giai đoạn E): nút "Xác nhận đã đủ thông tin" trong `RecordDetailPopup` hiện cho `PENDING`/`REVIEWING`/`PRINCIPLE_APPROVED` **bất kể config countdown** (khi còn `supplement_deadline_at` + có quyền sửa, kèm `ConfirmDialog`); BE `getEnabledSupplementStatuses()` fallback `CONFIRM_STATUSES=['PENDING','REVIEWING','PRINCIPLE_APPROVED']` khi config tắt hết `supplement` (KHÔNG đổi `getEnabledCountdownStatuses()` dùng cho worker/extend). Countdown (`DeadlineCountdown`) hiện đủ mốc — xa hạn `Hạn dd/MM HH:mm`, dưới 24h đếm live "Còn...", hết giờ badge xám "Hết hạn" (không đếm âm); đã xác nhận thì ẩn hẳn. Notify chủ đề xuất + cấp trên + toàn bộ ADMIN/SUPER_ADMIN (`INFO_COMPLETED`); "Mở lại để bổ sung" undo giữ deadline cũ (`INFO_REOPENED`). **Gia hạn deadline** (`proposalLifecycle.extendDeadline`, tối đa `extend_max_days_per_time` ngày/lần + `extend_max_times` lần/đề xuất (`0`=không giới hạn, cấu hình ở Countdown, migration `116`), bắt buộc lý do, chặn khi quá hạn/hết lượt; **nút "Gia hạn" chỉ render khi record còn deadline đang bật** → tránh 400): cộng deadline hiện tại + xóa cờ xác nhận + log `deadline_extended` + notify `SUPPLEMENT_EXTENDED`. API: `POST /admin/proposals/:id/confirm-info|reopen-info|extend-deadline` (`requireUserManager` + `denyOutsideBranch`), `POST /my-proposals/:id/confirm-info|reopen-info|extend-deadline` (chỉ chủ), `GET .../extend-info`. Sang mốc deadline mới (transition/resubmit) → xóa cờ, xác nhận lại. `transition_deadline_at` đặt ở form create, guest, import Excel, resubmit, khôi phục 1Office; backfill dữ liệu cũ bằng `backend/scripts/backfill-transition-deadlines.js` (dry-run → `--apply`, `--status=PENDING|APPROVED`). **Khôi phục đề xuất `CANCELLED` đã liên kết 1Office**: `backend/scripts/restore-cancelled-linked.js` (dry-run → `--apply`) đổi `CANCELLED→REVIEWING`, `info_completed_at=NOW()`, `reject_reason=NULL`, log `status_change` source `'script'` (`manual_override=1`), **không** notify/push.
-- **Auto-push khi lưu + tự xác nhận đủ thông tin + nút "Cập nhật" (kế hoạch 71)**: lưu đề xuất đã link (mọi status trừ `CANCELLED`) → tự tạo job push 1Office (dedup + làm mới `request_payload` của job `pending`, mặc định BẬT qua key `auto_push_on_update`, toggle ở Countdown panel `/admin/forms`). Link liên hệ (`POST /admin/1office/link`) validate code tồn tại + chống trùng (409) + đặt `sync_status='pending'` rồi tự push; push fail cuối (`queueWorker`) → `sync_status='error'`; file sync theo `file.id` (snapshot `fileIds`) + cảnh báo `files.stale` (1Office không có API xóa file). Tự xác nhận `info_completed_at` khi form đủ trường (create dùng form create, edit dùng form view; luôn kiểm 2 field `nguoi_phu_trach`/`nguoi_giao_phu_trach`) — hook cuối `createProposal`/`createGuestProposal`/`adminProposalService`/`myProposalService`, trả `infoCompleted`. Nút **"Cập nhật"** ở `/admin/proposals` (chỉ `SUPER_ADMIN`) → `POST /api/admin/proposals/confirm-info-batch` quét tối đa 500 đề xuất (status đang bật countdown bổ sung, `info_completed_at IS NULL`) và tự xác nhận; không push hàng loạt.
-
+- **`/admin/proposals` có 3 tab** (`?tab=all|requests|completed`, `AdminProposalsPage`): **Tất cả đề xuất** (bảng view 8 như cũ; ADMIN/SUPER thấy tất cả, SALES theo nhánh `getBranchIds`, CTV/NPP chỉ `p.user_id`), **Đề xuất cần thực hiện** (`ProposalRequestsTab` — `GET /admin/proposal-requests?status=OPEN` trả các yêu cầu đang mở: mã đề xuất, người đề xuất, trạng thái hiện tại, mô tả công việc, người yêu cầu, trạng thái trước đó, ngày, lần thứ `round_no`, ghi chú), **Đề xuất đã hoàn thành** (`ProposalCompletedTab` — `GET /admin/proposals?statuses=COMPLETED,CANCELLED`). Trong các bảng, **mã đề xuất** và **tên người** là link gạch chân (`ProposalLinkCells`; `UserChip` mở `RecordDetailPopup` entity `users`, `ma_de_xuat` mở popup đề xuất). Bảng đề xuất nhận prop `cellRenderers` (mở rộng `DynamicTable`).
+- **Sinh yêu cầu đề xuất** (`proposal_requests`, migration 175): `proposalLifecycle.transition` tạo `UPDATE_INFO` khi chuyển sang `REJECTED` (mô tả = lý do, `round_no` = lần thứ N theo loại, `target_user_id` = người đề xuất), đóng yêu cầu khi `REJECTED → PENDING`; `extendDeadline` tạo `SUPPLEMENT` (mô tả = lý do, ghi chú thời gian gia hạn); `setInfoCompleted(false)` tạo `UPDATE_INFO` (mở lại bổ sung), `setInfoCompleted(true)` đóng `UPDATE_INFO`/`SUPPLEMENT`. **Tab "Đề xuất cần thực hiện"**: `GET /admin/proposal-requests?my=1&type=` — `my=1` lọc yêu cầu giao cho chính mình (theo `target_user_id` hoặc loại khớp phòng ban/chức vụ: QH/PL→`RE_GRADE`, CN&QH→`LAYOUT_SUPPLEMENT`, GĐTTKD/Back Office→`REVISE_BCDX`, TGĐ→`TGD_REVIEW`) qua `proposalRequestService.assignedTypesForUser`; **"Đánh dấu đã hoàn thành"** `POST /:id/complete` (bắt buộc `resolution_note`, migration `184` thêm cột; chỉ ADMIN/SUPER, `target_user_id` hoặc đúng loại công việc của mình; CTV/NPP/MKT 403; làm log `request_completed`); backfill từ activity log: `backend/scripts/backfill-proposal-requests.js` (dry-run → `--apply`, map `layout_supplement_requested|report_revision_requested|report_update_requested|review_regrade_requested|review_to_tgd|deadline_extended`). Các bước v2 dùng chung `proposalRequestService.createRequest`.
+- **Countdown 2 mốc — chính sách mới (kế hoạch 72, migration `140-countdown-two-transition-rules.sql`)**: mỗi status có 2 loại countdown cấu hình ở panel Countdown `/admin/forms` (`supplement_countdown_config`): `supplement` (quá hạn chưa xác nhận đủ thông tin → hủy) và `transition` (quá hạn chưa chuyển trạng thái tiếp theo → hủy). **Mặc định chỉ bật 2 mốc `transition`**: `PENDING` = 3 ngày, `APPROVED` = 15 ngày; toàn bộ `supplement` **tắt** (giữ `warn_hours=6`). `transition()` luôn đặt lại **cả 2 cột** theo rule của status đích (`NULL` nếu tắt). Worker vòng đời chỉ auto-hủy theo các trạng thái **có mốc được bật** trong config (`getEnabledCountdownStatuses`) — mặc định chỉ `PENDING`/`APPROVED`; các status v2 (`GRADING`…`SIGNATURE_PENDING`) được cấu hình ở cùng panel nhưng **mặc định tắt** (`REVIEWING`/`PRINCIPLE_APPROVED` không bị đụng). Panel FE tách riêng từng status (liệt kê đủ 22 trạng thái, không còn "dùng chung 1 mốc"); `countdownConfig.js` fallback khi chưa load: `FALLBACK_COUNTDOWN_STATUSES=[PENDING,APPROVED]`, `FALLBACK_FLAGS={supplement:false,transition:true}`.
+- **Xác nhận hoàn thiện thông tin** (migration `115`, cột `info_completed_at`) — **tách khỏi công tắc countdown** (kế hoạch 72, Giai đoạn E): nút "Xác nhận đã đủ thông tin" trong `RecordDetailPopup` hiện cho `PENDING`/`REVIEWING`/`PRINCIPLE_APPROVED` **bất kể config countdown** (khi còn `supplement_deadline_at` + có quyền sửa, kèm `ConfirmDialog`); BE `getEnabledSupplementStatuses()` fallback `CONFIRM_STATUSES=['PENDING','REVIEWING','PRINCIPLE_APPROVED']` khi config tắt hết `supplement` (KHÔNG đổi `getEnabledCountdownStatuses()` dùng cho worker/extend). Countdown (`DeadlineCountdown`) hiện đủ mốc — xa hạn `Hạn dd/MM HH:mm`, dưới 24h đếm live "Còn...", hết giờ badge xám "Hết hạn" (không đếm âm); đã xác nhận thì ẩn hẳn. Notify chủ đề xuất + cấp trên + toàn bộ ADMIN/SUPER_ADMIN (`INFO_COMPLETED`); "Mở lại để bổ sung" undo giữ deadline cũ (`INFO_REOPENED`). **Gia hạn deadline** (`proposalLifecycle.extendDeadline`, tối đa `extend_max_days_per_time` ngày/lần + `extend_max_times` lần/đề xuất (`0`=không giới hạn, cấu hình ở Countdown, migration `116`), bắt buộc lý do, chặn khi quá hạn/hết lượt; **nút "Gia hạn" chỉ render khi record còn deadline đang bật** → tránh 400): cộng deadline hiện tại + xóa cờ xác nhận + log `deadline_extended` + notify `SUPPLEMENT_EXTENDED`. API: `POST /admin/proposals/:id/confirm-info|reopen-info|extend-deadline` (`requireUserManager` + `denyOutsideBranch`), `POST /my-proposals/:id/confirm-info|reopen-info|extend-deadline` (chỉ chủ), `GET .../extend-info`. Sang mốc deadline mới (transition/resubmit) → xóa cờ, xác nhận lại. `transition_deadline_at` đặt ở form create, guest, import Excel, resubmit, khôi phục dữ liệu cũ; backfill dữ liệu cũ bằng `backend/scripts/backfill-transition-deadlines.js` (dry-run → `--apply`, `--status=PENDING|APPROVED`).
+- **Đánh giá Quy hoạch và Pháp lý (v2, migration `176`)** — trang `/admin/proposals/danh-gia-quy-hoach` (`AdminProposalsDanhGiaQuyHoachPage` + `ProposalGradingTab`), 3 tab `?tab=all|pending|completed`: **Tất cả đề xuất** (từ `GRADING` đến hết flow v2, gồm `CANCELLED` đã đi qua chấm điểm), **Các đề xuất cần thực hiện** (`GRADING` mà phòng của mình chưa chấm), **Đề xuất đã hoàn thành** (cả QH+PL đã chấm, mọi status sau `GRADING`). 4 cột mới trên `station_proposals`: `quy_hoach_score` (TINYINT 0-3 nullable) + `quy_hoach_note`, `phap_ly_score` + `phap_ly_note` (+ field defs khóa `is_locked`, + index `(status, quy_hoach_score|phap_ly_score)`).
+  - **Phân quyền theo phòng ban** (`users.custom_data.department`, normalize không dấu): QH = department chứa "quy hoạch"/"công nghệ"/"quan hệ" (phòng "Phòng quan hệ và Quy hoạch" hoặc "Phòng Công nghệ và Quy hoạch"); PL = chứa "chiến lược" ("Phòng Chiến lược KD"). `proposalGradingService.resolveGradingRole`; user có 2 phòng → `BOTH`; ADMIN/SUPER mặc định `BOTH`. QH chỉ PUT được `quy_hoach_*`, PL chỉ `phap_ly_*` (đổi phòng khác → 403). SALES/CTV **không thuộc 2 phòng này** chỉ xem theo scope cũ (nhánh/của mình), không chấm được.
+  - **Trạng thái chi tiết ghi ở `note`** (5 mã, chỉ khi status `GRADING`): `NO_QH_NO_PL`, `NO_QH_YES_PL`, `NO_QH_WAIT_PL`, `YES_QH_NO_PL`, `YES_QH_WAIT_PL` (WAIT_PL = chờ hồ sơ pháp lý). Priority: PL có điểm → YES_PL; không, thiếu hồ sơ → WAIT_PL; else NO_PL. `proposalLifecycle.transition` gọi `syncNoteForProposal` khi vào `GRADING` và `clearGradingNote` khi ra khỏi `GRADING`; list API tự sync note khi lệch (`refreshGradingNotes`).
+  - **PL chỉ được chấm khi đủ hồ sơ pháp lý** = đủ file `legal_document` (GCN QSDĐ) + `dkkd_cccd_hkd` (ĐKKD) trong `custom_data` — thiếu → 400, UI hiển thị badge vàng "Pháp lý chờ bổ sung thông tin" + khóa chọn điểm. Bộ đọc file chấp nhận array/object/JSON string/file id (kể cả dữ liệu cũ); API trả thêm `legal_docs` (key/label/has_file/files) và modal chấm điểm có mục **Hồ sơ pháp lý** mở xem trực tiếp từng tệp (`FileViewer`). SALES thuộc phòng QH/PL được cấp quyền đọc file của đề xuất từ `GRADING` trở đi (kể cả `CANCELLED`) trong `canAccessFile` — ngoài ra **GĐTTKD đúng vùng** (khớp `vung_mien` đề xuất; vùng trống → toàn bộ), **TGĐ** (chức vụ Tổng giám đốc) và **Back Office** cũng được mở quyền từ `GRADING` trở đi (fileController dùng `proposalReviewService.resolveRoleKey`/`resolveRegion` + `proposalReportService.isBackOffice`).
+  - **Auto-transition sau khi chấm** (`proposalGradingService.updateGrading` → `proposalLifecycle.transition` source `system_auto`, log activity `grading_updated` + `status_change`): có điểm 0 → **`CANCELLED` ngay lập tức** (không chờ phòng còn lại, lý do "Điểm ... bằng 0", `reject_reason` = lý do); tổng ≥4 → `DESIGNING`; tổng 2-3 → `GDTTKD_EVALUATING` **+ tự tạo `proposal_requests` loại `RE_GRADE`** (target theo `vung_mien` → "Trung tâm KD miền Bắc|Trung|Nam"). API: `GET /api/admin/proposal-grading?tab=&department=QH|PL&search=` + `PUT /api/admin/proposal-grading/:id` (chỉ sửa điểm, status được chấm từ `GRADING`+ trở đi; update khi đã qua `GRADING` không reset trạng thái).
+  - **Pháp nhân/SĐT/Quy mô trụ/Chi phí**: fallback `lk_ten_phap_nhan||nq_ten_khach_hang||owner_name`, `lk_sdt||nq_sdt||owner_phone`; `formatProposalScale` đọc `chot_so_luong_tru` trước, fallback `loai_tru_nq/lk/tdt_tru` rồi `loai_tru` (format `NQ_1 DC120Kw + LK_2 DC60Kw`); chi phí đọc `tong_chi_phi` → `investment_cost`. Cột trạng thái đã chấm là link xanh mở modal nhỏ điểm+đánh giá; nút Cập nhật mở `ProposalGradingModal` — **chỉ render phần chấm của đúng phòng mình** (QH chỉ thấy ô Quy hoạch, PL chỉ thấy ô Pháp lý, ADMIN/BOTH thấy cả 2; phòng còn lại không xuất hiện để sửa); popup chi tiết bọc `ProposalGradingSummary` qua `RecordDetailPopup beforeActions` (`allowEdit=false`) và luôn truyền record gốc (giữ `id`/`custom_data`). Các helper đọc file nhận cả record phẳng từ `formData` lẫn `custom_data` lồng nhau.
+- **Yêu cầu chấm điểm lại (v2, migration `177`)** — trang `/admin/proposals/yeu-cau-cham-diem-lai` (`AdminProposalsReviewPage` + `ProposalReviewTab`), 3 tab `?tab=all|pending|completed`; route `RoleRoute ADMIN_AND_SALES`; backend `/api/admin/proposal-reviews` (`proposalReviewService/Controller/routes`, `requireUserManager`). Vai trò suy từ `users.custom_data.department`/`chuc_vu`: TGĐ (`Tổng giám đốc`, loại `Phó Tổng giám đốc`) → QH/PL theo phòng → GĐTTKD (`Giám đốc Trung tâm Kinh doanh` hoặc phòng `Trung tâm KD`), miền lấy từ tên phòng (`miền Bắc/Trung/Nam`), fallback `custom_data.vung_mien`; ADMIN/SUPER xem thay vai trò qua `?reviewRole=GDTTKD|QH|PL|TGD&region=Bac|Trung|Nam`. Tab 1 (review_level khác NULL) + tab 3 lọc theo role (GĐTTKD: khác NULL; QH/PL: `2`; TGĐ: `3`). Tab 2: GĐTTKD thấy `GDTTKD_EVALUATING`/`RE_GDTTKD_EVALUATING` đúng miền — nút Yêu cầu đánh giá lại (`RE_GRADING`, tạo request `RE_GRADE` lần N + `review_level=2` + notify 2 phòng) / Trình TGĐ (`TGD_REVIEW`, `review_level=3`, request `TGD_REVIEW`) / Xác nhận hủy; QH/PL thấy `RE_GRADING` — Chấm điểm lại; TGĐ thấy `TGD_REVIEW` — Duyệt (`DESIGNING`) / Không duyệt (`CANCELLED`). Mọi action bắt buộc lý do + log `review_regrade_requested|review_to_tgd|review_cancelled|review_approved|review_rejected` + `status_change`; chấm lại 0 điểm → `CANCELLED`, tổng ≥4 → `DESIGNING`, 2–3 → `RE_GDTTKD_EVALUATING` + đóng request `RE_GRADE`. Bảng chính thêm cột **Mức độ xem xét** (view 8, renderer `review_level`).
+- **Đánh giá layout (v2, migration `178`)** — trang `/admin/proposals/danh-gia-layout` (`AdminProposalsDanhGiaLayoutPage` + `ProposalLayoutTab` + `ProposalLayoutUpdateModal`), 4 tab `?tab=all|pending|waiting|layout`; route `RoleRoute PROPOSAL_ROLES`; backend `/api/admin/proposal-layouts` (`proposalDesignService/Controller/routes`, `requireUserManager`). Phân quyền theo `users.custom_data.department` (normalize không dấu chứa "công nghệ"/"quy hoạch"/"quan hệ" → Phòng Công nghệ và Quy hoạch) + ADMIN/SUPER; người ngoài phòng → list rỗng + 403 khi action. **Trạng thái mới `INFOR_WAITING`** (Chờ bổ sung thông tin) + ma trận `DESIGNING → INFOR_WAITING|PROPOSAL_REPORT_CREATING|CANCELLED`, `INFOR_WAITING → DESIGNING|CANCELLED`; field `ban_ve_layout` (file) gắn form 14; loại yêu cầu `LAYOUT_SUPPLEMENT` (bộ đếm "số lần đã yêu cầu cập nhật thông tin"). API: `GET /admin/proposal-layouts?tab=`, `PUT /:id` (lưu file + `approve=true` → `PROPOSAL_REPORT_CREATING` + notify GĐTTKD vùng), `PUT /:id/request-supplement` (mô tả bắt buộc → tạo request + `INFOR_WAITING` + notify người đề xuất), `PUT /:id/cancel` (lý do bắt buộc → `CANCELLED`). Cột: Mã đề xuất (link), pháp nhân, SĐT, mô hình, địa chỉ, quy mô trụ, người đề xuất (link), **số lần yêu cầu bổ sung**, trạng thái, hành động. Log: `layout_updated|layout_approved|layout_supplement_requested|layout_cancelled` + `status_change`. Người đề xuất sửa ở `INFOR_WAITING` (`PUT /my-proposals/:id`) → tự về `DESIGNING`, đóng request, notify phòng CN&QH.
+- **Lập tờ trình BCĐX (v2, migration `179`)** — trang `/admin/proposals/lap-to-trinh` (`AdminProposalsLapToTrinhPage` + `ProposalReportTab` + `ProposalReportUpdateModal` + `ProposalReportSummary`), 3 tab `?tab=all|pending|completed`; backend `/api/admin/proposal-reports` (`proposalReportService/Controller/routes`, `requireUserManager`) + `POST /api/my-proposals/:id/report` (người tạo tự đẩy file). Trạng thái mới **`PROPOSAL_REPORT_RE_CREATING`** (Yêu cầu tạo lại BCĐX) + ma trận `PROPOSAL_REPORT_CREATING → PROPOSAL_REPORT_REVIEWING|PROPOSAL_REPORT_RE_CREATING|CANCELLED`, `PROPOSAL_REPORT_RE_CREATING → PROPOSAL_REPORT_REVIEWING|CANCELLED`, `PROPOSAL_REPORT_REVIEWING → SIGNATURE_PENDING|PROPOSAL_REPORT_RE_CREATING|CANCELLED`; field `file_bc_dx` (file, gắn form 14); yêu cầu Back Office dùng loại `REVISE_BCDX` (mô tả hiển thị ở cột "Mô tả việc cần làm"). API: `GET /admin/proposal-reports?tab=`, `PUT /:id` (upload tờ trình → `PROPOSAL_REPORT_REVIEWING` + notify Back Office), `PUT /:id/request-revision` (bắt buộc mô tả → `PROPOSAL_REPORT_RE_CREATING` + tạo request). Phân quyền xem: Admin/Super + Back Office (department "back office") xem tất cả; GĐTTKD theo khu vực (`custom_data.vung_mien`); SALES theo nhánh; CTV/NPP đề xuất của mình. Cột: Mã đề xuất (link), pháp nhân, SĐT, mô hình, địa chỉ, quy mô trụ, tổng chi phí, người đề xuất (link), trạng thái, mô tả việc cần làm, hành động (Xem chi tiết / Cập nhật / Cập nhật lại). Popup chi tiết bọc `ProposalReportSummary` (điểm + đánh giá QH/PL + file layout). Log: `report_uploaded`, `report_revision_requested` + `status_change`. Duyệt layout (`DESIGNING → PROPOSAL_REPORT_CREATING`) → notify người tạo + cấp trên là GĐTTKD (`users.parent_id`) + GĐTTKD khu vực.
+- **Trình ký (v2, migration `183`)** — trang `/admin/proposals/trinh-ky` (`AdminProposalsTrinhKyPage` + `ProposalSignatureTab` + `ProposalSignatureDetailModal` + `ProposalSignedFileModal`), 4 tab `?tab=all|pending|chairman|completed`; backend `/api/admin/proposal-signatures` (`proposalSignatureService/Controller/routes`, `requireAuth`). Trang ký `/admin/proposals/ky-bcdx/:id` (`AdminProposalSigningPage`) dùng layout Admin nhưng **không có item ở sidebar**. Ma trận `SIGNATURE_PENDING → COMPLETED|PROPOSAL_REPORT_UPDATING|CANCELLED`. Cột **Ghi chú** = trạng thái ký tính từ `proposal_signature_configs`: `PENDING` (Cần thực hiện) / `DOING` (Đang thực hiện) / `DONE` (Đã hoàn thành) / `CEO_SIGNED` (Chủ tịch đã phê duyệt). API: `GET ?tab=`, `GET /:id` (mã đề xuất, người đề xuất, số lượng trụ đề xuất, số lượng trụ chốt, tổng giá trị chốt, file BCĐX, danh sách người ký), `POST /:id/sign` (dùng ảnh chữ ký đã tải trong hồ sơ cá nhân `signatures`, ghi `signature_id`/`signed_at`, log `signature_signed`), `POST /:id/reject` (TGĐ/Admin, bắt buộc lý do → `PROPOSAL_REPORT_UPDATING` + request `REVISE_BCDX` + notify, log `signature_rejected`), `POST /:id/signed-file` (Back Office/Admin, đủ chữ ký → `COMPLETED`, log `signed_file_uploaded`), `GET /:id/export`, `GET /:id/signature-image/:configId`.
+- **Duyệt BCĐX (v2, migration `180`)** — trang `/admin/proposals/duyet-bcdx` (`AdminProposalsDuyetBCDXPage` + `ProposalApprovalTab` + `ProposalSignatureConfigModal` + `ProposalApprovalSummary`), 4 tab `?tab=all|pending|updating|completed`; backend `/api/admin/proposal-approvals` (`proposalApprovalService/Controller/routes`, `requireUserManager`). **TGĐ chỉ đọc + "Từ chối duyệt"**: `scopeClause` bỏ filter khi `roleKey === 'TGD'` (metadata `meta.roleKey/isAdmin` trả về FE để ẩn nút); TGĐ ẩn "Yêu cầu cập nhật" + "Cấu hình ký"; nút "Từ chối duyệt" (TGĐ/ADMIN, chỉ `PROPOSAL_REPORT_REVIEWING`) gọi `PUT /:id/tgd-reject` (bắt buộc lý do → `PROPOSAL_REPORT_UPDATING` + request `REVISE_BCDX` cho GĐTTKD vùng + notify người đề xuất/GĐTTKD + log `report_tgd_rejected`). Trạng thái mới **`PROPOSAL_REPORT_UPDATING`** (Chờ cập nhật lại BCĐX) + ma trận `PROPOSAL_REPORT_REVIEWING → SIGNATURE_PENDING|PROPOSAL_REPORT_RE_CREATING|PROPOSAL_REPORT_UPDATING|CANCELLED`, `PROPOSAL_REPORT_UPDATING → PROPOSAL_REPORT_REVIEWING|CANCELLED`; bảng mới `proposal_signature_configs` (vị trí ô ký `page`/`pos_x`/`pos_y`/`box_width`/`box_height` chuẩn hóa 0..1, `file_id`, `user_id`, `status`). API: `GET /admin/proposal-approvals?tab=`, `PUT /:id/request-update` (bắt buộc mô tả → `PROPOSAL_REPORT_UPDATING` + request `UPDATE_INFO` + notify người đề xuất & GĐTTKD vùng + log `report_update_requested`), `GET /:id/signer-candidates` (người đề xuất + GĐTTKD + TGĐ), `GET|PUT /:id/signature-config` (lưu cấu hình ký → `SIGNATURE_PENDING` + notify người ký + log `signature_configured`). Cột: Mã đề xuất (link), pháp nhân, SĐT, mô hình, địa chỉ, quy mô trụ, tổng chi phí, người đề xuất (link), trạng thái, mô tả việc cần làm, hành động. Hành động (chỉ `PROPOSAL_REPORT_REVIEWING`): Xem chi tiết (popup kèm điểm QH/PL + file layout + file BCĐX), Yêu cầu cập nhật thông tin (modal mô tả), Cấu hình ký (modal xem file BCĐX + chọn người ký + kéo thả vị trí ô ký + Xác nhận trình ký). Vòng lặp: người đề xuất/GĐTTKD đẩy lại file từ `PROPOSAL_REPORT_UPDATING` → về `PROPOSAL_REPORT_REVIEWING` + đóng request + notify Back Office. **Sidebar "Duyệt BCĐX"**: ADMIN/SUPER + Back Office + TGĐ + GĐTTKD + SALES (CTV ẩn) qua `utils/proposalAccess.js` (`access` trong `AdminSidebar`); `/admin/proposals` bọc `RoleRoute` chặn MKT/NPP
 ### 4.3. Notification Bell
 - `NotificationBell` ở header user + admin (polling 30s + sự kiện `notifications:refresh`; nhấp nháy + badge chưa đọc)
 - Dropdown render qua `createPortal` ra `body` (`position:fixed`, `z-index:9999`) tránh `.drawer-side` che
 - Badge/list chỉ tính thông báo trong `NOTIFICATION_RETENTION_DAYS` ngày gần nhất (mặc định 7)
 - Tab user/SALES: "Của bạn"; admin + ADMIN/SUPER thêm tab "Tất cả" (`GET /api/notifications/all`, requireAdmin, chỉ đọc). Tab "Tất cả" **gộp 1 dòng/sự kiện** theo `(type, entity, title, message, ngày)` + trả `recipient_count`/`recipient_names` (FE hiện `→ tên +N`, hover xem danh sách) thay vì 1 dòng/người nhận
 - Click item điều hướng theo `mode` trang: user → `/my-proposals/view=id`, admin → `/admin/proposals/view=id` (không theo role)
-
 ### 4.4. Guest Proposal (không cần đăng nhập)
 - Form tại `/de-xuat` (`GuestProposalPage`, `GuestLayout`); submit `POST /api/proposals/guest` (`user_id` = NULL)
 - CAPTCHA Turnstile **fail-closed**: chỉ bypass khi `CAPTCHA_ENABLED === 'false'`; thiếu token/secret → 400
 - Tra cứu `GET /api/proposals/track/:code` (mask SĐT); check trùng công khai `POST /api/proposals/check-nearby-public`
 - Rate limit riêng: guest submit 5/h, upload 10/h, track 30/h
 - File guest dọn định kỳ qua `ORPHAN_FILE_TTL_HOURS` (mặc định 24h)
-
 ### 4.5. Map Marker & Page
 - Marker màu theo trạng thái, **phân biệt theo entity** (`getMarkerColor(status, 'station'|'proposal')`; constants `utils/mapStatuses.js`): Station `PLANNING` tím `#a855f7`, `ACTIVE` xanh `#22c55e`, `DEPLOYING` vàng `#eab308`, `REJECTED` đỏ sẫm `#b91c1c`; Proposal `PENDING` cam, `REVIEWING` xanh dương, `APPROVED` xanh lá, `REJECTED` đỏ `#ef4444`
 - **Icon marker trên bản đồ** (chỉ dùng trong map): cấu hình per-option trong field `status` của `stations`/`station_proposals` (`field_definitions.options[].icon` + `icon_bg` = `circle` (tròn trắng) | `flat` (phẳng, mặc định); bộ catalog `utils/mapMarkerIcons.js` — 49 icon, 5 nhóm (thêm nhóm Quy hoạch: `plus`/`clipboardList`/`draftingCompass`/`construction`/`crosshair`/`foldMap`/`sparkles`). `getMarkerIcon(status, entity)` tra override từ field-def (load 1 lần qua `loadMarkerIconConfig`, cache module-level), fallback `STATUS_ICON_DEFAULTS` (PLANNING = `target` bia ngắm + mũi tên xanh); `getMarkerIconBg(status, entity)` tra `icon_bg`. UI chọn icon + nền ở `FieldManager` (section "Options — Icon bản đồ", hiện cả khi field `is_locked`). Marker phẳng = SVG gốc + drop-shadow (icon 36px, to hơn bản cũ); marker circle = nền trắng + viền màu + icon 24px. Trạm PLANNING có thêm **badge số Cấp 1/2 góc trên-phải** (overlay tuyệt đối, không ảnh hưởng kích thước icon; MapLibre ghép sẵn image `app-glyph-<id>--b<1|2>`). Legend + `MapFilterPanel` chip render qua component `MapBadge` (tự chọn kiểu tròn/phẳng theo `icon_bg`). **Backend `updateFieldDefinition`**: field khóa CHO PHÉP cập nhật key `icon` + `icon_bg` trong `options` (mọi thứ khác giữ nguyên). Lưu field → `notifyMarkerIconsChanged()` xóa cache module và phát sự kiện `markericons:refresh`; hook `useMarkerIcons` force-fetch khi mount nên điều hướng map → fields → map luôn thấy cấu hình mới. Leaflet `createCustomIcon(color, icon, badge, bg)` + MapLibre 2 symbol layer (`app-marker-glyphs-circle` 1.0 / `-flat` 1.15, `ensureGlyphImages` sinh `app-glyph-<id>[-​-b1/2]` 44px)
 - Popup marker (`MapView`): link "Xem chi tiết" mở `/admin/stations|proposals/view=<id>` cho `SUPER_ADMIN|ADMIN|SALES` (dùng `canOpenAdminRecord`); render bằng thẻ `<a>` thuần (KHÔNG dùng `<Link>` vì popup ngoài React Router context → lỗi `basename`)
 - Popup đề xuất gate sở hữu (`canViewProposal`): ADMIN/SUPER luôn xem; SALES chỉ đề xuất của mình (`user_id`) hoặc CTV thuộc nhánh (`owner_parent_id`); ngoài nhánh hiện dòng đỏ. `GET /proposals` trả thêm `user_id`, `owner_parent_id` (backend vẫn chặn thật qua `denyOutsideBranch`)
-- Trang `/map` có bộ lọc `MapFilterPanel` (phạm vi "Của tôi"/"Tất cả", ẩn/hiện trạm & đề xuất, chip trạng thái trạm/đề xuất, chip **Loại ưu tiên Cấp 1/Cấp 2** áp cho cả trạm & đề xuất theo `loai_uu_tien`). Desktop = card nổi; mobile (<768px) = bottom sheet. **Legend cột Đề xuất 5**: Đang đề xuất / Đang xem xét / Đã duyệt BCĐX / Đã hủy / Đã lưu trữ (`show_in_legend`); filter đủ 8 theo `sort_order`, 3 chip ẩn-map (`REJECTED/CONTRACT_*`) gắn badge "không hiện bản đồ"; marker chỉ vẽ 5 trạng thái legend. **Quy hoạch tách riêng khỏi trạm**: chip trạng thái trạm chỉ lọc trạm không phải PLANNING; PLANNING chỉ theo hiện/hide Quy hoạch + chip Cấp 1/2 (`MapView.visibleStations` + `LocationMapModal`, fix kế hoạch 60).
+- Trang `/map` có bộ lọc `MapFilterPanel` (phạm vi "Của tôi"/"Tất cả", ẩn/hiện trạm & đề xuất, chip trạng thái trạm/đề xuất, chip **Loại ưu tiên Cấp 1/Cấp 2** áp cho cả trạm & đề xuất theo `loai_uu_tien`). Desktop = card nổi; mobile (<768px) = bottom sheet. **Legend cột Đề xuất 5**: Đang đề xuất / Đang xem xét / Đã duyệt BCĐX / Đã hủy / Đã lưu trữ (`show_in_legend`); filter đủ 8 theo `sort_order`, 3 chip ẩn-map (`REJECTED/CONTRACT_*`) gắn badge "không hiện bản đồ"; marker chỉ vẽ 5 trạng thái legend. **Quy hoạch tách riêng khỏi trạm**: chip trạng thái trạm chỉ lọc trạm không phải PLANNING; PLANNING chỉ theo hiện/hide Quy hoạch + chip Cấp 1/2 (`MapView.visibleStations` + `LocationMapModal`, fix kế hoạch 60). **9 trạng thái quy trình v2** (`GRADING`, `GDTTKD_EVALUATING`, `RE_GRADING`, `RE_GDTTKD_EVALUATING`, `TGD_REVIEW`, `DESIGNING`, `PROPOSAL_REPORT_CREATING`, `PROPOSAL_REPORT_REVIEWING`, `SIGNATURE_PENDING`) hiển thị trên bản đồ **gộp thành "Đang xem xét"** (nhãn/màu `#3b82f6`/icon kính lúp `search` của `REVIEWING`) qua `mapStatuses.getProposalMapStatus` + `getProposalMapStatuses`/`getProposalMapLegendStatuses` — filter chip + legend chỉ còn 1 mục "Đang xem xét", popup marker cũng hiện "Đang xem xét"; bảng/form vẫn giữ nhãn trạng thái thật.
 - `MapView` nhận prop `filters`; lọc client-side bằng `useMemo` trước `MapLayerController`. Mặc định `EMPTY_MAP_FILTERS` = hiện tất cả
 - `GET /stations` **không `limit`** → trả toàn bộ marker fields (map), kèm `loai_uu_tien`/`mo_hinh_tram` trích từ `custom_data`; có `limit` → phân trang. Proposals cap 20000, kèm `mo_hinh_dau_tu`/`loai_uu_tien`
 - `RecordDetailPopup` nút "Xem bản đồ" mở `LocationMapModal` **full-screen** (chỉ khi có tọa độ): cùng kiểu với trang `/map` — `MapFilterPanel` đầy đủ (mặc định ẩn Quy hoạch), legend 2 cột, chuyển layer (nền + nhãn hành chính), tên trạm + ranh giới luôn bật (không nút toggle), đường khoảng cách + thước đo; tâm tại record, vành nét đứt xoay (`location-point-ring`), bán kính **5/10/20/50/100 km** (`L.Circle`) + hiện trạm/đề xuất lân cận (lọc như `MapView`). Preview tạo đề xuất (`MapPage`/`MyProposalsPage`) dùng chung modal này.
@@ -132,7 +122,6 @@ Swagger UI:  http://localhost:3000/api-docs
 - **Quản lý Trợ lý** (tab **Trợ lý AI** trong `/admin/help`, `SUPER_ONLY`): xem/sửa **model, bật/tắt provider, thứ tự fallback** + **hỏi thử trực tiếp** (`components/admin/AssistantConfigPanel.jsx`) qua `GET/PUT /api/admin/assistant/config` + `POST /api/admin/assistant/test` (`routes/adminAssistant.js`, `requireSuperAdmin`; test không ghi log/cache, rate-limit 30/h). Cấu hình lưu bảng `assistant_provider_configs` (migration `108`); **API key vẫn nằm trong `.env`** (chỉ trả `keyConfigured`, không lộ key); models rỗng = dùng env. Picker model đọc danh sách thực tế từ `GET /api/admin/assistant/models` (Gemini ListModels/OpenRouter public, cache `assistant_model_cache` 24h — migration `109`) qua `ui/SearchableMultiSelect.jsx`; chuỗi fallback kéo-thả bằng `admin/DragDropList.jsx`.
 - **Kho tri thức tài liệu** (`assistant_knowledge`, migration `105`): index từ `AGENTS.md` + `docs/**/*.md` bằng `backend/scripts/index-knowledge.js` (allowlist, redact secret, loại `docs/0`/`docs/6`/`.env`/`docker-compose`). **Kho tri thức code/schema** (`assistant_code_knowledge`, migration `106`): index bằng `backend/scripts/index-code-knowledge.js` (code map + function-level cho `backend/src`/`frontend/src`, bỏ `.css`/`public`; schema đọc sống từ `information_schema`, 0 dòng dữ liệu) — **chỉ `SUPER_ADMIN`**, kill switch `ASSISTANT_CODE_KNOWLEDGE=false`. Chạy lại cả hai sau khi sửa docs/code (`npm run index:knowledge` trong `backend/`; **VPS không có `node_modules` trên host** → `update.sh` tự chạy trong container backend có mount repo: `docker compose -f docker-compose.simple.yml run --rm --no-deps -v "$PWD:/repo" -w /repo/backend backend sh -c 'ln -sfn /app/node_modules node_modules; node scripts/index-knowledge.js && node scripts/index-code-knowledge.js'`). KHÔNG đọc bảng nghiệp vụ. Bài/chuyên mục chung (đủ 5 role) được mở thêm `'guest'` (migration `107`) để trang hướng dẫn + chat khách có nội dung.
 - Trang `/map` có nút **chuyển Mode** (Đường phố/Vệ tinh/Vệ tinh + nhãn/Địa hình — `MAP_MODES`) và nút **bật/tắt 3D** khi renderer là MapLibre; thay đổi cục bộ theo phiên (không ghi `map_configs`), mobile ẩn 3D. Legend (`.map-legend`) ở **góc trên-phải** (`top:12; right:64px`) để không đè bộ lọc (`.map-filter` ở trên-trái); legend tách **2 cột Trạm / Đề xuất**, nút "Chú thích" (cụm controls) thu gọn/mở rộng — mobile (<768px) **mặc định đóng**
-
 ### 4.6. Map Tile & Renderer
 9. Cấu hình `map_configs` áp dụng thật: `MapView` + `LocationMapModal` + mini map `MyProposalsPage` đọc qua `useMapConfig`/`utils/mapTile.js`
 10. `tile_mode`: `proxy` (mặc định, `/tiles/{z}/{x}/{y}` — server giữ key) | `direct` (browser gọi provider, key client-side). `retina` bật `@2x`
@@ -143,7 +132,6 @@ Swagger UI:  http://localhost:3000/api-docs
 15. **Mode/Layer** (`utils/mapModes.js` + `utils/mapStyles.js`): `streets` (OpenFreeMap vector style liberty), `satellite` (Esri raster), `hybrid`, `terrain` (OpenTopoMap). Lưu ở `map_configs.default_mode` + `layers_config`; đổi mode/nguồn vector chỉ bằng cấu hình
     - **MapLibre `hybrid`** = Esri World_Imagery raster + nhãn/đường/POI **vector** OpenFreeMap: `buildHybridStyle()` lọc từ `/pmtiles/liberty-style.json` (giữ toàn bộ layer `symbol` + line `road_*`/`boundary_*`/`waterway_*`, bỏ `poi_r20`, `poi_transit` minzoom 12, text-field ưu tiên `name:vi`). `loadLibertyBaseStyle()` cache JSON 1 lần; `buildMapStyle('hybrid', { libertyBase })` mới ra bản chi tiết, thiếu `libertyBase` thì fallback raster Esri cũ
     - **Leaflet `hybrid`** = style `hybrid` thêm trong catalog provider `leaflet-osm`: base `World_Imagery` + `overlays[]` = `Reference/World_Transportation` + `Reference/World_Boundaries_and_Places`. `buildTileConfig` trả `overlays` (bỏ qua proxy), `leafletRuntime.setTileLayer` render thêm tile layer phủ (`zIndex` 2+)
-
 16. **Self-host PMTiles** (provider `maplibre-self-hosted`): `maplibreRuntime` đăng ký protocol `pmtiles`; `loadPmtilesStyle(url)` dùng **style OpenFreeMap liberty** (`frontend/public/pmtiles/liberty-style.json`, 117 layer) và thay `sources.openmaptiles` → `pmtiles://<origin>/...pmtiles` (bỏ `ne2_shaded`) để có đủ nhãn địa danh; fallback style tối giản nếu fetch lỗi. File build từ OSM (Planetiler) đặt ở `frontend/public/pmtiles/vietnam.pmtiles` (gitignore). Hướng dẫn: `docs/5/37`. **3D**: terrain DEM chỉ bật khi `enabled3d && pitch > 10 && zoom ≥ 15`, `dem.maxzoom=11`, building `minzoom=15`; terrain **giữ nguyên khi pan/zoom** (chỉ sync ở `zoomend`/`moveend`/`pitchend`, KHÔNG tắt giữa chừng) để tránh map tự nhảy khi phóng to gần max
 17. `/tiles` proxy validate z (0–22) + x/y trong khoảng, whitelist host, không có `?url=`, lỗi trả 502 + `X-Tile-Proxy-Status: fallback` (FE hiện banner). `tile_mode`: `proxy` (mặc định, `/tiles/{z}/{x}/{y}?style=...`) | `direct`
 18. Geolocation: log `console.error('[MapView] Geolocation error:')`, user thấy alert. `mountedRef` phải set `true` trong effect (StrictMode chạy 2 lần)
@@ -151,7 +139,6 @@ Swagger UI:  http://localhost:3000/api-docs
 20. Admin `/admin/map-config`: chọn renderer/provider/mode, preview dùng đúng renderer (`MapCanvas`), test kết nối vector/raster/PMTiles, lưu `renderer`/`default_mode`/`layers_config` → phát `mapconfig:refresh`
 21. **Nhãn hành chính sau sáp nhập** (`frontend/public/vn-provinces-labels.geojson` — 34 tỉnh; `vn-provinces-labels-old.geojson` — 63 tỉnh cũ; `vn-wards-labels.geojson` — 3321 xã; sinh bằng `frontend/scripts/gen-admin-labels.mjs` từ **Open Admin Data** + **viettrace** (CC-BY-4.0)): chọn ở **menu "Chuyển layer" nhóm "Nhãn hành chính"** — `Nhãn mới` (34 tỉnh + 3321 xã) / `Nhãn cũ` (63 tỉnh trước sáp nhập; chưa có xã cũ do thiếu dữ liệu toạ độ) / `Tắt nhãn`. Runtime `setWardLabels(points, show)` — **MapLibre**: source `app-ward-labels` + symbol layer minzoom 11 (tự `setGlyphs` nếu style thiếu, `applyAll` re-add sau đổi style); **Leaflet**: divIcon lọc theo viewport, chỉ zoom ≥ 12, tối đa 400 nhãn (`renderWardLabels`). Hybrid MapLibre bỏ `label_other` (OSM cấp phường/quận) tránh trùng. Mini map/`LocationMapModal`/`AdminMapConfigPage` mặc định tắt (`showWardLabels=false`)
 22. **Giới hạn zoom theo provider** (tránh lỗi "Map data not yet available"/502 khi phóng to): mỗi `tile_url_styles[]` có `max_zoom` (osm-de/osm-fr/esri = 19, opentopo = 17); `buildTileConfig` trả `maxNativeZoom`; Leaflet `L.tileLayer({ maxNativeZoom, maxZoom: 22 })` scale tile thay vì gọi z cao hơn; MapLibre raster source `maxzoom` (`MAX_ZOOM_ESRI`/`MAX_ZOOM_OPENTOPO` trong `mapStyles.js`) overzoom. Proxy `/tiles` retry 1 lần khi lỗi mạng
-
 ### 4.7. Reverse Geocoding
 - `geocodeService.reverse(lat,lng)` gọi Geoapify (`/v1/geocode/reverse`, `lang=vi`, `countrycodes=vn`) → chuẩn hóa + cache `geocode_cache` (4 chữ số thập phân). Trả kèm `admin` = kết quả khớp Data List
 - **`address` dựng chuẩn**: `[số nhà] [tên đường], {xã/phường}, {tỉnh/thành}, Việt Nam` (tối thiểu xã + tỉnh + Việt Nam). Ưu tiên canonical từ Data List; KHÔNG dùng `formatted` thô
@@ -159,14 +146,11 @@ Swagger UI:  http://localhost:3000/api-docs
 - `addressEnrichment.enrichDynamicData` tự điền `address`/`province`/`ma_tinh`/`vung_mien`/`xa_phuong` **chỉ khi ô trống**, gọi trước `applyDiaGioi` ở `proposalService`/`myProposalService`/`adminProposalService`/`stationService`/`excelService` (gate `GEOCODE_ON_IMPORT`)
 - FE: `DynamicForm` watcher `latitude`/`longitude` (debounce 700ms) gọi `POST /api/geocode/reverse`
 - Config `geocode_configs`; admin `GET/PUT /api/admin/geocode-config` + `POST /api/admin/geocode-config/test` (SUPER_ADMIN). Panel `GeocodeConfigPanel` cuối `/admin/map-config`
-
 ### 4.8. Create Form Modal
 - Tất cả create form modal phải có nút X (icon lucide-react) góc phải title
-
 ### 4.9. Ownership
 - Update/delete proposal phải check `user_id` khớp user đang login; admin bypass
 - Sai chủ trả 403 (không trả 404 để tránh oracle IDOR)
-
 ### 4.10. Dynamic Field
 - Field `source_type=fixed` không đổi key hoặc xóa
 - Field `source_type=json` lưu cột `custom_data`
@@ -174,13 +158,11 @@ Swagger UI:  http://localhost:3000/api-docs
 - Cascading select: child field có `parent_field` + `relation_key`
 - Formula: pre-compute (trong form) / post-compute (sau tạo record)
 - Type `user` lưu `{ id }`; `source_config.auto_user`: `current_user` | `parent_sales` | `owner_or_manager` | `area_director` (GĐKV: CTV→parent, GĐKV→mình, còn lại trống) | `center_director` (GĐTT cùng `department` với người phụ trách, còn lại trống) → **chỉ điền khi ô trống** (giữ giá trị sửa tay); FE khóa readonly với CTV/NPP, mở với SALES/ADMIN/SUPER
-
 ### 4.11. Data List
 - Data List name unique
 - Columns config `[{key,label,type}]`, type = `text` hoặc `number`
 - Row data lưu JSON cột `data`
 - Delete row → orphaned children set `parent_row_id = NULL`
-
 ### 4.12. Security & Rate Limiting
 - Mật khẩu bcrypt; JWT 12h (`JWT_EXPIRES_IN`) + `token_version` revoke; FE `api.js` interceptor 401 → xóa token + về `/login`
 - Đăng nhập bằng **email hoặc SĐT** (`authService.findByEmailOrPhone`, chuẩn hóa `0`/`84`/`+84`); tick "Ghi nhớ đăng nhập 30 ngày" → token `30d` (FE lưu `remember_until` = mốc hết hạn), không tick → `12h`. `AuthContext` lưu lựa chọn tick vào `remember_login` (LoginPage tự tick sẵn lần sau) và định kỳ 30s kiểm tra `remember_until` để **tự logout client-side đúng hạn**; `fetchUser` bỏ qua kết quả trả về nếu token đã bị xóa (chống race hồi sinh phiên)
@@ -188,9 +170,7 @@ Swagger UI:  http://localhost:3000/api-docs
 - **Upload**: allowlist MIME/ext, chặn svg/html/js/exe/php (kể cả double-ext), tên random + ext ép từ MIME, verify chữ ký thật. KHÔNG serve static `/uploads`; tải qua `/files/:id/download|image` có auth + ownership (admin bypass, owner, guest cùng IP). `optionalAuth`/`requireAuth` hỗ trợ `?token=` cho `<img>`
 - **Public proposals rút gọn**: `GET /api/proposals` / `:id` chỉ trả `id,latitude,longitude,address,status,created_at` (không PII)
 - Rate limit (`middlewares/rateLimits.js`): auth 10–30/ph, admin 60–120/ph, excel 10–30/ph, guest submit 5/h, guest upload 10/h, guest track 30/h, public data 120/ph, geocode 30–60/ph, assistant 30/h, assistant file 10/h (chỉ khi có tệp đính kèm)
-
 ## 5. Coding Conventions
-
 ```
 Frontend components:     PascalCase.jsx
 Variables/functions:     camelCase
@@ -199,14 +179,11 @@ Database tables:         snake_case, plural
 Database columns:        snake_case
 API routes:              /api/[resource]
 ```
-
 ### General Rules
 - JavaScript (không TypeScript); async/await; try-catch
 - Không thêm comments trừ khi được yêu cầu
 - **Backend test OK ≠ Frontend OK**: sau khi fix backend PHẢI kiểm tra frontend như mở trình duyệt — nút bấm, API gọi, dữ liệu hiển thị, ẩn/hiện đúng. Không chỉ test backend rồi kết luận.
-
 ## 6. Folder Responsibilities
-
 ### Frontend
 ```
 frontend/src/
@@ -216,9 +193,15 @@ frontend/src/
 │   ├── admin/      FieldManager, FormBuilder, ViewBuilder, DragDropList, DataListManager,
 │   │               DataListEditor, RecordDetailPopup, LeadDetailPopup, LeadJourneyPopup,
 │   │               ProcessTimeline, LeadAssignDialog, LeadReportTab, ReportWidget,
-│   │               ReportPropertiesPanel, FieldMappingPanel, TemplateEditor,
-│   │               SyncPanel, GeocodeConfigPanel, PersonnelSyncPanel, UserExternalPanel,
+│   │               ReportPropertiesPanel, GeocodeConfigPanel,
 │   │               UserTreeView, ProposalActivityPopup, ProposalFlowInfo,
+│   │               ProposalGradingTab, ProposalGradingModal, ProposalGradingSummary,
+│   │               ProposalReviewTab, ReviewActionDialog,
+│   │               ProposalLayoutTab, ProposalLayoutUpdateModal,
+│   │               ProposalReportTab, ProposalReportUpdateModal, ProposalReportSummary,
+│   │               ProposalApprovalTab, ProposalApprovalSummary, ProposalSignatureConfigModal,
+│   │               ProposalSignatureTab, ProposalSignatureDetailModal, ProposalSignedFileModal,
+│   │               ProposalDocumentPreview,
 │   │               HelpEditor (TipTap), HelpGuideBoard, AssistantConfigPanel,
 │   │               DocumentTemplateEditor, DocxPreviewPane (docx-preview, dynamic import),
 │   │               DocumentLayoutEditor (Bố cục Word: thêm/xóa/căn trường trực tiếp trên .docx + rollback)
@@ -234,9 +217,12 @@ frontend/src/
 │   ├── auth/       LoginPage, RegisterPage
 │   ├── user/       MapPage, MyProposalsPage, GuestProposalPage, ProfilePage
 │   └── admin/      AdminDashboard, AdminUsersPage, AdminStationsPage, AdminProposalsPage,
+│                   AdminProposalsDanhGiaQuyHoachPage, AdminProposalsReviewPage,
+│                   AdminProposalsDanhGiaLayoutPage, AdminProposalsLapToTrinhPage,
+│                   AdminProposalsTrinhKyPage, AdminProposalSigningPage,
 │                   AdminFieldsPage, AdminFormsPage, AdminFormBuilderPage, AdminViewsPage,
 │                   AdminViewBuilderPage, AdminDataListsPage, AdminRecordFilesPage,
-│                   AdminMapConfigPage, AdminRolesPage, AdminApiConfigPage, AdminAuditLogPage,
+│                   AdminMapConfigPage, AdminRolesPage, AdminAuditLogPage,
 │                   AdminHelpPage, RecordDetailPage, AdminDocumentsPage, AdminLeadsPage,
 │                   AdminReportsPage
 ├── services/       api.js (all API calls), helpApi.js (help + adminHelpApi)
@@ -245,11 +231,12 @@ frontend/src/
 ├── layouts/        PublicLayout, GuestLayout, UserLayout, AdminLayout
 ├── contexts/       AuthContext
 ├── utils/          mapHelpers, mapStatuses, mapTile, mapStyles, mapModes, tileProviders,
-│                   tileProviderCatalog, formatNumber, dataListCache, dataListLabel, provinceData
+│                   tileProviderCatalog, formatNumber, dataListCache, dataListLabel, provinceData,
+│                   proposalGrading, proposalReview, proposalDesign, proposalReport, proposalApproval,
+│                   proposalSignature
 ├── App.jsx         routes (pages import eager, chưa lazy)
 └── main.jsx        entry point
 ```
-
 ### Backend
 ```
 backend/src/
@@ -259,49 +246,48 @@ backend/src/
 ├── routes/             auth, stations, proposals, myProposals, adminProposals, adminUsers, adminLeads, adminReports,
 │                       dashboard, excel, mapUtils, mapConfigs, tiles, geocode, adminGeocodeConfig,
 │                       fieldDefinitions, forms, formFields, views, viewFields, dynamicEngine,
-│                       files, dataLists, dataListsPublic, formulas, apiConfigs, fieldMappings,
-│                       queueLogs, proposalActivity, webhooks, externalUsers, oneOfficeSync, notifications,
+│                       files, dataLists, dataListsPublic, formulas,
+│                       proposalActivity, notifications,
+│                       proposalRequests, proposalGrading, proposalReviews, proposalDesigns,
+│                       proposalReports, proposalApprovals, proposalSignatures,
 │                       helpPublic, adminHelp, adminHelpVideos, adminAssistant, assistant,
 │                       adminDocuments
 ├── controllers/        (matching routes)
 ├── services/           auth, station, proposal, myProposal, adminProposal, adminUser, dashboard, leadService,
 │                       leadAssignmentService, journeyActivityService, journeySyncService, leadProposalService,
-│                       reportService, reportMirrorService, reportBuilderService,
+│                       reportService, reportBuilderService,
 │                       map, mapConfig, proximity, fieldDefinition, form, formField, view,
 │                       viewField, dynamicEngine, dynamicUtils, file, fileSync, excel, dataList,
-│                       formula, apiConfig, fieldMapper, fieldMapping, oneOffice, sync,
-│                       personnelSync, externalUser, externalEvent, proposalLifecycle, proposalActivity,
+│                       formula,
+│                       proposalLifecycle, proposalActivity,
+│                       proposalRequestService, proposalGradingService, proposalReviewService,
+│                       proposalDesignService, proposalReportService, proposalApprovalService,
+│                       proposalSignatureService,
 │                       notification, template, addressEnrichment,
-│                       geocode, queue, help, knowledge, codeKnowledge, assistantConfig, assistantService + assistant/{provider,gemini,openrouter,router,guard,attachments},
+│                       geocode, help, knowledge, codeKnowledge, assistantConfig, assistantService + assistant/{provider,gemini,openrouter,router,guard,attachments},
 │                       documentTemplateService, documentService, documentFormula, documentXmlService (OOXML: extractTree/anchor/insert/remove/align)
-├── workers/            queueWorker (push/pull), personnelSyncWorker (cron nhân sự), proposalLifecycleWorker (auto CANCELLED/tạo trạm)
+├── workers/            proposalLifecycleWorker (auto CANCELLED/tạo trạm)
 └── utils/              db.js (MySQL pool), ttlCache.js, cronMatcher.js
 ```
-
 ## 7. API Conventions
-
 - All routes start with `/api`
 - Auth: JWT Bearer token (hỗ trợ `?token=` cho file/img)
 - Response: `{ success, data, message, pagination? }`
 - Validation trên backend (`middlewares/validators.js`)
 - Body size limit 10MB
-- Env chính (`.env.example`): `TZ=Asia/Ho_Chi_Minh`, `JWT_SECRET`/`JWT_EXPIRES_IN=12h`, `CORS_ORIGINS`, `BASE_URL`, `FRONTEND_URL`, `CAPTCHA_ENABLED`/`TURNSTILE_SECRET_KEY`, `ORPHAN_FILE_TTL_HOURS`, `ENABLE_SWAGGER`, `ONEOFFICE_WEBHOOK_SECRET` (webhook 1Office gọi sang), `VITE_API_URL=/api` (relative, không URL tuyệt đối), `GEMINI_API_KEY`/`GEMINI_MODEL`/`OPENROUTER_API_KEY`/`OPENROUTER_MODEL`/`OPENROUTER_VISION_MODEL`/`ASSISTANT_ENABLED`/`ASSISTANT_MAX_FILE_MB`/`ASSISTANT_MAX_FILES`/`ASSISTANT_CODE_KNOWLEDGE` (chatbot hướng dẫn — key để trong `.env` gitignored, compose truyền qua `${...}`)
-
+- Env chính (`.env.example`): `TZ=Asia/Ho_Chi_Minh`, `JWT_SECRET`/`JWT_EXPIRES_IN=12h`, `CORS_ORIGINS`, `BASE_URL`, `FRONTEND_URL`, `CAPTCHA_ENABLED`/`TURNSTILE_SECRET_KEY`, `ORPHAN_FILE_TTL_HOURS`, `ENABLE_SWAGGER`, ``VITE_API_URL=/api` (relative, không URL tuyệt đối), `GEMINI_API_KEY`/`GEMINI_MODEL`/`OPENROUTER_API_KEY`/`OPENROUTER_MODEL`/`OPENROUTER_VISION_MODEL`/`ASSISTANT_ENABLED`/`ASSISTANT_MAX_FILE_MB`/`ASSISTANT_MAX_FILES`/`ASSISTANT_CODE_KNOWLEDGE` (chatbot hướng dẫn — key để trong `.env` gitignored, compose truyền qua `${...}`)
 ## 8. Database Rules
-
 - Không lưu mật khẩu plaintext (bcrypt)
 - Mọi bảng có PK `id`; `created_at`/`updated_at`; FK nơi phù hợp
 - **KHÔNG DROP TABLE rồi CREATE lại**; không modify schema mà không có migration plan
 - Schema = file SQL thủ công trong `database/` (đánh số); áp dụng qua `scripts/migrate.sh` có tracking `schema_migrations`; chỉ viết script tiến tới, idempotent
 - **DB mới**: dựng bằng datadir + dump chuẩn rồi `mark-all`; không chạy `01-create-tables.sql` tự động
-
-### Database Tables (34 bảng)
-
+### Database Tables
 | Bảng | Mô tả |
 |------|-------|
-| `users` | Tài khoản (`role`, `status`, `parent_id`, `external_id`, `token_version`, `custom_data`) |
+| `users` | Tài khoản (`role`, `status`, `parent_id`, `token_version`, `custom_data`) |
 | `stations` | Trạm sạc |
-| `station_proposals` | Đề xuất (+ `reject_reason`, `reviewed_by/at`, `submission_source`, `tracking_code`, sync 1Office) |
+| `station_proposals` | Đề xuất (+ `reject_reason`, `reviewed_by/at`, `submission_source`, `tracking_code`, `note`, `chot_so_luong_tru` JSON, `tong_gia_tri_chot` DECIMAL, `review_level`, `quy_hoach_score/note`, `phap_ly_score/note`) |
 | `proposal_sequences` | Sinh mã tuần tự theo prefix |
 | `field_definitions` | Định nghĩa trường động (13 types + `user`) |
 | `forms` / `form_fields` | Cấu hình form + field (`order_index`, `visible`, `purpose`, `layout_config`, `is_locked`, `is_default`) |
@@ -311,19 +297,15 @@ backend/src/
 | `map_configs` | Tile provider, center, zoom, renderer/tile_mode/retina |
 | `geocode_configs` | Cấu hình reverse geocoding |
 | `geocode_cache` | Cache reverse geocode (lat_key/lng_key → JSON) |
-| `user_external_map` | Map user nội bộ ↔ ID hệ ngoài |
-| `external_users` | Nhân sự 1Office (pull) — nguồn dropdown "Mã NS - Tên" |
 | `notifications` | Thông báo trong app (chuông header) |
-| `api_configs` | Cấu hình API ngoài (`system_key`, `api_type`, `auth_config`, `sync_*`) |
-| `api_field_mappings` | Mapping field app ↔ 1Office (unique `target_field`) |
-| `api_queue_logs` | Queue push/pull + inbound webhook + audit log |
 | `proposal_activity_logs` | Log hoạt động đề xuất (created/updated/status_change/denied/station_created/auto_failed) |
 | `proposal_lifecycle_configs` | Config vòng đời (90/30 ngày auto, max retries, cron, countdown rules, giới hạn gia hạn `extend_max_times`/`extend_max_days_per_time`) |
+| `proposal_requests` | Yêu cầu đề xuất (tab "Đề xuất cần thực hiện"): `proposal_id`, `request_type` (UPDATE_INFO/SUPPLEMENT/LAYOUT_SUPPLEMENT/RE_GRADE/REVISE_BCDX/TGD_REVIEW/OTHER), `description`, `requested_by`, `previous_status`/`current_status`, `round_no`, `note`, `status` OPEN/DONE/CANCELLED — migration `175` |
+| `proposal_signature_configs` | Cấu hình ký BCĐX: `proposal_id`, `file_id`, `user_id`, `signer_title`, `page`, `pos_x`/`pos_y`/`box_width`/`box_height` (chuẩn hóa 0..1), `status` PENDING/SIGNED/CANCELLED — migration `180` |
 | `business_journeys` | Hành trình Lead (`journey_code` UUID unique, `current_stage`, `status`) — migration `134` |
 | `leads` | Lead MKT (`lead_code` UNIQUE + read-only, stage/classification/outcome, `assigned_*`, `custom_data` CSKH/TVBH, `deleted_at`) — migration `134`/`144`/`145`/`148` |
 | `lead_assignments` | Lịch sử phân chia lead (đóng cũ bằng `ended_at`) — migration `136` |
 | `journey_activity_logs` | Timeline hợp nhất Lead/Proposal/Station — migration `137` |
-| `journey_external_refs` | Map journey ↔ 1Office (`system`/`ref_type`/`external_id` unique) — migration `137` |
 | `help_categories` / `help_articles` | Hướng dẫn (TIP `/admin/help`): bài viết TipTap (`content_json`/`content_html`), `videos`/`images` JSON, `roles`, `status` draft/published/archived, FULLTEXT tìm kiếm (migration `104`) |
 | `assistant_logs` | Log chatbot hướng dẫn (`question`, `answer`, `sources`, `provider`, `latency_ms`, `fallback_reason`, `user_id`, + `tool`, `prompt_tokens`, `completion_tokens`, `has_attachment`, `attachment_types`, `cached`) — migration `104` + `106` |
 | `assistant_knowledge` | Kho tri thức tài liệu nội bộ (`source_path`, `heading`, `content`, FULLTEXT) — index từ `AGENTS.md`+`docs/**/*.md`, migration `105` |
@@ -333,44 +315,36 @@ backend/src/
 | `document_templates` / `document_constants` | Template báo cáo BCĐX (`entity`, `model` TDT/NQ/LK, `file_id`→files, `mapping` JSON tokens/loops/footers + hằng số dùng chung) — quản lý ở `/admin/documents`, sinh docx qua `docxtemplater`, migration `111`. **Loop đa nguồn**: mỗi loop có `parts[]` (nguồn hàng theo thứ tự: bảng trường/danh mục) — mỗi ô = stack binding, ô thiếu binding để trống; `scalars{}` lặp mọi hàng; STT liên tục; hàng tổng cố định cuối bảng. Backward-compat: loop cũ `source/table|listId/columns` tự chuẩn hóa thành 1 part |
 | `document_template_versions` | Lịch sử bố cục template (snapshot `file_id` + `mapping` mỗi lần sửa Bố cục Word) để rollback — migration `113` |
 | `schema_migrations` | Tracking migration đã chạy |
-
-Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdown/auto-push 140–141; 150 gương báo cáo xem docs/8/69-Z; 151 config dashboard/152 builder/153 index MKT xem docs/8/69-P4/AA; 154 readonly field Lead + 155 cột view Import leads xem docs/8/69-AB). Một số mốc quan trọng: Một số mốc quan trọng: `14` display_format/unit, `45–48` external user, `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template 1Office section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log + inbound, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT), `106` kho tri thức code/schema (`assistant_code_knowledge` + cột log token/file), `107` mở `'guest'` cho bài/chuyên mục chung, `108` cấu hình provider/model/fallback chatbot (`assistant_provider_configs`), `109` cache danh sách model thực tế (`assistant_model_cache`), `110` đổi tên view Excel `excel_basic` của đề xuất thành "Excel Đề xuất - Tạo nhanh", `111` quản lý tài liệu BCĐX (`document_templates`/`document_constants`), `112` chuẩn hoá hằng số BCĐX, `113` lịch sử bố cục template (`document_template_versions`), `114` gỡ autofill `chi_phi_lk.so_tien` (nhập tay + footer SUM), `115` xác nhận hoàn thiện thông tin (`info_completed_at`, auto-hủy quá hạn), `116` giới hạn gia hạn (`extend_max_times`/`extend_max_days_per_time`), `140` chính sách countdown 2 mốc chuyển trạng thái (PENDING 3 ngày / APPROVED 15 ngày, tắt hết countdown bổ sung — kế hoạch 72).
-
+Migrations nằm ở `database/`; các migration lịch sử được giữ nguyên, migration `187` dọn schema/dữ liệu tích hợp cũ sau khi tạo backup. Một số mốc quan trọng: `14` display_format/unit, `45–48` external-user schema (removed in migration 187), `49` review fields, `50` notifications, `53` map renderer/tile_mode/retina, `54–55` geocode, `56` performance indexes, `59–64` chuẩn hóa field/form/view 3 entity + khóa field, `70` trạng thái trạm + mô hình + loại ưu tiên, `71` required single-source (kế hoạch 40), `72` loại ưu tiên cho proposals, `73` nhãn trạng thái proposal tiếng Việt, `74` options vùng miền, `75` Loại đất → select 6 lựa chọn, `76` mô hình `NQ_LK` + tab lồng form đề xuất, `77` role `NPP`, `78` metadata form/view (`usage`/`is_locked`/`is_default`), `79` seed 6 view Excel (`excel_full`/`excel_basic`), `80` desc template section lồng NQ_LK, `81` sửa off-by-one row tab của 76, `82` gộp 4 chi phí Liên kết thành table `chi_phi_lk` + datalist `dm_chi_phi_lk`, `83` form "Tạo nhanh" (`purpose='create'`, `is_default=0`, 7 field), `84` required ô bảng `chi_phi_lk`, `85` fix orphan form NQ, `86` vòng đời đề xuất (ENUM 7 + `station_id` + field trạm vùng miền + `mo_hinh_tram.NQ_LK`), `87` config vòng đời, `88` activity log, `90` options phòng ban/chức vụ users, `91` mode gán `area/center_director`, `92` gắn 2 field người vào form 14, `94` status `ARCHIVED` (Đã lưu trữ: ENUM 8, option tím + legend, ma trận REVIEWING→ARCHIVED→CONTRACT_SIGNED/CANCELLED), `104` hệ thống hướng dẫn mới (`help_categories`/`help_articles`/`assistant_logs` + FULLTEXT), `105` kho tri thức tài liệu (`assistant_knowledge` + FULLTEXT), `106` kho tri thức code/schema (`assistant_code_knowledge` + cột log token/file), `107` mở `'guest'` cho bài/chuyên mục chung, `108` cấu hình provider/model/fallback chatbot (`assistant_provider_configs`), `109` cache danh sách model thực tế (`assistant_model_cache`), `110` đổi tên view Excel `excel_basic` của đề xuất thành "Excel Đề xuất - Tạo nhanh", `111` quản lý tài liệu BCĐX (`document_templates`/`document_constants`), `112` chuẩn hoá hằng số BCĐX, `113` lịch sử bố cục template (`document_template_versions`), `114` gỡ autofill `chi_phi_lk.so_tien` (nhập tay + footer SUM), `115` xác nhận hoàn thiện thông tin (`info_completed_at`, auto-hủy quá hạn), `116` giới hạn gia hạn (`extend_max_times`/`extend_max_days_per_time`), `140` chính sách countdown 2 mốc chuyển trạng thái (PENDING 3 ngày / APPROVED 15 ngày, tắt hết countdown bổ sung — kế hoạch 72), `174` bổ sung 9 trạng thái quy trình v2 (ENUM 18) + cột `note`/`chot_so_luong_tru` (đặc tả `docs/8/79`), `175` bảng `proposal_requests` cho tab "Đề xuất cần thực hiện", `176` 4 cột điểm QH/PL + field defs + index, `177` `review_level` + trạng thái `RE_GDTTKD_EVALUATING` (ENUM 19) + cột view 8 (trang Yêu cầu chấm điểm lại), `178` trạng thái `INFOR_WAITING` (ENUM 20) + field `ban_ve_layout` (file, gắn form 14) + loại yêu cầu `LAYOUT_SUPPLEMENT` (trang Đánh giá layout), `179` trạng thái `PROPOSAL_REPORT_RE_CREATING` (ENUM 21) + field `file_bc_dx` (file, gắn form 14) (trang Lập tờ trình BCĐX), `180` trạng thái `PROPOSAL_REPORT_UPDATING` (ENUM 22) + bảng `proposal_signature_configs` (vị trí ô ký) (trang Duyệt BCĐX), `183` cột `signed_file_id` + `signature_id`/`signature_url` cho bước trình ký (trang Trình ký).
+Migrations mới cho BCĐX: `181` thêm `tong_gia_tri_chot` (DECIMAL nullable), hoàn thiện cấu hình bảng `chot_so_luong_tru` gồm mô hình/số lượng/loại trụ/giá chốt/thành tiền; `182` đặt hai field chỉ đọc trên form 14. Khi upload BCĐX, API bắt buộc nhận ít nhất một dòng chốt, lấy giá hiện tại từ Data List `dm_loai_tru` (id 18), tự tính và lưu tổng (`so_luong × gia_chot`) vào `tong_gia_tri_chot`. `183` bước Trình ký (`signed_file_id` + `signature_id`/`signature_url`). `184` cột `proposal_requests.resolution_note` (ghi chú kết quả khi đánh dấu hoàn thành).
 ## 9. Swagger & Documentation
-
 - Swagger UI: `http://localhost:3000/api-docs`; JSON: `/api-docs.json`
 - Thêm endpoint mới → phải thêm `@swagger` JSDoc trong route file
 - Docs folder:
   - `docs/0/` — Backup, tổng quan dự án ban đầu
   - `docs/1/` — Kế hoạch, đề xuất
-  - `docs/2/` — Tài liệu tổng hợp (backend-features, field-configuration, ui-ux-features, bảo mật, swagger, tích hợp 1Office)
+  - `docs/2/` — Tài liệu tổng hợp (backend-features, field-configuration, ui-ux-features, bảo mật, swagger)
   - `docs/3/` — Bug fixes
   - `docs/4/` — Thiết kế tính năng (Formula Pre/Post, Excel theo View, Cascading Select, Dynamic Form/View)
-   - `docs/5/` — Kế hoạch & triển khai các mốc lớn (tìm kiếm, stress test, guest form, RBAC, 1Office, bản đồ, reverse geocode, MapLibre 35–36, self-host PMTiles 37)
-   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + webhook 1Office + worker vòng đời), 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban), 48–52 (webhook, ARCHIVED, cải tiến đề xuất, map/popup, nginx prod), **53 (hệ thống hướng dẫn mới: viewer DB + `/admin/help` + video + chatbot)**, **54 (nâng cấp chatbot: markdown/nguồn có ảnh, nút chat toàn cục, kho tri thức tài liệu, tối ưu Vite + fix lazy-load vỡ layout)**, **55 (tối ưu truy hồi & chi phí chatbot)**, **57 (cải tiến chatbot toàn diện: guard phạm vi, kho code/schema SUPER-only, multimodal ảnh/tài liệu)**, **58 (quản lý tài liệu BCĐX: template .docx động, loop đa nguồn stack trong 1 ô, bố cục Word thêm/xóa/căn trường + rollback)**, **60 (marker phẳng/tròn theo trạng thái + fullscreen bản đồ lân cận + badge ưu tiên quy hoạch + giới hạn gia hạn + field link Google Map)**, **61 (mở rộng cây GĐKV/GĐTT)**, **66 (automation gán quy trình vào dự án)**, **67 (đồng bộ báo cáo quy trình Google Sheet)**, **68 (MKT Leads kế hoạch)**, **69 (MKT Leads các bước)**, **71 (auto-push khi lưu)**, **72 (countdown 2 mốc)**  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
+   - `docs/5/` — Kế hoạch & triển khai các mốc lớn (tìm kiếm, stress test, guest form, RBAC, bản đồ, reverse geocode, MapLibre 35–36, self-host PMTiles 37)
+   - `docs/8/` — Kế hoạch 46 (quy chuẩn luồng trạng thái đề xuất 7 status + audit log hoạt động + worker vòng đời), 47 (nhân sự: role/cây 2 tầng, luật gán GĐKV/GĐTT, phân quyền 5 nhóm, kiểu cây phòng ban), 48–52 (ARCHIVED, cải tiến đề xuất, map/popup, nginx prod), **53 (hệ thống hướng dẫn mới: viewer DB + `/admin/help` + video + chatbot)**, **54 (nâng cấp chatbot: markdown/nguồn có ảnh, nút chat toàn cục, kho tri thức tài liệu, tối ưu Vite + fix lazy-load vỡ layout)**, **55 (tối ưu truy hồi & chi phí chatbot)**, **57 (cải tiến chatbot toàn diện: guard phạm vi, kho code/schema SUPER-only, multimodal ảnh/tài liệu)**, **58 (quản lý tài liệu BCĐX: template .docx động, loop đa nguồn stack trong 1 ô, bố cục Word thêm/xóa/căn trường + rollback)**, **60 (marker phẳng/tròn theo trạng thái + fullscreen bản đồ lân cận + badge ưu tiên quy hoạch + giới hạn gia hạn + field link Google Map)**, **61 (mở rộng cây GĐKV/GĐTT)**, **68 (MKT Leads kế hoạch)**, **69 (MKT Leads các bước)**, **72 (countdown 2 mốc)**  - `docs/6/` — Hướng dẫn deploy và cập nhật VPS
   - `docs/7/` — Review toàn mã nguồn (P0/P1/P2 + chuẩn hóa UIUX + kế hoạch test frontend). Nguồn chính xác nhất về bug đã/chưa fix.
-
 ## 10. Docker & Deploy
-
 - Compose dev: `docker-compose.yml`; prod: `docker-compose.simple.yml`; phpMyAdmin: `docker-compose.pma.yml`
 - Services: Frontend `:5173`, Backend `:3000`, MySQL `:3306`
 - Source code mount volumes (hot reload). **KHÔNG** xóa source volumes; **KHÔNG** `docker compose down -v` trừ khi được yêu cầu
 - Named volume: `frontend_node_modules`, `backend_node_modules`. Cài package mới: `docker exec station-frontend npm install <pkg>` rồi rebuild
 - **Bắt buộc `TZ=Asia/Ho_Chi_Minh`** cho `backend` + `mysql` (cả dev lẫn prod); `app.js` cũng set mặc định. Kiểm tra: `docker exec station-backend date` phải hiện `+07`
 - Scripts: `deploy.sh` (deploy 1 lệnh), `update.sh` (cập nhật VPS), `scripts/migrate.sh`, `scripts/sync-data.sh`
-
 ## 11. Dynamic System Architecture
-
 ### Field Types
 - 13 types chuẩn + `user`. Config riêng theo type: `number_format`, `decimal_places`, `display_format`, `unit`, `date_format`, `file_config`, `formula_config`, `option_style`, `source_config`
 - Lưu ở `field_definitions`; code còn xử lý `password`/`table` (legacy, xem `docs/7/04`)
 - **Table**: `source_config.columns[]` đặt `required: true` cho từng cột → FE (`DynamicForm.validate`) + BE (`dynamicUtils.validateField`) chặn ô rỗng (`"<label>: dòng N thiếu <cột>"`). Chỉ bảng có cột `required` mới bị chặn (hiện: `chi_phi_lk` — migration 84).
-
 ### User Field (type `user`)
 - Lưu `{ id }`; hiển thị chip tên, click xem chi tiết (CTV ẩn)
 - `source_config.auto_user`: `current_user` | `parent_sales` | `owner_or_manager`
 - BE: `dynamicUtils.applyAutoUserFields` (create/update proposal). FE: `DynamicForm.resolveAutoUserId`
-
 ### Form/View Builder
 - Tạo Forms/Views tại `/admin/forms`, `/admin/views`
 - **`DynamicForm` resolve form theo `purpose`** (`getByEntityAndPurpose`, `ORDER BY is_default DESC, id ASC`); **`formId` được truyền thì THẮNG `purpose`** (migration 78/83 — dùng cho nút "Tạo nhanh"). `DynamicForm` có form `all`/`create`/`view` nên hardcode `formId` dễ trỏ nhầm → ưu tiên `purpose` khi không có `formId`
@@ -381,21 +355,18 @@ Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdo
 - **Bỏ hardcode `VIEW_ID`**: hook `useDefaultViewId(entity, fallbackId)` tra view `usage='table' & status='active'` (cache module-level + fallback hằng số) cho `AdminProposalsPage`/`AdminStationsPage`/`AdminUsersPage`/`MyProposalsPage`
 - **Tạo view có cấu hình** (dialog Tên/Loại/Mô tả/Kích hoạt/Nối-thêm-field): chọn `excel_basic` tự tắt nối-thêm; view exact (`views.include_rest=0`, migration `149`) chỉ dùng đúng cột trong view, `include_rest=1` nối thêm field còn lại (thay ngữ nghĩa ngầm `usage==='excel_basic'`); view exact mới tự seed cột (clone view `excel_basic` chuẩn, không có thì lấy field `required=1`)
 - **HDSD Excel theo cột**: `view_fields.config.guide_text` (ô nhập trong ViewBuilder); `buildColumnGuide` ưu tiên custom, fallback auto
-
 ### Tab lồng trong layout (`layout_config.type:'tabs'`) — migration 76
 - `layout_config.sections[]` có 2 loại phần tử: section thường (`rows`) và **tab-group** (`type:'tabs'`, `tabs[]`, bắt buộc `rows: []`).
 - Mỗi tab con `{id, title, sectionRefs:[sectionId]}` **tham chiếu** section có sẵn (không nhân bản field). Section được ref: **bỏ qua `visibleWhen` riêng** (tab cha là cổng duy nhất).
 - Luật **"visible thắng"**: row hiển thị nếu tồn tại ≥1 nơi chứa nó đang hiển thị (chống bỏ qua `required` — R2). Engine render/validate/desc viết **đệ quy N cấp** (`MAX_TAB_DEPTH=5`, chống vòng bằng `visited/pathSet`).
 - FormBuilder UI chỉ tạo **2 cấp** (chặn tạo tab trong tab con); mọi chỗ duyệt section phải guard `(section.rows || [])`.
-- Render: `DynamicForm.renderTabGroup` (tab thật, `activeTabs` key theo path, render mọi tab + `display:none`), `RecordDetailPopup.renderTabGroup` (tab thật ở popup view/edit, `getLayoutSections` trả `{sections,sectionMap,cellMap}`), `templateService.renderSection` (desc 1Office section cha có `sections[]`).
+- Render: `DynamicForm.renderTabGroup` (tab thật, `activeTabs` key theo path, render mọi tab + `display:none`), `RecordDetailPopup.renderTabGroup` (tab thật ở popup view/edit, `getLayoutSections` trả `{sections,sectionMap,cellMap}`), `templateService.renderSection` (mô tả HTML section cha có `sections[]`).
 - Seed form 13/14: tab-group `tai_chinh_nqlk` (`visibleWhen mo_hinh_dau_tu=NQ_LK`) ref `s6` (NQ) / `s5` (LK); field mới `chinh_sach_nq`/`loai_tru_nq`/`chinh_sach_lk`/`loai_tru_lk`/`dat_coc`/`ghi_chu_dat_coc`/`tong_chi_phi` + 1 field **table** `chi_phi_lk` (cột `loai_chi_phi` chọn từ datalist `dm_chi_phi_lk`, cột `so_tien` **nhập thủ công**, footer `SUM`; migration `114` đã gỡ `autofill_from`/`data_link` cũ gây tự điền + khóa ô) — mỗi field `conditions: mo_hinh_dau_tu = NQ_LK`. 4 field chi phí số cũ (`chi_phi_van_chuyen/tram_bien_ap/ha_tang/thue_vi_tri`) đã chuyển `status='inactive'` (migration 82).
-
 ### Select/Multiselect Data Sources
 - **Manual options**: `[{label, value, color, borderRadius}]`
 - **Data List**: `data_list_id` + `data_list_column`
 - **Cascading**: child field `parent_field` + `relation_key`; API `GET /api/data-lists/:id/children?column&parent_column&parent_value`
 - FE transform flat rows → tree map `{tree, unique}` cho O(1) lookup; `useFieldOptions` đọc data-list (manual ưu tiên)
-
 ### Formula System
 - **Pre-compute**: tính trong form trước submit (scope chỉ có field trong form — KHÔNG có `id`/`{metadata}`). **Post-compute**: sau INSERT/UPDATE, dùng metadata (id, entity, base_url, created_at). Placeholder `{metadata}` (vd `{base_url}`) được thay giá trị thật trước khi evaluate ở cả preview lẫn chạy thật; `base_url` lấy từ env `FRONTEND_URL` (prod set domain thật, dev fallback `http://localhost:5173`)
 - Config: `formula_config = { compute_mode, expression, referencedFields, outputType, outputFormat, decimalPlaces, unit }`
@@ -404,16 +375,13 @@ Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdo
 - Sinh mã tuần tự: hàm `SEQ`/`setSeq` qua bảng `proposal_sequences`; `formulaService.reconcileSequences`/`parseCodeToSeq` đồng bộ sau import
 - Recompute hàng loạt: `backend/scripts/recomputeFormulas.js` (exclude `ma_de_xuat`)
 - 26+ hàm custom: ROUNDUP, ROUNDDOWN, MOD, IF, AND, OR, NOT, IFERROR, COUNT, COUNTA, COUNTIF, SUMIF, AVERAGE, CONCAT, LEN, LEFT, RIGHT, UPPER, LOWER, TRIM, DATE, TODAY, LPAD, RPAD, YEAR, MONTH, DAY, NOW, SEQ...
-
 ### Formula Visual Editor
 - `FormulaEditor.jsx`: compute mode selector, field/operator/function buttons, autocomplete tại cursor (keyboard nav), output config (numberFormat/comma/dot/space, decimalPlaces, unit)
 - API: `POST /api/formulas/validate`, `POST /api/formulas/preview`
-
 ### Number Formatting
 - `frontend/src/utils/formatNumber.js`: `formatNumber(value, {format, decimalPlaces, unit})`, `parseFormattedNumber(str)`
 - 4 formats: `plain` (1000), `comma` (1,000), `dot` (1.000), `space` (1 000)
 - Áp dụng: FieldRenderer, FormulaEditor output, DynamicForm computeFormula, DataListEditor
-
 ### File Management
 - Upload `POST /api/files/upload` (multer disk, 10MB); download `/files/:id/download` (auth-aware, Content-Disposition UTF-8, hỗ trợ `Range` → 206 để tua video)
 - Video hướng dẫn nội bộ: `POST /api/admin/help/videos` (multer riêng **200MB**, mp4/webm/mov, subdir `help-videos/`, SUPER_ADMIN). Quyền tải video theo `roles` của bài viết chứa `file_id` (mở rộng `fileController.canAccessFile`)
@@ -421,7 +389,6 @@ Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdo
 - Viewer: zoom ảnh, play video/audio, render PDF/Word/Excel inline
 - **Auto-rename file đề xuất** (`fileService.renameProposalFiles`, gọi sau post-formula ở `proposalService.createProposal/createGuestProposal`, `adminProposalService` + `myProposalService.updateProposal`): upload giữ tên tự do, lúc **lưu** đổi `files.original_name` + tên nhúng trong `custom_data` thành `{timestamp_tao}_{Mã đề xuất}_{label trường}_{STT theo vị trí trong field}` + giữ đuôi ext gốc (timestamp UTC `YYYYMMDDHHMMSS` lấy từ `files.created_at`, ổn định; file cũ đúng tên cũ thì giữ nguyên để không đổi tên/gửi lại hàng loạt; VD `20260101200405_LK_HNO_0004_Ảnh vị trí dự kiến lắp đặt trụ sạc_1.png`); thiếu mã → fallback `DX{id}`; idempotent (lưu lại không đổi tên cũ, xóa file giữa thì đánh lại STT)
 - Danh mục tỉnh tra theo cả 2 tên `dm_tinh`/`Tỉnh` (`dataListService.TINH_LIST_NAMES`) vì DB dev đã đổi tên (không tra thấy → `applyDiaGioi` throw, tạo đề xuất fail)
-
 ### Excel Import/Export
 - **Template/Export/Import theo view** (migration 79): `GET /admin/excel/template` + `/export/{entity}` nhận `viewId` | `viewIds` (phân tách dấu phẩy → **1 file nhiều sheet**) | `usage` (`table`|`excel_full`|`excel_basic`); không truyền → view `usage='table'` (giữ hành vi cũ). `excel_basic` = **chỉ cột trong view**; `table`/`excel_full` = cột view + nối các field còn lại. `viewService.resolveView` nội bộ `excelService`
 - **Tên file** do backend đặt qua `Content-Disposition` (`buildFileName`): Template `template_<entity>_<usage>.xlsx` (nhiều view → `_all`); Export `<YYYYMMDD_HHmmss>_export_<entity>_<usage>.xlsx`; xuất trùng `<stamp>_duplicates_export.xlsx`; Data List `<stamp>_<tên>.xlsx`
@@ -431,27 +398,7 @@ Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdo
 - Export ExcelJS → .xlsx; Import: Preview → Validate → Confirm (transaction, all-or-nothing, re-validate lại khi confirm)
 - Nút **Template/Export** ở 3 trang quản trị là **dropdown chọn bộ cột** (`ViewPickerMenu`); modal Import có select "Bộ cột" + banner nhận diện (`ImportViewPanel`)
 - **Template/Export/Import theo mô hình đầu tư** (đề xuất, migration `110`): `GET /admin/excel/template/by-model` → file `HDSD` + 4 sheet `Mô hình NQ/TDT/LK/NQ_LK` (cột chung + cột riêng theo prefix `tdt_`/`lk_`/`nq_` + 8 field NQ_LK). `GET /admin/excel/export/station_proposals/by-model` → `HDSD` + 4 sheet **lọc đúng mô hình** + sheet `Chưa rõ mô hình` (cột chung). Import đọc trực tiếp file đa sheet: `detectModelSheets` nhận sheet theo tên, **tự gán `mo_hinh_dau_tu` theo sheet** (ghi đè ô nhập), dòng lỗi tag `TênSheet#sốDòng`, trả `sheets[]`; chọn `usage=by_model` trong "Bộ cột" để ép. View `excel_basic` của đề xuất đổi tên **"Excel Đề xuất - Tạo nhanh"** (`110-rename-excel-basic-proposal-view.sql`)
-
-## 12. 1Office Integration
-
-- **Content-Type**: `application/x-www-form-urlencoded; charset=UTF-8` (thiếu charset gây mojibake tiếng Việt bên 1Office); **Auth**: `access_token` query param
-- **9/14 source types hoạt động**: text, textarea, number, email, phone, date, select, boolean, file
-- **5/14 chuyển text**: url, multiselect, datetime, formula, table
-- 1Office select fields dùng ID (formal_name, scale_id); `cf2` dùng label ("VIP", "VVIP")
-- **`user_ids`/`manager_user_ids` nhận CODE/TÊN, KHÔNG nhận ID**: string comma (vd `'NV06,NV08,Nguyễn Văn C'`). `user_external_map.external_id` lưu `personnel_id`. Push quy đổi `personnel_id` → `code` (ưu tiên) hoặc `fullname`; pull `field_raws=user_ids,manager_user_ids` trả `ID` liên hệ → quy đổi `ID` → `personnel_id`. Cần `admin_token` trong `api_configs.auth_config`. 3 ID khác nhau: `ID` (contact), `personnel_id`, `code`. Chỉ nhận người CÓ tài khoản 1Office (app gắn `warnings`; `UserExternalPanel` disable người `contact_id` rỗng)
-- **File đính kèm**: field `files` = JSON string `[{name,file}]` trong body `contact/insert|update`; KHÔNG endpoint upload riêng; gửi tất cả file 1 request; `update` append (chỉ gửi file mới); tên file bỏ đuôi
-- **Mapping đặc biệt**: `desc` (nguồn Desc Template, render lại tươi mỗi lần push + tự strip HTML cũ trong Mô tả chống lồng desc, cố định) + `files` luôn link sẵn; `api_field_mappings` unique `target_field` (1 nguồn → nhiều đích, 1 đích ← 1 nguồn). **`desc`/`files` KHÔNG dùng làm nguồn pull** (`syncService` tự loại) tránh desc lặp
-- **Non-working fields**: gender, group_type_id, trade_ids, websites, status_id, source_id, region (khóa kéo–thả)
-- **Non-working arrays**: contacts[] không parse; detail[] chỉ lưu department_id
-- **Desc field HTML**: INSERT lưu HTML, GET strip → plain text, Web UI render HTML
-- **FieldMappingPanel**: Contact Fields sửa Label + Ghi chú (nút bút chì) → `api_configs.field_metadata`; `getFieldTypes` ưu tiên `saved.label`; special `desc`/`files` không sửa. Proposal Fields chia Đã link / Chưa link, có tìm kiếm
-- **Code**: `backend/src/services/fieldMapper.js` (ONE_OFFICE_FIELDS), `frontend/src/components/admin/FieldMappingPanel.jsx` (SOURCE_TYPES_FORCE_TEXT)
-- **Phân loại config**: `api_configs.api_type` = `contact` | `personnel` (cùng `system_key='1office'`)
-- **API nhân sự (personnel)**: chỉ **pull** — `personnelSyncService.syncFrom1Office` gọi `/api/personnel/profile/gets` (cần **token riêng cho object `personnel/profile`**; token khác → `"accesstoken not of object"`) → upsert `external_users`. Map: `ID`→`external_id`, `raw_user_id`→`contact_id`, `code`→`code`, `name`→`fullname`, `department_id`→`department_name`; bỏ header `code='STT'`. Sync tay `POST /api/admin/api-configs/:id/sync-personnel` + cron (`sync_cron`, `sync_enabled`, tick 20s qua `cronMatcher.js` + `personnelSyncWorker.js`, KHÔNG dùng node-cron v4)
-- **Push/pull user dùng `external_users`** (không gọi API lúc push): `fieldMapper.getExternalUserMaps` (cache 30s), fallback API khi bảng trống. Dropdown `GET /api/admin/external-users`
-
-## 13. Performance Optimizations
-
+## 12. Performance Optimizations
 ### Đã áp dụng
 - **Route-level code splitting**: 21 page dùng `React.lazy` trong `App.jsx`; mỗi layout bọc `<Suspense fallback={<RouteFallback/>}>` **quanh `<Outlet />`** (KHÔNG bọc ngoài `<Routes>` — sẽ làm header/taskbar unmount khi tải chunk)
 - **`vite.config.js` manualChunks** tách vendor (`react-vendor`/`leaflet`/`icons`/`mathjs`/`xlsx`/`mammoth`/`excel-io`); khớp chính xác `/node_modules/<pkg>/` (regex rộng kiểu `/react/` bắt nhầm `@tiptap/react`). Kết quả: entry 2.897 kB → **53 kB**; preload đầu chỉ `index + react-vendor + icons`; không còn cảnh báo bundle
@@ -467,41 +414,40 @@ Migrations nằm ở `database/` (01→116, tiếp 134→149 MKT-Leads + countdo
 - Index migration 56 (`station_proposals(user_id,created_at)/(status,created_at)`, `stations(created_at)`, `data_list_rows(list_id,sort_order)`)
 - Debounce search `hooks/useDebouncedValue.js` ở các trang danh sách
 - Map endpoint: `GET /stations` không `limit` chỉ trả marker fields + `loai_uu_tien`/`mo_hinh_tram` (JSON_EXTRACT, bỏ merge `custom_data`); proposals cap 20000 + `mo_hinh_dau_tu`/`loai_uu_tien`
-
 ### Chưa có (cơ hội cải thiện)
 - API response caching (không SWR/ETag)
 - Context value memoization (`AuthProvider`)
 - Skeleton loading states
 - Hợp nhất 2 validator động (`dynamicUtils.validateField` vs `validators.validateDynamicFields`) — xem `docs/7/04`
-
 ## 14. Testing
-
 Sau khi đổi code:
 1. Frontend build (`npm run build` trong `frontend/`)
 2. Backend khởi động không lỗi
 3. Docker containers chạy
 4. Verify thủ công feature + feature cũ
 5. Swagger UI load đúng
-
+### Test E2E hợp nhất quy trình v2 (root)
+```powershell
+node e2e/full-flow-v2.js        # 93/93 PASS — toàn bộ quy trình v2: tạo → chấm → chấm lại → TGĐ → layout → BCĐX → trình ký
+```
+- API-driven (fetch + SQL qua `docker exec`), tự dựng fixture tạm (PL/TGĐ/Back Office/GĐTTKD Bắc + ảnh chữ ký) và tự dọn cuối cùng. Yêu cầu backend Docker đang chạy.
+- Docs/8/79 §15: ghi nhận hành vi — `toTgd` chỉ từ `RE_GDTTKD_EVALUATING`, đẩy lại BCĐX **bắt buộc file mới**, `PUT /my-proposals` đòi đủ 3 trường (`owner_name`/`owner_phone`/`address`), `my=1` admin giờ áp dụng `assignedTypesForUser`, chủ đề xuất là signer sẽ nhận 2 thông báo (trung tâm + signer loop), `note` chấm điểm lưu mã (`YES_QH_WAIT_PL`...) không phải nhãn.
 ### Playwright E2E (root)
 ```powershell
 npm run test:e2e          # playwright test e2e/FE-01-smoke.spec.js
 npm run test:e2e:headed
 ```
 - Config `playwright.config.js`: `testDir=./e2e`, `baseURL=http://localhost:5173`, project chromium
-
 ### Playwright host (frontend)
-- Test tại `frontend/test-*.cjs` (dùng `.cjs` vì package.json `"type":"module"`); chạy `node test-1office.cjs` từ `frontend/`
+- Test tại `frontend/test-*.cjs` (dùng `.cjs` vì package.json `"type":"module"`); chạy test Playwright phù hợp trong `frontend/` từ `frontend/`
 - `chromium.launch({ headless: true })`; login bằng `page.request.post(API + '/api/auth/login', ...)` → lưu token localStorage
 - Sau mỗi hành động: `waitForLoadState('networkidle')` + `waitForTimeout(1000-2000)`
 - Selectors: `button:has-text("Text")`, `span.font-medium`, `input[placeholder*="..."]`; KHÔNG dùng `text=...` trong `page.$()`
-- Results lưu `test-1office-results.json`
-
+- Results lưu file kết quả test tương ứng
 ```javascript
 const { chromium } = require('playwright');
 const BASE = 'http://localhost:5173';
 const API = 'http://localhost:3000';
-
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -516,9 +462,7 @@ async function main() {
 }
 main();
 ```
-
 ## 15. PowerShell UTF-8 Encoding
-
 PowerShell 5.1 (Windows) mặc định Windows-1252 → tiếng Việt sai (mojibake). MUST set UTF-8 trước mọi command:
 ```powershell
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -529,18 +473,14 @@ Khi `docker exec` mysql thêm `--default-character-set=utf8mb4`:
 docker exec station-mysql mysql -u root -ppassword station_management --default-character-set=utf8mb4 -e "QUERY"
 ```
 **KHÔNG dùng `Get-Content`/`Set-Content` của PowerShell để sửa file source** (double-encoding → mojibake). Luôn dùng công cụ `Edit`/`Write` (UTF-8). Nếu buộc phải thao tác file: `[System.IO.File]::ReadAllText/WriteAllText` với `[System.Text.UTF8Encoding]::new($false)`.
-
 ## 16. Known Issues
-
 - Xem `docs/7/` (review toàn mã nguồn, cập nhật 10/09/2026): P0 đã fix hết; P1 đã fix; một số P2/P3 còn lại (validator động trùng, select import chưa validate, Swagger lệch role, `AdminMapConfigPage` dùng relative URL...)
 - `AGENTS.md` mô tả 13 types nhưng code có thêm `user`/`password`/`table` — `table` chưa có cột DB tương ứng
 - MapLibre + 4 mode + self-host PMTiles đã triển khai (kế hoạch 36, Phase 1–8). File `frontend/public/pmtiles/vietnam.pmtiles` (~299MB) **không commit** — cần build lại theo `docs/5/37`. Glyphs nhãn đang dùng remote OpenFreeMap; self-host offline hoàn toàn cần thêm glyphs.
 - `/de-xuat` (guest) gọi `/api/field-definitions` bị **401 → redirect `/login`** ⇒ form đề xuất cho khách chưa đăng nhập bị chặn (cần nhường endpoint public). Phát hiện khi làm `docs/5/41`.
 - Trang hướng dẫn đã chuyển nguồn sang DB (migration 104, kế hoạch 53). **Cố ý giữ fallback `guideData.*.js`** cho trường hợp API help lỗi (bundle +~50KB); muốn gỡ hẳn thì đổi `apiMode ? apiSections : legacySections` → `apiMode ? apiSections : []` ở `HelpPage.jsx` rồi bỏ import `GUIDE`/`resolveFlowStep`.
 - Chatbot hướng dẫn **không dùng Ollama** (máy dev/VPS nhỏ không đủ RAM cho model 7B). Provider: Gemini chính + OpenRouter dự phòng (`OPENROUTER_MODEL` nhận danh sách model free, thử lần lượt — xem `docs/8/54`). Video hướng dẫn nội bộ giới hạn **200MB** (route riêng `POST /api/admin/help/videos`); cần thêm thì làm tus resumable (nấc 2).
-
 ## 17. Definition of Done
-
 - [ ] Feature works end-to-end
 - [ ] Frontend không lỗi runtime
 - [ ] Backend API trả đúng
@@ -548,18 +488,14 @@ docker exec station-mysql mysql -u root -ppassword station_management --default-
 - [ ] Không phá feature cũ
 - [ ] Docker hot reload vẫn chạy
 - [ ] Không console error
-
 ## 18. Công cụ hỗ trợ: codebase-memory-mcp (MCP)
-
 Đã cài **toàn cục** cho opencode (mọi dự án) — dùng để tra cứu cấu trúc code bằng knowledge graph (SQLite) thay vì grep/đọc file nhiều lần.
-
 **Cài đặt (không cần làm lại)**
 - Binary: `C:\Users\ADMIN\.local\bin\codebase-memory-mcp.exe` (v0.10.8), đã có trong PATH user
 - Cache: `C:\Users\ADMIN\.cbm-cache` — **bắt buộc** vì mặc định `~/.cache/codebase-memory-mcp` nằm trên junction `→ F:\Moved` (DACL cấp quyền cho `Authenticated Users` → CBM từ chối vì lý do bảo mật)
 - Env user `CBM_CACHE_DIR` đã set; entry MCP khai báo trong `~/.config/opencode/opencode.json` (`mcp.codebase-memory-mcp`, kèm `environment.CBM_CACHE_DIR`)
 - Cài bằng `--skip-config` ⇒ **chỉ có MCP tools**, KHÔNG có skill/agents/plugin của CBM
 - ⚠️ Chạy CLI ở shell không có `CBM_CACHE_DIR` sẽ lỗi `cache-private` → luôn set biến trước
-
 ```powershell
 $env:CBM_CACHE_DIR = "C:\Users\ADMIN\.cbm-cache"
 $exe = "$env:USERPROFILE\.local\bin\codebase-memory-mcp.exe"
@@ -567,11 +503,8 @@ $exe = "$env:USERPROFILE\.local\bin\codebase-memory-mcp.exe"
 & $exe cli index_status
 '{"name_pattern":".*AutoUser.*"}' | & $exe cli search_graph
 ```
-
 **15 tool**: `index_repository`, `list_projects`, `delete_project`, `index_status`, `check_index_coverage`, `get_architecture`, `search_graph`, `search_code`, `trace_path`, `query_graph`, `get_code_snippet`, `get_graph_schema`, `detect_changes`, `manage_adr`, `ingest_traces`.
-
 **Phạm vi hoạt động trên repo này** (index 15/09/2026: 2.423 nodes / 6.152 edges, ~5s)
-
 | Dùng tốt | Ghi chú |
 |---|---|
 | `get_architecture` | 220 Route, hotspot (`useAuth` fan_in=42), 12 cluster (map renderers, DynamicForm, FormBuilder…) |
@@ -580,14 +513,11 @@ $exe = "$env:USERPROFILE\.local\bin\codebase-memory-mcp.exe"
 | `search_code` | Grep có gắn graph; **dùng cho backend** |
 | `index_status` / `check_index_coverage` | Coverage + file `parse_partial` |
 | `detect_changes` | Blast radius theo git diff (theo file) |
-
 | Hạn chế (đã đo) | Chi tiết |
 |---|---|
 | **Backend mất ~377 hàm** | Extractor KHÔNG tạo Function node cho `exports.X = async () => {}` / `exports.X = function(){}` — backend dùng CommonJS pattern này gần như 100%. Chỉ còn **172** Function node backend (từ `function X()` / `const X = () =>`) |
-| `search_graph("pushTo1Office")` | → **0 kết quả** (cùng `getMissingPushUserFieldLabels`, `autoPushOnApprove` thì CÓ vì là `async function` khai báo thường) |
 | `trace_path` / `query_graph` cho backend | Không có `CALLS` edge với hàm `exports.X` |
 | `database/*.sql`, `docs/`, `scripts/`, `frontend/public/`, `e2e/`, `tests/` | Không index (by design hoặc skip-list); 52 file `parse_partial` (hầu hết SQL) |
-
 **Quy ước dùng (không sửa mã nguồn chỉ để phục vụ tool)**
 1. Backend: tìm symbol / ai gọi ai → dùng `search_code` (grep) như trước, **đừng** dựa `search_graph`/`trace_path`.
 2. Frontend: ưu tiên `search_graph` + `trace_path` (thay grep nhiều lần).

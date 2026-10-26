@@ -22,7 +22,7 @@ export const flowsGuide = {
         { ref: 'G14', note: 'Còn sửa được khi chờ duyệt; bị từ chối thì sửa rồi bấm Gửi lại để quay về chờ duyệt.' },
         { ref: 'G15', note: 'Tạo nhầm thì xóa (chỉ của chính mình, có xác nhận, mất hẳn).' },
         { ref: 'G25', note: 'Phía người duyệt (SALES/ADMIN): lọc đề xuất theo trạng thái + Cấp 1/Cấp 2 để xử lý hàng loạt.', image: '/help/admin-data/b07_proposals.jpg' },
-        { ref: 'G26', note: 'Duyệt (popup xác nhận, không hoàn tác): hệ thống tự tạo lệnh gửi sang 1Office. Từ chối thì bắt buộc ghi lý do.', image: '/help/admin-data/b08_trang-thai.jpg' },
+        { ref: 'G26', note: 'Duyệt đề xuất; nếu từ chối thì bắt buộc ghi lý do.', image: '/help/admin-data/b08_trang-thai.jpg' },
         { ref: 'G16', note: 'Chủ đề xuất nhận thông báo ở chuông header sau mỗi lần đổi trạng thái.', image: '/help/user/a14-thong-bao.jpg' },
       ],
     },

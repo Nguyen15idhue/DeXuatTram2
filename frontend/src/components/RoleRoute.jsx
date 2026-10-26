@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
-const RoleRoute = ({ allowed, children, redirectTo = '/admin' }) => {
+const RoleRoute = ({ allowed, accessCheck, children, redirectTo = '/admin' }) => {
   const { user, loading, isAuthenticated } = useAuth();
   const location = useLocation();
 
@@ -13,7 +13,7 @@ const RoleRoute = ({ allowed, children, redirectTo = '/admin' }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!allowed.includes(user?.role)) {
+  if (!allowed.includes(user?.role) || (accessCheck && !accessCheck(user))) {
     const state = redirectTo === '/admin' ? { denied: true, from: location.pathname } : undefined;
     return <Navigate to={redirectTo} replace state={state} />;
   }

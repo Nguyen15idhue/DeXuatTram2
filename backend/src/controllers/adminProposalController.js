@@ -1,11 +1,19 @@
 const adminProposalService = require('../services/adminProposalService');
 const proximityService = require('../services/proximityService');
 const documentService = require('../services/documentService');
+const proposalLifecycle = require('../services/proposalLifecycle');
+const proposalAccessService = require('../services/proposalAccessService');
+const proposalReviewService = require('../services/proposalReviewService');
+const proposalProgressService = require('../services/proposalProgressService');
 
 const scopeFor = async (req) => {
-  if (req.user.role !== 'SALES') return { role: req.user.role };
-  const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
-  return { role: 'SALES', branchIds, userId: req.user.id };
+  if (req.user.role !== 'SALES' && req.user.role !== 'CTV' && req.user.role !== 'NPP') return { role: req.user.role };
+  if (req.user.role === 'SALES' || req.user.role === 'NPP') {
+    const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
+    return { role: req.user.role, branchIds, userId: req.user.id };
+  }
+  // CTV: only see their own proposals (where they are the creator)
+  return { role: 'CTV', userId: req.user.id };
 };
 
 const isAssignee = (proposal, userId) => {
@@ -15,9 +23,16 @@ const isAssignee = (proposal, userId) => {
 };
 
 const denyOutsideBranch = (proposal, scope) => {
-  if (scope.role !== 'SALES') return false;
-  if (scope.branchIds.includes(Number(proposal.user_id))) return false;
-  return !isAssignee(proposal, scope.userId);
+  if (scope.role !== 'SALES' && scope.role !== 'CTV') return false;
+  if (scope.role === 'SALES') {
+    if (scope.branchIds.includes(Number(proposal.user_id))) return false;
+    return !isAssignee(proposal, scope.userId);
+  }
+  // CTV: only allow access to their own proposals (where they are the creator/user_id)
+  if (scope.role === 'CTV') {
+    return Number(proposal.user_id) !== Number(scope.userId);
+  }
+  return false;
 };
 
 exports.duplicates = async (req, res) => {
@@ -37,10 +52,15 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, date_from, date_to, date_field, lead_link } = req.query;
+    const { status, statuses, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, manager_user_id, model, date_from, date_to, date_field, lead_link } = req.query;
     const scope = await scopeFor(req);
+    const statusList = String(statuses || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => proposalLifecycle.ALL_STATUSES.includes(s));
     const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters, {
-      province, region, department, ownerUserId: owner_user_id, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link
+      province, region, department, ownerUserId: owner_user_id, managerUserId: manager_user_id, model, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link,
+      statuses: statusList
     });
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {
@@ -51,38 +71,19 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const light = await adminProposalService.getProposalById(req.params.id);
+    const light = await proposalAccessService.loadAccessRow(req.params.id);
     if (!light) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    const scope = await scopeFor(req);
-    if (denyOutsideBranch(light, scope)) {
+    const allowed = await proposalAccessService.canViewProposal(req.user, light);
+    if (!allowed) {
       return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
     }
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal });
+    const progress = await proposalProgressService.getProgress(req.params.id);
+    res.json({ success: true, data: { ...proposal, progress } });
   } catch (error) {
     console.error('Admin get proposal error:', error);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
-  }
-};
-
-exports.pushCheck = async (req, res) => {
-  try {
-    const light = await adminProposalService.getProposalById(req.params.id);
-    if (!light) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
-    }
-    const scope = await scopeFor(req);
-    if (denyOutsideBranch(light, scope)) {
-      return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
-    }
-    const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    const syncService = require('../services/syncService');
-    const result = await syncService.getPushCheck(proposal || light);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    console.error('Admin push check error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };
@@ -129,7 +130,7 @@ exports.delete = async (req, res) => {
 exports.updateStatus = async (req, res) => {
   try {
     const { status, reason, force } = req.body;
-    const validStatuses = ['PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED', 'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED'];
+    const validStatuses = proposalLifecycle.ALL_STATUSES;
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ' });
     }
@@ -141,6 +142,9 @@ exports.updateStatus = async (req, res) => {
     if (forceOverride && !String(reason || '').trim()) {
       return res.status(400).json({ success: false, message: 'Ghi đè trạng thái cần nhập lý do' });
     }
+    if (status === 'PAUSED') {
+      return res.status(400).json({ success: false, message: 'Dùng thao tác tạm dừng để ghi lý do và lưu trạng thái trước đó' });
+    }
     if (status === 'REJECTED' && !String(reason || '').trim()) {
       return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do từ chối' });
     }
@@ -151,6 +155,9 @@ exports.updateStatus = async (req, res) => {
     const existing = await adminProposalService.getProposalById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (existing.status === 'PAUSED' && status !== 'CANCELLED') {
+      return res.status(400).json({ success: false, message: 'Đề xuất đang tạm dừng; chỉ có thể tiếp tục hoặc hủy đề xuất' });
     }
     if (denyOutsideBranch(existing, await scopeFor(req))) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
@@ -164,7 +171,7 @@ exports.updateStatus = async (req, res) => {
       force: forceOverride
     });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal, autoPush: result.autoPush || null, autoSync: result.autoSync || null, message: 'Cập nhật trạng thái thành công' });
+    res.json({ success: true, data: proposal, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message, errors: error.details || undefined });
@@ -173,6 +180,50 @@ exports.updateStatus = async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi server' });
   }
 };
+
+const runPauseAction = async (req, res, action) => {
+  try {
+    const reviewer = await proposalReviewService.resolveReviewer(req.user);
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    if (!isSuperAdmin && !['GDTTKD', 'TGD'].includes(reviewer.roleKey)) {
+      return res.status(403).json({ success: false, message: 'Chỉ SUPER_ADMIN, GĐTTKD hoặc Ban Tổng giám đốc được thao tác tạm dừng đề xuất' });
+    }
+
+    const existing = await adminProposalService.getProposalById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
+    }
+    if (!isSuperAdmin && reviewer.roleKey !== 'TGD' && denyOutsideBranch(existing, await scopeFor(req))) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    const options = {
+      reason: action === 'pause' ? req.body.reason : null,
+      reviewerId: req.user.id,
+      actorRole: reviewer.roleKey || req.user.role
+    };
+    const result = action === 'pause'
+      ? await adminProposalService.pauseProposal(req.params.id, options)
+      : await adminProposalService.resumeProposal(req.params.id, options);
+    const proposal = await adminProposalService.getProposalWithUser(req.params.id);
+    res.json({
+      success: true,
+      data: proposal,
+      message: action === 'pause' ? 'Đã tạm dừng đề xuất' : 'Đã tiếp tục đề xuất',
+      previousStatus: result.prevStatus,
+      status: result.status
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error(`Admin proposal ${action} error:`, error);
+    res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+};
+
+exports.pause = (req, res) => runPauseAction(req, res, 'pause');
+exports.resume = (req, res) => runPauseAction(req, res, 'resume');
 
 exports.update = async (req, res) => {
   try {
@@ -192,7 +243,7 @@ exports.update = async (req, res) => {
       ip: req.ip || null
     });
     const proposal = await adminProposalService.getProposalWithUser(id);
-    res.json({ success: true, data: proposal, autoPush: (updated && updated.autoPush) || null, infoCompleted: (updated && updated.infoCompleted) || null, message: 'Cập nhật đề xuất thành công' });
+    res.json({ success: true, data: proposal, infoCompleted: (updated && updated.infoCompleted) || null, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
     console.error('Admin update proposal error:', error);
     if (error.statusCode) {

@@ -69,6 +69,7 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
   const created = await proposalService.createProposal(ownerId, data, {
     actorRole: actor.role || null,
     ip: opts.ip || null,
+    initialStatus: 'PENDING',
   });
   const proposalId = created.id;
   if (!proposalId) throw err('Tạo đề xuất thất bại', 500);

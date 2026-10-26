@@ -90,46 +90,6 @@ const DATASETS = {
     },
     baseFilter: 'l.deleted_at IS NULL',
   },
-  oneoffice_mirror: {
-    label: 'Gương 1Office',
-    from: 'automation_sync_snapshots s',
-    dimensions: {
-      version: { label: 'Version', sql: 's.version' },
-      proposal_code: { label: 'Mã đề xuất', sql: 's.proposal_code' },
-      synced_date: { label: 'Ngày sync', sql: 'DATE(s.updated_at)' },
-    },
-    metrics: {
-      process_id: { label: 'Số process', sql: 's.process_id', type: 'number', aggs: ['count', 'count_distinct'] },
-    },
-    scope: async (user) => {
-      const scope = await reportService.buildReportScope(user);
-      if (!scope || (scope.role !== 'SALES' && scope.role !== 'MKT')) return { where: [], params: [] };
-      const codes = await reportService.inScopeProposalCodes(scope, user, {}, 2000);
-      if (!codes || codes.length === 0) return { where: ['1 = 0'], params: [] };
-      return { where: [`s.proposal_code IN (${codes.map(() => '?').join(',')})`], params: codes };
-    },
-  },
-  automation_runs: {
-    label: 'Lượt chạy automation',
-    from: 'work_automation_runs r',
-    dimensions: {
-      status: { label: 'Trạng thái', sql: 'r.status' },
-      action: { label: 'Hành động', sql: 'r.action' },
-      trigger: { label: 'Trigger', sql: 'r.`trigger`' },
-      created_date: { label: 'Ngày', sql: 'DATE(r.created_at)' },
-      created_month: { label: 'Tháng', sql: "DATE_FORMAT(r.created_at, '%Y-%m')" },
-    },
-    metrics: {
-      id: { label: 'Số lượng', sql: 'r.id', type: 'number', aggs: ['count', 'count_distinct'] },
-    },
-    scope: async (user) => {
-      const scope = await reportService.buildReportScope(user);
-      if (!scope || (scope.role !== 'SALES' && scope.role !== 'MKT')) return { where: [], params: [] };
-      const codes = await reportService.inScopeProposalCodes(scope, user, {}, 2000);
-      if (!codes || codes.length === 0) return { where: ['1 = 0'], params: [] };
-      return { where: [`r.proposal_code IN (${codes.map(() => '?').join(',')})`], params: codes };
-    },
-  },
 };
 
 Object.values(DATASETS).forEach((ds) => {
@@ -269,7 +229,7 @@ const EVENT_LABELS = {
   entity_type: { lead: 'Lead', proposal: 'Đề xuất', station: 'Trạm' },
   actor_role: {
     SUPER_ADMIN: 'Quản trị cấp cao', ADMIN: 'Quản trị', SALES: 'Kinh doanh', MKT: 'Marketing',
-    CTV: 'Cộng tác viên', NPP: 'Nhà phân phối', SYSTEM: 'Hệ thống', system_auto: 'Hệ thống', '1Office': '1Office',
+    CTV: 'Cộng tác viên', NPP: 'Nhà phân phối', SYSTEM: 'Hệ thống', system_auto: 'Hệ thống',
   },
 };
 

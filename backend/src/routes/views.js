@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireSuperAdmin, requireLeadManager } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const viewController = require('../controllers/viewController');
 
 /**
@@ -40,7 +40,7 @@ const viewController = require('../controllers/viewController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireLeadManager, viewController.getAll);
+router.get('/', requireAuth, viewController.getAll);
 
 /**
  * @swagger

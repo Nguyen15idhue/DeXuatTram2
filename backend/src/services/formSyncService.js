@@ -1,18 +1,7 @@
 const pool = require('../utils/db');
-const apiConfigService = require('./apiConfigService');
-const templateService = require('./templateService');
 
 const EXTRA_SECTION_ID = 'sync_extra_section';
 const EXTRA_SECTION_TITLE = 'Trường riêng form xem/sửa';
-const DEFAULT_COLOR = '#27ae60';
-const DEFAULT_EMOJI = '📋';
-const TAB_COLOR = '#0ea5e9';
-const TAB_EMOJI = '🤝';
-const COLOR_BY_MO_HINH = {
-  TDT: ['#f39c12', '📋'],
-  LK: ['#9b59b6', '📋'],
-  NQ: ['#3498db', '📋']
-};
 
 const parseJson = (value, fallback) => {
   if (value === null || value === undefined || value === '') return fallback;
@@ -199,108 +188,8 @@ const describeSections = (layout, fields) =>
     fields: fieldsOfSection(section, fields)
   }));
 
-const buildDescTemplate = (layout, fields, existing) => {
-  const labelByKey = new Map(fields.map((f) => [f.key, f.label]));
-  const styleById = new Map();
-  const walk = (list) => {
-    for (const section of list || []) {
-      if (section && section.id) styleById.set(section.id, section);
-      if (section && Array.isArray(section.sections)) walk(section.sections);
-    }
-  };
-  walk(existing && existing.sections);
-
-  const styleFor = (section, isTab) => {
-    const saved = styleById.get(section.id) || {};
-    let fallback = isTab ? [TAB_COLOR, TAB_EMOJI] : [DEFAULT_COLOR, DEFAULT_EMOJI];
-    const value = section.visibleWhen && section.visibleWhen.value;
-    if (COLOR_BY_MO_HINH[value]) fallback = COLOR_BY_MO_HINH[value];
-    return { color: saved.color || fallback[0], emoji: saved.emoji || fallback[1] };
-  };
-
-  const sectionNode = (section, withCondition) => {
-    const keys = fieldsOfSection(section, fields).filter((key) => labelByKey.has(key));
-    if (keys.length === 0) return null;
-    const style = styleFor(section, false);
-    const node = {
-      id: section.id,
-      color: style.color,
-      emoji: style.emoji,
-      title: section.title,
-      layout: (section.rows || []).some((r) => String(r.columns) === '1:2') ? '2col' : '1col',
-      collapsible: false,
-      fields: keys
-    };
-    if (withCondition) {
-      if (section.visibleWhen && section.visibleWhen.field) {
-        node.condition = { field: section.visibleWhen.field, value: section.visibleWhen.value, operator: '=' };
-        node.always_show = false;
-      } else {
-        node.condition = null;
-        node.always_show = true;
-      }
-    }
-    return node;
-  };
-
-  const byId = new Map((layout.sections || []).map((s) => [s.id, s]));
-  const sections = [];
-  for (const section of layout.sections || []) {
-    if (section.type === 'tabs') {
-      const children = [];
-      for (const tab of section.tabs || []) {
-        for (const ref of tab.sectionRefs || []) {
-          const target = byId.get(ref);
-          if (!target) continue;
-          const child = sectionNode(target, false);
-          if (child) children.push(child);
-        }
-      }
-      if (children.length === 0) continue;
-      const style = styleFor(section, true);
-      const node = {
-        id: section.id,
-        color: style.color,
-        emoji: style.emoji,
-        title: section.title,
-        layout: '2col',
-        collapsible: false,
-        sections: children
-      };
-      if (section.visibleWhen && section.visibleWhen.field) {
-        node.condition = { field: section.visibleWhen.field, value: section.visibleWhen.value, operator: '=' };
-        node.always_show = false;
-      } else {
-        node.condition = null;
-        node.always_show = true;
-      }
-      sections.push(node);
-      continue;
-    }
-    const node = sectionNode(section, true);
-    if (node) sections.push(node);
-  }
-  return { sections };
-};
-
-const findDescTemplateConfig = async () => {
-  const [preferred] = await pool.query(
-    `SELECT id, name FROM api_configs
-     WHERE system_key = '1office' AND api_type = 'contact'
-     ORDER BY id ASC LIMIT 1`
-  );
-  if (preferred.length > 0) return preferred[0];
-  const [fallback] = await pool.query(
-    'SELECT id, name FROM api_configs WHERE desc_template_config IS NOT NULL ORDER BY id ASC LIMIT 1'
-  );
-  return fallback.length > 0 ? fallback[0] : null;
-};
-
 exports.syncPreview = async (targetId) => {
   const plan = await buildPlan(targetId);
-  const descConfig = await findDescTemplateConfig();
-  const existing = descConfig ? await apiConfigService.getDescTemplate(descConfig.id) : null;
-  const descTemplate = buildDescTemplate(plan.layout, plan.fields, existing);
   return {
     targetForm: {
       id: plan.target.id,
@@ -313,30 +202,12 @@ exports.syncPreview = async (targetId) => {
     extraSectionTitle: EXTRA_SECTION_TITLE,
     parked: plan.parked,
     replaced: plan.replaced,
-    sections: describeSections(plan.layout, plan.fields),
-    descConfig: descConfig
-      ? { id: descConfig.id, name: descConfig.name, sectionCount: descTemplate.sections.length }
-      : null,
-    descTemplate
+    sections: describeSections(plan.layout, plan.fields)
   };
 };
 
-exports.syncFromCreate = async (targetId, options = {}) => {
+exports.syncFromCreate = async (targetId) => {
   const plan = await buildPlan(targetId);
-  const syncDesc = !!options.syncDesc;
-  const descConfig = syncDesc ? await findDescTemplateConfig() : null;
-  let descTemplate = null;
-
-  if (descConfig) {
-    const existing = await apiConfigService.getDescTemplate(descConfig.id);
-    descTemplate = buildDescTemplate(plan.layout, plan.fields, existing);
-    const validation = templateService.validateTemplate(descTemplate);
-    if (!validation.valid) {
-      throw Object.assign(new Error(`Mẫu mô tả 1Office tạo ra không hợp lệ: ${validation.errors.join('; ')}`), {
-        statusCode: 400
-      });
-    }
-  }
 
   const conn = await pool.getConnection();
   try {
@@ -356,12 +227,6 @@ exports.syncFromCreate = async (targetId, options = {}) => {
       ]);
       await conn.query('INSERT INTO form_fields (form_id, field_id, order_index, visible, config) VALUES ?', [rows]);
     }
-    if (descTemplate) {
-      await conn.query('UPDATE api_configs SET desc_template_config = ?, updated_at = NOW() WHERE id = ?', [
-        JSON.stringify(descTemplate),
-        descConfig.id
-      ]);
-    }
     await conn.commit();
   } catch (error) {
     await conn.rollback();
@@ -370,13 +235,8 @@ exports.syncFromCreate = async (targetId, options = {}) => {
     conn.release();
   }
 
-  if (descTemplate) templateService.clearCache();
-
   return {
     summary: plan.summary,
-    sections: describeSections(plan.layout, plan.fields),
-    descConfig: descTemplate
-      ? { id: descConfig.id, name: descConfig.name, sectionCount: descTemplate.sections.length }
-      : null
+    sections: describeSections(plan.layout, plan.fields)
   };
 };

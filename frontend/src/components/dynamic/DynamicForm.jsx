@@ -163,7 +163,7 @@ const findTabForRow = (layoutConfig, rowId) => {
   return null;
 };
 
-const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null, beforeActions = null, readOnlyKeys = [], focusSection = null }) => {
+const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialData = {}, children, guestMode = false, optionAllowlist = {}, onValuesChange = null, hideActions = false, htmlId = null, beforeActions = null, readOnlyKeys = [], focusSection = null, excludeKeys = [], skipValidationKeys = [] }) => {
   const { token, user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -182,6 +182,11 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
   const formRef = useRef(null);
   const geocodeTimerRef = useRef(null);
   const geocodeSeqRef = useRef(0);
+  const excludeKeySignature = (Array.isArray(excludeKeys) ? excludeKeys : []).map(String).sort().join('\u0000');
+  const excludedKeys = useMemo(
+    () => new Set(excludeKeySignature.split('\u0000').filter(Boolean)),
+    [excludeKeySignature]
+  );
 
   useEffect(() => {
     if (formIdProp) { setResolvedFormId(formIdProp); return; }
@@ -204,7 +209,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
 
   useEffect(() => {
     if (resolvedFormId) loadFormConfig();
-  }, [resolvedFormId, authUser?.id, authUser?.parent_id]);
+  }, [resolvedFormId, authUser?.id, authUser?.parent_id, excludeKeySignature]);
 
   useEffect(() => {
     if (!focusSection || fields.length === 0) return;
@@ -279,7 +284,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
             autoUserId,
             autoLocked
           };
-        });
+        }).filter((field) => !excludedKeys.has(field.key));
         setFields(fieldList);
         const defaults = {};
         fieldList.forEach(f => {
@@ -359,12 +364,12 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
     if (!hasTable) return;
     const loadAll = async () => {
       try {
-        const res = await fieldDefinitionService.getAll(`entity=${entity}&limit=100`, token);
+        const res = await fieldDefinitionService.getByEntity(entity);
         if (res.success) setAllEntityFields(res.data || []);
       } catch {}
     };
     loadAll();
-  }, [entity, fields, token]);
+  }, [entity, fields]);
 
   useEffect(() => {
     if (!initialData || fields.length === 0) return;
@@ -632,6 +637,7 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       : null;
     const sectionHidden = computeRowHidden(layoutForValidate, formData);
     fields.forEach(f => {
+      if (skipValidationKeys.includes(f.key)) return;
       if (f.config && f.config.rowId && sectionHidden[f.config.rowId]) return;
       if (!isFieldVisible(f)) return;
       const isRequired = f.required;
@@ -783,7 +789,8 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
       placeholder: displayPlaceholder,
       required: isRequired,
       options: resolvedOptions,
-      readonly: field.readonly || !!field.autoLocked || scReadonly || (readOnlyKeys || []).includes(field.key)
+      readonly: field.readonly || !!field.autoLocked || scReadonly || readOnlyKeys === '*'
+        || (readOnlyKeys || []).includes(field.key)
         || !sectionEditable(fieldSectionMap[field.key])
     };
 

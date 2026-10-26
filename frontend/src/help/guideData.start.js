@@ -12,8 +12,7 @@ export const startGuide = {
         'Bạn (hoặc khách) tạo Đề xuất vị trí đặt trạm mới trên bản đồ.',
         'SALES / ADMIN xem xét, đổi trạng thái: đang xem xét, duyệt hoặc từ chối (kèm lý do).',
         'Đề xuất bị từ chối có thể sửa và gửi lại.',
-        'Đề xuất được duyệt sẽ tự gửi sang hệ thống 1Office. Lưu ý: được duyệt chưa thành Trạm thật — trạm được tạo riêng ở trang Quản lý Trạm.',
-        'Dữ liệu đề xuất có thể đẩy sang hệ thống 1Office để quản lý tập trung.',
+        'Đề xuất được duyệt chưa thành Trạm thật — trạm được tạo riêng ở trang Quản lý Trạm.',
       ],
       expected: 'Bạn hình dung được việc của mình nằm ở đâu trong chuỗi trên.',
       related: ['S02', 'S04'],
@@ -56,7 +55,7 @@ export const startGuide = {
       substeps: [
         'Mới gửi: trạng thái chờ duyệt (màu cam).',
         'Người duyệt mở xem: chuyển đang xem xét (màu xanh dương).',
-        'Duyệt: chuyển đã duyệt (màu xanh lá) — hệ thống tự tạo lệnh gửi sang 1Office (xem trong Audit Log). Được duyệt chưa thành trạm thật.',
+        'Duyệt: chuyển đã duyệt (màu xanh lá). Được duyệt chưa thành trạm thật.',
         'Từ chối: chuyển bị từ chối (màu đỏ), bắt buộc có lý do; bạn sửa rồi bấm Gửi lại để về chờ duyệt.',
         'Mỗi lần đổi trạng thái, bạn nhận thông báo ở chuông trên header.',
       ],

@@ -155,11 +155,10 @@ exports.buildPostScope = (metadata = {}, recordData = {}) => {
   scope.user_name = metadata.user_name || '';
   scope.user_role = metadata.user_role || '';
   scope.sales_name = metadata.sales_name || '';
-  scope.id_1office = metadata.id_1office || '';
   return scope;
 };
 
-const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name', 'id_1office']);
+const POST_METADATA = new Set(['id', 'entity', 'base_url', 'created_at', 'user_id', 'user_email', 'user_name', 'user_role', 'sales_name']);
 
 const substituteMetadataPlaceholders = (expression, values) => {  const toRaw = (v) => (v === null || v === undefined ? '' : String(v));
   const toLiteral = (v) => {

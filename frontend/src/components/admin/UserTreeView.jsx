@@ -11,7 +11,7 @@ const deptOf = (u) => (u.department && String(u.department).trim()) || '';
 const matchUser = (u, q) => {
   if (!q) return true;
   const s = q.trim().toLowerCase();
-  return [u.full_name, u.email, u.phone, u.external_id].some(v => (v || '').toLowerCase().includes(s));
+  return [u.full_name, u.email, u.phone].some(v => (v || '').toLowerCase().includes(s));
 };
 
 export default function UserTreeView({ users, search, onSelect }) {

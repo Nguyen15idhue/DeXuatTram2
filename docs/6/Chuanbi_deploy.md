@@ -86,9 +86,8 @@ Các file doc cũ nhắc tới nhưng **chưa tồn tại trong repo**:
 
 ### Phát hiện bảo mật nghiêm trọng
 
-1. **Token 1Office thật bị commit** trong `database/37-seed-1office-api-config.sql` (đã xoá khỏi script, thay bằng `CHANGE_ME_1OFFICE_TOKEN`) → **phải rotate token cũ và cập nhật token mới vào DB** trước khi deploy.
-2. Seed tạo tài khoản `admin@station.com` / `123456` (`database/02-seed-data.sql`, `database/03-update-passwords.sql`) → **đổi ngay sau deploy**.
-3. Không có `.dockerignore` → `COPY . .` kéo cả host `node_modules` (Windows binaries), `.git`, `storage/uploads` vào image.
+1. Seed tạo tài khoản `admin@station.com` / `123456` (`database/02-seed-data.sql`, `database/03-update-passwords.sql`) → **đổi ngay sau deploy**.
+2. Không có `.dockerignore` → `COPY . .` kéo cả host `node_modules` (Windows binaries), `.git`, `storage/uploads` vào image.
 
 ---
 
@@ -98,7 +97,7 @@ Các file doc cũ nhắc tới nhưng **chưa tồn tại trong repo**:
 - **OS**: Ubuntu 22.04 / 24.04 LTS
 - **RAM/CPU**: tối thiểu 2 vCPU / 2 GB. Nếu chỉ 1 GB → **bắt buộc thêm swap** (Vite build dễ OOM).
 - **Disk**: 40 GB SSD
-- Mở outbound 443 (backend gọi 1Office / Turnstile / tile proxy)
+- Mở outbound 443 (backend gọi Turnstile / tile proxy)
 
 ### 2.2 Swap (nếu RAM ≤ 2GB)
 ```bash
@@ -368,7 +367,6 @@ curl -fsS -X POST http://localhost:8080/api/auth/login \
 
 # 7. Bảo mật sau khi chạy được
 #    - Đổi mật khẩu toàn bộ tài khoản seed
-#    - Rotate token 1Office (đã lộ trong git)
 
 # 8. TLS: setup Caddy / host-nginx (mục 2.6) và trỏ domain
 
@@ -403,12 +401,11 @@ Named volume `mysql_data` + `uploads_data` giữ nguyên dữ liệu. **Cấm `d
 
 ## 9. Rủi ro cần xử lý trước khi deploy
 
-1. **Token 1Office đã lộ trong git** → bắt buộc rotate.
-2. **Seed password `123456`** → đổi toàn bộ tài khoản seed.
-3. **`DB_USER=root`** cho app → nên tạo user MySQL riêng.
-4. **Thiếu `restart: unless-stopped`** → VPS reboot là service chết.
-5. **Chưa set `trust proxy`** → bảo mật/phân quyền IP sai sau nginx.
-6. **`frontend/.env` bị gitignore** → build production trỏ `localhost` nếu không tạo `.env.production`.
+1. **Seed password `123456`** → đổi toàn bộ tài khoản seed.
+2. **`DB_USER=root`** cho app → nên tạo user MySQL riêng.
+3. **Thiếu `restart: unless-stopped`** → VPS reboot là service chết.
+4. **Chưa set `trust proxy`** → bảo mật/phân quyền IP sai sau nginx.
+5. **`frontend/.env` bị gitignore** → build production trỏ `localhost` nếu không tạo `.env.production`.
 
 ---
 

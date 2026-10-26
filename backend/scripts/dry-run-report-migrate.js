@@ -6,8 +6,7 @@ const METRICS = [
   'lead_funnel', 'lead_by_stage', 'lead_by_classification', 'lead_by_source', 'lead_by_province',
   'lead_by_region', 'lead_by_department', 'lead_by_assignee', 'proposal_by_status', 'conversion_rates',
   'average_duration', 'pipeline_over_time', 'stuck_items', 'unassigned_leads', 'proposals_without_lead',
-  'stations_without_proposal', 'journey_sync_errors', 'oneoffice_coverage', 'stuck_node',
-  'sync_staleness', 'automation_failures', 'lead360_sections',
+  'stations_without_proposal', 'stuck_node', 'lead360_sections',
 ];
 const SIZE_TO_W = { sm: 4, md: 6, lg: 8, full: 12 };
 
