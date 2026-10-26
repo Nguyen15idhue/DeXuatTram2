@@ -55,7 +55,7 @@ const AdminLayout = () => {
       {/* Content */}
       <div className="drawer-content flex flex-col min-h-screen">
         <AdminHeader onMenuToggle={() => setSidebarOpen(!sidebarOpen)} showBell={!isDesktop} />
-        <main className="flex-1 p-4 lg:p-6 bg-base-200">
+        <main className="flex-1 p-2 lg:px-4 lg:py-2 bg-base-200">
           <Suspense fallback={<RouteFallback />}>
             <Outlet />
           </Suspense>

@@ -5,7 +5,7 @@ import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
 import useMapStatuses from '../hooks/useMapStatuses';
-import { getStatusLabel, getProposalMapStatus } from '../utils/mapStatuses';
+import { getStatusLabel, getProposalMapStatus, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getProposalDisplayName, getProposalDisplayPhone, isProposalAssignee } from '../utils/proposalDisplay';
 import { PROVINCES, ISLAND_POINTS, VIETNAM_CENTER, VIETNAM_DEFAULT_ZOOM } from '../utils/provinceData';
 import { getProviderById, loadTileProviders } from '../utils/tileProviders';
@@ -298,6 +298,7 @@ function createProposalPopupContent(item, user) {
   statusSpan.textContent = getStatusLabel(mapStatus, 'proposal');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
+  addRow('Trạng thái đề xuất', getStatusLabel(item.status, 'proposal'));
   addRow('Mô hình', MO_HINH_LABELS[item.mo_hinh_dau_tu] || item.mo_hinh_dau_tu || '');
   const proposalTru = pickProposalTru(item);
   addRow('Trụ', proposalTru);
@@ -857,7 +858,7 @@ const MapView = ({
     () => layerStations.map(s => {
       const badge = s.status === 'PLANNING' ? String(s.loai_uu_tien || '') : '';
       const isPin = s.status === 'PLANNING' && (badge === '1' || badge === '2' || badge === '3');
-      const levelColor = badge === '1' ? '#22c55e' : badge === '2' ? '#f97316' : badge === '3' ? '#ef4444' : getMarkerColor(s.status, 'station');
+      const levelColor = PLANNING_PRIORITY_COLORS[badge] || getMarkerColor(s.status, 'station');
       const icon = isPin ? `target${badge}` : getMarkerIcon(s.status, 'station');
       return { ...s, _color: isPin ? levelColor : getMarkerColor(s.status, 'station'), _icon: icon, _badge: isPin ? badge : '', _bg: getMarkerIconBg(s.status, 'station') };
     }),

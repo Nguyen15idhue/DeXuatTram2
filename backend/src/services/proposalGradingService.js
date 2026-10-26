@@ -420,11 +420,13 @@ exports.listProposals = async ({
     );
     const supplementPending = requests.some((request) => request.request_type === 'SUPPLEMENT');
     const config = await loadDisplayConfig();
+    const progress = await require('./proposalProgressService').getProgress(proposalId);
     return {
       proposal,
       fieldDefinitions: fieldDefs,
       displayConfig: config,
       requests,
+      progress,
       step: proposal.status === REGRADING_STATUS ? 'regrading' : 'grading',
       permissions: {
         canGradeQH: !supplementPending && ['GRADING', REGRADING_STATUS].includes(proposal.status)

@@ -1,4 +1,4 @@
-import { formatProposalScale } from './proposalGrading';
+import { formatProposedScale as formatProposalScale } from './proposalGrading';
 
 export const SIGN_STATUS = {
   PENDING: 'PENDING',
@@ -31,6 +31,45 @@ export const SIGN_STATUS_HINTS = {
 export const getSignStatusLabel = (code) => SIGN_STATUS_LABELS[code] || '—';
 
 export const getSignStatusColor = (code) => SIGN_STATUS_COLORS[code] || '#64748b';
+
+export const normalizeSignerBox = (signer) => {
+  const posX = Math.min(1, Math.max(0, Number(signer?.pos_x) || 0));
+  const configuredWidth = Number(signer?.box_width);
+  const boxWidth = Math.min(
+    1 - posX,
+    Math.max(
+      0,
+      signer?.box_width !== null
+        && signer?.box_width !== undefined
+        && Number.isFinite(configuredWidth)
+        ? configuredWidth
+        : 0.25
+    )
+  );
+  const configuredHeight = Number(signer?.box_height);
+  const boxHeight = Math.min(
+    1,
+    Math.max(
+      0,
+      signer?.box_height !== null
+        && signer?.box_height !== undefined
+        && Number.isFinite(configuredHeight)
+        ? configuredHeight
+        : 0.25
+    )
+  );
+  const posY = Math.min(
+    1 - boxHeight,
+    Math.max(0, Number(signer?.pos_y) || 0)
+  );
+  return {
+    ...signer,
+    pos_x: posX,
+    box_height: boxHeight,
+    box_width: boxWidth,
+    pos_y: posY
+  };
+};
 
 const parseRows = (value) => {
   if (Array.isArray(value)) return value;
@@ -66,5 +105,8 @@ export const formatSignedTime = (value) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('vi-VN', { hour12: false });
+  return date.toLocaleString('vi-VN', {
+    hour12: false,
+    timeZone: 'Asia/Ho_Chi_Minh'
+  });
 };

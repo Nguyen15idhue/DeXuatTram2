@@ -18,7 +18,10 @@ import {
 } from './ProposalTableCells';
 import {
   formatScore,
-  formatProposalScale,
+  formatProposalMoney,
+  getProposalCostRows,
+  getProposalNumber,
+  getProposalPoleGroups,
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone,
@@ -34,7 +37,8 @@ const GRADING_COLUMNS = [
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
   ...PROPOSAL_CONTEXT_COLUMNS,
-  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'scale', field_key: 'scale', label: 'Loại trụ đề xuất', width: 300, sortable: false, filterable: false, visible: true },
+  { key: 'cost_breakdown', field_key: 'cost_breakdown', label: 'Chi phí liên kết', width: 220, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'status', field_key: 'status', label: 'Trạng thái Quy trình', width: 170, sortable: false, filterable: false, visible: true },
   { key: 'quy_hoach_status', field_key: 'quy_hoach_status', label: 'Trạng thái Quy hoạch', width: 180, sortable: false, filterable: false, visible: true },
@@ -260,7 +264,44 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
     vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
     province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
     address: (row, value) => <ProposalAddressCell row={row} value={value || getProposalAddress(row)} />,
-    scale: (row) => formatProposalScale(row),
+    scale: (row) => {
+      const groups = getProposalPoleGroups(row);
+      if (groups.length === 0) return <span className="text-base-content/50">—</span>;
+      return (
+        <div className="min-w-64 space-y-1 py-1">
+          {groups.flatMap((group) => group.rows.map((pole, index) => {
+            const quantity = getProposalNumber(pole.so_luong);
+            const unitPrice = getProposalNumber(pole.don_gia);
+            const total = getProposalNumber(pole.thanh_tien)
+              ?? (quantity !== null && unitPrice !== null ? quantity * unitPrice : null);
+            return (
+              <div key={`${group.key}-${index}`} className="whitespace-normal text-xs">
+                <span className="font-medium">{group.label}:</span>{' '}
+                {quantity ?? '—'} × {pole.loai_tru || '—'}
+                <span className="block text-base-content/60">
+                  Đơn giá {unitPrice === null ? '—' : formatProposalMoney(unitPrice)}
+                  {' · '}Thành tiền {total === null ? '—' : formatProposalMoney(total)}
+                </span>
+              </div>
+            );
+          }))}
+        </div>
+      );
+    },
+    cost_breakdown: (row) => {
+      const rows = getProposalCostRows(row);
+      if (rows.length === 0) return <span className="text-base-content/50">—</span>;
+      return (
+        <div className="space-y-1 py-1">
+          {rows.map((cost, index) => (
+            <div key={`${cost.loai_chi_phi || 'cost'}-${index}`} className="whitespace-normal text-xs">
+              <span className="font-medium">{cost.loai_chi_phi || 'Chi phí khác'}:</span>{' '}
+              {formatProposalMoney(cost.so_tien)}
+            </div>
+          ))}
+        </div>
+      );
+    },
     user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
     status: (row, value) => <ProposalStatusBadge value={value || row.status} optionMap={statusOptions} />,
     quy_hoach_status: (row) => <QuyHoachStatusCell row={row} onShowScore={setScoreDetail} />,

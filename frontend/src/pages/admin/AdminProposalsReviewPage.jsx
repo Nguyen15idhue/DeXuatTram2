@@ -36,7 +36,6 @@ const AdminProposalsReviewPage = () => {
       <div>
         <PageHeader
           title="Yêu cầu chấm điểm lại"
-          subtitle="Bước GĐTTKD xem xét, yêu cầu chấm lại và trình Tổng giám đốc"
         />
         <div className="alert alert-warning text-sm">
           Tài khoản của bạn không thuộc cấp xem xét (GĐTTKD, Phòng Quy hoạch, Phòng Pháp lý hoặc Tổng giám đốc).
@@ -49,7 +48,6 @@ const AdminProposalsReviewPage = () => {
     <div>
       <PageHeader
         title="Yêu cầu chấm điểm lại"
-        subtitle="GĐTTKD xem xét, yêu cầu chấm lại, trình Tổng giám đốc và theo dõi kết quả"
       />
 
       <div role="tablist" className="proposal-workflow-tabs mb-4">

@@ -7,6 +7,9 @@ import {
   DEFAULT_SIGNER_BOX,
   getReportFiles
 } from '../../utils/proposalApproval';
+import {
+  normalizeSignerBox
+} from '../../utils/proposalSignature';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -44,7 +47,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           proposalApprovalService.getSignatureConfig(record.id, token)
         ]);
         setCandidates(candRes?.data?.candidates || []);
-        setSigners((configRes?.data?.signers || []).map((signer) => ({
+        setSigners((configRes?.data?.signers || []).map((signer) => normalizeSignerBox({
           user_id: signer.user_id,
           full_name: signer.full_name,
           signer_title: signer.signer_title,
@@ -78,8 +81,8 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
         if (drag.mode === 'resize') {
           return {
             ...signer,
-            box_width: clamp(signer.box_width + dx, 0.05, 1),
-            box_height: clamp(signer.box_height + dy, 0.02, 0.5)
+            box_width: clamp(drag.origWidth + dx, 0, 1 - signer.pos_x),
+            box_height: clamp(drag.origHeight + dy, 0, 1 - signer.pos_y)
           };
         }
         return {
@@ -138,15 +141,18 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
     try {
       const res = await proposalApprovalService.configureSignature(record.id, {
         file_id: fileId,
-        signers: signers.map((signer) => ({
-          user_id: signer.user_id,
-          signer_title: signer.signer_title,
-          page: signer.page,
-          pos_x: signer.pos_x,
-          pos_y: signer.pos_y,
-          box_width: signer.box_width,
-          box_height: signer.box_height
-        }))
+        signers: signers.map((signer) => {
+          const normalized = normalizeSignerBox(signer);
+          return {
+            user_id: signer.user_id,
+            signer_title: signer.signer_title,
+            page: signer.page,
+            pos_x: normalized.pos_x,
+            pos_y: normalized.pos_y,
+            box_width: normalized.box_width,
+            box_height: normalized.box_height
+          };
+        })
       }, token);
       onSaved && onSaved(res?.data);
     } catch (err) {
@@ -346,7 +352,9 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
                         index,
                         mode: 'resize',
                         startX: event.clientX,
-                        startY: event.clientY
+                        startY: event.clientY,
+                        origWidth: signer.box_width,
+                        origHeight: signer.box_height
                       });
                     }}
                   />

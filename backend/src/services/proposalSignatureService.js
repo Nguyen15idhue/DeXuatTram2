@@ -42,6 +42,7 @@ const notificationService = require('./notificationService');
 const SIGNER_TOTAL_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.status <> 'CANCELLED')";
 const SIGNER_SIGNED_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.status = 'SIGNED')";
 const MY_CONFIG_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status <> 'CANCELLED')";
+const MY_PENDING_CONFIG_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'PENDING')";
 const MY_SIGNED_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'SIGNED')";
 
 const resolveScope = async (user) => {
@@ -79,7 +80,7 @@ const mapSignatureRow = (row) => {
     signer_signed: Number(row.signer_signed || 0),
     sign_status: signStatus,
     sign_status_label: SIGN_STATUS_LABELS[signStatus],
-    can_sign: Number(row.my_config_count || 0) > 0 && Number(row.my_signed_count || 0) === 0,
+    can_sign: Number(row.my_pending_count || 0) > 0,
     is_my_signed: Number(row.my_signed_count || 0) > 0
   };
 };
@@ -116,12 +117,7 @@ exports.listProposals = async ({
       params.push(scope.userId);
     }
   } else if (safeTab === 'pending') {
-    if (!scope.isManager) {
-      where.push(`${MY_CONFIG_SQL} > 0`);
-      params.push(scope.userId);
-    }
-    // Người đã ký của mình chuyển sang tab Đã hoàn thành (kể cả Back Office/Admin/TGĐ).
-    where.push(`${MY_SIGNED_SQL} = 0`);
+    where.push(`${MY_PENDING_CONFIG_SQL} > 0`);
     params.push(scope.userId);
   } else if (safeTab === 'chairman') {
     where.push(`${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}`);
@@ -149,8 +145,8 @@ exports.listProposals = async ({
 
   const cleanMyStatus = myStatus === 'my_pending' || myStatus === 'my_signed' ? myStatus : '';
   if (cleanMyStatus === 'my_pending') {
-    where.push(`${MY_CONFIG_SQL} > 0 AND ${MY_SIGNED_SQL} = 0`);
-    params.push(scope.userId, scope.userId);
+    where.push(`${MY_PENDING_CONFIG_SQL} > 0`);
+    params.push(scope.userId);
   } else if (cleanMyStatus === 'my_signed') {
     where.push(`${MY_SIGNED_SQL} > 0`);
     params.push(scope.userId);
@@ -185,6 +181,8 @@ exports.listProposals = async ({
             (SELECT COUNT(*) FROM proposal_signature_configs s
               WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status <> 'CANCELLED') AS my_config_count,
             (SELECT COUNT(*) FROM proposal_signature_configs s
+              WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'PENDING') AS my_pending_count,
+            (SELECT COUNT(*) FROM proposal_signature_configs s
               WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'SIGNED') AS my_signed_count
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id
@@ -192,7 +190,7 @@ exports.listProposals = async ({
      ${whereClause}
      ORDER BY ${orderBy}
      LIMIT ? OFFSET ?`,
-    [scope.userId, scope.userId, ...params, safeLimit, offset]
+    [scope.userId, scope.userId, scope.userId, ...params, safeLimit, offset]
   );
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
@@ -320,14 +318,30 @@ exports.getDetail = async ({ user, id } = {}) => {
     throw err('Đề xuất không ở trạng thái trình ký', 400);
   }
   const detail = await buildDetail(proposal, scope);
+  const canView = scope.isManager || !!detail.can_sign
+    || Number(proposal.user_id) === Number(scope.userId);
+  let progress = { requests: [], activity: [] };
+  let fieldDefinitions = [];
+  let initialProposalData = null;
+  if (canView) {
+    progress = await require('./proposalProgressService').getProgress(proposal.id);
+    fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
+    initialProposalData = await dynamicUtils.enrichUserFields(
+      dynamicUtils.mergeData(proposal, fieldDefinitions),
+      fieldDefinitions
+    );
+  }
   return {
     ...detail,
+    progress,
+    fieldDefinitions,
+    initial_proposal_data: initialProposalData,
     sign_status_label: SIGN_STATUS_LABELS[detail.sign_status],
     can_reject: !!scope.isAdmin || !!scope.isTgd,
     can_upload_signed: !!scope.isAdmin || !!scope.isBackOffice,
     can_request_rework: (!!scope.isAdmin || !!scope.isTgd || !!scope.isBackOffice) && !detail.is_my_signed
       && proposal.status === SIGNATURE_PENDING,
-    can_view: scope.isManager || !!detail.can_sign || Number(proposal.user_id) === Number(scope.userId)
+    can_view: canView
   };
 };
 

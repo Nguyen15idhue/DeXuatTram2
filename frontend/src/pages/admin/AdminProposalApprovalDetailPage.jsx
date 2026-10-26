@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileText, PenSquare, RefreshCw, XCircle } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ExternalLink, Eye, FileText, PenSquare, RefreshCw, XCircle } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import ReviewActionDialog from '../../components/admin/ReviewActionDialog';
 import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/ProposalTableBadges';
@@ -10,16 +10,20 @@ import { proposalApprovalService } from '../../services/api';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import {
   formatProposalCost,
-  formatProposalScale,
+  formatProposedScale,
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone
 } from '../../utils/proposalGrading';
 import { canConfigureSignature, canRequestUpdate, getReportFiles } from '../../utils/proposalApproval';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import DynamicForm from '../../components/dynamic/DynamicForm';
+import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
 const AdminProposalApprovalDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { token } = useAuth();
   const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
   const [proposal, setProposal] = useState(null);
@@ -29,6 +33,7 @@ const AdminProposalApprovalDetailPage = () => {
   const [dialogType, setDialogType] = useState('');
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [fileViewing, setFileViewing] = useState(null);
 
   const loadProposal = useCallback(async () => {
     if (!token || !id) return;
@@ -49,6 +54,8 @@ const AdminProposalApprovalDetailPage = () => {
   }, [loadProposal]);
 
   const reportFiles = getReportFiles(proposal);
+  const previewFileId = searchParams.get('previewFile');
+  const previewFile = reportFiles.find((file) => String(file.id) === previewFileId);
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
   const statusOptionMap = Object.fromEntries(
     (getSelectOptions('status') || []).map((option) => [option.value, option])
@@ -90,14 +97,45 @@ const AdminProposalApprovalDetailPage = () => {
     );
   }
 
+  if (previewFileId) {
+    if (!previewFile) {
+      return (
+        <div className="space-y-4">
+          <div className="alert alert-error">Không tìm thấy file tờ trình BCĐX.</div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => navigate(`/admin/proposals/duyet-bcdx/${proposal.id}`)}
+          >
+            <ArrowLeft size={16} /> Quay lại chi tiết
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="p-4">
+        <FileViewer
+          file={{ id: previewFile.id, original_name: previewFile.name, mime_type: previewFile.mime_type }}
+          inline
+          inlineHeight="calc(100vh - 7rem)"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
         title={`Chi tiết duyệt BCĐX — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
-        subtitle="Thông tin đề xuất và nội dung tờ trình được gửi trình duyệt"
       />
 
       {success && <div className="alert alert-success py-2">{success}</div>}
+      <ProposalProgressiveDetails
+        record={proposal}
+        progress={proposal.progress}
+        currentStep={5}
+        onViewFile={setFileViewing}
+      />
       <section className="rounded-lg border bg-base-100 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold">Thông tin cơ bản</h2>
@@ -111,11 +149,23 @@ const AdminProposalApprovalDetailPage = () => {
             <ProposalModelBadge value={proposal.mo_hinh_dau_tu} options={modelOptions} />
           </DetailField>
           <DetailField label="Địa chỉ" value={getProposalAddress(proposal)} />
-          <DetailField label="Quy mô trụ đề xuất" value={formatProposalScale(proposal)} />
+          <DetailField label="Quy mô trụ đề xuất" value={formatProposedScale(proposal)} />
           <DetailField label="Tổng chi phí dự kiến" value={formatProposalCost(proposal)} />
           <DetailField label="Người đề xuất" value={proposal.user_name || proposal.owner_name} />
           <DetailField label="Mô tả việc cần làm" value={proposal.task_description} />
         </dl>
+      </section>
+
+      <section className="rounded-lg border bg-base-100 p-4">
+        <h2 className="mb-3 font-semibold">Thông tin đã nhập khi tạo đề xuất</h2>
+        <DynamicForm
+          entity="station_proposals"
+          purpose="view"
+          initialData={proposal}
+          hideActions
+          readOnlyKeys="*"
+          excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
+        />
       </section>
 
       <section className="space-y-3 rounded-lg border bg-base-100 p-4">
@@ -131,6 +181,30 @@ const AdminProposalApprovalDetailPage = () => {
               key={file.id}
               file={{ id: file.id, original_name: file.name, mime_type: file.mime_type }}
               inline
+              inlineHeight="100vh"
+              inlineActions={(
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm gap-1"
+                    onClick={() => setFileViewing({
+                      id: file.id,
+                      original_name: file.name,
+                      mime_type: file.mime_type
+                    })}
+                  >
+                    <Eye size={15} /> Xem ở popup
+                  </button>
+                  <a
+                    className="btn btn-ghost btn-sm gap-1"
+                    href={`/admin/proposals/duyet-bcdx/${proposal.id}?previewFile=${encodeURIComponent(file.id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink size={15} /> Xem trong tab mới
+                  </a>
+                </div>
+              )}
             />
           ))
         )}
@@ -184,6 +258,7 @@ const AdminProposalApprovalDetailPage = () => {
         onClose={() => { if (!saving) setDialogType(''); }}
         onConfirm={submitAction}
       />
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
     </div>
   );
 };

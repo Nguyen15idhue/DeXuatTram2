@@ -193,7 +193,11 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   const nextLat = fixedData.latitude !== undefined ? fixedData.latitude : prevRow.latitude;
   const nextLng = fixedData.longitude !== undefined ? fixedData.longitude : prevRow.longitude;
   const nextNote = fixedData.note !== undefined ? fixedData.note : prevRow.note;
-  const nextPole = fixedData.chot_so_luong_tru !== undefined ? fixedData.chot_so_luong_tru : prevRow.chot_so_luong_tru;
+  const submittedPoleRows = fixedData.chot_so_luong_tru;
+  const nextPole = submittedPoleRows === undefined
+    || (Array.isArray(submittedPoleRows) && submittedPoleRows.length === 0)
+    ? prevRow.chot_so_luong_tru
+    : submittedPoleRows;
   await pool.query(
     `UPDATE station_proposals
      SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, custom_data = ?, status = ?, updated_at = NOW()

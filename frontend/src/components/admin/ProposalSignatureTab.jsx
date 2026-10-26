@@ -32,7 +32,7 @@ import {
   SIGN_STATUS_LABELS,
   SIGN_STATUS_HINTS
 } from '../../utils/proposalSignature';
-import { Download, Eye, FileUp, PenSquare, Search, X } from 'lucide-react';
+import { Download, FileUp, PenSquare, Search, X } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
 
@@ -181,27 +181,19 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
 
   const renderActions = (row) => {
     const canSignRow = row.can_sign && row.status === 'SIGNATURE_PENDING';
+    const canUploadSigned = meta.isAdmin || meta.isBackOffice;
+    const canExportCompletedSigning = row.status === 'SIGNATURE_PENDING'
+      && row.sign_status === SIGN_STATUS.DONE;
 
     if (tab === 'completed') return null;
 
     const buttons = [];
 
-    if (tab === 'all' && canSignRow) {
-      buttons.push(
-        <button
-          key="view-sign"
-          type="button"
-          className="btn btn-xs btn-primary gap-1"
-          title="Xem chi tiết và ký duyệt BCĐX"
-          onClick={() => goDetail(row)}
-        >
-          <Eye size={14} />
-          Xem &amp; ký duyệt
-        </button>
-      );
-    }
-
-    if (tab === 'pending' && canSignRow) {
+    if (
+      tab === 'all'
+      && canSignRow
+      && row.sign_status === SIGN_STATUS.DOING
+    ) {
       buttons.push(
         <button
           key="sign"
@@ -216,7 +208,10 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       );
     }
 
-    if (tab === 'chairman') {
+    if (
+      (tab === 'all' || tab === 'chairman')
+      && canExportCompletedSigning
+    ) {
       buttons.push(
         <button
           key="export"
@@ -227,16 +222,35 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
         >
           <Download size={14} />
           Xuất file PDF
-        </button>,
+        </button>
+      );
+      if (canUploadSigned) {
+        buttons.push(
+          <button
+            key="upload"
+            type="button"
+            className="btn btn-xs btn-primary gap-1"
+            title="Tải lên file BCĐX chủ tịch đã ký"
+            onClick={() => setSignedModal({ open: true, record: row })}
+          >
+            <FileUp size={14} />
+            Upload file đã ký
+          </button>
+        );
+      }
+    }
+
+    if (tab === 'pending' && canSignRow) {
+      buttons.push(
         <button
-          key="upload"
+          key="sign"
           type="button"
           className="btn btn-xs btn-primary gap-1"
-          title="Tải lên file BCĐX chủ tịch đã ký"
-          onClick={() => setSignedModal({ open: true, record: row })}
+          title="Ký duyệt BCĐX"
+          onClick={() => goDetail(row)}
         >
-          <FileUp size={14} />
-          Upload file đã ký
+          <PenSquare size={14} />
+          Ký duyệt
         </button>
       );
     }

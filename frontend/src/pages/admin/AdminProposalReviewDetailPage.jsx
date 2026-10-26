@@ -5,12 +5,17 @@ import PageHeader from '../../components/ui/PageHeader';
 import ReviewActionDialog from '../../components/admin/ReviewActionDialog';
 import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/ProposalTableBadges';
 import Toast from '../../components/Toast';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import FileViewer from '../../components/dynamic/FileViewer';
+import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalReviewService } from '../../services/api';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import {
   formatProposalCost,
-  formatProposalScale,
+  formatProposedScale,
+  isProposalFieldForModel,
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone
@@ -109,7 +114,7 @@ const formatValue = (value) => {
   return String(parsed);
 };
 
-const FieldValue = ({ field, value, token }) => {
+const FieldValue = ({ field, value, token, record }) => {
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;
@@ -135,6 +140,9 @@ const FieldValue = ({ field, value, token }) => {
       </div>
     );
   }
+  if (field.type === 'table') {
+    return <ProposalTableFieldValue record={record} field={field} />;
+  }
   return <span className="whitespace-pre-wrap break-words">{formatValue(value)}</span>;
 };
 
@@ -151,43 +159,6 @@ const formatDateTime = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN');
 };
 
-const getRequestLabel = (request) => {
-  if (request.request_type === 'TGD_REVIEW') return 'Yêu cầu Tổng Giám đốc xem xét';
-  if (request.request_type === 'RE_GRADE') {
-    if (request.target_department === 'QH') return 'Yêu cầu Quy hoạch chấm lại';
-    if (request.target_department === 'PL') return 'Yêu cầu Pháp lý chấm lại';
-    return 'Yêu cầu chấm điểm lại';
-  }
-  return request.request_type;
-};
-
-const RequestHistory = ({ requests }) => {
-  if (!requests?.length) {
-    return <p className="text-sm text-base-content/60">Chưa có yêu cầu xem xét hoặc chấm điểm lại.</p>;
-  }
-  return (
-    <ol className="space-y-3">
-      {requests.map((request) => (
-        <li key={request.id} className="rounded-lg border border-base-300 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-medium">{getRequestLabel(request)}</div>
-            <span className={`badge badge-sm ${request.status === 'OPEN' ? 'badge-warning' : 'badge-ghost'}`}>
-              {request.status === 'OPEN' ? 'Đang mở' : request.status === 'DONE' ? 'Đã hoàn thành' : 'Đã đóng'}
-            </span>
-          </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm">{request.description || request.note || 'Không có mô tả'}</p>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/60">
-            <span>Người yêu cầu: {request.requested_by_name || '—'}</span>
-            <span>Người nhận: {request.target_title || request.target_department || '—'}</span>
-            {request.round_no && <span>Lần: {request.round_no}</span>}
-            <span>{formatDateTime(request.created_at)}</span>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-};
-
 const AdminProposalReviewDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -200,6 +171,7 @@ const AdminProposalReviewDetailPage = () => {
   const [actionError, setActionError] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+  const [fileViewing, setFileViewing] = useState(null);
 
   const loadDetail = useCallback(async () => {
     if (!token || !id) return;
@@ -224,6 +196,8 @@ const AdminProposalReviewDetailPage = () => {
   const fieldGroups = useMemo(() => {
     const fields = (detail?.fieldDefinitions || [])
       .filter((field) => field.status !== 'inactive' || proposal?.[field.key] !== undefined)
+      .filter((field) => !PROPOSAL_PROCESS_FIELD_KEYS.includes(field.key))
+      .filter((field) => isProposalFieldForModel(field.key, proposal))
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
     const groups = FIELD_GROUPS.map((group) => ({ title: group.title, fields: [] }));
     const otherFields = [];
@@ -276,7 +250,13 @@ const AdminProposalReviewDetailPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Chi tiết yêu cầu chấm điểm lại — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
-        subtitle="Thông tin đề xuất, kết quả chấm điểm và lịch sử yêu cầu xem xét"
+      />
+      <ProposalProgressiveDetails
+        record={proposal}
+        progress={detail.progress}
+        currentStep={2}
+        onViewFile={setFileViewing}
+        omitStepDetails={['grading']}
       />
 
       <section className="rounded-lg border bg-base-100 p-4">
@@ -293,7 +273,7 @@ const AdminProposalReviewDetailPage = () => {
             <ProposalModelBadge value={proposal.mo_hinh_dau_tu} options={modelOptions} />
           </DetailField>
           <DetailField label="Địa chỉ" value={getProposalAddress(proposal)} />
-          <DetailField label="Quy mô trụ đề xuất" value={formatProposalScale(proposal)} />
+          <DetailField label="Quy mô trụ đề xuất" value={formatProposedScale(proposal)} />
           <DetailField label="Tổng chi phí dự kiến" value={formatProposalCost(proposal)} />
           <DetailField label="Mức độ xem xét" value={getReviewLevelLabel(proposal.review_level)} />
           <DetailField label="Ngày tạo" value={formatDateTime(proposal.created_at)} />
@@ -308,26 +288,13 @@ const AdminProposalReviewDetailPage = () => {
         </div>
       </section>
 
-      <section className="rounded-lg border bg-base-100 p-4">
-        <h2 className="mb-3 font-semibold">
-          {proposal.status === 'GDTTKD_EVALUATING'
-            ? 'Thông tin GĐTTKD xem xét'
-            : proposal.status === 'RE_GRADING'
-              ? 'Yêu cầu chấm điểm lại'
-              : proposal.status === 'TGD_REVIEW'
-                ? 'Thông tin trình Tổng Giám đốc xem xét'
-                : 'Lịch sử xem xét và yêu cầu'}
-        </h2>
-        <RequestHistory requests={detail.requests} />
-      </section>
-
       {fieldGroups.map((group) => (
         <section key={group.title} className="rounded-lg border bg-base-100 p-4">
           <h2 className="mb-3 font-semibold">{group.title}</h2>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {group.fields.map((field) => (
               <DetailField key={field.key} label={field.label || field.key}>
-                <FieldValue field={field} value={proposal[field.key]} token={token} />
+                <FieldValue field={field} record={proposal} value={proposal[field.key]} token={token} />
               </DetailField>
             ))}
           </dl>
@@ -384,6 +351,7 @@ const AdminProposalReviewDetailPage = () => {
         onClose={() => !saving && setActionType('')}
         onConfirm={submitAction}
       />
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
       <Toast message={toast} onClose={() => setToast('')} />
     </div>
   );

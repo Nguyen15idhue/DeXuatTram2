@@ -1,4 +1,12 @@
+import { notifyProposalTaskCountsChanged } from '../utils/proposalTaskCounts';
+
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+const runProposalTaskMutation = async (request) => {
+  const response = await request();
+  if (response?.success === true) notifyProposalTaskCountsChanged();
+  return response;
+};
 
 const fileStamp = () => {
   const d = new Date();
@@ -369,22 +377,22 @@ export const adminProposalService = {
     return api.getWithAuth(`/admin/proposals/${id}`, token);
   },
   updateStatus(id, status, token, reason, force) {
-    return api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposals/${id}/status`, { status, reason, force: force === true }, token));
   },
   pauseProposal(id, reason, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/pause`, { reason }, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/pause`, { reason }, token));
   },
   resumeProposal(id, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/resume`, {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/resume`, {}, token));
   },
   convertToStation(id, data, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/convert-to-station`, data || {}, token));
   },
   update(id, data, token) {
-    return api.putWithAuth(`/admin/proposals/${id}`, data, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposals/${id}`, data, token));
   },
   delete(id, token) {
-    return api.deleteWithAuth(`/admin/proposals/${id}`, token);
+    return runProposalTaskMutation(() => api.deleteWithAuth(`/admin/proposals/${id}`, token));
   },
   duplicates(minM, maxM, token) {
     return api.getWithAuth(`/admin/proposals/duplicates?min_m=${minM}&max_m=${maxM}`, token);
@@ -396,19 +404,19 @@ export const adminProposalService = {
     return api.getWithAuth(`/admin/proposals/${id}/completeness`, token);
   },
   confirmInfo(id, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/confirm-info`, {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/confirm-info`, {}, token));
   },
   reopenInfo(id, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/reopen-info`, {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/reopen-info`, {}, token));
   },
   extendDeadline(id, data, token) {
-    return api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposals/${id}/extend-deadline`, data || {}, token));
   },
   extendInfo(id, token) {
     return api.getWithAuth(`/admin/proposals/${id}/extend-info`, token);
   },
   confirmInfoBatch(token, limit) {
-    return api.postWithAuth('/admin/proposals/confirm-info-batch', { limit: limit || 500 }, token);
+    return runProposalTaskMutation(() => api.postWithAuth('/admin/proposals/confirm-info-batch', { limit: limit || 500 }, token));
   }
 };
 
@@ -427,10 +435,10 @@ export const proposalRequestService = {
     return api.getWithAuth(`/admin/proposal-requests/${id}/update-context`, token);
   },
   updateProposal(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-requests/${id}/proposal`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-requests/${id}/proposal`, data || {}, token));
   },
   complete(id, data, token) {
-    return api.postWithAuth(`/admin/proposal-requests/${id}/complete`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-requests/${id}/complete`, data || {}, token));
   }
 };
 
@@ -449,10 +457,10 @@ export const proposalGradingService = {
     return api.putWithAuth('/admin/proposal-grading/display-config', data || {}, token);
   },
   requestSupplement(id, data, token) {
-    return api.postWithAuth(`/admin/proposal-grading/${id}/request-supplement`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-grading/${id}/request-supplement`, data || {}, token));
   },
   update(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-grading/${id}`, data, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-grading/${id}`, data, token));
   }
 };
 
@@ -468,13 +476,13 @@ export const proposalLayoutService = {
     return api.getWithAuth(`/admin/proposal-layouts/${id}`, token);
   },
   updateLayout(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-layouts/${id}`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-layouts/${id}`, data || {}, token));
   },
   requestSupplement(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-layouts/${id}/request-supplement`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-layouts/${id}/request-supplement`, data || {}, token));
   },
   cancel(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-layouts/${id}/cancel`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-layouts/${id}/cancel`, data || {}, token));
   }
 };
 
@@ -490,10 +498,10 @@ export const proposalReportService = {
     return api.getWithAuth(`/admin/proposal-reports/${id}`, token);
   },
   upload(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token));
   },
   requestRevision(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token));
   }
 };
 
@@ -506,10 +514,10 @@ export const proposalApprovalService = {
     return api.getWithAuth(`/admin/proposal-approvals/${id}`, token);
   },
   requestUpdate(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-approvals/${id}/request-update`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/request-update`, data || {}, token));
   },
   tgdReject(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-approvals/${id}/tgd-reject`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/tgd-reject`, data || {}, token));
   },
   getSignatureConfig(id, token) {
     return api.getWithAuth(`/admin/proposal-approvals/${id}/signature-config`, token);
@@ -518,7 +526,7 @@ export const proposalApprovalService = {
     return api.getWithAuth(`/admin/proposal-approvals/${id}/signer-candidates`, token);
   },
   configureSignature(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-approvals/${id}/signature-config`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-approvals/${id}/signature-config`, data || {}, token));
   }
 };
 
@@ -531,16 +539,16 @@ export const proposalSignatureService = {
     return api.getWithAuth(`/admin/proposal-signatures/${id}`, token);
   },
   sign(id, token) {
-    return api.postWithAuth(`/admin/proposal-signatures/${id}/sign`, {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/sign`, {}, token));
   },
   reject(id, data, token) {
-    return api.postWithAuth(`/admin/proposal-signatures/${id}/reject`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/reject`, data || {}, token));
   },
   requestRework(id, data, token) {
-    return api.postWithAuth(`/admin/proposal-signatures/${id}/request-rework`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/request-rework`, data || {}, token));
   },
   uploadSignedFile(id, data, token) {
-    return api.postWithAuth(`/admin/proposal-signatures/${id}/signed-file`, data || {}, token);
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/signed-file`, data || {}, token));
   },
   getExportFile(id, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
@@ -574,19 +582,19 @@ export const proposalReviewService = {
     return api.getWithAuth(`/admin/proposal-reviews/${id}`, token);
   },
   requestRegrade(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reviews/${id}/request-regrade`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/request-regrade`, data || {}, token));
   },
   toTgd(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reviews/${id}/to-tgd`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/to-tgd`, data || {}, token));
   },
   cancel(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reviews/${id}/cancel`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/cancel`, data || {}, token));
   },
   approve(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reviews/${id}/approve`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/approve`, data || {}, token));
   },
   reject(id, data, token) {
-    return api.putWithAuth(`/admin/proposal-reviews/${id}/reject`, data || {}, token);
+    return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reviews/${id}/reject`, data || {}, token));
   }
 };
 

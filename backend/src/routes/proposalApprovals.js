@@ -200,8 +200,8 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *     tags: [Proposal Approvals]
  *     summary: Cấu hình vị trí ký và trình ký BCĐX
  *     description: >
- *       Áp dụng cho đề xuất PROPOSAL_REPORT_REVIEWING. Gửi danh sách người ký kèm vị trí ô ký
- *       (page/pos_x/pos_y/box_width/box_height chuẩn hóa 0..1). Xác nhận xong đề xuất chuyển
+ *       Áp dụng cho đề xuất PROPOSAL_REPORT_REVIEWING. Gửi danh sách người ký kèm vị trí ô ký;
+ *       box_width và box_height chuẩn hóa 0..1, được cấu hình độc lập. Xác nhận xong đề xuất chuyển
  *       sang SIGNATURE_PENDING và thông báo tới những người được cấu hình.
  *     security:
  *       - bearerAuth: []

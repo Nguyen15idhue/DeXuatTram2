@@ -1,5 +1,17 @@
 import { fieldDefinitionService } from "../services/api";
 
+export const PRIORITY_MARKER_COLORS = {
+  "1": "#22c55e",
+  "2": "#eab308",
+  "3": "#ef4444",
+};
+
+const PRIORITY_BADGE_TEXT_COLORS = {
+  "1": "#15803d",
+  "2": "#a16207",
+  "3": "#b91c1c",
+};
+
 // Bộ icon marker bản đồ — SVG dẹt tự màu (phong cách phẳng/gradient), viewBox 24.
 // Mỗi icon: { defs?: string, nodes: [[tag, attrs], ...] }
 const ICONS = {
@@ -17,7 +29,7 @@ const ICONS = {
   },
   mapPin2: {
     nodes: [
-      ["path", { d: "M12 22 L6 12 A6 6 0 1 1 18 12 Z", fill: "#f97316", stroke: "#c2410c", "stroke-width": "1.2", "stroke-linejoin": "round" }],
+      ["path", { d: "M12 22 L6 12 A6 6 0 1 1 18 12 Z", fill: PRIORITY_MARKER_COLORS["2"], stroke: PRIORITY_BADGE_TEXT_COLORS["2"], "stroke-width": "1.2", "stroke-linejoin": "round" }],
     ],
   },
   mapPin3: {
@@ -1271,9 +1283,9 @@ const ICONS = {
   },
   target1: {
     nodes: [
-      ["circle", { cx: "11", cy: "13", r: "9", fill: "#22c55e" }],
+      ["circle", { cx: "11", cy: "13", r: "9", fill: PRIORITY_MARKER_COLORS["1"] }],
       ["circle", { cx: "11", cy: "13", r: "6.2", fill: "#ffffff" }],
-      ["circle", { cx: "11", cy: "13", r: "3.4", fill: "#22c55e" }],
+      ["circle", { cx: "11", cy: "13", r: "3.4", fill: PRIORITY_MARKER_COLORS["1"] }],
       ["circle", { cx: "11", cy: "13", r: "1.2", fill: "#ffffff" }],
       [
         "path",
@@ -1305,9 +1317,9 @@ const ICONS = {
   },
   target2: {
     nodes: [
-      ["circle", { cx: "11", cy: "13", r: "9", fill: "#f97316" }],
+      ["circle", { cx: "11", cy: "13", r: "9", fill: PRIORITY_MARKER_COLORS["2"] }],
       ["circle", { cx: "11", cy: "13", r: "6.2", fill: "#ffffff" }],
-      ["circle", { cx: "11", cy: "13", r: "3.4", fill: "#f97316" }],
+      ["circle", { cx: "11", cy: "13", r: "3.4", fill: PRIORITY_MARKER_COLORS["2"] }],
       ["circle", { cx: "11", cy: "13", r: "1.2", fill: "#ffffff" }],
       [
         "path",
@@ -1339,9 +1351,9 @@ const ICONS = {
   },
   target3: {
     nodes: [
-      ["circle", { cx: "11", cy: "13", r: "9", fill: "#ef4444" }],
+      ["circle", { cx: "11", cy: "13", r: "9", fill: PRIORITY_MARKER_COLORS["3"] }],
       ["circle", { cx: "11", cy: "13", r: "6.2", fill: "#ffffff" }],
-      ["circle", { cx: "11", cy: "13", r: "3.4", fill: "#ef4444" }],
+      ["circle", { cx: "11", cy: "13", r: "3.4", fill: PRIORITY_MARKER_COLORS["3"] }],
       ["circle", { cx: "11", cy: "13", r: "1.2", fill: "#ffffff" }],
       [
         "path",
@@ -2574,6 +2586,8 @@ export const iconSvgWithBadge = (id, badge, { size = 32 } = {}) => {
   if (!isValidMarkerIcon(id)) return "";
   if (!isValidMarkerBadge(badge)) return iconSvgMarkup(id, { size });
   const icon = ICONS[id];
+  const badgeColor = PRIORITY_MARKER_COLORS[String(badge)];
+  const badgeTextColor = PRIORITY_BADGE_TEXT_COLORS[String(badge)];
   const defs = icon.defs ? `<defs>${icon.defs}</defs>` : "";
   const inner = icon.nodes
     .map(([tag, a]) => {
@@ -2584,7 +2598,7 @@ export const iconSvgWithBadge = (id, badge, { size = 32 } = {}) => {
     })
     .join("");
   const b = String(badge);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32" style="display:block">${defs}<g transform="translate(2,2) scale(1.1667)">${inner}</g><circle cx="25" cy="7" r="7" fill="#ffffff" stroke="#a855f7" stroke-width="2"/><text x="25" y="7" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="800" font-family="system-ui,sans-serif" fill="#7e22ce">${b}</text></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32" style="display:block">${defs}<g transform="translate(2,2) scale(1.1667)">${inner}</g><circle cx="25" cy="7" r="7" fill="#ffffff" stroke="${badgeColor}" stroke-width="2"/><text x="25" y="7" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="800" font-family="system-ui,sans-serif" fill="${badgeTextColor}">${b}</text></svg>`;
 };
 
 export const STATUS_ICON_DEFAULTS = {

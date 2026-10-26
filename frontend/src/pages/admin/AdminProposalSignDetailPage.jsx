@@ -6,6 +6,9 @@ import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import DynamicForm from '../../components/dynamic/DynamicForm';
+import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Toast from '../../components/Toast';
@@ -20,7 +23,6 @@ import {
 } from '../../utils/proposalSignature';
 import {
   formatProposalCost,
-  formatProposalScale,
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone
@@ -70,24 +72,6 @@ const InfoItem = ({ label, value }) => (
     <span className="text-xs text-base-content/60">{label}</span>
     <span className="text-sm font-medium break-words">{value || '-'}</span>
   </div>
-);
-
-const RequestRow = ({ label, item }) => (
-  <li className="border-b last:border-b-0 py-1.5 text-sm">
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="badge badge-ghost badge-sm">{label}</span>
-      <span className="text-xs text-base-content/60">Lần {item.round_no || 1}</span>
-      <span className="text-xs text-base-content/60">{formatDate(item.created_at)}</span>
-      <span
-        className={`badge badge-sm ${item.status === 'OPEN' ? 'badge-warning' : 'badge-success'}`}
-      >
-        {item.status === 'OPEN' ? 'Đang chờ' : 'Đã hoàn thành'}
-      </span>
-    </div>
-    {item.description && (
-      <p className="mt-1 text-sm break-words whitespace-pre-wrap">{item.description}</p>
-    )}
-  </li>
 );
 
 const AdminProposalSignDetailPage = () => {
@@ -234,14 +218,11 @@ const AdminProposalSignDetailPage = () => {
   const allSigned = detail.sign_status === SIGN_STATUS.DONE || detail.sign_status === SIGN_STATUS.CEO_SIGNED;
   const showSignButton = detail.can_sign;
   const chotRows = parseChotRows(detail.chot_so_luong_tru);
-  const regradeRequests = (detail.revision_requests || []).filter((item) => item.request_type === 'RE_GRADE');
-  const reworkRequests = (detail.revision_requests || []).filter((item) => item.request_type === 'REVISE_BCDX');
 
   return (
     <div className="p-4 md:p-6 space-y-3 pb-20">
       <PageHeader
         title="Chi tiết trình ký"
-        subtitle={`Mã đề xuất: ${detail.ma_de_xuat || `#${detail.id}`}`}
         actions={(
           <div className="flex gap-2">
             <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={() => navigate('/admin/proposals/trinh-ky')}>
@@ -256,13 +237,22 @@ const AdminProposalSignDetailPage = () => {
         )}
       />
 
+      <ProposalProgressiveDetails
+        record={detail}
+        progress={detail.progress}
+        currentStep={6}
+        onViewFile={setViewing}
+        signers={detail.signers}
+        showStepDetails={false}
+      />
+
       <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">
         <InfoItem label="Người đề xuất" value={detail.owner_name} />
         <InfoItem label="Tên pháp nhân" value={getProposalLegalName(detail)} />
         <InfoItem label="SĐT liên hệ" value={getProposalPhone(detail)} />
         <InfoItem label="Mô hình đầu tư" value={detail.mo_hinh_dau_tu || '-'} />
         <InfoItem label="Địa chỉ" value={getProposalAddress(detail)} />
-        <InfoItem label="Quy mô trụ đề xuất" value={formatProposalScale(detail) || formatProposedScale(detail)} />
+        <InfoItem label="Quy mô trụ đề xuất" value={formatProposedScale(detail)} />
         <InfoItem label="Số lượng trụ chốt" value={formatChotTruRows(detail.chot_so_luong_tru)} />
         <InfoItem label="Tổng giá trị chốt" value={formatChotTotal(detail.tong_gia_tri_chot)} />
         <InfoItem label="Tổng chi phí" value={formatProposalCost(detail)} />
@@ -284,6 +274,20 @@ const AdminProposalSignDetailPage = () => {
         />
         <InfoItem label="Mức độ xem xét" value={detail.review_level ? `Mức ${detail.review_level}` : '-'} />
       </div>
+
+      {detail.can_view && (
+        <section className="border rounded-lg bg-base-100 p-4">
+          <h2 className="font-semibold mb-3">Thông tin đã nhập khi tạo đề xuất</h2>
+          <DynamicForm
+            entity="station_proposals"
+            purpose="view"
+            initialData={detail.initial_proposal_data || detail}
+            hideActions
+            readOnlyKeys="*"
+            excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
+          />
+        </section>
+      )}
 
       {chotRows.length > 0 && (
         <section className="border rounded-lg bg-base-100 p-4 space-y-2">
@@ -339,21 +343,6 @@ const AdminProposalSignDetailPage = () => {
           </div>
         </div>
         <ProposalGradingSummary record={detail} />
-        {(regradeRequests.length > 0 || reworkRequests.length > 0) && (
-          <div className="border-t pt-2">
-            <p className="text-xs font-semibold text-base-content/70 mb-1">
-              Yêu cầu chấm lại và làm lại BCĐX
-            </p>
-            <ul>
-              {regradeRequests.map((item) => (
-                <RequestRow key={`regrade-${item.id}`} label="Yêu cầu chấm điểm lại" item={item} />
-              ))}
-              {reworkRequests.map((item) => (
-                <RequestRow key={`rework-${item.id}`} label="Yêu cầu làm lại BCĐX" item={item} />
-              ))}
-            </ul>
-          </div>
-        )}
       </section>
 
       <section className="border rounded-lg bg-base-100 p-4 space-y-3">

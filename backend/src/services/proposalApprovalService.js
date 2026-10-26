@@ -190,7 +190,11 @@ exports.getProposal = async ({ user, id } = {}) => {
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  return mapApprovalRow(dynamicUtils.mergeData(rows[0], fieldDefs));
+  const progress = await require('./proposalProgressService').getProgress(proposal.id);
+  return {
+    ...mapApprovalRow(dynamicUtils.mergeData(rows[0], fieldDefs)),
+    progress
+  };
 };
 
 const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) => {
@@ -358,15 +362,46 @@ exports.tgdReject = async ({ user, id, reason, ip } = {}) => {
 
 const normalizeSigners = (signers) => {
   const list = Array.isArray(signers) ? signers : [];
-  return list.map((item) => ({
-    user_id: Number(item?.user_id),
-    signer_title: item?.signer_title ? String(item.signer_title).trim() : null,
-    page: Math.max(1, parseInt(item?.page, 10) || 1),
-    pos_x: Math.min(1, Math.max(0, Number(item?.pos_x) || 0)),
-    pos_y: Math.min(1, Math.max(0, Number(item?.pos_y) || 0)),
-    box_width: Math.min(1, Math.max(0.02, Number(item?.box_width) || 0.25)),
-    box_height: Math.min(1, Math.max(0.01, Number(item?.box_height) || 0.06))
-  })).filter((item) => Number.isInteger(item.user_id) && item.user_id > 0);
+  return list.map((item) => {
+    const posX = Math.min(1, Math.max(0, Number(item?.pos_x) || 0));
+    const requestedWidth = Number(item?.box_width);
+    const boxWidth = Math.min(
+      1 - posX,
+      Math.max(
+        0,
+        item?.box_width !== null
+          && item?.box_width !== undefined
+          && Number.isFinite(requestedWidth)
+          ? requestedWidth
+          : 0.25
+      )
+    );
+    const requestedHeight = Number(item?.box_height);
+    const boxHeight = Math.min(
+      1,
+      Math.max(
+        0,
+        item?.box_height !== null
+          && item?.box_height !== undefined
+          && Number.isFinite(requestedHeight)
+          ? requestedHeight
+          : 0.25
+      )
+    );
+    const posY = Math.min(
+      1 - boxHeight,
+      Math.max(0, Number(item?.pos_y) || 0)
+    );
+    return {
+      user_id: Number(item?.user_id),
+      signer_title: item?.signer_title ? String(item.signer_title).trim() : null,
+      page: Math.max(1, parseInt(item?.page, 10) || 1),
+      pos_x: posX,
+      pos_y: posY,
+      box_width: boxWidth,
+      box_height: boxHeight
+    };
+  }).filter((item) => Number.isInteger(item.user_id) && item.user_id > 0);
 };
 
 exports.getSignatureConfig = async ({ user, id } = {}) => {

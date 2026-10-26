@@ -1,4 +1,4 @@
-import { getStatusOptions } from './mapMarkerIcons';
+import { getStatusOptions, PRIORITY_MARKER_COLORS } from './mapMarkerIcons';
 
 export const STATION_STATUSES = [
   { value: 'PLANNING', label: 'Quy hoạch', color: '#a855f7' },
@@ -8,7 +8,7 @@ export const STATION_STATUSES = [
 ];
 
 export const PROPOSAL_STATUSES = [
-  { value: 'PENDING', label: 'Đang đề xuất', color: '#f97316', show_in_legend: true, sort_order: 1 },
+  { value: 'PENDING', label: 'Mới đề xuất', color: '#f97316', show_in_legend: true, sort_order: 1 },
   { value: 'REVIEWING', label: 'Đang xem xét', color: '#3b82f6', show_in_legend: true, sort_order: 2 },
   // { value: 'PRINCIPLE_APPROVED', label: 'Duyệt chủ trương', color: '#6366f1', show_in_legend: true, sort_order: 3 },
   { value: 'APPROVED', label: 'Đã duyệt BCĐX', color: '#22c55e', show_in_legend: true, sort_order: 4 },
@@ -43,6 +43,8 @@ export const PRIORITY_OPTIONS = [
   { value: '2', label: 'Cấp 2' },
   { value: '3', label: 'Cấp 3' },
 ];
+
+export const PLANNING_PRIORITY_COLORS = PRIORITY_MARKER_COLORS;
 
 export const STATION_STATUS_MAP = STATION_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
 export const PROPOSAL_STATUS_MAP = PROPOSAL_STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
@@ -97,7 +99,10 @@ export const getProposalMapStatuses = () => {
     const value = getProposalMapStatus(s.value);
     if (seen.has(value)) return;
     seen.add(value);
-    result.push(byValue.get(value) || { ...s, value });
+    const mapStatus = byValue.get(value) || { ...s, value };
+    result.push(value === 'PENDING'
+      ? { ...mapStatus, label: 'Mới đề xuất' }
+      : mapStatus);
   });
   return result;
 };

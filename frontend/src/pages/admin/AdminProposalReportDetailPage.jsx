@@ -3,13 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Pencil } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalReportService } from '../../services/api';
-import { getLegalDocFiles } from '../../utils/proposalGrading';
+import { getLegalDocFiles, isProposalFieldForModel } from '../../utils/proposalGrading';
 import { getReportFiles, canUploadReport, uploadButtonLabel } from '../../utils/proposalReport';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ProposalReportSummary from '../../components/admin/ProposalReportSummary';
 import ProposalReportUpdateModal from '../../components/admin/ProposalReportUpdateModal';
 import PageHeader from '../../components/ui/PageHeader';
 import Toast from '../../components/Toast';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
 const formatDate = (value) => {
   if (!value) return '—';
@@ -48,6 +51,9 @@ const FieldValue = ({ record, field, onViewFile }) => {
       </div>
     );
   }
+  if (field.type === 'table') {
+    return <ProposalTableFieldValue record={record} field={field} />;
+  }
   const output = displayValue(value);
   return typeof value === 'object' && value !== null
     ? <pre className="whitespace-pre-wrap break-words text-sm">{output}</pre>
@@ -57,12 +63,6 @@ const FieldValue = ({ record, field, onViewFile }) => {
 const hasValue = (value) => {
   if (value === null || value === undefined || value === '') return false;
   return !Array.isArray(value) || value.length > 0;
-};
-
-const REQUEST_LABELS = {
-  REVISE_BCDX: 'Yêu cầu cập nhật BCĐX',
-  LAYOUT_SUPPLEMENT: 'Yêu cầu bổ sung layout',
-  UPDATE_INFO: 'Yêu cầu bổ sung thông tin'
 };
 
 const AdminProposalReportDetailPage = () => {
@@ -97,7 +97,10 @@ const AdminProposalReportDetailPage = () => {
 
   const proposal = detail?.proposal;
   const fields = useMemo(() => (detail?.fieldDefinitions || [])
-    .filter((field) => field.status !== 'inactive' && hasValue(proposal?.[field.key]))
+    .filter((field) => field.status !== 'inactive'
+      && hasValue(proposal?.[field.key])
+      && !PROPOSAL_PROCESS_FIELD_KEYS.includes(field.key)
+      && isProposalFieldForModel(field.key, proposal))
     .sort((a, b) => (a.order_index || 0) - (b.order_index || 0)), [detail, proposal]);
   const reportFiles = proposal ? getReportFiles(proposal) : [];
 
@@ -125,7 +128,6 @@ const AdminProposalReportDetailPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Chi tiết đề xuất ${proposal.ma_de_xuat || `#${proposal.id}`}`}
-        subtitle="Thông tin đề xuất, kết quả chấm điểm, bản vẽ layout và lịch sử lập BCĐX"
         actions={(
           <div className="flex gap-2">
             {detail.permissions?.canUpload && canUploadReport(proposal) && (
@@ -138,6 +140,14 @@ const AdminProposalReportDetailPage = () => {
             </button>
           </div>
         )}
+      />
+
+      <ProposalProgressiveDetails
+        record={proposal}
+        progress={detail.progress}
+        currentStep={4}
+        onViewFile={setFileViewing}
+        omitStepDetails={['grading', 'layout']}
       />
 
       <section className="card border border-base-300 bg-base-100">
@@ -194,59 +204,6 @@ const AdminProposalReportDetailPage = () => {
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </section>
-
-      <section className="card border border-base-300 bg-base-100">
-        <div className="card-body p-4">
-          <h2 className="card-title text-base">Yêu cầu liên quan</h2>
-          {(detail.requests || []).length === 0 ? (
-            <p className="text-sm text-base-content/60">Chưa có yêu cầu bổ sung hoặc cập nhật.</p>
-          ) : (
-            <div className="space-y-3">
-              {detail.requests.map((request) => (
-                <article key={request.id} className="border border-base-200 rounded-lg p-3">
-                  <div className="flex flex-wrap justify-between gap-2 text-sm">
-                    <strong>{REQUEST_LABELS[request.request_type] || request.request_type}</strong>
-                    <span className={`badge badge-sm ${request.status === 'OPEN' ? 'badge-warning' : 'badge-success'}`}>
-                      {request.status === 'OPEN' ? 'Đang mở' : request.status === 'DONE' ? 'Đã hoàn thành' : request.status}
-                    </span>
-                  </div>
-                  <p className="text-sm whitespace-pre-wrap mt-2">{request.description || '—'}</p>
-                  <p className="text-xs text-base-content/60 mt-2">
-                    {request.requester_name || 'Hệ thống'} · {formatDate(request.created_at)}
-                  </p>
-                  {request.resolution_note && (
-                    <p className="text-sm mt-2"><strong>Kết quả:</strong> {request.resolution_note}</p>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="card border border-base-300 bg-base-100">
-        <div className="card-body p-4">
-          <h2 className="card-title text-base">Lịch sử xử lý từ lúc tạo đề xuất</h2>
-          {(detail.activity || []).length === 0 ? (
-            <p className="text-sm text-base-content/60">Chưa có lịch sử xử lý.</p>
-          ) : (
-            <ol className="space-y-3">
-              {detail.activity.map((event) => (
-                <li key={event.id} className="border-l-2 border-primary/30 pl-3">
-                  <p className="font-semibold text-sm">{event.action || event.action_type || 'Cập nhật'}</p>
-                  <p className="text-xs text-base-content/60">
-                    {event.actor_name || 'Hệ thống'} · {formatDate(event.created_at)}
-                  </p>
-                  {event.from_status || event.to_status ? (
-                    <p className="text-sm mt-1">{event.from_status || '—'} → {event.to_status || '—'}</p>
-                  ) : null}
-                  {event.reason && <p className="text-sm mt-1 whitespace-pre-wrap">{event.reason}</p>}
-                </li>
-              ))}
-            </ol>
           )}
         </div>
       </section>

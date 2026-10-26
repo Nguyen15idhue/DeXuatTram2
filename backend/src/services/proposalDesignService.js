@@ -283,7 +283,8 @@ exports.getProposalDetail = async ({ user, id } = {}) => {
 
   const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const proposal = mapLayoutRow(dynamicUtils.mergeData(rows[0], fieldDefinitions));
-  return { proposal, fieldDefinitions };
+  const progress = await require('./proposalProgressService').getProgress(proposalId);
+  return { proposal, fieldDefinitions, progress };
 };
 
 const loadProposal = async (id) => {

@@ -303,24 +303,16 @@ exports.getProposalDetail = async ({ user, id } = {}) => {
   }
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const mapped = mapReportRow(dynamicUtils.mergeData(proposal, fieldDefs));
-  const [requests] = await pool.query(
-    `SELECT r.id, r.request_type, r.description, r.status, r.requested_by,
-            r.created_at, r.resolved_at, r.resolution_note, requester.full_name AS requester_name,
-            resolver.full_name AS resolver_name
-       FROM proposal_requests r
-       LEFT JOIN users requester ON requester.id = r.requested_by
-       LEFT JOIN users resolver ON resolver.id = r.resolved_by
-      WHERE r.proposal_id = ?
-        AND r.request_type IN (?, 'LAYOUT_SUPPLEMENT', 'UPDATE_INFO')
-      ORDER BY r.created_at ASC, r.id ASC`,
-    [proposalId, REVISION_REQUEST_TYPE]
-  );
-  const activity = await require('./proposalActivityService').timeline(proposalId);
+  const progress = await require('./proposalProgressService').getProgress(proposalId);
+  const requests = progress.requests.filter((request) => (
+    [REVISION_REQUEST_TYPE, 'LAYOUT_SUPPLEMENT', 'UPDATE_INFO'].includes(request.request_type)
+  ));
   return {
     proposal: mapped,
     fieldDefinitions: fieldDefs,
     requests,
-    activity,
+    activity: progress.activity,
+    progress,
     permissions: { canUpload: await canUploadReport(scope, proposal) },
     meta: {
       isAdmin: !!scope.isAdmin,

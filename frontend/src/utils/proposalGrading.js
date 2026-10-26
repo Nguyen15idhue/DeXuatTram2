@@ -1,9 +1,4 @@
 export const GRADING_ROLE = { QH: 'QH', PL: 'PL', BOTH: 'BOTH' };
-export const PROPOSAL_GRADING_TASKS_CHANGED_EVENT = 'proposal-grading:tasks-changed';
-
-export const notifyProposalGradingTasksChanged = () => {
-  window.dispatchEvent(new Event(PROPOSAL_GRADING_TASKS_CHANGED_EVENT));
-};
 
 export const GRADING_ROLE_LABELS = {
   QH: 'Quy hoạch',
@@ -80,6 +75,99 @@ export const getFieldValue = (row, key) => {
   if (direct !== undefined && direct !== null && direct !== '') return direct;
   return parseCustomData(row.custom_data)[key];
 };
+
+const getCellValue = (value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value.value ?? value.label ?? value.name ?? value.code ?? value;
+  }
+  return value;
+};
+
+export const getProposalModelCode = (row) => {
+  const value = getCellValue(getFieldValue(row, 'mo_hinh_dau_tu'));
+  const normalized = normalizeText(value).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').toUpperCase();
+  if (normalized === 'NQ_LK' || (normalized.includes('NHUONG_QUYEN') && normalized.includes('LIEN_KET'))) return 'NQ_LK';
+  if (normalized === 'TDT' || normalized.includes('TU_DAU_TU')) return 'TDT';
+  if (normalized === 'NQ' || normalized.includes('NHUONG_QUYEN')) return 'NQ';
+  if (normalized === 'LK' || normalized.includes('LIEN_KET')) return 'LK';
+  return '';
+};
+
+export const parseProposalTableRows = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.rows)) return value.rows;
+    if (Array.isArray(value.data)) return value.data;
+  }
+  return [];
+};
+
+export const getProposalTableRows = (row, key) => (
+  parseProposalTableRows(getFieldValue(row, key))
+);
+
+const POLE_TABLES_BY_MODEL = {
+  TDT: [{ model: 'TDT', label: 'Tự đầu tư', key: 'tdt_tru' }],
+  NQ: [{ model: 'NQ', label: 'Nhượng quyền', key: 'loai_tru_nq' }],
+  LK: [{ model: 'LK', label: 'Liên kết', key: 'loai_tru_lk' }],
+  NQ_LK: [
+    { model: 'NQ', label: 'Nhượng quyền', key: 'loai_tru_nq' },
+    { model: 'LK', label: 'Liên kết', key: 'loai_tru_lk' }
+  ]
+};
+
+export const getProposalPoleGroups = (row) => {
+  const model = getProposalModelCode(row);
+  const tableConfigs = POLE_TABLES_BY_MODEL[model] || Object.values(POLE_TABLES_BY_MODEL).flat();
+  const groups = tableConfigs.map((table) => ({
+    ...table,
+    rows: getProposalTableRows(row, table.key)
+  })).filter((group) => group.rows.length > 0);
+
+  if (groups.length > 0) return groups;
+  const legacyType = getCellValue(getFieldValue(row, 'loai_tru'));
+  if (!legacyType) return [];
+  const quantity = getCellValue(getFieldValue(row, 'so_luong_tru'));
+  return [{
+    model: model || '',
+    label: getModelLabel(model),
+    key: 'loai_tru',
+    rows: [{ loai_tru: legacyType, so_luong: quantity || 1 }]
+  }];
+};
+
+export const getProposalCostRows = (row) => {
+  const model = getProposalModelCode(row);
+  if (model && model !== 'NQ_LK') return [];
+  return getProposalTableRows(row, 'chi_phi_lk');
+};
+
+export const isProposalFieldForModel = (fieldKey, row) => {
+  const model = getProposalModelCode(row);
+  if (!model) return true;
+  if (['chinh_sach_nq', 'loai_tru_nq', 'chinh_sach_lk', 'loai_tru_lk', 'chi_phi_lk', 'dat_coc', 'ghi_chu_dat_coc', 'tong_chi_phi'].includes(fieldKey)) {
+    return model === 'NQ_LK';
+  }
+  if (fieldKey === 'tdt_tru') return model === 'TDT';
+  return true;
+};
+
+export const formatProposalMoney = (value) => {
+  const number = parseNumberValue(getCellValue(value));
+  return number === null ? '—' : `${number.toLocaleString('vi-VN')} ₫`;
+};
+
+export const getProposalNumber = (value) => parseNumberValue(getCellValue(value));
 
 export const hasFileValue = (value) => normalizeFileEntries(value).length > 0;
 
@@ -169,43 +257,29 @@ const parseCount = (value) => {
 
 const formatRow = (row) => {
   if (!row) return null;
-  const model = String(row.mo_hinh ?? '').trim().toUpperCase();
-  const qty = parseCount(row.so_luong) ?? 1;
-  const type = String(row.loai_tru ?? '').trim();
+  const model = String(getCellValue(row.mo_hinh) ?? '').trim().toUpperCase();
+  const qty = parseCount(getCellValue(row.so_luong)) ?? 1;
+  const type = String(getCellValue(row.loai_tru) ?? '').trim();
   if (!model && !type) return null;
   return `${model || '?'}_${qty}${type ? ` ${type}` : ''}`;
 };
 
+export const formatProposedScale = (row) => {
+  if (!row) return '-';
+  const parts = getProposalPoleGroups(row).flatMap(({ model, rows }) => (
+    rows.map((item) => formatRow({ ...item, mo_hinh: model }))
+  )).filter(Boolean);
+  return parts.length > 0 ? parts.join(' + ') : '-';
+};
+
 export const formatProposalScale = (row) => {
   if (!row) return '-';
-  const parts = [];
   const chot = row.chot_so_luong_tru;
   const chotRows = Array.isArray(chot)
     ? chot
     : (typeof chot === 'string' && chot.trim().startsWith('[') ? (() => { try { return JSON.parse(chot); } catch { return []; } })() : []);
-  (chotRows || []).forEach((item) => {
-    const text = formatRow(item);
-    if (text) parts.push(text);
-  });
-  if (parts.length === 0) {
-    const extras = [
-      { model: 'NQ', rows: row.loai_tru_nq },
-      { model: 'LK', rows: row.loai_tru_lk },
-      { model: 'TDT', rows: row.tdt_tru }
-    ];
-    extras.forEach(({ model, rows }) => {
-      (Array.isArray(rows) ? rows : []).forEach((item) => {
-        const text = formatRow({ ...item, mo_hinh: model });
-        if (text) parts.push(text);
-      });
-    });
-  }
-  if (parts.length === 0 && row.loai_tru) {
-    const model = String(row.mo_hinh_dau_tu || '').trim().toUpperCase();
-    const qty = model ? 1 : null;
-    parts.push(`${model || ''}_${qty || 1} ${row.loai_tru}`.replace(/^_/, ''));
-  }
-  return parts.length > 0 ? parts.join(' + ') : '-';
+  const committed = chotRows.map(formatRow).filter(Boolean);
+  return committed.length > 0 ? committed.join(' + ') : formatProposedScale(row);
 };
 
 export const formatProposalCost = (row) => {

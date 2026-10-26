@@ -97,7 +97,6 @@ const AdminProposalSigningPage = () => {
     <div className="p-4 md:p-6 space-y-3">
       <PageHeader
         title="Ký BCĐX"
-        subtitle={`Mã đề xuất: ${detail?.ma_de_xuat || `#${id}`}`}
         actions={(
           <div className="flex gap-2">
             <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={() => navigate('/admin/proposals/trinh-ky')}>

@@ -5,11 +5,15 @@ import { adminProposalService, proposalSignatureService } from '../../services/a
 import useFieldOptions from '../../hooks/useFieldOptions';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import FileViewer from '../../components/dynamic/FileViewer';
-import ProposalActivityPopup from '../../components/admin/ProposalActivityPopup';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import {
+  getProposalReachedStep,
+  PROPOSAL_PROCESS_FIELD_KEYS
+} from '../../utils/proposalProgress';
 import {
   formatProposalCost,
-  formatProposalScale,
+  formatProposedScale,
   getLegalDocFiles,
   getModelLabel,
   getProposalAddress,
@@ -29,7 +33,6 @@ import {
   CheckCircle2,
   FileSignature,
   FileText,
-  History,
   LayoutTemplate,
   Paperclip,
   PenSquare
@@ -38,25 +41,7 @@ import {
 const LAYOUT_FIELD = 'ban_ve_layout';
 const REPORT_FIELD = 'file_bc_dx';
 
-const FLOW_ORDER = [
-  'GRADING',
-  'GDTTKD_EVALUATING',
-  'RE_GRADING',
-  'RE_GDTTKD_EVALUATING',
-  'TGD_REVIEW',
-  'DESIGNING',
-  'INFOR_WAITING',
-  'PROPOSAL_REPORT_CREATING',
-  'PROPOSAL_REPORT_RE_CREATING',
-  'PROPOSAL_REPORT_REVIEWING',
-  'PROPOSAL_REPORT_UPDATING',
-  'SIGNATURE_PENDING',
-  'COMPLETED'
-];
-
 const SIGNATURE_STATUSES = ['SIGNATURE_PENDING', 'COMPLETED'];
-
-const stageIndex = (status) => FLOW_ORDER.indexOf(status);
 
 const parseChotRows = (value) => {
   if (Array.isArray(value)) return value;
@@ -126,7 +111,7 @@ const FileChips = ({ files, emptyText, onView }) => {
 const AdminProposalDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status', 'mo_hinh_dau_tu']);
 
   const [record, setRecord] = useState(null);
@@ -136,7 +121,6 @@ const AdminProposalDetailPage = () => {
   const [signatureLoading, setSignatureLoading] = useState(false);
   const [signatureError, setSignatureError] = useState('');
   const [viewing, setViewing] = useState(null);
-  const [showActivity, setShowActivity] = useState(false);
 
   const statusOptionMap = useMemo(() => {
     const map = {};
@@ -225,16 +209,15 @@ const AdminProposalDetailPage = () => {
   const layoutFiles = getLegalDocFiles(record, LAYOUT_FIELD);
   const reportFiles = getLegalDocFiles(record, REPORT_FIELD);
   const chotRows = parseChotRows(record.chot_so_luong_tru);
-  const stage = stageIndex(record.status);
+  const reachedStep = getProposalReachedStep(record, record.progress);
 
   const showGrading = record.quy_hoach_score !== null && record.quy_hoach_score !== undefined
     || record.phap_ly_score !== null && record.phap_ly_score !== undefined
-    || stage >= 0;
-  const showLayout = layoutFiles.length > 0 || stage >= stageIndex('DESIGNING');
-  const showCommittedPoles = chotRows.length > 0 || stage >= stageIndex('PROPOSAL_REPORT_CREATING');
-  const showReport = reportFiles.length > 0 || stage >= stageIndex('PROPOSAL_REPORT_CREATING');
+    || reachedStep >= 1;
+  const showLayout = layoutFiles.length > 0 || reachedStep >= 3;
+  const showCommittedPoles = chotRows.length > 0 || reachedStep >= 4;
+  const showReport = reportFiles.length > 0 || reachedStep >= 4;
   const showSignature = SIGNATURE_STATUSES.includes(record.status);
-  const canViewActivity = ['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(user?.role);
 
   const signColor = signatureDetail ? getSignStatusColor(signatureDetail.sign_status) : '#64748b';
 
@@ -273,16 +256,6 @@ const AdminProposalDetailPage = () => {
             Ký BCĐX
           </button>
         )}
-        {canViewActivity && (
-          <button
-            type="button"
-            className="btn btn-outline btn-sm gap-1"
-            onClick={() => setShowActivity(true)}
-          >
-            <History size={14} />
-            Lịch sử xử lý
-          </button>
-        )}
       </div>
 
       <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">
@@ -290,12 +263,20 @@ const AdminProposalDetailPage = () => {
         <InfoItem label="Tên pháp nhân" value={getProposalLegalName(record)} />
         <InfoItem label="SĐT liên hệ" value={getProposalPhone(record)} />
         <InfoItem label="Mô hình đầu tư" value={getModelLabel(record.mo_hinh_dau_tu, modelOptions)} />
-        <InfoItem label="Quy mô trụ đề xuất" value={formatProposalScale(record)} />
+        <InfoItem label="Quy mô trụ đề xuất" value={formatProposedScale(record)} />
         <InfoItem label="Tổng chi phí" value={formatProposalCost(record)} />
         <InfoItem label="Ngày tạo" value={formatDate(record.created_at)} />
         <InfoItem label="Người phụ trách" value={record.nguoi_phu_trach?.label} />
         <InfoItem label="Mức độ xem xét" value={record.review_level ? `Mức ${record.review_level}` : '-'} />
       </div>
+
+      <ProposalProgressiveDetails
+        record={record}
+        progress={record.progress}
+        currentStep="all"
+        showStepDetails={false}
+        showNotes={false}
+      />
 
       {(record.note || record.reject_reason) && (
         <StepCard icon={FileText} title="Ghi chú và lý do xử lý">
@@ -445,15 +426,13 @@ const AdminProposalDetailPage = () => {
             initialData={record}
             hideActions
             readOnlyKeys="*"
+            excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
           />
         </div>
       </div>
 
       {viewing && (
         <FileViewer file={viewing} onClose={() => setViewing(null)} />
-      )}
-      {showActivity && (
-        <ProposalActivityPopup proposalId={record.id} onClose={() => setShowActivity(false)} />
       )}
     </div>
   );

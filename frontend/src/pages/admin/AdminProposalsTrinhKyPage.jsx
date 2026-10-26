@@ -36,7 +36,6 @@ const AdminProposalsTrinhKyPage = () => {
     <div>
       <PageHeader
         title="Trình ký"
-        subtitle="Theo dõi và thực hiện ký duyệt tờ trình BCĐX"
       />
 
       <div className="space-y-3">

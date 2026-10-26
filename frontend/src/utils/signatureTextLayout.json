@@ -1,0 +1,26 @@
+{
+  "imageHeightRatio": 0.35,
+  "leftPaddingPx": 6,
+  "rightPaddingPx": 6,
+  "topPaddingPx": 2,
+  "fontSizePx": 12,
+  "lineHeightPx": 12,
+  "segments": [
+    {
+      "key": "name",
+      "fontSizePx": 12,
+      "font": "bold",
+      "fontWeight": 600,
+      "color": "#111827",
+      "separatorAfter": " "
+    },
+    {
+      "key": "time",
+      "fontSizePx": 12,
+      "font": "regular",
+      "fontWeight": 400,
+      "color": "#374151",
+      "separatorAfter": ""
+    }
+  ]
+}

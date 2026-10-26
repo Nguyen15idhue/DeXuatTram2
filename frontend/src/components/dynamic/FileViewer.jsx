@@ -69,6 +69,8 @@ const FileViewer = ({
   file,
   onClose,
   inline = false,
+  inlineHeight = null,
+  inlineActions = null,
   overlay = null,
   pdfPage = 1,
 }) => {
@@ -378,14 +380,17 @@ const FileViewer = ({
     const isWord = fileType === "word";
     return (
       <div className="w-full overflow-hidden rounded-lg border bg-base-100">
-        <div className="border-b px-3 py-2 text-sm font-semibold truncate">
-          {name}
+        <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+          <div className="min-w-0 truncate text-sm font-semibold">{name}</div>
+          {inlineActions}
         </div>
         <div
           className={`relative max-h-[75vh] min-h-[480px] overflow-auto ${isPdf ? "mx-auto" : ""} ${isWord ? "approval-docx-scroll" : ""}`}
           style={{
             background: bgColor,
-            minHeight: isPdf ? 420 : 360,
+            height: inlineHeight || undefined,
+            maxHeight: inlineHeight ? "none" : undefined,
+            minHeight: inlineHeight || (isPdf ? 420 : 360),
             display: "flex",
             alignItems:
               fileType === "pdf" || fileType === "word" || fileType === "excel"

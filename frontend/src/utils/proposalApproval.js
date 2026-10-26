@@ -23,7 +23,7 @@ export const getApprovalScale = (row) => formatProposalScale(row);
 export const DEFAULT_SIGNER_BOX = {
   page: 1,
   pos_x: 0.35,
-  pos_y: 0.8,
-  box_width: 0.25,
-  box_height: 0.06
+  pos_y: 0.72,
+  box_width: 0.12,
+  box_height: 0.1697
 };

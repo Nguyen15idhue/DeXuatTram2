@@ -1,3 +1,19 @@
+@font-face {
+  font-family: 'TmtSignatureNoto';
+  src: url('/fonts/NotoSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TmtSignatureNoto';
+  src: url('/fonts/NotoSans-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* App.css — wrapped in @layer base so Tailwind utilities can override */
 @layer base {
 /* Reset & Base */

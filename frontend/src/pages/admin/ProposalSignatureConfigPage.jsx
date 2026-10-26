@@ -9,8 +9,12 @@ import {
   DEFAULT_SIGNER_BOX,
   getReportFiles,
 } from "../../utils/proposalApproval";
+import { normalizeSignerBox } from "../../utils/proposalSignature";
+import signerTextLayout from "../../utils/signatureTextLayout.json";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const signerNameLayout = signerTextLayout.segments.find((segment) => segment.key === "name");
+const signerTimeLayout = signerTextLayout.segments.find((segment) => segment.key === "time");
 
 const ProposalSignatureConfigPage = () => {
   const { id } = useParams();
@@ -39,8 +43,7 @@ const ProposalSignatureConfigPage = () => {
           proposalApprovalService.getSignatureConfig(id, token),
         ]);
       const loadedProposal = proposalResponse?.data || null;
-      const loadedSigners = (configResponse?.data?.signers || []).map(
-        (signer) => ({
+      const loadedSigners = (configResponse?.data?.signers || []).map((signer) => normalizeSignerBox({
           user_id: signer.user_id,
           full_name: signer.full_name,
           signer_title: signer.signer_title,
@@ -48,9 +51,8 @@ const ProposalSignatureConfigPage = () => {
           pos_x: signer.pos_x,
           pos_y: signer.pos_y,
           box_width: signer.box_width,
-          box_height: signer.box_height,
-        }),
-      );
+          box_height: signer.box_height ?? DEFAULT_SIGNER_BOX.box_height,
+        }));
       setProposal(loadedProposal);
       setCandidates(candidateResponse?.data?.candidates || []);
       setSigners(loadedSigners);
@@ -74,34 +76,41 @@ const ProposalSignatureConfigPage = () => {
   useEffect(() => {
     if (!drag) return undefined;
     const onMove = (event) => {
+      const targetPage = drag.mode === "move"
+        ? document.elementFromPoint(event.clientX, event.clientY)
+          ?.closest?.("[data-proposal-page]")
+        : null;
+      const pageElement = targetPage || drag.pageElement;
+      const rect = pageElement?.getBoundingClientRect();
+      const pageWidth = rect?.width || drag.pageWidth || 1;
+      const pageHeight = rect?.height || drag.pageHeight || 1;
       const dx = (event.clientX - drag.startX) / (drag.pageWidth || 1);
       const dy = (event.clientY - drag.startY) / (drag.pageHeight || 1);
       setSigners((current) =>
         current.map((signer) => {
-          if (
-            Number(signer.user_id) !== Number(drag.userId) ||
-            Number(signer.page) !== Number(drag.page)
-          )
-            return signer;
+          if (Number(signer.user_id) !== Number(drag.userId)) return signer;
+          const currentBox = normalizeSignerBox(signer);
           if (drag.mode === "resize") {
             return {
-              ...signer,
-              box_width: clamp(
-                drag.origWidth + dx,
-                0.05,
-                1 - signer.pos_x,
-              ),
-              box_height: clamp(
-                drag.origHeight + dy,
-                0.02,
-                1 - signer.pos_y,
-              ),
+              ...currentBox,
+              box_width: clamp(drag.origWidth + dx, 0, 1 - currentBox.pos_x),
+              box_height: clamp(drag.origHeight + dy, 0, 1 - currentBox.pos_y),
             };
           }
+          const page = Number(pageElement?.dataset?.proposalPage) || signer.page;
           return {
-            ...signer,
-            pos_x: clamp(drag.origPosX + dx, 0, 1 - signer.box_width),
-            pos_y: clamp(drag.origPosY + dy, 0, 1 - signer.box_height),
+            ...currentBox,
+            page,
+            pos_x: clamp(
+              (event.clientX - (rect?.left || 0)) / pageWidth - drag.grabOffsetX * currentBox.box_width,
+              0,
+              1 - currentBox.box_width,
+            ),
+            pos_y: clamp(
+              (event.clientY - (rect?.top || 0)) / pageHeight - drag.grabOffsetY * currentBox.box_height,
+              0,
+              1 - currentBox.box_height,
+            ),
           };
         }),
       );
@@ -134,14 +143,23 @@ const ProposalSignatureConfigPage = () => {
     event.stopPropagation();
     const pageEl = event.currentTarget.closest?.("[data-proposal-page]") || null;
     const rect = pageEl?.getBoundingClientRect();
+    const overlay = event.currentTarget.closest?.("[data-signer-overlay]") || null;
+    const overlayRect = overlay?.getBoundingClientRect();
     setDrag({
       userId: signer.user_id,
       page: signer.page,
+      pageElement: pageEl,
       mode,
       startX: event.clientX,
       startY: event.clientY,
       pageWidth: rect?.width || 1,
       pageHeight: rect?.height || 1,
+      grabOffsetX: overlayRect?.width
+        ? clamp((event.clientX - overlayRect.left) / overlayRect.width, 0, 1)
+        : 0.5,
+      grabOffsetY: overlayRect?.height
+        ? clamp((event.clientY - overlayRect.top) / overlayRect.height, 0, 1)
+        : 0.5,
       origPosX: signer.pos_x,
       origPosY: signer.pos_y,
       origWidth: signer.box_width,
@@ -173,20 +191,6 @@ const ProposalSignatureConfigPage = () => {
     ]);
   };
 
-  const updateSigner = (userId, patch) => {
-    setSigners((current) =>
-      current.map((signer) =>
-        Number(signer.user_id) === Number(userId)
-          ? { ...signer, ...patch }
-          : signer,
-      ),
-    );
-  };
-
-  useEffect(() => {
-    docPagesRef.current?.scrollToPage?.(activePage);
-  }, [activePage]);
-
   const submit = async () => {
     setError("");
     if (!fileId) {
@@ -203,15 +207,18 @@ const ProposalSignatureConfigPage = () => {
         proposal.id,
         {
           file_id: fileId,
-          signers: signers.map((signer) => ({
-            user_id: signer.user_id,
-            signer_title: signer.signer_title,
-            page: signer.page,
-            pos_x: signer.pos_x,
-            pos_y: signer.pos_y,
-            box_width: signer.box_width,
-            box_height: signer.box_height,
-          })),
+          signers: signers.map((signer) => {
+            const normalized = normalizeSignerBox(signer);
+            return {
+              user_id: signer.user_id,
+              signer_title: signer.signer_title,
+              page: signer.page,
+              pos_x: normalized.pos_x,
+              pos_y: normalized.pos_y,
+              box_width: normalized.box_width,
+              box_height: normalized.box_height,
+            };
+          }),
         },
         token,
       );
@@ -323,30 +330,13 @@ const ProposalSignatureConfigPage = () => {
                     <button
                       type="button"
                       className={`min-w-0 flex-1 truncate text-left text-sm ${Number(signer.page) === activePage ? "font-semibold text-primary" : ""}`}
-                      onClick={() => setActivePage(Number(signer.page) || 1)}
+                      onClick={() => docPagesRef.current?.scrollToOverlay?.(Number(signer.page) || 1, signer.user_id)}
                     >
                       {signer.full_name}
                       <span className="ml-1 text-xs text-base-content/60">
                         — trang {signer.page}
                       </span>
                     </button>
-                    <label className="flex items-center gap-1 text-xs">
-                      Trang
-                      <input
-                        type="number"
-                        min={1}
-                        className="input input-bordered input-xs w-16"
-                        value={signer.page}
-                        onChange={(event) => {
-                          const page = Math.max(
-                            1,
-                            parseInt(event.target.value, 10) || 1,
-                          );
-                          updateSigner(signer.user_id, { page });
-                          setActivePage(page);
-                        }}
-                      />
-                    </label>
                     <button
                       type="button"
                       className="btn btn-ghost btn-xs text-error"
@@ -396,24 +386,7 @@ const ProposalSignatureConfigPage = () => {
             </label>
           </div>
 
-          {signers.length > 0 && (
-            <label className="flex items-center gap-2 text-sm">
-              Trang đang chỉnh
-              <select
-                className="select select-bordered select-sm"
-                value={activePage}
-                onChange={(event) => setActivePage(Number(event.target.value))}
-              >
-                {[...new Set(signers.map((signer) => Number(signer.page) || 1))]
-                  .sort((a, b) => a - b)
-                  .map((page) => (
-                    <option key={page} value={page}>
-                      Trang {page}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
+          <span className="text-sm text-base-content/70">Đang xem trang {activePage}</span>
 
           {!selectedFile ? (
             <div className="flex min-h-80 items-center justify-center rounded border border-dashed text-sm text-base-content/60">
@@ -422,8 +395,8 @@ const ProposalSignatureConfigPage = () => {
           ) : (
             <>
               <p className="text-xs text-base-content/60">
-                Kéo khung để đổi vị trí; kéo nút ở góc dưới bên phải để đổi kích
-                thước. Đổi "Trang" của người ký để đưa ô ký sang trang khác.
+                Kéo khung để đổi vị trí hoặc đưa sang trang khác; kéo nút ở góc
+                dưới bên phải để đổi kích thước. Ô ký sẽ tự theo dõi trang đang xem.
               </p>
               <ProposalDocumentPages
                 ref={docPagesRef}
@@ -434,19 +407,24 @@ const ProposalSignatureConfigPage = () => {
                 }}
                 showPageLabel
                 activePage={activePage}
-                renderPageOverlay={(pageNumber) =>
-                  signers
+                onActivePageChange={setActivePage}
+                renderPageOverlay={(pageNumber) => {
+                  return signers
                     .filter((signer) => Number(signer.page) === pageNumber)
-                    .map((signer) => (
+                    .map((sourceSigner) => {
+                      const signer = normalizeSignerBox(sourceSigner);
+                      return (
                       <div
                         key={signer.user_id}
-                        className="pointer-events-auto absolute z-30 cursor-move border-2 border-primary bg-primary/20"
+                        data-signer-overlay=""
+                        data-signer-overlay-id={signer.user_id}
+                        className="pointer-events-auto absolute z-30 flex cursor-move flex-col items-start justify-start overflow-visible border-2 border-primary bg-white/90 px-1 py-0.5 text-left leading-tight"
                         style={{
                           left: `${signer.pos_x * 100}%`,
                           top: `${signer.pos_y * 100}%`,
                           width: `${signer.box_width * 100}%`,
                           height: `${signer.box_height * 100}%`,
-                          minHeight: 24,
+                          boxSizing: "border-box",
                           touchAction: "none",
                         }}
                         onPointerDown={(event) =>
@@ -456,6 +434,33 @@ const ProposalSignatureConfigPage = () => {
                         <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-primary px-1 text-[10px] text-primary-content">
                           {signer.full_name}
                         </span>
+                        <div
+                          className="w-full flex-none overflow-hidden pb-1 text-left text-[10px] text-base-content/50"
+                          style={{ height: `${signerTextLayout.imageHeightRatio * 100}%` }}
+                        >
+                          Ảnh chữ ký
+                        </div>
+                        <div className="min-h-0 w-full flex-1 overflow-hidden text-left">
+                          <div
+                            className="truncate"
+                            style={{
+                              fontSize: `${signerNameLayout.fontSizePx}px`,
+                              fontWeight: signerNameLayout.fontWeight,
+                              lineHeight: `${signerTextLayout.lineHeightPx}px`,
+                            }}
+                          >
+                            {signer.full_name}
+                          </div>
+                          <div
+                            className="truncate text-base-content/70"
+                            style={{
+                              fontSize: `${signerTimeLayout.fontSizePx}px`,
+                              lineHeight: `${signerTextLayout.lineHeightPx}px`,
+                            }}
+                          >
+                            Thời gian ký
+                          </div>
+                        </div>
                         <span
                           className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize border border-white bg-primary"
                           onPointerDown={(event) =>
@@ -463,8 +468,9 @@ const ProposalSignatureConfigPage = () => {
                           }
                         />
                       </div>
-                    ))
-                }
+                      );
+                    });
+                }}
               />
             </>
           )}

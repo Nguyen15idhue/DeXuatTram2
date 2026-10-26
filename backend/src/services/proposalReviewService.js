@@ -339,6 +339,7 @@ const getReviewDetail = async (id, user) => {
   );
   const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const proposal = mapReviewRow(dynamicUtils.mergeData(row, fieldDefinitions));
+  const progress = await require('./proposalProgressService').getProgress(proposalId);
   const isGdttkd = scope.roleKey === REVIEW_ROLE.GDTTKD || scope.isSuperAdmin;
   const isTgd = scope.roleKey === REVIEW_ROLE.TGD || scope.isSuperAdmin;
   const status = proposal.status;
@@ -348,6 +349,7 @@ const getReviewDetail = async (id, user) => {
     proposal,
     fieldDefinitions,
     requests,
+    progress,
     permissions: {
       canRequestRegrade: isGdttkd && status === 'GDTTKD_EVALUATING' && reviewLevel === 1,
       canCancelGdttkd: isGdttkd

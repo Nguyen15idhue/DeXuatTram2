@@ -4,6 +4,7 @@ const documentService = require('../services/documentService');
 const proposalLifecycle = require('../services/proposalLifecycle');
 const proposalAccessService = require('../services/proposalAccessService');
 const proposalReviewService = require('../services/proposalReviewService');
+const proposalProgressService = require('../services/proposalProgressService');
 
 const scopeFor = async (req) => {
   if (req.user.role !== 'SALES' && req.user.role !== 'CTV' && req.user.role !== 'NPP') return { role: req.user.role };
@@ -79,7 +80,8 @@ exports.getById = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
     }
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal });
+    const progress = await proposalProgressService.getProgress(req.params.id);
+    res.json({ success: true, data: { ...proposal, progress } });
   } catch (error) {
     console.error('Admin get proposal error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });

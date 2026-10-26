@@ -25,7 +25,6 @@ const AdminProposalsLapToTrinhPage = () => {
     <div>
       <PageHeader
         title="Lập tờ trình BCĐX"
-        subtitle="Lập tờ trình Ban Chỉ đạo Xây dựng cho đề xuất trạm sạc"
       />
 
       <div className="space-y-3">

@@ -3,10 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Save } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalGradingService } from '../../services/api';
-import { notifyProposalGradingTasksChanged } from '../../utils/proposalGrading';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalGradingModal from '../../components/admin/ProposalGradingModal';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import FileViewer from '../../components/dynamic/FileViewer';
 import Toast from '../../components/Toast';
+import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
+import { isProposalFieldForModel } from '../../utils/proposalGrading';
 
 const getStep = (status) => status === 'RE_GRADING' ? 'regrading' : 'grading';
 
@@ -48,7 +52,7 @@ const displayValue = (value) => {
   return String(parsed);
 };
 
-const FieldValue = ({ field, value, token }) => {
+const FieldValue = ({ field, record, value, token }) => {
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;
@@ -74,6 +78,9 @@ const FieldValue = ({ field, value, token }) => {
       </div>
     );
   }
+  if (field.type === 'table') {
+    return <ProposalTableFieldValue record={record} field={field} />;
+  }
   const parsed = parseValue(value);
   if (parsed && typeof parsed === 'object') {
     return <pre className="whitespace-pre-wrap break-words text-sm">{displayValue(parsed)}</pre>;
@@ -97,6 +104,7 @@ const AdminProposalGradingDetailPage = () => {
   const [supplementError, setSupplementError] = useState('');
   const [toast, setToast] = useState('');
   const [toastType, setToastType] = useState('success');
+  const [fileViewing, setFileViewing] = useState(null);
   const [draftConfig, setDraftConfig] = useState({ grading: [], regrading: [] });
   const [configStep, setConfigStep] = useState('grading');
 
@@ -132,7 +140,10 @@ const AdminProposalGradingDetailPage = () => {
   const fields = useMemo(() => {
     const keys = new Set(draftConfig[step] || []);
     return (detail?.fieldDefinitions || [])
-      .filter((field) => field.status !== 'inactive' && keys.has(field.key))
+      .filter((field) => field.status !== 'inactive'
+        && keys.has(field.key)
+        && !PROPOSAL_PROCESS_FIELD_KEYS.includes(field.key)
+        && isProposalFieldForModel(field.key, proposal))
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
   }, [detail, draftConfig, step]);
   const canGradeQH = !!detail?.permissions?.canGradeQH;
@@ -140,7 +151,6 @@ const AdminProposalGradingDetailPage = () => {
   const canRequestSupplement = !!detail?.permissions?.canRequestSupplement;
 
   const handleScoreSaved = async (result, message) => {
-    notifyProposalGradingTasksChanged();
     setScoreOpen(false);
     const transition = result?.transition;
     const extra = transition?.status === 'CANCELLED'
@@ -164,7 +174,6 @@ const AdminProposalGradingDetailPage = () => {
         { reason: supplementReason.trim() },
         token
       );
-      notifyProposalGradingTasksChanged();
       setSupplementOpen(false);
       setSupplementReason('');
       setToast(response?.message || 'Đã gửi yêu cầu bổ sung thông tin');
@@ -239,6 +248,13 @@ const AdminProposalGradingDetailPage = () => {
       </div>
 
       <PageHeader title={`Chi tiết chấm điểm — ${proposal.ma_de_xuat || `#${proposal.id}`}`} />
+      <ProposalProgressiveDetails
+        record={proposal}
+        progress={detail.progress}
+        currentStep={1}
+        onViewFile={setFileViewing}
+        showSummary
+      />
       <section className="card bg-base-100 border border-base-300">
         <div className="card-body p-4">
           <div className="flex flex-wrap gap-2 items-center">
@@ -280,22 +296,6 @@ const AdminProposalGradingDetailPage = () => {
         </div>
       </section>
 
-      {detail.requests?.length > 0 && (
-        <section className="card bg-base-100 border border-base-300">
-          <div className="card-body p-4">
-            <h2 className="font-semibold">Yêu cầu đang mở</h2>
-            <ul className="space-y-2">
-              {detail.requests.map((request) => (
-                <li key={request.id} className="border-l-2 border-warning pl-3">
-                  <p className="text-xs text-base-content/60">{request.request_type} · {request.target_title || request.target_department || 'Người đề xuất'}</p>
-                  <p className="whitespace-pre-wrap text-sm">{request.description || request.note || '—'}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      )}
-
       {detail.permissions?.canConfigure && (
         <section className="card bg-base-100 border border-info/40">
           <div className="card-body p-4">
@@ -331,7 +331,7 @@ const AdminProposalGradingDetailPage = () => {
             {fields.map((field) => (
               <div key={field.key} className="rounded border border-base-300 p-3">
                 <h3 className="text-xs font-semibold text-base-content/60 mb-1">{field.label || field.key}</h3>
-                <FieldValue field={field} value={proposal[field.key]} token={token} />
+                <FieldValue field={field} record={proposal} value={proposal[field.key]} token={token} />
               </div>
             ))}
           </div>
@@ -378,6 +378,7 @@ const AdminProposalGradingDetailPage = () => {
           </form>
         </dialog>
       )}
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
       <Toast message={toast} type={toastType} onClose={() => setToast('')} />
     </div>
   );

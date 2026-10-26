@@ -11,9 +11,9 @@ import {
   proposalSignatureService,
 } from "../../services/api";
 import {
-  PROPOSAL_GRADING_TASKS_CHANGED_EVENT,
   resolveGradingRole,
 } from "../../utils/proposalGrading";
+import { PROPOSAL_TASK_COUNTS_CHANGED_EVENT } from "../../utils/proposalTaskCounts";
 import {
   BarChart3,
   Users,
@@ -52,18 +52,6 @@ const mainItems = [
     path: "/admin",
     label: "Dashboard",
     icon: BarChart3,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
-  },
-  {
-    path: "/admin/users",
-    label: "Quản lý Users",
-    icon: Users,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
-  },
-  {
-    path: "/admin/stations",
-    label: "Quản lý Trạm",
-    icon: Zap,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
@@ -124,6 +112,18 @@ const mainItems = [
     label: "Quản lý Chữ ký số",
     icon: File,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
+  },
+  {
+    path: "/admin/stations",
+    label: "Quản lý Trạm",
+    icon: Zap,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+  },
+  {
+    path: "/admin/users",
+    label: "Quản lý Users",
+    icon: Users,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
     path: "/admin/ev-reports",
@@ -322,8 +322,10 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
   useEffect(() => {
     let cancelled = false;
+    let loadSequence = 0;
 
     const loadProposalTaskCounts = async () => {
+      const currentSequence = ++loadSequence;
       if (!token || !canSeeProposalMenu) {
         setProposalTaskCounts(null);
         return;
@@ -406,18 +408,20 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         }
       }));
 
-      if (!cancelled) setProposalTaskCounts(Object.fromEntries(results));
+      if (!cancelled && currentSequence === loadSequence) {
+        setProposalTaskCounts(Object.fromEntries(results));
+      }
     };
 
     loadProposalTaskCounts();
     window.addEventListener("focus", loadProposalTaskCounts);
-    window.addEventListener(PROPOSAL_GRADING_TASKS_CHANGED_EVENT, loadProposalTaskCounts);
+    window.addEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, loadProposalTaskCounts);
     const intervalId = window.setInterval(loadProposalTaskCounts, 30000);
 
     return () => {
       cancelled = true;
       window.removeEventListener("focus", loadProposalTaskCounts);
-      window.removeEventListener(PROPOSAL_GRADING_TASKS_CHANGED_EVENT, loadProposalTaskCounts);
+      window.removeEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, loadProposalTaskCounts);
       window.clearInterval(intervalId);
     };
   }, [canSeeGradingTaskCount, canSeeProposalMenu, location.pathname, token, user]);

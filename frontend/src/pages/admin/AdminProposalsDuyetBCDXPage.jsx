@@ -26,7 +26,6 @@ const AdminProposalsDuyetBCDXPage = () => {
     <div>
       <PageHeader
         title="Duyệt BCĐX"
-        subtitle="Back Office xem xét tờ trình BCĐX và cấu hình trình ký"
       />
 
       <div className="space-y-3">

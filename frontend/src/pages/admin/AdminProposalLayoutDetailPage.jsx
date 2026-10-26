@@ -3,11 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalLayoutService } from '../../services/api';
-import { getLegalDocFiles } from '../../utils/proposalGrading';
+import { getLegalDocFiles, isProposalFieldForModel } from '../../utils/proposalGrading';
 import { getLayoutFiles } from '../../utils/proposalDesign';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
+import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
 import PageHeader from '../../components/ui/PageHeader';
+import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
 const formatDate = (value) => {
   if (!value) return '—';
@@ -47,6 +50,9 @@ const FieldValue = ({ record, field, onViewFile }) => {
   }
 
   const value = record[field.key];
+  if (field.type === 'table') {
+    return <ProposalTableFieldValue record={record} field={field} />;
+  }
   const output = displayValue(value);
   return typeof value === 'object' && value !== null
     ? <pre className="whitespace-pre-wrap break-words text-sm">{output}</pre>
@@ -88,7 +94,10 @@ const AdminProposalLayoutDetailPage = () => {
 
   const proposal = detail?.proposal;
   const fields = useMemo(() => (detail?.fieldDefinitions || [])
-    .filter((field) => field.status !== 'inactive' && hasValue(proposal?.[field.key]))
+    .filter((field) => field.status !== 'inactive'
+      && hasValue(proposal?.[field.key])
+      && !PROPOSAL_PROCESS_FIELD_KEYS.includes(field.key)
+      && isProposalFieldForModel(field.key, proposal))
     .sort((a, b) => (a.order_index || 0) - (b.order_index || 0)), [detail, proposal]);
   const layoutFiles = proposal ? getLayoutFiles(proposal) : [];
 
@@ -115,7 +124,6 @@ const AdminProposalLayoutDetailPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Chi tiết đề xuất ${proposal.ma_de_xuat || `#${proposal.id}`}`}
-        subtitle="Thông tin đề xuất, kết quả đánh giá và bản vẽ layout"
         actions={(
           <button
             type="button"
@@ -125,6 +133,14 @@ const AdminProposalLayoutDetailPage = () => {
             <ArrowLeft size={16} /> Quay lại
           </button>
         )}
+      />
+
+      <ProposalProgressiveDetails
+        record={proposal}
+        progress={detail.progress}
+        currentStep={3}
+        onViewFile={setFileViewing}
+        omitStepDetails={['grading']}
       />
 
       <section className="card border border-base-300 bg-base-100">

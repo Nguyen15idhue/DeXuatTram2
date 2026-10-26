@@ -32,7 +32,6 @@ const AdminProposalsDanhGiaLayoutPage = () => {
     <div>
       <PageHeader
         title="Đánh giá layout"
-        subtitle="Tải bản vẽ layout, duyệt layout và yêu cầu người đề xuất bổ sung thông tin"
       />
 
       {!canManage ? (
