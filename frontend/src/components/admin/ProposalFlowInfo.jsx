@@ -9,40 +9,35 @@ const STEPS = [
   {
     color: '#3b82f6', title: '2. Đang xem xét',
     desc: 'Đề xuất đang được xem xét. Người tạo vẫn được sửa để bổ sung thông tin (không được xóa).',
-    next: ['Duyệt chủ trương → chờ cập nhật thông tin', 'Duyệt BCĐX → chuyển sang ký', 'Lưu trữ → ưu tiên thấp, cất kho', 'Hủy → kết thúc']
+    next: ['Duyệt BCĐX → chuyển sang ký', 'Lưu trữ → ưu tiên thấp, cất kho', 'Hủy → kết thúc']
   },
   {
-    color: '#6366f1', title: '3. Duyệt chủ trương',
-    desc: 'Đã duyệt chủ trương, chờ hoàn thiện các bước nghiệp vụ tiếp theo. Người tạo vẫn được sửa để cập nhật thông tin (không được xóa).',
-    next: ['Tiếp tục quy trình nội bộ', 'Hủy → kết thúc']
-  },
-  {
-    color: '#16a34a', title: '4. Đã duyệt BCĐX',
+    color: '#16a34a', title: '3. Đã duyệt BCĐX',
     desc: 'BCĐX đã được duyệt. Ký hợp đồng để đi tiếp.',
     next: ['Ký thành công', 'Ký thất bại', 'Hủy → kết thúc']
   },
   {
-    color: '#0d9488', title: '5. Ký thành công',
+    color: '#0d9488', title: '4. Ký thành công',
     desc: 'Sau 90 ngày (hoặc nút "Tạo trạm" bấm tay) → trở thành Trạm ở trạng thái Triển khai.',
     next: ['Có thể Hủy thủ công trước khi thành trạm']
   },
   {
-    color: '#f59e0b', title: '6. Ký thất bại',
+    color: '#f59e0b', title: '5. Ký thất bại',
     desc: 'Sau 30 ngày tự động chuyển sang Đã hủy.',
     next: ['Có thể Hủy thủ công']
   },
   {
-    color: '#8b5cf6', title: '7. Đã lưu trữ',
+    color: '#8b5cf6', title: '6. Đã lưu trữ',
     desc: 'Duyệt nhưng ưu tiên thấp, cất kho. Vào từ Đang xem xét.',
     next: ['Ký thành công (kích hoạt lại)', 'Hủy → kết thúc']
   },
   {
-    color: '#dc2626', title: '8. Từ chối',
+    color: '#dc2626', title: '7. Từ chối',
     desc: 'Cần chỉnh sửa. CTV sửa xong bấm "Gửi lại" → quay về Đang đề xuất.',
     next: ['Có thể Hủy thủ công → kết thúc']
   },
   {
-    color: '#6b7280', title: '9. Đã hủy',
+    color: '#6b7280', title: '8. Đã hủy',
     desc: 'Trạng thái cuối cùng — không thể mở lại, kể cả admin.',
     next: []
   }

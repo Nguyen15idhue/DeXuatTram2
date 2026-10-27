@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { fieldDefinitionService, dataListService } from '../services/api';
 import { fetchDataList } from '../utils/dataListCache';
 import { sortByOrder } from '../utils/optionOrder';
+import { isRetiredProposalStatusOption } from '../utils/proposalStatus';
 
 const cache = {};
 
@@ -85,11 +86,19 @@ const useFieldOptions = (entity, keys) => {
   const getSelectOptions = (key) => {
     const field = fields.find(f => f.key === key);
     if (!field) return [];
-    if (Array.isArray(field.options) && field.options.length > 0) return sortByOrder(field.options);
+    if (Array.isArray(field.options) && field.options.length > 0) {
+      return sortByOrder(field.options.filter((option) => (
+        !isRetiredProposalStatusOption(entity, key, option.value)
+      )));
+    }
     if (typeof field.options === 'string') {
       try {
         const parsed = JSON.parse(field.options);
-        if (Array.isArray(parsed) && parsed.length > 0) return sortByOrder(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return sortByOrder(parsed.filter((option) => (
+            !isRetiredProposalStatusOption(entity, key, option.value)
+          )));
+        }
       } catch { /* silent */ }
     }
     if (field.data_list_id && field.data_list_column) {

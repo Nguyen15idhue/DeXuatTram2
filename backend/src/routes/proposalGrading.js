@@ -11,7 +11,7 @@ const proposalGradingController = require('../controllers/proposalGradingControl
  *     summary: Danh sách đề xuất cho trang Chấm điểm Quy hoạch và Pháp lý
  *     description: >
  *       tab=all: từ GRADING đến hết status flow (không gồm PENDING);
- *       tab=pending: công việc của phòng chưa chấm hoặc đang được yêu cầu chấm lại;
+ *       tab=pending: phòng chưa chấm hoặc đang được yêu cầu chấm lại, kể cả khi đề xuất đã chuyển sang GĐTTKD xem xét;
  *       tab=completed: phần việc đã hoàn thành riêng theo phòng; CANCELLED xuất hiện ở cả hai phòng.
  *     security:
  *       - bearerAuth: []

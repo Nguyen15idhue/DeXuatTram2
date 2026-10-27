@@ -21,6 +21,7 @@ import {
   getProposalAddress,
   getProposalLegalName,
   getProposalPhone,
+  getPartialGradingProgress,
 } from "../../utils/proposalGrading";
 import {
   ProposalModelBadge,
@@ -359,12 +360,18 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
         to={`/admin/proposals/yeu-cau-cham-diem-lai/${row.id}`}
       />
     ),
-    status: (row, value) => (
-      <ProposalStatusBadge
-        value={value || row.status}
-        optionMap={getSelectOptions("status")}
-      />
-    ),
+    status: (row, value) => {
+      const progress = getPartialGradingProgress(row);
+      return (
+        <div className="min-w-40 space-y-1">
+          <ProposalStatusBadge
+            value={value || row.status}
+            optionMap={getSelectOptions("status")}
+          />
+          {progress && <p className="text-xs text-base-content/70">{progress}</p>}
+        </div>
+      );
+    },
     legal_name: (row) => getProposalLegalName(row),
     phone: (row) => getProposalPhone(row),
     mo_hinh_dau_tu: (row, value) => (
@@ -424,6 +431,13 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
       </div>
 
       {filterOptionsError && <div className="alert alert-warning py-2 text-sm">{filterOptionsError}</div>}
+
+      {tab === "pending" && ["QH", "PL"].includes(roleKey) && (
+        <div className="alert alert-info py-2 text-sm">
+          Đề xuất đang chờ GĐTTKD xem xét sau khi một phòng chấm chưa phải là yêu cầu chấm lại.
+          Mở tab “Tất cả đề xuất” để theo dõi; yêu cầu chấm lại sẽ xuất hiện ở đây sau khi GĐTTKD gửi yêu cầu.
+        </div>
+      )}
 
       <FilterBody
         open={showFilter}
@@ -499,6 +513,8 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
           ACTION_CONFIG[actionDialog.type]?.reasonPlaceholder || "Nhập lý do..."
         }
         showDepartmentSelection={actionDialog.type === "regrade"}
+        allowQH={actionDialog.row?.quy_hoach_score !== null && actionDialog.row?.quy_hoach_score !== undefined}
+        allowPL={actionDialog.row?.phap_ly_score !== null && actionDialog.row?.phap_ly_score !== undefined}
         requireReason
         saving={actionDialog.saving}
         error={actionDialog.error}

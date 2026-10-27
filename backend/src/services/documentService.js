@@ -404,7 +404,6 @@ exports.exportReports = async (proposalIds, opts = {}) => {
     if (!rec) { fail(pid, 'không tìm thấy'); continue; }
     const model = rec.mo_hinh_dau_tu || '';
     if (model === 'NQ_LK') { fail(pid, 'chưa hỗ trợ mô hình NQ_LK'); continue; }
-    // TODO(P58-L2): chỉ cho xuất khi status=Duyệt chủ trương
     let tpl;
     try {
       tpl = await resolveTemplate(model, opts.templateId);

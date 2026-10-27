@@ -177,7 +177,7 @@ async function getLifecycleRules(nq) {
   if (map.contract_signed_to_station_days) parts.push(`Đề xuất "Ký thành công" sau ${map.contract_signed_to_station_days} ngày (chưa thành trạm) sẽ tự tạo trạm`);
   if (map.contract_failed_to_cancel_days) parts.push(`Đề xuất "Ký thất bại" sau ${map.contract_failed_to_cancel_days} ngày sẽ tự chuyển "Đã hủy"`);
   if (map.review_supplement_days) parts.push(`Bổ sung hồ sơ ở bước xem xét: ${map.review_supplement_days} ngày`);
-  if (map.principle_supplement_days) parts.push(`Bổ sung hồ sơ ở bước duyệt chủ trương: ${map.principle_supplement_days} ngày`);
+  if (map.principle_supplement_days) parts.push(`Bổ sung hồ sơ ở trạng thái legacy: ${map.principle_supplement_days} ngày`);
   if (map.lifecycle_max_retries) parts.push(`Số lần thử lại tối đa khi tự động lỗi: ${map.lifecycle_max_retries}`);
   if (parts.length === 0) return null;
   return { skipDocs: true, direct: true, text: `Quy tắc vòng đời tự động của đề xuất: ${parts.join('; ')}.` };

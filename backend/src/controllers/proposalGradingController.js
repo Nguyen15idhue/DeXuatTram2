@@ -104,14 +104,16 @@ exports.update = async (req, res) => {
       payload: req.body || {}
     });
     let message = 'Đã cập nhật đánh giá';
-    if (result.transition && result.transition.status === 'CANCELLED') {
+    if (result.transitionError) {
+      message = `Đã lưu điểm nhưng chưa chuyển trạng thái: ${result.transitionError}`;
+    } else if (result.reviewRequestError) {
+      message = `Đã lưu điểm và cập nhật trạng thái nhưng không đồng bộ được yêu cầu GĐTTKD: ${result.reviewRequestError}`;
+    } else if (result.transition && result.transition.status === 'CANCELLED') {
       message = 'Đã cập nhật đánh giá — đề xuất bị hủy vì có điểm 0';
     } else if (result.transition && result.transition.status === 'DESIGNING') {
       message = 'Đã cập nhật đánh giá — đề xuất chuyển sang Đang vẽ Layout';
     } else if (result.transition && result.transition.status === 'GDTTKD_EVALUATING') {
       message = 'Đã cập nhật đánh giá — đề xuất chuyển sang GĐTTKD đánh giá';
-    } else if (result.transitionError) {
-      message = `Đã lưu điểm nhưng chưa chuyển trạng thái: ${result.transitionError}`;
     }
     res.json({ success: true, data: result, message });
   } catch (error) {

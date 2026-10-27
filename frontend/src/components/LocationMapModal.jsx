@@ -4,7 +4,7 @@ import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService, evReportService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getMarkerColor } from '../utils/mapHelpers';
-import { getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses } from '../utils/mapStatuses';
+import { getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import { getProposalDisplayName, getProposalDisplayPhone } from '../utils/proposalDisplay';
@@ -136,7 +136,7 @@ function createNearbyPopup(title, item, status, entity) {
   const span = document.createElement('span');
   const mapStatus = entity === 'proposal' ? getProposalMapStatus(status) : status;
   span.style.color = getMarkerColor(mapStatus, entity);
-  span.textContent = getStatusLabel(mapStatus, entity);
+  span.textContent = getMapStatusLabel(mapStatus, entity);
   statusP.appendChild(span);
   div.appendChild(statusP);
   addRow('Khoảng cách', `${item._distanceKm.toFixed(2)} km`);

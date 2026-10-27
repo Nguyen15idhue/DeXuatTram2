@@ -36,7 +36,7 @@ import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, MoreVertical, ChevronDown, AlertTriangle, CheckCircle2, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play } from 'lucide-react';
+import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, MoreVertical, ChevronDown, AlertTriangle, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play } from 'lucide-react';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
 const PROPOSALS_VIEW_ID = 8;
@@ -120,7 +120,6 @@ const AdminProposalsPage = () => {
   const [reopenModal, setReopenModal] = useState({ open: false, id: null, reason: '', saving: false });
   const [pauseModal, setPauseModal] = useState({ open: false, id: null, action: 'pause', reason: '', saving: false });
   const [forceModal, setForceModal] = useState({ open: false, id: null, status: '', reason: '', ack: false, saving: false });
-  const [approveModal, setApproveModal] = useState({ open: false, id: null, saving: false, incomplete: [], checking: false });
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
@@ -298,17 +297,6 @@ const AdminProposalsPage = () => {
       setCancelModal({ open: true, id, reason: '', saving: false });
       return;
     }
-    if (newStatus === 'REVIEWING') {
-      setApproveModal({ open: true, id, saving: false, incomplete: [], checking: true });
-      try {
-        const comp = await adminProposalService.getCompleteness(id, token).catch(() => null);
-        const incomplete = comp && comp.success && comp.data && Array.isArray(comp.data.missing) ? comp.data.missing : [];
-        setApproveModal({ open: true, id, saving: false, incomplete, checking: false });
-      } catch {
-        setApproveModal({ open: true, id, saving: false, incomplete: [], checking: false });
-      }
-      return;
-    }
     try {
       const res = await adminProposalService.updateStatus(id, newStatus, token);
       if (res.success) {
@@ -340,31 +328,6 @@ const AdminProposalsPage = () => {
     } catch {
       setError('Lỗi kết nối server');
       setRejectModal(prev => ({ ...prev, saving: false }));
-    }
-  };
-
-  const handleConfirmApprove = async () => {
-    const { id } = approveModal;
-    setApproveModal(prev => ({ ...prev, saving: true }));
-    try {
-      const res = await adminProposalService.updateStatus(id, 'REVIEWING', token);
-      if (res.success) {
-        setToast({ message: 'Đã duyệt — đề xuất chuyển sang Đang xem xét', type: 'success' });
-        setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false });
-        notifyBellRefresh();
-        loadProposals(pagination.page);
-      } else {
-        const errs = Array.isArray(res.errors) && res.errors.length > 0 ? res.errors : null;
-        if (errs) {
-          setApproveModal(prev => ({ ...prev, saving: false, incomplete: errs }));
-        } else {
-          setError(res.message || 'Duyệt thất bại');
-          setApproveModal(prev => ({ ...prev, saving: false }));
-        }
-      }
-    } catch {
-      setError('Lỗi kết nối server');
-      setApproveModal(prev => ({ ...prev, saving: false }));
     }
   };
 
@@ -451,41 +414,6 @@ const AdminProposalsPage = () => {
       setError('Lỗi kết nối server');
       setForceModal(prev => ({ ...prev, saving: false }));
     }
-  };
-
-  const handleBatchApprove = async () => {
-    setShowMoreMenu(false);
-    const pendings = selectedIds
-      .map(id => proposals.find(p => p.id === id))
-      .filter(r => r && r.status === 'PENDING');
-    if (pendings.length === 0) {
-      setError('Không có đề xuất Đang đề xuất nào được chọn');
-      return;
-    }
-    setBatchLoading(true);
-    const ok = [];
-    const failed = [];
-    for (const row of pendings) {
-      try {
-        const res = await adminProposalService.updateStatus(row.id, 'REVIEWING', token);
-        if (res.success) ok.push(row.id);
-        else failed.push(`#${row.id}: ${res.message || 'thất bại'}`);
-      } catch {
-        failed.push(`#${row.id}: lỗi kết nối`);
-      }
-    }
-    const parts = [];
-    if (ok.length > 0) parts.push(`Đã duyệt ${ok.length} đề xuất (sang Đang xem xét)`);
-    if (failed.length > 0) parts.push(`${failed.length} lỗi: ${failed.join('; ')}`);
-    if (ok.length > 0) {
-      setToast({ message: parts.join(' — '), type: failed.length > 0 ? 'warning' : 'success' });
-    } else {
-      setError(parts.join(' — '));
-    }
-    notifyBellRefresh();
-    setSelectedIds([]);
-    loadProposals(pagination.page);
-    setBatchLoading(false);
   };
 
   const openStationModal = (row) => {
@@ -875,12 +803,7 @@ const AdminProposalsPage = () => {
     const go = (s) => handleStatusChange(row.id, s);
     switch (row.status) {
       case 'PENDING':
-        return (
-          <button className="btn btn-success btn-xs gap-1 shrink-0" onClick={() => go('REVIEWING')} title="Duyệt đề xuất sang trạng thái Đang xem xét">
-            <CheckCircle2 size={12} />
-            Duyệt
-          </button>
-        );
+        return null;
       case 'REVIEWING':
         return null;
       case 'CONTRACT_SIGNED':
@@ -1052,15 +975,6 @@ const AdminProposalsPage = () => {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 w-52 dropdown-center-mobile" style={moreTop != null ? { top: moreTop } : undefined}>
-                  <button
-                    className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
-                    onClick={handleBatchApprove}
-                    disabled={selectedIds.length === 0 || batchLoading}
-                  >
-                    <CheckCircle2 size={14} className="text-success" />
-                    Duyệt
-                    {selectedIds.length > 0 && <span className="badge badge-success badge-sm ml-auto">{selectedIds.length}</span>}
-                  </button>
                   <button
                     className="w-full px-3 py-2 text-sm text-left hover:bg-base-200 flex items-center gap-2 gap-2"
                     onClick={() => { setShowMoreMenu(false); handleExportReports(selectedIds); }}
@@ -1333,47 +1247,6 @@ const AdminProposalsPage = () => {
         onCancel={() => setConfirmInfoBatchOpen(false)}
         confirmText={batchConfirmLoading ? 'Đang quét...' : 'Chạy'}
       />
-
-      {approveModal.open && (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Duyệt đề xuất</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false })}>
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-sm text-base-content/80">Đề xuất sẽ chuyển sang <b>Đang xem xét</b>. Hãy xác nhận để tiếp tục.</p>
-            {approveModal.checking && (
-              <p className="text-xs text-base-content/60 mt-3">Đang kiểm tra thông tin...</p>
-            )}
-            {approveModal.incomplete.length > 0 && (
-              <div className="alert alert-error py-2 px-3 mt-3 text-xs">
-                <div>
-                  <p className="font-bold mb-1">Thông tin chưa đầy đủ — hãy sửa đề xuất bổ sung:</p>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    {approveModal.incomplete.map((m, i) => (
-                      <li key={i}>{typeof m === 'string' ? m : (m.label || m.message || JSON.stringify(m))}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            <div className="modal-action">
-              <button className="btn btn-ghost btn-sm" onClick={() => setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false })}>Hủy</button>
-              <button
-                className="btn btn-success btn-sm"
-                disabled={approveModal.saving || approveModal.checking || approveModal.incomplete.length > 0}
-                title={approveModal.incomplete.length > 0 ? 'Thông tin chưa đầy đủ — hãy sửa đề xuất trước khi duyệt' : ''}
-                onClick={handleConfirmApprove}
-              >
-                {approveModal.saving ? 'Đang duyệt...' : 'Duyệt'}
-              </button>
-            </div>
-          </div>
-          <div className="modal-backdrop bg-black/50" onClick={() => setApproveModal({ open: false, id: null, saving: false, incomplete: [], checking: false })} />
-        </dialog>
-      )}
 
       {cancelModal.open && (
         <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
@@ -1813,6 +1686,7 @@ const AdminProposalsPage = () => {
         }}
         additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
         hiddenColumnKeys={PROPOSAL_MONEY_COLUMN_KEYS}
+        hiddenColumnLabels={['ID 1Office']}
         density="compact"
         data={proposals}
         frozenColumns={3}
