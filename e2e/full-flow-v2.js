@@ -212,7 +212,13 @@ async function main() {
     const id = global.__A;
     const qh = await gradeQH(id, 3, 'Vị trí phù hợp quy hoạch');
     check('A2 QH chấm 3 OK', qh.status === 200);
-    check('A2 note = YES_QH_WAIT_PL', sql(`SELECT note FROM station_proposals WHERE id=${id}`) === 'YES_QH_WAIT_PL');
+    check('A2 có điểm QH thì chuyển GĐTTKD ngay', statusOf(id) === 'GDTTKD_EVALUATING', statusOf(id));
+    const pendingPL = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);
+    check('A2 PL vẫn thấy đề xuất chưa chấm trong việc cần thực hiện',
+      ((pendingPL.body && pendingPL.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const pendingQH = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.qh);
+    check('A2 QH đã chấm không còn trong việc cần thực hiện',
+      !((pendingQH.body && pendingQH.body.data) || []).some((row) => Number(row.id) === Number(id)));
     const blocked = await gradePL(id, 3, 'x');
     check('A3 PL bị chặn khi thiếu hồ sơ (400)', blocked.status === 400, (blocked.body && blocked.message || '').slice(0, 80));
     await attachLegalDocs(id);
@@ -297,6 +303,49 @@ async function main() {
     check('B1 QH chấm 0 → CANCELLED ngay (không chờ PL)', statusOf(id) === 'CANCELLED', statusOf(id));
     check('B1 reject_reason tự động "Điểm Quy hoạch bằng 0"', sql(`SELECT reject_reason FROM station_proposals WHERE id=${id}`).includes('bằng 0'));
     check('B1 notify CANCELLED cho GĐTTKD vùng', (await notifCount(tokens.gd, 'CANCELLED', id)) >= 1);
+  });
+
+  await section('B1b. Chấm một phòng trước, giữ việc cho phòng còn lại', async () => {
+    const id = await createProposal('B1b', true);
+    const first = await gradeQH(id, 2, 'QH chấm trước');
+    check('B1b QH chấm trước → GĐTTKD_EVALUATING',
+      first.status === 200 && statusOf(id) === 'GDTTKD_EVALUATING', statusOf(id));
+
+    const pendingPL = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);
+    check('B1b PL vẫn thấy việc chưa chấm trong hàng đợi chấm',
+      ((pendingPL.body && pendingPL.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const pendingQH = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.qh);
+    check('B1b QH đã chấm không còn việc chấm lần đầu',
+      !((pendingQH.body && pendingQH.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const gdReview = await req('GET', '/admin/proposal-reviews?tab=pending&limit=100', tokens.gd);
+    check('B1b GĐTTKD thấy đề xuất chờ xem xét lần đầu',
+      ((gdReview.body && gdReview.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const qhReviewAll = await req('GET', '/admin/proposal-reviews?tab=all&limit=100', tokens.qh);
+    check('B1b QH theo dõi được trạng thái chờ GĐTTKD ở tab Tất cả',
+      ((qhReviewAll.body && qhReviewAll.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const qhReviewPending = await req('GET', '/admin/proposal-reviews?tab=pending&limit=100', tokens.qh);
+    check('B1b QH chưa nhận việc chấm lại trước khi GĐTTKD gửi yêu cầu',
+      !((qhReviewPending.body && qhReviewPending.body.data) || []).some((row) => Number(row.id) === Number(id)));
+
+    const invalidRegrade = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, {
+      reason: 'Chỉ được yêu cầu phòng đã chấm',
+      departments: ['PL']
+    });
+    check('B1b API từ chối yêu cầu chấm lại phòng chưa chấm', invalidRegrade.status === 400, String(invalidRegrade.status));
+
+    const regrade = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, {
+      reason: 'Yêu cầu Quy hoạch đánh giá lại',
+      departments: ['QH']
+    });
+    check('B1b chỉ yêu cầu QH chấm lại thành công', regrade.status === 200 && statusOf(id) === 'RE_GRADING', statusOf(id));
+
+    const pendingPlDuringRegrade = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);
+    check('B1b PL vẫn thấy việc chưa chấm trong khi QH đang chấm lại',
+      ((pendingPlDuringRegrade.body && pendingPlDuringRegrade.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const pl = await gradePL(id, 2, 'PL chấm lần đầu');
+    check('B1b PL vẫn chấm được khi trạng thái RE_GRADING', pl.status === 200, String(pl.status));
+    const qh = await gradeQH(id, 2, 'QH chấm lại');
+    check('B1b hoàn tất điểm → DESIGNING', qh.status === 200 && statusOf(id) === 'DESIGNING', statusOf(id));
   });
 
   await section('B2-B3-B4. Tổng 2-3 → GĐTTKD → chấm lại → trình TGĐ → TGĐ duyệt', async () => {

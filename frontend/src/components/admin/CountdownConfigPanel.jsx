@@ -82,17 +82,22 @@ const CountdownConfigPanel = () => {
         warn_hours: Number(warnHours) || 24,
         extend_max_times: Number(maxTimes),
         extend_max_days_per_time: Number(maxDaysPerTime),
-        rules: displayRows.flatMap((row) => {
-          const r = ensureRule(row);
-          const norm = (part) => ({
-            enabled: !!(part && part.enabled),
-            days: Number((part && part.days) || 0),
-            hours: Number((part && part.hours) || 0),
-            minutes: Number((part && part.minutes) || 0)
+        rules: (() => {
+          const visibleStatuses = new Set(displayRows.flatMap((row) => row.statuses));
+          const visibleRules = displayRows.flatMap((row) => {
+            const r = ensureRule(row);
+            const norm = (part) => ({
+              enabled: !!(part && part.enabled),
+              days: Number((part && part.days) || 0),
+              hours: Number((part && part.hours) || 0),
+              minutes: Number((part && part.minutes) || 0)
+            });
+            const rule = { supplement: norm(r.supplement), transition: norm(r.transition) };
+            return row.statuses.map((status) => ({ status, ...rule }));
           });
-          const rule = { supplement: norm(r.supplement), transition: norm(r.transition) };
-          return row.statuses.map((status) => ({ status, ...rule }));
-        })
+          const retainedRules = rules.filter((rule) => rule?.status && !visibleStatuses.has(rule.status));
+          return [...visibleRules, ...retainedRules];
+        })()
       };
       const res = await api.putWithAuth('/admin/lifecycle-config', payload, token);
       if (res && res.success) {

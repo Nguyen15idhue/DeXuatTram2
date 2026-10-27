@@ -1,4 +1,5 @@
 import { fieldDefinitionService } from "../services/api";
+import { isRetiredProposalStatusOption } from "./proposalStatus";
 
 export const PRIORITY_MARKER_COLORS = {
   "1": "#22c55e",
@@ -2490,7 +2491,7 @@ const ICON_LABELS = {
   ban: "Cấm",
   lock: "Khóa",
   bell: "Thông báo",
-  stamp: "Duyệt chủ trương",
+  stamp: "Con dấu",
   handshake: "Liên kết",
   scale: "Cân đối",
   penSign: "Ký duyệt",
@@ -2768,7 +2769,11 @@ export const getMarkerIconBg = (status, entity) => {
 
 export const getStatusOptions = (entity) => {
   const key = normEntityKey(entity);
-  return statusOptionsCache[key] || null;
+  const options = statusOptionsCache[key] || null;
+  if (key !== "proposal" || !options) return options;
+  return options.filter((option) => (
+    !isRetiredProposalStatusOption("station_proposals", "status", option.value)
+  ));
 };
 
 export const MARKER_ICONS_REFRESH_EVENT = "markericons:refresh";

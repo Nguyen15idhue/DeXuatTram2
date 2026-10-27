@@ -12,7 +12,12 @@ import Toast from '../../components/Toast';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 import { isProposalFieldForModel } from '../../utils/proposalGrading';
 
-const getStep = (status) => status === 'RE_GRADING' ? 'regrading' : 'grading';
+const getStep = (proposal, permissions = {}) => {
+  if (proposal?.status !== 'RE_GRADING') return 'grading';
+  const isRegradingTask = (permissions.canGradeQH && proposal.quy_hoach_regrade_pending)
+    || (permissions.canGradePL && proposal.phap_ly_regrade_pending);
+  return isRegradingTask ? 'regrading' : 'grading';
+};
 
 const parseValue = (value) => {
   if (typeof value !== 'string') return value;
@@ -118,7 +123,7 @@ const AdminProposalGradingDetailPage = () => {
       setDetail(result);
       const allKeys = (result?.fieldDefinitions || []).map((field) => field.key);
       const config = result?.displayConfig || {};
-      setConfigStep(getStep(result?.proposal?.status));
+      setConfigStep(getStep(result?.proposal, result?.permissions));
       setDraftConfig({
         grading: Array.isArray(config.grading) ? config.grading : allKeys,
         regrading: Array.isArray(config.regrading) ? config.regrading : allKeys
@@ -136,7 +141,7 @@ const AdminProposalGradingDetailPage = () => {
   }, [loadDetail]);
 
   const proposal = detail?.proposal;
-  const step = getStep(proposal?.status);
+  const step = getStep(proposal, detail?.permissions);
   const fields = useMemo(() => {
     const keys = new Set(draftConfig[step] || []);
     return (detail?.fieldDefinitions || [])
@@ -161,7 +166,7 @@ const AdminProposalGradingDetailPage = () => {
           ? ' — Đề xuất chuyển sang GĐTTKD đánh giá'
           : result?.transitionError ? ` — ${result.transitionError}` : '';
     setToast((message || 'Đã cập nhật điểm') + extra);
-    setToastType(result?.transitionError ? 'warning' : 'success');
+    setToastType(result?.transitionError || result?.reviewRequestError ? 'warning' : 'success');
     await loadDetail();
   };
 

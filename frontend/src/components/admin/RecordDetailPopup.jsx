@@ -838,7 +838,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           {entity === 'station_proposals' && record?.pending_station_code && (
           <div className="alert py-2 px-3 text-sm alert-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <Hash size={16} />
-            <span>Mã trạm chờ: <b className="font-mono">{record.pending_station_code}</b> (tự động giữ khi duyệt chủ trương)</span>
+            <span>Mã trạm chờ: <b className="font-mono">{record.pending_station_code}</b> (mã được giữ từ quy trình cũ)</span>
           </div>
           )}
 

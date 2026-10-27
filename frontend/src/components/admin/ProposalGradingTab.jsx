@@ -26,7 +26,8 @@ import {
   getProposalLegalName,
   getProposalPhone,
   getMissingLegalDocs,
-  isLegalDocsComplete
+  isLegalDocsComplete,
+  getPartialGradingProgress
 } from '../../utils/proposalGrading';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
 import { Pencil, RotateCcw, Search, X } from 'lucide-react';
@@ -308,6 +309,19 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
     phap_ly_status: (row) => <PhapLyStatusCell row={row} onShowScore={setScoreDetail} />,
     grading_result: (row) => {
       const cancelled = row.status === 'CANCELLED' || row.quy_hoach_score === 0 || row.phap_ly_score === 0;
+      const progress = getPartialGradingProgress(row);
+      if (progress) {
+        const bothScored = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined
+          && row.phap_ly_score !== null && row.phap_ly_score !== undefined;
+        return (
+          <div className="min-w-40 space-y-1">
+            <span className="badge badge-warning badge-sm">
+              {bothScored ? 'Chờ GĐTTKD xem xét' : 'Chờ phòng còn lại chấm'}
+            </span>
+            <p className="text-xs text-base-content/70">{progress}</p>
+          </div>
+        );
+      }
       const complete = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined
         && row.phap_ly_score !== null && row.phap_ly_score !== undefined
         && !row.quy_hoach_regrade_pending && !row.phap_ly_regrade_pending;
@@ -317,16 +331,19 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
   };
 
   const renderActions = (row) => {
-    const active = ['GRADING', 'RE_GRADING'].includes(row.status);
-    const rowCanGrade = (canGradeQH && (row.status === 'GRADING'
-      ? row.quy_hoach_score === null || row.quy_hoach_score === undefined
-      : row.quy_hoach_regrade_pending))
-      || (canGradePL && (row.status === 'GRADING'
-        ? row.phap_ly_score === null || row.phap_ly_score === undefined
-        : row.phap_ly_regrade_pending));
+    const active = ['GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING'].includes(row.status);
+    const qhMissing = row.quy_hoach_score === null || row.quy_hoach_score === undefined;
+    const plMissing = row.phap_ly_score === null || row.phap_ly_score === undefined;
+    const qhCanGrade = row.status === 'RE_GRADING'
+      ? qhMissing || row.quy_hoach_regrade_pending
+      : qhMissing;
+    const plCanGrade = row.status === 'RE_GRADING'
+      ? plMissing || row.phap_ly_regrade_pending
+      : plMissing;
+    const rowCanGrade = (canGradeQH && qhCanGrade) || (canGradePL && plCanGrade);
     const bothScored = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined
       && row.phap_ly_score !== null && row.phap_ly_score !== undefined;
-    const rowCanAct = !row.supplement_pending && (row.status === 'GRADING' ? canGrade : rowCanGrade);
+    const rowCanAct = !row.supplement_pending && rowCanGrade;
     const showAction = active && canGrade && (
       isPending ? rowCanGrade : isAll ? (!bothScored || row.status === 'RE_GRADING') && rowCanAct : rowCanAct
     );

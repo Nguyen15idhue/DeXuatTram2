@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], hiddenColumnKeys = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -67,6 +67,11 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
   );
   const hiddenColumnKeysSig = useMemo(() => hiddenColumnKeys.join(','), [hiddenColumnKeys]);
   const hiddenColumns = useMemo(() => new Set(hiddenColumnKeysSig.split(',').filter(Boolean)), [hiddenColumnKeysSig]);
+  const hiddenColumnLabelsSig = useMemo(
+    () => hiddenColumnLabels.map((label) => String(label).trim().toLowerCase()).join(','),
+    [hiddenColumnLabels]
+  );
+  const hiddenLabels = useMemo(() => new Set(hiddenColumnLabelsSig.split(',').filter(Boolean)), [hiddenColumnLabelsSig]);
   const columnLabelOverridesSig = useMemo(
     () => JSON.stringify(columnLabelOverrides || {}),
     [columnLabelOverrides]
@@ -89,11 +94,15 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       }
     });
     return mergedColumns
-      .filter((column) => !hiddenColumns.has(column.key) && !hiddenColumns.has(column.field_key))
       .map((column) => {
         const key = column.field_key || column.key;
         return labelOverrides[key] ? { ...column, label: labelOverrides[key] } : column;
-      });
+      })
+      .filter((column) => (
+        !hiddenColumns.has(column.key)
+        && !hiddenColumns.has(column.field_key)
+        && !hiddenLabels.has(String(column.label || '').trim().toLowerCase())
+      ));
   };
 
   useEffect(() => {
@@ -108,7 +117,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setColumns([]);
       setLoading(false);
     }
-  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, columnLabelOverridesSig, additionalColumnsSig]);
+  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, hiddenColumnLabelsSig, hiddenLabels, columnLabelOverridesSig, additionalColumnsSig]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {

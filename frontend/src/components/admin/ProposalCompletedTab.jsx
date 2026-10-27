@@ -194,6 +194,7 @@ const ProposalCompletedTab = ({ token }) => {
           }}
           additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
           hiddenColumnKeys={['review_level', ...PROPOSAL_MONEY_COLUMN_KEYS]}
+          hiddenColumnLabels={['ID 1Office']}
           density="compact"
           data={items}
           startIndex={(pagination.page - 1) * pagination.limit}

@@ -329,3 +329,15 @@ export const getGradingStatusLabel = (code) => {
   if (!code) return '';
   return GRADING_NOTE_LABELS[code] || code;
 };
+
+export const getPartialGradingProgress = (row) => {
+  if (row?.status !== 'GDTTKD_EVALUATING' || Number(row.review_level) !== 1) return null;
+
+  const qhScored = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined;
+  const plScored = row.phap_ly_score !== null && row.phap_ly_score !== undefined;
+
+  if (qhScored && plScored) return 'Hai phòng đã chấm xong · đang chờ GĐTTKD xem xét';
+  if (qhScored) return 'Quy hoạch đã chấm · Pháp lý chưa chấm';
+  if (plScored) return 'Pháp lý đã chấm · Quy hoạch chưa chấm';
+  return null;
+};

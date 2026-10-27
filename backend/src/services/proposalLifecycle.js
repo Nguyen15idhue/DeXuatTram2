@@ -12,7 +12,7 @@ const ALL_STATUSES = [
 
 const ALLOWED_TRANSITIONS = {
   PENDING: ['REVIEWING', 'GRADING', 'REJECTED', 'CANCELLED'],
-  REVIEWING: ['PRINCIPLE_APPROVED', 'APPROVED', 'CANCELLED', 'ARCHIVED'],
+  REVIEWING: ['APPROVED', 'CANCELLED', 'ARCHIVED'],
   PRINCIPLE_APPROVED: ['APPROVED', 'CANCELLED'],
   APPROVED: ['CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED'],
   ARCHIVED: ['CONTRACT_SIGNED', 'CANCELLED'],
@@ -21,7 +21,7 @@ const ALLOWED_TRANSITIONS = {
   REJECTED: ['PENDING', 'CANCELLED'],
   CANCELLED: [],
   GRADING: ['DESIGNING', 'GDTTKD_EVALUATING', 'CANCELLED'],
-  GDTTKD_EVALUATING: ['RE_GRADING', 'TGD_REVIEW', 'CANCELLED'],
+  GDTTKD_EVALUATING: ['DESIGNING', 'RE_GRADING', 'TGD_REVIEW', 'CANCELLED'],
   RE_GRADING: ['DESIGNING', 'GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING', 'CANCELLED'],
   RE_GDTTKD_EVALUATING: ['TGD_REVIEW', 'CANCELLED'],
   TGD_REVIEW: ['DESIGNING', 'CANCELLED'],
@@ -161,6 +161,14 @@ exports.transition = async (id, to, opts = {}) => {
   }
   if (resumeAction && !isResumeTransition) {
     throw err('Không tìm thấy trạng thái cần khôi phục cho đề xuất', 409);
+  }
+  if (to === 'PRINCIPLE_APPROVED' && !isResumeTransition && from !== to) {
+    await exports.logActivity({
+      proposalId: id, action: 'status_change_denied',
+      fromStatus: from, toStatus: to,
+      actorId, actorRole, source, ip
+    });
+    throw err('Trạng thái "Duyệt chủ trương" đã ngừng sử dụng', 400);
   }
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
   const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
@@ -377,10 +385,6 @@ exports.transition = async (id, to, opts = {}) => {
     }
   } catch { /* silent: khong chan chuyen trang thai vi journey */ }
 
-  if (!isResumeTransition && to === 'PRINCIPLE_APPROVED' && from !== 'PRINCIPLE_APPROVED') {
-    await reservePendingStationCode(id, actorId, actorRole, source, ip).catch(() => {});
-  }
-
   return {
     id, status: to, prevStatus: from,
     stationCreated: stationCreated ? { id: stationCreated.id, name: stationCreated.name, ma_tram: stationCreated.ma_tram || null } : null,
@@ -406,44 +410,6 @@ exports.resumeProposal = async (id, opts = {}) => {
     resumeAction: true
   });
 };
-
-async function reservePendingStationCode(id, actorId, actorRole, source, ip) {
-  const [rows] = await pool.query(
-    'SELECT id, custom_data, pending_station_code FROM station_proposals WHERE id = ?',
-    [id]
-  );
-  if (rows.length === 0 || rows[0].pending_station_code) return;
-  let cd = rows[0].custom_data;
-  if (typeof cd === 'string') {
-    try { cd = JSON.parse(cd); } catch { cd = {}; }
-  }
-  const maTinh = cd && cd.ma_tinh ? String(cd.ma_tinh).trim() : '';
-  if (!maTinh) return;
-  const stationCodeService = require('./stationCodeService');
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const code = await stationCodeService.generatePendingCode(maTinh);
-    try {
-      await pool.query(
-        'UPDATE station_proposals SET pending_station_code = ? WHERE id = ? AND pending_station_code IS NULL',
-        [code, id]
-      );
-      await exports.logActivity({
-        proposalId: id, action: 'station_code_reserved',
-        changedFields: { pending_station_code: { label: 'Mã trạm chờ', old: '', new: code } },
-        actorId: actorId || null, actorRole: actorRole || null, source: source || 'user', ip: ip || null
-      });
-      return;
-    } catch (e) {
-      if (e && e.code === 'ER_DUP_ENTRY') continue;
-      throw e;
-    }
-  }
-  await exports.logActivity({
-    proposalId: id, action: 'auto_failed',
-    changedFields: { error: 'Không giữ được mã trạm chờ sau 2 lần thử' },
-    actorId: actorId || null, actorRole: actorRole || null, source: 'system_auto', ip: ip || null
-  });
-}
 
 // ===== Kế hoạch 71 (F) — Tự xác nhận "đủ thông tin" =====
 

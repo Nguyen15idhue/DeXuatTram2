@@ -5,6 +5,7 @@ import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../ut
 import { formatDate, formatDateTime, toDateInputValue, toDateTimeLocalValue } from '../../utils/formatDateTime';
 import { resolveColumnDatalist, getColumnSource } from '../../utils/tableColumnSource';
 import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
+import { isRetiredProposalStatusOption, RETIRED_PROPOSAL_STATUS } from '../../utils/proposalStatus';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -327,6 +328,9 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
         return [];
       }
     }
+    opts = opts.filter((option) => (
+      !isRetiredProposalStatusOption(entityType, field.key, option.value)
+    ));
     if (Array.isArray(allowedOptions)) {
       opts = opts.filter(o => allowedOptions.includes(o.value !== undefined ? o.value : o));
     }
@@ -745,7 +749,10 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
       );
 
     case 'select': {
-      const selectedOpt = parsedOptions.find(o => (o.value !== undefined ? o.value : o) === value);
+      const selectedOpt = parsedOptions.find(o => (o.value !== undefined ? o.value : o) === value)
+        || (isRetiredProposalStatusOption(entityType, field.key, value)
+          ? { value: RETIRED_PROPOSAL_STATUS, label: 'Duyệt chủ trương (bản ghi cũ)' }
+          : null);
       const searchTerm = normalizeForSearch(selectSearch.trim());
       const filteredOptions = searchTerm
         ? parsedOptions.filter((opt) => {

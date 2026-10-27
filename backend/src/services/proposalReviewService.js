@@ -482,9 +482,17 @@ const requestRegrade = async ({ user, id, reason, departments, ip }) => {
   if (Number(proposal.review_level) !== 1) throw err('Đề xuất không ở mức GĐTTKD xem xét', 400);
   assertRegion(scope, proposal);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do yêu cầu đánh giá lại');
-  const targets = [...new Set(Array.isArray(departments) ? departments : [])];
+  const scoredDepartments = [
+    ...(proposal.quy_hoach_score !== null && proposal.quy_hoach_score !== undefined ? ['QH'] : []),
+    ...(proposal.phap_ly_score !== null && proposal.phap_ly_score !== undefined ? ['PL'] : [])
+  ];
+  const selectedDepartments = departments === undefined ? scoredDepartments : departments;
+  const targets = [...new Set(Array.isArray(selectedDepartments) ? selectedDepartments : [])];
   if (targets.length === 0 || targets.some((department) => !['QH', 'PL'].includes(department))) {
-    throw err('Vui lòng chọn Quy hoạch, Pháp lý hoặc cả hai phòng cần chấm lại', 400);
+    throw err('Không có phòng đã chấm điểm hợp lệ để yêu cầu chấm lại', 400);
+  }
+  if (targets.some((department) => !scoredDepartments.includes(department))) {
+    throw err('Chỉ được yêu cầu chấm lại phòng đã có điểm', 400);
   }
 
   const transition = await require('./proposalLifecycle').transition(proposal.id, REGRADING_STATUS, {

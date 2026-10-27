@@ -377,7 +377,6 @@ exports.convertToStation = async (req, res) => {
 
 exports.exportReports = async (req, res) => {
   try {
-    // TODO(P58-L2): chỉ cho xuất khi status=Duyệt chủ trương
     let { proposalIds, templateId } = req.body || {};
     if (!Array.isArray(proposalIds)) proposalIds = [];
     proposalIds = [...new Set(proposalIds.map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 50);

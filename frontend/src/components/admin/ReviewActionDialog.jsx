@@ -10,6 +10,8 @@ const ReviewActionDialog = ({
   reasonLabel = 'Lý do',
   reasonPlaceholder = 'Nhập lý do...',
   showDepartmentSelection = false,
+  allowQH = false,
+  allowPL = false,
   requireReason = true,
   saving = false,
   error = '',
@@ -22,9 +24,9 @@ const ReviewActionDialog = ({
   useEffect(() => {
     if (isOpen) {
       setReason('');
-      setDepartmentSelection('BOTH');
+      setDepartmentSelection(allowQH && allowPL ? 'BOTH' : allowQH ? 'QH' : allowPL ? 'PL' : '');
     }
-  }, [isOpen]);
+  }, [isOpen, allowQH, allowPL]);
 
   if (!isOpen) return null;
 
@@ -61,16 +63,20 @@ const ReviewActionDialog = ({
         {showDepartmentSelection && (
           <label className="form-control w-full mt-3">
             <span className="label-text font-medium mb-2">Phòng cần chấm lại *</span>
-            <select
-              className="select select-bordered"
-              value={departmentSelection}
-              onChange={(event) => setDepartmentSelection(event.target.value)}
-            >
-              <option value="" disabled>Chọn phòng cần chấm lại</option>
-              <option value="QH">Quy hoạch</option>
-              <option value="PL">Pháp lý</option>
-              <option value="BOTH">Cả Quy hoạch và Pháp lý</option>
-            </select>
+            {!allowQH && !allowPL ? (
+              <span className="text-sm text-warning">Chưa có phòng nào chấm điểm để yêu cầu chấm lại.</span>
+            ) : (
+              <select
+                className="select select-bordered"
+                value={departmentSelection}
+                onChange={(event) => setDepartmentSelection(event.target.value)}
+              >
+                <option value="" disabled>Chọn phòng cần chấm lại</option>
+                {allowQH && <option value="QH">Quy hoạch</option>}
+                {allowPL && <option value="PL">Pháp lý</option>}
+                {allowQH && allowPL && <option value="BOTH">Cả Quy hoạch và Pháp lý</option>}
+              </select>
+            )}
           </label>
         )}
 
