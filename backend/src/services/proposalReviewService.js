@@ -273,6 +273,7 @@ const listReviews = async ({
 
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             u.parent_id AS manager_user_id, manager.full_name AS manager_name
      FROM station_proposals p
      LEFT JOIN users u ON u.id = p.user_id

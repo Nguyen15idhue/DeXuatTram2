@@ -14,6 +14,8 @@ import ProposalAdvancedFilters from './ProposalAdvancedFilters';
 import { FilterBody, FilterToggle } from '../ui/FilterPanel';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_HIDDEN_COLUMN_KEYS,
+  PROPOSAL_HIDDEN_COLUMN_LABELS,
   ProposalAddressCell,
   ProposalManagerCell,
   ProposalProvinceCell,
@@ -45,9 +47,9 @@ const LAYOUT_COLUMNS = [
   { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
-  ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'supplement_count', field_key: 'supplement_count', label: 'Số lần YC cập nhật thông tin', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'status', field_key: 'status', label: 'Trạng thái Quy trình', width: 150, sortable: true, filterable: false, visible: true }
 ];
@@ -324,6 +326,8 @@ const ProposalLayoutTab = ({ tab, canManage }) => {
             entity="station_proposals"
             density="compact"
             columns={LAYOUT_COLUMNS}
+            hiddenColumnKeys={PROPOSAL_HIDDEN_COLUMN_KEYS}
+            hiddenColumnLabels={PROPOSAL_HIDDEN_COLUMN_LABELS}
             data={items}
             startIndex={(page - 1) * pageSize}
             cellRenderers={cellRenderers}

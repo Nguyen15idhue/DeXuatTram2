@@ -5,11 +5,15 @@ import { resolveRegion, REGION_LABELS } from '../../utils/proposalReview';
 import { ProposalPersonLink } from './ProposalLinkCells';
 
 export const PROPOSAL_CONTEXT_COLUMNS = [
+  { key: 'owner_department', field_key: 'owner_department', label: 'Phòng ban đề xuất', width: 180, sortable: false, filterable: false, visible: true },
+  { key: 'vung_mien', field_key: 'vung_mien', label: 'Miền đề xuất', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'manager_name', field_key: 'manager_name', label: 'Người phụ trách', width: 160, sortable: false, filterable: false, visible: true },
-  { key: 'vung_mien', field_key: 'vung_mien', label: 'Miền', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'province', field_key: 'province', label: 'Tỉnh/Thành phố', width: 150, sortable: false, filterable: false, visible: true },
   { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true }
 ];
+
+export const PROPOSAL_HIDDEN_COLUMN_KEYS = ['submission_source', 'he_thong_nguon'];
+export const PROPOSAL_HIDDEN_COLUMN_LABELS = ['Hệ thống nguồn'];
 
 export const PROPOSAL_MONEY_COLUMN_KEYS = [
   'cost',

@@ -12,6 +12,8 @@ import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import { ProposalStatusBadge } from './ProposalTableBadges';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_HIDDEN_COLUMN_KEYS,
+  PROPOSAL_HIDDEN_COLUMN_LABELS,
   ProposalAddressCell,
   ProposalManagerCell,
   ProposalProvinceCell,
@@ -312,6 +314,8 @@ const ProposalRequestsTab = ({ token }) => {
           entity="station_proposals"
           density="compact"
           columns={REQUEST_COLUMNS}
+          hiddenColumnKeys={PROPOSAL_HIDDEN_COLUMN_KEYS}
+          hiddenColumnLabels={PROPOSAL_HIDDEN_COLUMN_LABELS}
           data={items}
           actions={renderActions}
           cellRenderers={cellRenderers}
