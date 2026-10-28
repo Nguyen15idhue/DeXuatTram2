@@ -47,7 +47,7 @@ const LAYOUT_COLUMNS = [
   { key: 'legal_name', field_key: 'legal_name', label: 'Tên pháp nhân', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phone', field_key: 'phone', label: 'SĐT liên hệ', width: 120, sortable: false, filterable: false, visible: true },
   { key: 'mo_hinh_dau_tu', field_key: 'mo_hinh_dau_tu', label: 'Mô hình đầu tư', width: 140, sortable: false, filterable: false, visible: true },
-  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ đề xuất', width: 160, sortable: false, filterable: false, visible: true },
+  { key: 'scale', field_key: 'scale', label: 'Quy mô trụ', width: 160, sortable: false, filterable: false, visible: true },
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'supplement_count', field_key: 'supplement_count', label: 'Số lần YC cập nhật thông tin', width: 160, sortable: false, filterable: false, visible: true },

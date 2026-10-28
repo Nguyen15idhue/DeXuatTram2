@@ -12,8 +12,33 @@ export const PROPOSAL_CONTEXT_COLUMNS = [
   { key: 'address', field_key: 'address', label: 'Địa chỉ chi tiết', width: 240, sortable: false, filterable: false, visible: true }
 ];
 
-export const PROPOSAL_HIDDEN_COLUMN_KEYS = ['submission_source', 'he_thong_nguon'];
-export const PROPOSAL_HIDDEN_COLUMN_LABELS = ['Hệ thống nguồn'];
+export const PROPOSAL_HIDDEN_COLUMN_KEYS = [
+  'submission_source',
+  'he_thong_nguon',
+  'loai_uu_tien',
+  'review_level',
+  'vung_mien',
+  'nguon_dien',
+  'manager_name'
+];
+export const PROPOSAL_HIDDEN_COLUMN_LABELS = [
+  'Hệ thống nguồn',
+  'Loại ưu tiên',
+  'Mức độ xem xét',
+  'Miền đề xuất',
+  'Nguồn điện',
+  'Người phụ trách'
+];
+
+export const PROPOSAL_SCALE_COLUMN = {
+  key: 'scale',
+  field_key: 'scale',
+  label: 'Quy mô trụ',
+  width: 240,
+  sortable: false,
+  filterable: false,
+  visible: true
+};
 
 export const PROPOSAL_MONEY_COLUMN_KEYS = [
   'cost',

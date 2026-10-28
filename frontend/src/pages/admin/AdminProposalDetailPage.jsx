@@ -8,6 +8,9 @@ import FileViewer from '../../components/dynamic/FileViewer';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
+import ExtendDeadlineDialog from '../../components/admin/ExtendDeadlineDialog';
+import Toast from '../../components/Toast';
+import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 import {
   getProposalReachedStep,
   PROPOSAL_PROCESS_FIELD_KEYS
@@ -36,7 +39,8 @@ import {
   FileText,
   LayoutTemplate,
   Paperclip,
-  PenSquare
+  PenSquare,
+  Clock
 } from 'lucide-react';
 
 const LAYOUT_FIELD = 'ban_ve_layout';
@@ -112,7 +116,7 @@ const FileChips = ({ files, emptyText, onView }) => {
 const AdminProposalDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { getSelectOptions } = useFieldOptions('station_proposals', ['status', 'mo_hinh_dau_tu']);
 
   const [record, setRecord] = useState(null);
@@ -122,6 +126,12 @@ const AdminProposalDetailPage = () => {
   const [signatureLoading, setSignatureLoading] = useState(false);
   const [signatureError, setSignatureError] = useState('');
   const [viewing, setViewing] = useState(null);
+  const [now, setNow] = useState(Date.now());
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extendLoading, setExtendLoading] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const [extendLimits, setExtendLimits] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const statusOptionMap = useMemo(() => {
     const map = {};
@@ -152,6 +162,56 @@ const AdminProposalDetailPage = () => {
     run();
     return () => { cancelled = true; };
   }, [id, token]);
+
+  useEffect(() => {
+    if (record?.status !== 'PENDING' || !record.transition_deadline_at) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [record?.status, record?.transition_deadline_at]);
+
+  const canExtend = ['ADMIN', 'SUPER_ADMIN', 'SALES', 'CTV'].includes(user?.role)
+    && record?.status === 'PENDING'
+    && Number.isFinite(new Date(record.transition_deadline_at).getTime())
+    && new Date(record.transition_deadline_at).getTime() > now;
+
+  const openExtend = async () => {
+    setExtendLoading(true);
+    try {
+      const res = await adminProposalService.extendInfo(record.id, token);
+      if (!res?.success || !res.data) {
+        throw new Error(res?.message || 'Không tải được thông tin gia hạn');
+      }
+      setExtendLimits({
+        maxDaysPerTime: res.data.maxDaysPerTime,
+        remaining: res.data.remaining,
+        maxTimes: res.data.maxTimes
+      });
+      setExtendOpen(true);
+    } catch (err) {
+      setToast({ message: err?.message || 'Không tải được thông tin gia hạn', type: 'error' });
+    } finally {
+      setExtendLoading(false);
+    }
+  };
+
+  const handleExtend = async ({ days, hours, reason }) => {
+    if (!record?.id) return;
+    setExtending(true);
+    try {
+      const res = await adminProposalService.extendDeadline(record.id, { days, hours, reason }, token);
+      if (!res?.success) {
+        throw new Error(res?.message || 'Gia hạn thất bại');
+      }
+      if (res.data) setRecord((current) => ({ ...current, ...res.data }));
+      setExtendOpen(false);
+      setToast({ message: res.message || 'Gia hạn thành công', type: 'success' });
+      notifyBellRefresh();
+    } catch (err) {
+      setToast({ message: err?.message || 'Gia hạn thất bại', type: 'error' });
+    } finally {
+      setExtending(false);
+    }
+  };
 
   const recordStatus = record?.status;
   const recordId = record?.id;
@@ -248,6 +308,18 @@ const AdminProposalDetailPage = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canExtend && (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm gap-1"
+              onClick={openExtend}
+              disabled={extendLoading}
+              title="Gia hạn thời gian xử lý khi đề xuất đang còn hạn"
+            >
+              <Clock size={14} />
+              {extendLoading ? 'Đang tải...' : 'Gia hạn'}
+            </button>
+          )}
           <ProposalLocationMapButton proposal={record} />
           {signatureDetail?.can_sign && (
             <button
@@ -437,6 +509,20 @@ const AdminProposalDetailPage = () => {
 
       {viewing && (
         <FileViewer file={viewing} onClose={() => setViewing(null)} />
+      )}
+      <ExtendDeadlineDialog
+        isOpen={extendOpen}
+        saving={extending}
+        limits={extendLimits}
+        onConfirm={handleExtend}
+        onCancel={() => { if (!extending) setExtendOpen(false); }}
+      />
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
     </div>
   );
