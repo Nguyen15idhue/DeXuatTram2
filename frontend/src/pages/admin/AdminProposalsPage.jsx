@@ -16,6 +16,8 @@ import { ProposalCodeLink, ProposalPersonLink } from '../../components/admin/Pro
 import ProposalFlowInfo from '../../components/admin/ProposalFlowInfo';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_HIDDEN_COLUMN_KEYS,
+  PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
   ProposalAddressCell,
   ProposalManagerCell,
@@ -1680,13 +1682,14 @@ const AdminProposalsPage = () => {
         columnLabelOverrides={{
           status: 'Trạng thái Quy trình',
           manager_name: 'Người phụ trách',
-          vung_mien: 'Miền',
+          vung_mien: 'Miền đề xuất',
           province: 'Tỉnh/Thành phố',
           address: 'Địa chỉ chi tiết'
         }}
         additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
-        hiddenColumnKeys={PROPOSAL_MONEY_COLUMN_KEYS}
-        hiddenColumnLabels={['ID 1Office']}
+        columnsAfter={{ anchorKey: 'nguoi_de_xuat', keys: ['owner_department', 'vung_mien'] }}
+        hiddenColumnKeys={[...PROPOSAL_MONEY_COLUMN_KEYS, ...PROPOSAL_HIDDEN_COLUMN_KEYS]}
+        hiddenColumnLabels={['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS]}
         density="compact"
         data={proposals}
         frozenColumns={3}

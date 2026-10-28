@@ -125,6 +125,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
             p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
             u.full_name as user_name, u.email as user_email,
+            JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             p.journey_id,
             l.id AS lead_id, l.lead_code AS lead_code

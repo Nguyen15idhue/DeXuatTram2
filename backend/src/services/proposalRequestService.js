@@ -348,6 +348,7 @@ exports.listRequests = async ({
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS vung_mien,
             p.address AS address,
             u.full_name AS owner_name, u.parent_id AS manager_user_id,
+            JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             manager.full_name AS manager_name,
             ru.full_name AS requested_by_name,
             tu.full_name AS target_user_name

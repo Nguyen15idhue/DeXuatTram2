@@ -9,6 +9,8 @@ import ReviewActionDialog from "./ReviewActionDialog";
 import { ProposalCodeLink, ProposalPersonLink } from "./ProposalLinkCells";
 import {
   PROPOSAL_CONTEXT_COLUMNS,
+  PROPOSAL_HIDDEN_COLUMN_KEYS,
+  PROPOSAL_HIDDEN_COLUMN_LABELS,
   ProposalAddressCell,
   ProposalManagerCell,
   ProposalProvinceCell,
@@ -473,6 +475,8 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
             entity="station_proposals"
             density="compact"
             columns={REVIEW_COLUMNS}
+            hiddenColumnKeys={PROPOSAL_HIDDEN_COLUMN_KEYS}
+            hiddenColumnLabels={PROPOSAL_HIDDEN_COLUMN_LABELS}
             data={items}
             startIndex={(page - 1) * pageSize}
             cellRenderers={cellRenderers}

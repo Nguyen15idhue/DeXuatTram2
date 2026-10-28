@@ -180,6 +180,7 @@ exports.listProposals = async ({
 
   const [rows] = await pool.query(
     `SELECT p.*, p.ma_de_xuat_gen AS ma_de_xuat, u.full_name AS user_name, u.email AS user_email,
+            JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             (SELECT COUNT(*) FROM proposal_requests r
               WHERE r.proposal_id = p.id AND r.request_type = ?) AS supplement_request_count
