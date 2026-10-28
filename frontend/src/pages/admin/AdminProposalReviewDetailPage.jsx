@@ -6,6 +6,7 @@ import ReviewActionDialog from '../../components/admin/ReviewActionDialog';
 import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/ProposalTableBadges';
 import Toast from '../../components/Toast';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
 import FileViewer from '../../components/dynamic/FileViewer';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
@@ -250,6 +251,7 @@ const AdminProposalReviewDetailPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Chi tiết yêu cầu chấm điểm lại — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
+        actions={<ProposalLocationMapButton proposal={proposal} />}
       />
       <ProposalProgressiveDetails
         record={proposal}

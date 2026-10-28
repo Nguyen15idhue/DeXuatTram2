@@ -7,6 +7,7 @@ import ProposalSigningDocument from '../../components/admin/ProposalSigningDocum
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 import FileViewer from '../../components/dynamic/FileViewer';
@@ -225,6 +226,7 @@ const AdminProposalSignDetailPage = () => {
         title="Chi tiết trình ký"
         actions={(
           <div className="flex gap-2">
+            <ProposalLocationMapButton proposal={detail} />
             <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={() => navigate('/admin/proposals/trinh-ky')}>
               <ArrowLeft size={16} />
               Quay lại

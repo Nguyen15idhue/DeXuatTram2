@@ -6,6 +6,7 @@ import { proposalGradingService } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalGradingModal from '../../components/admin/ProposalGradingModal';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
 import FileViewer from '../../components/dynamic/FileViewer';
 import Toast from '../../components/Toast';
@@ -245,11 +246,14 @@ const AdminProposalGradingDetailPage = () => {
         <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={() => navigate(-1)}>
           <ArrowLeft size={16} /> Quay lại
         </button>
-        {detail.permissions?.canConfigure && (
-          <button type="button" className="btn btn-primary btn-sm gap-1" onClick={saveConfig} disabled={savingConfig}>
-            <Save size={15} /> {savingConfig ? 'Đang lưu...' : 'Lưu cấu hình hiển thị'}
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <ProposalLocationMapButton proposal={proposal} />
+          {detail.permissions?.canConfigure && (
+            <button type="button" className="btn btn-primary btn-sm gap-1" onClick={saveConfig} disabled={savingConfig}>
+              <Save size={15} /> {savingConfig ? 'Đang lưu...' : 'Lưu cấu hình hiển thị'}
+            </button>
+          )}
+        </div>
       </div>
 
       <PageHeader title={`Chi tiết chấm điểm — ${proposal.ma_de_xuat || `#${proposal.id}`}`} />

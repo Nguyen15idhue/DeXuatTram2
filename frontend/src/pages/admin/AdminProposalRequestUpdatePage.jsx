@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, Save } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { proposalRequestService } from "../../services/api";
 import DynamicForm from "../../components/dynamic/DynamicForm";
+import ProposalLocationMapButton from "../../components/admin/ProposalLocationMapButton";
 
 const REQUEST_LABELS = {
   UPDATE_INFO: "Yêu cầu cập nhật thông tin",
@@ -102,11 +103,14 @@ const AdminProposalRequestUpdatePage = () => {
       >
         <ArrowLeft size={16} /> Trở về
       </button>
-      <div>
-        <h1 className="text-2xl font-bold">Cập nhật theo yêu cầu</h1>
-        <p className="text-sm text-base-content/60">
-          Mã đề xuất: <strong>{request?.ma_de_xuat || "-"}</strong>
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Cập nhật theo yêu cầu</h1>
+          <p className="text-sm text-base-content/60">
+            Mã đề xuất: <strong>{request?.ma_de_xuat || "-"}</strong>
+          </p>
+        </div>
+        {proposal && <ProposalLocationMapButton proposal={proposal} />}
       </div>
 
       {loading && (

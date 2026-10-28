@@ -11,6 +11,7 @@ import ProposalReportUpdateModal from '../../components/admin/ProposalReportUpda
 import PageHeader from '../../components/ui/PageHeader';
 import Toast from '../../components/Toast';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
@@ -130,6 +131,7 @@ const AdminProposalReportDetailPage = () => {
         title={`Chi tiết đề xuất ${proposal.ma_de_xuat || `#${proposal.id}`}`}
         actions={(
           <div className="flex gap-2">
+            <ProposalLocationMapButton proposal={proposal} />
             {detail.permissions?.canUpload && canUploadReport(proposal) && (
               <button type="button" className="btn btn-primary btn-sm gap-1" onClick={() => setUploadOpen(true)}>
                 <Pencil size={14} /> {uploadButtonLabel(proposal)}
