@@ -12,7 +12,7 @@ const colWidthStyle = (col) => {
   return { width: w, minWidth: w };
 };
 
-const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null }, ref) => {
+const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
@@ -23,6 +23,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
   const [frozenN, setFrozenN] = useState(typeof frozenColumns === 'number' ? frozenColumns : 2);
   const [frozenMap, setFrozenMap] = useState(null);
   const [frozenBgs, setFrozenBgs] = useState(null);
+  const [cellStyleNow, setCellStyleNow] = useState(Date.now());
   const frozenSigRef = useRef(null);
   const tableWrapRef = useRef(null);
 
@@ -60,6 +61,12 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
     }, SERVER_FILTER_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [filters, serverMode]);
+
+  useEffect(() => {
+    if (typeof getCellStyle !== 'function' && typeof getRowStyle !== 'function') return undefined;
+    const timer = setInterval(() => setCellStyleNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, [getCellStyle, getRowStyle]);
 
   const columnsPropSig = useMemo(
     () => (Array.isArray(columnsProp) && columnsProp.length > 0 ? JSON.stringify(columnsProp) : ''),
@@ -468,20 +475,28 @@ const toDisplayValue = (val) => {
                   Không có dữ liệu
                 </td>
               </tr>
-            ) : sortedData.map((row, idx) => (
-              <tr key={row.id || idx} className="hover">
+            ) : sortedData.map((row, idx) => {
+              const rowStyle = typeof getRowStyle === 'function' ? getRowStyle(row, cellStyleNow) || {} : {};
+              const selectionCell = hasSelection ? frozenCell('__sel', 'td', '', idx % 2) : null;
+              const indexCell = frozenCell('__stt', 'td', 'text-center', idx % 2);
+              const leadingCell = hasLeading ? frozenCell('__lead', 'td', 'text-center whitespace-nowrap', idx % 2) : null;
+              return (
+              <tr key={row.id || idx} className="hover" style={rowStyle}>
                 {hasSelection && (
-                  <td {...frozenCell('__sel', 'td', '', idx % 2)}>
+                  <td {...selectionCell} style={{ ...selectionCell.style, ...rowStyle }}>
                     <input type="checkbox" className="checkbox checkbox-sm" checked={selectedIds.includes(row.id)} onChange={() => handleToggleRow(row.id)} />
                   </td>
                 )}
-                <td {...frozenCell('__stt', 'td', 'text-center', idx % 2)}>{startIndex + idx + 1}</td>
-                {hasLeading && <td {...frozenCell('__lead', 'td', 'text-center whitespace-nowrap', idx % 2)}>{leadingAction(row)}</td>}
+                <td {...indexCell} style={{ ...indexCell.style, ...rowStyle }}>{startIndex + idx + 1}</td>
+                {hasLeading && <td {...leadingCell} style={{ ...leadingCell.style, ...rowStyle }}>{leadingAction(row)}</td>}
                 {visibleColumns.map((col, colIdx) => {
                   const key = col.field_key || col.key;
                   const depth = typeof rowDepth === 'function' ? (rowDepth(row) || 0) : 0;
                   const fp = frozenCell(`__d:${key}`, 'td', '', idx % 2);
                   const fpPin = (pinActions && colIdx === pinAfterIdx) ? frozenCell('__pin', 'td', '', idx % 2) : null;
+                  const extraCellStyle = typeof getCellStyle === 'function'
+                    ? getCellStyle(row, key, col, cellStyleNow) || {}
+                    : {};
                   const cell = (
                     cellRenderers && typeof cellRenderers[key] === 'function'
                       ? cellRenderers[key](row, getFieldValue(row, col), col)
@@ -497,12 +512,12 @@ const toDisplayValue = (val) => {
                   );
                   return (
                     <Fragment key={key}>
-                      <td style={{ ...colWidthStyle(col), ...fp.style }} className={fp.className}>
+                      <td style={{ ...colWidthStyle(col), ...fp.style, ...rowStyle, ...extraCellStyle }} className={fp.className}>
                         {colIdx === 0 && depth > 0 ? <div style={{ paddingLeft: depth * 24 }}>{cell}</div> : cell}
                         {typeof cellFooter === 'function' ? cellFooter(row, key) : null}
                       </td>
                       {pinActions && colIdx === pinAfterIdx && (
-                        <td className={`text-center whitespace-nowrap ${fpPin.className || ''}`} style={fpPin.style}>
+                        <td className={`text-center whitespace-nowrap ${fpPin.className || ''}`} style={{ ...fpPin.style, ...rowStyle }}>
                           <div className="dynamic-table-actions">{actions(row)}</div>
                         </td>
                       )}
@@ -510,7 +525,7 @@ const toDisplayValue = (val) => {
                   );
                 })}
                 {!pinActions && showActions && (
-                <td>
+                <td style={rowStyle}>
                   {actions ? (
                     <div className="dynamic-table-actions">{actions(row)}</div>
                   ) : (
@@ -524,7 +539,7 @@ const toDisplayValue = (val) => {
                 </td>
                 )}
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>

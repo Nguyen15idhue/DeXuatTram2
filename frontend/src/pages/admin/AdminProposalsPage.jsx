@@ -19,11 +19,13 @@ import {
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
+  PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell
 } from '../../components/admin/ProposalTableCells';
+import { formatProposalScale } from '../../utils/proposalGrading';
 import Toast from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ErrorMessage from '../../components/ErrorMessage';
@@ -37,12 +39,34 @@ import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
+import { COUNTDOWN_CONFIG_EVENT, getCountdownFlags, loadCountdownConfig } from '../../utils/countdownConfig';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, MoreVertical, ChevronDown, AlertTriangle, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play } from 'lucide-react';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
 const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_CREATE_FORM_ID = 13;
+const HOURS_24 = 24 * 60 * 60 * 1000;
+
+const getProposalDeadlineRowStyle = (row, countdownFlags, now) => {
+  const flags = countdownFlags?.[row?.status];
+  if (!flags) return undefined;
+
+  const deadlines = [];
+  if (flags.supplement && !row.info_completed_at && row.supplement_deadline_at) {
+    deadlines.push(new Date(row.supplement_deadline_at).getTime());
+  }
+  if (flags.transition && row.transition_deadline_at) {
+    deadlines.push(new Date(row.transition_deadline_at).getTime());
+  }
+
+  const validDeadlines = deadlines.filter(Number.isFinite);
+  if (validDeadlines.length === 0) return undefined;
+
+  const remaining = Math.min(...validDeadlines) - now;
+  if (remaining > 0 && remaining <= HOURS_24) return { backgroundColor: '#fecaca' };
+  return undefined;
+};
 
 const AdminProposalsPage = () => {
   const { token, user, isSales, isAdmin, isSuperAdmin } = useAuth();
@@ -65,6 +89,7 @@ const AdminProposalsPage = () => {
   const provinceOptions = getSelectOptions('province');
   const regionOptions = getSelectOptions('vung_mien');
   const [proposals, setProposals] = useState([]);
+  const [countdownFlags, setCountdownFlags] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [filterUuTien, setFilterUuTien] = useState('');
@@ -163,6 +188,26 @@ const AdminProposalsPage = () => {
   };
   const dupRef = useRef(null);
   const tableRef = useRef(null);
+
+  useEffect(() => {
+    if (!token) {
+      setCountdownFlags(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const applyConfig = (config) => {
+      if (!cancelled) setCountdownFlags(config ? getCountdownFlags(config) : null);
+    };
+    const refreshConfig = () => loadCountdownConfig(true).then(applyConfig);
+
+    loadCountdownConfig().then(applyConfig);
+    window.addEventListener(COUNTDOWN_CONFIG_EVENT, refreshConfig);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(COUNTDOWN_CONFIG_EVENT, refreshConfig);
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -1686,10 +1731,11 @@ const AdminProposalsPage = () => {
           province: 'Tỉnh/Thành phố',
           address: 'Địa chỉ chi tiết'
         }}
-        additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
+        additionalColumns={[...PROPOSAL_CONTEXT_COLUMNS, PROPOSAL_SCALE_COLUMN]}
         columnsAfter={{ anchorKey: 'nguoi_de_xuat', keys: ['owner_department', 'vung_mien'] }}
         hiddenColumnKeys={[...PROPOSAL_MONEY_COLUMN_KEYS, ...PROPOSAL_HIDDEN_COLUMN_KEYS]}
         hiddenColumnLabels={['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS]}
+        getRowStyle={(row, now) => getProposalDeadlineRowStyle(row, countdownFlags, now)}
         density="compact"
         data={proposals}
         frozenColumns={3}
@@ -1705,6 +1751,7 @@ const AdminProposalsPage = () => {
           vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
           province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
           address: (row, value) => <ProposalAddressCell row={row} value={value || row.address} />,
+          scale: (row) => formatProposalScale(row),
           review_level: (row) => <span className="badge badge-ghost badge-sm">{getReviewLevelLabel(row.review_level)}</span>
         }}
         startIndex={(pagination.page - 1) * pagination.limit}

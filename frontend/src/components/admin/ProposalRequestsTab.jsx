@@ -14,11 +14,13 @@ import {
   PROPOSAL_CONTEXT_COLUMNS,
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
+  PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell
 } from './ProposalTableCells';
+import { formatProposalScale } from '../../utils/proposalGrading';
 import { RotateCcw, Search } from 'lucide-react';
 
 const REQUEST_TYPES = [
@@ -34,6 +36,7 @@ const REQUEST_TYPES = [
 const REQUEST_COLUMNS = [
   { key: 'ma_de_xuat', field_key: 'ma_de_xuat', label: 'Mã đề xuất', width: 120, sortable: true, filterable: false, visible: true },
   { key: 'owner_name', field_key: 'owner_name', label: 'Người đề xuất', width: 160, sortable: true, filterable: false, visible: true },
+  PROPOSAL_SCALE_COLUMN,
   ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'proposal_status', field_key: 'proposal_status', label: 'Trạng thái Quy trình', width: 140, sortable: true, filterable: false, visible: true },
   { key: 'description', field_key: 'description', label: 'Mô tả công việc cần thực hiện', width: 300, sortable: false, filterable: false, visible: true },
@@ -200,6 +203,7 @@ const ProposalRequestsTab = ({ token }) => {
     vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
     province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
     address: (row, value) => <ProposalAddressCell row={row} value={value || row.address} />,
+    scale: (row) => formatProposalScale(row),
     proposal_status: (row, value) => <ProposalStatusBadge value={value} />,
     description: (row, value) => (
       <div>

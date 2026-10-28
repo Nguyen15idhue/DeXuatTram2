@@ -14,11 +14,13 @@ import {
   PROPOSAL_HIDDEN_COLUMN_KEYS,
   PROPOSAL_HIDDEN_COLUMN_LABELS,
   PROPOSAL_MONEY_COLUMN_KEYS,
+  PROPOSAL_SCALE_COLUMN,
   ProposalAddressCell,
   ProposalManagerCell,
   ProposalProvinceCell,
   ProposalRegionCell
 } from './ProposalTableCells';
+import { formatProposalScale } from '../../utils/proposalGrading';
 import { RotateCcw, Search } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
@@ -110,6 +112,7 @@ const ProposalCompletedTab = ({ token }) => {
       row.user_id ? <ProposalPersonLink id={row.user_id} name={row.user_name || value} /> : <span>{value || 'Khách'}</span>
     ),
     mo_hinh_dau_tu: (row, value) => <ProposalModelBadge value={value} options={modelOptions} />,
+    scale: (row) => formatProposalScale(row),
     manager_name: (row) => <ProposalManagerCell row={row} />,
     vung_mien: (row, value) => <ProposalRegionCell value={value || row.vung_mien} />,
     province: (row, value) => <ProposalProvinceCell value={value || row.province} />,
@@ -194,7 +197,7 @@ const ProposalCompletedTab = ({ token }) => {
             province: 'Tỉnh/Thành phố',
             address: 'Địa chỉ chi tiết'
           }}
-          additionalColumns={PROPOSAL_CONTEXT_COLUMNS}
+          additionalColumns={[...PROPOSAL_CONTEXT_COLUMNS, PROPOSAL_SCALE_COLUMN]}
           columnsAfter={{ anchorKey: 'nguoi_de_xuat', keys: ['owner_department', 'vung_mien'] }}
           hiddenColumnKeys={['review_level', ...PROPOSAL_MONEY_COLUMN_KEYS, ...PROPOSAL_HIDDEN_COLUMN_KEYS]}
           hiddenColumnLabels={['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS]}
