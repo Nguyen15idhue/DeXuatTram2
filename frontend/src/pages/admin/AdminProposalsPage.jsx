@@ -49,10 +49,10 @@ const AdminProposalsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = ['all', 'requests', 'completed'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'requests';
+  const activeTab = ['all', 'requests', 'completed'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'all';
   const changeTab = (tab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'requests') next.delete('tab');
+    if (tab === 'all') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
@@ -1105,6 +1105,15 @@ const AdminProposalsPage = () => {
         <button
           type="button"
           role="tab"
+          className={`proposal-workflow-tab ${activeTab === 'all' ? 'is-active' : ''}`}
+          onClick={() => changeTab('all')}
+          title="Tất cả đề xuất trong phạm vi được phép xem"
+        >
+          Tất cả đề xuất
+        </button>
+        <button
+          type="button"
+          role="tab"
           className={`proposal-workflow-tab ${activeTab === 'requests' ? 'is-active' : ''}`}
           onClick={() => changeTab('requests')}
           title="Các đề xuất đang có yêu cầu cần thực hiện"
@@ -1119,15 +1128,6 @@ const AdminProposalsPage = () => {
           title="Các đề xuất đã hoàn thành hoặc đã hủy"
         >
           Các đề xuất đã hoàn thành
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={`proposal-workflow-tab ${activeTab === 'all' ? 'is-active' : ''}`}
-          onClick={() => changeTab('all')}
-          title="Tất cả đề xuất trong phạm vi được phép xem"
-        >
-          Tất cả đề xuất
         </button>
       </div>
 

@@ -17,6 +17,7 @@ import {
 } from '../../utils/proposalGrading';
 import { canConfigureSignature, canRequestUpdate, getReportFiles } from '../../utils/proposalApproval';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
@@ -127,6 +128,7 @@ const AdminProposalApprovalDetailPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Chi tiết duyệt BCĐX — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
+        actions={<ProposalLocationMapButton proposal={proposal} />}
       />
 
       {success && <div className="alert alert-success py-2">{success}</div>}

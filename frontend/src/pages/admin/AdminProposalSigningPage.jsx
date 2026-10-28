@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { proposalSignatureService } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Toast from '../../components/Toast';
 import {
@@ -99,6 +100,7 @@ const AdminProposalSigningPage = () => {
         title="Ký BCĐX"
         actions={(
           <div className="flex gap-2">
+            <ProposalLocationMapButton proposal={detail} />
             <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={() => navigate('/admin/proposals/trinh-ky')}>
               <ArrowLeft size={16} />
               Quay lại

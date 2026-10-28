@@ -7,6 +7,7 @@ import DynamicForm from '../../components/dynamic/DynamicForm';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import {
   getProposalReachedStep,
   PROPOSAL_PROCESS_FIELD_KEYS
@@ -246,16 +247,19 @@ const AdminProposalDetailPage = () => {
             <p className="text-sm text-base-content/60 mt-1">{getProposalAddress(record)}</p>
           </div>
         </div>
-        {signatureDetail?.can_sign && (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm gap-1"
-            onClick={() => navigate(`/admin/proposals/ky-bcdx/${record.id}`)}
-          >
-            <PenSquare size={14} />
-            Ký BCĐX
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <ProposalLocationMapButton proposal={record} />
+          {signatureDetail?.can_sign && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm gap-1"
+              onClick={() => navigate(`/admin/proposals/ky-bcdx/${record.id}`)}
+            >
+              <PenSquare size={14} />
+              Ký BCĐX
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">

@@ -8,6 +8,7 @@ import { getLayoutFiles } from '../../utils/proposalDesign';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
+import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
 import PageHeader from '../../components/ui/PageHeader';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
@@ -125,13 +126,16 @@ const AdminProposalLayoutDetailPage = () => {
       <PageHeader
         title={`Chi tiết đề xuất ${proposal.ma_de_xuat || `#${proposal.id}`}`}
         actions={(
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm gap-1"
-            onClick={() => navigate('/admin/proposals/danh-gia-layout')}
-          >
-            <ArrowLeft size={16} /> Quay lại
-          </button>
+          <>
+            <ProposalLocationMapButton proposal={proposal} />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm gap-1"
+              onClick={() => navigate('/admin/proposals/danh-gia-layout')}
+            >
+              <ArrowLeft size={16} /> Quay lại
+            </button>
+          </>
         )}
       />
 

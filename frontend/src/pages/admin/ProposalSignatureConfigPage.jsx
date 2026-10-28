@@ -12,6 +12,7 @@ import {
 import { normalizeSignerBox } from "../../utils/proposalSignature";
 import signerTextLayout from "../../utils/signatureTextLayout.json";
 import SignerDetailsText from "../../components/admin/SignerDetailsText";
+import ProposalLocationMapButton from "../../components/admin/ProposalLocationMapButton";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -258,6 +259,7 @@ const ProposalSignatureConfigPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Cấu hình ký BCĐX — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
+        actions={<ProposalLocationMapButton proposal={proposal} />}
       />
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(500px,1.4fr)]">

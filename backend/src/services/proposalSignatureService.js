@@ -280,6 +280,8 @@ const buildDetail = async (proposal, scope) => {
     owner_name: proposal.owner_name,
     owner_phone: proposal.owner_phone,
     address: proposal.address || '',
+    latitude: proposal.latitude,
+    longitude: proposal.longitude,
     mo_hinh_dau_tu: custom.mo_hinh_dau_tu || '',
     vung_mien: custom.vung_mien || '',
     created_at: proposal.created_at,
