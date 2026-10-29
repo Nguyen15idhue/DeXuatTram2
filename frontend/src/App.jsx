@@ -59,6 +59,7 @@ const AdminHelpPage = lazy(() => import('./pages/admin/AdminHelpPage'));
 const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage'));
 const AdminChargingStationsPage = lazy(() => import('./pages/admin/AdminChargingStationsPage'));
 const AdminComingSoonPage = lazy(() => import('./pages/admin/AdminComingSoonPage'));
+const AdminWarehousePage = lazy(() => import('./pages/admin/AdminWarehousePage'));
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
@@ -327,7 +328,11 @@ function App() {
             />
             <Route
               path="/admin/kho"
-              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminComingSoonPage title="Quản lý kho" /></RoleRoute>}
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehousePage /></RoleRoute>}
+            />
+            <Route
+              path="/admin/kho/*"
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehousePage /></RoleRoute>}
             />
             <Route
               path="/admin/e-sign"

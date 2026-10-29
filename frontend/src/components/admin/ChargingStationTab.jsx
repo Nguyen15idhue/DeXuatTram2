@@ -82,7 +82,7 @@ const ChargingStationTab = ({ stage }) => {
       label: 'Trạng thái',
       render: (value, row) => (
         <div className="flex flex-col gap-1 items-start">
-          <Badge variant={CS_STATUS_VARIANT[value]} size="sm">{CS_STATUS_LABELS[value] || value}</Badge>
+          <Badge variant={CS_STATUS_VARIANT[value]} size="sm" className="whitespace-normal h-auto py-1">{CS_STATUS_LABELS[value] || value}</Badge>
           {row.sub_status && (
             <span className="text-[11px] text-base-content/60">{CS_SUB_STATUS_LABELS[row.sub_status]}</span>
           )}
@@ -92,22 +92,22 @@ const ChargingStationTab = ({ stage }) => {
     {
       key: 'contract_status',
       label: 'Hợp đồng',
-      render: (value) => <Badge variant={CS_CONTRACT_VARIANT[value]} size="sm" outline>{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+      render: (value) => <Badge variant={CS_CONTRACT_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>
     },
     {
       key: 'infra_power_status',
       label: 'Hạ tầng điện',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline>{CS_FLOW_LABELS[value] || '—'}</Badge>
+      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_FLOW_LABELS[value] || '—'}</Badge>
     },
     {
       key: 'infra_site_status',
       label: 'Hạ tầng mặt bằng',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline>{CS_FLOW_LABELS[value] || '—'}</Badge>
+      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_FLOW_LABELS[value] || '—'}</Badge>
     },
     {
       key: 'payment_status',
       label: 'Thanh toán',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline>{CS_FLOW_LABELS[value] || '—'}</Badge>
+      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_FLOW_LABELS[value] || '—'}</Badge>
     },
     { key: 'on_date', label: 'Ngày ON', render: (value) => <span className="whitespace-nowrap">{formatCsDate(value)}</span> }
   ], []);
