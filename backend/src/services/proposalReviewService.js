@@ -419,53 +419,6 @@ const logReview = async ({
   });
 };
 
-const findUsersByRoleKeys = async (roleKeys) => {
-  const [rows] = await pool.query(
-    "SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'"
-  );
-  const ids = [];
-  rows.forEach((row) => {
-    const custom = parseCustomData(row.custom_data);
-    const key = resolveRoleKey({ role: row.role, department: custom.department, chucVu: custom.chuc_vu });
-    if (roleKeys.includes(key)) ids.push(Number(row.id));
-  });
-  return [...new Set(ids)];
-};
-
-const notifyByRoleKeys = async (roleKeys, { type, title, message, entityId, createdBy, actorId }) => {
-  try {
-    let userIds = await findUsersByRoleKeys(roleKeys);
-    if (userIds.length === 0 && roleKeys.includes(REVIEW_ROLE.TGD)) {
-      const [admins] = await pool.query(
-        "SELECT id FROM users WHERE status = 'ACTIVE' AND role IN ('SUPER_ADMIN', 'ADMIN')"
-      );
-      userIds = admins.map((row) => Number(row.id));
-    }
-    const notificationService = require('./notificationService');
-    for (const userId of userIds) {
-      if (!userId || Number(userId) === Number(actorId)) continue;
-      try {
-        await notificationService.create({
-          userId,
-          type,
-          title: title || notificationService.statusTitle(type),
-          message,
-          entityType: 'station_proposals',
-          entityId,
-          createdBy: createdBy || null
-        });
-      } catch { /* silent */ }
-    }
-  } catch { /* silent: khong chan thao tac vi thong bao */ }
-};
-
-const messageFor = async (proposal, actorId, { status, actionLabel, reason }) => {
-  const notificationService = require('./notificationService');
-  const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
-  const actorName = (await notificationService.getUserName(actorId)) || 'Hệ thống';
-  return notificationService.statusMessage({ code, actorName, status, actionLabel, reason });
-};
-
 const countRegradeRound = async (proposalId) => {
   const [rows] = await pool.query(
     `SELECT COALESCE(MAX(round_no), 0) AS n FROM proposal_requests
@@ -546,19 +499,14 @@ const requestRegrade = async ({ user, id, reason, departments, ip }) => {
     ip
   });
 
-  const message = await messageFor(proposal, user.id, {
-    status: REGRADING_STATUS,
-    actionLabel: 'Người yêu cầu',
-    reason: `${cleanReason} · Lần chấm lại: ${round}`
-  });
-  await notifyByRoleKeys(targets.map((department) => targetDetails[department].role), {
-    type: 'RE_GRADING',
-    title: 'Đề xuất được yêu cầu chấm điểm lại',
-    message,
-    entityId: proposal.id,
-    createdBy: user.id,
-    actorId: user.id
-  });
+  try {
+    await require('./proposalLifecycle').notifyStepReceivers(proposal.id, REGRADING_STATUS, {
+      actorId: user.id,
+      reason: `${cleanReason} · Lần chấm lại: ${round}`
+    });
+  } catch (error) {
+    console.error(`[ProposalNotifications] Failed to notify regrading recipients for proposal ${proposal.id}:`, error);
+  }
 
   return { id: proposal.id, status: REGRADING_STATUS, review_level: 2, roundNo: round, requests, transition };
 };
@@ -605,20 +553,6 @@ const toTgd = async ({ user, id, reason, ip }) => {
     actorId: user.id,
     actorRole: user.role,
     ip
-  });
-
-  const message = await messageFor(proposal, user.id, {
-    status: TGD_STATUS,
-    actionLabel: 'Người trình',
-    reason: cleanReason
-  });
-  await notifyByRoleKeys([REVIEW_ROLE.TGD], {
-    type: 'TGD_REVIEW',
-    title: 'Đề xuất đang trình Tổng giám đốc',
-    message,
-    entityId: proposal.id,
-    createdBy: user.id,
-    actorId: user.id
   });
 
   return { id: proposal.id, status: TGD_STATUS, review_level: 3, request, transition };

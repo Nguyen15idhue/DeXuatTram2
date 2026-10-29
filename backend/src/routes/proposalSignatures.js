@@ -10,7 +10,7 @@ const proposalSignatureController = require('../controllers/proposalSignatureCon
  *     tags: [Proposal Signatures]
  *     summary: Danh sách đề xuất cho bước Trình ký
  *     description: >
- *       tab=all: SIGNATURE_PENDING + COMPLETED; tab=pending: SIGNATURE_PENDING (Back Office/Admin/TGD
+ *       tab=all: SIGNATURE_PENDING + APPROVED; tab=pending: SIGNATURE_PENDING (Back Office/Admin/TGD
  *       xem tất cả, người được phân công ký chỉ thấy hồ sơ mình chưa ký);
  *       tab=chairman: SIGNATURE_PENDING đã ký đủ (chờ trình chủ tịch, Back Office);
  *       tab=completed: hồ sơ đã ký đủ hoặc đã hoàn thành.
@@ -198,7 +198,7 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  *     tags: [Proposal Signatures]
  *     summary: Back Office tải lên file BCĐX đã ký (chủ tịch phê duyệt)
  *     description: >
- *       Chỉ áp dụng khi đã đủ chữ ký; lưu file và chuyển đề xuất sang COMPLETED.
+ *       Chỉ áp dụng khi đã đủ chữ ký; lưu file và chuyển đề xuất sang APPROVED.
  *     security:
  *       - bearerAuth: []
  *     parameters:

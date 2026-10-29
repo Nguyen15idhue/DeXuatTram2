@@ -13,10 +13,10 @@ const LAYOUT_FIELD = 'ban_ve_layout';
 const SUPPLEMENT_REQUEST_TYPE = 'LAYOUT_SUPPLEMENT';
 
 const TAB_STATUSES = {
-  all: ['DESIGNING', 'INFOR_WAITING', 'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'SIGNATURE_PENDING', 'COMPLETED'],
+  all: ['DESIGNING', 'INFOR_WAITING', 'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'SIGNATURE_PENDING', 'APPROVED'],
   pending: ['DESIGNING'],
   waiting: ['INFOR_WAITING'],
-  layout: ['PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'SIGNATURE_PENDING', 'COMPLETED', 'CANCELLED']
+  layout: ['PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'SIGNATURE_PENDING', 'APPROVED', 'CANCELLED']
 };
 
 const MANAGEABLE_STATUSES = [DESIGNING_STATUS, WAITING_STATUS];
@@ -104,6 +104,9 @@ exports.listProposals = async ({
     const placeholders = nonCancelled.map(() => '?').join(',');
     let clause = `p.status IN (${placeholders})`;
     params.push(...nonCancelled);
+    if (nonCancelled.includes('APPROVED')) {
+      clause = `(${clause} AND (p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL))`;
+    }
     if (statuses.includes('CANCELLED')) {
       clause = `(${clause} OR (p.status = 'CANCELLED' AND EXISTS (
         SELECT 1 FROM proposal_activity_logs l
@@ -207,7 +210,8 @@ exports.getFilterOptions = async ({ user } = {}) => {
   const scope = await resolveScope(user);
   assertCanManage(scope);
   const statuses = TAB_STATUSES.all;
-  const statusClause = `p.status IN (${statuses.map(() => '?').join(',')})`;
+  const statusClause = `(p.status IN (${statuses.map(() => '?').join(',')})
+    AND (p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL))`;
   const [owners] = await pool.query(
     `SELECT DISTINCT p.user_id AS id, u.full_name AS name,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
@@ -273,7 +277,9 @@ exports.getProposalDetail = async ({ user, id } = {}) => {
        LEFT JOIN users u ON u.id = p.user_id
        LEFT JOIN users manager ON manager.id = u.parent_id
       WHERE p.id = ?
-        AND (p.status IN (${statusPlaceholders}) OR (p.status = 'CANCELLED' AND EXISTS (
+        AND ((p.status IN (${statusPlaceholders})
+          AND (p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL))
+          OR (p.status = 'CANCELLED' AND EXISTS (
           SELECT 1 FROM proposal_activity_logs l
            WHERE l.proposal_id = p.id AND l.action = 'layout_approved'
         )))
@@ -311,41 +317,11 @@ const requireText = (value, message) => {
   return text;
 };
 
-const findUsersByRole = async ({ roleKey, region = null }) => {
-  const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
-  const proposalReviewService = require('./proposalReviewService');
-  const ids = [];
-  for (const row of rows) {
-    const custom = parseCustomData(row.custom_data);
-    if (roleKey === LAYOUT_ROLE) {
-      if (resolveDesignRole(custom.department)) ids.push(Number(row.id));
-      continue;
-    }
-    const key = proposalReviewService.resolveRoleKey({
-      role: row.role,
-      department: custom.department,
-      chucVu: custom.chuc_vu
-    });
-    if (key !== roleKey) continue;
-    if (region) {
-      const userRegion = proposalReviewService.resolveRegion(custom.department)
-        || proposalReviewService.resolveRegion(custom.vung_mien);
-      if (userRegion !== region) continue;
-    }
-    ids.push(Number(row.id));
-  }
-  if (ids.length === 0 && roleKey === 'GDTTKD' && !region) {
-    const [admins] = await pool.query("SELECT id FROM users WHERE status = 'ACTIVE' AND role IN ('SUPER_ADMIN', 'ADMIN')");
-    admins.forEach((row) => ids.push(Number(row.id)));
-  }
-  return [...new Set(ids)];
-};
-
 const notifyUsers = async (userIds, { type, title, message, entityId, actorId }) => {
   if (!userIds || userIds.length === 0) return;
   const notificationService = require('./notificationService');
   for (const userId of userIds) {
-    if (!userId || Number(userId) === Number(actorId)) continue;
+    if (!userId) continue;
     try {
       await notificationService.create({
         userId,
@@ -356,7 +332,9 @@ const notifyUsers = async (userIds, { type, title, message, entityId, actorId })
         entityId,
         createdBy: actorId || null
       });
-    } catch { /* silent */ }
+    } catch (error) {
+      console.error(`[ProposalNotifications] Failed to notify user ${userId} for layout task ${entityId}:`, error);
+    }
   }
 };
 
@@ -368,7 +346,11 @@ const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) 
 };
 
 const notifyDesignDepartment = async ({ proposal, actorId, type = 'DESIGNING', title, message }) => {
-  const ids = await findUsersByRole({ roleKey: LAYOUT_ROLE });
+  const ids = await require('./proposalStepRecipients').resolveStepRecipients(DESIGNING_STATUS, proposal);
+  if (ids.length === 0) {
+    console.warn(`[ProposalNotifications] No eligible layout recipients for proposal ${proposal.id}`);
+    return;
+  }
   await notifyUsers(ids, { type, title, message, entityId: proposal.id, actorId });
 };
 
@@ -591,5 +573,7 @@ exports.notifyInfoSupplemented = async ({ proposalId, actorId }) => {
       title: 'Đề xuất đã bổ sung thông tin, tiếp tục vẽ Layout',
       message
     });
-  } catch { /* silent: khong chan luu de xuat */ }
+  } catch (error) {
+    console.error(`[ProposalNotifications] Failed to notify layout recipients after proposal ${proposalId} was supplemented:`, error);
+  }
 };

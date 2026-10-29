@@ -10,16 +10,16 @@ const RE_CREATING_STATUS = 'PROPOSAL_REPORT_RE_CREATING';
 const REVIEWING_STATUS = 'PROPOSAL_REPORT_REVIEWING';
 const UPDATING_STATUS = 'PROPOSAL_REPORT_UPDATING';
 const SIGNATURE_STATUS = 'SIGNATURE_PENDING';
-const COMPLETED_STATUS = 'COMPLETED';
+const APPROVED_STATUS = 'APPROVED';
 const CANCELLED_STATUS = 'CANCELLED';
 
 const TAB_STATUSES = {
   all: [
     CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS, REVIEWING_STATUS,
-    SIGNATURE_STATUS, COMPLETED_STATUS, CANCELLED_STATUS
+    SIGNATURE_STATUS, APPROVED_STATUS, CANCELLED_STATUS
   ],
   pending: [CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS],
-  completed: [REVIEWING_STATUS, SIGNATURE_STATUS, COMPLETED_STATUS, CANCELLED_STATUS]
+  completed: [REVIEWING_STATUS, SIGNATURE_STATUS, APPROVED_STATUS, CANCELLED_STATUS]
 };
 
 const REPORT_FIELD = 'file_bc_dx';
@@ -152,6 +152,9 @@ exports.listProposals = async ({
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
   const params = [...statuses];
+  if (statuses.includes(APPROVED_STATUS)) {
+    where.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)");
+  }
 
   const scoped = await scopeClause(scope, params);
   if (scoped) where.push(scoped.replace(/^ AND /, ''));
@@ -299,7 +302,8 @@ exports.getProposalDetail = async ({ user, id } = {}) => {
     throw err('Không tìm thấy đề xuất', 404);
   }
   const proposal = rows[0];
-  if (!TAB_STATUSES.all.includes(proposal.status)) {
+  if (!TAB_STATUSES.all.includes(proposal.status)
+    || (proposal.status === APPROVED_STATUS && !proposal.signed_file_id)) {
     throw err('Đề xuất chưa thuộc quy trình lập tờ trình BCĐX', 404);
   }
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
@@ -394,75 +398,6 @@ const normalizeReportFiles = async (value, existingIds = []) => {
     size: row.size
   }));
 };
-
-const notificationService = require('./notificationService');
-
-const notifyUsers = async (userIds, { type, title, message, entityId, actorId }) => {
-  if (!userIds || userIds.length === 0) return;
-  for (const userId of userIds) {
-    if (!userId || Number(userId) === Number(actorId)) continue;
-    try {
-      await notificationService.create({
-        userId,
-        type,
-        title: title || notificationService.statusTitle(type),
-        message,
-        entityType: 'station_proposals',
-        entityId,
-        createdBy: actorId || null
-      });
-    } catch { /* silent */ }
-  }
-};
-
-const findGdttkdIdsByRegion = async (region) => {
-  const proposalReviewService = require('./proposalReviewService');
-  const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
-  const ids = [];
-  rows.forEach((row) => {
-    const custom = parseCustomData(row.custom_data);
-    const key = proposalReviewService.resolveRoleKey({
-      role: row.role,
-      department: custom.department,
-      chucVu: custom.chuc_vu
-    });
-    if (key !== 'GDTTKD') return;
-    if (region) {
-      const userRegion = proposalReviewService.resolveRegion(custom.department)
-        || proposalReviewService.resolveRegion(custom.vung_mien);
-      if (userRegion !== region) return;
-    }
-    ids.push(Number(row.id));
-  });
-  return [...new Set(ids)];
-};
-
-const findGdttkdAncestorIds = async (userId) => {
-  const adminUserService = require('./adminUserService');
-  const proposalReviewService = require('./proposalReviewService');
-  const ancestorIds = await adminUserService.getAncestorIds(userId);
-  if (!ancestorIds || ancestorIds.length === 0) return [];
-  const [rows] = await pool.query(
-    `SELECT id, role, custom_data FROM users WHERE id IN (${ancestorIds.map(() => '?').join(',')})`,
-    ancestorIds
-  );
-  return rows
-    .filter((row) => proposalReviewService.resolveRoleKey({
-      role: row.role,
-      department: parseCustomData(row.custom_data).department,
-      chucVu: parseCustomData(row.custom_data).chuc_vu
-    }) === 'GDTTKD')
-    .map((row) => Number(row.id));
-};
-
-const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) => {
-  const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
-  const actorName = (await notificationService.getUserName(actorId)) || 'Hệ thống';
-  return notificationService.statusMessage({ code, actorName, status, actionLabel, reason });
-};
-
-exports.findGdttkdAncestorIds = findGdttkdAncestorIds;
-exports.findGdttkdIdsByRegion = findGdttkdIdsByRegion;
 
 const TRU_LIST_ID = 18;
 const INVESTMENT_MODELS = new Set(['TDT', 'LK', 'NQ', 'NQ_LK']);
@@ -669,20 +604,6 @@ exports.requestRevision = async ({ user, id, description, ip } = {}) => {
     actorRole: user.role,
     source: 'user',
     ip
-  });
-
-  const message = await buildMessage(proposal, user.id, {
-    status: RE_CREATING_STATUS,
-    actionLabel: 'Back Office',
-    reason: cleanDescription
-  });
-  const recipientIds = await findGdttkdIdsByRegion(proposalRegion(proposal.custom_data));
-  await notifyUsers(recipientIds, {
-    type: RE_CREATING_STATUS,
-    title: 'Đề xuất cần tạo lại tờ trình BCĐX',
-    message,
-    entityId: proposal.id,
-    actorId: user.id
   });
 
   return { id: proposal.id, status: RE_CREATING_STATUS, roundNo: round, request, transition };

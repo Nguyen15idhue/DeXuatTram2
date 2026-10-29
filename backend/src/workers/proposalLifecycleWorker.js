@@ -185,7 +185,8 @@ const processDeadlines = async (maxRetries = 5) => {
   const [rows] = await pool.query(
     `SELECT id, user_id, status, supplement_deadline_at, transition_deadline_at, info_completed_at, custom_data FROM station_proposals
       WHERE status IN (${placeholders})
-        AND (supplement_deadline_at IS NOT NULL OR transition_deadline_at IS NOT NULL)`,
+        AND (supplement_deadline_at IS NOT NULL OR transition_deadline_at IS NOT NULL)
+        AND NOT (status = 'APPROVED' AND signed_file_id IS NOT NULL)`,
     enabledStatuses
   );
   let acted = 0;

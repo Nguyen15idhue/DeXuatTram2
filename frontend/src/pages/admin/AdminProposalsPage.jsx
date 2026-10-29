@@ -962,7 +962,8 @@ const AdminProposalsPage = () => {
     <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
       {user?.role !== 'NPP' || Number(row.user_id) === Number(user.id) ? (
         <>
-      {canPauseProposals && row.status && !['COMPLETED', 'CANCELLED'].includes(row.status) && (
+      {canPauseProposals && row.status && row.status !== 'CANCELLED'
+        && !(row.status === 'APPROVED' && row.signed_file_id) && (
         <button
           type="button"
           className={`btn btn-xs gap-1 shrink-0 ${row.status === 'PAUSED' ? 'btn-success' : 'btn-warning'}`}

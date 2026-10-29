@@ -295,6 +295,7 @@ async function datasetStuckItems(pw) {
   const cond = [...pw.where];
   const params = [...pw.params];
   cond.push(`p.status IN (${NON_TERMINAL_PROPOSAL.map(() => '?').join(',')})`);
+  cond.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NULL)");
   params.push(...NON_TERMINAL_PROPOSAL);
   cond.push('(p.transition_deadline_at IS NOT NULL AND p.transition_deadline_at < NOW())');
   const whereSql = `WHERE ${cond.join(' AND ')}`;

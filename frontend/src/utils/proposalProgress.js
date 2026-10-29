@@ -14,7 +14,7 @@ export const PROPOSAL_STATUS_LABELS = {
   PENDING: 'Chờ xác nhận thông tin',
   REVIEWING: 'Đang xem xét',
   PRINCIPLE_APPROVED: 'Đã duyệt chủ trương',
-  APPROVED: 'Đã duyệt',
+  APPROVED: 'Đã duyệt BCĐX',
   REJECTED: 'Đã từ chối',
   CANCELLED: 'Đã hủy',
   ARCHIVED: 'Đã lưu trữ',
@@ -153,6 +153,7 @@ export const getProposalCurrentStep = (proposal, activity = []) => {
     : proposal?.status === 'CANCELLED'
       ? [...activity].reverse().find((event) => event?.to_status === 'CANCELLED')?.from_status
       : proposal?.status;
+  if (status === 'APPROVED' && proposal?.signed_file_id) return 6;
   return getProposalStatusStep(status);
 };
 

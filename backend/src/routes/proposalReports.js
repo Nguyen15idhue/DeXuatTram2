@@ -11,10 +11,10 @@ const proposalReportController = require('../controllers/proposalReportControlle
  *     summary: Danh sách đề xuất cho trang Lập tờ trình BCĐX
  *     description: >
  *       tab=all: PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING, PROPOSAL_REPORT_UPDATING,
- *       PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED, CANCELLED; tab=pending:
+ *       PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, APPROVED, CANCELLED; tab=pending:
  *       PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING, PROPOSAL_REPORT_UPDATING;
  *       tab=completed: PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING,
- *       COMPLETED, CANCELLED. Hỗ trợ lọc theo status, model, province, region, owner, manager, date.
+ *       APPROVED, CANCELLED. Hỗ trợ lọc theo status, model, province, region, owner, manager, date.
  *       Phân quyền theo vai trò: Admin/Super Admin và Back Office xem tất cả;
  *       GĐTTKD xem theo khu vực; SALES xem theo nhánh; CTV/NPP xem đề xuất của mình.
  *     security:

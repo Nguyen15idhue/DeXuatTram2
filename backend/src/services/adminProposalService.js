@@ -57,6 +57,9 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     where.push(`p.status IN (${extra.statuses.map(() => '?').join(',')})`);
     params.push(...extra.statuses);
   }
+  if (extra.signedApprovalOnly) {
+    where.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)");
+  }
 
   if (uuTien) {
     where.push("JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.loai_uu_tien')) = ?");
@@ -119,7 +122,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
-            p.station_id,
+            p.station_id, p.signed_file_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.paused_from_status, p.paused_at,
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,

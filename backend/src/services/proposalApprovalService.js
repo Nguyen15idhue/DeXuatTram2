@@ -8,13 +8,13 @@ const { normalizeText, parseCustomData, toFileSummaries } = proposalGradingServi
 const REVIEWING_STATUS = 'PROPOSAL_REPORT_REVIEWING';
 const UPDATING_STATUS = 'PROPOSAL_REPORT_UPDATING';
 const SIGNATURE_STATUS = 'SIGNATURE_PENDING';
-const COMPLETED_STATUS = 'COMPLETED';
+const APPROVED_STATUS = 'APPROVED';
 
 const TAB_STATUSES = {
-  all: [REVIEWING_STATUS, UPDATING_STATUS, SIGNATURE_STATUS, COMPLETED_STATUS],
+  all: [REVIEWING_STATUS, UPDATING_STATUS, SIGNATURE_STATUS, APPROVED_STATUS],
   pending: [REVIEWING_STATUS],
   updating: [UPDATING_STATUS],
-  completed: [SIGNATURE_STATUS, COMPLETED_STATUS]
+  completed: [SIGNATURE_STATUS, APPROVED_STATUS]
 };
 
 const REPORT_FIELD = 'file_bc_dx';
@@ -102,6 +102,9 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
   const params = [...statuses];
+  if (statuses.includes(APPROVED_STATUS)) {
+    where.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)");
+  }
 
   const scoped = await scopeClause(scope, params);
   if (scoped) where.push(scoped.replace(/^ AND /, ''));
@@ -259,26 +262,6 @@ exports.requestUpdate = async ({ user, id, description, ip } = {}) => {
     ip
   });
 
-  const message = await buildMessage(proposal, user.id, {
-    status: UPDATING_STATUS,
-    actionLabel: 'Back Office',
-    reason: cleanDescription
-  });
-  const recipientIds = await proposalReportService.findGdttkdIdsByRegion(proposalRegion(proposal.custom_data));
-  for (const userId of [...new Set(recipientIds.filter(Boolean))]) {
-    try {
-      await notificationService.create({
-        userId,
-        type: UPDATING_STATUS,
-        title: notificationService.statusTitle(UPDATING_STATUS),
-        message,
-        entityType: 'station_proposals',
-        entityId: proposal.id,
-        createdBy: user.id
-      });
-    } catch { /* silent */ }
-  }
-
   return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
 };
 
@@ -336,27 +319,6 @@ exports.tgdReject = async ({ user, id, reason, ip } = {}) => {
     source: 'user',
     ip
   });
-
-  const message = await buildMessage(proposal, user.id, {
-    status: UPDATING_STATUS,
-    actionLabel: 'Tổng giám đốc',
-    reason: cleanReason
-  });
-  const regionIds = await proposalReportService.findGdttkdIdsByRegion(proposalRegion(proposal.custom_data));
-  for (const userId of [...new Set(regionIds.filter(Boolean))]) {
-    if (Number(userId) === Number(user.id)) continue;
-    try {
-      await notificationService.create({
-        userId,
-        type: UPDATING_STATUS,
-        title: 'Tổng giám đốc yêu cầu cập nhật lại BCĐX',
-        message,
-        entityType: 'station_proposals',
-        entityId: proposal.id,
-        createdBy: user.id
-      });
-    } catch { /* silent */ }
-  }
 
   return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
 };

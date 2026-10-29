@@ -52,7 +52,7 @@ exports.duplicates = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const { status, statuses, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, manager_user_id, model, date_from, date_to, date_field, lead_link } = req.query;
+    const { status, statuses, signed_approval_only, search, page = 1, limit = 10, uu_tien, filters, province, region, department, owner_user_id, manager_user_id, model, date_from, date_to, date_field, lead_link } = req.query;
     const scope = await scopeFor(req);
     const statusList = String(statuses || '')
       .split(',')
@@ -60,7 +60,8 @@ exports.getAll = async (req, res) => {
       .filter((s) => proposalLifecycle.ALL_STATUSES.includes(s));
     const result = await adminProposalService.getAllProposals(status, search, parseInt(page), parseInt(limit), scope, uu_tien, filters, {
       province, region, department, ownerUserId: owner_user_id, managerUserId: manager_user_id, model, dateFrom: date_from, dateTo: date_to, dateField: date_field, leadLink: lead_link,
-      statuses: statusList
+      statuses: statusList,
+      signedApprovalOnly: signed_approval_only === '1'
     });
     res.json({ success: true, data: result.proposals, pagination: result.pagination });
   } catch (error) {

@@ -6,7 +6,7 @@ export const LAYOUT_FIELD = 'ban_ve_layout';
 export const REVIEWING_STATUS = 'PROPOSAL_REPORT_REVIEWING';
 export const UPDATING_STATUS = 'PROPOSAL_REPORT_UPDATING';
 export const SIGNATURE_STATUS = 'SIGNATURE_PENDING';
-export const COMPLETED_STATUS = 'COMPLETED';
+export const APPROVED_STATUS = 'APPROVED';
 
 export const getReportFiles = (row) => getLegalDocFiles(row, REPORT_FIELD);
 

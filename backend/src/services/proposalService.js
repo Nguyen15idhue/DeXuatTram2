@@ -185,22 +185,30 @@ exports.createProposal = async (userId, data, opts = {}) => {
 
   if (initialStatus === 'GRADING') {
     try {
-      const proposalLifecycle = require('./proposalLifecycle');
       const gradingService = require('./proposalGradingService');
       await gradingService.syncNoteForProposal(recordId);
-      await proposalLifecycle.notifyStepReceivers(recordId, 'GRADING', { actorId: userId });
     } catch { /* silent: khong chan tao de xuat vi thong bao/ghi chu */ }
   }
 
   try {
     const proposalLifecycle = require('./proposalLifecycle');
     finalData.autoInfoCompleted = await proposalLifecycle.maybeAutoConfirmInfo(recordId, {
-      actorId: userId, purpose: 'create', formId: null, ip: opts.ip || null
+      actorId: opts.actorId || userId, purpose: 'create', formId: null, ip: opts.ip || null
     });
   } catch { finalData.autoInfoCompleted = null; }
 
   const [currentRows] = await pool.query('SELECT status FROM station_proposals WHERE id = ?', [recordId]);
   if (currentRows.length > 0) finalData.status = currentRows[0].status;
+  if (finalData.status !== 'GRADING' || finalData.autoInfoCompleted?.movedTo !== 'GRADING') {
+    try {
+      await require('./proposalLifecycle').notifyStepReceivers(recordId, finalData.status, {
+        actorId: opts.actorId || userId,
+        includeOwner: true
+      });
+    } catch (error) {
+      console.error(`[ProposalNotifications] Failed to notify initial task for proposal ${recordId}:`, error);
+    }
+  }
 
   return finalData;
 };

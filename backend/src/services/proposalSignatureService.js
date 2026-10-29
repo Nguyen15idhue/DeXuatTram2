@@ -9,7 +9,7 @@ const signedDocumentService = require('./signedDocumentService');
 const { parseCustomData, toFileSummaries } = proposalGradingService;
 
 const SIGNATURE_PENDING = 'SIGNATURE_PENDING';
-const COMPLETED = 'COMPLETED';
+const APPROVED = 'APPROVED';
 const UPDATING_STATUS = 'PROPOSAL_REPORT_UPDATING';
 const REPORT_FIELD = 'file_bc_dx';
 const REVISION_REQUEST_TYPE = 'REVISE_BCDX';
@@ -29,10 +29,10 @@ const SIGN_STATUS_LABELS = {
 };
 
 const TAB_STATUSES = {
-  all: [SIGNATURE_PENDING, COMPLETED],
+  all: [SIGNATURE_PENDING, APPROVED],
   pending: [SIGNATURE_PENDING],
   chairman: [SIGNATURE_PENDING],
-  completed: [SIGNATURE_PENDING, COMPLETED]
+  completed: [SIGNATURE_PENDING, APPROVED]
 };
 
 const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
@@ -110,6 +110,9 @@ exports.listProposals = async ({
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
   const params = [...statuses];
+  if (statuses.includes(APPROVED)) {
+    where.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)");
+  }
 
   if (safeTab === 'all') {
     if (!scope.isManager) {
@@ -124,7 +127,7 @@ exports.listProposals = async ({
     where.push('p.signed_file_id IS NULL');
   } else if (safeTab === 'completed') {
     // Hồ sơ tôi đã ký, hoặc hồ sơ đã đủ chữ ký / đã hoàn thành chung.
-    where.push(`(p.status = 'COMPLETED' OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}) OR ${MY_SIGNED_SQL} > 0)`);
+    where.push(`((p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL) OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}) OR ${MY_SIGNED_SQL} > 0)`);
     params.push(scope.userId);
   }
 
@@ -317,7 +320,8 @@ const buildDetail = async (proposal, scope) => {
 exports.getDetail = async ({ user, id } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
-  if (![SIGNATURE_PENDING, COMPLETED].includes(proposal.status)) {
+  if (proposal.status !== SIGNATURE_PENDING
+    && !(proposal.status === APPROVED && proposal.signed_file_id)) {
     throw err('Đề xuất không ở trạng thái trình ký', 400);
   }
   const detail = await buildDetail(proposal, scope);
@@ -357,7 +361,6 @@ const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) 
 const notifyRecipients = async (userIds, { type, title, message, entityId, actorId }) => {
   const ids = [...new Set((userIds || []).filter(Boolean).map(Number))];
   for (const userId of ids) {
-    if (Number(userId) === Number(actorId)) continue;
     try {
       await notificationService.create({
         userId,
@@ -368,22 +371,26 @@ const notifyRecipients = async (userIds, { type, title, message, entityId, actor
         entityId,
         createdBy: actorId || null
       });
-    } catch { /* silent */ }
+    } catch (error) {
+      console.error(`[ProposalNotifications] Failed to notify user ${userId} for signature task ${entityId}:`, error);
+    }
   }
 };
 
 const backOfficeUserIds = async () => {
-  const [rows] = await pool.query("SELECT id, custom_data FROM users WHERE status = 'ACTIVE'");
+  const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
   return rows
-    .filter((row) => proposalReportService.isBackOffice(parseCustomData(row.custom_data).department))
+    .filter((row) => ['ADMIN', 'SUPER_ADMIN'].includes(row.role)
+      || proposalReportService.isBackOffice(parseCustomData(row.custom_data).department))
     .map((row) => Number(row.id));
 };
 
 const notifyBackOfficeAndSigners = async ({ proposal, actorId, message, type = SIGNATURE_PENDING }) => {
-  const backOfficeIds = await backOfficeUserIds();
   const configs = await loadConfigs(proposal.id);
-  const signerIds = configs.map((config) => Number(config.user_id));
-  await notifyRecipients([...backOfficeIds, ...signerIds], {
+  const pendingSignerIds = configs
+    .filter((config) => config.status !== 'SIGNED' && config.status !== 'CANCELLED')
+    .map((config) => Number(config.user_id));
+  await notifyRecipients(pendingSignerIds, {
     type,
     title: 'Đề xuất đang trình ký',
     message,
@@ -524,22 +531,6 @@ exports.reject = async ({ user, id, reason, ip } = {}) => {
     ip
   });
 
-  const message = await buildMessage(proposal, user.id, {
-    status: UPDATING_STATUS,
-    actionLabel: 'Tổng giám đốc',
-    reason: cleanReason
-  });
-  const regionIds = await proposalReportService.findGdttkdIdsByRegion(
-    require('./proposalReviewService').resolveRegion(parseCustomData(proposal.custom_data).vung_mien)
-  );
-  await notifyRecipients(regionIds, {
-    type: UPDATING_STATUS,
-    title: 'Đề xuất cần tạo lại tờ trình BCĐX',
-    message,
-    entityId: proposal.id,
-    actorId: user.id
-  });
-
   return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
 };
 
@@ -598,24 +589,6 @@ exports.requestRework = async ({ user, id, reason, ip } = {}) => {
     ip
   });
 
-  const message = await buildMessage(proposal, user.id, {
-    status: UPDATING_STATUS,
-    actionLabel: 'Back Office',
-    reason: cleanReason
-  });
-  const adminUserService = require('./adminUserService');
-  const ancestorIds = proposal.user_id ? await adminUserService.getAncestorIds(proposal.user_id) : [];
-  const regionIds = await proposalReportService.findGdttkdIdsByRegion(
-    require('./proposalReviewService').resolveRegion(parseCustomData(proposal.custom_data).vung_mien)
-  );
-  await notifyRecipients([proposal.user_id, ...ancestorIds, ...regionIds], {
-    type: UPDATING_STATUS,
-    title: 'Đề xuất cần làm lại tờ trình BCĐX',
-    message,
-    entityId: proposal.id,
-    actorId: user.id
-  });
-
   return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
 };
 
@@ -655,7 +628,7 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
   );
 
   const proposalLifecycle = require('./proposalLifecycle');
-  const transition = await proposalLifecycle.transition(proposal.id, COMPLETED, {
+  const transition = await proposalLifecycle.transition(proposal.id, APPROVED, {
     reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt',
     actorId: user.id,
     actorRole: user.role,
@@ -667,7 +640,7 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
     proposalId: proposal.id,
     action: 'signed_file_uploaded',
     fromStatus: SIGNATURE_PENDING,
-    toStatus: COMPLETED,
+    toStatus: APPROVED,
     changedFields: {
       signed_file_id: { label: 'File BCĐX đã ký', old: '', new: String(signedFileId) }
     },
@@ -678,19 +651,19 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
   });
 
   const message = await buildMessage(proposal, user.id, {
-    status: COMPLETED,
+    status: APPROVED,
     actionLabel: 'Back Office',
     reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
   });
   await notifyRecipients(configs.map((config) => config.user_id), {
-    type: COMPLETED,
+    type: APPROVED,
     title: 'Đề xuất đã được phê duyệt',
     message,
     entityId: proposal.id,
     actorId: user.id
   });
 
-  return { id: proposal.id, status: COMPLETED, signed_file_id: signedFileId, transition };
+  return { id: proposal.id, status: APPROVED, signed_file_id: signedFileId, transition };
 };
 
 exports.getExportFile = async ({ user, id } = {}) => {

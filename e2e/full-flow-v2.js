@@ -282,16 +282,19 @@ async function main() {
     check('A8 GĐTTKD ký OK', s2.status === 200, (s2.body && s2.body.message || '').slice(0, 60));
     check('A8 cả 2 ô ký đã SIGNED', Number(sql(`SELECT COUNT(*) FROM proposal_signature_configs WHERE proposal_id=${id} AND status='SIGNED'`)) === 2);
     const up = await req('POST', `/admin/proposal-signatures/${id}/signed-file`, tokens.bo, { files: [{ id: fileIds.signed }] });
-    check('A8 Back Office upload file chốt → COMPLETED', up.status === 200 && statusOf(id) === 'COMPLETED', statusOf(id));
+    check('A8 Back Office upload file chốt → APPROVED', up.status === 200 && statusOf(id) === 'APPROVED', statusOf(id));
     check('A8 signed_file_id đã lưu', sql(`SELECT IFNULL(signed_file_id, 0) FROM station_proposals WHERE id=${id}`) !== '0');
     check('A8 log signature_signed + signed_file_uploaded', logsOf(id).includes('signature_signed') && logsOf(id).includes('signed_file_uploaded'));
+    const signatureList = await req('GET', '/admin/proposal-signatures?tab=completed&sign_status=CEO_SIGNED', tokens.admin);
+    check('A8 danh sách trình ký nhận diện Chủ tịch đã phê duyệt', signatureList.status === 200
+      && (signatureList.body?.data || []).some((row) => Number(row.id) === Number(id)));
   });
 
-  await section('A9. COMPLETED — không tự tạo trạm', async () => {
+  await section('A9. APPROVED sau ký Chủ tịch — không tự tạo trạm', async () => {
     const id = global.__A;
     const after = stationsBefore();
-    check('A9 số trạm không tăng (COMPLETED không tự tạo)', after === stationCountBefore, `${stationCountBefore} → ${after}`);
-    const tab = await req('GET', '/admin/proposals?statuses=COMPLETED,CANCELLED&limit=50', tokens.admin);
+    check('A9 số trạm không tăng (APPROVED không tự tạo)', after === stationCountBefore, `${stationCountBefore} → ${after}`);
+    const tab = await req('GET', '/admin/proposals?statuses=APPROVED,CANCELLED&signed_approval_only=1&limit=50', tokens.admin);
     const rows = (tab.body && tab.body.data) || [];
     check('A9 xuất hiện trong tab Đề xuất đã hoàn thành', rows.some((r) => Number(r.id) === Number(id)));
   });

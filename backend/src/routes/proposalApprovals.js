@@ -11,9 +11,9 @@ const proposalApprovalController = require('../controllers/proposalApprovalContr
  *     summary: Danh sách đề xuất cho trang Duyệt BCĐX
  *     description: >
  *       Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được truy cập.
- *       tab=all: PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, COMPLETED;
+ *       tab=all: PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, APPROVED;
  *       tab=pending: PROPOSAL_REPORT_REVIEWING; tab=updating: PROPOSAL_REPORT_UPDATING;
- *       tab=completed: SIGNATURE_PENDING, COMPLETED.
+ *       tab=completed: SIGNATURE_PENDING, APPROVED (chỉ hồ sơ đã upload file ký).
  *     security:
  *       - bearerAuth: []
  *     parameters:

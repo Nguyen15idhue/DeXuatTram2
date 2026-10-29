@@ -22,7 +22,7 @@ const DOWNSTREAM_STATUSES = [
   'PROPOSAL_REPORT_REVIEWING',
   'PROPOSAL_REPORT_UPDATING',
   'SIGNATURE_PENDING',
-  'COMPLETED'
+  'APPROVED'
 ];
 
 const GRADING_NOTE_LABELS = {
@@ -229,6 +229,9 @@ exports.listProposals = async ({
     const placeholders = withoutCancelled.map(() => '?').join(',');
     let clause = `p.status IN (${placeholders})`;
     params.push(...withoutCancelled);
+    if (withoutCancelled.includes('APPROVED')) {
+      clause = `(${clause} AND (p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL))`;
+    }
     if (statuses.includes('CANCELLED')) clause = `(${clause} OR p.status = 'CANCELLED')`;
     where.push(clause);
   }
