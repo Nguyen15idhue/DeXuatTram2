@@ -232,8 +232,8 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
         ) : (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={CS_STATUS_VARIANT[record.status]}>{CS_STATUS_LABELS[record.status]}</Badge>
-              {record.sub_status && <Badge variant="ghost" outline>{CS_SUB_STATUS_LABELS[record.sub_status]}</Badge>}
+              <Badge variant={CS_STATUS_VARIANT[record.status]} className="whitespace-normal h-auto py-1">{CS_STATUS_LABELS[record.status]}</Badge>
+              {record.sub_status && <Badge variant="ghost" outline className="whitespace-normal h-auto py-1">{CS_SUB_STATUS_LABELS[record.sub_status]}</Badge>}
               <Link
                 to={`/admin/proposals/chi-tiet/${record.proposal_id}`}
                 className="link link-primary text-sm"
