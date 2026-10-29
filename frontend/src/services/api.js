@@ -530,6 +530,74 @@ export const proposalApprovalService = {
   }
 };
 
+export const warehouseService = {
+  listPoles(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/warehouse/poles${qs}`, token);
+  },
+  createPole(data, token) {
+    return api.postWithAuth('/admin/warehouse/poles', data || {}, token);
+  },
+  updatePole(id, data, token) {
+    return api.putWithAuth(`/admin/warehouse/poles/${id}`, data || {}, token);
+  },
+  deletePole(id, token) {
+    return api.deleteWithAuth(`/admin/warehouse/poles/${id}`, token);
+  },
+  listImports(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/warehouse/imports${qs}`, token);
+  },
+  getImport(id, token) {
+    return api.getWithAuth(`/admin/warehouse/imports/${id}`, token);
+  },
+  createImport(data, token) {
+    return api.postWithAuth('/admin/warehouse/imports', data || {}, token);
+  },
+  listExports(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/warehouse/exports${qs}`, token);
+  },
+  getExport(id, token) {
+    return api.getWithAuth(`/admin/warehouse/exports/${id}`, token);
+  },
+  createExport(data, token) {
+    return api.postWithAuth('/admin/warehouse/exports', data || {}, token);
+  },
+  getStock(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/warehouse/stock${qs}`, token);
+  }
+};
+
+export const chargingStationService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/charging-stations${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}`, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/charging-stations/${id}`, data || {}, token);
+  },
+  changeStatus(id, data, token) {
+    return api.postWithAuth(`/admin/charging-stations/${id}/status`, data || {}, token);
+  },
+  updateAcceptance(id, data, token) {
+    return api.putWithAuth(`/admin/charging-stations/${id}/acceptance`, data || {}, token);
+  },
+  setAcceptanceFile(id, fileId, token) {
+    return api.postWithAuth(`/admin/charging-stations/${id}/acceptance-file`, { file_id: fileId }, token);
+  },
+  addAcceptanceImages(id, fileIds, token) {
+    return api.postWithAuth(`/admin/charging-stations/${id}/acceptance-images`, { file_ids: fileIds }, token);
+  },
+  removeAcceptanceImage(id, fileId, token) {
+    return api.deleteWithAuth(`/admin/charging-stations/${id}/acceptance-images/${fileId}`, token);
+  }
+};
+
 export const proposalSignatureService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';

@@ -650,6 +650,18 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
     ip
   });
 
+  try {
+    const chargingStationService = require('./chargingStationService');
+    await chargingStationService.createFromApprovedProposal(proposal.id, {
+      actorId: user.id,
+      actorRole: user.role,
+      source: 'user',
+      ip
+    });
+  } catch (error) {
+    console.error('Create charging station error:', error);
+  }
+
   const message = await buildMessage(proposal, user.id, {
     status: APPROVED,
     actionLabel: 'Back Office',
