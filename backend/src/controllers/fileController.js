@@ -69,6 +69,15 @@ const canAccessFile = async (file, req) => {
     } catch { /* silent */ }
   }
   if (requesterId && ['ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
+  if (requesterId && requesterRole === 'SALES') {
+    const [linkedCharging] = await pool.query(
+      `SELECT 1 FROM charging_stations WHERE acceptance_file_id = ?
+       UNION SELECT 1 FROM charging_station_images WHERE file_id = ?
+       LIMIT 1`,
+      [file.id, file.id]
+    );
+    if (linkedCharging.length > 0) return true;
+  }
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
   const reqIp = req.ip || req.connection?.remoteAddress || null;
   if (file.uploaded_by === null && file.submitter_ip && reqIp && file.submitter_ip === reqIp) return true;

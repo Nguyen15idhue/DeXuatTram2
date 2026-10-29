@@ -161,6 +161,29 @@ const requireReportConfigurator = (req, res, next) => {
   next();
 };
 
+const CHARGING_STATION_VIEWER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+const CHARGING_STATION_EDITOR_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+const requireChargingStationViewer = (req, res, next) => {
+  if (!CHARGING_STATION_VIEWER_ROLES.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
+const requireChargingStationEditor = (req, res, next) => {
+  if (!CHARGING_STATION_EDITOR_ROLES.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền thao tác ON trạm'
+    });
+  }
+  next();
+};
+
 // Optional auth: attach user if token exists, otherwise continue
 const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -192,6 +215,8 @@ module.exports = {
   requireLeadWriter,
   requireReportViewer,
   requireReportConfigurator,
+  requireChargingStationViewer,
+  requireChargingStationEditor,
   optionalAuth,
   JWT_SECRET
 };

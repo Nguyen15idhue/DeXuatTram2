@@ -57,6 +57,8 @@ const AdminRolesPage = lazy(() => import('./pages/admin/AdminRolesPage'));
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'));
 const AdminHelpPage = lazy(() => import('./pages/admin/AdminHelpPage'));
 const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage'));
+const AdminChargingStationsPage = lazy(() => import('./pages/admin/AdminChargingStationsPage'));
+const AdminComingSoonPage = lazy(() => import('./pages/admin/AdminComingSoonPage'));
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
@@ -66,6 +68,7 @@ const PROPOSAL_INFO_ROLES = [...PROPOSAL_ROLES, 'NPP'];
 const SIGNING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const ESIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
 const PANEL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
+const CHARGING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 const HIDE_ASSISTANT_PATHS = ['/login', '/register', '/map'];
 
 import './App.css';
@@ -289,6 +292,43 @@ function App() {
               }
             />
             <Route path="/admin/proposals/*" element={<RoleRoute allowed={PROPOSAL_ROLES}><AdminProposalsPage /></RoleRoute>} />
+            <Route path="/admin/on-tram" element={<Navigate to="/admin/on-tram/thong-tin-chung" replace />} />
+            <Route
+              path="/admin/on-tram/thong-tin-chung"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="thong-tin-chung" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/khoi-tao-hop-dong"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="khoi-tao-hop-dong" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/xay-dung-ha-tang"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="xay-dung-ha-tang" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/giao-tru"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="giao-tru" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/lap-tru"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="lap-tru" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/nghiem-thu"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="nghiem-thu" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/on-tram"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="on-tram" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/tai-chinh"
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminComingSoonPage title="Quản lý tài chính" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/kho"
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminComingSoonPage title="Quản lý kho" /></RoleRoute>}
+            />
             <Route
               path="/admin/e-sign"
               element={
