@@ -61,8 +61,8 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
     throw err('Vui lòng chọn tọa độ trên bản đồ (latitude/longitude bắt buộc)', 400);
   }
   if (!String(data.owner_name || '').trim()) throw err('Thiếu tên khách hàng (lấy từ Lead)', 400);
-  if (!/^\d{10}$/.test(String(data.owner_phone || '').replace(/[^\d]/g, ''))) {
-    throw err('SĐT khách hàng phải có đúng 10 chữ số', 400);
+  if (!/^\d{10,11}$/.test(String(data.owner_phone || '').replace(/[^\d]/g, ''))) {
+    throw err('SĐT khách hàng phải có 10 hoặc 11 chữ số', 400);
   }
 
   const ownerId = Number(lead.assigned_user_id) || Number(actor.id);

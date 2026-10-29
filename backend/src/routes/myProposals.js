@@ -146,6 +146,7 @@ router.post('/duplicates/export', requireAuth, (req, res) => excelService.export
  *                 type: string
  *               owner_phone:
  *                 type: string
+ *                 pattern: '^\d{10,11}$'
  *               address:
  *                 type: string
  *               area:

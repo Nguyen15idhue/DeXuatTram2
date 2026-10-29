@@ -90,8 +90,9 @@ router.get('/:id', optionalAuth, proposalController.getById);
  *                 example: Nguyen Van A
  *               owner_phone:
  *                 type: string
- *                 pattern: '^\d{10}$'
- *                 example: 0912345678
+ *                 pattern: '^\d{10,11}$'
+ *                 pattern: '^\d{10,11}$'
+ *                 example: '09123456789'
  *               address:
  *                 type: string
  *                 example: Quận Hoàn Kiếm, Hà Nội
@@ -184,6 +185,7 @@ router.post('/check-nearby', requireAuth, proposalController.checkNearby);
  *                 type: string
  *               owner_phone:
  *                 type: string
+ *                 pattern: '^\d{10,11}$'
  *               address:
  *                 type: string
  *               captcha_token:

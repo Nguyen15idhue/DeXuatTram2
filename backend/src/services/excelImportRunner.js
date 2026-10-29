@@ -199,7 +199,11 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
 
       if (entity === 'station_proposals') {
         if (fixedData.owner_name == null) fixedData.owner_name = '';
-        if (fixedData.owner_phone == null) fixedData.owner_phone = '';
+        const proposalPhone = String(fixedData.owner_phone || '').replace(/[^\d]/g, '');
+        if (!/^\d{10,11}$/.test(proposalPhone)) {
+          throw new Error('SĐT chủ sở hữu phải có 10 hoặc 11 chữ số');
+        }
+        fixedData.owner_phone = proposalPhone;
       }
       if (entity === 'stations') {
         if (fixedData.name == null) fixedData.name = '';

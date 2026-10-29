@@ -61,7 +61,7 @@ const options = {
             latitude: { type: 'number', example: 21.0285 },
             longitude: { type: 'number', example: 105.8542 },
             owner_name: { type: 'string', example: 'Nguyen Van A' },
-            owner_phone: { type: 'string', example: '0912345678' },
+            owner_phone: { type: 'string', pattern: '^\\d{10,11}$', example: '09123456789' },
             address: { type: 'string', example: 'Quận Hoàn Kiếm, Hà Nội' },
             area: { type: 'string', example: '100m2' },
             land_type: { type: 'string', example: 'Dân cư' },
