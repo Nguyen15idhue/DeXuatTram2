@@ -6,10 +6,9 @@ import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
+import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
-import DynamicForm from '../../components/dynamic/DynamicForm';
-import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Toast from '../../components/Toast';
@@ -219,6 +218,14 @@ const AdminProposalSignDetailPage = () => {
   const allSigned = detail.sign_status === SIGN_STATUS.DONE || detail.sign_status === SIGN_STATUS.CEO_SIGNED;
   const showSignButton = detail.can_sign;
   const chotRows = parseChotRows(detail.chot_so_luong_tru);
+  const initialProposalData = detail.initial_proposal_data && typeof detail.initial_proposal_data === 'object'
+    ? detail.initial_proposal_data
+    : {};
+  const proposalInfo = {
+    ...detail,
+    ...initialProposalData,
+    custom_data: initialProposalData.custom_data || detail.custom_data
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-3 pb-20">
@@ -246,6 +253,7 @@ const AdminProposalSignDetailPage = () => {
         onViewFile={setViewing}
         signers={detail.signers}
         showStepDetails={false}
+        showNotes={false}
       />
 
       <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">
@@ -278,17 +286,7 @@ const AdminProposalSignDetailPage = () => {
       </div>
 
       {detail.can_view && (
-        <section className="border rounded-lg bg-base-100 p-4">
-          <h2 className="font-semibold mb-3">Thông tin đã nhập khi tạo đề xuất</h2>
-          <DynamicForm
-            entity="station_proposals"
-            purpose="view"
-            initialData={detail.initial_proposal_data || detail}
-            hideActions
-            readOnlyKeys="*"
-            excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
-          />
-        </section>
+        <ProposalStaticInfo record={proposalInfo} onViewFile={setViewing} />
       )}
 
       {chotRows.length > 0 && (
@@ -584,7 +582,7 @@ const AdminProposalSignDetailPage = () => {
         }}
       />
 
-      {viewing && <FileViewer file={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <FileViewer file={viewing} onClose={() => setViewing(null)} fullScreen />}
 
       <Toast
         message={toast.message}

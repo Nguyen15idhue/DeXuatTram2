@@ -212,13 +212,16 @@ async function main() {
     const id = global.__A;
     const qh = await gradeQH(id, 3, 'Vị trí phù hợp quy hoạch');
     check('A2 QH chấm 3 OK', qh.status === 200);
-    check('A2 có điểm QH thì chuyển GĐTTKD ngay', statusOf(id) === 'GDTTKD_EVALUATING', statusOf(id));
+    check('A2 QH chấm 3 điểm, vẫn chờ phòng PL trong GRADING', statusOf(id) === 'GRADING', statusOf(id));
     const pendingPL = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);
     check('A2 PL vẫn thấy đề xuất chưa chấm trong việc cần thực hiện',
       ((pendingPL.body && pendingPL.body.data) || []).some((row) => Number(row.id) === Number(id)));
     const pendingQH = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.qh);
     check('A2 QH đã chấm không còn trong việc cần thực hiện',
       !((pendingQH.body && pendingQH.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const gdReview = await req('GET', '/admin/proposal-reviews?tab=pending&limit=100', tokens.gd);
+    check('A2 GĐTTKD chưa nhận việc khi điểm phòng đầu tiên là 3',
+      !((gdReview.body && gdReview.body.data) || []).some((row) => Number(row.id) === Number(id)));
     const blocked = await gradePL(id, 3, 'x');
     check('A3 PL bị chặn khi thiếu hồ sơ (400)', blocked.status === 400, (blocked.body && blocked.message || '').slice(0, 80));
     await attachLegalDocs(id);
@@ -310,8 +313,8 @@ async function main() {
 
   await section('B1b. Chấm một phòng trước, giữ việc cho phòng còn lại', async () => {
     const id = await createProposal('B1b', true);
-    const first = await gradeQH(id, 2, 'QH chấm trước');
-    check('B1b QH chấm trước → GĐTTKD_EVALUATING',
+    const first = await gradeQH(id, 1, 'QH chấm trước');
+    check('B1b QH chấm 1 điểm trước → GĐTTKD_EVALUATING',
       first.status === 200 && statusOf(id) === 'GDTTKD_EVALUATING', statusOf(id));
 
     const pendingPL = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);

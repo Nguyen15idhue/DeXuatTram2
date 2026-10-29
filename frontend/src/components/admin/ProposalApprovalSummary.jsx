@@ -38,7 +38,7 @@ const ProposalApprovalSummary = ({ record }) => {
       </div>
 
       {viewing && (
-        <FileViewer file={viewing} onClose={() => setViewing(null)} />
+        <FileViewer file={viewing} onClose={() => setViewing(null)} fullScreen />
       )}
     </div>
   );

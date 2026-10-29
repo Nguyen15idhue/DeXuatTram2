@@ -55,6 +55,7 @@ const evReportsRoutes = require('./routes/evReports');
 const signaturesRoutes = require('./routes/signatures');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 const importWorker = require('./workers/importWorker');
+const evReportSheetSyncWorker = require('./workers/evReportSheetSyncWorker');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -183,6 +184,9 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   importWorker.start().catch((err) => {
     console.error('[ImportWorker] start error:', err.message);
+  });
+  evReportSheetSyncWorker.start().catch((err) => {
+    console.error('[EvReportSheetSyncWorker] start error:', err.message);
   });
 });
 

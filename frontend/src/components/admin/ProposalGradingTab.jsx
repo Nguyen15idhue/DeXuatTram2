@@ -28,6 +28,7 @@ import {
   getProposalPhone,
   getMissingLegalDocs,
   isLegalDocsComplete,
+  isLegalDocsRequired,
   getPartialGradingProgress
 } from '../../utils/proposalGrading';
 import { ProposalModelBadge, ProposalStatusBadge } from './ProposalTableBadges';
@@ -108,6 +109,7 @@ const PhapLyStatusCell = ({ row, onShowScore }) => {
 const ScoreDetailDialog = ({ detail, onClose }) => {
   if (!detail?.open) return null;
   const missing = getMissingLegalDocs(detail.row);
+  const legalDocsRequired = isLegalDocsRequired(detail.row);
   const score = detail.dept === 'QH' ? detail.row?.quy_hoach_score : detail.row?.phap_ly_score;
   const note = detail.dept === 'QH' ? detail.row?.quy_hoach_note : detail.row?.phap_ly_note;
   return (
@@ -133,7 +135,7 @@ const ScoreDetailDialog = ({ detail, onClose }) => {
             <span className="text-sm text-base-content/70">Đánh giá:</span>
             <p className="text-sm whitespace-pre-wrap">{note || '(không có)'}</p>
           </div>
-          {detail.dept === 'PL' && missing.length > 0 && (
+          {detail.dept === 'PL' && legalDocsRequired && missing.length > 0 && (
             <p className="text-xs text-warning">Thiếu hồ sơ pháp lý: {missing.join(', ')}</p>
           )}
         </div>

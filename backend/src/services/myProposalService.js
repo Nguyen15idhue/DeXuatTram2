@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note'];
+const MY_PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note', 'ngay_du_kien_on'];
 
 exports.getUserProposals = async (userId, status, search, page, limit, columnFilters, extra = {}) => {
   const offset = (page - 1) * limit;
@@ -60,7 +60,8 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
             p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
-            p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot
+            p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
+            DATE_FORMAT(p.ngay_du_kien_on, '%Y-%m-%d') AS ngay_du_kien_on
     FROM station_proposals p
     ${whereClause}
     ORDER BY p.created_at DESC

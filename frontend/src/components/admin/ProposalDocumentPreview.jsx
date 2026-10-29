@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import mammoth from 'mammoth';
-import { Download, FileText } from 'lucide-react';
+import { Download, Eye, FileText } from 'lucide-react';
+import FileViewer from '../dynamic/FileViewer';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -20,6 +21,7 @@ const ProposalDocumentPreview = ({ file, height = '60vh' }) => {
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fullScreenPreview, setFullScreenPreview] = useState(false);
   const objectUrlRef = useRef(null);
 
   const fileId = file?.id;
@@ -82,15 +84,25 @@ const ProposalDocumentPreview = ({ file, height = '60vh' }) => {
           <FileText size={14} />
           <span className="text-sm truncate">{fileName}</span>
         </div>
-        <a
-          className="btn btn-ghost btn-xs gap-1"
-          href={`${API_URL}/files/${fileId}/download?token=${encodeURIComponent(token || '')}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <Download size={14} />
-          Tải xuống
-        </a>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs gap-1"
+            onClick={() => setFullScreenPreview(true)}
+          >
+            <Eye size={14} />
+            Xem toàn màn hình
+          </button>
+          <a
+            className="btn btn-ghost btn-xs gap-1"
+            href={`${API_URL}/files/${fileId}/download?token=${encodeURIComponent(token || '')}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Download size={14} />
+            Tải xuống
+          </a>
+        </div>
       </div>
       <div style={{ height }}>
         {loading && <div className="flex justify-center py-8"><span className="loading loading-spinner" /></div>}
@@ -99,7 +111,12 @@ const ProposalDocumentPreview = ({ file, height = '60vh' }) => {
           <iframe src={objectUrl} className="w-full h-full border-none" title={fileName} />
         )}
         {!loading && !error && fileType === 'image' && (
-          <img src={objectUrl} alt={fileName} className="w-full h-full object-contain" />
+          <img
+            src={objectUrl}
+            alt={fileName}
+            className="w-full h-full object-contain cursor-zoom-in"
+            onClick={() => setFullScreenPreview(true)}
+          />
         )}
         {!loading && !error && fileType === 'word' && (
           <div className="p-4 overflow-auto h-full bg-white" dangerouslySetInnerHTML={{ __html: html }} />
@@ -110,6 +127,13 @@ const ProposalDocumentPreview = ({ file, height = '60vh' }) => {
           </div>
         )}
       </div>
+      {fullScreenPreview && (
+        <FileViewer
+          file={{ ...file, id: fileId, original_name: fileName }}
+          fullScreen
+          onClose={() => setFullScreenPreview(false)}
+        />
+      )}
     </div>
   );
 };

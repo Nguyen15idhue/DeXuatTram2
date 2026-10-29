@@ -6,7 +6,7 @@ const addressEnrichment = require('./addressEnrichment');
 const notificationService = require('./notificationService');
 const { buildColumnFilterWhere } = require('../utils/dynamicFilter');
 
-const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note', 'review_level', 'quy_hoach_score', 'quy_hoach_note', 'phap_ly_score', 'phap_ly_note'];
+const PROPOSAL_FIXED_COLUMNS = ['owner_name', 'owner_phone', 'latitude', 'longitude', 'address', 'area', 'land_type', 'description', 'status', 'tracking_code', 'note', 'review_level', 'quy_hoach_score', 'quy_hoach_note', 'phap_ly_score', 'phap_ly_note', 'ngay_du_kien_on'];
 
 exports.getBranchUserIds = async (salesId) => {
   const adminUserService = require('./adminUserService');

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireUserManager, optionalAuth } = require('../middlewares/auth');
 const { guestSubmitLimiter, guestTrackLimiter } = require('../middlewares/rateLimits');
+const { adminLimiter } = require('../middlewares/rateLimits');
 const { validateCreateEvReport, validateUpdateEvReport } = require('../middlewares/validators');
 const evReportController = require('../controllers/evReportController');
 
@@ -137,6 +138,49 @@ router.post('/check-nearby-public', guestTrackLimiter, evReportController.checkN
  *         description: Thành công
  */
 router.get('/admin/list', requireAuth, requireUserManager, evReportController.adminList);
+
+/**
+ * @swagger
+ * /api/ev-reports/admin/google-sheet/status:
+ *   get:
+ *     tags: [EvReports]
+ *     summary: Xem trạng thái đồng bộ Google Sheet
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Trạng thái cấu hình và lượt đồng bộ gần nhất
+ */
+router.get(
+  '/admin/google-sheet/status',
+  requireAuth,
+  requireUserManager,
+  adminLimiter,
+  evReportController.adminSheetSyncStatus,
+);
+
+/**
+ * @swagger
+ * /api/ev-reports/admin/google-sheet/sync:
+ *   post:
+ *     tags: [EvReports]
+ *     summary: Đồng bộ khách hàng mới sang Google Sheet
+ *     description: Chỉ thêm bản ghi có nhu cầu hợp tác và chưa có ev_report_id trong Sheet; không cập nhật các hàng đã tồn tại.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Đồng bộ hoàn tất
+ *       409:
+ *         description: Đang có lượt đồng bộ khác
+ */
+router.post(
+  '/admin/google-sheet/sync',
+  requireAuth,
+  requireUserManager,
+  adminLimiter,
+  evReportController.adminSyncSheet,
+);
 
 /**
  * @swagger

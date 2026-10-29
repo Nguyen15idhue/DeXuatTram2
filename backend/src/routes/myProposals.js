@@ -176,7 +176,8 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *     description: >
  *       Áp dụng cho đề xuất PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_RE_CREATING hoặc
  *       PROPOSAL_REPORT_UPDATING. Bắt buộc gửi số lượng trụ chốt; server lấy giá hiện tại
- *       theo loại trụ và tính tổng giá trị chốt. Sau khi tải lên, đề xuất chuyển sang
+ *       theo loại trụ và tính tổng giá trị chốt. Người đề xuất có thể gửi ngày dự kiến ON
+ *       (ngay_du_kien_on, nullable). Sau khi tải lên, đề xuất chuyển sang
  *       PROPOSAL_REPORT_REVIEWING và thông báo Back Office.
  *     security:
  *       - bearerAuth: []
@@ -217,7 +218,11 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *                     loai_tru:
  *                       type: string
  *                     gia_chot:
- *                       type: number
+ *                        type: number
+               ngay_du_kien_on:
+                 type: string
+                 format: date
+                 nullable: true
  *     responses:
  *       200:
  *         description: Thành công

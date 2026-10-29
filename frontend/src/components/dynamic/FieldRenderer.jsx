@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react';
 import UserChip from './UserChip';
 import { create, all } from 'mathjs';
-import { Zap } from 'lucide-react';
+import { Paperclip, Zap } from 'lucide-react';
 import { formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
 import { formatDate, formatDateTime } from '../../utils/formatDateTime';
 import { getDataListLabelFromMap } from '../../utils/dataListLabel';
@@ -26,6 +26,7 @@ const customFunctions = {
 math.import(customFunctions, { override: false });
 
 const FileListPopup = lazy(() => import('./FileListPopup'));
+const FileViewer = lazy(() => import('./FileViewer'));
 
 const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T|\s)\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,10 +55,39 @@ const getFileUrl = (file, entity, entityId) => {
   return '';
 };
 
+const normalizeFileEntries = (value) => {
+  if (Array.isArray(value)) return value.flatMap(normalizeFileEntries);
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? [{ id: value }] : [];
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return [];
+    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+      try {
+        return normalizeFileEntries(JSON.parse(text));
+      } catch {
+        return [{ original_name: text }];
+      }
+    }
+    const id = Number(text);
+    return Number.isInteger(id) && id > 0 ? [{ id }] : [{ original_name: text }];
+  }
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.files)) return normalizeFileEntries(value.files);
+    if (value.id || value.file_id || value.url || value.link) return [{
+      ...value,
+      id: value.id || value.file_id,
+      url: value.url || value.link
+    }];
+    return Object.values(value).flatMap(normalizeFileEntries);
+  }
+  return [];
+};
+
 const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, expandTable = false }) => {
   const [showFilePopup, setShowFilePopup] = useState(false);
   const [showAvatarPopup, setShowAvatarPopup] = useState(false);
   const [showTablePopup, setShowTablePopup] = useState(false);
+  const [viewingFile, setViewingFile] = useState(null);
 
   if (value === null || value === undefined || value === '') {
     return <span className="field-empty">-</span>;
@@ -149,6 +179,36 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
       if (files.length === 0 || !files[0]) return <span className="field-empty">-</span>;
       const fieldKey = field.field_key || field.key || '';
       const isAvatarField = fieldKey === 'avatar';
+      if (entity === 'station_proposals') {
+        const previewFiles = normalizeFileEntries(value);
+        return (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {previewFiles.map((file, index) => (
+                <button
+                  key={`${file.id || file.original_name || 'file'}-${index}`}
+                  type="button"
+                  className="btn btn-ghost btn-xs max-w-full justify-start gap-1"
+                  onClick={() => setViewingFile(file)}
+                  disabled={!file.id && !file.url}
+                >
+                  <Paperclip size={12} />
+                  <span className="truncate">{file.original_name || file.name || `Tệp ${index + 1}`}</span>
+                </button>
+              ))}
+            </div>
+            {viewingFile && (
+              <Suspense fallback={<div className="loading">Đang mở bản xem trước...</div>}>
+                <FileViewer
+                  file={viewingFile}
+                  fullScreen
+                  onClose={() => setViewingFile(null)}
+                />
+              </Suspense>
+            )}
+          </>
+        );
+      }
       if (isAvatarField) {
         const firstFile = files[0];
         const imgUrl = getFileUrl(firstFile, entity, entityId);

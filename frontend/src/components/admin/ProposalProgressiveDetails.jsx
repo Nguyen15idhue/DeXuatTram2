@@ -131,7 +131,7 @@ const FileLinks = ({ files, onViewFile, emptyText = 'Chưa có tệp' }) => {
   );
 };
 
-const ProgressStepper = ({ proposal, progress, reachedStep, currentStep, showNotes }) => {
+const ProgressStepper = ({ proposal, progress, reachedStep, currentStep, showNotes, showCurrentStatus }) => {
   const paused = proposal?.status === 'PAUSED';
   const cancelled = proposal?.status === 'CANCELLED';
   const pauseEvent = [...(progress?.activity || [])].reverse().find((event) => event.to_status === 'PAUSED');
@@ -161,7 +161,7 @@ const ProgressStepper = ({ proposal, progress, reachedStep, currentStep, showNot
           );
         })}
       </div>
-      {proposal?.status && (
+      {showCurrentStatus && proposal?.status && (
         <p className="text-xs text-base-content/60">
           Trạng thái: <span className="font-medium">{getProposalStatusLabel(proposal.status)}</span>
           {paused && proposal.paused_from_status && (
@@ -363,6 +363,7 @@ const ProposalProgressiveDetails = ({
   showHistory = false,
   showSummary = false,
   showNotes = true,
+  showCurrentStatus = true,
   omitStepDetails = [],
   signers = []
 }) => {
@@ -390,6 +391,7 @@ const ProposalProgressiveDetails = ({
         reachedStep={reachedStep}
         currentStep={effectiveCurrentStep}
         showNotes={showNotes}
+        showCurrentStatus={showCurrentStatus}
       />
 
       {showSummary && <ProposalSummary record={record} />}
