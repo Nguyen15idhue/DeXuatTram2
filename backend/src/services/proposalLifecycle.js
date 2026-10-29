@@ -6,7 +6,7 @@ const ALL_STATUSES = [
   'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED',
   'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING', 'TGD_REVIEW', 'DESIGNING',
   'INFOR_WAITING',
-  'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING', 'COMPLETED',
+  'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING',
   'PAUSED'
 ];
 
@@ -31,8 +31,7 @@ const ALLOWED_TRANSITIONS = {
   PROPOSAL_REPORT_RE_CREATING: ['PROPOSAL_REPORT_REVIEWING', 'CANCELLED'],
   PROPOSAL_REPORT_REVIEWING: ['SIGNATURE_PENDING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_UPDATING', 'CANCELLED'],
   PROPOSAL_REPORT_UPDATING: ['PROPOSAL_REPORT_REVIEWING', 'CANCELLED'],
-  SIGNATURE_PENDING: ['COMPLETED', 'PROPOSAL_REPORT_UPDATING', 'CANCELLED'],
-  COMPLETED: []
+  SIGNATURE_PENDING: ['APPROVED', 'PROPOSAL_REPORT_UPDATING', 'CANCELLED']
 };
 
 const REASON_REQUIRED = ['REJECTED', 'CANCELLED'];
@@ -55,7 +54,7 @@ const STATUS_STEP_LABELS = {
   PROPOSAL_REPORT_CREATING: 'lập tờ trình BCĐX',
   PROPOSAL_REPORT_REVIEWING: 'duyệt BCĐX',
   SIGNATURE_PENDING: 'trình ký',
-  COMPLETED: 'đã phê duyệt',
+  APPROVED: 'đã duyệt BCĐX',
   PAUSED: 'đang tạm dừng',
   CANCELLED: 'đã hủy'
 };
@@ -124,7 +123,7 @@ exports.transition = async (id, to, opts = {}) => {
     throw err('Trạng thái không hợp lệ', 400);
   }
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, journey_id, custom_data,
+    `SELECT id, user_id, status, journey_id, custom_data, signed_file_id,
             supplement_deadline_at, transition_deadline_at, paused_from_status, paused_at
        FROM station_proposals WHERE id = ?`,
     [id]
@@ -153,7 +152,7 @@ exports.transition = async (id, to, opts = {}) => {
     });
     throw err('Đề xuất đang tạm dừng; hãy dùng thao tác tiếp tục để khôi phục trạng thái trước đó', 400);
   }
-  if (isPauseTransition && ['COMPLETED', 'CANCELLED'].includes(from)) {
+  if (isPauseTransition && from === 'CANCELLED') {
     throw err('Không thể tạm dừng đề xuất đã kết thúc', 400);
   }
   if (isPauseTransition && (proposal.paused_from_status || proposal.paused_at)) {
@@ -172,8 +171,18 @@ exports.transition = async (id, to, opts = {}) => {
   }
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
   const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
+  const isSignedApproval = from === 'APPROVED' && Boolean(proposal.signed_file_id);
+  const isSignedApprovalTarget = to === 'APPROVED' && Boolean(proposal.signed_file_id);
   if (forceOverride && !String(reason || '').trim()) {
     throw err('Ghi đè trạng thái cần nhập lý do', 400);
+  }
+  if (isSignedApproval && !forceOverride) {
+    await exports.logActivity({
+      proposalId: id, action: 'status_change_denied',
+      fromStatus: from, toStatus: to,
+      actorId, actorRole, source, ip
+    });
+    throw err('Đề xuất đã được Chủ tịch phê duyệt; không thể thay đổi trạng thái', 400);
   }
   if (!forceOverride) {
     if (!isPauseTransition && !isResumeTransition && !isPausedCancellation
@@ -263,16 +272,27 @@ exports.transition = async (id, to, opts = {}) => {
     [updateResult] = await pool.query(
       `UPDATE station_proposals
        SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW(),
+           supplement_deadline_at = CASE WHEN ? = 1 THEN NULL ELSE supplement_deadline_at END,
+           transition_deadline_at = CASE WHEN ? = 1 THEN NULL ELSE transition_deadline_at END,
+           info_completed_at = CASE WHEN ? = 1 THEN NULL ELSE info_completed_at END,
            paused_from_status = CASE WHEN ? = 1 THEN NULL ELSE paused_from_status END,
            paused_at = CASE WHEN ? = 1 THEN NULL ELSE paused_at END
        WHERE id = ?`,
-      [to, rejectReasonValue, actorId || null, isPausedCancellation ? 1 : 0, isPausedCancellation ? 1 : 0, id]
+      [
+        to, rejectReasonValue, actorId || null,
+        isSignedApprovalTarget ? 1 : 0,
+        isSignedApprovalTarget ? 1 : 0,
+        isSignedApprovalTarget ? 1 : 0,
+        isPausedCancellation ? 1 : 0,
+        isPausedCancellation ? 1 : 0,
+        id
+      ]
     );
   }
 
   // Đặt SONG SONG 2 mốc countdown theo rule của trạng thái đích:
   //   supplement_deadline_at (bổ sung thông tin) + transition_deadline_at (chuyển trạng thái).
-  if (!isPauseTransition && !isResumeTransition) {
+  if (!isPauseTransition && !isResumeTransition && !isSignedApprovalTarget) {
     try {
       const suppMinutes = await exports.getDeadlineMinutes(to, 'supplement');
       const transMinutes = await exports.getDeadlineMinutes(to, 'transition');
@@ -299,7 +319,9 @@ exports.transition = async (id, to, opts = {}) => {
 
   try {
     await exports.notifyStepReceivers(id, to, { actorId, reason: cleanReason });
-  } catch { /* silent: khong chan chuyen trang thai vi thong bao */ }
+  } catch (error) {
+    console.error(`[ProposalNotifications] Failed to notify proposal ${id} after transition to ${to}:`, error);
+  }
 
   let stationCreated = null;
   let stationCreateError = null;
@@ -866,15 +888,28 @@ const collectInfoNotifyIds = async (proposal) => {
 };
 
 exports.notifyStepReceivers = async (id, to, opts = {}) => {
-  const { actorId = null, reason = null } = opts;
+  const { actorId = null, reason = null, includeOwner = false } = opts;
   const stepRecipients = require('./proposalStepRecipients');
   if (!stepRecipients.STEP_RECIPIENT_STATUSES.includes(to)) return [];
-  const [rows] = await pool.query('SELECT id, user_id, status, custom_data FROM station_proposals WHERE id = ?', [id]);
+  const [rows] = await pool.query(
+    `SELECT p.id, p.user_id, p.status, p.custom_data, p.quy_hoach_score, p.phap_ly_score
+       FROM station_proposals p WHERE p.id = ?`,
+    [id]
+  );
   if (rows.length === 0) return [];
   const proposal = rows[0];
-  const recipientIds = (await stepRecipients.resolveStepRecipients(to, proposal))
-    .filter((uid) => Number(uid) !== Number(actorId) && Number(uid) !== Number(proposal.user_id));
-  if (recipientIds.length === 0) return [];
+  const resolvedRecipients = await stepRecipients.resolveStepRecipients(to, proposal);
+  const gradingTasks = await stepRecipients.resolveGradingTasks(to, proposal);
+  const recipientIds = resolvedRecipients
+    .filter((uid) => includeOwner || Number(uid) !== Number(proposal.user_id));
+  const taskRecipientIds = gradingTasks.flatMap((task) => task.userIds)
+    .filter((uid) => includeOwner || Number(uid) !== Number(proposal.user_id));
+  if (recipientIds.length === 0 && taskRecipientIds.length === 0) {
+    if (resolvedRecipients.length === 0 && gradingTasks.length === 0 && to !== 'RE_GRADING') {
+      console.warn(`[ProposalNotifications] No eligible task recipients for proposal ${id} at ${to}`);
+    }
+    return [];
+  }
   const code = notificationService.proposalCode(proposal.custom_data, id);
   const actorName = actorId ? ((await notificationService.getUserName(actorId)) || 'Hệ thống') : 'Hệ thống';
   const message = notificationService.statusMessage({
@@ -891,9 +926,38 @@ exports.notifyStepReceivers = async (id, to, opts = {}) => {
         entityId: id,
         createdBy: actorId || null
       });
-    } catch { /* silent */ }
+    } catch (error) {
+      console.error(`[ProposalNotifications] Failed to notify user ${uid} for proposal ${id} at ${to}:`, error);
+    }
   }
-  return recipientIds;
+  for (const task of gradingTasks) {
+    const taskMessage = notificationService.statusMessage({
+      code,
+      actorName,
+      status: to,
+      actionLabel: `Công việc: Phòng ${task.departmentLabel}`,
+      reason: task.type === 'regrade'
+        ? `Phòng ${task.departmentLabel} được yêu cầu chấm điểm lại${reason ? ` · ${reason}` : ''}`
+        : `Phòng ${task.departmentLabel} chưa có kết quả chấm điểm${reason ? ` · ${reason}` : ''}`
+    });
+    for (const uid of task.userIds) {
+      if (!includeOwner && Number(uid) === Number(proposal.user_id)) continue;
+      try {
+        await notificationService.create({
+          userId: uid,
+          type: task.type === 'regrade' ? 'RE_GRADING' : 'GRADING',
+          title: task.title,
+          message: taskMessage,
+          entityType: 'station_proposals',
+          entityId: id,
+          createdBy: actorId || null
+        });
+      } catch (error) {
+        console.error(`[ProposalNotifications] Failed to notify user ${uid} for ${task.departmentLabel} task on proposal ${id}:`, error);
+      }
+    }
+  }
+  return [...new Set([...recipientIds, ...taskRecipientIds])];
 };
 
 exports.setInfoCompleted = async (id, completed, opts = {}) => {

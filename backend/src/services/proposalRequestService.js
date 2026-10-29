@@ -68,13 +68,12 @@ const assignedTypesForUser = (user) => {
   if (user.role === 'SUPER_ADMIN' || (user.role === 'ADMIN' && gradingService.resolveGradingRole(user.department))) {
     types.push('RE_GRADE');
   }
-  const dept = gradingService.normalizeText(user.department);
-  if (dept.includes('cong nghe') || dept.includes('quy hoach') || dept.includes('quan he')) types.push('LAYOUT_SUPPLEMENT');
   if (reportService.isBackOffice(user.department)) types.push('REVISE_BCDX');
   let roleKey = null;
   try {
     roleKey = reviewService.resolveRoleKey({ role: user.role, department: user.department, chucVu: user.chucVu });
   } catch { roleKey = null; }
+  if (roleKey === reviewService.REVIEW_ROLE.GDTTKD && !types.includes('RE_GRADE')) types.push('RE_GRADE');
   if (roleKey === reviewService.REVIEW_ROLE.GDTTKD && !types.includes('REVISE_BCDX')) types.push('REVISE_BCDX');
   if (roleKey === reviewService.REVIEW_ROLE.TGD) types.push('TGD_REVIEW');
   return types;
@@ -253,11 +252,17 @@ const requestAssignmentClause = (user, params) => {
       }
       if (assignedTypes.includes('RE_GRADE')) {
         const gradingRole = require('./proposalGradingService').resolveGradingRole(user.department);
+        const proposalReviewService = require('./proposalReviewService');
         if (user.role === 'SUPER_ADMIN') {
           conditions.push("r.request_type = 'RE_GRADE'");
         } else if (gradingRole) {
           conditions.push("(r.request_type = 'RE_GRADE' AND (r.target_department = ? OR r.target_title = 'Hai phòng chấm điểm'))");
           params.push(gradingRole);
+        } else if (reviewProfile.roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD && reviewProfile.region) {
+          conditions.push(`(r.request_type = 'RE_GRADE'
+            AND r.target_title = 'Giám đốc Trung tâm Kinh doanh'
+            AND LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?)`);
+          params.push(regionPattern(reviewProfile.region));
         }
       }
       if (assignedTypes.includes('REVISE_BCDX')) {
@@ -489,10 +494,20 @@ const requestAssignedToUser = (request, user) => {
   if (!types.includes(request.request_type)) return false;
   if (request.request_type === 'RE_GRADE') {
     if (user.role === 'SUPER_ADMIN') return true;
-    if (user.role !== 'ADMIN') return false;
     const gradingRole = require('./proposalGradingService').resolveGradingRole(user.department);
-    return !!gradingRole
-      && (request.target_department === gradingRole || request.target_title === 'Hai phòng chấm điểm');
+    if (gradingRole && (request.target_department === gradingRole || request.target_title === 'Hai phòng chấm điểm')) {
+      return user.role === 'ADMIN';
+    }
+    const reviewProfile = getReviewProfile(user);
+    if (reviewProfile.roleKey === require('./proposalReviewService').REVIEW_ROLE.GDTTKD
+      && request.target_title === 'Giám đốc Trung tâm Kinh doanh'
+      && reviewProfile.region) {
+      const proposalRegion = require('./proposalReviewService').resolveRegion(
+        parseCustomData(request.proposal_custom_data).vung_mien
+      );
+      return proposalRegion === reviewProfile.region;
+    }
+    return false;
   }
   if (request.request_type === 'REVISE_BCDX') {
     const reviewProfile = getReviewProfile(user);
@@ -595,5 +610,16 @@ exports.completeRequest = async (id, { user = null, resolutionNote = null } = {}
       source: 'user'
     });
   } catch { /* silent */ }
+  if (request.request_type === 'SUPPLEMENT' && ['GRADING', 'RE_GRADING'].includes(request.proposal_status)) {
+    try {
+      await require('./proposalLifecycle').notifyStepReceivers(
+        request.proposal_id,
+        request.proposal_status,
+        { actorId: user.id }
+      );
+    } catch (error) {
+      console.error(`[ProposalNotifications] Failed to notify grading recipients after supplement ${id}:`, error);
+    }
+  }
   return { id: Number(id), status: 'DONE', resolution_note: cleanNote, resolved_by: Number(user.id) };
 };

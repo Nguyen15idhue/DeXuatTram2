@@ -67,6 +67,7 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
 
   const ownerId = Number(lead.assigned_user_id) || Number(actor.id);
   const created = await proposalService.createProposal(ownerId, data, {
+    actorId: actor.id,
     actorRole: actor.role || null,
     ip: opts.ip || null,
     initialStatus: 'PENDING',

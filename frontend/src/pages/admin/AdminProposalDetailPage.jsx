@@ -46,8 +46,6 @@ import {
 const LAYOUT_FIELD = 'ban_ve_layout';
 const REPORT_FIELD = 'file_bc_dx';
 
-const SIGNATURE_STATUSES = ['SIGNATURE_PENDING', 'COMPLETED'];
-
 const parseChotRows = (value) => {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string') return [];
@@ -215,9 +213,11 @@ const AdminProposalDetailPage = () => {
 
   const recordStatus = record?.status;
   const recordId = record?.id;
+  const hasSignatureStatus = recordStatus === 'SIGNATURE_PENDING'
+    || (recordStatus === 'APPROVED' && Boolean(record?.signed_file_id));
 
   useEffect(() => {
-    if (!token || !recordId || !SIGNATURE_STATUSES.includes(recordStatus)) {
+    if (!token || !recordId || !hasSignatureStatus) {
       setSignatureDetail(null);
       setSignatureLoading(false);
       setSignatureError('');
@@ -241,7 +241,7 @@ const AdminProposalDetailPage = () => {
         if (!cancelled) setSignatureLoading(false);
       });
     return () => { cancelled = true; };
-  }, [recordId, recordStatus, token]);
+  }, [recordId, hasSignatureStatus, token]);
 
   if (loading) {
     return (
@@ -278,7 +278,8 @@ const AdminProposalDetailPage = () => {
   const showLayout = layoutFiles.length > 0 || reachedStep >= 3;
   const showCommittedPoles = chotRows.length > 0 || reachedStep >= 4;
   const showReport = reportFiles.length > 0 || reachedStep >= 4;
-  const showSignature = SIGNATURE_STATUSES.includes(record.status);
+  const showSignature = record.status === 'SIGNATURE_PENDING'
+    || (record.status === 'APPROVED' && Boolean(record.signed_file_id));
 
   const signColor = signatureDetail ? getSignStatusColor(signatureDetail.sign_status) : '#64748b';
 

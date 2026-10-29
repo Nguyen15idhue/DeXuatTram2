@@ -371,6 +371,16 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
           source: 'import', ip: ip || null
         });
       } catch { /* silent */ }
+      if (user && user.id) {
+        try {
+          await proposalLifecycle.notifyStepReceivers(pid, 'PENDING', {
+            actorId: user.id,
+            includeOwner: true
+          });
+        } catch (error) {
+          console.error(`[ProposalNotifications] Failed to notify imported proposal ${pid}:`, error);
+        }
+      }
     }
   }
 

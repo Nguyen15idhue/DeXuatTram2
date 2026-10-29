@@ -24,8 +24,7 @@ export const MARKER_COLORS = {
   PROPOSAL_REPORT_RE_CREATING: '#f59e0b',
   PROPOSAL_REPORT_REVIEWING: '#2563eb',
   PROPOSAL_REPORT_UPDATING: '#f97316',
-  SIGNATURE_PENDING: '#9333ea',
-  COMPLETED: '#16a34a'
+  SIGNATURE_PENDING: '#9333ea'
 };
 
 export const getMarkerColor = (status, entity) => {

@@ -24,7 +24,7 @@ import { formatProposalScale } from '../../utils/proposalGrading';
 import { RotateCcw, Search } from 'lucide-react';
 
 const PROPOSALS_VIEW_ID = 8;
-const STATUS_VALUES = ['COMPLETED', 'CANCELLED'];
+const STATUS_VALUES = ['APPROVED', 'CANCELLED'];
 const EMPTY_FILTERS = {
   proposalStatus: '', model: '', province: '', region: '',
   ownerUserId: '', managerUserId: '', dateFrom: '', dateTo: ''
@@ -38,7 +38,7 @@ const ProposalCompletedTab = ({ token }) => {
   const statusOptionMap = Object.fromEntries(getSelectOptions('status').map((option) => [option.value, option]));
   const statusFilters = STATUS_VALUES.map((value) => ({
     value,
-    label: statusOptionMap[value]?.label || (value === 'COMPLETED' ? 'Đã hoàn thành' : 'Đã hủy')
+    label: statusOptionMap[value]?.label || (value === 'APPROVED' ? 'Đã duyệt BCĐX' : 'Đã hủy')
   }));
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +79,7 @@ const ProposalCompletedTab = ({ token }) => {
     try {
       const params = new URLSearchParams();
       params.set('statuses', filters.proposalStatus || STATUS_VALUES.join(','));
+      params.set('signed_approval_only', '1');
       params.set('page', String(targetPage));
       params.set('limit', String(pageSize));
       if (search) params.set('search', search);

@@ -11,8 +11,8 @@ const proposalDesignController = require('../controllers/proposalDesignControlle
  *     summary: Danh sách đề xuất cho trang Đánh giá layout
  *     description: >
  *       tab=all: DESIGNING, INFOR_WAITING, PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING,
- *       SIGNATURE_PENDING, COMPLETED; tab=pending: DESIGNING; tab=waiting: INFOR_WAITING;
- *       tab=layout: PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, COMPLETED
+ *       SIGNATURE_PENDING, APPROVED; tab=pending: DESIGNING; tab=waiting: INFOR_WAITING;
+ *       tab=layout: PROPOSAL_REPORT_CREATING, PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING, APPROVED
  *       và CANCELLED đã từng duyệt bản vẽ layout.
  *     security:
  *       - bearerAuth: []
