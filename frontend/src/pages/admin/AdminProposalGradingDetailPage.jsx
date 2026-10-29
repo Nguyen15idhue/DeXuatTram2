@@ -11,7 +11,16 @@ import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldVa
 import FileViewer from '../../components/dynamic/FileViewer';
 import Toast from '../../components/Toast';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
-import { isProposalFieldForModel } from '../../utils/proposalGrading';
+import {
+  formatProposalCost,
+  formatProposedScale,
+  getLegalDocs,
+  getModelLabel,
+  getProposalAddress,
+  getProposalLegalName,
+  getProposalPhone,
+  isProposalFieldForModel
+} from '../../utils/proposalGrading';
 
 const getStep = (proposal, permissions = {}) => {
   if (proposal?.status !== 'RE_GRADING') return 'grading';
@@ -58,27 +67,29 @@ const displayValue = (value) => {
   return String(parsed);
 };
 
-const FieldValue = ({ field, record, value, token }) => {
+const FieldValue = ({ field, record, value, onViewFile }) => {
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;
-    const apiUrl = import.meta.env.VITE_API_URL || '/api';
     return (
       <div className="flex flex-col gap-1">
         {files.map((file, index) => {
           const id = file.id || file.file_id;
           if (!id) return <span key={index}>{file.name || file.original_name || 'Tệp đính kèm'}</span>;
           return (
-            <a
+            <button
               key={`${id}-${index}`}
-              className="link link-primary inline-flex items-center gap-1"
-              href={`${apiUrl}/files/${id}/download?token=${encodeURIComponent(token)}`}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
+              className="link link-primary inline-flex items-center gap-1 text-left"
+              onClick={() => onViewFile({
+                ...file,
+                id,
+                original_name: file.original_name || file.name || `Tệp #${id}`
+              })}
             >
               <FileText size={14} />
               {file.original_name || file.name || `Tệp #${id}`}
-            </a>
+            </button>
           );
         })}
       </div>
@@ -239,6 +250,51 @@ const AdminProposalGradingDetailPage = () => {
       && !proposal.quy_hoach_regrade_request_id && !proposal.phap_ly_regrade_request_id
         ? 'Đã hoàn thành'
         : 'Đang làm';
+  const legalDocs = getLegalDocs(proposal);
+  const scoreCard = (title, score, note, regradeRequestId, regradeDescription, files = []) => (
+    <div className="rounded-xl border border-base-300 bg-base-100 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">{title}</h2>
+          <p className="mt-1 text-xs text-base-content/60">Kết quả chấm điểm</p>
+        </div>
+        <span className={`badge badge-lg ${score === 0 ? 'badge-error' : score == null ? 'badge-ghost' : 'badge-info'}`}>
+          {score == null ? 'Chưa chấm' : `${score}/3`}
+        </span>
+      </div>
+      {regradeRequestId && (
+        <p className="mt-3 text-sm text-warning">
+          Đang chờ chấm lại{score != null ? ` · Điểm trước: ${score}/3` : ''}
+        </p>
+      )}
+      {regradeDescription && (
+        <div className="alert alert-warning mt-3 py-2 text-sm">{regradeDescription}</div>
+      )}
+      {note && <p className="mt-3 whitespace-pre-wrap text-sm text-base-content/75">{note}</p>}
+      {files.length > 0 && (
+        <div className="mt-4 border-t border-base-200 pt-3">
+          <p className="mb-2 text-xs font-semibold text-base-content/70">Hồ sơ pháp lý</p>
+          <div className="flex flex-wrap gap-2">
+            {files.map((file, index) => (
+              <button
+                key={`${file.id || file.name}-${index}`}
+                type="button"
+                className="btn btn-ghost btn-xs gap-1"
+                onClick={() => setFileViewing({
+                  ...file,
+                  original_name: file.name || file.original_name || title
+                })}
+                disabled={!file.id && !file.url}
+              >
+                <FileText size={13} />
+                {file.name || `Tệp ${index + 1}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -262,35 +318,18 @@ const AdminProposalGradingDetailPage = () => {
         progress={detail.progress}
         currentStep={1}
         onViewFile={setFileViewing}
-        showSummary
+        showNotes={false}
       />
       <section className="card bg-base-100 border border-base-300">
         <div className="card-body p-4">
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="badge badge-info">{statusLabel}</span>
-            <span className={`badge ${scoreStatus === 'Đã hủy' ? 'badge-error' : scoreStatus === 'Đã hoàn thành' ? 'badge-success' : 'badge-warning'}`}>
-              {scoreStatus}
-            </span>
-            <span className="text-sm">Quy hoạch: {proposal.quy_hoach_regrade_request_id
-              ? `Đang chờ Quy hoạch chấm lại${proposal.quy_hoach_score !== null ? ` (điểm trước: ${proposal.quy_hoach_score}/3)` : ''}`
-              : proposal.quy_hoach_score ?? 'Chưa chấm'}</span>
-            <span className="text-sm">Pháp lý: {proposal.phap_ly_regrade_request_id
-              ? `Đang chờ Pháp lý chấm lại${proposal.phap_ly_score !== null ? ` (điểm trước: ${proposal.phap_ly_score}/3)` : ''}`
-              : proposal.phap_ly_score ?? 'Chưa chấm'}</span>
-          </div>
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            {proposal.quy_hoach_regrade_description && (
-              <div className="alert alert-warning py-2 text-sm">
-                <span><b>Yêu cầu Quy hoạch chấm lại:</b> {proposal.quy_hoach_regrade_description}</span>
-              </div>
-            )}
-            {proposal.phap_ly_regrade_description && (
-              <div className="alert alert-warning py-2 text-sm">
-                <span><b>Yêu cầu Pháp lý chấm lại:</b> {proposal.phap_ly_regrade_description}</span>
-              </div>
-            )}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="badge badge-info">{statusLabel}</span>
+              <span className={`badge ${scoreStatus === 'Đã hủy' ? 'badge-error' : scoreStatus === 'Đã hoàn thành' ? 'badge-success' : 'badge-warning'}`}>
+                {scoreStatus}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
             {canRequestSupplement && (
               <button type="button" className="btn btn-warning btn-sm" onClick={() => setSupplementOpen(true)}>
                 Yêu cầu bổ sung thông tin
@@ -301,8 +340,40 @@ const AdminProposalGradingDetailPage = () => {
                 {proposal.status === 'RE_GRADING' ? 'Chấm điểm lại' : 'Chấm điểm'}
               </button>
             )}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {scoreCard(
+              'Quy hoạch',
+              proposal.quy_hoach_score,
+              proposal.quy_hoach_note,
+              proposal.quy_hoach_regrade_request_id,
+              proposal.quy_hoach_regrade_description
+            )}
+            {scoreCard(
+              'Pháp lý',
+              proposal.phap_ly_score,
+              proposal.phap_ly_note,
+              proposal.phap_ly_regrade_request_id,
+              proposal.phap_ly_regrade_description,
+              legalDocs.flatMap((document) => document.files)
+            )}
           </div>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-base-300 bg-base-100 p-4">
+        <h2 className="mb-3 text-sm font-semibold">Tóm tắt đề xuất</h2>
+        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div><dt className="text-xs text-base-content/60">Mã đề xuất</dt><dd className="mt-1 text-sm font-medium">{proposal.ma_de_xuat || `#${proposal.id}`}</dd></div>
+          <div><dt className="text-xs text-base-content/60">Người đề xuất</dt><dd className="mt-1 text-sm font-medium">{proposal.user_name || proposal.owner_name || '—'}</dd></div>
+          <div><dt className="text-xs text-base-content/60">Tên pháp nhân</dt><dd className="mt-1 text-sm font-medium">{getProposalLegalName(proposal)}</dd></div>
+          <div><dt className="text-xs text-base-content/60">SĐT liên hệ</dt><dd className="mt-1 text-sm font-medium">{getProposalPhone(proposal)}</dd></div>
+          <div><dt className="text-xs text-base-content/60">Mô hình đầu tư</dt><dd className="mt-1 text-sm font-medium">{getModelLabel(proposal.mo_hinh_dau_tu)}</dd></div>
+          <div><dt className="text-xs text-base-content/60">Quy mô trụ đề xuất</dt><dd className="mt-1 text-sm font-medium">{formatProposedScale(proposal)}</dd></div>
+          <div><dt className="text-xs text-base-content/60">Tổng chi phí dự kiến</dt><dd className="mt-1 text-sm font-medium">{formatProposalCost(proposal)}</dd></div>
+          <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-base-content/60">Địa chỉ</dt><dd className="mt-1 text-sm font-medium">{getProposalAddress(proposal)}</dd></div>
+        </dl>
       </section>
 
       {detail.permissions?.canConfigure && (
@@ -340,7 +411,12 @@ const AdminProposalGradingDetailPage = () => {
             {fields.map((field) => (
               <div key={field.key} className="rounded border border-base-300 p-3">
                 <h3 className="text-xs font-semibold text-base-content/60 mb-1">{field.label || field.key}</h3>
-                <FieldValue field={field} record={proposal} value={proposal[field.key]} token={token} />
+                <FieldValue
+                  field={field}
+                  record={proposal}
+                  value={proposal[field.key]}
+                  onViewFile={setFileViewing}
+                />
               </div>
             ))}
           </div>
@@ -387,7 +463,7 @@ const AdminProposalGradingDetailPage = () => {
           </form>
         </dialog>
       )}
-      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} fullScreen />}
       <Toast message={toast} type={toastType} onClose={() => setToast('')} />
     </div>
   );

@@ -144,15 +144,18 @@ const AdminProposalLayoutDetailPage = () => {
         progress={detail.progress}
         currentStep={3}
         onViewFile={setFileViewing}
-        omitStepDetails={['grading']}
+        showNotes={false}
+        showCurrentStatus={false}
+        omitStepDetails={['grading', 'review']}
       />
 
       <section className="card border border-base-300 bg-base-100">
         <div className="card-body p-4">
-          <h2 className="card-title text-base">Thông tin quy trình</h2>
+          <div className="mb-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-primary">Đề xuất</p>
+            <h2 className="card-title text-base">{proposal.ma_de_xuat || `#${proposal.id}`}</h2>
+          </div>
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <div><span className="font-semibold">Mã đề xuất:</span> {proposal.ma_de_xuat || `#${proposal.id}`}</div>
-            <div><span className="font-semibold">Trạng thái:</span> {proposal.status || '—'}</div>
             <div><span className="font-semibold">Người đề xuất:</span> {proposal.user_name || 'Khách'}</div>
             <div><span className="font-semibold">Người phụ trách:</span> {proposal.manager_name || '—'}</div>
             <div><span className="font-semibold">Ngày tạo:</span> {formatDate(proposal.created_at)}</div>
@@ -209,7 +212,7 @@ const AdminProposalLayoutDetailPage = () => {
         </div>
       </section>
 
-      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} fullScreen />}
     </div>
   );
 };

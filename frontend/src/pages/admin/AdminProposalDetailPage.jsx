@@ -335,7 +335,17 @@ const AdminProposalDetailPage = () => {
         </div>
       </div>
 
-      <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">
+      <ProposalProgressiveDetails
+        record={record}
+        progress={record.progress}
+        currentStep="all"
+        showStepDetails={false}
+        showNotes={false}
+      />
+
+      <section className="rounded-xl border border-base-300 bg-base-100 p-4">
+        <h2 className="mb-3 text-sm font-semibold">Thông tin đề xuất</h2>
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
         <InfoItem label="Người đề xuất" value={record.user_name || record.owner_name} />
         <InfoItem label="Tên pháp nhân" value={getProposalLegalName(record)} />
         <InfoItem label="SĐT liên hệ" value={getProposalPhone(record)} />
@@ -345,30 +355,20 @@ const AdminProposalDetailPage = () => {
         <InfoItem label="Ngày tạo" value={formatDate(record.created_at)} />
         <InfoItem label="Người phụ trách" value={record.nguoi_phu_trach?.label} />
         <InfoItem label="Mức độ xem xét" value={record.review_level ? `Mức ${record.review_level}` : '-'} />
-      </div>
+        </div>
+      </section>
 
-      <ProposalProgressiveDetails
-        record={record}
-        progress={record.progress}
-        currentStep="all"
-        showStepDetails={false}
-        showNotes={false}
-      />
-
-      {(record.note || record.reject_reason) && (
-        <StepCard icon={FileText} title="Ghi chú và lý do xử lý">
-          {record.note && (
-            <div className="text-sm whitespace-pre-wrap break-words">
-              <span className="font-medium">Ghi chú:</span> {record.note}
-            </div>
-          )}
-          {record.reject_reason && (
-            <div className="text-sm whitespace-pre-wrap break-words">
-              <span className="font-medium">Lý do từ chối / hủy:</span> {record.reject_reason}
-            </div>
-          )}
-        </StepCard>
-      )}
+      <section className="rounded-xl border border-base-300 bg-base-100 p-4">
+        <h2 className="mb-3 text-sm font-semibold">Thông tin đề xuất chi tiết</h2>
+        <DynamicForm
+          entity="station_proposals"
+          purpose="view"
+          initialData={record}
+          hideActions
+          readOnlyKeys="*"
+          excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
+        />
+      </section>
 
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-base-content/70 uppercase tracking-wide">Kết quả các bước xử lý</h2>
@@ -494,22 +494,8 @@ const AdminProposalDetailPage = () => {
         )}
       </div>
 
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold text-base-content/70 uppercase tracking-wide">Thông tin đề xuất</h2>
-        <div className="border rounded-lg bg-base-100 p-4">
-          <DynamicForm
-            entity="station_proposals"
-            purpose="view"
-            initialData={record}
-            hideActions
-            readOnlyKeys="*"
-            excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
-          />
-        </div>
-      </div>
-
       {viewing && (
-        <FileViewer file={viewing} onClose={() => setViewing(null)} />
+        <FileViewer file={viewing} onClose={() => setViewing(null)} fullScreen />
       )}
       <ExtendDeadlineDialog
         isOpen={extendOpen}

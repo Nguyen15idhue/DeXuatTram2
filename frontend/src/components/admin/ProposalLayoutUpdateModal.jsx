@@ -127,7 +127,7 @@ const ProposalLayoutUpdateModal = ({ open, record, onClose, onSaved }) => {
       </form>
 
       {viewing && (
-        <FileViewer file={viewing} onClose={() => setViewing(null)} />
+        <FileViewer file={viewing} onClose={() => setViewing(null)} fullScreen />
       )}
     </dialog>
   );

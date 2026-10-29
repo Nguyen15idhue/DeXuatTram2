@@ -8,27 +8,33 @@ import {
   getGradingStatusLabel,
   getLegalDocs,
   getMissingLegalDocs,
-  isLegalDocsComplete
+  isLegalDocsComplete,
+  isLegalDocsRequired
 } from '../../utils/proposalGrading';
 
 const SCORE_OPTIONS = [0, 1, 2, 3];
 
-const LegalDocsPanel = ({ docs, onOpenFile }) => (
+const LegalDocsPanel = ({ docs, required, onOpenFile }) => (
   <div className="border rounded-lg p-3 bg-base-100">
     <div className="flex items-center gap-2 mb-2">
       <Paperclip size={14} />
       <h4 className="font-semibold text-sm">Hồ sơ pháp lý</h4>
     </div>
+    {!required && (
+      <p className="mb-2 rounded bg-info/10 px-2 py-1 text-xs text-info-content">
+        Không bắt buộc với đề xuất Nhượng quyền áp dụng chính sách Trả thẳng.
+      </p>
+    )}
     <div className="grid gap-2 sm:grid-cols-2">
       {docs.map((doc) => (
         <div
           key={doc.key}
-          className={`border rounded p-2 text-sm ${doc.has_file ? '' : 'border-warning/60 bg-warning/10'}`}
+          className={`border rounded p-2 text-sm ${doc.has_file || !required ? '' : 'border-warning/60 bg-warning/10'}`}
         >
           <div className="flex items-start justify-between gap-2">
             <span className="font-medium">{doc.label}</span>
-            <span className={`badge badge-xs ${doc.has_file ? 'badge-success' : 'badge-warning'}`}>
-              {doc.has_file ? 'Đã có' : 'Thiếu'}
+            <span className={`badge badge-xs ${doc.has_file ? 'badge-success' : required ? 'badge-warning' : 'badge-ghost'}`}>
+              {doc.has_file ? 'Đã có' : required ? 'Thiếu' : 'Không bắt buộc'}
             </span>
           </div>
           {doc.files.length > 0 ? (
@@ -99,6 +105,7 @@ const ProposalGradingModal = ({ open, record, canGradeQH, canGradePL, onClose, o
 
   const legalDocs = useMemo(() => getLegalDocs(record), [record]);
   const legalComplete = useMemo(() => isLegalDocsComplete(record), [record]);
+  const legalDocsRequired = useMemo(() => isLegalDocsRequired(record), [record]);
   const legalMissing = useMemo(() => getMissingLegalDocs(record), [record]);
 
   useEffect(() => {
@@ -116,7 +123,7 @@ const ProposalGradingModal = ({ open, record, canGradeQH, canGradePL, onClose, o
 
   const allowQH = canGradeQH;
   const allowPL = canGradePL;
-  const plBlocked = !legalComplete && allowPL;
+  const plBlocked = legalDocsRequired && !legalComplete && allowPL;
   const showQH = allowQH;
   const showPL = allowPL;
 
@@ -189,7 +196,7 @@ const ProposalGradingModal = ({ open, record, canGradeQH, canGradePL, onClose, o
         </div>
 
         <div className="space-y-3">
-          <LegalDocsPanel docs={legalDocs} onOpenFile={setViewingFile} />
+          <LegalDocsPanel docs={legalDocs} required={legalDocsRequired} onOpenFile={setViewingFile} />
 
           <div className={`grid gap-3 ${showQH && showPL ? 'sm:grid-cols-2' : ''}`}>
             {showQH && (
@@ -238,7 +245,7 @@ const ProposalGradingModal = ({ open, record, canGradeQH, canGradePL, onClose, o
       </div>
 
       {viewingFile && (
-        <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />
+        <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} fullScreen />
       )}
 
       <form method="dialog" className="modal-backdrop" onClick={handleClose}>

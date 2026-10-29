@@ -3,7 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, Pencil } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalReportService } from '../../services/api';
-import { getLegalDocFiles, isProposalFieldForModel } from '../../utils/proposalGrading';
+import {
+  formatProposalCost,
+  formatProposedScale,
+  getLegalDocFiles,
+  getProposalAddress,
+  getProposalLegalName,
+  getProposalPhone,
+  isProposalFieldForModel
+} from '../../utils/proposalGrading';
 import { getReportFiles, canUploadReport, uploadButtonLabel } from '../../utils/proposalReport';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ProposalReportSummary from '../../components/admin/ProposalReportSummary';
@@ -13,12 +21,17 @@ import Toast from '../../components/Toast';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
-import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
+import { getProposalStatusLabel, PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
 const formatDate = (value) => {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN');
+};
+
+const formatExpectedOnDate = (value) => {
+  const match = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : '—';
 };
 
 const displayValue = (value) => {
@@ -30,6 +43,13 @@ const displayValue = (value) => {
   }
   return String(value);
 };
+
+const OverviewItem = ({ label, value }) => (
+  <div className="min-w-0 rounded-lg border border-base-200 p-3">
+    <dt className="text-xs text-base-content/60">{label}</dt>
+    <dd className="mt-1 break-words text-sm font-medium">{value || '—'}</dd>
+  </div>
+);
 
 const FieldValue = ({ record, field, onViewFile }) => {
   const value = record[field.key];
@@ -149,22 +169,31 @@ const AdminProposalReportDetailPage = () => {
         progress={detail.progress}
         currentStep={4}
         onViewFile={setFileViewing}
+        showNotes={false}
         omitStepDetails={['grading', 'layout']}
       />
 
       <section className="card border border-base-300 bg-base-100">
         <div className="card-body p-4">
-          <h2 className="card-title text-base">Thông tin quy trình</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-            <div><span className="font-semibold">Mã đề xuất:</span> {proposal.ma_de_xuat || `#${proposal.id}`}</div>
-            <div><span className="font-semibold">Trạng thái:</span> {proposal.status}</div>
-            <div><span className="font-semibold">Người đề xuất:</span> {proposal.user_name || 'Khách'}</div>
-            <div><span className="font-semibold">Ngày tạo:</span> {formatDate(proposal.created_at)}</div>
-            <div><span className="font-semibold">Mô hình:</span> {displayValue(proposal.mo_hinh_dau_tu)}</div>
-            <div><span className="font-semibold">Miền:</span> {displayValue(proposal.vung_mien)}</div>
-            <div><span className="font-semibold">Pháp nhân:</span> {proposal.owner_name || '—'}</div>
-            <div><span className="font-semibold">SĐT:</span> {proposal.owner_phone || '—'}</div>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-primary">Tổng quan đề xuất</p>
+              <h2 className="card-title text-base">{proposal.ma_de_xuat || `#${proposal.id}`}</h2>
+            </div>
+            <span className="badge badge-outline">{getProposalStatusLabel(proposal.status)}</span>
           </div>
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <OverviewItem label="Người đề xuất" value={proposal.user_name || proposal.owner_name || 'Khách'} />
+            <OverviewItem label="Tên pháp nhân" value={getProposalLegalName(proposal)} />
+            <OverviewItem label="SĐT liên hệ" value={getProposalPhone(proposal)} />
+            <OverviewItem label="Mô hình đầu tư" value={displayValue(proposal.mo_hinh_dau_tu)} />
+            <OverviewItem label="Miền / tỉnh" value={[displayValue(proposal.vung_mien), displayValue(proposal.province)].filter((value) => value !== '—').join(' · ')} />
+            <OverviewItem label="Quy mô trụ đề xuất" value={formatProposedScale(proposal)} />
+            <OverviewItem label="Tổng chi phí dự kiến" value={formatProposalCost(proposal)} />
+            <OverviewItem label="Ngày dự kiến ON" value={formatExpectedOnDate(proposal.ngay_du_kien_on)} />
+            <OverviewItem label="Ngày tạo" value={formatDate(proposal.created_at)} />
+            <OverviewItem label="Địa chỉ" value={getProposalAddress(proposal)} />
+          </dl>
         </div>
       </section>
 
@@ -210,7 +239,7 @@ const AdminProposalReportDetailPage = () => {
         </div>
       </section>
 
-      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} fullScreen />}
       <ProposalReportUpdateModal
         open={uploadOpen}
         record={proposal}

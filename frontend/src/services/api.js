@@ -354,6 +354,12 @@ export const evReportService = {
   adminCreateProposal(id, token) {
     return api.postWithAuth(`/ev-reports/admin/${id}/create-proposal`, {}, token);
   },
+  adminSheetStatus(token) {
+    return api.getWithAuth('/ev-reports/admin/google-sheet/status', token);
+  },
+  adminSheetSync(token) {
+    return api.postWithAuth('/ev-reports/admin/google-sheet/sync', {}, token);
+  },
   getById(id, token) {
     return api.getWithAuth(`/ev-reports/admin/${id}`, token);
   },

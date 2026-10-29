@@ -436,7 +436,8 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
 
       {tab === "pending" && ["QH", "PL"].includes(roleKey) && (
         <div className="alert alert-info py-2 text-sm">
-          Đề xuất đang chờ GĐTTKD xem xét sau khi một phòng chấm chưa phải là yêu cầu chấm lại.
+          Khi một phòng chấm 1 điểm, đề xuất chuyển tới GĐTTKD xem xét; nếu phòng đầu tiên chấm 2–3 điểm, đề xuất tiếp tục chờ phòng còn lại.
+          Việc này chưa phải yêu cầu chấm lại.
           Mở tab “Tất cả đề xuất” để theo dõi; yêu cầu chấm lại sẽ xuất hiện ở đây sau khi GĐTTKD gửi yêu cầu.
         </div>
       )}

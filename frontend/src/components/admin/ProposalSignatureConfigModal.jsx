@@ -385,7 +385,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
       </form>
 
       {viewing && (
-        <FileViewer file={viewing} onClose={() => setViewing(null)} />
+        <FileViewer file={viewing} onClose={() => setViewing(null)} fullScreen />
       )}
     </dialog>
   );

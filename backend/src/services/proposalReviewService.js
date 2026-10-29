@@ -134,6 +134,8 @@ const mapReviewRow = (row) => {
     quy_hoach_score: qhScore,
     phap_ly_score: plScore,
     legal_docs_complete: legalDocs.complete,
+    legal_docs_required: legalDocs.required,
+    legal_docs_uploaded_complete: legalDocs.uploadedComplete,
     legal_docs_missing: legalDocs.missing,
     legal_docs: legalDocs.documents,
     vung_mien_label: REGION_LABELS[proposalRegion(custom)] || (custom.vung_mien || null)

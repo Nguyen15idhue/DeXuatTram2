@@ -48,10 +48,25 @@ const normalizeText = (value) => String(value || '')
   .trim()
   .toLowerCase();
 
+const getCellValue = (value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value.value ?? value.label ?? value.name ?? value.code ?? value;
+  }
+  return value;
+};
+
 const parseCustomData = (value) => {
   if (!value) return {};
   if (typeof value === 'object') return value;
   try { return JSON.parse(value); } catch { return {}; }
+};
+
+const isLegalDocsRequired = (customData) => {
+  const custom = parseCustomData(customData);
+  const model = normalizeText(getCellValue(custom.mo_hinh_dau_tu));
+  const policy = normalizeText(getCellValue(custom.chinh_sach_nq));
+  const isNq = model === 'nq' || model === 'nhuong quyen';
+  return !(isNq && policy === 'tra thang');
 };
 
 const resolveGradingRole = (department) => {
@@ -108,12 +123,19 @@ const toFileSummaries = (value) => normalizeFileEntries(value).map((item) => {
 
 const getLegalDocsState = (customData) => {
   const custom = parseCustomData(customData);
+  const required = isLegalDocsRequired(custom);
   const documents = LEGAL_DOCUMENTS.map((doc) => {
     const files = toFileSummaries(custom[doc.key]);
     return { key: doc.key, label: doc.label, has_file: files.length > 0, files };
   });
   const missing = documents.filter((doc) => !doc.has_file).map((doc) => doc.label);
-  return { complete: missing.length === 0, missing, documents };
+  return {
+    complete: !required || missing.length === 0,
+    required,
+    uploadedComplete: missing.length === 0,
+    missing,
+    documents
+  };
 };
 
 const computeGradingStatus = ({ quyHoachScore, phapLyScore, legalDocsComplete }) => {
@@ -170,6 +192,8 @@ const mapGradingRow = (row) => {
     quy_hoach_score: qhScore,
     phap_ly_score: plScore,
     legal_docs_complete: legalDocs.complete,
+    legal_docs_required: legalDocs.required,
+    legal_docs_uploaded_complete: legalDocs.uploadedComplete,
     legal_docs_missing: legalDocs.missing,
     legal_docs: legalDocs.documents,
     grading_status: code,
@@ -207,6 +231,7 @@ exports.LEGAL_DOCUMENTS = LEGAL_DOCUMENTS;
 exports.resolveGradingRole = resolveGradingRole;
 exports.normalizeText = normalizeText;
 exports.parseCustomData = parseCustomData;
+exports.isLegalDocsRequired = isLegalDocsRequired;
 exports.getUserDepartment = getUserDepartment;
 exports.getLegalDocsState = getLegalDocsState;
 exports.normalizeFileEntries = normalizeFileEntries;
@@ -850,9 +875,12 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
         target = 'GDTTKD_EVALUATING';
         reason = `Điểm Quy hoạch + Pháp lý đạt ${total}/6, cần GĐTTKD đánh giá`;
       }
-    } else if (isGrading && (nextQH !== null || nextPL !== null)) {
+    } else if (
+      isGrading &&
+      ((nextQH === 1 && nextPL === null) || (nextPL === 1 && nextQH === null))
+    ) {
       target = 'GDTTKD_EVALUATING';
-      reason = 'Đã có điểm từ một phòng; chuyển GĐTTKD xem xét trong khi chờ phòng còn lại chấm điểm';
+      reason = 'Một phòng chấm 1 điểm; chuyển GĐTTKD xem xét trong khi chờ phòng còn lại chấm điểm';
     }
 
     if (target) {
@@ -914,7 +942,9 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     const total = bothScored ? nextQH + nextPL : null;
     const description = bothScored
       ? `Đề xuất đạt ${total}/6 điểm, cần Giám đốc Trung tâm Kinh doanh đánh giá.`
-      : 'Đã có kết quả chấm từ một phòng; phòng còn lại vẫn cần hoàn thành phần việc.';
+      : (nextQH === 1 || nextPL === 1)
+        ? 'Một phòng chấm 1 điểm; phòng còn lại vẫn cần hoàn thành phần việc.'
+        : 'Đã có kết quả chấm từ một phòng; phòng còn lại vẫn cần hoàn thành phần việc.';
     try {
       const [existingRequests] = await pool.query(
         `SELECT id FROM proposal_requests
@@ -958,6 +988,8 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     grading_status: nextNote,
     grading_status_label: nextNote ? (GRADING_NOTE_LABELS[nextNote] || nextNote) : null,
     legal_docs_complete: legalDocs.complete,
+    legal_docs_required: legalDocs.required,
+    legal_docs_uploaded_complete: legalDocs.uploadedComplete,
     legal_docs_missing: legalDocs.missing,
     legal_docs: legalDocs.documents,
     transition,

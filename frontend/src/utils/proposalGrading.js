@@ -93,6 +93,12 @@ export const getProposalModelCode = (row) => {
   return '';
 };
 
+export const isLegalDocsRequired = (row) => {
+  if (typeof row?.legal_docs_required === 'boolean') return row.legal_docs_required;
+  const policy = normalizeText(getCellValue(getFieldValue(row, 'chinh_sach_nq')));
+  return !(getProposalModelCode(row) === 'NQ' && policy === 'tra thang');
+};
+
 export const parseProposalTableRows = (value) => {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
@@ -225,6 +231,7 @@ export const getMissingLegalDocs = (row) => getLegalDocs(row)
 
 export const isLegalDocsComplete = (row, value) => {
   if (typeof value === 'boolean') return value;
+  if (!isLegalDocsRequired(row)) return true;
   if (getLegalDocs(row).every((doc) => doc.has_file)) return true;
   return typeof row?.legal_docs_complete === 'boolean' ? row.legal_docs_complete : false;
 };

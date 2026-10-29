@@ -4,7 +4,7 @@ import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService, evReportService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getMarkerColor } from '../utils/mapHelpers';
-import { getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses } from '../utils/mapStatuses';
+import { getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
 import { getProposalDisplayName, getProposalDisplayPhone } from '../utils/proposalDisplay';
@@ -447,11 +447,14 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
   const canvasStations = nearby.stations.map(s => {
     const badge = s.status === 'PLANNING' ? String(readPriority(s) || '') : '';
     const isPin = s.status === 'PLANNING' && (badge === '1' || badge === '2' || badge === '3');
-    const levelColor = badge === '1' ? '#22c55e' : badge === '2' ? '#f97316' : badge === '3' ? '#ef4444' : getMarkerColor(s.status, 'station');
+    const levelColor = PLANNING_PRIORITY_COLORS[badge] || getMarkerColor(s.status, 'station');
     const icon = isPin ? `target${badge}` : getMarkerIcon(s.status, 'station');
     return { ...s, _color: isPin ? levelColor : getMarkerColor(s.status, 'station'), _icon: icon, _badge: isPin ? badge : '', _bg: getMarkerIconBg(s.status, 'station') };
   });
-  const canvasProposals = nearby.proposals.map(p => ({ ...p, _color: getMarkerColor(p.status, 'proposal'), _icon: getMarkerIcon(p.status, 'proposal'), _bg: getMarkerIconBg(p.status, 'proposal') }));
+  const canvasProposals = nearby.proposals.map(p => {
+    const mapStatus = getProposalMapStatus(p.status);
+    return { ...p, _color: getMarkerColor(mapStatus, 'proposal'), _icon: getMarkerIcon(mapStatus, 'proposal'), _bg: getMarkerIconBg(mapStatus, 'proposal') };
+  });
   const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
   const renderProposalPopup = (item) => createNearbyPopup(item.ma_de_xuat || `Đề xuất #${item.id}`, item, item.status, 'proposal');
