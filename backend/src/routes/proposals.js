@@ -91,7 +91,6 @@ router.get('/:id', optionalAuth, proposalController.getById);
  *               owner_phone:
  *                 type: string
  *                 pattern: '^\d{10,11}$'
- *                 pattern: '^\d{10,11}$'
  *                 example: '09123456789'
  *               address:
  *                 type: string

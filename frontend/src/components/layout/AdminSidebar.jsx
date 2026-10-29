@@ -39,6 +39,9 @@ import {
   PenSquare,
   Scale,
   RotateCcw,
+  BatteryCharging,
+  Wallet,
+  Warehouse,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import {
@@ -106,6 +109,68 @@ const mainItems = [
         roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
       },
     ],
+  },
+  {
+    path: "/admin/on-tram",
+    label: "Quản lý ON trạm",
+    icon: BatteryCharging,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+    children: [
+      {
+        path: "/admin/on-tram/thong-tin-chung",
+        label: "Thông tin chung",
+        icon: FileText,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+      {
+        path: "/admin/on-tram/khoi-tao-hop-dong",
+        label: "Khởi tạo hợp đồng",
+        icon: PenSquare,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+      {
+        path: "/admin/on-tram/xay-dung-ha-tang",
+        label: "Xây dựng hạ tầng",
+        icon: Scale,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+      {
+        path: "/admin/on-tram/giao-tru",
+        label: "Giao trụ",
+        icon: Zap,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+      {
+        path: "/admin/on-tram/lap-tru",
+        label: "Lắp trụ",
+        icon: PenTool,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+      {
+        path: "/admin/on-tram/nghiem-thu",
+        label: "Nghiệm thu",
+        icon: FileCheck,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+      {
+        path: "/admin/on-tram/on-tram",
+        label: "On trạm",
+        icon: MapPin,
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+      },
+    ],
+  },
+  {
+    path: "/admin/tai-chinh",
+    label: "Quản lý tài chính",
+    icon: Wallet,
+    roles: ["SUPER_ADMIN", "ADMIN"],
+  },
+  {
+    path: "/admin/kho",
+    label: "Quản lý kho",
+    icon: Warehouse,
+    roles: ["SUPER_ADMIN", "ADMIN"],
   },
   {
     path: "/admin/e-sign",
