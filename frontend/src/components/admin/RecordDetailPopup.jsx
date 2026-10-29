@@ -550,6 +550,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
           newErrors[f.key] = `${label} là bắt buộc`;
         }
       }
+      if (entity === 'station_proposals' && f.key === 'owner_phone' && val !== '' && val != null) {
+        const phoneDigits = String(val).replace(/[^\d]/g, '');
+        if (!/^\d{10,11}$/.test(phoneDigits)) {
+          newErrors[f.key] = `${label} phải có 10 hoặc 11 chữ số`;
+        }
+      }
       if (f.type === 'table' && Array.isArray(val) && val.length > 0) {
         const tc = (() => {
           if (!f.source_config) return {};

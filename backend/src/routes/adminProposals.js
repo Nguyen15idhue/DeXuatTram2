@@ -257,6 +257,7 @@ router.delete('/:id', requireAuth, requireProposalManager, adminProposalControll
  *                 type: string
  *               owner_phone:
  *                 type: string
+ *                 pattern: '^\d{10,11}$'
  *               address:
  *                 type: string
  *               area:

@@ -656,6 +656,13 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
           newErrors[f.key] = `${label} phải có ít nhất 1 dòng`;
         }
       }
+      if (entity === 'station_proposals' && f.key === 'owner_phone' && formData[f.key] !== '' && formData[f.key] != null) {
+        const phoneDigits = String(formData[f.key]).replace(/[^\d]/g, '');
+        if (!/^\d{10,11}$/.test(phoneDigits)) {
+          const label = f.labelOverride || f.label;
+          newErrors[f.key] = `${label} phải có 10 hoặc 11 chữ số`;
+        }
+      }
       if (f.type === 'table' && Array.isArray(formData[f.key])) {
         const tc = (() => {
           if (!f.source_config) return {};

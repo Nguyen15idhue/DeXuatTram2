@@ -88,6 +88,7 @@ const resolveInitialStatus = async (formId) => {
 exports.createProposal = async (userId, data, opts = {}) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
+  fixedData.owner_phone = validateProposalPhone(fixedData.owner_phone);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
   await dynamicUtils.applyAutoUserFields(dynamicData, fieldDefs, userId);
@@ -215,6 +216,16 @@ exports.createProposal = async (userId, data, opts = {}) => {
 
 const normalizePhone = (phone) => String(phone || '').replace(/[^\d]/g, '');
 
+const validateProposalPhone = (phone) => {
+  const digits = normalizePhone(phone);
+  if (!/^\d{10,11}$/.test(digits)) {
+    const err = new Error('Số điện thoại liên hệ phải có 10 hoặc 11 chữ số');
+    err.statusCode = 400;
+    throw err;
+  }
+  return digits;
+};
+
 const verifyCaptcha = async (token, ip) => {
   if (process.env.CAPTCHA_ENABLED === 'false') return true;
   const secret = process.env.TURNSTILE_SECRET_KEY || '';
@@ -255,13 +266,7 @@ exports.createGuestProposal = async (data, ip) => {
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
 
-  const phone = normalizePhone(fixedData.owner_phone);
-  if (phone && !/^0(3|5|7|8|9)\d{8}$/.test(phone)) {
-    const err = new Error('Số điện thoại phải là số di động Việt Nam 10 chữ số');
-    err.statusCode = 400;
-    throw err;
-  }
-  fixedData.owner_phone = phone;
+  const phone = validateProposalPhone(fixedData.owner_phone);
 
   if (fixedData.description && String(fixedData.description).length > 2000) {
     const err = new Error('Mô tả tối đa 2000 ký tự');

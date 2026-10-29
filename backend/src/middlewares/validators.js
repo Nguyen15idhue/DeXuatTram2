@@ -227,7 +227,11 @@ function validateDynamicFields(data, fieldDefs) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) errors.push(`${fd.label} không hợp lệ`);
         break;
       case 'phone':
-        if (!/^\d{10}$/.test(value)) errors.push(`${fd.label} phải có đúng 10 chữ số`);
+        if (fd.key === 'owner_phone') {
+          if (!/^\d{10,11}$/.test(value)) errors.push(`${fd.label} phải có 10 hoặc 11 chữ số`);
+        } else if (!/^\d{10}$/.test(value)) {
+          errors.push(`${fd.label} phải có đúng 10 chữ số`);
+        }
         break;
       case 'password':
         if (typeof value !== 'string' || value.length < 6) errors.push(`${fd.label} phải có ít nhất 6 ký tự`);

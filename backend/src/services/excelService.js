@@ -941,6 +941,15 @@ function parseExcelRow(row, columns, entity, headerMap, userMap = null) {
     }
   });
 
+  if (entity === 'station_proposals') {
+    const phone = String(fixedData.owner_phone || '').replace(/[^\d]/g, '');
+    if (!/^\d{10,11}$/.test(phone)) {
+      errors.push('SĐT chủ sở hữu phải có 10 hoặc 11 chữ số');
+    } else {
+      fixedData.owner_phone = phone;
+    }
+  }
+
   return { fixedData, dynamicData, errors };
 }
 

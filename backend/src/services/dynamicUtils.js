@@ -47,9 +47,12 @@ exports.validateField = (fieldDef, value) => {
       break;
 
     case 'phone':
-      const phoneRegex = /^\d{10}$/;
+      const isProposalContactPhone = fieldDef.key === 'owner_phone';
+      const phoneRegex = isProposalContactPhone ? /^\d{10,11}$/ : /^\d{10}$/;
       if (!phoneRegex.test(value)) {
-        errors.push(`${fieldDef.label} phải có đúng 10 chữ số`);
+        errors.push(isProposalContactPhone
+          ? `${fieldDef.label} phải có 10 hoặc 11 chữ số`
+          : `${fieldDef.label} phải có đúng 10 chữ số`);
       }
       break;
 
