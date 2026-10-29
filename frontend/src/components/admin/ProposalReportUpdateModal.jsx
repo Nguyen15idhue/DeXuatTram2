@@ -132,11 +132,34 @@ const formatMoney = (value) => {
   return Number.isFinite(number) ? `${number.toLocaleString('vi-VN')} ₫` : '—';
 };
 
+const formatExpectedOnDate = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').slice(0, 10));
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : '';
+};
+
+const parseExpectedOnDate = (value) => {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(value || '').trim());
+  if (!match) return null;
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1000
+    || date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day) {
+    return null;
+  }
+  return `${yearText}-${monthText}-${dayText}`;
+};
+
 const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload }) => {
   const { token } = useAuth();
   const [files, setFiles] = useState([]);
   const [existingFileIds, setExistingFileIds] = useState([]);
   const [chotRows, setChotRows] = useState([emptyRow()]);
+  const [expectedOnDate, setExpectedOnDate] = useState('');
   const [truTypes, setTruTypes] = useState([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -164,6 +187,7 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
     const previousFiles = toUploadValue(record);
     setFiles(previousFiles);
     setExistingFileIds(previousFiles.map((file) => Number(file.id)).filter(Number.isFinite));
+    setExpectedOnDate(formatExpectedOnDate(record?.ngay_du_kien_on));
     setChotRows(parseRows(record?.chot_so_luong_tru).length > 0
       ? parseRows(record?.chot_so_luong_tru).map((row) => ({
         mo_hinh: row.mo_hinh || '',
@@ -216,6 +240,9 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
 
   const validate = () => {
     if (!files || files.length === 0) return 'Vui lòng tải lên file tờ trình BCĐX';
+    if (onUpload && expectedOnDate.trim() && !parseExpectedOnDate(expectedOnDate)) {
+      return 'Ngày dự kiến ON phải đúng định dạng dd-mm-yyyy và là ngày hợp lệ';
+    }
     if ([RE_CREATING_STATUS, UPDATING_STATUS].includes(record.status)
       && !files.some((file) => file.id && !existingFileIds.includes(Number(file.id)))) {
       return 'Vui lòng tải lên file BCĐX mới theo yêu cầu cập nhật';
@@ -249,7 +276,8 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
           so_luong: Number(row.so_luong),
           loai_tru: row.loai_tru,
           gia_chot: Number(row.gia_chot)
-        }))
+        })),
+        ...(onUpload ? { ngay_du_kien_on: parseExpectedOnDate(expectedOnDate) } : {})
       };
       const res = onUpload
         ? await onUpload(payload)
@@ -301,6 +329,28 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
                 Số lượng và loại trụ mặc định lấy từ đề xuất; có thể chỉnh sửa. Giá chốt lấy từ danh mục hiện tại.
               </p>
             </div>
+
+            {onUpload && (
+              <div className="form-control max-w-sm">
+                <label className="label py-1" htmlFor="proposal-expected-on-date">
+                  <span className="label-text font-semibold">Ngày dự kiến ON</span>
+                </label>
+                <input
+                  id="proposal-expected-on-date"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="dd-mm-yyyy"
+                  className="input input-bordered input-sm"
+                  value={expectedOnDate}
+                  onChange={(event) => setExpectedOnDate(event.target.value)}
+                  disabled={saving}
+                />
+                <span className="label py-1">
+                  <span className="label-text-alt">Không bắt buộc · định dạng dd-mm-yyyy</span>
+                </span>
+              </div>
+            )}
 
             {loadingTypes ? (
               <div className="flex justify-center py-4"><span className="loading loading-spinner loading-sm" /></div>

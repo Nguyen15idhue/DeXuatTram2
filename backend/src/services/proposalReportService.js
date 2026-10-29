@@ -334,6 +334,7 @@ const loadProposal = async (id) => {
   if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
   const [rows] = await pool.query(
     `SELECT p.id, p.user_id, p.status, p.owner_name, p.custom_data,
+            DATE_FORMAT(p.ngay_du_kien_on, '%Y-%m-%d') AS ngay_du_kien_on,
             p.chot_so_luong_tru, p.tong_gia_tri_chot, u.parent_id AS owner_parent_id
        FROM station_proposals p
        LEFT JOIN users u ON u.id = p.user_id
@@ -453,7 +454,25 @@ const normalizeChotRows = (rows, prices) => {
 
 const sumChotTotal = (rows) => rows.reduce((sum, row) => sum + (Number(row.thanh_tien) || 0), 0);
 
-exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ip } = {}) => {
+const normalizeExpectedOnDate = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string') throw err('Ngày dự kiến ON không hợp lệ', 400);
+  const dateValue = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+  if (!match) throw err('Ngày dự kiến ON phải theo định dạng YYYY-MM-DD', 400);
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1000
+    || date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day) {
+    throw err('Ngày dự kiến ON không hợp lệ', 400);
+  }
+  return dateValue;
+};
+
+exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -485,13 +504,18 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ip } = {}) => {
     ? proposal.chot_so_luong_tru
     : parseCustomData(proposal.chot_so_luong_tru);
   const previousTotal = proposal.tong_gia_tri_chot;
+  const previousExpectedOnDate = proposal.ngay_du_kien_on || null;
+  const normalizedExpectedOnDate = normalizeExpectedOnDate(ngayDuKienOn);
+  const nextExpectedOnDate = normalizedExpectedOnDate === undefined
+    ? previousExpectedOnDate
+    : normalizedExpectedOnDate;
   const nextCustom = { ...custom, [REPORT_FIELD]: reportFiles };
 
   await pool.query(
     `UPDATE station_proposals
-     SET custom_data = ?, chot_so_luong_tru = ?, tong_gia_tri_chot = ?, updated_at = NOW()
+     SET custom_data = ?, chot_so_luong_tru = ?, tong_gia_tri_chot = ?, ngay_du_kien_on = ?, updated_at = NOW()
      WHERE id = ?`,
-    [JSON.stringify(nextCustom), JSON.stringify(chotRows), totalValue, proposal.id]
+    [JSON.stringify(nextCustom), JSON.stringify(chotRows), totalValue, nextExpectedOnDate, proposal.id]
   );
 
   const proposalLifecycle = require('./proposalLifecycle');
@@ -517,7 +541,14 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ip } = {}) => {
         label: 'Tổng giá trị chốt',
         old: previousTotal === null || previousTotal === undefined ? '' : String(previousTotal),
         new: String(totalValue)
-      }
+      },
+      ...(ngayDuKienOn !== undefined ? {
+        ngay_du_kien_on: {
+          label: 'Ngày dự kiến ON',
+          old: previousExpectedOnDate || '',
+          new: nextExpectedOnDate || ''
+        }
+      } : {})
     },
     actorId: user.id,
     actorRole: user.role,
@@ -545,6 +576,7 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ip } = {}) => {
     report_files: reportFiles,
     chot_so_luong_tru: chotRows,
     tong_gia_tri_chot: totalValue,
+    ngay_du_kien_on: nextExpectedOnDate,
     transition
   };
 };
