@@ -39,6 +39,9 @@ const parseJsonSafe = async (response) => {
   const text = await response.text();
   if (!text) throw new Error(`Server không trả dữ liệu (HTTP ${response.status}). Có thể request bị ngắt do xử lý quá lâu — hãy chia file nhỏ hơn, tắt check trùng/geocode rồi thử lại.`);
   try { return JSON.parse(text); } catch {
+    if (response.status === 404) {
+      throw new Error('Không tìm thấy API (404). Backend có thể chưa được cập nhật hoặc chưa khởi động lại.');
+    }
     if (response.status >= 500) throw new Error(`Server lỗi (HTTP ${response.status}). Có thể import quá lâu trên VPS chậm — hãy chia file <200 dòng, tắt check trùng/geocode rồi thử lại.`);
     throw new Error(`Phản hồi không hợp lệ (HTTP ${response.status})`);
   }
@@ -118,8 +121,18 @@ export const api = {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     handleUnauthorized(response);
-    const data = await response.json();
-    return data;
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('json')) {
+      if (response.status === 404) {
+        throw new Error(`Không tìm thấy API ${endpoint} (404). Backend có thể chưa được cập nhật hoặc chưa khởi động lại.`);
+      }
+      throw new Error(`API ${endpoint} trả về nội dung không phải JSON (HTTP ${response.status}).`);
+    }
+    try {
+      return await response.json();
+    } catch {
+      throw new Error(`API ${endpoint} trả về JSON không hợp lệ (HTTP ${response.status}).`);
+    }
   },
 
   async postWithAuth(endpoint, body, token) {
@@ -1046,6 +1059,48 @@ export const excelService = {
     if (filters.formId) params.append('formId', filters.formId);
     const query = params.toString() ? `?${params.toString()}` : '';
     await this.downloadBlob(`/my-proposals/export${query}`, token, `${fileStamp()}_export_station_proposals.xlsx`);
+  },
+
+  getCustomExportCatalog(token) {
+    return api.getWithAuth('/admin/excel/custom/catalog', token);
+  },
+
+  previewCustomExport(token, payload) {
+    return api.postWithAuth('/admin/excel/custom/preview', payload, token);
+  },
+
+  async exportCustomData(token, payload) {
+    const response = await fetch(`${API_URL}/admin/excel/custom/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    handleUnauthorized(response);
+    if (!response.ok) {
+      let message = `Xuất Excel thất bại (HTTP ${response.status})`;
+      try {
+        const error = await response.json();
+        if (error?.message) message = error.message;
+      } catch { /* response may not be JSON */ }
+      throw new Error(message);
+    }
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('spreadsheetml')) {
+      throw new Error(`Máy chủ trả về định dạng không phải Excel (${contentType || 'không rõ định dạng'})`);
+    }
+    const filename = parseDispositionFilename(response.headers.get('content-disposition'))
+      || `${fileStamp()}_export_de_xuat.xlsx`;
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    triggerDownload(objectUrl, filename);
+    setTimeout(() => {
+      try { window.URL.revokeObjectURL(objectUrl); } catch { /* browser cleanup */ }
+    }, 30000);
+    return filename;
   },
 
   async exportDuplicatesBlob(url, body, token, filename) {

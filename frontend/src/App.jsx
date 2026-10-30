@@ -45,6 +45,7 @@ const AdminProposalDetailPage = lazy(() => import('./pages/admin/AdminProposalDe
 const AdminProposalRequestUpdatePage = lazy(() => import('./pages/admin/AdminProposalRequestUpdatePage'));
 const AdminESignPage = lazy(() => import('./pages/admin/AdminESignPage'));
 const AdminEvReportsPage = lazy(() => import('./pages/admin/AdminEvReportsPage'));
+const AdminCustomExcelExportPage = lazy(() => import('./pages/admin/AdminCustomExcelExportPage'));
 const AdminFieldsPage = lazy(() => import('./pages/admin/AdminFieldsPage'));
 const AdminFormsPage = lazy(() => import('./pages/admin/AdminFormsPage'));
 const AdminFormBuilderPage = lazy(() => import('./pages/admin/AdminFormBuilderPage'));
@@ -344,6 +345,10 @@ function App() {
             />
             <Route path="/admin/ev-reports" element={<AdminEvReportsPage />} />
             <Route path="/admin/ev-reports/*" element={<AdminEvReportsPage />} />
+            <Route
+              path="/admin/excel-export"
+              element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminCustomExcelExportPage /></RoleRoute>}
+            />
             <Route path="/admin/fields" element={<RoleRoute allowed={SUPER_ONLY}><AdminFieldsPage /></RoleRoute>} />
             <Route path="/admin/forms" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormsPage /></RoleRoute>} />
             <Route path="/admin/forms/:id/edit" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormBuilderPage /></RoleRoute>} />

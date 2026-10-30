@@ -20,16 +20,11 @@ import {
   Search,
 } from "lucide-react";
 
-const EV_REPORTS_VIEW_ID = 17;
-
 const AdminEvReportsPage = () => {
   const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const evReportsViewId = useDefaultViewId(
-    "ev_charging_reports",
-    EV_REPORTS_VIEW_ID,
-  );
+  const evReportsViewId = useDefaultViewId("ev_charging_reports", null);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
