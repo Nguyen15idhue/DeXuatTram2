@@ -42,6 +42,7 @@ import {
   BatteryCharging,
   Wallet,
   Warehouse,
+  FileSpreadsheet,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import {
@@ -194,6 +195,12 @@ const mainItems = [
     path: "/admin/ev-reports",
     label: "Quản lý Nhu cầu sạc",
     icon: MapPin,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+  },
+  {
+    path: "/admin/excel-export",
+    label: "Xuất Excel",
+    icon: FileSpreadsheet,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
