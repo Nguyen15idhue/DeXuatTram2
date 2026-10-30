@@ -134,6 +134,8 @@ const mapReviewRow = (row) => {
     quy_hoach_score: qhScore,
     phap_ly_score: plScore,
     legal_docs_complete: legalDocs.complete,
+    legal_docs_required: legalDocs.required,
+    legal_docs_uploaded_complete: legalDocs.uploadedComplete,
     legal_docs_missing: legalDocs.missing,
     legal_docs: legalDocs.documents,
     vung_mien_label: REGION_LABELS[proposalRegion(custom)] || (custom.vung_mien || null)
@@ -602,9 +604,12 @@ const approveByTgd = async ({ user, id, reason, ip }) => {
   assertStatus(proposal, [TGD_STATUS]);
   if (Number(proposal.review_level) !== 3) throw err('Đề xuất không ở mức Tổng Giám đốc xem xét', 400);
   const cleanReason = requireReason(reason, 'Vui lòng nhập lý do duyệt đề xuất');
+  const targetStatus = proposalGradingService.isNqDirectPayment(proposal.custom_data)
+    ? 'PROPOSAL_REPORT_CREATING'
+    : 'DESIGNING';
 
   await require('./proposalRequestService').closeRequests(proposal.id, ['TGD_REVIEW'], { resolvedBy: user.id });
-  const transition = await require('./proposalLifecycle').transition(proposal.id, 'DESIGNING', {
+  const transition = await require('./proposalLifecycle').transition(proposal.id, targetStatus, {
     reason: cleanReason,
     actorId: user.id,
     actorRole: user.role,
@@ -616,14 +621,14 @@ const approveByTgd = async ({ user, id, reason, ip }) => {
     proposalId: proposal.id,
     action: 'review_approved',
     fromStatus: TGD_STATUS,
-    toStatus: 'DESIGNING',
+    toStatus: targetStatus,
     reason: cleanReason,
     actorId: user.id,
     actorRole: user.role,
     ip
   });
 
-  return { id: proposal.id, status: 'DESIGNING', review_level: proposal.review_level, transition };
+  return { id: proposal.id, status: targetStatus, review_level: proposal.review_level, transition };
 };
 
 const rejectByTgd = async ({ user, id, reason, ip }) => {

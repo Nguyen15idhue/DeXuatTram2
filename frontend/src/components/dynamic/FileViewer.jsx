@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Download, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { downloadFile, openFileInNewTab } from "../../utils/filePreviewActions";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
@@ -75,10 +76,13 @@ const FileViewer = ({
   overlay = null,
   pdfPage = 1,
   maximizable = false,
+  fullScreen = false,
 }) => {
   const { token } = useAuth();
   const [zoom, setZoom] = useState(1);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [actionLoading, setActionLoading] = useState("");
   const [objectUrl, setObjectUrl] = useState(null);
   const [htmlContent, setHtmlContent] = useState("");
   const [textContent, setTextContent] = useState("");
@@ -92,6 +96,37 @@ const FileViewer = ({
   const name = file.original_name || file.name || "File";
   const objectUrlRef = useRef(null);
   const docxContainerRef = useRef(null);
+  const isFullScreen = fullScreen || isMaximized;
+
+  useEffect(() => {
+    if (!isFullScreen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFullScreen]);
+
+  useEffect(() => {
+    if (!fullScreen || !onClose) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [fullScreen, onClose]);
+
+  const handleFileAction = async (action, callback) => {
+    setActionLoading(action);
+    setActionError("");
+    try {
+      await callback(file, token);
+    } catch (error) {
+      setActionError(error?.message || "Không thể thực hiện thao tác với file");
+    } finally {
+      setActionLoading("");
+    }
+  };
 
   useEffect(() => {
     if (!url) return undefined;
@@ -196,9 +231,13 @@ const FileViewer = ({
     if (inline) {
       return <div className="alert alert-error">Không thể hiển thị file</div>;
     }
-    return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="legacy-modal" onClick={(e) => e.stopPropagation()}>
+    const missingFileModal = (
+      <div className="modal-overlay" onClick={onClose} style={fullScreen ? { position: "fixed", inset: 0, zIndex: 10000 } : undefined}>
+        <div
+          className="legacy-modal"
+          style={fullScreen ? { position: "fixed", inset: 0, width: "100vw", maxWidth: "none", height: "100dvh", maxHeight: "none", borderRadius: 0 } : undefined}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="text-center p-6 text-gray-400">
             Không thể hiển thị file
           </div>
@@ -210,6 +249,7 @@ const FileViewer = ({
         </div>
       </div>
     );
+    return fullScreen ? createPortal(missingFileModal, document.body) : missingFileModal;
   }
 
   const renderContent = () => {
@@ -249,7 +289,7 @@ const FileViewer = ({
             alt={name}
             style={{
               maxWidth: "100%",
-              maxHeight: isMaximized ? "calc(100vh - 100px)" : "70vh",
+              maxHeight: isFullScreen ? "calc(100vh - 100px)" : "70vh",
               transform: `scale(${zoom})`,
               transformOrigin: "center",
               transition: "transform 0.2s",
@@ -262,7 +302,7 @@ const FileViewer = ({
           <video
             src={objectUrl}
             controls
-            className={`max-w-full ${isMaximized ? "max-h-full" : "max-h-[70vh]"}`}
+            className={`max-w-full ${isFullScreen ? "max-h-full" : "max-h-[70vh]"}`}
           >
             Trình duyệt không hỗ trợ video.
           </video>
@@ -287,7 +327,7 @@ const FileViewer = ({
             className={
               inline
                 ? "h-full min-h-[420px] w-full border-none"
-                : `w-full ${isMaximized ? "h-full" : "h-[70vh]"} border-none`
+                : `w-full ${isFullScreen ? "h-full" : "h-[70vh]"} border-none`
             }
             title={name}
           />
@@ -295,7 +335,7 @@ const FileViewer = ({
 
       case "word":
         return (
-          <div className={`w-full p-5 bg-white text-black overflow-auto ${isMaximized ? "h-full" : "max-h-[70vh]"}`}>
+          <div className={`w-full p-5 bg-white text-black overflow-auto ${isFullScreen ? "h-full" : "max-h-[70vh]"}`}>
             <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
           </div>
         );
@@ -309,7 +349,7 @@ const FileViewer = ({
           );
         }
         return (
-          <div className={`w-full overflow-auto p-2.5 ${isMaximized ? "h-full" : "max-h-[70vh]"}`}>
+          <div className={`w-full overflow-auto p-2.5 ${isFullScreen ? "h-full" : "max-h-[70vh]"}`}>
             {xlsxData.map((sheet, si) => (
               <div key={si} className="mb-5">
                 <div className="font-semibold text-white mb-2 px-2 py-1 bg-indigo-500 rounded inline-block">
@@ -426,18 +466,23 @@ const FileViewer = ({
     );
   }
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  const modal = (
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      style={fullScreen || isMaximized ? { position: "fixed", inset: 0, zIndex: 10000, padding: 0 } : undefined}
+    >
       <div
         className="legacy-modal max-w-[950px] max-h-[92vh]"
-        style={isMaximized ? {
+        style={isFullScreen ? {
           position: "fixed",
-          inset: 8,
-          width: "auto",
+          inset: fullScreen ? 0 : 8,
+          width: fullScreen ? "100vw" : "auto",
           maxWidth: "none",
-          height: "auto",
+          height: fullScreen ? "100dvh" : "auto",
           maxHeight: "none",
-          padding: 16,
+          padding: fullScreen ? 12 : 16,
+          borderRadius: fullScreen ? 0 : undefined,
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
@@ -449,7 +494,33 @@ const FileViewer = ({
             {name}
           </h3>
           <div className="flex gap-1.5 items-center">
-            {maximizable && (
+            {fullScreen && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary gap-1"
+                  onClick={() => handleFileAction("download", downloadFile)}
+                  disabled={!!actionLoading}
+                  title="Tải xuống file"
+                  aria-label="Tải xuống file"
+                >
+                  <Download size={15} />
+                  <span className="hidden sm:inline">{actionLoading === "download" ? "Đang tải..." : "Tải xuống"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary gap-1"
+                  onClick={() => handleFileAction("newTab", openFileInNewTab)}
+                  disabled={!!actionLoading}
+                  title="Xem trong trang mới"
+                  aria-label="Xem trong trang mới"
+                >
+                  <ExternalLink size={15} />
+                  <span className="hidden sm:inline">{actionLoading === "newTab" ? "Đang mở..." : "Trang mới"}</span>
+                </button>
+              </>
+            )}
+            {maximizable && !fullScreen && (
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
@@ -484,15 +555,16 @@ const FileViewer = ({
             </button>
           </div>
         </div>
+        {actionError && <div className="alert alert-error mb-2 py-2 text-sm" role="alert">{actionError}</div>}
         <div
           style={{
             overflow: "auto",
-            maxHeight: isMaximized ? "none" : "calc(92vh - 80px)",
+            maxHeight: isFullScreen ? "none" : "calc(92vh - 80px)",
             background: bgColor,
             borderRadius: 8,
             display: "flex",
-            flex: isMaximized ? 1 : undefined,
-            minHeight: isMaximized ? 0 : 200,
+            flex: isFullScreen ? 1 : undefined,
+            minHeight: isFullScreen ? 0 : 200,
             alignItems:
               fileType === "pdf" || fileType === "word" || fileType === "excel"
                 ? "flex-start"
@@ -509,6 +581,7 @@ const FileViewer = ({
       </div>
     </div>
   );
+  return fullScreen || isMaximized ? createPortal(modal, document.body) : modal;
 };
 
 export default FileViewer;

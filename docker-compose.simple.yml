@@ -27,8 +27,13 @@ services:
       - SIGNATURE_FONT_DIR=/app/signature-fonts
       - SIGNATURE_FONT_REGULAR=${SIGNATURE_FONT_REGULAR:-}
       - SIGNATURE_FONT_BOLD=${SIGNATURE_FONT_BOLD:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/google-sheets.json
     volumes:
       - uploads_data:/app/storage/uploads
+      - type: bind
+        source: ${GOOGLE_APPLICATION_CREDENTIALS:-./credentials.json}
+        target: /run/secrets/google-sheets.json
+        read_only: true
       - ${SIGNATURE_FONT_HOST_DIR:-/usr/share/fonts/truetype/msttcorefonts}:/app/signature-fonts:ro
     depends_on:
       mysql:

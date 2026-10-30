@@ -51,6 +51,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           user_id: signer.user_id,
           full_name: signer.full_name,
           signer_title: signer.signer_title,
+          signer_department: signer.signer_department || null,
           page: signer.page || 1,
           pos_x: signer.pos_x,
           pos_y: signer.pos_y,
@@ -116,6 +117,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
       user_id: candidate.id,
       full_name: candidate.full_name,
       signer_title: candidate.chuc_vu || candidate.department || null,
+      signer_department: candidate.department || null,
       ...DEFAULT_SIGNER_BOX
     }]);
     setSelectedUser('');
@@ -146,6 +148,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           return {
             user_id: signer.user_id,
             signer_title: signer.signer_title,
+            signer_department: signer.signer_department,
             page: signer.page,
             pos_x: normalized.pos_x,
             pos_y: normalized.pos_y,
@@ -385,7 +388,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
       </form>
 
       {viewing && (
-        <FileViewer file={viewing} onClose={() => setViewing(null)} />
+        <FileViewer file={viewing} onClose={() => setViewing(null)} fullScreen />
       )}
     </dialog>
   );

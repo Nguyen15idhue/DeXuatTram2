@@ -10,18 +10,21 @@ import ErrorMessage from "../../components/ErrorMessage";
 import Pagination from "../../components/Pagination";
 import useDefaultViewId from "../../hooks/useDefaultViewId";
 import useDebouncedValue from "../../hooks/useDebouncedValue";
-import { MapPin, Search, RotateCcw, PlusCircle } from "lucide-react";
-
-const EV_REPORTS_VIEW_ID = 17;
+import {
+  Clock3,
+  ExternalLink,
+  MapPin,
+  PlusCircle,
+  RefreshCw,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 
 const AdminEvReportsPage = () => {
   const { token, isSales } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const evReportsViewId = useDefaultViewId(
-    "ev_charging_reports",
-    EV_REPORTS_VIEW_ID,
-  );
+  const evReportsViewId = useDefaultViewId("ev_charging_reports", null);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,6 +42,12 @@ const AdminEvReportsPage = () => {
     record: null,
     mode: "view",
   });
+  const [sheetStatus, setSheetStatus] = useState({
+    loading: true,
+    data: null,
+    error: "",
+  });
+  const [sheetSyncing, setSheetSyncing] = useState(false);
 
   const loadReports = useCallback(async () => {
     try {
@@ -60,6 +69,43 @@ const AdminEvReportsPage = () => {
   useEffect(() => {
     loadReports();
   }, [loadReports]);
+
+  const loadSheetStatus = useCallback(async () => {
+    try {
+      const res = await evReportService.adminSheetStatus(token);
+      if (!res.success)
+        throw new Error(res.message || "Không tải được trạng thái");
+      setSheetStatus({ loading: false, data: res.data, error: "" });
+    } catch (err) {
+      setSheetStatus({
+        loading: false,
+        data: null,
+        error: err.message || "Không kết nối được với server",
+      });
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadSheetStatus();
+  }, [loadSheetStatus]);
+
+  const handleSheetSync = async () => {
+    setSheetSyncing(true);
+    try {
+      const res = await evReportService.adminSheetSync(token);
+      if (!res.success) throw new Error(res.message || "Đồng bộ thất bại");
+      setToast({ message: res.message, type: "success" });
+      await loadSheetStatus();
+    } catch (err) {
+      setToast({
+        message: err.message || "Không kết nối được với server",
+        type: "error",
+      });
+      await loadSheetStatus();
+    } finally {
+      setSheetSyncing(false);
+    }
+  };
 
   useEffect(() => {
     const match = location.pathname.match(
@@ -170,6 +216,78 @@ const AdminEvReportsPage = () => {
           <PlusCircle size={16} /> Thêm nhu cầu sạc xe
         </a>
       </div>
+
+      <section className="rounded-lg border border-base-300 bg-base-100 p-4 mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-semibold">Đồng bộ Google Sheet</h2>
+            <p className="text-sm text-base-content/70 mt-1">
+              Chỉ thêm khách mới có nhu cầu hợp tác; các cột chăm sóc hiện có
+              không bị ghi đè.
+            </p>
+            {sheetStatus.loading ? (
+              <p className="text-sm text-base-content/60 mt-2">
+                Đang kiểm tra cấu hình...
+              </p>
+            ) : sheetStatus.error ? (
+              <p className="text-sm text-error mt-2">{sheetStatus.error}</p>
+            ) : (
+              <>
+                {/* <p className="text-sm text-base-content/70 mt-2">
+                  {sheetStatus.data.configured
+                    ? `Tab: ${sheetStatus.data.tabName} · Lịch: ${sheetStatus.data.cron}`
+                    : sheetStatus.data.message || "Chưa cấu hình Google Sheet"}
+                </p> */}
+                {sheetStatus.data.lastRun && (
+                  <p className="text-sm text-base-content/70 mt-1">
+                    <Clock3 size={14} className="inline mr-1" />
+                    Lần gần nhất: {sheetStatus.data.lastRun.status}
+                    {sheetStatus.data.lastRun.completed_at
+                      ? ` · ${new Date(
+                          sheetStatus.data.lastRun.completed_at,
+                        ).toLocaleString("vi-VN")}`
+                      : ""}
+                    {sheetStatus.data.lastRun.status === "SUCCESS"
+                      ? ` · thêm ${sheetStatus.data.lastRun.inserted_count} bản ghi`
+                      : ""}
+                    {sheetStatus.data.lastRun.error_message
+                      ? ` · ${sheetStatus.data.lastRun.error_message}`
+                      : ""}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            {sheetStatus.data?.spreadsheetUrl && (
+              <a
+                href={sheetStatus.data.spreadsheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline btn-sm gap-2"
+              >
+                <ExternalLink size={15} /> Mở Google Sheet
+              </a>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary btn-sm gap-2"
+              onClick={handleSheetSync}
+              disabled={
+                sheetSyncing ||
+                sheetStatus.loading ||
+                !sheetStatus.data?.configured
+              }
+            >
+              <RefreshCw
+                size={15}
+                className={sheetSyncing ? "animate-spin" : ""}
+              />
+              {sheetSyncing ? "Đang đồng bộ..." : "Đồng bộ ngay"}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {error && (
         <ErrorMessage

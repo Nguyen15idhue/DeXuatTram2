@@ -35,20 +35,16 @@ SET custom_data = JSON_REMOVE(
 WHERE custom_data IS NOT NULL;
 
 DELETE FROM proposal_activity_logs
-WHERE source = 'webhook'
-   OR action LIKE '%sync%'
-   OR action LIKE '%push%'
-   OR action LIKE '%pull%'
+WHERE action LIKE '%1office%'
    OR CAST(changed_fields AS CHAR) LIKE '%1office%'
    OR CAST(changed_fields AS CHAR) LIKE '%contact_1office%';
 
 ALTER TABLE proposal_activity_logs
-  MODIFY COLUMN source ENUM('user', 'script', 'system_auto', 'admin_override') NOT NULL DEFAULT 'user';
+  MODIFY COLUMN source ENUM('user', 'webhook', 'script', 'system_auto', 'admin_override', 'import', 'restore') NOT NULL DEFAULT 'user';
 
 DELETE FROM journey_activity_logs
 WHERE source LIKE '%1office%'
-   OR source LIKE '%webhook%'
-   OR action LIKE '%sync%'
+   OR action LIKE '%1office%'
    OR CAST(changed_fields AS CHAR) LIKE '%1office%';
 
 DELETE FROM proposal_requests
@@ -61,9 +57,6 @@ DELETE FROM assistant_logs
 WHERE question LIKE '%1office%'
    OR answer LIKE '%1office%'
    OR CAST(sources AS CHAR) LIKE '%1office%'
-   OR question LIKE '%google sheet%'
-   OR answer LIKE '%google sheet%'
-   OR CAST(sources AS CHAR) LIKE '%google sheet%'
    OR question LIKE '%api_configs%'
    OR answer LIKE '%api_configs%'
    OR question LIKE '%api_queue_logs%'
@@ -77,7 +70,6 @@ DELETE FROM assistant_knowledge
 WHERE source_path LIKE '%1office%'
    OR content LIKE '%1office%'
    OR CAST(tags AS CHAR) LIKE '%1office%'
-   OR content LIKE '%google sheet%'
    OR content LIKE '%api_configs%'
    OR content LIKE '%api_queue_logs%'
    OR content LIKE '%api_field_mappings%'
@@ -91,26 +83,20 @@ WHERE source_path LIKE '%1office%'
    OR content LIKE '%automation_process_versions%'
    OR content LIKE '%external_id%'
    OR content LIKE '%journey_external_refs%'
-   OR source_path LIKE '%googleSheet%'
    OR source_path LIKE '%Automation%'
    OR source_path LIKE '%AutoPush%'
    OR source_path LIKE '%FieldMapping%'
-   OR source_path LIKE '%ExternalUser%'
-   OR source_path LIKE '%webhook%';
+   OR source_path LIKE '%ExternalUser%';
 
 DELETE FROM assistant_code_knowledge
 WHERE source_path LIKE '%1office%'
    OR content LIKE '%1office%'
-   OR source_path LIKE '%googleSheet%'
    OR source_path LIKE '%automation%'
    OR source_path LIKE '%apiConfig%'
    OR source_path LIKE '%externalUser%'
    OR source_path LIKE '%fieldMapping%'
    OR source_path LIKE '%personnelSync%'
    OR source_path LIKE '%queueWorker%'
-   OR source_path LIKE '%webhook%'
-   OR source_path LIKE '%syncService%'
-   OR content LIKE '%google sheet%'
    OR content LIKE '%api_configs%'
    OR content LIKE '%api_queue_logs%'
    OR content LIKE '%api_field_mappings%'
@@ -131,9 +117,6 @@ DELETE FROM help_articles
 WHERE slug LIKE '%1office%'
    OR title LIKE '%1office%'
    OR summary LIKE '%1office%'
-   OR slug LIKE '%google-sheet%'
-   OR title LIKE '%google sheet%'
-   OR summary LIKE '%google sheet%'
    OR title LIKE '%api_configs%'
    OR summary LIKE '%api_configs%'
    OR content_html LIKE '%api_configs%'
@@ -142,10 +125,6 @@ WHERE slug LIKE '%1office%'
    OR CAST(content_json AS CHAR) LIKE '%1office%'
    OR CAST(videos AS CHAR) LIKE '%1office%'
    OR CAST(images AS CHAR) LIKE '%1office%'
-   OR content_html LIKE '%google sheet%'
-   OR CAST(content_json AS CHAR) LIKE '%google sheet%'
-   OR CAST(videos AS CHAR) LIKE '%google sheet%'
-   OR CAST(images AS CHAR) LIKE '%google sheet%'
    OR CAST(tags AS CHAR) LIKE '%1office%';
 
 UPDATE help_articles AS article

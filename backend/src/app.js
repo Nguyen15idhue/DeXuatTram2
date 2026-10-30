@@ -26,6 +26,7 @@ const adminUsersRoutes = require('./routes/adminUsers');
 const adminLeadsRoutes = require('./routes/adminLeads');
 const adminReportsRoutes = require('./routes/adminReports');
 const excelRoutes = require('./routes/excel');
+const customExcelExportRoutes = require('./routes/customExcelExport');
 const mapUtilsRoutes = require('./routes/mapUtils');
 const dashboardRoutes = require('./routes/dashboard');
 const fieldDefinitionsRoutes = require('./routes/fieldDefinitions');
@@ -55,6 +56,7 @@ const evReportsRoutes = require('./routes/evReports');
 const signaturesRoutes = require('./routes/signatures');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 const importWorker = require('./workers/importWorker');
+const evReportSheetSyncWorker = require('./workers/evReportSheetSyncWorker');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -142,6 +144,7 @@ app.use('/api/my-proposals', myProposalsRoutes);
 app.use('/api/admin/users', adminLimiter, adminUsersRoutes);
 app.use('/api/admin/leads', adminLimiter, adminLeadsRoutes);
 app.use('/api/admin/reports', adminLimiter, adminReportsRoutes);
+app.use('/api/admin/excel/custom', adminLimiter, customExcelExportRoutes);
 app.use('/api/admin/excel', adminLimiter, excelRoutes);
 app.use('/api/admin/dashboard', adminLimiter, dashboardRoutes);
 app.use('/api/map', mapUtilsRoutes);
@@ -183,6 +186,9 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   importWorker.start().catch((err) => {
     console.error('[ImportWorker] start error:', err.message);
+  });
+  evReportSheetSyncWorker.start().catch((err) => {
+    console.error('[EvReportSheetSyncWorker] start error:', err.message);
   });
 });
 

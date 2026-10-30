@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Eye, FileText, PenSquare, RefreshCw, XCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Paperclip, PenSquare, RefreshCw, XCircle } from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import ReviewActionDialog from '../../components/admin/ReviewActionDialog';
 import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/ProposalTableBadges';
@@ -18,8 +18,7 @@ import {
 import { canConfigureSignature, canRequestUpdate, getReportFiles } from '../../utils/proposalApproval';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
-import DynamicForm from '../../components/dynamic/DynamicForm';
-import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
+import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
 
 const AdminProposalApprovalDetailPage = () => {
   const { id } = useParams();
@@ -114,13 +113,11 @@ const AdminProposalApprovalDetailPage = () => {
       );
     }
     return (
-      <div className="p-4">
-        <FileViewer
-          file={{ id: previewFile.id, original_name: previewFile.name, mime_type: previewFile.mime_type }}
-          inline
-          inlineHeight="calc(100vh - 7rem)"
-        />
-      </div>
+      <FileViewer
+        file={{ id: previewFile.id, original_name: previewFile.name, mime_type: previewFile.mime_type }}
+        fullScreen
+        onClose={() => navigate(`/admin/proposals/duyet-bcdx/${proposal.id}`)}
+      />
     );
   }
 
@@ -137,6 +134,7 @@ const AdminProposalApprovalDetailPage = () => {
         progress={proposal.progress}
         currentStep={5}
         onViewFile={setFileViewing}
+        showNotes={false}
       />
       <section className="rounded-lg border bg-base-100 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -158,57 +156,33 @@ const AdminProposalApprovalDetailPage = () => {
         </dl>
       </section>
 
-      <section className="rounded-lg border bg-base-100 p-4">
-        <h2 className="mb-3 font-semibold">Thông tin đã nhập khi tạo đề xuất</h2>
-        <DynamicForm
-          entity="station_proposals"
-          purpose="view"
-          initialData={proposal}
-          hideActions
-          readOnlyKeys="*"
-          excludeKeys={PROPOSAL_PROCESS_FIELD_KEYS}
-        />
-      </section>
+      <ProposalStaticInfo record={proposal} onViewFile={setFileViewing} />
 
       <section className="space-y-3 rounded-lg border bg-base-100 p-4">
         <div className="flex items-center gap-2">
           <FileText size={18} />
-          <h2 className="font-semibold">Xem trước file tờ trình BCĐX</h2>
+          <h2 className="font-semibold">Tờ trình BCĐX</h2>
         </div>
         {reportFiles.length === 0 ? (
           <div className="alert">Đề xuất chưa có file tờ trình BCĐX.</div>
         ) : (
-          reportFiles.map((file) => (
-            <FileViewer
-              key={file.id}
-              file={{ id: file.id, original_name: file.name, mime_type: file.mime_type }}
-              inline
-              inlineHeight="100vh"
-              inlineActions={(
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm gap-1"
-                    onClick={() => setFileViewing({
-                      id: file.id,
-                      original_name: file.name,
-                      mime_type: file.mime_type
-                    })}
-                  >
-                    <Eye size={15} /> Xem bằng modal
-                  </button>
-                  <a
-                    className="btn btn-ghost btn-sm gap-1"
-                    href={`/admin/proposals/duyet-bcdx/${proposal.id}?previewFile=${encodeURIComponent(file.id)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink size={15} /> Xem trong tab mới
-                  </a>
-                </div>
-              )}
-            />
-          ))
+          <div className="flex flex-wrap gap-2">
+            {reportFiles.map((file) => (
+              <button
+                key={file.id}
+                type="button"
+                className="btn btn-outline btn-sm gap-2"
+                onClick={() => setFileViewing({
+                  id: file.id,
+                  original_name: file.name,
+                  mime_type: file.mime_type
+                })}
+              >
+                <Paperclip size={14} />
+                {file.name || `Tệp #${file.id}`}
+              </button>
+            ))}
+          </div>
         )}
       </section>
 
@@ -264,7 +238,7 @@ const AdminProposalApprovalDetailPage = () => {
         <FileViewer
           file={fileViewing}
           onClose={() => setFileViewing(null)}
-          maximizable
+          fullScreen
         />
       )}
     </div>

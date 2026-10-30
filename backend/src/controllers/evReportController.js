@@ -1,4 +1,5 @@
 const evReportService = require("../services/evReportService");
+const evReportSheetSyncService = require("../services/evReportSheetSyncService");
 const proximityService = require("../services/proximityService");
 
 exports.getAll = async (req, res) => {
@@ -149,5 +150,45 @@ exports.adminCreateProposal = async (req, res) => {
         .json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
+exports.adminSheetSyncStatus = async (req, res) => {
+  try {
+    const data = await evReportSheetSyncService.getStatus();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error("Get ev report sheet sync status error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Không lấy được trạng thái đồng bộ Google Sheet",
+    });
+  }
+};
+
+exports.adminSyncSheet = async (req, res) => {
+  try {
+    const result = await evReportSheetSyncService.syncReports({
+      triggeredBy: req.user.id,
+      triggerType: "manual",
+    });
+    if (result.status === "SKIPPED") {
+      return res.status(409).json({
+        success: false,
+        data: result,
+        message: result.message,
+      });
+    }
+    res.json({
+      success: true,
+      data: result,
+      message: `Đồng bộ hoàn tất: đã thêm ${result.insertedCount} bản ghi mới`,
+    });
+  } catch (error) {
+    console.error("Sync ev reports to Google Sheet error:", error.message);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Đồng bộ Google Sheet thất bại",
+    });
   }
 };

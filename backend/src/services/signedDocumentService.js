@@ -11,6 +11,7 @@ const signerTextLayout = require('../../assets/signatureTextLayout.json');
 
 const execFileAsync = promisify(execFile);
 const IMAGE_HEIGHT_RATIO = signerTextLayout.imageHeightRatio;
+const IMAGE_TEXT_GAP_PT = 11;
 const PDF_POINTS_PER_CSS_PIXEL = 0.75;
 const SIGNATURE_BLOCK_MARKER = 'TMT-EGREEN-SIGNATURE-BLOCK-V3';
 const IMAGE_CONVERT_TIMEOUT_MS = 15000;
@@ -117,28 +118,6 @@ const getSignerFonts = async (pdf) => {
   return fonts;
 };
 
-const fitSignerSegment = (font, value, separator, fontSizePt, maxWidthPt) => {
-  const text = String(value || '').normalize('NFC');
-  const completeText = text ? `${text}${separator}` : '';
-  const completeWidth = font.widthOfTextAtSize(completeText, fontSizePt);
-  if (completeWidth <= maxWidthPt) {
-    return { text: completeText, width: completeWidth, truncated: false };
-  }
-
-  let visible = Array.from(text);
-  while (visible.length > 0) {
-    const candidate = `${visible.join('')}…`;
-    const width = font.widthOfTextAtSize(candidate, fontSizePt);
-    if (width <= maxWidthPt) return { text: candidate, width, truncated: true };
-    visible = visible.slice(0, -1);
-  }
-
-  const ellipsisWidth = font.widthOfTextAtSize('…', fontSizePt);
-  return ellipsisWidth <= maxWidthPt
-    ? { text: '…', width: ellipsisWidth, truncated: true }
-    : { text: '', width: 0, truncated: true };
-};
-
 const parseColor = (hex) => {
   const value = String(hex || '').replace(/^#/, '');
   if (!/^[\da-f]{6}$/i.test(value)) {
@@ -151,53 +130,81 @@ const parseColor = (hex) => {
   );
 };
 
-const drawSignerDetails = (page, signer, box, pageWidth, pageHeight, fonts) => {
-  const textByKey = {
-    title: signer.signer_title || '',
-    name: signer.full_name || '',
-    time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
-  };
-  const widthPoints = box.width * pageWidth;
-  const textAreaHeight = box.height * pageHeight * (1 - IMAGE_HEIGHT_RATIO);
+const drawSignerLine = (page, signer, box, pageWidth, pageHeight, fonts, key, value, topPt) => {
+  const line = signerTextLayout.lines[key];
+  const font = fonts[line.font];
+  const metrics = font.metrics;
+  const fontSize = line.fontSizePt;
+  const metricHeight = ((metrics.ascent - metrics.descent) / metrics.unitsPerEm) * fontSize;
+  const baselineFromTop = signerTextLayout.topPaddingPx * PDF_POINTS_PER_CSS_PIXEL
+    + (signerTextLayout.lineHeightPt - metricHeight) / 2
+    + (metrics.ascent / metrics.unitsPerEm) * fontSize;
   const leftPadding = signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
   const rightPadding = signerTextLayout.rightPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
-  const topPadding = signerTextLayout.topPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
-  const textWidth = Math.max(0, widthPoints - leftPadding - rightPadding);
-  const lineFont = fonts.regular.metrics;
-  const maxFontSize = Math.max(...signerTextLayout.segments.map((segment) => segment.fontSizePt));
-  const lineMetricHeight = ((lineFont.ascent - lineFont.descent) / lineFont.unitsPerEm)
-    * maxFontSize;
-  const baselineFromTop = topPadding
-    + (signerTextLayout.lineHeightPt - lineMetricHeight) / 2
-    + (lineFont.ascent / lineFont.unitsPerEm) * maxFontSize;
-  const boxBottom = pageHeight - (box.posY * pageHeight) - (box.height * pageHeight);
-  const baselineY = boxBottom + textAreaHeight - baselineFromTop;
-  const startX = box.posX * pageWidth + leftPadding;
-  let textCursorX = startX;
+  if (!value) return;
 
-  for (const segment of signerTextLayout.segments) {
-    const font = fonts[segment.font];
-    const maxWidth = textWidth - (textCursorX - startX);
-    if (maxWidth <= 0) break;
-    const { text, width, truncated } = fitSignerSegment(
-      font.embedded,
-      textByKey[segment.key],
-      segment.separatorAfter,
-      segment.fontSizePt,
-      maxWidth
-    );
-    if (text) {
-      page.drawText(text, {
-        x: textCursorX,
-        y: baselineY,
-        size: segment.fontSizePt,
-        font: font.embedded,
-        color: parseColor(segment.color)
-      });
-    }
-    textCursorX += width;
-    if (truncated) break;
+  const text = String(value).normalize('NFC');
+  const innerLeft = box.posX * pageWidth + leftPadding;
+  const innerWidth = box.width * pageWidth - leftPadding - rightPadding;
+  const textWidth = measureSignerText(fonts, key, text);
+
+  page.drawText(text, {
+    x: innerLeft + Math.max(0, innerWidth - textWidth) / 2,
+    y: pageHeight - topPt - baselineFromTop,
+    size: fontSize,
+    font: font.embedded,
+    color: parseColor(line.color)
+  });
+};
+
+const signerTextValues = (signer) => ({
+  department: signer.signer_department || signer.signer_title || '',
+  name: signer.full_name || '',
+  time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
+});
+
+const measureSignerText = (fonts, key, text) => {
+  const line = signerTextLayout.lines[key];
+  const metrics = fonts[line.font].metrics;
+  return (metrics.layout(text).advanceWidth / metrics.unitsPerEm) * line.fontSizePt;
+};
+
+const expandSignerBox = (signer, box, pageWidthPt, fonts) => {
+  const padding = (signerTextLayout.leftPaddingPx + signerTextLayout.rightPaddingPx) * PDF_POINTS_PER_CSS_PIXEL;
+  const textWidth = Math.max(0, ...Object.entries(signerTextValues(signer)).map(([key, text]) => (
+    text ? measureSignerText(fonts, key, String(text).normalize('NFC')) : 0
+  )));
+  const maxWidth = (1 - box.posX) * pageWidthPt;
+  const width = Math.min(maxWidth, Math.max(box.width * pageWidthPt, textWidth + padding));
+  return { ...box, width: width / pageWidthPt };
+};
+
+const loadSignerFontMetrics = async () => {
+  const paths = fontPaths();
+  const fonts = {};
+  for (const font of ['regular', 'bold']) {
+    fonts[font] = { metrics: fontkit.create(await fs.promises.readFile(paths[font])) };
   }
+  return fonts;
+};
+
+const drawSignerDetails = (page, signer, box, pageWidth, pageHeight, fonts) => {
+  const boxTopPt = box.posY * pageHeight;
+  const boxHeightPt = box.height * pageHeight;
+  const lineHeightPt = signerTextLayout.lineHeightPt;
+  const footerTopPt = boxTopPt + boxHeightPt - lineHeightPt * 2;
+  const values = signerTextValues(signer);
+
+  drawSignerLine(page, signer, box, pageWidth, pageHeight, fonts, 'department', values.department, boxTopPt);
+  drawSignerLine(page, signer, box, pageWidth, pageHeight, fonts, 'name', values.name, footerTopPt);
+  drawSignerLine(page, signer, box, pageWidth, pageHeight, fonts, 'time', values.time, footerTopPt + lineHeightPt);
+};
+
+const signerImageRegion = (boxTop, boxHeight, ptScale = 1) => {
+  const lineHeight = signerTextLayout.lineHeightPt * ptScale;
+  const footerTop = boxTop + boxHeight - lineHeight * 2;
+  const height = boxHeight * IMAGE_HEIGHT_RATIO;
+  return { top: footerTop - IMAGE_TEXT_GAP_PT * ptScale - height, height };
 };
 
 const convertSignatureImage = async (filePath) => {
@@ -268,23 +275,24 @@ const stampPdf = async (source, signers, { includeImages = true } = {}) => {
     }
     const page = pdf.getPage(pageIndex);
     const { width, height } = page.getSize();
-    const box = signerBox(signer);
+    const box = expandSignerBox(signer, signerBox(signer), width, fonts);
     if (includeImages) {
       const signature = await readSignature(signer);
       const image = await pdf.embedPng(signature.bytes);
       const boxWidth = box.width * width;
-      const boxHeight = box.height * height * IMAGE_HEIGHT_RATIO;
+      const boxHeight = box.height * height;
       const imageLeftPadding = signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
       const imageRightPadding = signerTextLayout.rightPaddingPx * PDF_POINTS_PER_CSS_PIXEL;
-      const top = box.posY * height;
-      const bottom = height - top - boxHeight;
+      const region = signerImageRegion(box.posY * height, boxHeight);
+      const imageRegionHeight = region.height;
+      const imageTop = region.top;
       const availableImageWidth = Math.max(0, boxWidth - imageLeftPadding - imageRightPadding);
-      const scale = Math.min((availableImageWidth * 0.88) / image.width, boxHeight / image.height);
+      const scale = Math.min((availableImageWidth * 0.88) / image.width, imageRegionHeight / image.height);
       const drawWidth = image.width * scale;
       const drawHeight = image.height * scale;
       page.drawImage(image, {
-        x: box.posX * width + imageLeftPadding,
-        y: bottom,
+        x: box.posX * width + imageLeftPadding + (availableImageWidth - drawWidth) / 2,
+        y: height - imageTop - (imageRegionHeight + drawHeight) / 2,
         width: drawWidth,
         height: drawHeight
       });
@@ -301,39 +309,49 @@ const stampPdf = async (source, signers, { includeImages = true } = {}) => {
   return Buffer.from(await pdf.save());
 };
 
-const imageDrawing = ({ relationshipId, signer, imageId, pageWidth, pageHeight }) => {
-  const box = signerBox(signer);
+const imageDrawing = ({ relationshipId, signer, box, imageId, pageWidth, pageHeight }) => {
   const width = Math.max(1, Math.round(box.width * pageWidth));
-  const height = Math.max(1, Math.round(box.height * IMAGE_HEIGHT_RATIO * pageHeight));
+  const height = Math.max(1, Math.round(signerImageRegion(0, box.height * pageHeight, 20).height));
   const x = Math.round(box.posX * pageWidth);
-  const y = Math.round(box.posY * pageHeight);
+  const y = Math.round(signerImageRegion(box.posY * pageHeight, box.height * pageHeight, 20).top);
   const name = xmlEscape(`Chữ ký ${signer.full_name || signer.user_id}`);
   return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${imageId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${imageId}" name="${name}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${imageId}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 };
 
-const textDrawing = ({ signer, drawingId, pageWidth, pageHeight }) => {
-  const box = signerBox(signer);
+const textDrawing = ({ signer, box, drawingId, pageWidth, pageHeight, placement }) => {
   const x = Math.round(box.posX * pageWidth);
-  const y = Math.round((box.posY + box.height * IMAGE_HEIGHT_RATIO) * pageHeight);
   const width = Math.max(1, Math.round(box.width * pageWidth));
-  const height = Math.max(1, Math.round(box.height * (1 - IMAGE_HEIGHT_RATIO) * pageHeight));
-  const textByKey = {
-    title: signer.signer_title || '',
-    name: signer.full_name || '',
-    time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
-  };
-  const runs = signerTextLayout.segments.map((segment) => {
-    const text = textByKey[segment.key] || '';
-    const value = text ? `${text}${segment.separatorAfter}` : '';
-    const fontSize = Math.round(segment.fontSizePt * 2);
-    const fontFamily = xmlEscape(signerTextLayout.fontFamily);
-    return `<w:r><w:rPr><w:rFonts w:ascii="${fontFamily}" w:hAnsi="${fontFamily}" w:eastAsia="${fontFamily}" w:cs="${fontFamily}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/><w:lang w:val="vi-VN"/>${segment.font === 'bold' ? '<w:b/>' : ''}</w:rPr><w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r>`;
-  }).join('');
   const lineHeightTwips = Math.round(signerTextLayout.lineHeightPt * 20);
-  const paragraphs = `<w:p><w:pPr><w:jc w:val="left"/><w:spacing w:before="0" w:after="0" w:line="${lineHeightTwips}" w:lineRule="exact"/></w:pPr>${runs}</w:p>`;
-  const drawingName = xmlEscape(`Thông tin người ký ${signer.full_name || signer.user_id}`);
-  const inset = Math.round(signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 20);
-  return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${drawingId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="${drawingName}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent>${paragraphs}</w:txbxContent></wps:txbx><wps:bodyPr wrap="none" lIns="${inset}" rIns="${inset}" tIns="0" bIns="0" anchor="t"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+  const lineKeys = placement === 'department' ? ['department'] : ['name', 'time'];
+  const textByKey = signerTextValues(signer);
+  const boxTop = Math.round(box.posY * pageHeight);
+  const boxHeight = Math.round(box.height * pageHeight);
+  const footerHeight = lineHeightTwips * 2;
+  const height = placement === 'department'
+    ? Math.max(lineHeightTwips, boxHeight - footerHeight)
+    : footerHeight;
+  const y = placement === 'department'
+    ? boxTop
+    : boxTop + boxHeight - height;
+  const bodyWrap = 'none';
+  const paragraphs = lineKeys.map((key) => {
+    const line = signerTextLayout.lines[key];
+    const value = textByKey[key] || '';
+    const fontSize = Math.round(line.fontSizePt * 2);
+    const fontFamily = xmlEscape(signerTextLayout.fontFamily);
+    const color = line.color.replace(/^#/, '');
+    const bold = line.font === 'bold' ? '<w:b/>' : '';
+    const run = value
+      ? `<w:r><w:rPr><w:rFonts w:ascii="${fontFamily}" w:hAnsi="${fontFamily}" w:eastAsia="${fontFamily}" w:cs="${fontFamily}"/><w:color w:val="${color}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/><w:lang w:val="vi-VN"/>${bold}</w:rPr><w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r>`
+      : '';
+    return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0" w:line="${lineHeightTwips}" w:lineRule="exact"/></w:pPr>${run}</w:p>`;
+  }).join('');
+  const drawingName = xmlEscape(`${placement === 'department' ? 'Phòng ban' : 'Thông tin người ký'} ${signer.full_name || signer.user_id}`);
+  const inset = Math.round(signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 12700);
+  const topInset = placement === 'department'
+    ? Math.round(signerTextLayout.topPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 12700)
+    : 0;
+  return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${drawingId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="${drawingName}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent>${paragraphs}</w:txbxContent></wps:txbx><wps:bodyPr wrap="${bodyWrap}" lIns="${inset}" rIns="${inset}" tIns="${topInset}" bIns="0" anchor="t"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 };
 
 const stampDocx = async (source, signers, { includeImages = true } = {}) => {
@@ -364,8 +382,10 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
   let nextImageId = Math.max(0, ...[...documentXml.matchAll(/<wp:docPr[^>]*id="(\d+)"/g)].map((match) => Number(match[1]))) + 1;
   const additions = new Map();
   let contentTypesXml = await zip.file('[Content_Types].xml')?.async('string');
+  const fonts = await loadSignerFontMetrics();
 
   for (const signer of signers) {
+    const box = expandSignerBox(signer, signerBox(signer), pageWidth / 20, fonts);
     let imageMarkup = '';
     if (includeImages) {
       const signature = await readSignature(signer);
@@ -387,6 +407,7 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
       imageMarkup = imageDrawing({
         relationshipId,
         signer,
+        box,
         imageId,
         pageWidth,
         pageHeight
@@ -406,12 +427,23 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
       renderedPage += explicitBreaks;
     }
     const paragraph = paragraphs[paragraphIndex][0];
-    additions.set(paragraph, `${additions.get(paragraph) || ''}${imageMarkup}${textDrawing({
+    const departmentMarkup = textDrawing({
       signer,
+      box,
       drawingId: nextImageId++,
       pageWidth,
-      pageHeight
-    })}`);
+      pageHeight,
+      placement: 'department'
+    });
+    const footerMarkup = textDrawing({
+      signer,
+      box,
+      drawingId: nextImageId++,
+      pageWidth,
+      pageHeight,
+      placement: 'footer'
+    });
+    additions.set(paragraph, `${additions.get(paragraph) || ''}${departmentMarkup}${imageMarkup}${footerMarkup}`);
   }
 
   for (const [paragraph, drawings] of additions) {

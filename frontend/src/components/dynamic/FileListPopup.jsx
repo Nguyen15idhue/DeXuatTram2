@@ -31,6 +31,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
   const [viewingFile, setViewingFile] = useState(null);
   const [selected, setSelected] = useState({});
   const [downloading, setDownloading] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const list = Array.isArray(files) ? files : files ? [files] : [];
 
@@ -73,6 +74,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
     if (filesToDownload.length === 0) return;
 
     setDownloading(true);
+    setActionError('');
     try {
       if (filesToDownload.length === 1) {
         const file = filesToDownload[0];
@@ -101,6 +103,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
       }
     } catch (err) {
       console.error('Download error:', err);
+      setActionError(err?.message || 'Không thể tải file');
     } finally {
       setDownloading(false);
     }
@@ -111,6 +114,7 @@ const FileListPopup = ({ files = [], onClose, title = 'Danh sách file', entity,
   }, []);
 
   const handleOpenNewTab = useCallback(async (file) => {
+    setActionError('');
     try {
       const viewUrl = getViewUrl(file);
       if (!viewUrl) return;
@@ -173,6 +177,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
       }
     } catch (err) {
       console.error('Open new tab error:', err);
+      setActionError(err?.message || 'Không thể mở file trong trang mới');
     }
   }, [token]);
 
@@ -183,6 +188,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
         onClose={() => setViewingFile(null)}
         entity={entity}
         entityId={entityId}
+        fullScreen={entity === 'station_proposals'}
       />
     );
   }
@@ -211,6 +217,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
               </label>
             </div>
 
+            {actionError && <div className="alert alert-error mb-3 py-2 text-sm" role="alert">{actionError}</div>}
             <div className="flex flex-col gap-2 max-h-[55vh] overflow-y-auto">
               {list.map((file, idx) => {
                 const name = file.original_name || file.name || `File ${idx + 1}`;

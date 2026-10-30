@@ -55,13 +55,13 @@ const logsOf = (id) => sql(`SELECT action FROM proposal_activity_logs WHERE prop
   .split('\n').filter(Boolean);
 
 const createdProposalIds = [];
-const createProposal = async (tag, withDocs) => {
+const createProposal = async (tag, withDocs, nqPolicy = null, model = 'NQ') => {
   // Tạo nhanh (form 17) -> PENDING, rồi "Xác nhận đủ thông tin" -> GRADING (entry-flow đã xác thực)
   const payload = {
     latitude: 21.0285 + Math.random() * 0.02,
     longitude: 105.8542 + Math.random() * 0.02,
     province: 'Hà Nội',
-    mo_hinh_dau_tu: 'NQ',
+    mo_hinh_dau_tu: model,
     owner_name: `Flow ${tag}`,
     owner_phone: '0987654321',
     address: `Số ${Math.floor(Math.random() * 100)} Flow ${tag}, Hoàn Kiếm, Hà Nội`,
@@ -71,6 +71,12 @@ const createProposal = async (tag, withDocs) => {
   const id = res.body && res.body.data && res.body.data.id;
   if (!id) throw new Error(`createProposal ${tag} failed: HTTP ${res.status} ${res.body && res.body.message}`);
   if ((res.body.data.status || 'PENDING') !== 'PENDING') throw new Error(`createProposal ${tag}: expected PENDING, got ${res.body.data.status}`);
+  if (nqPolicy !== null) {
+    sql(
+      `UPDATE station_proposals SET custom_data = JSON_SET(COALESCE(custom_data, JSON_OBJECT()), ` +
+      `'$.mo_hinh_dau_tu', '${model}', '$.chinh_sach_nq', '${nqPolicy}') WHERE id=${id}`
+    );
+  }
   const cf = await req('POST', `/my-proposals/${id}/confirm-info`, tokens.ctv, {});
   if (cf.status !== 200 || (cf.body.data && cf.body.data.status) !== 'GRADING') {
     throw new Error(`confirm-info ${tag} failed: HTTP ${cf.status} ${cf.body && cf.body.message}`);
@@ -82,6 +88,18 @@ const createProposal = async (tag, withDocs) => {
 
 const gradeQH = (id, score, note) => req('PUT', `/admin/proposal-grading/${id}`, tokens.qh, { quy_hoach_score: score, quy_hoach_note: note });
 const gradePL = (id, score, note) => req('PUT', `/admin/proposal-grading/${id}`, tokens.pl, { phap_ly_score: score, phap_ly_note: note });
+const gradeBothAsAdmin = async (id, qhScore, plScore) => {
+  const result = await req('PUT', `/admin/proposal-grading/${id}`, tokens.admin, {
+    quy_hoach_score: qhScore,
+    quy_hoach_note: `QH note ${qhScore}`,
+    phap_ly_score: plScore,
+    phap_ly_note: `PL note ${plScore}`
+  });
+  if (result.status !== 200) {
+    throw new Error(`gradeBothAsAdmin ${id} HTTP ${result.status}: ${result.body && result.body.message}`);
+  }
+  return statusOf(id);
+};
 
 const attachLegalDocsSql = (id) => sql(
   `UPDATE station_proposals SET custom_data = JSON_SET(custom_data, ` +
@@ -199,7 +217,7 @@ async function main() {
 
   // ================= CHUỖI A — HAPPY PATH =================
   await section('A1. Tạo nhanh + Xác nhận đủ thông tin → GRADING', async () => {
-    const id = await createProposal('A', false);
+    const id = await createProposal('A', false, 'Hỗ trợ trả góp từ TMT-Egreen');
     check('A1 quick + confirm-info → GRADING', statusOf(id) === 'GRADING', statusOf(id));
     check('A1 log created', logsOf(id).includes('created'));
     check('A1 note = NO_QH_WAIT_PL', sql(`SELECT note FROM station_proposals WHERE id=${id}`) === 'NO_QH_WAIT_PL');
@@ -212,13 +230,16 @@ async function main() {
     const id = global.__A;
     const qh = await gradeQH(id, 3, 'Vị trí phù hợp quy hoạch');
     check('A2 QH chấm 3 OK', qh.status === 200);
-    check('A2 có điểm QH thì chuyển GĐTTKD ngay', statusOf(id) === 'GDTTKD_EVALUATING', statusOf(id));
+    check('A2 QH chấm 3 điểm, vẫn chờ phòng PL trong GRADING', statusOf(id) === 'GRADING', statusOf(id));
     const pendingPL = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);
     check('A2 PL vẫn thấy đề xuất chưa chấm trong việc cần thực hiện',
       ((pendingPL.body && pendingPL.body.data) || []).some((row) => Number(row.id) === Number(id)));
     const pendingQH = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.qh);
     check('A2 QH đã chấm không còn trong việc cần thực hiện',
       !((pendingQH.body && pendingQH.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const gdReview = await req('GET', '/admin/proposal-reviews?tab=pending&limit=100', tokens.gd);
+    check('A2 GĐTTKD chưa nhận việc khi điểm phòng đầu tiên là 3',
+      !((gdReview.body && gdReview.body.data) || []).some((row) => Number(row.id) === Number(id)));
     const blocked = await gradePL(id, 3, 'x');
     check('A3 PL bị chặn khi thiếu hồ sơ (400)', blocked.status === 400, (blocked.body && blocked.message || '').slice(0, 80));
     await attachLegalDocs(id);
@@ -238,6 +259,26 @@ async function main() {
     check('A5 duyệt layout → PROPOSAL_REPORT_CREATING', app.status === 200 && statusOf(id) === 'PROPOSAL_REPORT_CREATING', statusOf(id));
     check('A5 log layout_approved', logsOf(id).includes('layout_approved'));
     check('A5 notify GĐTTKD vùng đúng 1 (không trùng)', (await notifCount(tokens.gd, 'PROPOSAL_REPORT_CREATING', id)) === 1);
+  });
+
+  await section('A5b. NQ trả thẳng 100% — bỏ qua layout', async () => {
+    const id = await createProposal('NQ100', false, 'Trả thẳng');
+    const status = await gradeBothAsAdmin(id, 3, 3);
+    check('A5b tổng 6 → PROPOSAL_REPORT_CREATING trực tiếp', status === 'PROPOSAL_REPORT_CREATING', status);
+    check('A5b thông báo lập BCĐX cho GĐTTKD vùng', (await notifCount(tokens.gd, 'PROPOSAL_REPORT_CREATING', id)) >= 1);
+    check('A5b không gửi thông báo bước DESIGNING', (await notifCount(tokens.qh, 'DESIGNING', id)) === 0);
+    const layoutQueue = await req('GET', '/admin/proposal-layouts?tab=pending&limit=100', tokens.qh);
+    check('A5b không xuất hiện trong hàng đợi layout',
+      !((layoutQueue.body && layoutQueue.body.data) || []).some((row) => Number(row.id) === Number(id)));
+    const reportQueue = await req('GET', '/admin/proposal-reports?tab=pending&limit=100', tokens.bo);
+    check('A5b xuất hiện trong hàng đợi lập BCĐX',
+      ((reportQueue.body && reportQueue.body.data) || []).some((row) => Number(row.id) === Number(id)));
+  });
+
+  await section('A5c. NQ_LK trả thẳng vẫn qua layout', async () => {
+    const id = await createProposal('NQLK100', true, 'Trả thẳng', 'NQ_LK');
+    const status = await gradeBothAsAdmin(id, 3, 3);
+    check('A5c NQ_LK tổng 6 → DESIGNING', status === 'DESIGNING', status);
   });
 
   await section('A6. Lập tờ trình BCĐX — bảng trụ chốt bắt buộc', async () => {
@@ -310,8 +351,8 @@ async function main() {
 
   await section('B1b. Chấm một phòng trước, giữ việc cho phòng còn lại', async () => {
     const id = await createProposal('B1b', true);
-    const first = await gradeQH(id, 2, 'QH chấm trước');
-    check('B1b QH chấm trước → GĐTTKD_EVALUATING',
+    const first = await gradeQH(id, 1, 'QH chấm trước');
+    check('B1b QH chấm 1 điểm trước → GĐTTKD_EVALUATING',
       first.status === 200 && statusOf(id) === 'GDTTKD_EVALUATING', statusOf(id));
 
     const pendingPL = await req('GET', '/admin/proposal-grading?tab=pending&limit=100', tokens.pl);
@@ -380,7 +421,37 @@ async function main() {
     check('B4 request TGD_REVIEW đóng', requestsOf(id).some((r) => r.startsWith('TGD_REVIEW|DONE|1|')), requestsOf(id).join(' ; '));
   });
 
-  await section('B4b. TGĐ không duyệt (qua vòng chấm lại) → CANCELLED', async () => {
+  await section('B4a. NQ trả thẳng — chấm lại đạt ngưỡng đi thẳng lập BCĐX', async () => {
+    const id = await createProposal('NQ100-regrade', false, 'Trả thẳng');
+    const initial = await gradeBothAsAdmin(id, 1, 1);
+    check('B4a điểm ban đầu → GDTTKD_EVALUATING', initial === 'GDTTKD_EVALUATING', initial);
+    const request = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, {
+      reason: 'Yêu cầu Quy hoạch đánh giá lại',
+      departments: ['QH']
+    });
+    check('B4a yêu cầu chấm lại → RE_GRADING', request.status === 200 && statusOf(id) === 'RE_GRADING', statusOf(id));
+    const qh = await gradeQH(id, 3, 'Điểm chấm lại đạt ngưỡng');
+    check('B4a chấm lại tổng 4 → PROPOSAL_REPORT_CREATING', qh.status === 200 && statusOf(id) === 'PROPOSAL_REPORT_CREATING', statusOf(id));
+    check('B4a yêu cầu RE_GRADE được đóng', requestsOf(id).every((row) => !row.startsWith('RE_GRADE|OPEN|')), requestsOf(id).join(' ; '));
+  });
+
+  await section('B4b. NQ trả thẳng — TGĐ duyệt đi thẳng lập BCĐX', async () => {
+    const id = await createProposal('NQ100-TGD', false, 'Trả thẳng');
+    const initial = await gradeBothAsAdmin(id, 1, 1);
+    check('B4b điểm ban đầu → GDTTKD_EVALUATING', initial === 'GDTTKD_EVALUATING', initial);
+    const request = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, {
+      reason: 'Yêu cầu chấm lại trước khi trình TGĐ'
+    });
+    check('B4b GĐTTKD yêu cầu chấm lại', request.status === 200 && statusOf(id) === 'RE_GRADING', statusOf(id));
+    const regraded = await gradeBothAsAdmin(id, 1, 1);
+    check('B4b chấm lại 2 điểm → RE_GDTTKD_EVALUATING', regraded === 'RE_GDTTKD_EVALUATING', regraded);
+    const toTgd = await req('PUT', `/admin/proposal-reviews/${id}/to-tgd`, tokens.gd, { reason: 'Trình TGĐ xem xét' });
+    check('B4b trình TGĐ → TGD_REVIEW', toTgd.status === 200 && statusOf(id) === 'TGD_REVIEW', statusOf(id));
+    const approved = await req('PUT', `/admin/proposal-reviews/${id}/approve`, tokens.tgd, { reason: 'Đồng ý phương án trả thẳng' });
+    check('B4b TGĐ duyệt → PROPOSAL_REPORT_CREATING', approved.status === 200 && statusOf(id) === 'PROPOSAL_REPORT_CREATING', statusOf(id));
+  });
+
+  await section('B4c. TGĐ không duyệt (qua vòng chấm lại) → CANCELLED', async () => {
     const id = await createProposal('B4b', true);
     await gradeTo(id, 1, 1);
     await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, { reason: 'Chấm lại lần 1' });

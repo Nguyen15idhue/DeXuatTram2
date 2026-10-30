@@ -115,27 +115,29 @@ const formatValue = (value) => {
   return String(parsed);
 };
 
-const FieldValue = ({ field, value, token, record }) => {
+const FieldValue = ({ field, value, record, onViewFile }) => {
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;
-    const apiUrl = import.meta.env.VITE_API_URL || '/api';
     return (
       <div className="flex flex-col gap-1">
         {files.map((file, index) => {
           const fileId = file.id || file.file_id;
           if (!fileId) return <span key={`name-${index}`}>{file.name || file.original_name || 'Tệp đính kèm'}</span>;
           return (
-            <a
+            <button
               key={`${fileId}-${index}`}
-              className="link link-primary inline-flex items-center gap-1"
-              href={`${apiUrl}/files/${fileId}/download?token=${encodeURIComponent(token || '')}`}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
+              className="link link-primary inline-flex items-center gap-1 text-left"
+              onClick={() => onViewFile({
+                ...file,
+                id: fileId,
+                original_name: file.original_name || file.name || `Tệp #${fileId}`
+              })}
             >
               <FileText size={14} />
               {file.original_name || file.name || `Tệp #${fileId}`}
-            </a>
+            </button>
           );
         })}
       </div>
@@ -258,6 +260,7 @@ const AdminProposalReviewDetailPage = () => {
         progress={detail.progress}
         currentStep={2}
         onViewFile={setFileViewing}
+        showNotes={false}
         omitStepDetails={['grading']}
       />
 
@@ -296,7 +299,12 @@ const AdminProposalReviewDetailPage = () => {
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {group.fields.map((field) => (
               <DetailField key={field.key} label={field.label || field.key}>
-                <FieldValue field={field} record={proposal} value={proposal[field.key]} token={token} />
+                <FieldValue
+                  field={field}
+                  record={proposal}
+                  value={proposal[field.key]}
+                  onViewFile={setFileViewing}
+                />
               </DetailField>
             ))}
           </dl>
@@ -353,7 +361,7 @@ const AdminProposalReviewDetailPage = () => {
         onClose={() => !saving && setActionType('')}
         onConfirm={submitAction}
       />
-      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} />}
+      {fileViewing && <FileViewer file={fileViewing} onClose={() => setFileViewing(null)} fullScreen />}
       <Toast message={toast} onClose={() => setToast('')} />
     </div>
   );
