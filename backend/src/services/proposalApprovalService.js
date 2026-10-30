@@ -372,7 +372,8 @@ exports.getSignatureConfig = async ({ user, id } = {}) => {
   assertApprovalAccess(scope);
   const proposal = await loadProposal(id);
   const [rows] = await pool.query(
-    `SELECT s.*, u.full_name, u.role, u.email
+    `SELECT s.*, u.full_name, u.role, u.email,
+            JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS user_department
      FROM proposal_signature_configs s
      LEFT JOIN users u ON u.id = s.user_id
      WHERE s.proposal_id = ? AND s.status <> 'CANCELLED'
@@ -389,6 +390,7 @@ exports.getSignatureConfig = async ({ user, id } = {}) => {
       email: row.email,
       role: row.role,
       signer_title: row.signer_title,
+      signer_department: row.signer_department || row.user_department || null,
       file_id: row.file_id,
       page: row.page,
       pos_x: Number(row.pos_x),
@@ -501,6 +503,19 @@ exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
     throw err('Đề xuất chưa có file tờ trình BCĐX', 400);
   }
 
+  const signerIds = [...new Set(normalized.map((signer) => signer.user_id))];
+  const signerPlaceholders = signerIds.map(() => '?').join(', ');
+  const [signerRows] = await pool.query(
+    `SELECT id, JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) AS department
+     FROM users
+     WHERE status = 'ACTIVE' AND id IN (${signerPlaceholders})`,
+    signerIds
+  );
+  const signerDepartments = new Map(signerRows.map((row) => [Number(row.id), row.department || null]));
+  if (signerDepartments.size !== signerIds.length) {
+    throw err('Một hoặc nhiều người ký không còn hoạt động', 400);
+  }
+
   const [fileRows] = await pool.query(
     'SELECT id, original_name FROM files WHERE id = ? LIMIT 1',
     [resolvedFileId]
@@ -516,13 +531,14 @@ exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
   for (const signer of normalized) {
     await pool.query(
       `INSERT INTO proposal_signature_configs
-        (proposal_id, file_id, user_id, signer_title, page, pos_x, pos_y, box_width, box_height, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (proposal_id, file_id, user_id, signer_title, signer_department, page, pos_x, pos_y, box_width, box_height, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         proposal.id,
         resolvedFileId,
         signer.user_id,
         signer.signer_title,
+        signerDepartments.get(signer.user_id),
         signer.page,
         signer.pos_x,
         signer.pos_y,

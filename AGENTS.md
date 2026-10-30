@@ -302,7 +302,7 @@ backend/src/
 | `proposal_activity_logs` | Log hoạt động đề xuất (created/updated/status_change/denied/station_created/auto_failed) |
 | `proposal_lifecycle_configs` | Config vòng đời (90/30 ngày auto, max retries, cron, countdown rules, giới hạn gia hạn `extend_max_times`/`extend_max_days_per_time`) |
 | `proposal_requests` | Yêu cầu đề xuất (tab "Đề xuất cần thực hiện"): `proposal_id`, `request_type` (UPDATE_INFO/SUPPLEMENT/LAYOUT_SUPPLEMENT/RE_GRADE/REVISE_BCDX/TGD_REVIEW/OTHER), `description`, `requested_by`, `previous_status`/`current_status`, `round_no`, `note`, `status` OPEN/DONE/CANCELLED — migration `175` |
-| `proposal_signature_configs` | Cấu hình ký BCĐX: `proposal_id`, `file_id`, `user_id`, `signer_title`, `page`, `pos_x`/`pos_y`/`box_width`/`box_height` (chuẩn hóa 0..1), `status` PENDING/SIGNED/CANCELLED — migration `180` |
+| `proposal_signature_configs` | Cấu hình ký BCĐX: `proposal_id`, `file_id`, `user_id`, `signer_title`, `signer_department` (snapshot phòng ban), `page`, `pos_x`/`pos_y`/`box_width`/`box_height` (chuẩn hóa 0..1), `status` PENDING/SIGNED/CANCELLED — migration `180` + `193` |
 | `business_journeys` | Hành trình Lead (`journey_code` UUID unique, `current_stage`, `status`) — migration `134` |
 | `leads` | Lead MKT (`lead_code` UNIQUE + read-only, stage/classification/outcome, `assigned_*`, `custom_data` CSKH/TVBH, `deleted_at`) — migration `134`/`144`/`145`/`148` |
 | `lead_assignments` | Lịch sử phân chia lead (đóng cũ bằng `ended_at`) — migration `136` |
@@ -320,6 +320,7 @@ Migrations nằm ở `database/`; các migration lịch sử được giữ nguy
 Migrations mới cho BCĐX: `181` thêm `tong_gia_tri_chot` (DECIMAL nullable), hoàn thiện cấu hình bảng `chot_so_luong_tru` gồm mô hình/số lượng/loại trụ/giá chốt/thành tiền; `182` đặt hai field chỉ đọc trên form 14. Khi upload BCĐX, API bắt buộc nhận ít nhất một dòng chốt, lấy giá hiện tại từ Data List `dm_loai_tru` (id 18), tự tính và lưu tổng (`so_luong × gia_chot`) vào `tong_gia_tri_chot`. `183` bước Trình ký (`signed_file_id` + `signature_id`/`signature_url`). `184` cột `proposal_requests.resolution_note` (ghi chú kết quả khi đánh dấu hoàn thành). `185` thêm trạng thái tạm dừng `PAUSED`.
 Migration `188-replace-proposal-completed-with-approved.sql` backfills `COMPLETED` to `APPROVED`, removes the `COMPLETED` status option, and removes it from the `station_proposals.status` ENUM. Migration `189-proposal-contact-phone-10-or-11-digits.sql` adds the MySQL check constraint for proposal contact phones.
 Migration `190-proposal-expected-on-date.sql` adds nullable `station_proposals.ngay_du_kien_on`; the proposal owner can update it from the BCĐX upload form.
+Migration `193-proposal-signature-department-snapshot.sql` stores the signer's department snapshot in `proposal_signature_configs`; signed-document overlays render department above the signature image and name/time below it in Times New Roman.
 ## 9. Swagger & Documentation
 - Swagger UI: `http://localhost:3000/api-docs`; JSON: `/api-docs.json`
 - Thêm endpoint mới → phải thêm `@swagger` JSDoc trong route file

@@ -4,31 +4,25 @@
   "leftPaddingPx": 6,
   "rightPaddingPx": 6,
   "topPaddingPx": 2,
-  "lineHeightPt": 14,
-  "segments": [
-    {
-      "key": "title",
-      "fontSizePt": 12,
-      "font": "regular",
-      "fontWeight": 400,
-      "color": "#111827",
-      "separatorAfter": " "
-    },
-    {
-      "key": "name",
-      "fontSizePt": 12,
+  "lineHeightPt": 28,
+  "lines": {
+    "department": {
+      "fontSizePt": 13,
       "font": "bold",
       "fontWeight": 700,
-      "color": "#111827",
-      "separatorAfter": " "
+      "color": "#111827"
     },
-    {
-      "key": "time",
-      "fontSizePt": 11,
+    "name": {
+      "fontSizePt": 13,
+      "font": "bold",
+      "fontWeight": 700,
+      "color": "#111827"
+    },
+    "time": {
+      "fontSizePt": 13,
       "font": "regular",
       "fontWeight": 400,
-      "color": "#374151",
-      "separatorAfter": ""
+      "color": "#374151"
     }
-  ]
+  }
 }
