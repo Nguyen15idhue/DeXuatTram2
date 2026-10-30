@@ -1,12 +1,24 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
-import { Download, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { downloadFile, openFileInNewTab } from "../../utils/filePreviewActions";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
+const MIN_IMAGE_ZOOM = 0.25;
+const MAX_IMAGE_ZOOM = 5;
 
 const getViewUrl = (file) => {
   if (file.url) return file.url;
@@ -80,6 +92,9 @@ const FileViewer = ({
 }) => {
   const { token } = useAuth();
   const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
+  const [isImageDragging, setIsImageDragging] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionLoading, setActionLoading] = useState("");
@@ -96,7 +111,10 @@ const FileViewer = ({
   const name = file.original_name || file.name || "File";
   const objectUrlRef = useRef(null);
   const docxContainerRef = useRef(null);
+  const imageViewportRef = useRef(null);
+  const imageDragRef = useRef(null);
   const isFullScreen = fullScreen || isMaximized;
+  const canPanImage = zoom > 1 || rotation % 180 !== 0;
 
   useEffect(() => {
     if (!isFullScreen) return undefined;
@@ -137,6 +155,11 @@ const FileViewer = ({
     setXlsxData(null);
     setDocxRenderVersion(0);
     setDocxOverlayPage(null);
+    setZoom(1);
+    setRotation(0);
+    setImagePan({ x: 0, y: 0 });
+    setIsImageDragging(false);
+    imageDragRef.current = null;
 
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
@@ -219,6 +242,122 @@ const FileViewer = ({
   }, [url, fileType, token, inline]);
 
   useEffect(() => {
+    if (zoom <= 1 && rotation % 180 === 0) setImagePan({ x: 0, y: 0 });
+  }, [zoom, rotation]);
+
+  const changeZoom = useCallback((factor) => {
+    setZoom((current) => Math.min(
+      MAX_IMAGE_ZOOM,
+      Math.max(MIN_IMAGE_ZOOM, current * factor),
+    ));
+  }, []);
+
+  const handleImageWheel = useCallback((event) => {
+    if (fileType !== "image" || event.deltaY === 0) return;
+    event.preventDefault();
+    changeZoom(event.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }, [changeZoom, fileType]);
+
+  useEffect(() => {
+    const viewport = imageViewportRef.current;
+    if (fileType !== "image" || !viewport) return undefined;
+    const onWheel = (event) => handleImageWheel(event);
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [fileType, handleImageWheel, inline]);
+
+  const handleImagePointerDown = (event) => {
+    if (!canPanImage || event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    imageDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: imagePan.x,
+      panY: imagePan.y,
+    };
+    setIsImageDragging(true);
+  };
+
+  const handleImagePointerMove = (event) => {
+    const drag = imageDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setImagePan({
+      x: drag.panX + event.clientX - drag.startX,
+      y: drag.panY + event.clientY - drag.startY,
+    });
+  };
+
+  const handleImagePointerUp = (event) => {
+    if (imageDragRef.current?.pointerId !== event.pointerId) return;
+    imageDragRef.current = null;
+    setIsImageDragging(false);
+  };
+
+  const resetImageView = () => {
+    setZoom(1);
+    setRotation(0);
+    setImagePan({ x: 0, y: 0 });
+  };
+
+  const renderImageControls = () => (
+    <div
+      className="flex items-center gap-1"
+      title="Cuộn con lăn để phóng to/thu nhỏ; kéo ảnh để di chuyển"
+    >
+      <button
+        type="button"
+        className="btn btn-sm btn-secondary"
+        onClick={() => changeZoom(1 / 1.25)}
+        title="Thu nhỏ ảnh"
+        aria-label="Thu nhỏ ảnh"
+      >
+        <ZoomOut size={15} />
+      </button>
+      <span className="text-xs text-gray-500 min-w-[42px] text-center" aria-live="polite">
+        {Math.round(zoom * 100)}%
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm btn-secondary"
+        onClick={() => changeZoom(1.25)}
+        title="Phóng to ảnh"
+        aria-label="Phóng to ảnh"
+      >
+        <ZoomIn size={15} />
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm btn-secondary"
+        onClick={() => setRotation((current) => (current + 270) % 360)}
+        title="Xoay trái 90 độ"
+        aria-label="Xoay trái 90 độ"
+      >
+        <RotateCcw size={15} />
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm btn-secondary"
+        onClick={() => setRotation((current) => (current + 90) % 360)}
+        title="Xoay phải 90 độ"
+        aria-label="Xoay phải 90 độ"
+      >
+        <RotateCw size={15} />
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm btn-secondary"
+        onClick={resetImageView}
+        title="Đặt lại chế độ xem"
+        aria-label="Đặt lại chế độ xem"
+      >
+        <RefreshCw size={15} />
+      </button>
+    </div>
+  );
+
+  useEffect(() => {
     if (!inline || fileType !== "word" || !docxRenderVersion) return;
     const pages =
       docxContainerRef.current?.querySelectorAll("section.approval-docx") || [];
@@ -287,12 +426,14 @@ const FileViewer = ({
           <img
             src={objectUrl}
             alt={name}
+            draggable={false}
             style={{
               maxWidth: "100%",
               maxHeight: isFullScreen ? "calc(100vh - 100px)" : "70vh",
-              transform: `scale(${zoom})`,
+              transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
               transformOrigin: "center",
-              transition: "transform 0.2s",
+              transition: isImageDragging ? "none" : "transform 0.15s ease-out",
+              userSelect: "none",
             }}
           />
         ) : null;
@@ -429,10 +570,16 @@ const FileViewer = ({
       <div className="w-full overflow-hidden rounded-lg border bg-base-100">
         <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
           <div className="min-w-0 truncate text-sm font-semibold">{name}</div>
+          {fileType === "image" && renderImageControls()}
           {inlineActions}
         </div>
         <div
+          ref={fileType === "image" ? imageViewportRef : undefined}
           className={`relative max-h-[75vh] min-h-[480px] overflow-auto ${isPdf ? "mx-auto" : ""} ${isWord ? "approval-docx-scroll" : ""}`}
+          onPointerDown={fileType === "image" ? handleImagePointerDown : undefined}
+          onPointerMove={fileType === "image" ? handleImagePointerMove : undefined}
+          onPointerUp={fileType === "image" ? handleImagePointerUp : undefined}
+          onPointerCancel={fileType === "image" ? handleImagePointerUp : undefined}
           style={{
             background: bgColor,
             height: inlineHeight || undefined,
@@ -448,6 +595,11 @@ const FileViewer = ({
               fileType === "pdf" || fileType === "word" || fileType === "excel"
                 ? "column"
                 : "row",
+            touchAction: fileType === "image" ? "none" : undefined,
+            userSelect: fileType === "image" ? "none" : undefined,
+            cursor: fileType === "image" && canPanImage
+              ? isImageDragging ? "grabbing" : "grab"
+              : undefined,
           }}
         >
           {renderContent()}
@@ -531,25 +683,7 @@ const FileViewer = ({
                 {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               </button>
             )}
-            {fileType === "image" && (
-              <>
-                <button
-                  className="btn btn-sm btn-secondary"
-                  onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}
-                >
-                  −
-                </button>
-                <span className="text-xs text-gray-500 min-w-[40px] text-center">
-                  {Math.round(zoom * 100)}%
-                </span>
-                <button
-                  className="btn btn-sm btn-secondary"
-                  onClick={() => setZoom((z) => Math.min(4, z + 0.25))}
-                >
-                  +
-                </button>
-              </>
-            )}
+            {fileType === "image" && renderImageControls()}
             <button className="btn btn-sm btn-secondary" onClick={onClose}>
               ✕
             </button>
@@ -557,6 +691,7 @@ const FileViewer = ({
         </div>
         {actionError && <div className="alert alert-error mb-2 py-2 text-sm" role="alert">{actionError}</div>}
         <div
+          ref={fileType === "image" ? imageViewportRef : undefined}
           style={{
             overflow: "auto",
             maxHeight: isFullScreen ? "none" : "calc(92vh - 80px)",
@@ -574,7 +709,16 @@ const FileViewer = ({
               fileType === "pdf" || fileType === "word" || fileType === "excel"
                 ? "column"
                 : "row",
+            touchAction: fileType === "image" ? "none" : undefined,
+            userSelect: fileType === "image" ? "none" : undefined,
+            cursor: fileType === "image" && canPanImage
+              ? isImageDragging ? "grabbing" : "grab"
+              : undefined,
           }}
+          onPointerDown={fileType === "image" ? handleImagePointerDown : undefined}
+          onPointerMove={fileType === "image" ? handleImagePointerMove : undefined}
+          onPointerUp={fileType === "image" ? handleImagePointerUp : undefined}
+          onPointerCancel={fileType === "image" ? handleImagePointerUp : undefined}
         >
           {renderContent()}
         </div>
