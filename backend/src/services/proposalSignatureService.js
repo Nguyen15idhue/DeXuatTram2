@@ -241,6 +241,7 @@ const loadConfigs = async (proposalId) => {
     email: row.email,
     role: row.role,
     signer_title: row.signer_title,
+    signer_department: row.signer_department || null,
     file_id: row.file_id,
     page: row.page,
     pos_x: Number(row.pos_x),

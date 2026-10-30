@@ -7,6 +7,9 @@ import signerTextLayout from '../../utils/signatureTextLayout.json';
 import SignerDetailsText from './SignerDetailsText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const IMAGE_TEXT_GAP_PT = 11;
+const FOOTER_PX = signerTextLayout.lineHeightPt * 2 * 4 / 3;
+const IMAGE_BOTTOM_PX = FOOTER_PX + IMAGE_TEXT_GAP_PT * 4 / 3;
 
 const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, onSign, signing }) => {
   const signer = normalizeSignerBox(sourceSigner);
@@ -14,7 +17,7 @@ const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, on
     <div
       data-signer-overlay=""
       data-signer-overlay-id={signer.id}
-      className={`absolute z-10 flex flex-col items-start justify-start overflow-hidden border-2 bg-white/90 px-1 py-0.5 text-left ${signer.status === 'SIGNED' ? 'border-success' : 'border-dashed border-primary'}`}
+      className={`absolute z-10 overflow-hidden border-2 bg-white/90 text-left ${signer.status === 'SIGNED' ? 'border-success' : 'border-dashed border-primary'}`}
       style={{
         left: `${Number(signer.pos_x) * 100}%`,
         top: `${signer.pos_y * 100}%`,
@@ -24,26 +27,43 @@ const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, on
         boxSizing: 'border-box'
       }}
     >
-      {signer.status === 'SIGNED' ? (
-        <img
-          src={`${API_URL}/admin/proposal-signatures/${proposalId}/signature-image/${signer.id}?token=${encodeURIComponent(token || '')}`}
-          alt={`Chữ ký ${signer.full_name}`}
-          className="min-h-0 w-full flex-none object-contain object-left-bottom"
-          style={{ height: `${signerTextLayout.imageHeightRatio * 100}%` }}
-        />
-      ) : (
-        <div
-          className="flex w-full flex-none items-end justify-start pb-1 text-left text-[10px] text-base-content/50"
-          style={{ height: `${signerTextLayout.imageHeightRatio * 100}%` }}
-        >
-          Chờ chữ ký
-        </div>
-      )}
       <div
-        className="min-h-0 w-full flex-1 overflow-hidden text-left"
+        className="absolute inset-x-0 top-0 overflow-hidden"
         style={{
-          paddingTop: `${signerTextLayout.topPaddingPx}px`,
-          fontFamily: `"${signerTextLayout.fontFamily}", serif`
+          height: `${signerTextLayout.lineHeightPt * 4 / 3}px`,
+          padding: `${signerTextLayout.topPaddingPx}px ${signerTextLayout.rightPaddingPx}px 0 ${signerTextLayout.leftPaddingPx}px`
+        }}
+      >
+        <SignerDetailsText
+          signer={signer}
+          timeText={signer.status === 'SIGNED' ? formatSignedTime(signer.signed_at) : 'Chờ ký'}
+          placement="department"
+        />
+      </div>
+      <div
+        className="absolute inset-x-0 flex items-center justify-center overflow-hidden"
+        style={{
+          bottom: `${IMAGE_BOTTOM_PX}px`,
+          height: `${signerTextLayout.imageHeightRatio * 100}%`,
+          paddingLeft: `${signerTextLayout.leftPaddingPx}px`,
+          paddingRight: `${signerTextLayout.rightPaddingPx}px`
+        }}
+      >
+        {signer.status === 'SIGNED' ? (
+          <img
+            src={`${API_URL}/admin/proposal-signatures/${proposalId}/signature-image/${signer.id}?token=${encodeURIComponent(token || '')}`}
+            alt={`Chữ ký ${signer.full_name}`}
+            className="max-h-full max-w-[88%] object-contain"
+          />
+        ) : (
+          <div className="w-full text-center text-[10px] text-base-content/50">Chờ chữ ký</div>
+        )}
+      </div>
+      <div
+        className="absolute inset-x-0 bottom-0 overflow-hidden"
+        style={{
+          height: `${signerTextLayout.lineHeightPt * 2 * 4 / 3}px`,
+          padding: `0 ${signerTextLayout.rightPaddingPx}px 0 ${signerTextLayout.leftPaddingPx}px`
         }}
       >
         <SignerDetailsText
