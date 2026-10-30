@@ -56,11 +56,13 @@ const mainItems = [
     path: "/admin",
     label: "Dashboard",
     icon: BarChart3,
+    group: "Tổng quan",
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
     path: "/admin/proposals",
     label: "Quản lý Đề xuất",
+    group: "Quy trình đề xuất",
     icon: ClipboardList,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
     children: [
@@ -114,6 +116,7 @@ const mainItems = [
   {
     path: "/admin/on-tram",
     label: "Quản lý ON trạm",
+    group: "Quy trình đề xuất",
     icon: BatteryCharging,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
     children: [
@@ -162,38 +165,37 @@ const mainItems = [
     ],
   },
   {
+    path: "/admin/e-sign",
+    label: "Quản lý Chữ ký số",
+    group: "Quy trình đề xuất",
+    icon: File,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
+  },
+  {
     path: "/admin/tai-chinh",
     label: "Quản lý tài chính",
+    group: "Vận hành",
     icon: Wallet,
     roles: ["SUPER_ADMIN", "ADMIN"],
   },
   {
     path: "/admin/kho",
     label: "Quản lý kho",
+    group: "Vận hành",
     icon: Warehouse,
     roles: ["SUPER_ADMIN", "ADMIN"],
   },
   {
-    path: "/admin/e-sign",
-    label: "Quản lý Chữ ký số",
-    icon: File,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
-  },
-  {
     path: "/admin/stations",
     label: "Quản lý Trạm",
+    group: "Vận hành",
     icon: Zap,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
-  },
-  {
-    path: "/admin/users",
-    label: "Quản lý Users",
-    icon: Users,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
     path: "/admin/ev-reports",
     label: "Quản lý Nhu cầu sạc",
+    group: "Khách hàng",
     icon: MapPin,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
@@ -206,18 +208,28 @@ const mainItems = [
   {
     path: "/admin/leads",
     label: "Quản lý Leads",
+    group: "Khách hàng",
     icon: Target,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT"],
   },
   {
+    path: "/admin/users",
+    label: "Quản lý Users",
+    group: "Quản trị",
+    icon: Users,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+  },
+  {
     path: "/admin/reports",
     label: "Báo cáo",
+    group: "Báo cáo & nhật ký",
     icon: PieChart,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT"],
   },
   {
     path: "/admin/audit-log",
     label: "Audit Log",
+    group: "Báo cáo & nhật ký",
     icon: History,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
@@ -634,7 +646,23 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
-        {visibleMain.map(renderMainItem)}
+        {(() => {
+          const grouped = [];
+          visibleMain.forEach((item) => {
+            const label = item.group || 'Khác';
+            const last = grouped[grouped.length - 1];
+            if (!last || last.label !== label) grouped.push({ label, items: [item] });
+            else last.items.push(item);
+          });
+          return grouped.map((group, groupIndex) => (
+            <div key={`${group.label}-${groupIndex}`} className="mb-2">
+              <div className="px-2 pt-3 pb-1 text-xs font-bold uppercase tracking-wider text-primary">
+                {group.label}
+              </div>
+              {group.items.map(renderMainItem)}
+            </div>
+          ));
+        })()}
         {visibleGroups.length > 0 && (
           <div className="border-t border-base-300 my-3 mx-1" />
         )}
