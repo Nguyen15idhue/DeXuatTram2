@@ -299,48 +299,65 @@ const getExport = async (id) => {
   return { ...rows[0], items };
 };
 
-const createExport = async (data = {}, ctx = {}) => {
+const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   const exporterUserId = ctx.userId || toInt(data.exporter_user_id, 'Người xuất kho');
   const exportDate = normalizeDate(data.export_date || new Date().toISOString(), 'Ngày xuất kho');
   const chargingStationId = toInt(data.charging_station_id, 'Trạm sạc');
   const reason = data.reason ? String(data.reason).trim() : null;
+  const carrier = data.carrier ? String(data.carrier).trim() : null;
+  const transportCode = data.transport_code ? String(data.transport_code).trim() : null;
+  const transportStatus = String(data.transport_status || 'PENDING').trim().toUpperCase();
+  const totalAmount = data.total_amount === null || data.total_amount === undefined || data.total_amount === ''
+    ? null
+    : Number(data.total_amount);
   const items = normalizeItems(data.items);
+  if (!['PENDING', 'SHIPPING', 'DELIVERED', 'FAILED', 'RETURNED'].includes(transportStatus)) {
+    throw err('Trạng thái vận chuyển không hợp lệ', 400);
+  }
+  if (totalAmount !== null && (!Number.isFinite(totalAmount) || totalAmount < 0)) {
+    throw err('Tổng số tiền vận chuyển phải là số không âm', 400);
+  }
 
+  const [stationRows] = await conn.query('SELECT id FROM charging_stations WHERE id = ?', [chargingStationId]);
+  if (stationRows.length === 0) throw err('Không tìm thấy trạm sạc', 404);
+
+  const [stockRows] = await conn.query(
+    `SELECT id, quantity FROM charging_poles WHERE id IN (${items.map(() => '?').join(',')}) FOR UPDATE`,
+    items.map((item) => item.pole_id)
+  );
+  const stockMap = new Map(stockRows.map((row) => [row.id, row.quantity]));
+  for (const item of items) {
+    if (!stockMap.has(item.pole_id)) throw err(`Không tìm thấy trụ sạc #${item.pole_id}`, 404);
+    if (stockMap.get(item.pole_id) < item.quantity) {
+      throw err(`Trụ sạc #${item.pole_id} không đủ tồn kho`, 400);
+    }
+  }
+
+  const [headerResult] = await conn.query(
+    `INSERT INTO warehouse_exports
+      (exporter_user_id, export_date, reason, charging_station_id, carrier, transport_code, transport_status, total_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [exporterUserId, exportDate, reason, chargingStationId, carrier, transportCode, transportStatus, totalAmount]
+  );
+  const exportId = headerResult.insertId;
+  await conn.query(
+    'INSERT INTO warehouse_export_items (export_id, pole_id, quantity) VALUES ?',
+    [items.map((item) => [exportId, item.pole_id, item.quantity])]
+  );
+  for (const item of items) {
+    await conn.query(
+      'UPDATE charging_poles SET quantity = quantity - ? WHERE id = ?',
+      [item.quantity, item.pole_id]
+    );
+  }
+  return exportId;
+};
+
+const createExport = async (data = {}, ctx = {}) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-
-    const [stationRows] = await conn.query('SELECT id FROM charging_stations WHERE id = ?', [chargingStationId]);
-    if (stationRows.length === 0) throw err('Không tìm thấy trạm sạc', 404);
-
-    const [stockRows] = await conn.query(
-      `SELECT id, quantity FROM charging_poles WHERE id IN (${items.map(() => '?').join(',')}) FOR UPDATE`,
-      items.map((item) => item.pole_id)
-    );
-    const stockMap = new Map(stockRows.map((row) => [row.id, row.quantity]));
-    for (const item of items) {
-      if (!stockMap.has(item.pole_id)) throw err(`Không tìm thấy trụ sạc #${item.pole_id}`, 404);
-      if (stockMap.get(item.pole_id) < item.quantity) {
-        throw err(`Trụ sạc #${item.pole_id} không đủ tồn kho`, 400);
-      }
-    }
-
-    const [headerResult] = await conn.query(
-      `INSERT INTO warehouse_exports (exporter_user_id, export_date, reason, charging_station_id)
-       VALUES (?, ?, ?, ?)`,
-      [exporterUserId, exportDate, reason, chargingStationId]
-    );
-    const exportId = headerResult.insertId;
-    await conn.query(
-      `INSERT INTO warehouse_export_items (export_id, pole_id, quantity) VALUES ?`,
-      [items.map((item) => [exportId, item.pole_id, item.quantity])]
-    );
-    for (const item of items) {
-      await conn.query(
-        'UPDATE charging_poles SET quantity = quantity - ? WHERE id = ?',
-        [item.quantity, item.pole_id]
-      );
-    }
+    const exportId = await createExportWithinTransaction(conn, data, ctx);
     await conn.commit();
     return getExport(exportId);
   } catch (error) {
@@ -379,4 +396,5 @@ exports.createImport = createImport;
 exports.listExports = listExports;
 exports.getExport = getExport;
 exports.createExport = createExport;
+exports.createExportWithinTransaction = createExportWithinTransaction;
 exports.getStock = getStock;

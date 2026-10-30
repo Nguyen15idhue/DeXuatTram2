@@ -161,7 +161,7 @@ const requireReportConfigurator = (req, res, next) => {
   next();
 };
 
-const CHARGING_STATION_VIEWER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+const CHARGING_STATION_VIEWER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const CHARGING_STATION_EDITOR_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 const requireChargingStationViewer = (req, res, next) => {

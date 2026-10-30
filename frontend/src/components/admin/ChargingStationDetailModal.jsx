@@ -4,6 +4,7 @@ import { api, API_URL, chargingStationService } from '../../services/api';
 import { Badge, Button, ConfirmDialog, Dialog, Input, Loading, Select } from '../ui';
 import {
   CS_CONTRACT_LABELS,
+  CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_NEXT_STATUS,
   CS_PAYMENT_LABELS,
@@ -21,9 +22,6 @@ const TEXTAREA_CLASS = 'textarea textarea-bordered w-full';
 const toForm = (record) => ({
   on_date: record.on_date || '',
   contract_status: record.contract_status || 'NOT',
-  infra_power_status: record.infra_power_status || 'NOT',
-  infra_site_status: record.infra_site_status || 'NOT',
-  payment_status: record.payment_status || 'NOT',
   description: record.description || '',
   note: record.note || '',
   sub_status: record.sub_status || '',
@@ -32,10 +30,6 @@ const toForm = (record) => ({
 });
 
 const toOptions = (labels) => Object.keys(labels).map((value) => ({ value, label: labels[value] }));
-
-const CONTRACT_OPTIONS = toOptions(CS_CONTRACT_LABELS);
-const FLOW_OPTIONS = toOptions(CS_FLOW_LABELS);
-const PAYMENT_OPTIONS = toOptions(CS_PAYMENT_LABELS);
 
 const Card = ({ title, children }) => (
   <section className="rounded-xl border border-base-300 bg-base-100 p-4 space-y-3">
@@ -47,6 +41,9 @@ const Card = ({ title, children }) => (
 const ACTION_LABELS = {
   created: 'Tạo bản ghi ON trạm từ đề xuất đã ký',
   updated: 'Cập nhật thông tin',
+  contract_signing_started: 'Bắt đầu ký hợp đồng',
+  contract_completed: 'Hoàn tất hợp đồng',
+  infrastructure_status_changed: 'Cập nhật trạng thái hạ tầng',
   status_changed: 'Chuyển trạng thái',
   status_rolled_back: 'Lùi bước',
   acceptance_updated: 'Cập nhật nghiệm thu',
@@ -116,10 +113,6 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
   const saveInfo = () => run(
     () => chargingStationService.update(id, {
       on_date: form.on_date || null,
-      contract_status: form.contract_status,
-      infra_power_status: form.infra_power_status,
-      infra_site_status: form.infra_site_status,
-      payment_status: form.payment_status,
       description: form.description,
       note: form.note
     }, token),
@@ -284,43 +277,51 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
               </Card>
 
               <Card title="Hợp đồng, hạ tầng, thanh toán">
-                <Select
-                  label="Trạng thái hợp đồng"
-                  options={CONTRACT_OPTIONS}
-                  placeholder={null}
-                  value={form.contract_status}
-                  disabled={disabled}
-                  onChange={(e) => setForm({ ...form, contract_status: e.target.value })}
-                />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">Trạng thái hợp đồng</span>
+                  <Badge variant={CS_CONTRACT_VARIANT[record.contract_status]} outline>
+                    {CS_CONTRACT_LABELS[record.contract_status] || '—'}
+                  </Badge>
+                </div>
+                {record.contract_file_id && (
+                  <a
+                    className="link link-primary text-sm break-all"
+                    href={`${API_URL}/files/${record.contract_file_id}/download?token=${token}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {record.contract_file_name || `Hợp đồng #${record.contract_file_id}`}
+                  </a>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <Select
-                    label="Hạ tầng điện"
-                    options={FLOW_OPTIONS}
-                    placeholder={null}
-                    value={form.infra_power_status}
-                    disabled={disabled}
-                    onChange={(e) => setForm({ ...form, infra_power_status: e.target.value })}
-                  />
-                  <Select
-                    label="Hạ tầng mặt bằng"
-                    options={FLOW_OPTIONS}
-                    placeholder={null}
-                    value={form.infra_site_status}
-                    disabled={disabled}
-                    onChange={(e) => setForm({ ...form, infra_site_status: e.target.value })}
-                  />
-                  <Select
-                    label="Thanh toán"
-                    options={PAYMENT_OPTIONS}
-                    placeholder={null}
-                    value={form.payment_status}
-                    disabled={disabled}
-                    onChange={(e) => setForm({ ...form, payment_status: e.target.value })}
-                  />
+                  <div>
+                    <span className="label-text font-medium">Hạ tầng điện</span>
+                    <div className="mt-1">
+                      <Badge variant={CS_FLOW_VARIANT[record.infra_power_status] || 'ghost'} outline>
+                        {CS_FLOW_LABELS[record.infra_power_status] || '—'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="label-text font-medium">Hạ tầng mặt bằng</span>
+                    <div className="mt-1">
+                      <Badge variant={CS_FLOW_VARIANT[record.infra_site_status] || 'ghost'} outline>
+                        {CS_FLOW_LABELS[record.infra_site_status] || '—'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="label-text font-medium">Thanh toán</span>
+                    <div className="mt-1">
+                      <Badge variant={CS_FLOW_VARIANT[record.payment_status] || 'ghost'} outline>
+                        {CS_PAYMENT_LABELS[record.payment_status] || '—'}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
                 {canEdit && (
                   <div className="flex justify-end">
-                    <Button size="sm" loading={busy} disabled={disabled} onClick={saveInfo}>Lưu hợp đồng</Button>
+                    <Button size="sm" loading={busy} disabled={disabled} onClick={saveInfo}>Lưu thanh toán</Button>
                   </div>
                 )}
               </Card>

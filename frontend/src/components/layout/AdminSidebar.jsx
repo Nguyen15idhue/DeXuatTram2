@@ -9,11 +9,13 @@ import {
   proposalRequestService,
   proposalReviewService,
   proposalSignatureService,
+  chargingStationService,
 } from "../../services/api";
 import {
   resolveGradingRole,
 } from "../../utils/proposalGrading";
 import { PROPOSAL_TASK_COUNTS_CHANGED_EVENT } from "../../utils/proposalTaskCounts";
+import { CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT } from "../../utils/chargingStationTaskCounts";
 import {
   BarChart3,
   Users,
@@ -47,6 +49,7 @@ import {
 import NotificationBell from "./NotificationBell";
 import {
   canSeeApprovalPage,
+  canSeeFinancePage,
   canSeeLayoutPage,
   canSeeReviewRequestsPage,
 } from "../../utils/proposalAccess";
@@ -118,49 +121,49 @@ const mainItems = [
     label: "Quản lý ON trạm",
     group: "Quy trình đề xuất",
     icon: BatteryCharging,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
     children: [
       {
         path: "/admin/on-tram/thong-tin-chung",
         label: "Thông tin chung",
         icon: FileText,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/on-tram/khoi-tao-hop-dong",
         label: "Khởi tạo hợp đồng",
         icon: PenSquare,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/on-tram/xay-dung-ha-tang",
         label: "Xây dựng hạ tầng",
         icon: Scale,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/on-tram/giao-tru",
         label: "Giao trụ",
         icon: Zap,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/on-tram/lap-tru",
         label: "Lắp trụ",
         icon: PenTool,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/on-tram/nghiem-thu",
         label: "Nghiệm thu",
         icon: FileCheck,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
       {
         path: "/admin/on-tram/on-tram",
         label: "On trạm",
         icon: MapPin,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
       },
     ],
   },
@@ -176,7 +179,8 @@ const mainItems = [
     label: "Quản lý tài chính",
     group: "Vận hành",
     icon: Wallet,
-    roles: ["SUPER_ADMIN", "ADMIN"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+    access: canSeeFinancePage,
   },
   {
     path: "/admin/kho",
@@ -317,6 +321,24 @@ const proposalTaskKeyByPath = {
   "/admin/proposals/trinh-ky": "signatures",
 };
 
+const chargingStationTaskKeyByPath = {
+  "/admin/on-tram/khoi-tao-hop-dong": "contract",
+  "/admin/on-tram/xay-dung-ha-tang": "infrastructure",
+  "/admin/on-tram/giao-tru": "delivery",
+  "/admin/on-tram/lap-tru": "installation",
+  "/admin/on-tram/nghiem-thu": "acceptance",
+  "/admin/on-tram/on-tram": "on_station",
+};
+
+const chargingStationTaskTitleByKey = {
+  contract: "công việc Khởi tạo hợp đồng",
+  infrastructure: "công việc Xây dựng hạ tầng",
+  delivery: "công việc Giao trụ",
+  installation: "công việc Lắp trụ",
+  acceptance: "công việc Nghiệm thu",
+  on_station: "công việc On trạm",
+};
+
 const STORAGE_KEY = "admin-sidebar-groups";
 
 const loadCollapsed = () => {
@@ -357,8 +379,10 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [mainCollapsed, setMainCollapsed] = useState({});
   const [proposalTaskCounts, setProposalTaskCounts] = useState(null);
+  const [chargingStationTaskCounts, setChargingStationTaskCounts] = useState(null);
   const gradingRole = resolveGradingRole(user?.department);
   const canSeeProposalMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
+  const canSeeChargingStationMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
   const canSeeGradingTaskCount = user?.role === "SUPER_ADMIN"
     || (user?.role === "ADMIN" && ["QH", "PL"].includes(gradingRole));
   const proposalTaskTotal = proposalTaskCounts
@@ -504,6 +528,70 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     };
   }, [canSeeGradingTaskCount, canSeeProposalMenu, location.pathname, token, user]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let loadSequence = 0;
+
+    const loadChargingStationTaskCounts = async () => {
+      const currentSequence = ++loadSequence;
+      if (!token || !canSeeChargingStationMenu) {
+        setChargingStationTaskCounts(null);
+        return;
+      }
+
+      try {
+        const response = await chargingStationService.getTaskCounts(token);
+        const counts = response?.data?.counts;
+        const taskKeys = [
+          "contract",
+          "infrastructure",
+          "delivery",
+          "installation",
+          "acceptance",
+          "on_station",
+          "finance",
+        ];
+        const onStationTaskKeys = taskKeys.filter((key) => key !== "finance");
+        if (
+          response?.success !== true
+          || !counts
+          || taskKeys.some((key) => !Number.isFinite(Number(counts[key])) || Number(counts[key]) < 0)
+        ) {
+          throw new Error("Invalid ON-station task count response");
+        }
+
+        const normalizedCounts = Object.fromEntries(
+          taskKeys.map((key) => [key, Number(counts[key])]),
+        );
+        const total = onStationTaskKeys.reduce((sum, key) => sum + normalizedCounts[key], 0);
+        if (Number(response.data.total) !== total) {
+          throw new Error("ON-station task total does not match stage counts");
+        }
+
+        if (!cancelled && currentSequence === loadSequence) {
+          setChargingStationTaskCounts({ total, counts: normalizedCounts });
+        }
+      } catch (error) {
+        console.error("Load ON-station task counts error:", error);
+        if (!cancelled && currentSequence === loadSequence) {
+          setChargingStationTaskCounts(null);
+        }
+      }
+    };
+
+    loadChargingStationTaskCounts();
+    window.addEventListener("focus", loadChargingStationTaskCounts);
+    window.addEventListener(CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT, loadChargingStationTaskCounts);
+    const intervalId = window.setInterval(loadChargingStationTaskCounts, 30000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", loadChargingStationTaskCounts);
+      window.removeEventListener(CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT, loadChargingStationTaskCounts);
+      window.clearInterval(intervalId);
+    };
+  }, [canSeeChargingStationMenu, location.pathname, token]);
+
   const toggleGroup = (id) => {
     setCollapsed((prev) => {
       const next = prev.includes(id)
@@ -542,7 +630,19 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       ? activePath === item.path
       : isItemActiveExact(location.pathname, item.path);
     const taskKey = proposalTaskKeyByPath[item.path];
-    const taskCount = taskKey ? proposalTaskCounts?.[taskKey] : null;
+    const chargingStationTaskKey = chargingStationTaskKeyByPath[item.path];
+    const taskCount = taskKey
+      ? proposalTaskCounts?.[taskKey]
+      : chargingStationTaskKey
+        ? chargingStationTaskCounts?.counts[chargingStationTaskKey]
+      : item.path === "/admin/tai-chinh"
+        ? chargingStationTaskCounts?.counts.finance
+        : null;
+    const taskTitle = item.path === "/admin/tai-chinh"
+      ? "công việc Tài chính ON trạm"
+      : chargingStationTaskKey
+        ? chargingStationTaskTitleByKey[chargingStationTaskKey]
+      : "công việc cần thực hiện";
     return (
       <Link
         key={item.path}
@@ -561,8 +661,8 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         {Number.isFinite(taskCount) && taskCount > 0 && (
           <span
             className="badge badge-error badge-sm ml-auto h-5 min-w-5 flex-shrink-0 rounded-full px-1 text-white"
-            title={`${taskCount} công việc cần thực hiện`}
-            aria-label={`${taskCount} công việc cần thực hiện`}
+            title={`${taskCount} ${taskTitle}`}
+            aria-label={`${taskCount} ${taskTitle}`}
           >
             {formatTaskCount(taskCount)}
           </span>
@@ -584,6 +684,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       isActive = !!activeChildPath || isActiveExact;
     }
     const isOpen = mainCollapsed[item.path] ?? !!activeChildPath;
+    const taskCount = item.path === "/admin/proposals"
+      ? proposalTaskTotal
+      : item.path === "/admin/on-tram"
+        ? chargingStationTaskCounts?.total
+        : null;
+    const taskTitle = item.path === "/admin/proposals"
+      ? "công việc cần thực hiện trong Quản lý Đề xuất"
+      : "công việc cần thực hiện trong Quản lý ON trạm";
 
     if (hasChildren) {
       return (
@@ -604,13 +712,13 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
               </span>
             </span>
             <span className="flex items-center gap-2">
-              {Number.isFinite(proposalTaskTotal) && proposalTaskTotal > 0 && (
+              {Number.isFinite(taskCount) && taskCount > 0 && (
                 <span
                   className="badge badge-error badge-sm h-5 min-w-5 rounded-full px-1 text-white"
-                  title={`${proposalTaskTotal} công việc cần thực hiện trong Quản lý Đề xuất`}
-                  aria-label={`${proposalTaskTotal} công việc cần thực hiện trong Quản lý Đề xuất`}
+                  title={`${taskCount} ${taskTitle}`}
+                  aria-label={`${taskCount} ${taskTitle}`}
                 >
-                  {formatTaskCount(proposalTaskTotal)}
+                  {formatTaskCount(taskCount)}
                 </span>
               )}
               <ChevronDown

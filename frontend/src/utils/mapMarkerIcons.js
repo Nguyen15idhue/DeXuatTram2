@@ -2616,6 +2616,7 @@ export const STATUS_ICON_DEFAULTS = {
     REJECTED: "cross",
     CANCELLED: "ban",
     CONTRACT_SIGNED: "document",
+    ACTIVE: "evStation",
     CONTRACT_FAILED: "alert",
   },
   ev_report: { ACTIVE: "evCar", INACTIVE: "ban" },

@@ -66,12 +66,14 @@ export const CS_ROLLBACK_STATUS = {
 
 export const CS_CONTRACT_LABELS = {
   NOT: 'Chưa ký hợp đồng',
+  DOING: 'Đang ký hợp đồng',
   DONE: 'Đã ký hợp đồng',
   CANCELLED: 'Đã hủy'
 };
 
 export const CS_CONTRACT_VARIANT = {
   NOT: 'ghost',
+  DOING: 'warning',
   DONE: 'success',
   CANCELLED: 'error'
 };

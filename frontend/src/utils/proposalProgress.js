@@ -19,6 +19,8 @@ export const PROPOSAL_STATUS_LABELS = {
   CANCELLED: 'Đã hủy',
   ARCHIVED: 'Đã lưu trữ',
   CONTRACT_SIGNED: 'Ký thành công',
+  DEPLOYING: 'Đang triển khai',
+  ACTIVE: 'Hoạt động',
   CONTRACT_FAILED: 'Ký thất bại',
   GRADING: 'Đang chấm điểm',
   GDTTKD_EVALUATING: 'GĐTTKD đang xem xét',

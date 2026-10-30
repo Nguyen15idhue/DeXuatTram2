@@ -3,11 +3,11 @@ const notificationService = require('./notificationService');
 
 const ALL_STATUSES = [
   'PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED',
-  'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED',
+  'CONTRACT_SIGNED', 'CONTRACT_FAILED', 'ARCHIVED', 'DEPLOYING',
   'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING', 'TGD_REVIEW', 'DESIGNING',
   'INFOR_WAITING',
   'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING',
-  'PAUSED'
+  'PAUSED', 'ACTIVE'
 ];
 
 const ALLOWED_TRANSITIONS = {
@@ -16,7 +16,9 @@ const ALLOWED_TRANSITIONS = {
   PRINCIPLE_APPROVED: ['APPROVED', 'CANCELLED'],
   APPROVED: ['CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED'],
   ARCHIVED: ['CONTRACT_SIGNED', 'CANCELLED'],
-  CONTRACT_SIGNED: ['CANCELLED'],
+  CONTRACT_SIGNED: ['CANCELLED', 'DEPLOYING', 'ACTIVE'],
+  DEPLOYING: ['CANCELLED', 'ACTIVE'],
+  ACTIVE: [],
   CONTRACT_FAILED: ['CANCELLED'],
   REJECTED: ['PENDING', 'CANCELLED'],
   CANCELLED: [],
@@ -56,7 +58,8 @@ const STATUS_STEP_LABELS = {
   SIGNATURE_PENDING: 'trình ký',
   APPROVED: 'đã duyệt BCĐX',
   PAUSED: 'đang tạm dừng',
-  CANCELLED: 'đã hủy'
+  CANCELLED: 'đã hủy',
+  ACTIVE: 'đang hoạt động'
 };
 
 exports.OWNER_EDITABLE_STATUSES = OWNER_EDITABLE_STATUSES;
@@ -168,6 +171,12 @@ exports.transition = async (id, to, opts = {}) => {
       actorId, actorRole, source, ip
     });
     throw err('Trạng thái "Duyệt chủ trương" đã ngừng sử dụng', 400);
+  }
+  if (to === 'ACTIVE' && source !== 'system_auto') {
+    throw err('Chỉ quy trình ON trạm được chuyển đề xuất sang Hoạt động', 403);
+  }
+  if (to === 'DEPLOYING' && source !== 'system_auto') {
+    throw err('Chỉ quy trình ON trạm được chuyển đề xuất sang Đang triển khai', 403);
   }
   const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
   const forceOverride = force === true && source === 'user' && isSuperAdmin === true;

@@ -26,7 +26,7 @@ exports.getAllProposals = async () => {
        LEFT JOIN users u ON p.user_id = u.id
        LEFT JOIN users gdkv ON gdkv.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED)
        LEFT JOIN users ptr ON ptr.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
-       WHERE NOT (p.status = 'CONTRACT_SIGNED' AND p.station_id IS NOT NULL)
+       WHERE NOT (p.status IN ('CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE') AND p.station_id IS NOT NULL)
        ORDER BY p.created_at DESC
        LIMIT 20000`
   );

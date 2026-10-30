@@ -15,6 +15,8 @@ export const PROPOSAL_STATUSES = [
   { value: 'ARCHIVED', label: 'Đã lưu trữ', color: '#8b5cf6', show_in_legend: true, sort_order: 6 },
   { value: 'REJECTED', label: 'Từ chối', color: '#ef4444', show_in_legend: false, sort_order: 7 },
   { value: 'CONTRACT_SIGNED', label: 'Ký thành công', color: '#0d9488', show_in_legend: false, sort_order: 8 },
+  { value: 'DEPLOYING', label: 'Đang triển khai', color: '#2563eb', show_in_legend: false, sort_order: 20.5 },
+  { value: 'ACTIVE', label: 'Hoạt động', color: '#0d9488', show_in_legend: false, sort_order: 20 },
   { value: 'CONTRACT_FAILED', label: 'Ký thất bại', color: '#f59e0b', show_in_legend: false, sort_order: 9 },
   { value: 'GRADING', label: 'Đang đánh giá quy hoạch và pháp lý', color: '#f59e0b', show_in_legend: false, sort_order: 10 },
   { value: 'GDTTKD_EVALUATING', label: 'GĐTTKD đánh giá', color: '#7c3aed', show_in_legend: false, sort_order: 11 },
