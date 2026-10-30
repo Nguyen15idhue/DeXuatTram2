@@ -171,6 +171,14 @@ Swagger UI:  http://localhost:3000/api-docs
 - **Upload**: allowlist MIME/ext, chặn svg/html/js/exe/php (kể cả double-ext), tên random + ext ép từ MIME, verify chữ ký thật. KHÔNG serve static `/uploads`; tải qua `/files/:id/download|image` có auth + ownership (admin bypass, owner, guest cùng IP). `optionalAuth`/`requireAuth` hỗ trợ `?token=` cho `<img>`
 - **Public proposals rút gọn**: `GET /api/proposals` / `:id` chỉ trả `id,latitude,longitude,address,status,created_at` (không PII)
 - Rate limit (`middlewares/rateLimits.js`): auth 10–30/ph, admin 60–120/ph, excel 10–30/ph, guest submit 5/h, guest upload 10/h, guest track 30/h, public data 120/ph, geocode 30–60/ph, assistant 30/h, assistant file 10/h (chỉ khi có tệp đính kèm)
+### 4.13. ON trạm — Hợp đồng và hạ tầng
+- `/admin/on-tram/thong-tin-chung` tổng hợp các ON trạm theo ba tab `all|need|completed`; `need` gồm mọi trạm chưa ở `OPERATING/ACTIVE`, `completed` chỉ gồm `OPERATING/ACTIVE`. Mã trạm mở trang chi tiết con `/thong-tin-chung/:id`, mã đề xuất mở chi tiết đề xuất; danh sách tuân theo scope `proposalReportService.resolveScope`.
+- `/admin/on-tram/khoi-tao-hop-dong` và `/admin/on-tram/xay-dung-ha-tang` có ba tab `need|completed|all`, cùng phạm vi xem theo `proposalReportService.resolveScope`; trang chi tiết trạm là route con của từng bước.
+- Chỉ Back Office và SUPER_ADMIN cập nhật hợp đồng/hạ tầng. Hợp đồng hoàn tất đặt `contract_status=DONE` và `payment_status=DOING`; hạ tầng điện/mặt bằng chuyển tuần tự `NOT→DOING→DONE` qua API riêng, không sửa qua PUT tổng quát.
+- `/admin/tai-chinh` quản lý trạng thái `payment_status` và hóa đơn `DEPOSIT`/`REFUND`/`PAYMENT`; chỉ Back Office và quản trị viên được thao tác, việc đổi trạng thái bắt buộc có lý do và trạng thái `DONE` yêu cầu đã có hóa đơn tiền cọc hoặc thanh toán. Hạn tài chính là 15 ngày từ khi tạo ON trạm; cập nhật trạng thái và tạo hóa đơn đều ghi nhật ký hoạt động.
+- Badge menu ON trạm lấy từ `GET /admin/charging-stations/task-counts`, tổng chỉ cộng task ở Khởi tạo hợp đồng, Xây dựng hạ tầng, Giao trụ, Lắp trụ, Nghiệm thu và On trạm theo scope/quyền; Tài chính có badge riêng, không cộng vào tổng ON trạm. Các trang bước ON trạm hiển thị badge task riêng; trang Thông tin chung không tính vào tổng.
+- Khi hợp đồng DONE, thanh toán DOING và ít nhất một hạng mục hạ tầng DONE, ON trạm tự chuyển `ONBOARDING→DELIVERING` với `sub_status=NOT_DELIVERED`; cùng transaction ghi log và tạo thông báo cho Back Office. Hạng mục còn lại vẫn có thể cập nhật khi trạm đang DELIVERING.
+- `/admin/on-tram/giao-tru`, `/lap-tru`, `/nghiem-thu` và `/on-tram` có ba tab `need|completed|all`, trang chi tiết trạm là route con của từng bước, scope theo role/nhánh/miền/phòng ban. Giao trụ gồm đề xuất giao sớm và phiếu xuất kho; Lắp trụ theo dõi `INSTALLING`; Nghiệm thu theo dõi `ACCEPTANCE` (đạt chuyển `OPERATING/CONFIGURING`); On trạm theo dõi `OPERATING/CONFIGURING` (hoàn tất chuyển `OPERATING/ACTIVE` và đề xuất `CONTRACT_SIGNED→ACTIVE`). Các cập nhật lắp đặt, nghiệm thu, cấu hình chỉ cho Setup/Vận hành hoặc quản trị viên.
 ## 5. Coding Conventions
 ```
 Frontend components:     PascalCase.jsx
@@ -289,6 +297,10 @@ backend/src/
 | `users` | Tài khoản (`role`, `status`, `parent_id`, `token_version`, `custom_data`) |
 | `stations` | Trạm sạc |
 | `station_proposals` | Đề xuất (+ `reject_reason`, `reviewed_by/at`, `submission_source`, `tracking_code`, `note`, `chot_so_luong_tru` JSON, `tong_gia_tri_chot` DECIMAL, `ngay_du_kien_on` DATE nullable, `review_level`, `quy_hoach_score/note`, `phap_ly_score/note`) |
+| `charging_stations` | Hồ sơ vận hành ON trạm, liên kết 1-1 với `station_proposals`, độc lập với bảng `stations`; hợp đồng `NOT`/`DOING`/`DONE`/`CANCELLED`, file hợp đồng qua `contract_file_id`, mã CMS `cms_station_code` — migration `190` + `195` + `197` |
+| `charging_poles` | Danh mục trụ sạc và số lượng tồn kho — migration `191` |
+| `warehouse_exports` / `warehouse_export_items` | Phiếu xuất kho (người xuất, ngày, lý do, trạm, vận chuyển, tổng tiền) và các dòng trụ/số lượng — migration `191` + `194` + `196` |
+| `charging_station_invoices` | Hóa đơn ON trạm (`DEPOSIT`/`REFUND`/`PAYMENT`), liên kết hồ sơ ON, đề xuất, file bằng chứng và người tạo — migration `192` + `194` |
 | `proposal_sequences` | Sinh mã tuần tự theo prefix |
 | `field_definitions` | Định nghĩa trường động (13 types + `user`) |
 | `forms` / `form_fields` | Cấu hình form + field (`order_index`, `visible`, `purpose`, `layout_config`, `is_locked`, `is_default`) |
@@ -321,6 +333,9 @@ Migrations mới cho BCĐX: `181` thêm `tong_gia_tri_chot` (DECIMAL nullable), 
 Migration `188-replace-proposal-completed-with-approved.sql` backfills `COMPLETED` to `APPROVED`, removes the `COMPLETED` status option, and removes it from the `station_proposals.status` ENUM. Migration `189-proposal-contact-phone-10-or-11-digits.sql` adds the MySQL check constraint for proposal contact phones.
 Migration `190-proposal-expected-on-date.sql` adds nullable `station_proposals.ngay_du_kien_on`; the proposal owner can update it from the BCĐX upload form.
 Migration `193-proposal-signature-department-snapshot.sql` stores the signer's department snapshot in `proposal_signature_configs`; signed-document overlays render department above the signature image and name/time below it in Times New Roman.
+Migration `195-charging-station-contract-workflow.sql` adds the `DOING` contract status, the contract-file FK, and the index used by the contract tabs.
+
+Migration `194-warehouse-export-header-and-charging-invoices.sql` stores carrier, transport code/status, and total amount on the `warehouse_exports` header so shipment state applies to the whole export, and ensures the `charging_station_invoices` table exists. Migration `196-warehouse-export-header-normalization.sql` backfills those header fields from existing item rows (latest item values; line amounts are summed), then removes the duplicate transport and amount columns from `warehouse_export_items`. Migration `197-charging-station-activation.sql` adds the CMS station code and proposal status `ACTIVE`, used when ON-station configuration is completed. Migration `198-proposal-deploying-status.sql` adds proposal status `DEPLOYING`, used after the contract, finance, and infrastructure workflow starts deployment.
 ## 9. Swagger & Documentation
 - Swagger UI: `http://localhost:3000/api-docs`; JSON: `/api-docs.json`
 - Thêm endpoint mới → phải thêm `@swagger` JSDoc trong route file
@@ -390,7 +405,7 @@ Migration `193-proposal-signature-department-snapshot.sql` stores the signer's d
 - Upload `POST /api/files/upload` (multer disk, 10MB); download `/files/:id/download` (auth-aware, Content-Disposition UTF-8, hỗ trợ `Range` → 206 để tua video)
 - Video hướng dẫn nội bộ: `POST /api/admin/help/videos` (multer riêng **200MB**, mp4/webm/mov, subdir `help-videos/`, SUPER_ADMIN). Quyền tải video theo `roles` của bài viết chứa `file_id` (mở rộng `fileController.canAccessFile`)
 - Types: image, video, audio, pdf, word (.docx → HTML via mammoth), excel (.xlsx → table via xlsx), text
-- Viewer: zoom ảnh, play video/audio, render PDF/Word/Excel inline
+- Viewer: ảnh hỗ trợ zoom bằng nút/con lăn, xoay 90° hai chiều, kéo để pan và đặt lại góc nhìn; play video/audio, render PDF/Word/Excel inline
 - **Auto-rename file đề xuất** (`fileService.renameProposalFiles`, gọi sau post-formula ở `proposalService.createProposal/createGuestProposal`, `adminProposalService` + `myProposalService.updateProposal`): upload giữ tên tự do, lúc **lưu** đổi `files.original_name` + tên nhúng trong `custom_data` thành `{timestamp_tao}_{Mã đề xuất}_{label trường}_{STT theo vị trí trong field}` + giữ đuôi ext gốc (timestamp UTC `YYYYMMDDHHMMSS` lấy từ `files.created_at`, ổn định; file cũ đúng tên cũ thì giữ nguyên để không đổi tên/gửi lại hàng loạt; VD `20260101200405_LK_HNO_0004_Ảnh vị trí dự kiến lắp đặt trụ sạc_1.png`); thiếu mã → fallback `DX{id}`; idempotent (lưu lại không đổi tên cũ, xóa file giữa thì đánh lại STT)
 - Danh mục tỉnh tra theo cả 2 tên `dm_tinh`/`Tỉnh` (`dataListService.TINH_LIST_NAMES`) vì DB dev đã đổi tên (không tra thấy → `applyDiaGioi` throw, tạo đề xuất fail)
 ### Excel Import/Export

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -10,6 +11,7 @@ import {
   CS_EDITOR_ROLES,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
+  CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
@@ -18,9 +20,18 @@ import {
 
 const PAGE_SIZE = 20;
 const EMPTY_TOAST = { message: '', type: 'success' };
+const TABS = [
+  { key: 'all', label: 'Tất cả trạm sạc' },
+  { key: 'need', label: 'Trạm sạc cần thực hiện' },
+  { key: 'completed', label: 'Trạm sạc đã hoàn thành' }
+];
 
 const ChargingStationTab = ({ stage }) => {
   const { token, user } = useAuth();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'all';
   const canEdit = CS_EDITOR_ROLES.includes(user?.role);
 
   const [items, setItems] = useState([]);
@@ -37,7 +48,7 @@ const ChargingStationTab = ({ stage }) => {
     if (!token) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ stage, page: targetPage, limit: PAGE_SIZE });
+      const params = new URLSearchParams({ stage, tab, page: targetPage, limit: PAGE_SIZE });
       if (debouncedSearch) params.set('search', debouncedSearch);
       const res = await chargingStationService.getAll(params.toString(), token);
       setItems(res?.data || []);
@@ -48,7 +59,7 @@ const ChargingStationTab = ({ stage }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, stage, debouncedSearch]);
+  }, [token, stage, tab, debouncedSearch]);
 
   useEffect(() => {
     setPage(1);
@@ -60,18 +71,37 @@ const ChargingStationTab = ({ stage }) => {
     load(next);
   };
 
+  const selectTab = (nextTab) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', nextTab);
+    setSearchParams(next);
+  };
+
   const columns = useMemo(() => [
     {
       key: 'ma_tram',
       label: 'Mã trạm',
-      render: (value) => <span className="font-mono text-xs font-semibold">{value || '—'}</span>
+      render: (value, row) => (
+        <Link
+          to={`/admin/on-tram/thong-tin-chung/${row.id}`}
+          state={{ returnTo: `${location.pathname}${location.search}` }}
+          className="link link-primary font-mono text-xs font-semibold"
+        >
+          {value || `#${row.id}`}
+        </Link>
+      )
     },
     {
       key: 'ma_de_xuat',
       label: 'Mã đề xuất',
-      render: (value, row) => <span className="font-mono text-xs">{value || `#${row.proposal_id}`}</span>
+      render: (value, row) => (
+        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary font-mono text-xs">
+          {value || `#${row.proposal_id}`}
+        </Link>
+      )
     },
     { key: 'owner_name', label: 'Chủ trạm', render: (value) => value || '—' },
+    { key: 'owner_phone', label: 'SĐT', render: (value) => value || '—' },
     {
       key: 'address',
       label: 'Địa chỉ',
@@ -107,20 +137,46 @@ const ChargingStationTab = ({ stage }) => {
     {
       key: 'payment_status',
       label: 'Thanh toán',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_FLOW_LABELS[value] || '—'}</Badge>
+      render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_PAYMENT_LABELS[value] || '—'}</Badge>
     },
     { key: 'on_date', label: 'Ngày ON', render: (value) => <span className="whitespace-nowrap">{formatCsDate(value)}</span> }
-  ], []);
+  ], [location.pathname, location.search]);
 
   const renderActions = (row) => (
-    <Button variant="outline" size="xs" onClick={() => setSelectedId(row.id)}>
-      Chi tiết
-    </Button>
+    <div className="flex items-center justify-center gap-1">
+      <Link
+        to={`/admin/on-tram/thong-tin-chung/${row.id}`}
+        state={{ returnTo: `${location.pathname}${location.search}` }}
+        className="btn btn-outline btn-xs"
+      >
+        Chi tiết
+      </Link>
+      {canEdit && (
+        <Button variant="ghost" size="xs" onClick={() => setSelectedId(row.id)}>
+          Sửa
+        </Button>
+      )}
+    </div>
   );
 
   return (
     <div className="space-y-4">
       <Toast message={toast.message} type={toast.type} onClose={closeToast} />
+
+      <div role="tablist" className="tabs tabs-bordered">
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            className={`tab ${tab === item.key ? 'tab-active font-semibold' : ''}`}
+            onClick={() => selectTab(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
       <FilterBar>
         <div className="flex-1 min-w-0">
@@ -140,7 +196,11 @@ const ChargingStationTab = ({ stage }) => {
         columns={columns}
         data={items}
         loading={loading}
-        emptyMessage="Chưa có bản ghi ON trạm nào"
+        emptyMessage={tab === 'need'
+          ? 'Không có trạm sạc cần thực hiện'
+          : tab === 'completed'
+            ? 'Chưa có trạm sạc ON hoàn tất'
+            : 'Chưa có bản ghi ON trạm nào'}
         startIndex={(pagination.page - 1) * PAGE_SIZE}
         actions={renderActions}
       />

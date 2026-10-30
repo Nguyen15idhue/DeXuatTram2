@@ -69,6 +69,39 @@ const canAccessFile = async (file, req) => {
     } catch { /* silent */ }
   }
   if (requesterId && ['ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
+  if (requesterId) {
+    const [contractStations] = await pool.query(
+      'SELECT id FROM charging_stations WHERE contract_file_id = ? LIMIT 1',
+      [file.id]
+    );
+    if (contractStations.length > 0) {
+      return require('../services/chargingStationService').canViewChargingStation(
+        contractStations[0].id,
+        { id: requesterId, role: requesterRole }
+      );
+    }
+  }
+  if (requesterId) {
+    const [invoiceStations] = await pool.query(
+      'SELECT charging_station_id FROM charging_station_invoices WHERE evidence_file_id = ? LIMIT 1',
+      [file.id]
+    );
+    if (invoiceStations.length > 0) {
+      try {
+        await require('../services/chargingFinanceService').assertFinanceManager({
+          id: requesterId,
+          role: requesterRole
+        });
+      } catch (error) {
+        if (error.statusCode === 403) return false;
+        throw error;
+      }
+      return require('../services/chargingStationService').canViewChargingStation(
+        invoiceStations[0].charging_station_id,
+        { id: requesterId, role: requesterRole }
+      );
+    }
+  }
   if (requesterId && requesterRole === 'SALES') {
     const [linkedCharging] = await pool.query(
       `SELECT 1 FROM charging_stations WHERE acceptance_file_id = ?

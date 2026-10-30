@@ -42,8 +42,12 @@ const ALLOWED_TRANSITIONS = {
   OPERATING: []
 };
 
-const CONTRACT_STATUSES = ['NOT', 'DONE', 'CANCELLED'];
+const CONTRACT_STATUSES = ['NOT', 'DOING', 'DONE', 'CANCELLED'];
 const FLOW_STATUSES = ['NOT', 'DOING', 'DONE'];
+const CONTRACT_FILE_MIME_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+];
 
 const IMAGE_MAX_COUNT = 20;
 const ACCEPTANCE_PDF_MIME = 'application/pdf';
@@ -60,6 +64,7 @@ module.exports = {
   ALLOWED_TRANSITIONS,
   CONTRACT_STATUSES,
   FLOW_STATUSES,
+  CONTRACT_FILE_MIME_TYPES,
   IMAGE_MAX_COUNT,
   ACCEPTANCE_PDF_MIME,
   IMAGE_MIME_PREFIX,

@@ -12,7 +12,7 @@ router.use(requireAuth);
  *     tags: [Charging Stations]
  *     summary: Danh sách ON trạm theo giai đoạn
  *     description: >
- *       stage = thong-tin-chung (tất cả) | khoi-tao-hop-dong | xay-dung-ha-tang | giao-tru | lap-tru | nghiem-thu | on-tram.
+ *       stage = thong-tin-chung | khoi-tao-hop-dong (tab = need|completed|all) | xay-dung-ha-tang (tab = need|completed|all) | giao-tru | lap-tru | nghiem-thu | on-tram.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -25,6 +25,12 @@ router.use(requireAuth);
  *         name: search
  *         schema:
  *           type: string
+ *       - in: query
+ *         name: tab
+ *         schema:
+ *           type: string
+ *           enum: [need, completed, all]
+ *           default: need
  *       - in: query
  *         name: page
  *         schema:
@@ -44,6 +50,24 @@ router.use(requireAuth);
  *         description: Không có quyền
  */
 router.get('/', requireChargingStationViewer, chargingStationController.list);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/task-counts:
+ *   get:
+ *     tags: [Charging Stations]
+ *     summary: Đếm task ON trạm theo phạm vi và quyền của người dùng
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Số task cần thực hiện theo từng bước
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền xem ON trạm
+ */
+router.get('/task-counts', requireChargingStationViewer, chargingStationController.taskCounts);
 
 /**
  * @swagger
@@ -72,7 +96,7 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
  * /api/admin/charging-stations/{id}:
  *   put:
  *     tags: [Charging Stations]
- *     summary: Cập nhật thông tin chung, hợp đồng, hạ tầng, thanh toán, trạng thái phụ
+ *     summary: Cập nhật thông tin chung, thanh toán và trạng thái phụ
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -91,15 +115,6 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
  *               on_date:
  *                 type: string
  *                 format: date
- *               contract_status:
- *                 type: string
- *                 enum: [NOT, DONE, CANCELLED]
- *               infra_power_status:
- *                 type: string
- *                 enum: [NOT, DOING, DONE]
- *               infra_site_status:
- *                 type: string
- *                 enum: [NOT, DOING, DONE]
  *               payment_status:
  *                 type: string
  *                 enum: [NOT, DOING, DONE]
@@ -118,6 +133,298 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
  *         description: Không có quyền
  */
 router.put('/:id', requireChargingStationEditor, chargingStationController.update);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/contract/start:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Bắt đầu ký hợp đồng (Back Office)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Đã chuyển hợp đồng sang Đang ký
+ *       400:
+ *         description: Trạng thái hiện tại không cho phép bắt đầu ký
+ *       403:
+ *         description: Không thuộc Back Office
+ */
+router.post('/:id/contract/start', requireChargingStationViewer, chargingStationController.startContract);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/contract/complete:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Gắn file hợp đồng và hoàn tất thủ tục (Back Office)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [file_id]
+ *             properties:
+ *               file_id:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: File hợp đồng đã lưu, contract_status chuyển DONE và payment_status chuyển DOING; trạm tự chuyển sang Giao trụ nếu đủ điều kiện
+ *       400:
+ *         description: Trạng thái hoặc file không hợp lệ
+ *       403:
+ *         description: Không thuộc Back Office
+ */
+router.post('/:id/contract/complete', requireChargingStationViewer, chargingStationController.completeContract);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/infrastructure/{type}/start:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Bắt đầu hoàn thiện một hạng mục hạ tầng
+ *     description: Chỉ Back Office hoặc SUPER_ADMIN; type là power hoặc site.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [power, site]
+ *     responses:
+ *       200:
+ *         description: Hạng mục hạ tầng đã chuyển sang DOING
+ *       400:
+ *         description: Trạng thái hiện tại không cho phép bắt đầu
+ *       403:
+ *         description: Không thuộc Back Office
+ */
+router.post('/:id/infrastructure/:type/start', requireChargingStationViewer, chargingStationController.startInfrastructure);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/infrastructure/{type}/complete:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Xác nhận hoàn thành một hạng mục hạ tầng
+ *     description: Chỉ Back Office hoặc SUPER_ADMIN; type là power hoặc site. Nếu đủ điều kiện, ON trạm tự chuyển sang Giao trụ.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [power, site]
+ *     responses:
+ *       200:
+ *         description: Hạng mục hạ tầng đã hoàn thành
+ *       400:
+ *         description: Trạng thái hiện tại không cho phép hoàn tất
+ *       403:
+ *         description: Không thuộc Back Office
+ */
+router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, chargingStationController.completeInfrastructure);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/delivery/early-request:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Đề xuất giao trụ sớm
+ *     description: Người đề xuất hoặc người quản lý trong phạm vi được xem có thể yêu cầu giao sớm; yêu cầu phải có ngày mong muốn và lý do.
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [desired_delivery_date, reason]
+ *             properties:
+ *               desired_delivery_date: { type: string, format: date }
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: Đã gửi đề xuất giao trụ sớm }
+ *       403: { description: Không thuộc phạm vi đề xuất }
+ */
+router.post('/:id/delivery/early-request', requireChargingStationViewer, chargingStationController.requestEarlyDelivery);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/delivery/export:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Tạo phiếu xuất trụ cho ON trạm
+ *     description: Chỉ Back Office hoặc SUPER_ADMIN; danh sách trụ và số lượng lấy từ đề xuất, trừ kho nguyên tử cùng cập nhật trạng thái trạm.
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [carrier, transport_code, transport_status, total_amount]
+ *             properties:
+ *               carrier: { type: string }
+ *               transport_code: { type: string }
+ *               transport_status: { type: string, enum: [PENDING, SHIPPING], default: SHIPPING }
+ *               total_amount: { type: number, minimum: 0 }
+ *     responses:
+ *       200: { description: Đã tạo phiếu xuất và trừ tồn kho }
+ *       400: { description: Dữ liệu hoặc tồn kho không hợp lệ }
+ *       403: { description: Không thuộc Back Office }
+ */
+router.post('/:id/delivery/export', requireChargingStationViewer, chargingStationController.createDeliveryExport);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/delivery/confirm:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Xác nhận trụ đã giao đến nơi
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Chuyển trạm sang INSTALLING / NOT_INSTALLED và thông báo Setup/Vận hành }
+ *       403: { description: Không thuộc Back Office }
+ */
+router.post('/:id/delivery/confirm', requireChargingStationViewer, chargingStationController.confirmDelivery);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/installation/start:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Bắt đầu lắp đặt
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Chuyển trạng thái phụ sang INSTALLING }
+ *       403: { description: Không thuộc Phòng Setup và Vận hành }
+ */
+router.post('/:id/installation/start', requireChargingStationViewer, chargingStationController.startInstallation);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/installation/complete:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Xác nhận lắp đặt hoàn tất
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: Chuyển trạm sang ACCEPTANCE / NOT_ACCEPTED }
+ *       403: { description: Không thuộc Phòng Setup và Vận hành }
+ */
+router.post('/:id/installation/complete', requireChargingStationViewer, chargingStationController.completeInstallation);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/acceptance/result:
+ *   put:
+ *     tags: [Charging Stations]
+ *     summary: Cập nhật kết quả nghiệm thu
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [result]
+ *             properties:
+ *               result: { type: string, enum: [ACCEPT_FAILED, ACCEPT_PASSED] }
+ *     responses:
+ *       200: { description: Đã cập nhật kết quả nghiệm thu }
+ *       400: { description: Thiếu biên bản nghiệm thu hoặc trạng thái không phù hợp }
+ *       403: { description: Không thuộc Phòng Setup và Vận hành }
+ */
+router.put('/:id/acceptance/result', requireChargingStationViewer, chargingStationController.updateAcceptanceResult);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/configuration/complete:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Hoàn tất cấu hình và xác nhận ON trạm
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [cms_station_code, on_date]
+ *             properties:
+ *               cms_station_code: { type: string }
+ *               on_date: { type: string, format: date }
+ *     responses:
+ *       200: { description: Trạm và đề xuất được chuyển sang Hoạt động }
+ *       400: { description: Dữ liệu hoặc trạng thái không hợp lệ }
+ *       403: { description: Không thuộc Phòng Setup và Vận hành }
+ */
+router.post('/:id/configuration/complete', requireChargingStationViewer, chargingStationController.completeConfiguration);
 
 /**
  * @swagger
@@ -192,7 +499,7 @@ router.post('/:id/status', requireChargingStationEditor, chargingStationControll
  *       400:
  *         description: Dữ liệu không hợp lệ
  */
-router.put('/:id/acceptance', requireChargingStationEditor, chargingStationController.updateAcceptance);
+router.put('/:id/acceptance', requireChargingStationViewer, chargingStationController.updateAcceptance);
 
 /**
  * @swagger
@@ -224,7 +531,7 @@ router.put('/:id/acceptance', requireChargingStationEditor, chargingStationContr
  *       400:
  *         description: File không phải PDF hoặc không tồn tại
  */
-router.post('/:id/acceptance-file', requireChargingStationEditor, chargingStationController.setAcceptanceFile);
+router.post('/:id/acceptance-file', requireChargingStationViewer, chargingStationController.setAcceptanceFile);
 
 /**
  * @swagger
@@ -258,7 +565,7 @@ router.post('/:id/acceptance-file', requireChargingStationEditor, chargingStatio
  *       400:
  *         description: File không phải ảnh hoặc vượt giới hạn
  */
-router.post('/:id/acceptance-images', requireChargingStationEditor, chargingStationController.addImages);
+router.post('/:id/acceptance-images', requireChargingStationViewer, chargingStationController.addImages);
 
 /**
  * @swagger
@@ -285,6 +592,6 @@ router.post('/:id/acceptance-images', requireChargingStationEditor, chargingStat
  *       404:
  *         description: Ảnh không tồn tại
  */
-router.delete('/:id/acceptance-images/:fileId', requireChargingStationEditor, chargingStationController.removeImage);
+router.delete('/:id/acceptance-images/:fileId', requireChargingStationViewer, chargingStationController.removeImage);
 
 module.exports = router;

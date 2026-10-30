@@ -11,6 +11,8 @@ const STATUS_TITLES = {
   RESUBMITTED: 'Đề xuất được gửi lại',
   CANCELLED: 'Đề xuất đã bị hủy',
   CONTRACT_SIGNED: 'Đề xuất ký hợp đồng thành công',
+  DEPLOYING: 'Đề xuất đang triển khai ON trạm',
+  ACTIVE: 'Đề xuất đã đi vào hoạt động',
   CONTRACT_FAILED: 'Đề xuất ký hợp đồng thất bại',
   ARCHIVED: 'Đề xuất đã được lưu trữ',
   PRINCIPLE_APPROVED: 'Đề xuất đã được duyệt chủ trương',

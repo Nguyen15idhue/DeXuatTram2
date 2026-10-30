@@ -1,10 +1,17 @@
 import { notifyProposalTaskCountsChanged } from '../utils/proposalTaskCounts';
+import { notifyChargingStationTaskCountsChanged } from '../utils/chargingStationTaskCounts';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const runProposalTaskMutation = async (request) => {
   const response = await request();
   if (response?.success === true) notifyProposalTaskCountsChanged();
+  return response;
+};
+
+const runChargingStationTaskMutation = async (request) => {
+  const response = await request();
+  if (response?.success === true) notifyChargingStationTaskCountsChanged();
   return response;
 };
 
@@ -589,7 +596,28 @@ export const warehouseService = {
   }
 };
 
+export const chargingFinanceService = {
+  getStations(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/charging-finance/stations${qs}`, token);
+  },
+  getInvoices(stationId, queryString, token) {
+    const params = new URLSearchParams(queryString || '');
+    params.set('charging_station_id', String(stationId));
+    return api.getWithAuth(`/admin/charging-finance/invoices?${params.toString()}`, token);
+  },
+  createInvoice(stationId, data, token) {
+    return api.postWithAuth(`/admin/charging-finance/stations/${stationId}/invoices`, data || {}, token);
+  },
+  updatePaymentStatus(stationId, data, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-finance/stations/${stationId}/payment-status`, data || {}, token));
+  }
+};
+
 export const chargingStationService = {
+  getTaskCounts(token) {
+    return api.getWithAuth('/admin/charging-stations/task-counts', token);
+  },
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/charging-stations${qs}`, token);
@@ -598,22 +626,55 @@ export const chargingStationService = {
     return api.getWithAuth(`/admin/charging-stations/${id}`, token);
   },
   update(id, data, token) {
-    return api.putWithAuth(`/admin/charging-stations/${id}`, data || {}, token);
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}`, data || {}, token));
+  },
+  startContractSigning(id, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/start`, {}, token));
+  },
+  completeContract(id, fileId, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/complete`, { file_id: fileId }, token));
+  },
+  startInfrastructure(id, type, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/start`, {}, token));
+  },
+  completeInfrastructure(id, type, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/complete`, {}, token));
+  },
+  requestEarlyDelivery(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/delivery/early-request`, data || {}, token));
+  },
+  createDeliveryExport(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/delivery/export`, data || {}, token));
+  },
+  confirmDelivery(id, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/delivery/confirm`, {}, token));
+  },
+  startInstallation(id, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/installation/start`, {}, token));
+  },
+  completeInstallation(id, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/installation/complete`, {}, token));
+  },
+  updateAcceptanceResult(id, result, token) {
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/acceptance/result`, { result }, token));
+  },
+  completeConfiguration(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/configuration/complete`, data || {}, token));
   },
   changeStatus(id, data, token) {
-    return api.postWithAuth(`/admin/charging-stations/${id}/status`, data || {}, token);
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/status`, data || {}, token));
   },
   updateAcceptance(id, data, token) {
-    return api.putWithAuth(`/admin/charging-stations/${id}/acceptance`, data || {}, token);
+    return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}/acceptance`, data || {}, token));
   },
   setAcceptanceFile(id, fileId, token) {
-    return api.postWithAuth(`/admin/charging-stations/${id}/acceptance-file`, { file_id: fileId }, token);
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/acceptance-file`, { file_id: fileId }, token));
   },
   addAcceptanceImages(id, fileIds, token) {
-    return api.postWithAuth(`/admin/charging-stations/${id}/acceptance-images`, { file_ids: fileIds }, token);
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/acceptance-images`, { file_ids: fileIds }, token));
   },
   removeAcceptanceImage(id, fileId, token) {
-    return api.deleteWithAuth(`/admin/charging-stations/${id}/acceptance-images/${fileId}`, token);
+    return runChargingStationTaskMutation(() => api.deleteWithAuth(`/admin/charging-stations/${id}/acceptance-images/${fileId}`, token));
   }
 };
 

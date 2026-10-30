@@ -49,3 +49,7 @@ export const canSeeApprovalPage = (user) => (
   user?.role === 'SUPER_ADMIN'
   || (user?.role === 'ADMIN' && isBackOfficeDept(user))
 );
+
+export const canSeeFinancePage = (user) => (
+  isAdminUser(user) || (user?.role === 'SALES' && isBackOfficeDept(user))
+);

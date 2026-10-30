@@ -33,7 +33,8 @@ const TYPE_COLORS = {
   PROPOSAL_REPORT_REVIEWING: { bg: '#dbeafe', border: '#2563eb', text: '#1e40af' },
   PROPOSAL_REPORT_UPDATING: { bg: '#ffedd5', border: '#f97316', text: '#9a3412' },
   SIGNATURE_PENDING: { bg: '#f3e8ff', border: '#9333ea', text: '#6b21a8' },
-  COMPLETED: { bg: '#dcfce7', border: '#16a34a', text: '#166534' }
+  COMPLETED: { bg: '#dcfce7', border: '#16a34a', text: '#166534' },
+  CHARGING_STATION_DELIVERY_READY: { bg: '#dbeafe', border: '#2563eb', text: '#1e40af' }
 };
 
 export const notifyBellRefresh = () => window.dispatchEvent(new Event('notifications:refresh'));
@@ -163,6 +164,8 @@ const NotificationBell = ({ mode = 'user' }) => {
     setOpen(false);
     if (n.entity_type === 'station_proposals' && n.entity_id) {
       navigate(mode === 'admin' ? `/admin/proposals/chi-tiet/${n.entity_id}` : `/my-proposals/view=${n.entity_id}`);
+    } else if (n.entity_type === 'charging_stations' && n.entity_id) {
+      navigate(`/admin/on-tram/giao-tru`);
     }
   };
 

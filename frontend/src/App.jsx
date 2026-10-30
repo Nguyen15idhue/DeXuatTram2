@@ -9,7 +9,7 @@ import AdminLayout from './layouts/AdminLayout';
 
 import RoleRoute from './components/RoleRoute';
 import AssistantChat from './components/help/AssistantChat';
-import { canSeeApprovalPage, canSeeReviewRequestsPage } from './utils/proposalAccess';
+import { canSeeApprovalPage, canSeeFinancePage, canSeeReviewRequestsPage } from './utils/proposalAccess';
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
@@ -59,8 +59,10 @@ const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'));
 const AdminHelpPage = lazy(() => import('./pages/admin/AdminHelpPage'));
 const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage'));
 const AdminChargingStationsPage = lazy(() => import('./pages/admin/AdminChargingStationsPage'));
+const AdminChargingStationDetailPage = lazy(() => import('./pages/admin/AdminChargingStationDetailPage'));
 const AdminComingSoonPage = lazy(() => import('./pages/admin/AdminComingSoonPage'));
 const AdminWarehousePage = lazy(() => import('./pages/admin/AdminWarehousePage'));
+const AdminFinancePage = lazy(() => import('./pages/admin/AdminFinancePage'));
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
@@ -70,7 +72,7 @@ const PROPOSAL_INFO_ROLES = [...PROPOSAL_ROLES, 'NPP'];
 const SIGNING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const ESIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
 const PANEL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
-const CHARGING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
+const CHARGING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const HIDE_ASSISTANT_PATHS = ['/login', '/register', '/map'];
 
 import './App.css';
@@ -300,6 +302,34 @@ function App() {
               element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="thong-tin-chung" /></RoleRoute>}
             />
             <Route
+              path="/admin/on-tram/thong-tin-chung/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage stage="thong-tin-chung" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/khoi-tao-hop-dong/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/xay-dung-ha-tang/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage stage="xay-dung-ha-tang" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/giao-tru/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage stage="giao-tru" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/lap-tru/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage stage="lap-tru" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/nghiem-thu/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage stage="nghiem-thu" /></RoleRoute>}
+            />
+            <Route
+              path="/admin/on-tram/on-tram/:id"
+              element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationDetailPage stage="on-tram" /></RoleRoute>}
+            />
+            <Route
               path="/admin/on-tram/khoi-tao-hop-dong"
               element={<RoleRoute allowed={CHARGING_ROLES}><AdminChargingStationsPage stage="khoi-tao-hop-dong" /></RoleRoute>}
             />
@@ -325,7 +355,7 @@ function App() {
             />
             <Route
               path="/admin/tai-chinh"
-              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminComingSoonPage title="Quản lý tài chính" /></RoleRoute>}
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN', 'SALES']} accessCheck={canSeeFinancePage}><AdminFinancePage /></RoleRoute>}
             />
             <Route
               path="/admin/kho"
