@@ -652,7 +652,9 @@ function buildColumnGuide(col, entity) {
     case 'text': text = 'Nhập chữ'; break;
     case 'textarea': text = 'Nhập đoạn văn'; break;
     case 'email': text = 'Nhập email. VD: example@email.com'; break;
-    case 'phone': text = 'Số điện thoại 10 số, bắt đầu bằng 0. VD: 0901234567'; break;
+    case 'phone': text = col.key === 'owner_phone'
+      ? 'Số điện thoại 10 hoặc 11 số, bắt đầu bằng 0. VD: 0901234567'
+      : 'Số điện thoại 10 số, bắt đầu bằng 0. VD: 0901234567'; break;
     case 'url': text = 'Nhập đường dẫn. VD: https://...'; break;
     case 'number': text = 'Nhập số'; break;
     case 'date': text = 'Ngày dạng dd/mm/yyyy. VD: 01/01/2026'; break;
