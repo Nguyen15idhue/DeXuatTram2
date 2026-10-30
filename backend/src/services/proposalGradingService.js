@@ -61,13 +61,15 @@ const parseCustomData = (value) => {
   try { return JSON.parse(value); } catch { return {}; }
 };
 
-const isLegalDocsRequired = (customData) => {
+const isNqDirectPayment = (customData) => {
   const custom = parseCustomData(customData);
   const model = normalizeText(getCellValue(custom.mo_hinh_dau_tu));
   const policy = normalizeText(getCellValue(custom.chinh_sach_nq));
   const isNq = model === 'nq' || model === 'nhuong quyen';
-  return !(isNq && policy === 'tra thang');
+  return isNq && policy === 'tra thang';
 };
+
+const isLegalDocsRequired = (customData) => !isNqDirectPayment(customData);
 
 const resolveGradingRole = (department) => {
   const dept = normalizeText(department);
@@ -232,6 +234,7 @@ exports.resolveGradingRole = resolveGradingRole;
 exports.normalizeText = normalizeText;
 exports.parseCustomData = parseCustomData;
 exports.isLegalDocsRequired = isLegalDocsRequired;
+exports.isNqDirectPayment = isNqDirectPayment;
 exports.getUserDepartment = getUserDepartment;
 exports.getLegalDocsState = getLegalDocsState;
 exports.normalizeFileEntries = normalizeFileEntries;
@@ -866,8 +869,12 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
     } else if (!hasOpenRegrade && nextQH !== null && nextPL !== null) {
       const total = nextQH + nextPL;
       if (total >= 4) {
-        target = 'DESIGNING';
-        reason = `Điểm Quy hoạch + Pháp lý đạt ${total}/6`;
+        target = isNqDirectPayment(current.custom_data)
+          ? 'PROPOSAL_REPORT_CREATING'
+          : 'DESIGNING';
+        reason = `Điểm Quy hoạch + Pháp lý đạt ${total}/6${
+          target === 'PROPOSAL_REPORT_CREATING' ? ', nhượng quyền trả thẳng 100% nên bỏ qua đánh giá layout' : ''
+        }`;
       } else if (isReGrading) {
         target = 'RE_GDTTKD_EVALUATING';
         reason = `Điểm Quy hoạch + Pháp lý đạt ${total}/6, cần GĐTTKD xem xét lại`;
@@ -898,7 +905,7 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
             { resolvedBy: userId || null, status: 'CANCELLED' }
           );
         }
-        if (target === 'DESIGNING') {
+        if (['DESIGNING', 'PROPOSAL_REPORT_CREATING'].includes(target)) {
           await require('./proposalRequestService').closeRequests(
             proposalId,
             ['RE_GRADE'],
@@ -906,7 +913,7 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
           );
         }
 
-        const reviewLevelForTarget = target === 'DESIGNING' || target === 'CANCELLED'
+        const reviewLevelForTarget = ['DESIGNING', 'PROPOSAL_REPORT_CREATING', 'CANCELLED'].includes(target)
           ? null
           : (target === 'RE_GDTTKD_EVALUATING' ? 2 : 1);
         const currentReviewLevel = current.review_level === null || current.review_level === undefined
