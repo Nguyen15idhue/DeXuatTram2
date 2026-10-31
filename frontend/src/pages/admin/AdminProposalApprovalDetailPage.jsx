@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, FileText, Paperclip, PenSquare, RefreshCw, XCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  FileText,
+  Maximize2,
+  PenSquare,
+  RefreshCw,
+  XCircle
+} from 'lucide-react';
 import PageHeader from '../../components/ui/PageHeader';
 import ReviewActionDialog from '../../components/admin/ReviewActionDialog';
 import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/ProposalTableBadges';
 import FileViewer from '../../components/dynamic/FileViewer';
 import { useAuth } from '../../contexts/AuthContext';
-import { proposalApprovalService } from '../../services/api';
+import { API_URL, proposalApprovalService } from '../../services/api';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import {
   formatProposalCost,
@@ -166,22 +174,46 @@ const AdminProposalApprovalDetailPage = () => {
         {reportFiles.length === 0 ? (
           <div className="alert">Đề xuất chưa có file tờ trình BCĐX.</div>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {reportFiles.map((file) => (
-              <button
-                key={file.id}
-                type="button"
-                className="btn btn-outline btn-sm gap-2"
-                onClick={() => setFileViewing({
-                  id: file.id,
-                  original_name: file.name,
-                  mime_type: file.mime_type
-                })}
-              >
-                <Paperclip size={14} />
-                {file.name || `Tệp #${file.id}`}
-              </button>
-            ))}
+          <div className="space-y-4">
+            {reportFiles.map((file, index) => {
+              const fileDetails = {
+                ...file,
+                original_name: file.name || `Tệp #${file.id || index + 1}`,
+              };
+              return (
+                <FileViewer
+                  key={file.id || file.name || index}
+                  file={fileDetails}
+                  inline
+                  inlineHeight="70vh"
+                  inlineActions={(
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs gap-1"
+                        onClick={() => setFileViewing(fileDetails)}
+                        title="Mở toàn màn hình"
+                      >
+                        <Maximize2 size={14} />
+                        <span className="hidden sm:inline">Toàn màn hình</span>
+                      </button>
+                      {file.id && (
+                        <a
+                          className="btn btn-ghost btn-xs gap-1"
+                          href={`${API_URL}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Tải xuống file"
+                        >
+                          <Download size={14} />
+                          <span className="hidden sm:inline">Tải xuống</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+                />
+              );
+            })}
           </div>
         )}
       </section>
