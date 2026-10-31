@@ -121,7 +121,7 @@ const DataListEditor = () => {
       {error && <ErrorMessage message={error} />}
 
       <div className="table-container">
-        <table>
+        <table className="table">
           <thead>
             <tr>
               <th className="w-[50px]">#</th>

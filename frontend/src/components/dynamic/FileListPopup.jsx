@@ -153,7 +153,7 @@ ${styles || ''}</style></head><body>${bodyContent}</body></html>`;
         wb.SheetNames.forEach(sheetName => {
           const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
           body += `<div class="sheet-tab">${sheetName}</div>`;
-          body += '<table>';
+          body += '<table class="table">';
           data.forEach((row, ri) => {
             const tag = ri === 0 ? 'th' : 'td';
             body += '<tr>';

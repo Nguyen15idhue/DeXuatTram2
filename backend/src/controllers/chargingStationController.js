@@ -234,3 +234,11 @@ exports.removeImage = async (req, res) => {
     sendError(res, error);
   }
 };
+exports.committedExportItems = async (req, res) => {
+  try {
+    const data = await chargingStationService.getCommittedExportItems(req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
