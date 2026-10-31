@@ -267,7 +267,7 @@ const ProposalSignatureConfigPage = () => {
           <div>
             <h2 className="font-semibold">Danh sách người ký</h2>
             <p className="mt-1 text-xs text-base-content/60">
-              Chọn người thuộc các nhóm có liên quan đến đề xuất để thêm ô ký.
+              Chọn người thuộc Ban Tổng giám đốc, Phòng Tài chính, Back Office, người đề xuất hoặc quản lý phía trên.
               Người ký mới sẽ được gắn vào trang đang chỉnh.
             </p>
           </div>
