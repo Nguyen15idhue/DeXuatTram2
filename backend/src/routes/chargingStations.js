@@ -595,3 +595,4 @@ router.post('/:id/acceptance-images', requireChargingStationViewer, chargingStat
 router.delete('/:id/acceptance-images/:fileId', requireChargingStationViewer, chargingStationController.removeImage);
 
 module.exports = router;
+router.get('/:id/committed-export-items', requireChargingStationViewer, chargingStationController.committedExportItems);
