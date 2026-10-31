@@ -97,7 +97,10 @@ const ProposalSignatureConfigPage = () => {
               box_height: clamp(
                 drag.origHeight + dy,
                 signerTextLayout.minBoxHeightRatio,
-                1 - currentBox.pos_y,
+                Math.max(
+                  signerTextLayout.minBoxHeightRatio,
+                  1 - currentBox.pos_y,
+                ),
               ),
             };
           }
@@ -439,13 +442,10 @@ const ProposalSignatureConfigPage = () => {
                         <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-primary px-1 text-[10px] text-primary-content">
                           {signer.full_name}
                         </span>
-                        <div
-                          className="w-full flex-none overflow-hidden pb-1 text-left text-[10px] text-base-content/50"
-                          style={{ height: `${signerTextLayout.imageHeightRatio * 100}%` }}
-                        >
+                        <div className="w-full min-h-0 flex-1 overflow-hidden pb-1 text-left text-[10px] text-base-content/50">
                           Ảnh chữ ký
                         </div>
-                        <div className="min-h-0 w-full flex-1 overflow-hidden text-left">
+                        <div className="w-full flex-none overflow-hidden text-left">
                           <SignerDetailsText signer={signer} timeText="Thời gian ký" />
                         </div>
                         <span

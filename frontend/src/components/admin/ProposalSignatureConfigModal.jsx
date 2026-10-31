@@ -10,6 +10,7 @@ import {
 import {
   normalizeSignerBox
 } from '../../utils/proposalSignature';
+import signerTextLayout from '../../utils/signatureTextLayout.json';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -83,7 +84,11 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           return {
             ...signer,
             box_width: clamp(drag.origWidth + dx, 0, 1 - signer.pos_x),
-            box_height: clamp(drag.origHeight + dy, 0, 1 - signer.pos_y)
+            box_height: clamp(
+              drag.origHeight + dy,
+              signerTextLayout.minBoxHeightRatio,
+              Math.max(signerTextLayout.minBoxHeightRatio, 1 - signer.pos_y)
+            )
           };
         }
         return {
@@ -347,7 +352,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
                     {signer.full_name}
                   </span>
                   <span
-                    className="absolute -bottom-1 -right-1 w-3 h-3 bg-primary border border-white cursor-nwse-resize"
+                    className="absolute -bottom-1 -right-1 z-10 w-3 h-3 bg-primary border border-white cursor-nwse-resize"
                     onMouseDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
