@@ -176,7 +176,7 @@ const FileViewer = ({
           return r.arrayBuffer();
         })
         .then(async (buf) => {
-          if (inline) {
+          try {
             const { renderAsync } = await import("docx-preview");
             if (!docxContainerRef.current)
               throw new Error("Không tìm thấy vùng xem trước tài liệu");
@@ -186,10 +186,11 @@ const FileViewer = ({
               breakPages: true,
             });
             setDocxRenderVersion((version) => version + 1);
-            return;
+          } catch (renderError) {
+            if (inline) throw renderError;
+            const result = await mammoth.convertToHtml({ arrayBuffer: buf });
+            setHtmlContent(result.value);
           }
-          const result = await mammoth.convertToHtml({ arrayBuffer: buf });
-          setHtmlContent(result.value);
         })
         .catch((err) => setError("Lỗi đọc file Word: " + err.message))
         .finally(() => setLoading(false));
@@ -392,7 +393,14 @@ const FileViewer = ({
   }
 
   const renderContent = () => {
-    if (inline && fileType === "word") {
+    if (fileType === "word") {
+      if (!inline && htmlContent) {
+        return (
+          <div className={`w-full p-5 bg-white text-black overflow-auto ${isFullScreen ? "h-full" : "max-h-[70vh]"}`}>
+            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+          </div>
+        );
+      }
       return (
         <>
           <div
@@ -473,13 +481,6 @@ const FileViewer = ({
             title={name}
           />
         ) : null;
-
-      case "word":
-        return (
-          <div className={`w-full p-5 bg-white text-black overflow-auto ${isFullScreen ? "h-full" : "max-h-[70vh]"}`}>
-            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-          </div>
-        );
 
       case "excel":
         if (!xlsxData || xlsxData.length === 0) {
