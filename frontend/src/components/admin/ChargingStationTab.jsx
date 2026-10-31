@@ -5,6 +5,7 @@ import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { Badge, Button, DataTable, FilterBar, Input, Pagination, Toast } from '../ui';
 import ChargingStationDetailModal from './ChargingStationDetailModal';
+import ChargingStationCareModal from './ChargingStationCareModal';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
@@ -41,6 +42,7 @@ const ChargingStationTab = ({ stage }) => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [selectedId, setSelectedId] = useState(null);
+  const [careStation, setCareStation] = useState(null);
   const [toast, setToast] = useState(EMPTY_TOAST);
   const closeToast = useCallback(() => setToast(EMPTY_TOAST), []);
 
@@ -156,6 +158,9 @@ const ChargingStationTab = ({ stage }) => {
           Sửa
         </Button>
       )}
+      <Button variant="outline" size="xs" onClick={() => setCareStation({ id: row.id, code: row.ma_tram })}>
+        CSKH
+      </Button>
     </div>
   );
 
@@ -219,6 +224,18 @@ const ChargingStationTab = ({ stage }) => {
           canEdit={canEdit}
           onClose={() => setSelectedId(null)}
           onChanged={() => load(page)}
+          onToast={(message, type = 'success') => setToast({ message, type })}
+        />
+      )}
+
+      {careStation && (
+        <ChargingStationCareModal
+          open
+          stationId={careStation.id}
+          stationCode={careStation.code}
+          token={token}
+          canEdit={canEdit}
+          onClose={() => setCareStation(null)}
           onToast={(message, type = 'success') => setToast({ message, type })}
         />
       )}

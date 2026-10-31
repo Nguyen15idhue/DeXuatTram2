@@ -678,6 +678,21 @@ export const chargingStationService = {
   }
 };
 
+export const chargingStationCareService = {
+  list(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/care-logs`, token);
+  },
+  create(id, data, token) {
+    return api.postWithAuth(`/admin/charging-stations/${id}/care-logs`, data || {}, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/charging-stations/care-logs/${id}`, data || {}, token);
+  },
+  remove(id, token) {
+    return api.deleteWithAuth(`/admin/charging-stations/care-logs/${id}`, token);
+  }
+};
+
 export const proposalSignatureService = {
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';

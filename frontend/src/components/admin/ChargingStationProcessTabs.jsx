@@ -185,7 +185,7 @@ const ChargingStationProcessTabs = ({ stage = 'lap-tru' }) => {
     { key: 'acceptance_file_name', label: 'Biên bản nghiệm thu', render: (value) => value || '—' },
     { key: 'cms_station_code', label: 'Mã trạm CMS', render: (value) => value || '—' },
     { key: 'on_date', label: 'Ngày ON chính thức', render: formatCsDate },
-    { key: 'updated_at', label: 'Cập nhật', render: formatDateTime }
+
   ], [location.pathname, location.search, stage]);
 
   const renderActions = (row) => {
