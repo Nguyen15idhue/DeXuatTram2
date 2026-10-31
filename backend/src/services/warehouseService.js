@@ -48,7 +48,7 @@ const listPoles = async ({ search = '', page = 1, limit = 20 } = {}) => {
 
   const [[countRow]] = await pool.query(`SELECT COUNT(*) AS total FROM charging_poles ${whereClause}`, params);
   const [rows] = await pool.query(
-    `SELECT id, name, charging_type, power_kw, quantity, supplier, created_at, updated_at
+    `SELECT id, name, charging_type, power_kw, quantity, supplier, note, created_at, updated_at
      FROM charging_poles ${whereClause}
      ORDER BY id DESC LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
@@ -67,13 +67,12 @@ const createPole = async (data = {}) => {
   if (!['AC', 'DC'].includes(chargingType)) throw err('Loại sạc chỉ được AC hoặc DC', 400);
   const powerKw = Number(data.power_kw);
   if (!Number.isFinite(powerKw) || powerKw <= 0) throw err('Công suất phải lớn hơn 0', 400);
-  const quantity = data.quantity === undefined || data.quantity === null || data.quantity === '' ? 0 : Number(data.quantity);
-  if (!Number.isInteger(quantity) || quantity < 0) throw err('Số lượng phải là số nguyên không âm', 400);
   const supplier = data.supplier ? String(data.supplier).trim() : null;
+  const note = data.note ? String(data.note).trim() : null;
 
   const [result] = await pool.query(
-    'INSERT INTO charging_poles (name, charging_type, power_kw, quantity, supplier) VALUES (?, ?, ?, ?, ?)',
-    [name, chargingType, powerKw, quantity, supplier]
+    'INSERT INTO charging_poles (name, charging_type, power_kw, quantity, supplier, note) VALUES (?, ?, ?, 0, ?, ?)',
+    [name, chargingType, powerKw, supplier, note]
   );
   const [rows] = await pool.query('SELECT * FROM charging_poles WHERE id = ?', [result.insertId]);
   return rows[0];
@@ -101,13 +100,11 @@ const updatePole = async (id, data = {}) => {
     if (!Number.isFinite(powerKw) || powerKw <= 0) throw err('Công suất phải lớn hơn 0', 400);
     patch.power_kw = powerKw;
   }
-  if (data.quantity !== undefined) {
-    const quantity = Number(data.quantity);
-    if (!Number.isInteger(quantity) || quantity < 0) throw err('Số lượng phải là số nguyên không âm', 400);
-    patch.quantity = quantity;
-  }
   if (data.supplier !== undefined) {
     patch.supplier = data.supplier ? String(data.supplier).trim() : null;
+  }
+  if (data.note !== undefined) {
+    patch.note = data.note ? String(data.note).trim() : null;
   }
 
   if (Object.keys(patch).length === 0) throw err('Không có dữ liệu cập nhật', 400);
@@ -171,7 +168,22 @@ const listImports = async ({ page = 1, limit = 20 } = {}) => {
     if (!itemMap.has(item.import_id)) itemMap.set(item.import_id, []);
     itemMap.get(item.import_id).push(item);
   });
-  rows.forEach((row) => { row.items = itemMap.get(row.id) || []; });
+  const [evidence] = await pool.query(
+    `SELECT wif.import_id, f.id, f.original_name, f.mime_type, f.size
+     FROM warehouse_import_files wif
+     JOIN files f ON f.id = wif.file_id
+     WHERE wif.import_id IN (${ids.map(() => '?').join(',')})`,
+    ids
+  );
+  const evidenceMap = new Map();
+  evidence.forEach((file) => {
+    if (!evidenceMap.has(file.import_id)) evidenceMap.set(file.import_id, []);
+    evidenceMap.get(file.import_id).push(file);
+  });
+  rows.forEach((row) => {
+    row.items = itemMap.get(row.id) || [];
+    row.evidence_files = evidenceMap.get(row.id) || [];
+  });
 
   return {
     items: rows,
@@ -196,7 +208,15 @@ const getImport = async (id) => {
      WHERE wii.import_id = ?`,
     [importId]
   );
-  return { ...rows[0], items };
+  const [evidence] = await pool.query(
+    `SELECT f.id, f.original_name, f.mime_type, f.size
+     FROM warehouse_import_files wif
+     JOIN files f ON f.id = wif.file_id
+     WHERE wif.import_id = ?
+     ORDER BY wif.sort_order, wif.id`,
+    [importId]
+  );
+  return { ...rows[0], items, evidence_files: evidence };
 };
 
 const createImport = async (data = {}, ctx = {}) => {
@@ -205,6 +225,9 @@ const createImport = async (data = {}, ctx = {}) => {
   const chargingStationId = toNullableInt(data.charging_station_id, 'Trạm sạc');
   const note = data.note ? String(data.note).trim() : null;
   const items = normalizeItems(data.items);
+  const evidenceFileIds = [...new Set((Array.isArray(data.evidence_file_ids) ? data.evidence_file_ids : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0))];
 
   const conn = await pool.getConnection();
   try {
@@ -225,6 +248,23 @@ const createImport = async (data = {}, ctx = {}) => {
         [item.quantity, item.pole_id]
       );
       if (result.affectedRows === 0) throw err(`Không tìm thấy trụ sạc #${item.pole_id}`, 404);
+    }
+    if (evidenceFileIds.length > 0) {
+      const [fileRows] = await conn.query(
+        `SELECT id, mime_type, status FROM files WHERE id IN (${evidenceFileIds.map(() => '?').join(',')}) AND status <> 'deleted'`,
+        evidenceFileIds
+      );
+      if (fileRows.length !== evidenceFileIds.length) throw err('Có file minh chứng không tồn tại', 400);
+      for (const file of fileRows) {
+        const mime = String(file.mime_type || '').toLowerCase();
+        if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'].includes(mime)) {
+          throw err('Minh chứng chỉ chấp nhận ảnh JPG/PNG/GIF/WEBP hoặc PDF', 400);
+        }
+      }
+      await conn.query(
+        `INSERT IGNORE INTO warehouse_import_files (import_id, file_id, sort_order) VALUES ?`,
+        [evidenceFileIds.map((fileId, index) => [importId, fileId, index])]
+      );
     }
     await conn.commit();
     return getImport(importId);
@@ -318,8 +358,38 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
     throw err('Tổng số tiền vận chuyển phải là số không âm', 400);
   }
 
-  const [stationRows] = await conn.query('SELECT id FROM charging_stations WHERE id = ?', [chargingStationId]);
+  const [stationRows] = await conn.query(
+    `SELECT cs.id, p.chot_so_luong_tru
+     FROM charging_stations cs
+     JOIN station_proposals p ON p.id = cs.proposal_id
+     WHERE cs.id = ?`,
+    [chargingStationId]
+  );
   if (stationRows.length === 0) throw err('Không tìm thấy trạm sạc', 404);
+
+  const committedRows = (() => {
+    const value = stationRows[0].chot_so_luong_tru;
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    try { return JSON.parse(value); } catch { return []; }
+  })();
+  if (!Array.isArray(committedRows) || committedRows.length === 0) {
+    throw err('Trạm chưa có số lượng trụ chốt để xuất kho', 409);
+  }
+
+  const committedMap = new Map();
+  for (const row of committedRows) {
+    const poleName = String(row?.loai_tru || '').trim().toLowerCase();
+    const quantity = Number(row?.so_luong);
+    if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
+    const [poleRows] = await conn.query(
+      'SELECT id FROM charging_poles WHERE LOWER(TRIM(name)) = ? LIMIT 2',
+      [poleName]
+    );
+    if (poleRows.length === 1) {
+      committedMap.set(poleRows[0].id, (committedMap.get(poleRows[0].id) || 0) + quantity);
+    }
+  }
 
   const [stockRows] = await conn.query(
     `SELECT id, quantity FROM charging_poles WHERE id IN (${items.map(() => '?').join(',')}) FOR UPDATE`,
@@ -328,8 +398,13 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   const stockMap = new Map(stockRows.map((row) => [row.id, row.quantity]));
   for (const item of items) {
     if (!stockMap.has(item.pole_id)) throw err(`Không tìm thấy trụ sạc #${item.pole_id}`, 404);
-    if (stockMap.get(item.pole_id) < item.quantity) {
-      throw err(`Trụ sạc #${item.pole_id} không đủ tồn kho`, 400);
+    const committedQty = committedMap.get(item.pole_id);
+    if (!committedQty) {
+      throw err(`Trụ sạc #${item.pole_id} không thuộc số lượng đã chốt của trạm`, 400);
+    }
+    const maxAllowed = Math.min(committedQty, stockMap.get(item.pole_id));
+    if (item.quantity > maxAllowed) {
+      throw err(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 400);
     }
   }
 

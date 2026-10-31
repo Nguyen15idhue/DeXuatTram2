@@ -1832,3 +1832,43 @@ exports.setAcceptanceFile = setAcceptanceFile;
 exports.addAcceptanceImages = addAcceptanceImages;
 exports.removeAcceptanceImage = removeAcceptanceImage;
 exports.findByProposal = findByProposal;
+const getCommittedExportItems = async (id) => {
+  const stationId = normalizeId(id, 'Ma ban ghi');
+  const [rows] = await pool.query(
+    `SELECT cs.id, p.chot_so_luong_tru
+     FROM charging_stations cs
+     JOIN station_proposals p ON p.id = cs.proposal_id
+     WHERE cs.id = ?`,
+    [stationId]
+  );
+  if (rows.length === 0) throw err('Khong tim thay ban ghi ON tram', 404);
+  const committedRows = (() => {
+    const value = rows[0].chot_so_luong_tru;
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    try { return JSON.parse(value); } catch { return []; }
+  })();
+  const items = [];
+  for (const row of committedRows) {
+    const poleName = String(row?.loai_tru || '').trim();
+    const quantity = Number(row?.so_luong);
+    if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
+    const [poleRows] = await pool.query(
+      'SELECT id, name, charging_type, power_kw, quantity AS stock_quantity FROM charging_poles WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 2',
+      [poleName]
+    );
+    if (poleRows.length === 1) {
+      items.push({
+        pole_id: poleRows[0].id,
+        name: poleRows[0].name,
+        charging_type: poleRows[0].charging_type,
+        power_kw: poleRows[0].power_kw,
+        committed_quantity: quantity,
+        stock_quantity: poleRows[0].stock_quantity
+      });
+    }
+  }
+  return items;
+};
+
+exports.getCommittedExportItems = getCommittedExportItems;

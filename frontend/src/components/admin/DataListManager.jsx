@@ -365,7 +365,7 @@ const DataListManager = () => {
       )}
 
       <div className="table-container">
-        <table>
+        <table className="table">
           <thead>
             <tr>
               <th>STT</th>

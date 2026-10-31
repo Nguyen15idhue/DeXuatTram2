@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { warehouseService } from '../../services/api';
 import { Badge, Button, ConfirmDialog, DataTable, Dialog, FilterBar, Input, Loading, Pagination, Select, Toast } from '../../components/ui';
+import FileUpload from '../../components/dynamic/FileUpload';
 import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 
@@ -71,7 +72,7 @@ const PolesTab = ({ token, onToast }) => {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [dialog, setDialog] = useState({ open: false, record: null });
   const [confirm, setConfirm] = useState({ open: false, id: null });
-  const [form, setForm] = useState({ name: '', charging_type: 'AC', power_kw: '', quantity: 0, supplier: '' });
+  const [form, setForm] = useState({ name: '', charging_type: 'AC', power_kw: '', supplier: '', note: '' });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (targetPage = 1) => {
@@ -93,7 +94,7 @@ const PolesTab = ({ token, onToast }) => {
   useEffect(() => { setPage(1); load(1); }, [load]);
 
   const openCreate = () => {
-    setForm({ name: '', charging_type: 'AC', power_kw: '', quantity: 0, supplier: '' });
+    setForm({ name: '', charging_type: 'AC', power_kw: '', supplier: '', note: '' });
     setDialog({ open: true, record: null });
   };
 
@@ -102,8 +103,8 @@ const PolesTab = ({ token, onToast }) => {
       name: record.name || '',
       charging_type: record.charging_type || 'AC',
       power_kw: record.power_kw || '',
-      quantity: record.quantity ?? 0,
-      supplier: record.supplier || ''
+      supplier: record.supplier || '',
+      note: record.note || ''
     });
     setDialog({ open: true, record });
   };
@@ -173,9 +174,10 @@ const PolesTab = ({ token, onToast }) => {
             <Select label="Loại sạc" options={[{ value: 'AC', label: 'AC' }, { value: 'DC', label: 'DC' }]} value={form.charging_type} onChange={(e) => setForm({ ...form, charging_type: e.target.value })} placeholder={null} />
             <Input label="Công suất (kW)" type="number" min="1" step="1" value={form.power_kw} onChange={(e) => setForm({ ...form, power_kw: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Số lượng" type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
-            <Input label="Nhà cung cấp" value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} />
+          <Input label="Nhà cung cấp" value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} />
+          <div className="form-control w-full">
+            <span className="label-text font-medium mb-1">Ghi chú</span>
+            <textarea className="textarea textarea-bordered w-full" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setDialog({ open: false, record: null })} disabled={busy}>Hủy</Button>
@@ -238,7 +240,7 @@ const ImportsTab = ({ token, onToast }) => {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [poles, setPoles] = useState([]);
   const [dialog, setDialog] = useState({ open: false });
-  const [form, setForm] = useState({ import_date: '', charging_station_id: '', note: '', items: [{ pole_id: '', quantity: 1 }] });
+  const [form, setForm] = useState({ import_date: '', charging_station_id: '', note: '', items: [{ pole_id: '', quantity: 1 }], evidence: [] });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (targetPage = 1) => {
@@ -274,7 +276,7 @@ const ImportsTab = ({ token, onToast }) => {
   }));
 
   const openCreate = () => {
-    setForm({ import_date: new Date().toISOString().slice(0, 16), charging_station_id: '', note: '', items: [{ pole_id: '', quantity: 1 }] });
+    setForm({ import_date: new Date().toISOString().slice(0, 16), charging_station_id: '', note: '', items: [{ pole_id: '', quantity: 1 }], evidence: [] });
     setDialog({ open: true });
   };
 
@@ -285,7 +287,8 @@ const ImportsTab = ({ token, onToast }) => {
         import_date: form.import_date,
         charging_station_id: form.charging_station_id || null,
         note: form.note,
-        items: form.items.map((row) => ({ pole_id: Number(row.pole_id), quantity: Number(row.quantity) }))
+        items: form.items.map((row) => ({ pole_id: Number(row.pole_id), quantity: Number(row.quantity) })),
+        evidence_file_ids: (form.evidence || []).map((file) => file.id)
       }, token);
       setDialog({ open: false });
       onToast('Đã nhập kho', 'success');
@@ -306,6 +309,15 @@ const ImportsTab = ({ token, onToast }) => {
       key: 'items',
       label: 'Chi tiết',
       render: (value) => (value || []).map((item) => `${item.name} x${item.quantity}`).join(', ') || '—'
+    },
+    {
+      key: 'evidence_files',
+      label: 'Minh chứng',
+      render: (value) => (value || []).length === 0 ? '—' : (value || []).map((file) => (
+        <a key={file.id} className="link link-primary text-xs mr-2" href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/files/${file.id}/download?token=${token}`} target="_blank" rel="noreferrer">
+          {file.original_name}
+        </a>
+      ))
     }
   ];
 
@@ -353,6 +365,16 @@ const ImportsTab = ({ token, onToast }) => {
               </div>
             ))}
           </div>
+          <div className="space-y-2">
+            <span className="font-medium text-sm">Minh chứng nhập kho</span>
+            <FileUpload
+              value={form.evidence}
+              onChange={(value) => setForm({ ...form, evidence: Array.isArray(value) ? value : (value ? [value] : []) })}
+              multiple
+              accept="image/*,application/pdf"
+              fileConfig={{ maxSize: 10 }}
+            />
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setDialog({ open: false })} disabled={busy}>Hủy</Button>
             <Button loading={busy} onClick={save}>Lưu phiếu nhập</Button>
@@ -370,6 +392,7 @@ const ExportsTab = ({ token, onToast }) => {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [poles, setPoles] = useState([]);
   const [stations, setStations] = useState([]);
+  const [committedItems, setCommittedItems] = useState([]);
   const [dialog, setDialog] = useState({ open: false });
   const [form, setForm] = useState({ export_date: '', charging_station_id: '', reason: '', items: [{ pole_id: '', quantity: 1 }] });
   const [busy, setBusy] = useState(false);
@@ -403,6 +426,28 @@ const ExportsTab = ({ token, onToast }) => {
     })();
   }, [token]);
 
+  useEffect(() => {
+    if (!form.charging_station_id || !token) {
+      setCommittedItems([]);
+      return;
+    }
+    (async () => {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/admin/charging-stations/${form.charging_station_id}/committed-export-items`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          setCommittedItems([]);
+          return;
+        }
+        const res = await response.json();
+        setCommittedItems(res?.data || []);
+      } catch {
+        setCommittedItems([]);
+      }
+    })();
+  }, [form.charging_station_id, token]);
+
   const addRow = () => setForm((prev) => ({ ...prev, items: [...prev.items, { pole_id: '', quantity: 1 }] }));
   const removeRow = (index) => setForm((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }));
   const updateRow = (index, patch) => setForm((prev) => ({
@@ -416,13 +461,41 @@ const ExportsTab = ({ token, onToast }) => {
   };
 
   const save = async () => {
+    if (!form.charging_station_id) {
+      onToast('Vui lòng chọn trạm nhận', 'error');
+      return;
+    }
+    const normalizedItems = form.items.map((row) => ({
+      pole_id: Number(row.pole_id),
+      quantity: Number(row.quantity)
+    }));
+    if (normalizedItems.some((item) => !Number.isInteger(item.pole_id) || item.pole_id <= 0)) {
+      onToast('Vui lòng chọn trụ sạc cho tất cả các dòng', 'error');
+      return;
+    }
+    if (normalizedItems.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+      onToast('Số lượng xuất phải là số nguyên lớn hơn 0', 'error');
+      return;
+    }
+    for (const item of normalizedItems) {
+      const pole = poles.find((p) => p.id === item.pole_id);
+      const committed = committedItems.find((c) => c.pole_id === item.pole_id);
+      const maxByStock = pole ? Number(pole.quantity) : 0;
+      const maxByCommitted = committed ? Number(committed.committed_quantity) : 0;
+      const maxAllowed = committed ? Math.min(maxByCommitted, maxByStock) : maxByStock;
+      if (item.quantity > maxAllowed) {
+        onToast(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 'error');
+        return;
+      }
+    }
+
     setBusy(true);
     try {
       await warehouseService.createExport({
         export_date: form.export_date,
         charging_station_id: Number(form.charging_station_id),
         reason: form.reason,
-        items: form.items.map((row) => ({ pole_id: Number(row.pole_id), quantity: Number(row.quantity) }))
+        items: normalizedItems
       }, token);
       setDialog({ open: false });
       onToast('Đã xuất kho', 'success');
@@ -463,6 +536,20 @@ const ExportsTab = ({ token, onToast }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Ngày xuất" type="datetime-local" value={form.export_date} onChange={(e) => setForm({ ...form, export_date: e.target.value })} required />
             <Select label="Trạm nhận" options={stations.map((station) => ({ value: String(station.id), label: `${station.ma_tram || `#${station.id}`} - ${station.owner_name || ''}`.trim() }))} value={form.charging_station_id} onChange={(e) => setForm({ ...form, charging_station_id: e.target.value })} placeholder="Chọn trạm" />
+            {committedItems.length > 0 && (
+              <div className="rounded-lg border border-base-300 bg-base-200/40 p-3 text-xs space-y-1">
+                <div className="font-medium text-base-content/70">Số lượng đã chốt / tồn kho:</div>
+                {committedItems.map((item) => {
+                  const max = Math.min(item.committed_quantity, item.stock_quantity);
+                  return (
+                    <div key={item.pole_id} className="flex justify-between gap-2">
+                      <span>{item.name} ({item.charging_type} {Number(item.power_kw)}kW)</span>
+                      <span>chốt {item.committed_quantity} · tồn {item.stock_quantity} · tối đa {max}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <Input label="Lý do xuất kho" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
           <div className="space-y-2">
@@ -471,30 +558,57 @@ const ExportsTab = ({ token, onToast }) => {
               <Button variant="outline" size="xs" onClick={addRow}>Thêm dòng</Button>
             </div>
             {form.items.map((row, index) => (
-              <div key={index} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-7">
-                  <Select
-                    label={index === 0 ? 'Trụ sạc' : undefined}
-                    options={poles.map((pole) => ({ value: String(pole.id), label: `${pole.name} (${pole.charging_type} ${Number(pole.power_kw)}kW) - tồn ${pole.quantity}` }))}
-                    value={row.pole_id}
-                    onChange={(e) => updateRow(index, { pole_id: e.target.value })}
-                    placeholder="Chọn trụ sạc"
-                  />
+              <div key={index} className="space-y-1">
+                <div className="flex flex-col sm:flex-row gap-2 items-end">
+                  <div className="flex-1 min-w-0">
+                    <Select
+                      label={index === 0 ? 'Trụ sạc' : undefined}
+                      options={poles.map((pole) => ({ value: String(pole.id), label: `${pole.name} (${pole.charging_type} ${Number(pole.power_kw)}kW) - tồn ${pole.quantity}` }))}
+                      value={row.pole_id}
+                      onChange={(e) => updateRow(index, { pole_id: e.target.value })}
+                      placeholder="Chọn trụ sạc"
+                    />
+                  </div>
+                  <div className="w-full sm:w-32">
+                    <Input label={index === 0 ? 'Số lượng' : undefined} type="number" min="1" value={row.quantity} onChange={(e) => updateRow(index, { quantity: e.target.value })} max={(() => { const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id)); const pole = poles.find((p) => p.id === Number(row.pole_id)); if (!committed) return undefined; return Math.min(committed.committed_quantity, pole ? Number(pole.quantity) : 0); })()} />
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    {form.items.length > 1 && (
+                      <Button variant="ghost" size="xs" onClick={() => removeRow(index)}>Xóa</Button>
+                    )}
+                  </div>
                 </div>
-                <div className="col-span-3">
-                  <Input label={index === 0 ? 'Số lượng' : undefined} type="number" value={row.quantity} onChange={(e) => updateRow(index, { quantity: e.target.value })} />
-                </div>
-                <div className="col-span-2">
-                  {form.items.length > 1 && (
-                    <Button variant="ghost" size="xs" onClick={() => removeRow(index)}>Xóa</Button>
-                  )}
-                </div>
+                {(() => {
+                  const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
+                  const pole = poles.find((p) => p.id === Number(row.pole_id));
+                  if (!row.pole_id || !pole) return null;
+                  const maxAllowed = committed ? Math.min(committed.committed_quantity, Number(pole.quantity)) : Number(pole.quantity);
+                  if (Number(row.quantity) <= maxAllowed) return null;
+                  return <div className="text-xs text-error">Tối đa {maxAllowed} trụ</div>;
+                })()}
               </div>
             ))}
           </div>
+          {(() => {
+            const invalid = form.items.some((row) => {
+              const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
+              if (!row.pole_id || !committed) return false;
+              const pole = poles.find((p) => p.id === Number(row.pole_id));
+              const maxAllowed = Math.min(committed.committed_quantity, pole ? Number(pole.quantity) : 0);
+              return Number(row.quantity) > maxAllowed;
+            });
+            return invalid ? <div className="alert alert-error text-sm">Số lượng xuất vượt quá số lượng cho phép. Vui lòng kiểm tra lại.</div> : null;
+          })()}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setDialog({ open: false })} disabled={busy}>Hủy</Button>
-            <Button loading={busy} onClick={save}>Lưu phiếu xuất</Button>
+            <Button loading={busy} onClick={save} disabled={busy || !form.charging_station_id || form.items.some((row) => {
+              const pole = poles.find((p) => p.id === Number(row.pole_id));
+              const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
+              if (!row.pole_id || !Number.isInteger(Number(row.pole_id)) || Number(row.pole_id) <= 0) return true;
+              if (!Number.isInteger(Number(row.quantity)) || Number(row.quantity) <= 0) return true;
+              const maxAllowed = committed ? Math.min(committed.committed_quantity, pole ? Number(pole.quantity) : 0) : (pole ? Number(pole.quantity) : 0);
+              return Number(row.quantity) > maxAllowed;
+            })}>Lưu phiếu xuất</Button>
           </div>
         </div>
       </Dialog>
