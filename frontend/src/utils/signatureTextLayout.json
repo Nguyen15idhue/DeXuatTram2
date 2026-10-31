@@ -1,17 +1,12 @@
 {
   "fontFamily": "Times New Roman",
   "imageHeightRatio": 0.35,
+  "minBoxHeightRatio": 0.1697,
   "leftPaddingPx": 6,
   "rightPaddingPx": 6,
   "topPaddingPx": 2,
   "lineHeightPt": 28,
   "lines": {
-    "department": {
-      "fontSizePt": 13,
-      "font": "bold",
-      "fontWeight": 700,
-      "color": "#111827"
-    },
     "name": {
       "fontSizePt": 13,
       "font": "bold",

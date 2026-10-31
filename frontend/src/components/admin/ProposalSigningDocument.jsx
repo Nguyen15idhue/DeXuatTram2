@@ -28,23 +28,10 @@ const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, on
       }}
     >
       <div
-        className="absolute inset-x-0 top-0 overflow-hidden"
-        style={{
-          height: `${signerTextLayout.lineHeightPt * 4 / 3}px`,
-          padding: `${signerTextLayout.topPaddingPx}px ${signerTextLayout.rightPaddingPx}px 0 ${signerTextLayout.leftPaddingPx}px`
-        }}
-      >
-        <SignerDetailsText
-          signer={signer}
-          timeText={signer.status === 'SIGNED' ? formatSignedTime(signer.signed_at) : 'Chờ ký'}
-          placement="department"
-        />
-      </div>
-      <div
         className="absolute inset-x-0 flex items-center justify-center overflow-hidden"
         style={{
+          top: 0,
           bottom: `${IMAGE_BOTTOM_PX}px`,
-          height: `${signerTextLayout.imageHeightRatio * 100}%`,
           paddingLeft: `${signerTextLayout.leftPaddingPx}px`,
           paddingRight: `${signerTextLayout.rightPaddingPx}px`
         }}

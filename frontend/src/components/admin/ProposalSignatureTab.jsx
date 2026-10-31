@@ -146,7 +146,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
     } catch (err) {
       setToastType('error');
       setToastMessage(err?.message || 'Không xuất được file');

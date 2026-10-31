@@ -86,7 +86,7 @@ const AdminProposalSigningPage = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
     } catch (err) {
       setToast({ message: err?.message || 'Không xuất được file', type: 'error' });
     } finally {

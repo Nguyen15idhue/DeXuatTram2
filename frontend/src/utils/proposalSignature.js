@@ -1,4 +1,5 @@
 import { formatProposedScale as formatProposalScale } from './proposalGrading';
+import signerTextLayout from './signatureTextLayout.json';
 
 export const SIGN_STATUS = {
   PENDING: 'PENDING',
@@ -50,7 +51,7 @@ export const normalizeSignerBox = (signer) => {
   const boxHeight = Math.min(
     1,
     Math.max(
-      0,
+      signerTextLayout.minBoxHeightRatio,
       signer?.box_height !== null
         && signer?.box_height !== undefined
         && Number.isFinite(configuredHeight)
