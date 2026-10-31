@@ -1,6 +1,10 @@
 import { forwardRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatSignedTime, normalizeSignerBox } from '../../utils/proposalSignature';
+import {
+  formatSignedTime,
+  getSignerBoxMinHeightRatio,
+  normalizeSignerBox
+} from '../../utils/proposalSignature';
 import { PenSquare } from 'lucide-react';
 import ProposalDocumentPages from './ProposalDocumentPages';
 import signerTextLayout from '../../utils/signatureTextLayout.json';
@@ -11,8 +15,16 @@ const IMAGE_TEXT_GAP_PT = 11;
 const FOOTER_PX = signerTextLayout.lineHeightPt * 2 * 4 / 3;
 const IMAGE_BOTTOM_PX = FOOTER_PX + IMAGE_TEXT_GAP_PT * 4 / 3;
 
-const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, onSign, signing }) => {
-  const signer = normalizeSignerBox(sourceSigner);
+const SignatureOverlay = ({
+  signer: sourceSigner,
+  minBoxHeightRatio,
+  proposalId,
+  token,
+  canSign,
+  onSign,
+  signing
+}) => {
+  const signer = normalizeSignerBox(sourceSigner, minBoxHeightRatio);
   return (
     <div
       data-signer-overlay=""
@@ -79,6 +91,7 @@ const SignatureOverlay = ({ signer: sourceSigner, proposalId, token, canSign, on
 
 const ProposalSigningDocument = forwardRef(({ file, proposalId, myConfig, signers, canSign, onSign, signing }, ref) => {
   const { token } = useAuth();
+  const minBoxHeightRatio = getSignerBoxMinHeightRatio(file);
 
   const renderPageOverlay = (pageNumber) => signers
     .filter((signer) => Number(signer.page) === pageNumber)
@@ -86,6 +99,7 @@ const ProposalSigningDocument = forwardRef(({ file, proposalId, myConfig, signer
       <SignatureOverlay
         key={signer.id}
         signer={signer}
+        minBoxHeightRatio={minBoxHeightRatio}
         proposalId={proposalId}
         token={token}
         canSign={canSign && Number(signer.user_id) === Number(myConfig?.user_id) && signer.status === 'PENDING'}

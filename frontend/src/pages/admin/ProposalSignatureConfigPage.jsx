@@ -9,12 +9,34 @@ import {
   DEFAULT_SIGNER_BOX,
   getReportFiles,
 } from "../../utils/proposalApproval";
-import { normalizeSignerBox } from "../../utils/proposalSignature";
+import {
+  getSignerBoxMinHeightRatio,
+  normalizeSignerBox,
+} from "../../utils/proposalSignature";
 import signerTextLayout from "../../utils/signatureTextLayout.json";
 import SignerDetailsText from "../../components/admin/SignerDetailsText";
 import ProposalLocationMapButton from "../../components/admin/ProposalLocationMapButton";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const getPageOverlayAtPoint = (clientX, clientY) => {
+  const target = document.elementFromPoint(clientX, clientY);
+  if (!target) return null;
+  const directOverlay = target.closest?.("[data-proposal-overlay-page]");
+  if (directOverlay) return directOverlay;
+  const docxSection = target.closest?.("[data-docx-section]");
+  if (docxSection) {
+    return [...docxSection.querySelectorAll("[data-proposal-overlay-page]")].find((overlay) => {
+      const rect = overlay.getBoundingClientRect();
+      return clientX >= rect.left
+        && clientX <= rect.right
+        && clientY >= rect.top
+        && clientY <= rect.bottom;
+    }) || null;
+  }
+  const pdfPage = target.closest?.("[data-proposal-page]");
+  return pdfPage?.querySelector?.("[data-proposal-overlay-page]") || null;
+};
 
 const ProposalSignatureConfigPage = () => {
   const { id } = useParams();
@@ -31,6 +53,12 @@ const ProposalSignatureConfigPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const reportFiles = useMemo(() => getReportFiles(proposal), [proposal]);
+  const selectedFile = reportFiles.find(
+    (file) => Number(file.id) === Number(fileId),
+  );
+  const minBoxHeightRatio = getSignerBoxMinHeightRatio(selectedFile);
+
   const loadPage = useCallback(async () => {
     if (!token || !id) return;
     setLoading(true);
@@ -43,6 +71,14 @@ const ProposalSignatureConfigPage = () => {
           proposalApprovalService.getSignatureConfig(id, token),
         ]);
       const loadedProposal = proposalResponse?.data || null;
+      const loadedFileId =
+        configResponse?.data?.signers?.[0]?.file_id ||
+        getReportFiles(loadedProposal)[0]?.id ||
+        null;
+      const loadedFile = getReportFiles(loadedProposal).find(
+        (file) => Number(file.id) === Number(loadedFileId),
+      );
+      const loadedMinBoxHeightRatio = getSignerBoxMinHeightRatio(loadedFile);
       const loadedSigners = (configResponse?.data?.signers || []).map((signer) => normalizeSignerBox({
           user_id: signer.user_id,
           full_name: signer.full_name,
@@ -52,15 +88,11 @@ const ProposalSignatureConfigPage = () => {
           pos_y: signer.pos_y,
           box_width: signer.box_width,
           box_height: signer.box_height ?? DEFAULT_SIGNER_BOX.box_height,
-        }));
+        }, loadedMinBoxHeightRatio));
       setProposal(loadedProposal);
       setCandidates(candidateResponse?.data?.candidates || []);
       setSigners(loadedSigners);
-      setFileId(
-        configResponse?.data?.signers?.[0]?.file_id ||
-          getReportFiles(loadedProposal)[0]?.id ||
-          null,
-      );
+      setFileId(loadedFileId);
       setActivePage(loadedSigners[0]?.page || 1);
     } catch (loadError) {
       setError(loadError?.message || "Không tải được dữ liệu cấu hình ký");
@@ -76,12 +108,11 @@ const ProposalSignatureConfigPage = () => {
   useEffect(() => {
     if (!drag) return undefined;
     const onMove = (event) => {
-      const targetPage = drag.mode === "move"
-        ? document.elementFromPoint(event.clientX, event.clientY)
-          ?.closest?.("[data-proposal-page]")
+      const targetOverlay = drag.mode === "move"
+        ? getPageOverlayAtPoint(event.clientX, event.clientY)
         : null;
-      const pageElement = targetPage || drag.pageElement;
-      const rect = pageElement?.getBoundingClientRect();
+      const overlayElement = targetOverlay || drag.overlayElement;
+      const rect = overlayElement?.getBoundingClientRect();
       const pageWidth = rect?.width || drag.pageWidth || 1;
       const pageHeight = rect?.height || drag.pageHeight || 1;
       const dx = (event.clientX - drag.startX) / (drag.pageWidth || 1);
@@ -89,22 +120,22 @@ const ProposalSignatureConfigPage = () => {
       setSigners((current) =>
         current.map((signer) => {
           if (Number(signer.user_id) !== Number(drag.userId)) return signer;
-          const currentBox = normalizeSignerBox(signer);
+          const currentBox = normalizeSignerBox(signer, minBoxHeightRatio);
           if (drag.mode === "resize") {
             return {
               ...currentBox,
               box_width: clamp(drag.origWidth + dx, 0, 1 - currentBox.pos_x),
               box_height: clamp(
                 drag.origHeight + dy,
-                signerTextLayout.minBoxHeightRatio,
+                minBoxHeightRatio,
                 Math.max(
-                  signerTextLayout.minBoxHeightRatio,
+                  minBoxHeightRatio,
                   1 - currentBox.pos_y,
                 ),
               ),
             };
           }
-          const page = Number(pageElement?.dataset?.proposalPage) || signer.page;
+          const page = Number(overlayElement?.dataset?.proposalOverlayPage) || signer.page;
           return {
             ...currentBox,
             page,
@@ -129,12 +160,8 @@ const ProposalSignatureConfigPage = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [drag]);
+  }, [drag, minBoxHeightRatio]);
 
-  const reportFiles = useMemo(() => getReportFiles(proposal), [proposal]);
-  const selectedFile = reportFiles.find(
-    (file) => Number(file.id) === Number(fileId),
-  );
   const candidateGroups = useMemo(() => {
     const groups = new Map();
     candidates.forEach((candidate) => {
@@ -148,14 +175,18 @@ const ProposalSignatureConfigPage = () => {
   const startDrag = (event, signer, mode) => {
     event.preventDefault();
     event.stopPropagation();
-    const pageEl = event.currentTarget.closest?.("[data-proposal-page]") || null;
-    const rect = pageEl?.getBoundingClientRect();
+    const pageEl = event.currentTarget.closest?.("[data-docx-section], [data-proposal-page]") || null;
+    const overlayEl = event.currentTarget.closest?.("[data-proposal-overlay-page]")
+      || pageEl?.querySelector?.("[data-proposal-overlay-page]")
+      || pageEl;
+    const rect = overlayEl?.getBoundingClientRect();
     const overlay = event.currentTarget.closest?.("[data-signer-overlay]") || null;
     const overlayRect = overlay?.getBoundingClientRect();
     setDrag({
       userId: signer.user_id,
       page: signer.page,
       pageElement: pageEl,
+      overlayElement: overlayEl,
       mode,
       startX: event.clientX,
       startY: event.clientY,
@@ -215,7 +246,7 @@ const ProposalSignatureConfigPage = () => {
         {
           file_id: fileId,
           signers: signers.map((signer) => {
-            const normalized = normalizeSignerBox(signer);
+            const normalized = normalizeSignerBox(signer, minBoxHeightRatio);
             return {
               user_id: signer.user_id,
               signer_title: signer.signer_title,
@@ -420,7 +451,10 @@ const ProposalSignatureConfigPage = () => {
                   return signers
                     .filter((signer) => Number(signer.page) === pageNumber)
                     .map((sourceSigner) => {
-                      const signer = normalizeSignerBox(sourceSigner);
+                      const signer = normalizeSignerBox(
+                        sourceSigner,
+                        minBoxHeightRatio,
+                      );
                       return (
                       <div
                         key={signer.user_id}
@@ -449,7 +483,7 @@ const ProposalSignatureConfigPage = () => {
                           <SignerDetailsText signer={signer} timeText="Thời gian ký" />
                         </div>
                         <span
-                          className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize border border-white bg-primary"
+                          className="absolute bottom-0 right-0 z-10 h-3 w-3 cursor-nwse-resize border border-white bg-primary"
                           onPointerDown={(event) =>
                             startDrag(event, signer, "resize")
                           }

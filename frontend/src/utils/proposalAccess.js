@@ -1,3 +1,5 @@
+import { isGdkv, isGdtt } from './salesRanks.js';
+
 const normalizeText = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -26,9 +28,12 @@ export const isBackOfficeDept = (user) => {
 export const isGdttkdUser = (user) => {
   const title = titleOf(user);
   const dept = deptOf(user);
-  return title.includes('giam doc trung tam kinh doanh')
-    || dept.includes('trung tam kd')
-    || dept.includes('trung tam kinh doanh');
+  if (user?.chuc_vu && isGdkv(user.chuc_vu, user.department)) return false;
+  if (user?.chuc_vu) {
+    return isGdtt(user.chuc_vu, user.department)
+      || title.includes('giam doc trung tam kinh doanh');
+  }
+  return dept.includes('trung tam kd') || dept.includes('trung tam kinh doanh');
 };
 
 export const isTgdUser = (user) => {

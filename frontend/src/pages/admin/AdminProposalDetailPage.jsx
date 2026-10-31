@@ -8,6 +8,7 @@ import ProposalGradingSummary from '../../components/admin/ProposalGradingSummar
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 import ExtendDeadlineDialog from '../../components/admin/ExtendDeadlineDialog';
 import Toast from '../../components/Toast';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
@@ -104,6 +105,9 @@ const formatValue = (value) => {
 };
 
 const FieldValue = ({ field, value, record, onViewFile }) => {
+  if (field.key === 'link_google_map') {
+    return <ProposalGoogleMapLink value={value} />;
+  }
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;

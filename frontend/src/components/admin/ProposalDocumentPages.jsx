@@ -11,16 +11,27 @@ const getFileType = (file) => {
   return 'unsupported';
 };
 
-const PageOverlayContent = ({ pageNumber, active, showPageLabel, children }) => (
-  <>
-    {active && <div className="pointer-events-none absolute inset-0 z-10 border-2 border-primary" />}
+const PageOverlayContent = ({
+  pageNumber,
+  active,
+  showPageLabel,
+  top = 0,
+  height,
+  children
+}) => (
+  <div
+    data-proposal-overlay-page={pageNumber}
+    className={`pointer-events-none absolute z-20 ${height ? 'left-0 w-full' : 'inset-0'}`}
+    style={height ? { top: `${top}px`, height: `${height}px` } : undefined}
+  >
+    {active && <div className="absolute inset-0 z-10 border-2 border-primary" />}
     {showPageLabel && (
       <span className="absolute left-2 top-2 z-20 whitespace-nowrap rounded bg-base-300/90 px-1.5 py-0.5 text-[10px] font-semibold text-base-content">
         Trang {pageNumber}
       </span>
     )}
     {children}
-  </>
+  </div>
 );
 
 const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, renderPageOverlay }) => {
@@ -81,7 +92,6 @@ const ProposalDocumentPages = forwardRef(({
   const containerRef = useRef(null);
   const docxContainerRef = useRef(null);
   const pdfPageElsRef = useRef({});
-  const docxPageElsRef = useRef({});
   const [fileType, setFileType] = useState('');
   const [pdf, setPdf] = useState(null);
   const [docxPages, setDocxPages] = useState([]);
@@ -91,12 +101,16 @@ const ProposalDocumentPages = forwardRef(({
   useImperativeHandle(ref, () => ({
     scrollToPage(pageNumber) {
       const target = Number(pageNumber) || 1;
-      const el = pdfPageElsRef.current[target] || docxPageElsRef.current[target] || null;
+      const el = pdfPageElsRef.current[target]
+        || containerRef.current?.querySelector(`[data-proposal-overlay-page="${target}"]`)
+        || null;
       if (el?.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
     scrollToOverlay(pageNumber, signerId = null) {
       const target = Number(pageNumber) || 1;
-      const pageEl = pdfPageElsRef.current[target] || docxPageElsRef.current[target] || null;
+      const pageEl = pdfPageElsRef.current[target]
+        || containerRef.current?.querySelector(`[data-proposal-overlay-page="${target}"]`)
+        || null;
       if (!pageEl) return;
       const overlayEl = [...pageEl.querySelectorAll('[data-signer-overlay]')]
         .find((element) => !signerId || element.dataset.signerOverlayId === String(signerId));
@@ -114,7 +128,7 @@ const ProposalDocumentPages = forwardRef(({
     if (!container || !onActivePageChange || typeof IntersectionObserver === 'undefined') {
       return undefined;
     }
-    const pages = [...container.querySelectorAll('[data-proposal-page]')];
+    const pages = [...container.querySelectorAll('[data-proposal-overlay-page]')];
     if (pages.length === 0) return undefined;
     const visibleRatios = new Map(pages.map((page) => [page, 0]));
 
@@ -130,7 +144,7 @@ const ProposalDocumentPages = forwardRef(({
       });
       const candidates = [...visibleRatios.entries()]
         .map(([element, ratio]) => ({
-          page: Number(element.dataset.proposalPage),
+          page: Number(element.dataset.proposalOverlayPage),
           ratio
         }))
         .filter((entry) => entry.page > 0 && entry.ratio > 0)
@@ -182,14 +196,36 @@ const ProposalDocumentPages = forwardRef(({
             className: 'approval-docx',
             breakPages: true
           });
-          let pages = [...docxContainerRef.current.querySelectorAll('section.approval-docx')];
-          if (pages.length === 0) pages = [docxContainerRef.current];
-          pages.forEach((page, index) => {
-            page.style.position = 'relative';
-            page.dataset.proposalPage = String(index + 1);
-            docxPageElsRef.current[index + 1] = page;
+          let sections = [...docxContainerRef.current.querySelectorAll('section.approval-docx')];
+          if (sections.length === 0) sections = [docxContainerRef.current];
+          let pageNumber = 1;
+          const renderedPages = [];
+          sections.forEach((section, index) => {
+            section.style.position = 'relative';
+            section.dataset.docxSection = String(index + 1);
+            const style = getComputedStyle(section);
+            const rect = section.getBoundingClientRect();
+            const pageHeight = Number.parseFloat(style.minHeight)
+              || Number.parseFloat(section.style.minHeight)
+              || rect.height
+              || 1122.5;
+            const sectionHeight = Math.max(pageHeight, rect.height);
+            const pageCount = Math.max(
+              1,
+              Math.ceil((sectionHeight - pageHeight * 0.01) / pageHeight),
+            );
+            section.style.minHeight = `${pageCount * pageHeight}px`;
+            for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+              renderedPages.push({
+                section,
+                pageNumber,
+                top: pageIndex * pageHeight,
+                height: pageHeight,
+              });
+              pageNumber += 1;
+            }
           });
-          if (!cancelled) setDocxPages(pages);
+          if (!cancelled) setDocxPages(renderedPages);
           return;
         }
         throw new Error('Chỉ hỗ trợ hiển thị file PDF hoặc DOCX');
@@ -204,7 +240,6 @@ const ProposalDocumentPages = forwardRef(({
     return () => {
       cancelled = true;
       pdfDocument?.destroy();
-      docxPageElsRef.current = {};
     };
   }, [file?.id, file?.mime_type, file?.name, file?.original_name, token]);
 
@@ -236,19 +271,19 @@ const ProposalDocumentPages = forwardRef(({
           />
         ))
       )}
-      {!loading && !error && fileType === 'docx' && docxPages.map((page, index) => {
-        const rect = page.getBoundingClientRect();
-        const pageAspectRatio = rect.height > 0 ? rect.width / rect.height : 210 / 297;
+      {!loading && !error && fileType === 'docx' && docxPages.map((page) => {
         return createPortal(
           <PageOverlayContent
-            pageNumber={index + 1}
-            active={activePage !== null && Number(activePage) === index + 1}
+            pageNumber={page.pageNumber}
+            active={activePage !== null && Number(activePage) === page.pageNumber}
             showPageLabel={showPageLabel}
+            top={page.top}
+            height={page.height}
           >
-            {renderPageOverlay ? renderPageOverlay(index + 1, pageAspectRatio) : null}
+            {renderPageOverlay ? renderPageOverlay(page.pageNumber) : null}
           </PageOverlayContent>,
-          page,
-          `proposal-page-overlay-${index + 1}`
+          page.section,
+          `proposal-page-overlay-${page.pageNumber}`
         );
       })}
     </div>

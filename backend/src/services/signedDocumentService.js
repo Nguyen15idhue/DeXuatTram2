@@ -25,7 +25,7 @@ const xmlEscape = (value) => String(value || '')
 const clamp = (value) => Math.min(1, Math.max(0, Number(value) || 0));
 const invalidDocument = (message) => Object.assign(new Error(message), { statusCode: 400 });
 
-const signerBox = (signer) => {
+const signerBox = (signer, minHeightRatio = signerTextLayout.minBoxHeightRatio) => {
   const posX = clamp(signer.pos_x);
   const width = Math.min(
     1 - posX,
@@ -41,12 +41,12 @@ const signerBox = (signer) => {
   const height = Math.min(
     1,
     Math.max(
-      signerTextLayout.minBoxHeightRatio,
+      minHeightRatio,
       signer.box_height !== null
         && signer.box_height !== undefined
         && Number.isFinite(Number(signer.box_height))
         ? Number(signer.box_height)
-        : signerTextLayout.minBoxHeightRatio
+        : minHeightRatio
     )
   );
   const posY = Math.min(1 - height, clamp(signer.pos_y));
@@ -376,7 +376,12 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
   const fonts = await loadSignerFontMetrics();
 
   for (const signer of signers) {
-    const box = expandSignerBox(signer, signerBox(signer), pageWidth / 20, fonts);
+    const box = expandSignerBox(
+      signer,
+      signerBox(signer, signerTextLayout.minDocxBoxHeightRatio),
+      pageWidth / 20,
+      fonts
+    );
     let imageMarkup = '';
     if (includeImages) {
       const signature = await readSignature(signer);
