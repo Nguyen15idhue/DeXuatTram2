@@ -1,7 +1,7 @@
 const pool = require('../utils/db');
 const dynamicUtils = require('./dynamicUtils');
 const proposalGradingService = require('./proposalGradingService');
-const { isGdtt } = require('../constants/salesRanks');
+const { isGdkv, isGdtt } = require('../constants/salesRanks');
 
 const { normalizeText, parseCustomData, resolveGradingRole, getLegalDocsState } = proposalGradingService;
 
@@ -74,8 +74,11 @@ const resolveRoleKey = ({ role, department, chucVu }) => {
   if (gradingRole) return gradingRole;
   const title = normalizeText(chucVu);
   const dept = normalizeText(department);
-  if (isGdtt(chucVu, department) || title.includes('giam doc trung tam kinh doanh')
-    || dept.includes('trung tam kd') || dept.includes('trung tam kinh doanh')) {
+  if (isGdkv(chucVu, department)) return null;
+  if (isGdtt(chucVu, department) || title.includes('giam doc trung tam kinh doanh')) {
+    return REVIEW_ROLE.GDTTKD;
+  }
+  if (!title && (dept.includes('trung tam kd') || dept.includes('trung tam kinh doanh'))) {
     return REVIEW_ROLE.GDTTKD;
   }
   return null;

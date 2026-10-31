@@ -33,9 +33,22 @@ export const getSignStatusLabel = (code) => SIGN_STATUS_LABELS[code] || '—';
 
 export const getSignStatusColor = (code) => SIGN_STATUS_COLORS[code] || '#64748b';
 
-export const normalizeSignerBox = (signer) => {
+export const getSignerBoxMinHeightRatio = (file) => {
+  const name = String(file?.name || file?.original_name || '').toLowerCase();
+  const mime = String(file?.mime_type || '').toLowerCase();
+  const isDocx = mime.includes('wordprocessingml') || name.endsWith('.docx');
+  return isDocx
+    ? signerTextLayout.minDocxBoxHeightRatio
+    : signerTextLayout.minBoxHeightRatio;
+};
+
+export const normalizeSignerBox = (
+  signer,
+  minHeightRatio = signerTextLayout.minBoxHeightRatio
+) => {
   const posX = Math.min(1, Math.max(0, Number(signer?.pos_x) || 0));
   const configuredWidth = Number(signer?.box_width);
+  const minHeight = Math.min(1, Math.max(0, Number(minHeightRatio) || 0));
   const boxWidth = Math.min(
     1 - posX,
     Math.max(
@@ -51,7 +64,7 @@ export const normalizeSignerBox = (signer) => {
   const boxHeight = Math.min(
     1,
     Math.max(
-      signerTextLayout.minBoxHeightRatio,
+      minHeight,
       signer?.box_height !== null
         && signer?.box_height !== undefined
         && Number.isFinite(configuredHeight)

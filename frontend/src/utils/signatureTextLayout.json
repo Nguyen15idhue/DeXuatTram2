@@ -2,6 +2,7 @@
   "fontFamily": "Times New Roman",
   "imageHeightRatio": 0.35,
   "minBoxHeightRatio": 0.1,
+  "minDocxBoxHeightRatio": 0.09,
   "leftPaddingPx": 6,
   "rightPaddingPx": 6,
   "topPaddingPx": 2,

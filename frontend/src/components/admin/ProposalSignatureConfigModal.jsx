@@ -8,9 +8,9 @@ import {
   getReportFiles
 } from '../../utils/proposalApproval';
 import {
+  getSignerBoxMinHeightRatio,
   normalizeSignerBox
 } from '../../utils/proposalSignature';
-import signerTextLayout from '../../utils/signatureTextLayout.json';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -30,6 +30,8 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
   const [showRevision, setShowRevision] = useState(false);
 
   const reportFiles = useMemo(() => (record ? getReportFiles(record) : []), [record]);
+  const selectedFile = reportFiles.find((file) => Number(file.id) === Number(fileId));
+  const minBoxHeightRatio = getSignerBoxMinHeightRatio(selectedFile);
   const code = record?.ma_de_xuat || (record?.id ? `#${record.id}` : '');
 
   useEffect(() => {
@@ -47,6 +49,13 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           proposalApprovalService.getSignerCandidates(record.id, token),
           proposalApprovalService.getSignatureConfig(record.id, token)
         ]);
+        const configuredFileId = configRes?.data?.signers?.[0]?.file_id
+          || reportFiles[0]?.id
+          || null;
+        const configuredFile = reportFiles.find(
+          (file) => Number(file.id) === Number(configuredFileId)
+        );
+        const configuredMinHeightRatio = getSignerBoxMinHeightRatio(configuredFile);
         setCandidates(candRes?.data?.candidates || []);
         setSigners((configRes?.data?.signers || []).map((signer) => normalizeSignerBox({
           user_id: signer.user_id,
@@ -58,10 +67,8 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
           pos_y: signer.pos_y,
           box_width: signer.box_width,
           box_height: signer.box_height
-        })));
-        if (configRes?.data?.signers?.[0]?.file_id) {
-          setFileId(configRes.data.signers[0].file_id);
-        }
+        }, configuredMinHeightRatio)));
+        setFileId(configuredFileId);
       } catch (err) {
         setError(err?.message || 'Không tải được danh sách người ký');
       } finally {
@@ -86,8 +93,8 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
             box_width: clamp(drag.origWidth + dx, 0, 1 - signer.pos_x),
             box_height: clamp(
               drag.origHeight + dy,
-              signerTextLayout.minBoxHeightRatio,
-              Math.max(signerTextLayout.minBoxHeightRatio, 1 - signer.pos_y)
+              minBoxHeightRatio,
+              Math.max(minBoxHeightRatio, 1 - signer.pos_y)
             )
           };
         }
@@ -105,7 +112,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [drag]);
+  }, [drag, minBoxHeightRatio]);
 
   if (!open || !record) return null;
 
@@ -149,7 +156,7 @@ const ProposalSignatureConfigModal = ({ open, record, onClose, onSaved, onReques
       const res = await proposalApprovalService.configureSignature(record.id, {
         file_id: fileId,
         signers: signers.map((signer) => {
-          const normalized = normalizeSignerBox(signer);
+          const normalized = normalizeSignerBox(signer, minBoxHeightRatio);
           return {
             user_id: signer.user_id,
             signer_title: signer.signer_title,
