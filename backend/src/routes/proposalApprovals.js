@@ -176,7 +176,7 @@ router.get('/:id/signature-config', requireAuth, requireUserManager, proposalApp
  * /api/admin/proposal-approvals/{id}/signer-candidates:
  *   get:
  *     tags: [Proposal Approvals]
- *     summary: Danh sách người có thể ký liên quan đến đề xuất
+ *     summary: Danh sách người ký thuộc Tổng giám đốc, Tài chính, Back Office hoặc nhánh quản lý của người đề xuất
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -202,7 +202,8 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *     description: >
  *       Áp dụng cho đề xuất PROPOSAL_REPORT_REVIEWING. Gửi danh sách người ký kèm vị trí ô ký;
  *       box_width và box_height chuẩn hóa 0..1, được cấu hình độc lập. Xác nhận xong đề xuất chuyển
- *       sang SIGNATURE_PENDING và thông báo tới những người được cấu hình.
+ *       sang SIGNATURE_PENDING và thông báo tới những người được cấu hình. Người ký phải thuộc Ban
+ *       Tổng giám đốc, Phòng Tài chính, Back Office, là người đề xuất hoặc quản lý phía trên của người đề xuất.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -243,7 +244,7 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *       200:
  *         description: Thành công
  *       400:
- *         description: Sai trạng thái hoặc thiếu người ký
+ *         description: Sai trạng thái, thiếu người ký hoặc người ký ngoài danh sách cho phép
  *       403:
  *         description: Không có quyền
  *       404:
