@@ -402,31 +402,21 @@ exports.getSignatureConfig = async ({ user, id } = {}) => {
   };
 };
 
-exports.getSignerCandidates = async ({ user, id } = {}) => {
-  const scope = await proposalReportService.resolveScope(user);
-  assertApprovalAccess(scope);
-  const proposal = await loadProposal(id);
-  const proposalReviewService = require('./proposalReviewService');
-  const [rows] = await pool.query("SELECT id, full_name, role, parent_id, custom_data FROM users WHERE status = 'ACTIVE'");
-  const proposalCustomData = parseCustomData(proposal.custom_data);
-  const relatedIds = new Set([Number(proposal.user_id)].filter(Boolean));
-  if (proposal.user_id) {
-    const adminUserService = require('./adminUserService');
-    (await adminUserService.getAncestorIds(proposal.user_id)).forEach((id) => relatedIds.add(Number(id)));
-  }
-  ['nguoi_phu_trach', 'nguoi_giao_phu_trach', 'sales_quan_ly'].forEach((key) => {
-    const value = proposalCustomData[key];
-    const id = Number(value && typeof value === 'object' ? value.id : value);
-    if (Number.isInteger(id) && id > 0) relatedIds.add(id);
-  });
-  const proposalRegionValue = proposalRegion(proposal.custom_data);
+const getSignerCandidatesForProposal = async (proposal) => {
+  const [rows] = await pool.query("SELECT id, full_name, role, custom_data FROM users WHERE status = 'ACTIVE'");
+  const ownerId = Number(proposal.user_id) || null;
+  const adminUserService = require('./adminUserService');
+  const managerIds = new Set(
+    ownerId
+      ? (await adminUserService.getAncestorIds(ownerId)).map(Number)
+      : []
+  );
   const candidateRanks = {
-    'Tổng giám đốc': 0,
-    'Back Office': 1,
-    'GĐTTKD': 2,
-    'Giám đốc khu vực': 3,
-    'Sale liên quan': 4,
-    'Người đề xuất': 5
+    'Ban Tổng giám đốc': 0,
+    'Phòng Tài chính': 1,
+    'Back Office': 2,
+    'Người đề xuất': 3,
+    'Quản lý phía trên': 4
   };
   const candidates = [];
   const push = (row, category, title) => {
@@ -446,41 +436,37 @@ exports.getSignerCandidates = async ({ user, id } = {}) => {
     const userId = Number(row.id);
     const department = custom.department || '';
     const chucVu = custom.chuc_vu || '';
-    const normalizedTitle = normalizeText(chucVu);
     const normalizedDepartment = normalizeText(department);
-    if (userId === Number(proposal.user_id)) {
+    if (userId === ownerId) {
       push(row, 'Người đề xuất', 'Người đề xuất');
       return;
     }
-    const isTgd = (normalizedTitle.includes('tong giam doc')
-      && !normalizedTitle.includes('pho tong giam doc'))
-      || normalizedDepartment.includes('tong giam doc');
-    if (isTgd) {
-      push(row, 'Tổng giám đốc', chucVu);
+    if (normalizedDepartment.includes('tong giam doc') || normalizedDepartment.includes('ban tgd')) {
+      push(row, 'Ban Tổng giám đốc', chucVu);
+      return;
+    }
+    if (normalizedDepartment.includes('tai chinh') || normalizedDepartment.includes('finance')) {
+      push(row, 'Phòng Tài chính', chucVu);
       return;
     }
     if (proposalReportService.isBackOffice(department)) {
       push(row, 'Back Office', chucVu);
       return;
     }
-    const isGdttkd = normalizedTitle.includes('giam doc trung tam kinh doanh')
-      || normalizedDepartment.includes('trung tam kd')
-      || normalizedDepartment.includes('trung tam kinh doanh');
-    if (isGdttkd) {
-      const userRegion = proposalReviewService.resolveRegion(department)
-        || proposalReviewService.resolveRegion(custom.vung_mien);
-      if (!proposalRegionValue || !userRegion || userRegion === proposalRegionValue) {
-        push(row, 'GĐTTKD', chucVu);
-      }
-      return;
-    }
-    if (row.role === 'SALES' && relatedIds.has(userId)) {
-      const isAreaDirector = normalizedTitle.includes('giam doc khu vuc');
-      push(row, isAreaDirector ? 'Giám đốc khu vực' : 'Sale liên quan', chucVu);
+    if (managerIds.has(userId)) {
+      push(row, 'Quản lý phía trên', chucVu);
     }
   });
   candidates.sort((a, b) => candidateRanks[a.category] - candidateRanks[b.category]
     || a.full_name.localeCompare(b.full_name, 'vi'));
+  return candidates;
+};
+
+exports.getSignerCandidates = async ({ user, id } = {}) => {
+  const scope = await proposalReportService.resolveScope(user);
+  assertApprovalAccess(scope);
+  const proposal = await loadProposal(id);
+  const candidates = await getSignerCandidatesForProposal(proposal);
   return { proposal_id: proposal.id, status: proposal.status, candidates };
 };
 
@@ -504,6 +490,10 @@ exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
   }
 
   const signerIds = [...new Set(normalized.map((signer) => signer.user_id))];
+  const eligibleIds = new Set((await getSignerCandidatesForProposal(proposal)).map((candidate) => candidate.id));
+  if (signerIds.some((signerId) => !eligibleIds.has(signerId))) {
+    throw err('Chỉ được chọn người ký thuộc các nhóm được phép', 400);
+  }
   const signerPlaceholders = signerIds.map(() => '?').join(', ');
   const [signerRows] = await pool.query(
     `SELECT id, JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) AS department
