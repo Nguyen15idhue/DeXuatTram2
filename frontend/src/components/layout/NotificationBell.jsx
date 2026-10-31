@@ -272,7 +272,7 @@ const NotificationBell = ({ mode = 'user' }) => {
   return (
     <div className="notification-bell" ref={btnRef}>
       <button type="button" className={`bell-btn ${blink ? 'blink' : ''}`} onClick={toggle} title="Thông báo">
-        <Bell size={18} />
+        <Bell size={20} />
         {count > 0 && <span className="bell-badge">{count > 99 ? '99+' : count}</span>}
       </button>
       {dropdown}

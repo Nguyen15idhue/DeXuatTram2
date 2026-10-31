@@ -155,7 +155,7 @@ const ChargingStationContractTabs = () => {
       render: (value) => <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
     },
     { key: 'created_at', label: 'Ngày tạo', render: formatDateTime },
-    { key: 'updated_at', label: 'Cập nhật', render: formatDateTime }
+
   ], [location.pathname, location.search]);
 
   const selectTab = (nextTab) => {

@@ -219,10 +219,10 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *                       type: string
  *                     gia_chot:
  *                        type: number
-               ngay_du_kien_on:
-                 type: string
-                 format: date
-                 nullable: true
+ *               ngay_du_kien_on:
+ *                 type: string
+ *                 format: date
+ *                 nullable: true
  *     responses:
  *       200:
  *         description: Thành công

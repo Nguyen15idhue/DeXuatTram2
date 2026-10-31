@@ -154,7 +154,7 @@ const ChargingStationInfrastructureTabs = () => {
       )
     },
     { key: 'on_date', label: 'Ngày ON', render: (value) => formatCsDate(value) },
-    { key: 'updated_at', label: 'Cập nhật', render: formatDateTime }
+
   ], [location.pathname, location.search]);
 
   const selectTab = (nextTab) => {

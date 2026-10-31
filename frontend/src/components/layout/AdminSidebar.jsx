@@ -390,7 +390,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       ? Object.values(proposalTaskCounts).reduce((total, count) => total + count, 0)
       : null
     : null;
-  const formatTaskCount = (count) => count > 99 ? "99+" : count;
+  const formatTaskCount = (count) => count > 999 ? "999+" : count;
 
   useEffect(() => {
     setCollapsed((prev) => {
@@ -619,13 +619,20 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     .filter((g) => g.items.length > 0);
 
   const linkClass = (isActive) =>
-    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${
+    `group flex items-center gap-3 h-11 px-3 rounded-lg text-[14px] font-medium transition-colors duration-150 mb-0.5 ${
       isActive
-        ? "bg-primary text-primary-content shadow-sm"
-        : "text-base-content/70 hover:bg-base-300 hover:text-base-content"
+        ? "bg-[#4F35E8] text-white font-semibold"
+        : "text-[#52525B] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"
     }`;
 
-  const renderLink = (item, activePath = null) => {
+  const childLinkClass = (isActive) =>
+    `group flex items-center gap-3 h-10 pl-10 pr-3 rounded-lg text-[13px] font-medium transition-colors duration-150 mb-0.5 ${
+      isActive
+        ? "bg-[#F0EDFF] text-[#4F35E8] font-semibold border-l-2 border-[#4F35E8]"
+        : "text-[#71717A] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"
+    }`;
+
+  const renderLink = (item, activePath = null, isChild = false) => {
     const isActive = activePath
       ? activePath === item.path
       : isItemActiveExact(location.pathname, item.path);
@@ -643,24 +650,26 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       : chargingStationTaskKey
         ? chargingStationTaskTitleByKey[chargingStationTaskKey]
       : "công việc cần thực hiện";
+    const cls = isChild ? childLinkClass(isActive) : linkClass(isActive);
     return (
       <Link
         key={item.path}
         to={item.path}
-        className={linkClass(isActive)}
+        className={cls}
         onClick={onNavClick}
         title={item.label}
       >
         <item.icon
-          size={18}
-          className={isActive ? "text-primary-content" : ""}
+          size={isChild ? 16 : 18}
+          strokeWidth={1.8}
+          className={isActive ? "text-white" : "text-[#71717A] group-hover:text-[#4F35E8]"}
         />
         <span className="truncate" title={item.label}>
           {item.label}
         </span>
         {Number.isFinite(taskCount) && taskCount > 0 && (
           <span
-            className="badge badge-error badge-sm ml-auto h-5 min-w-5 flex-shrink-0 rounded-full px-1 text-white"
+            className={`inline-flex items-center justify-center h-6 min-w-[26px] px-[7px] text-[12px] font-semibold rounded-[6px] ml-auto ${isActive ? "bg-white text-[#4F35E8]" : "bg-[#F0EDFF] text-[#5538D5]"}`}
             title={`${taskCount} ${taskTitle}`}
             aria-label={`${taskCount} ${taskTitle}`}
           >
@@ -699,13 +708,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           <button
             type="button"
             onClick={() => toggleMainItem(item.path)}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-300 hover:text-base-content"}`}
+            className={`group w-full flex items-center justify-between h-11 px-3 rounded-lg text-[14px] font-medium transition-colors duration-150 mb-0.5 ${isActive ? "bg-[#4F35E8] text-white font-semibold" : "text-[#52525B] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"}`}
             title={item.label}
           >
             <span className="flex items-center gap-3">
               <item.icon
                 size={18}
-                className={isActive ? "text-primary-content" : ""}
+                strokeWidth={1.8}
+                className={isActive ? "text-white" : "text-[#71717A] group-hover:text-[#4F35E8]"}
               />
               <span className="truncate" title={item.label}>
                 {item.label}
@@ -714,7 +724,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
             <span className="flex items-center gap-2">
               {Number.isFinite(taskCount) && taskCount > 0 && (
                 <span
-                  className="badge badge-error badge-sm h-5 min-w-5 rounded-full px-1 text-white"
+                  className={`inline-flex items-center justify-center h-6 min-w-[26px] px-[7px] text-[12px] font-semibold rounded-[6px] ${isActive ? "bg-white text-[#4F35E8]" : "bg-[#F0EDFF] text-[#5538D5]"}`}
                   title={`${taskCount} ${taskTitle}`}
                   aria-label={`${taskCount} ${taskTitle}`}
                 >
@@ -728,8 +738,8 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
             </span>
           </button>
           {isOpen && (
-            <div className="ml-2 border-b mt-1 space-y-1 border-l border-base-300 rounded-bl-xl pl-2">
-              {visibleChildren.map((child) => renderLink(child, activeChildPath))}
+            <div className="ml-2 mt-1 space-y-1 border-l border-base-300 pl-2">
+              {visibleChildren.map((child) => renderLink(child, activeChildPath, true))}
             </div>
           )}
         </div>
@@ -741,10 +751,10 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   return (
     <aside className="w-64 h-full flex flex-col bg-base-100 border-r border-base-300">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-base-300 flex-shrink-0 flex items-center justify-between">
+      <div className="h-16 px-5 border-b border-[#E5E7EB] flex-shrink-0 flex items-center justify-between">
         <Link
           to="/admin"
-          className="text-lg font-bold text-primary"
+          className="text-[18px] font-bold text-[#4F35E8]"
           onClick={onNavClick}
         >
           Admin Panel
@@ -764,7 +774,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           });
           return grouped.map((group, groupIndex) => (
             <div key={`${group.label}-${groupIndex}`} className="mb-2">
-              <div className="px-2 pt-3 pb-1 text-xs font-bold uppercase tracking-wider text-primary">
+              <div className="px-2 pt-5 pb-2 text-[11px] font-semibold uppercase tracking-[0.6px] text-[#9CA3AF]">
                 {group.label}
               </div>
               {group.items.map(renderMainItem)}
@@ -820,23 +830,24 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-base-300 flex-shrink-0">
-        <div className="flex items-center gap-3 mb-3 px-2">
-          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
+      <div className="px-4 py-4 border-t border-[#E5E7EB] flex-shrink-0 bg-white">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-9 h-9 rounded-full bg-[#F5F3FF] flex items-center justify-center text-[#4F35E8] font-semibold text-sm flex-shrink-0">
             {user?.full_name?.charAt(0)?.toUpperCase() || "A"}
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-medium text-base-content truncate">
+            <div className="text-[14px] font-semibold text-[#111827] truncate">
               {user?.full_name}
             </div>
-            <div className="text-xs text-base-content/50 uppercase">
+            <div className="text-[12px] text-[#9CA3AF] uppercase">
               {user?.role}
             </div>
           </div>
         </div>
         <button
           onClick={logout}
-          className="btn btn-sm btn-ghost text-base-content/60 hover:text-error hover:bg-error/10 w-full gap-2 justify-start"
+          className="btn btn-ghost w-full gap-2 justify-start text-[#6B7280] hover:text-[#DC2626] hover:bg-[#FEF2F2]"
+          style={{ minHeight: '36px' }}
         >
           <LogOut size={14} />
           Đăng xuất

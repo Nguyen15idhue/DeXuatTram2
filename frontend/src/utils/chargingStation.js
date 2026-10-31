@@ -25,8 +25,8 @@ export const CS_STATUS_LABELS = {
 export const CS_STATUS_VARIANT = {
   ONBOARDING: 'warning',
   DELIVERING: 'info',
-  INSTALLING: 'secondary',
-  ACCEPTANCE: 'accent',
+  INSTALLING: 'info',
+  ACCEPTANCE: 'info',
   OPERATING: 'success'
 };
 

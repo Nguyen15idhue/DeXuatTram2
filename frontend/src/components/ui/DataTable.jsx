@@ -26,11 +26,11 @@ const DataTable = ({
   }
 
   return (
-    <div className={`overflow-x-auto rounded-lg border border-base-300 ${className}`}>
-      <table className="table table-zebra w-full">
-        <thead className="bg-base-200">
+    <div className={`overflow-x-auto rounded-lg border border-[#E5E7EB] bg-white ${className}`}>
+      <table className="table w-full">
+        <thead className="bg-[#F9FAFB]">
           <tr>
-            <th className="w-12 text-center">STT</th>
+            <th className="w-12 text-center text-[#374151]">STT</th>
             {columns.map((col) => (
               <th
                 key={col.key}

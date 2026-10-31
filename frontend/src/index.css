@@ -266,6 +266,132 @@ body {
   pointer-events: none;
 }
 
+/* Table Design System */
+.overflow-x-auto:has(table) {
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.table {
+  font-size: 13px;
+  color: #374151;
+  border-collapse: collapse;
+}
+
+.table thead th {
+  background: #F9FAFB !important;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  height: 48px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #E5E7EB;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.table tbody td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #E5E7EB;
+  vertical-align: middle;
+  color: #374151;
+  font-size: 13px;
+}
+
+.table tbody tr:hover td {
+  background: #F3F4F6 !important;
+}
+
+.table tbody tr:nth-child(even) td {
+  background: #FFFFFF;
+}
+
+.table .btn {
+  min-height: 32px;
+  font-size: 12px;
+  padding: 0 10px;
+  border-radius: 6px;
+}
+
+.badge {
+  min-height: 28px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 10px;
+  border-radius: 6px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: currentColor;
+  white-space: nowrap;
+}
+
+.badge-success { color: #059669; background: #ECFDF5; border-color: #059669; }
+.badge-warning { color: #D97706; background: #FFFBEB; border-color: #D97706; }
+.badge-error { color: #DC2626; background: #FEF2F2; border-color: #DC2626; }
+.badge-info { color: #2563EB; background: #EFF6FF; border-color: #2563EB; }
+.badge-neutral, .badge-ghost { color: #4B5563; background: #F3F4F6; border-color: #4B5563; }
+
+/* Table action button standard */
+.table .btn {
+  min-height: 32px !important;
+  min-width: 48px !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 18px !important;
+  border-radius: 6px !important;
+  border: 1px solid #D1D5DB !important;
+  background: #FFFFFF !important;
+  color: #374151 !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease !important;
+}
+
+.table .btn:hover:not(:disabled) {
+  background: #F3F4F6 !important;
+  border-color: #9CA3AF !important;
+  color: #111827 !important;
+}
+
+.table .btn:focus-visible {
+  outline: 2px solid #93C5FD !important;
+  outline-offset: 2px !important;
+}
+
+.table .btn:disabled {
+  color: #9CA3AF !important;
+  background: #F9FAFB !important;
+  border-color: #E5E7EB !important;
+}
+
+.table td > div.flex,
+.table td > div.flex-wrap {
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+
+/* Sidebar scrollbar */
+aside nav {
+  scrollbar-width: thin;
+  scrollbar-color: #D1D5DB transparent;
+}
+
+aside nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+aside nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+aside nav::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 3px;
+}
+
 /* Report edit mode (mini Looker Studio) */
 .report-edit-layout {
   position: relative;

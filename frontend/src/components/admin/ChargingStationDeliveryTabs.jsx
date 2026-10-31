@@ -205,7 +205,7 @@ const ChargingStationDeliveryTabs = () => {
       label: 'Trụ chốt',
       render: (value) => parseRows(value).map((row) => `${row.loai_tru || 'Trụ'} × ${row.so_luong || 0}`).join(', ') || '—'
     },
-    { key: 'updated_at', label: 'Cập nhật', render: formatDateTime }
+
   ], [location.pathname, location.search]);
 
   const renderActions = (row) => {
