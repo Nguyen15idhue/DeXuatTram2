@@ -10,7 +10,6 @@ const fileService = require('./fileService');
 const signerTextLayout = require('../../assets/signatureTextLayout.json');
 
 const execFileAsync = promisify(execFile);
-const IMAGE_HEIGHT_RATIO = signerTextLayout.imageHeightRatio;
 const IMAGE_TEXT_GAP_PT = 11;
 const PDF_POINTS_PER_CSS_PIXEL = 0.75;
 const SIGNATURE_BLOCK_MARKER = 'TMT-EGREEN-SIGNATURE-BLOCK-V3';
@@ -42,12 +41,12 @@ const signerBox = (signer) => {
   const height = Math.min(
     1,
     Math.max(
-      0,
+      signerTextLayout.minBoxHeightRatio,
       signer.box_height !== null
         && signer.box_height !== undefined
         && Number.isFinite(Number(signer.box_height))
         ? Number(signer.box_height)
-        : 0.25
+        : signerTextLayout.minBoxHeightRatio
     )
   );
   const posY = Math.min(1 - height, clamp(signer.pos_y));
@@ -158,7 +157,6 @@ const drawSignerLine = (page, signer, box, pageWidth, pageHeight, fonts, key, va
 };
 
 const signerTextValues = (signer) => ({
-  department: signer.signer_department || signer.signer_title || '',
   name: signer.full_name || '',
   time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
 });
@@ -195,7 +193,6 @@ const drawSignerDetails = (page, signer, box, pageWidth, pageHeight, fonts) => {
   const footerTopPt = boxTopPt + boxHeightPt - lineHeightPt * 2;
   const values = signerTextValues(signer);
 
-  drawSignerLine(page, signer, box, pageWidth, pageHeight, fonts, 'department', values.department, boxTopPt);
   drawSignerLine(page, signer, box, pageWidth, pageHeight, fonts, 'name', values.name, footerTopPt);
   drawSignerLine(page, signer, box, pageWidth, pageHeight, fonts, 'time', values.time, footerTopPt + lineHeightPt);
 };
@@ -203,8 +200,9 @@ const drawSignerDetails = (page, signer, box, pageWidth, pageHeight, fonts) => {
 const signerImageRegion = (boxTop, boxHeight, ptScale = 1) => {
   const lineHeight = signerTextLayout.lineHeightPt * ptScale;
   const footerTop = boxTop + boxHeight - lineHeight * 2;
-  const height = boxHeight * IMAGE_HEIGHT_RATIO;
-  return { top: footerTop - IMAGE_TEXT_GAP_PT * ptScale - height, height };
+  const top = boxTop;
+  const height = Math.max(0, footerTop - top - IMAGE_TEXT_GAP_PT * ptScale);
+  return { top, height };
 };
 
 const convertSignatureImage = async (filePath) => {
@@ -318,21 +316,17 @@ const imageDrawing = ({ relationshipId, signer, box, imageId, pageWidth, pageHei
   return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${imageId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${imageId}" name="${name}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${imageId}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 };
 
-const textDrawing = ({ signer, box, drawingId, pageWidth, pageHeight, placement }) => {
+const textDrawing = ({ signer, box, drawingId, pageWidth, pageHeight }) => {
   const x = Math.round(box.posX * pageWidth);
   const width = Math.max(1, Math.round(box.width * pageWidth));
   const lineHeightTwips = Math.round(signerTextLayout.lineHeightPt * 20);
-  const lineKeys = placement === 'department' ? ['department'] : ['name', 'time'];
+  const lineKeys = ['name', 'time'];
   const textByKey = signerTextValues(signer);
   const boxTop = Math.round(box.posY * pageHeight);
   const boxHeight = Math.round(box.height * pageHeight);
   const footerHeight = lineHeightTwips * 2;
-  const height = placement === 'department'
-    ? Math.max(lineHeightTwips, boxHeight - footerHeight)
-    : footerHeight;
-  const y = placement === 'department'
-    ? boxTop
-    : boxTop + boxHeight - height;
+  const height = footerHeight;
+  const y = boxTop + boxHeight - height;
   const bodyWrap = 'none';
   const paragraphs = lineKeys.map((key) => {
     const line = signerTextLayout.lines[key];
@@ -346,12 +340,9 @@ const textDrawing = ({ signer, box, drawingId, pageWidth, pageHeight, placement 
       : '';
     return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0" w:line="${lineHeightTwips}" w:lineRule="exact"/></w:pPr>${run}</w:p>`;
   }).join('');
-  const drawingName = xmlEscape(`${placement === 'department' ? 'Phòng ban' : 'Thông tin người ký'} ${signer.full_name || signer.user_id}`);
+  const drawingName = xmlEscape(`Thông tin người ký ${signer.full_name || signer.user_id}`);
   const inset = Math.round(signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 12700);
-  const topInset = placement === 'department'
-    ? Math.round(signerTextLayout.topPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 12700)
-    : 0;
-  return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${drawingId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="${drawingName}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent>${paragraphs}</w:txbxContent></wps:txbx><wps:bodyPr wrap="${bodyWrap}" lIns="${inset}" rIns="${inset}" tIns="${topInset}" bIns="0" anchor="t"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+  return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${drawingId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${drawingId}" name="${drawingName}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent>${paragraphs}</w:txbxContent></wps:txbx><wps:bodyPr wrap="${bodyWrap}" lIns="${inset}" rIns="${inset}" tIns="0" bIns="0" anchor="t"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 };
 
 const stampDocx = async (source, signers, { includeImages = true } = {}) => {
@@ -427,23 +418,14 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
       renderedPage += explicitBreaks;
     }
     const paragraph = paragraphs[paragraphIndex][0];
-    const departmentMarkup = textDrawing({
-      signer,
-      box,
-      drawingId: nextImageId++,
-      pageWidth,
-      pageHeight,
-      placement: 'department'
-    });
     const footerMarkup = textDrawing({
       signer,
       box,
       drawingId: nextImageId++,
       pageWidth,
-      pageHeight,
-      placement: 'footer'
+      pageHeight
     });
-    additions.set(paragraph, `${additions.get(paragraph) || ''}${departmentMarkup}${imageMarkup}${footerMarkup}`);
+    additions.set(paragraph, `${additions.get(paragraph) || ''}${imageMarkup}${footerMarkup}`);
   }
 
   for (const [paragraph, drawings] of additions) {
@@ -478,6 +460,18 @@ const hasPdfSignatureBlock = async (source) => {
   return String(pdf.getKeywords() || '')
     .split(/\s+/)
     .includes(SIGNATURE_BLOCK_MARKER);
+};
+
+const hasDocxSignatureBlock = async (source) => {
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(source);
+  } catch {
+    throw invalidDocument('Không đọc được cấu trúc file DOCX BCĐX');
+  }
+  const documentXml = await zip.file('word/document.xml')?.async('string');
+  if (!documentXml) throw invalidDocument('File Word không có cấu trúc DOCX hợp lệ');
+  return /<wp:docPr\b[^>]*\bname="(?:Chữ ký|Thông tin người ký)\s/.test(documentXml);
 };
 
 const xmlUnescape = (value) => String(value || '')
@@ -518,6 +512,15 @@ exports.build = async ({ reportFileId, signedFileId, signers }) => {
   const isDocx = extension === '.docx' || fileData.file.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   if (!isPdf && !isDocx) {
     throw Object.assign(new Error('Ký trực tiếp chỉ hỗ trợ file BCĐX định dạng PDF hoặc DOCX'), { statusCode: 400 });
+  }
+
+  if (!signedFileId) {
+    const alreadyStamped = isPdf
+      ? await hasPdfSignatureBlock(source)
+      : await hasDocxSignatureBlock(source);
+    if (alreadyStamped) {
+      throw invalidDocument('File BCĐX nguồn đã có chữ ký được đóng dấu từ lần xuất trước. Hãy tải lại bản gốc chưa ký để xuất theo vị trí cấu hình hiện tại.');
+    }
   }
 
   let signersToStamp = signers;

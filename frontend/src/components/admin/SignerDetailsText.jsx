@@ -2,10 +2,9 @@ import signerTextLayout from '../../utils/signatureTextLayout.json';
 
 const POINTS_TO_CSS_PIXELS = 4 / 3;
 
-const SignerDetailsText = ({ signer, timeText, placement = 'footer', className = '' }) => {
-  const lineKeys = placement === 'department' ? ['department'] : ['name', 'time'];
+const SignerDetailsText = ({ signer, timeText, className = '' }) => {
+  const lineKeys = ['name', 'time'];
   const textByKey = {
-    department: signer.signer_department || signer.signer_title || '',
     name: signer.full_name || '',
     time: timeText || ''
   };

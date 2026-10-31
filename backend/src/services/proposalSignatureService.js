@@ -708,7 +708,15 @@ exports.getSignedDocument = async ({ user, id } = {}) => {
   if (!canView) {
     throw err('Bạn không có quyền xem file BCĐX này', 403);
   }
-  const reportFileId = detail.report_files.find((file) => Number(file.id) > 0)?.id;
+  const configuredFileIds = [...new Set(
+    detail.signers
+      .map((signer) => Number(signer.file_id))
+      .filter((fileId) => Number.isInteger(fileId) && fileId > 0)
+  )];
+  if (configuredFileIds.length > 1) {
+    throw err('Cấu hình người ký đang gắn với nhiều file BCĐX. Hãy cấu hình ký lại trên một file duy nhất.', 400);
+  }
+  const reportFileId = configuredFileIds[0] || detail.report_files.find((file) => Number(file.id) > 0)?.id;
   if (!proposal.signed_file_id && !reportFileId) {
     throw err('Đề xuất chưa có file BCĐX để xuất', 400);
   }

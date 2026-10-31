@@ -94,7 +94,11 @@ const ProposalSignatureConfigPage = () => {
             return {
               ...currentBox,
               box_width: clamp(drag.origWidth + dx, 0, 1 - currentBox.pos_x),
-              box_height: clamp(drag.origHeight + dy, 0, 1 - currentBox.pos_y),
+              box_height: clamp(
+                drag.origHeight + dy,
+                signerTextLayout.minBoxHeightRatio,
+                1 - currentBox.pos_y,
+              ),
             };
           }
           const page = Number(pageElement?.dataset?.proposalPage) || signer.page;
