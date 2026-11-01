@@ -48,8 +48,9 @@ export const resolveRegion = (value) => {
 const isTgdTitle = (department, chucVu) => {
   const title = normalizeText(chucVu);
   const dept = normalizeText(department);
-  if (title.includes('pho tong giam doc')) return false;
-  return title.includes('tong giam doc') || dept.includes('tong giam doc');
+  return !title.includes('pho tong giam doc')
+    && title.includes('tong giam doc')
+    && dept.includes('ban tong giam doc');
 };
 
 export const resolveReviewRole = (user) => {
@@ -60,16 +61,18 @@ export const resolveReviewRole = (user) => {
   const department = user.department || user.custom_data?.department || '';
   const chucVu = user.chuc_vu || user.custom_data?.chuc_vu || '';
   if (user.role === 'ADMIN') {
-    const isTgdDepartment = normalizeText(department).includes('ban tong giam doc');
     return {
-      roleKey: isTgdDepartment ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN,
+      roleKey: isTgdTitle(department, chucVu) ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN,
       region: null,
       isAdmin: true,
       isSuperAdmin: false
     };
   }
-  if (isTgdTitle(department, chucVu)) {
+  if (user.role === 'SALES' && isTgdTitle(department, chucVu)) {
     return { roleKey: REVIEW_ROLE.TGD, region: null, isAdmin: false };
+  }
+  if (user.role !== 'SALES') {
+    return { roleKey: null, region: null, isAdmin: false };
   }
   const gradingRole = resolveGradingRole(department);
   if (gradingRole) {

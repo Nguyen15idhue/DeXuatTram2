@@ -643,6 +643,9 @@ export const chargingStationService = {
   requestEarlyDelivery(id, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/delivery/early-request`, data || {}, token));
   },
+  extendDeadline(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/deadline/extend`, data || {}, token));
+  },
   createDeliveryExport(id, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/delivery/export`, data || {}, token));
   },
@@ -1482,7 +1485,7 @@ export const documentService = {
         if (err && err.message) message = err.message;
       } catch {}
       throw new Error(message);
-    }
+    }z
     const ct = (response.headers.get('content-type') || '').toLowerCase();
     if (!ct.includes('wordprocessingml') && !ct.includes('octet-stream') && !ct.includes('zip')) {
       throw new Error('File template không phải định dạng docx');

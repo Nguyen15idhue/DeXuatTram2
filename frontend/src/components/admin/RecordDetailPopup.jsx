@@ -33,7 +33,7 @@ const ENTITY_SERVICES = {
 
 const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8, leads: 0 };
 
-const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null, beforeActions = null }) => {
+const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null, beforeActions = null, readOnlyKeys = [] }) => {
   const { token, user: authUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -100,6 +100,12 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   useEffect(() => {
     if (modeProp) setMode(allowEdit ? modeProp : 'view');
   }, [modeProp, allowEdit]);
+
+  const recordEditable = allowEdit && (!canEditRecord || (!!record && canEditRecord(record)));
+
+  useEffect(() => {
+    if (record && !recordEditable) setMode('view');
+  }, [record, recordEditable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -669,7 +675,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
         entityType={entity}
         allFields={allFields}
         dataListOptions={dataListOptions}
-        disabled={userLocked}
+        disabled={userLocked || readOnlyKeys.includes(key)}
         formValues={formData}
       />
     ) : (

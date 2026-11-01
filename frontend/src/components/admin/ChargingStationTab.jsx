@@ -12,6 +12,8 @@ import {
   CS_EDITOR_ROLES,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
+  CS_DEPOSIT_LABELS,
+  CS_DEPOSIT_VARIANT,
   CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
@@ -135,6 +137,11 @@ const ChargingStationTab = ({ stage }) => {
       key: 'infra_site_status',
       label: 'Hạ tầng mặt bằng',
       render: (value) => <Badge variant={CS_FLOW_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_FLOW_LABELS[value] || '—'}</Badge>
+    },
+    {
+      key: 'deposit_status',
+      label: 'Tiền cọc',
+      render: (value) => <Badge variant={CS_DEPOSIT_VARIANT[value] || 'ghost'} size="sm" outline className="whitespace-normal h-auto py-1">{CS_DEPOSIT_LABELS[value] || '—'}</Badge>
     },
     {
       key: 'payment_status',

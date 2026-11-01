@@ -68,6 +68,7 @@ exports.upload = async (req, res) => {
       id: req.params.id,
       files: body.files,
       chotSoLuongTru: body.chot_so_luong_tru,
+      ngayDuKienOn: body.ngay_du_kien_on,
       ip: req.ip
     });
     res.json({

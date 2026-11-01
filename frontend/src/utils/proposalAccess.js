@@ -8,8 +8,8 @@ const normalizeText = (value) => String(value || '')
   .trim()
   .toLowerCase();
 
-const deptOf = (user) => normalizeText(user?.department);
-const titleOf = (user) => normalizeText(user?.chuc_vu);
+const deptOf = (user) => normalizeText(user?.department || user?.custom_data?.department);
+const titleOf = (user) => normalizeText(user?.chuc_vu || user?.custom_data?.chuc_vu);
 
 export const isAdminUser = (user) => ['SUPER_ADMIN', 'ADMIN'].includes(user?.role);
 
@@ -38,8 +38,11 @@ export const isGdttkdUser = (user) => {
 
 export const isTgdUser = (user) => {
   const title = titleOf(user);
-  if (title.includes('pho tong giam doc')) return false;
-  return title.includes('tong giam doc') || deptOf(user).includes('tong giam doc');
+  const department = deptOf(user);
+  return ['SALES', 'ADMIN'].includes(user?.role)
+    && !title.includes('pho tong giam doc')
+    && title.includes('tong giam doc')
+    && department.includes('ban tong giam doc');
 };
 
 export const isReviewUser = (user) => (
@@ -52,9 +55,15 @@ export const canSeeLayoutPage = (user) => isAdminUser(user) || isLayoutDept(user
 
 export const canSeeApprovalPage = (user) => (
   user?.role === 'SUPER_ADMIN'
-  || (user?.role === 'ADMIN' && isBackOfficeDept(user))
+  || (['ADMIN', 'SALES'].includes(user?.role) && isBackOfficeDept(user))
 );
 
+export const isFinanceDept = (user) => {
+  const dept = deptOf(user);
+  return dept.includes('tai chinh') || dept.includes('finance');
+};
+
 export const canSeeFinancePage = (user) => (
-  isAdminUser(user) || (user?.role === 'SALES' && isBackOfficeDept(user))
+  isAdminUser(user)
+  || (user?.role === 'SALES' && (isBackOfficeDept(user) || isFinanceDept(user)))
 );

@@ -5,7 +5,7 @@ import { api, API_URL, chargingFinanceService } from '../../services/api';
 import { Badge, Button, DataTable, Dialog, FilterBar, Input, Pagination, Select, Toast } from '../../components/ui';
 import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS } from '../../utils/chargingStation';
+import { CS_DEPOSIT_LABELS, CS_DEPOSIT_VARIANT, CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS } from '../../utils/chargingStation';
 
 const PAGE_SIZE = 20;
 const TABS = [
@@ -19,10 +19,30 @@ const INVOICE_TYPES = [
   { value: 'PAYMENT', label: 'Thanh toán' }
 ];
 const INVOICE_LABELS = Object.fromEntries(INVOICE_TYPES.map(({ value, label }) => [value, label]));
-const PAYMENT_VARIANTS = { NOT: 'ghost', DOING: 'warning', DONE: 'success' };
+const PAYMENT_VARIANTS = { NOT_REQUIRED: 'ghost', NOT: 'ghost', DOING: 'warning', DONE: 'success' };
 const FLOW_LABELS = { NOT: 'Chưa làm', DOING: 'Đang làm', DONE: 'Hoàn thành' };
 const EMPTY_INVOICE_FORM = { invoice_type: 'DEPOSIT', amount: '', content: '' };
 const EMPTY_TOAST = { message: '', type: 'success' };
+
+const isFinanceFinished = (station) => (
+  ['RECEIVED', 'REFUNDED', 'NOT_REQUIRED'].includes(station.deposit_status)
+  && ['DONE', 'NOT_REQUIRED'].includes(station.payment_status)
+);
+
+const getInvoiceTypeOptions = (station) => {
+  if (!station.requires_deposit) return [];
+  const types = ['DEPOSIT', 'PAYMENT'];
+  if (String(station.mo_hinh_dau_tu || '').toUpperCase() === 'LK' && station.status === 'OPERATING') {
+    types.push('REFUND');
+  }
+  return INVOICE_TYPES.filter((item) => types.includes(item.value));
+};
+
+const getDefaultInvoiceType = (station) => {
+  if (['REFUND_PENDING'].includes(station.deposit_status)) return 'REFUND';
+  if (station.deposit_status === 'RECEIVED') return 'PAYMENT';
+  return 'DEPOSIT';
+};
 
 const formatMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`;
 
@@ -111,6 +131,10 @@ const AdminFinancePage = () => {
     load(1);
   }, [load]);
 
+  useEffect(() => {
+    setInvoiceStation((current) => (current ? items.find((item) => item.id === current.id) || current : current));
+  }, [items]);
+
   const selectTab = (nextTab) => {
     const next = new URLSearchParams(searchParams);
     if (nextTab === 'need') next.delete('tab');
@@ -123,7 +147,7 @@ const AdminFinancePage = () => {
     setInvoicePage(1);
     setInvoices([]);
     setAddingInvoice(false);
-    setInvoiceForm(EMPTY_INVOICE_FORM);
+    setInvoiceForm({ ...EMPTY_INVOICE_FORM, invoice_type: getDefaultInvoiceType(station) });
     setEvidenceFile(null);
     loadInvoices(station.id, 1);
   };
@@ -171,7 +195,7 @@ const AdminFinancePage = () => {
       }, token);
       if (!response?.success) throw new Error(response?.message || 'Không ghi nhận được hóa đơn');
       setToast({ message: response.message || 'Đã ghi nhận hóa đơn', type: 'success' });
-      setInvoiceForm(EMPTY_INVOICE_FORM);
+      setInvoiceForm({ ...EMPTY_INVOICE_FORM, invoice_type: invoiceForm.invoice_type });
       setEvidenceFile(null);
       setAddingInvoice(false);
       setInvoicePage(1);
@@ -257,16 +281,21 @@ const AdminFinancePage = () => {
       )
     },
     {
+      key: 'deposit_status',
+      label: 'Tiền cọc',
+      render: (value) => <Badge variant={CS_DEPOSIT_VARIANT[value] || 'ghost'} outline>{CS_DEPOSIT_LABELS[value] || value || '—'}</Badge>
+    },
+    {
       key: 'payment_status',
-      label: 'Tài chính',
+      label: 'Thanh toán',
       render: (value) => <Badge variant={PAYMENT_VARIANTS[value] || 'ghost'} outline>{CS_PAYMENT_LABELS[value] || value || '—'}</Badge>
     },
     {
       key: 'finance_deadline_at',
       label: 'Mốc 15 ngày',
       render: (value, row) => (
-        <span className={row.payment_status === 'DONE' ? 'text-success text-xs' : 'text-xs'} title={formatDateTime(value)}>
-          {getDeadlineLabel(value, row.payment_status === 'DONE')}
+        <span className={isFinanceFinished(row) ? 'text-success text-xs' : 'text-xs'} title={formatDateTime(value)}>
+          {getDeadlineLabel(value, isFinanceFinished(row))}
         </span>
       )
     }
@@ -291,7 +320,7 @@ const AdminFinancePage = () => {
     <div className="flex flex-wrap justify-center gap-1">
       <Button size="xs" variant="outline" onClick={() => openInvoices(station)}>Hóa đơn</Button>
       {station.payment_status === 'NOT' && (
-        <Button size="xs" disabled={busy} onClick={() => openStatusChange(station, 'DOING')}>Bắt đầu</Button>
+        <Button size="xs" disabled={busy} onClick={() => openStatusChange(station, 'DOING')}>Bắt đầu thanh toán</Button>
       )}
       {station.payment_status === 'DOING' && (
         <Button size="xs" disabled={busy} onClick={() => openStatusChange(station, 'DONE')}>Hoàn tất</Button>
@@ -363,21 +392,28 @@ const AdminFinancePage = () => {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-base-200 p-3 text-sm">
               <span>Đề xuất: <Link to={`/admin/proposals/chi-tiet/${invoiceStation.proposal_id}`} className="link link-primary">{invoiceStation.ma_de_xuat || `#${invoiceStation.proposal_id}`}</Link></span>
-              <Badge variant={PAYMENT_VARIANTS[invoiceStation.payment_status] || 'ghost'} outline>{CS_PAYMENT_LABELS[invoiceStation.payment_status] || invoiceStation.payment_status}</Badge>
+              <div className="flex flex-wrap gap-1">
+                <Badge variant={CS_DEPOSIT_VARIANT[invoiceStation.deposit_status] || 'ghost'} outline>{CS_DEPOSIT_LABELS[invoiceStation.deposit_status] || invoiceStation.deposit_status}</Badge>
+                <Badge variant={PAYMENT_VARIANTS[invoiceStation.payment_status] || 'ghost'} outline>{CS_PAYMENT_LABELS[invoiceStation.payment_status] || invoiceStation.payment_status}</Badge>
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-2">
               <h4 className="font-semibold">Lịch sử hóa đơn</h4>
-              <Button size="sm" onClick={() => setAddingInvoice((value) => !value)}>
-                {addingInvoice ? 'Đóng biểu mẫu' : 'Ghi nhận hóa đơn'}
-              </Button>
+              {getInvoiceTypeOptions(invoiceStation).length > 0 ? (
+                <Button size="sm" onClick={() => setAddingInvoice((value) => !value)}>
+                  {addingInvoice ? 'Đóng biểu mẫu' : 'Ghi nhận hóa đơn'}
+                </Button>
+              ) : (
+                <span className="text-xs text-base-content/60">Mô hình Tự đầu tư không thu cọc hoặc thanh toán</span>
+              )}
             </div>
 
             {addingInvoice && (
               <form className="grid gap-3 rounded-lg border border-base-300 p-4 md:grid-cols-2" onSubmit={submitInvoice}>
                 <Select
                   label="Loại hóa đơn"
-                  options={INVOICE_TYPES}
+                  options={getInvoiceTypeOptions(invoiceStation)}
                   value={invoiceForm.invoice_type}
                   onChange={(event) => setInvoiceForm((form) => ({ ...form, invoice_type: event.target.value }))}
                   placeholder={null}
@@ -448,7 +484,7 @@ const AdminFinancePage = () => {
           </div>
           {statusChange?.targetStatus === 'DONE' && (
             <p className="text-sm text-warning">
-              Chỉ xác nhận hoàn thành sau khi đã ghi nhận hóa đơn tiền cọc hoặc thanh toán.
+              Chỉ xác nhận hoàn thành sau khi đã ghi nhận tiền cọc và hóa đơn thanh toán.
             </p>
           )}
           <label className="form-control w-full">

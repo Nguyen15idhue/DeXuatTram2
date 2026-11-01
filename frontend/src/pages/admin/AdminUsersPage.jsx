@@ -24,7 +24,7 @@ import { isGdkv, isGdtt } from '../../utils/salesRanks';
 const USERS_VIEW_ID = 7;
 const USERS_FORM_ID = 15;
 
-const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3 };
+const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
 
 const parseCustomData = (cd) => {
   if (!cd) return {};
@@ -32,7 +32,7 @@ const parseCustomData = (cd) => {
   try { return JSON.parse(cd); } catch { return {}; }
 };
 
-const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, salesList, allUsers, currentUser, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
+const CreateUserModal = ({ token, isSuperAdmin, isSales, isNpp, createRoleAllowlist, salesList, allUsers, currentUser, onClose, onSubmit, createRole, setCreateRole, createParentId, setCreateParentId }) => {
   const [detectedRole, setDetectedRole] = useState(createRole);
   const [dept, setDept] = useState('');
   const [chucVu, setChucVu] = useState('');
@@ -56,13 +56,14 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
   const meCd = parseCustomData(currentUser && currentUser.custom_data);
   const meChucVu = meCd.chuc_vu || '';
   const meDept = meCd.department || '';
+  const isBranchManager = isSales || isNpp;
   const isGdkvViewer = isSales && isGdkv(meChucVu, meDept);
   const isGdttViewer = isSales && isGdtt(meChucVu, meDept);
 
   const activeUsers = (allUsers || []).filter(u => u.status === 'ACTIVE');
   const gdkvList = activeUsers.filter(s => s.role === 'SALES' && isGdkv(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
   const gdttList = activeUsers.filter(s => s.role === 'SALES' && isGdtt(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
-  const parentableUsers = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
+  const parentableUsers = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN', 'NPP'].includes(u.role));
   const gdkvIds = new Set(gdkvList.map(s => s.id));
   const otherUsers = parentableUsers.filter(u => !gdkvIds.has(u.id));
 
@@ -74,12 +75,13 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
 
   useEffect(() => {
     if (createParentId) return;
+    if (isNpp && isCtvOrNpp) { setCreateParentId(String(currentUser.id)); return; }
     if (isGdkvViewer && isCtvOrNpp) { setCreateParentId(String(currentUser.id)); return; }
     if (isGdttViewer && isCtvOrNpp) {
       if (gdkvForGdttViewer.length === 1) setCreateParentId(String(gdkvForGdttViewer[0].id));
       return;
     }
-    if (isSales) return;
+    if (isBranchManager) return;
     if (isCtvOrNpp) {
       if (sameDeptGdkv.length === 1) setCreateParentId(String(sameDeptGdkv[0].id));
     } else if (suggestedGdtt) {
@@ -139,8 +141,18 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
               </div>
               ) : detectedRole === 'SALES' ? (
               <div className="text-xs opacity-70">Chức vụ hiện tại không cần gán cấp trên (chỉ GĐKV mới gán GĐTT).</div>
-              ) : isSales ? (
-                isGdttViewer ? (
+              ) : isBranchManager ? (
+                isNpp ? (
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text text-sm">Cấp trên</span>
+                  </label>
+                  <div className="text-sm px-1 py-2">
+                    <strong>{currentUser.full_name}</strong>
+                    <span className="ml-1 opacity-60">(CTV sẽ thuộc nhánh của bạn)</span>
+                  </div>
+                </div>
+                ) : isGdttViewer ? (
                 <div className="form-control">
                   <label className="label">
                     <span className="label-text text-sm">Giám đốc Khu vực (GĐKV) — cùng phòng ban</span>
@@ -225,6 +237,8 @@ const CreateUserModal = ({ token, isSuperAdmin, isSales, createRoleAllowlist, sa
 
 const AdminUsersPage = () => {
   const { token, user: currentUser, isSuperAdmin, isSales } = useAuth();
+  const isNpp = currentUser?.role === 'NPP';
+  const isBranchManager = isSales || isNpp;
   const navigate = useNavigate();
   const location = useLocation();
   const usersViewId = useDefaultViewId('users', USERS_VIEW_ID);
@@ -274,7 +288,7 @@ const [viewMode, setViewMode] = useState('table');
   const [createRole, setCreateRole] = useState('CTV');
   const [createParentId, setCreateParentId] = useState('');
   const [salesList, setSalesList] = useState([]);
-  const createRoleAllowlist = isSales ? ['CTV', 'NPP'] : (!isSuperAdmin ? ['CTV', 'NPP', 'SALES', 'ADMIN'] : null);
+  const createRoleAllowlist = isNpp ? ['CTV'] : (isSales ? ['CTV', 'NPP'] : (!isSuperAdmin ? ['CTV', 'NPP', 'SALES', 'ADMIN'] : null));
   const [pwModal, setPwModal] = useState({ open: false, id: null, name: '' });
   const [pwOld, setPwOld] = useState('');
   const [pw1, setPw1] = useState('');
@@ -290,13 +304,13 @@ const [viewMode, setViewMode] = useState('table');
   }, [token]);
 
   useEffect(() => {
-    if (!token || isSales) return;
+    if (!token || isBranchManager) return;
     let cancelled = false;
     excelService.getViews('users', token)
       .then(res => { if (!cancelled && res && res.success) setExcelViews(res.data || []); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [token, isSales]);
+  }, [token, isBranchManager]);
 
   useEffect(() => {
     const match = location.pathname.match(/\/admin\/users\/(view|edit)=(\d+)/);
@@ -502,6 +516,7 @@ const [viewMode, setViewMode] = useState('table');
   };
 
   const handleConfirmBulkDelete = async () => {
+    if (isNpp) return;
     if (selectedIds.length === 0) return;
     setConfirmBulkDelete(false);
     setBulkLoading(true);
@@ -511,7 +526,10 @@ const [viewMode, setViewMode] = useState('table');
     const myRank = RANK[currentUser.role] ?? 99;
     selectedIds.forEach((id) => {
       const u = users.find(x => x.id === id);
-      if (!u || u.id === currentUser.id || myRank >= (RANK[u.role] ?? 99)) {
+      const inDeleteScope = isSuperAdmin
+        || (currentUser.role === 'ADMIN' && u?.role !== 'SUPER_ADMIN')
+        || (isSales && Number(u?.parent_id) === Number(currentUser.id) && ['CTV', 'NPP'].includes(u?.role));
+      if (!u || u.id === currentUser.id || !inDeleteScope || myRank >= (RANK[u.role] ?? 99)) {
         skipped.push(`#${id}${u ? ` (${u.full_name || u.email || ''})` : ''}`);
       } else {
         deletable.push(id);
@@ -736,9 +754,15 @@ const [viewMode, setViewMode] = useState('table');
     const RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
     const myRank = RANK[currentUser.role] ?? 99;
     const rowRank = RANK[row.role] ?? 99;
-    const inBranch = !isSales || row._scope === 'branch';
-    const canManage = isSuperAdmin || (inBranch && row.id !== currentUser.id && (myRank < RANK.SALES || (row.role !== 'ADMIN' && row.role !== 'SUPER_ADMIN')));
-    const canDelete = row.id !== currentUser.id && myRank < rowRank;
+    const inBranch = !isBranchManager || row._scope === 'branch';
+    const canManage = isSuperAdmin || (inBranch
+      && row.id !== currentUser.id
+      && (myRank < RANK.SALES || (row.role !== 'ADMIN' && row.role !== 'SUPER_ADMIN'))
+      && (!isNpp || row.role === 'CTV'));
+    const canDelete = !isNpp
+      && (!isSales || Number(row.parent_id) === Number(currentUser.id))
+      && row.id !== currentUser.id
+      && myRank < rowRank;
     return (
       <div className="flex flex-wrap gap-1">
         <button className="btn btn-primary btn-xs" onClick={() => navigate(`/admin/users/view=${row.id}`)}>Xem</button>
@@ -748,7 +772,7 @@ const [viewMode, setViewMode] = useState('table');
         {canManage && (
           <button className="btn btn-ghost btn-xs" onClick={() => openPasswordModal(row.id, row.full_name)}>Đổi MK</button>
         )}
-        {canManage && !isSales && row.id !== currentUser.id && (
+        {canManage && !isBranchManager && row.id !== currentUser.id && (
           <button className="btn btn-sm btn-ghost" onClick={() => handleToggleLock(row.id)}>
             {row.status === 'ACTIVE' ? 'Khóa' : 'Mở'}
           </button>
@@ -766,7 +790,11 @@ const [viewMode, setViewMode] = useState('table');
   const popupUserScope = popup.open
     ? (popup.record?._scope || users.find(u => Number(u.id) === popupUserId)?._scope || null)
     : null;
-  const canEditPopupUser = !isSales || popupUserScope === 'branch';
+  const popupTargetUser = popup.record || users.find(u => Number(u.id) === popupUserId);
+  const canEditPopupUser = !isBranchManager || (
+    popupUserScope === 'branch'
+    && (!isNpp || Number(popupTargetUser?.id) === Number(currentUser.id) || popupTargetUser?.role === 'CTV')
+  );
 
   return (
     <div>
@@ -782,13 +810,13 @@ const [viewMode, setViewMode] = useState('table');
             <Plus size={14} />
             Tạo user
           </button>
-          {!isSales && (
+          {!isBranchManager && (
             <ViewPickerMenu label="Template" icon={FileSpreadsheet} views={excelViews} onPick={handleDownloadTemplate} title="Chọn bộ cột cho file mẫu" />
           )}
-          {!isSales && (
+          {!isBranchManager && (
             <ViewPickerMenu label="Export" views={excelViews} onPick={handleExport} onPickForm={handleExportByForm} title="Chọn bộ cột để export" />
           )}
-          {!isSales && (
+          {!isBranchManager && (
             <button className="btn btn-ghost btn-sm gap-1" onClick={openImport}>
               <Upload size={14} />
               Import
@@ -891,7 +919,7 @@ const [viewMode, setViewMode] = useState('table');
         </div>
       </FilterBody>
 
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && !isNpp && (
         <div className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 bg-base-200 rounded-lg">
           <span className="text-sm font-medium">Đã chọn: {selectedIds.length} user</span>
           <button className="btn btn-error btn-sm gap-1" onClick={() => setConfirmBulkDelete(true)} disabled={bulkLoading}>
@@ -1020,6 +1048,7 @@ const [viewMode, setViewMode] = useState('table');
           token={token}
           isSuperAdmin={isSuperAdmin}
           isSales={isSales}
+          isNpp={isNpp}
           createRoleAllowlist={createRoleAllowlist}
           salesList={salesList}
           allUsers={users}
@@ -1077,6 +1106,7 @@ const [viewMode, setViewMode] = useState('table');
           viewId={usersViewId}
           mode={popup.mode}
           allowEdit={canEditPopupUser}
+          readOnlyKeys={isBranchManager ? ['role', 'status', 'parent_id'] : []}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view' });
             navigate('/admin/users');
@@ -1097,12 +1127,12 @@ const [viewMode, setViewMode] = useState('table');
             const meCd = parseCustomData(currentUser.custom_data);
             const meChucVu = meCd.chuc_vu || '';
             const meDept = meCd.department || '';
-            const isAdminish = !isSales;
+            const isAdminish = !isBranchManager;
 
             const activeUsers = (users || []).filter(u => u.status === 'ACTIVE');
             const gdkv = activeUsers.filter(s => s.role === 'SALES' && isGdkv(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
             const gdtt = activeUsers.filter(s => s.role === 'SALES' && isGdtt(parseCustomData(s.custom_data).chuc_vu, parseCustomData(s.custom_data).department));
-            const parentable = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN'].includes(u.role));
+            const parentable = activeUsers.filter(u => ['SALES', 'ADMIN', 'SUPER_ADMIN', 'NPP'].includes(u.role));
             const gdkvIdSet = new Set(gdkv.map(s => s.id));
             const otherUsers = parentable.filter(u => !gdkvIdSet.has(u.id));
 
@@ -1113,7 +1143,9 @@ const [viewMode, setViewMode] = useState('table');
             const emptyLabel = isGdkvTarget ? '— Chọn GĐTT —' : '— Chọn GĐKV —';
 
             let groups = [];
-            if (isAdminish) {
+            if (isNpp) {
+              groups = [{ label: null, users: (users || []).filter(u => Number(u.id) === Number(currentUser.id)) }];
+            } else if (isAdminish) {
               if (isGdkvTarget) {
                 groups = [
                   { label: 'Giám đốc Trung tâm Kinh doanh', users: gdtt },

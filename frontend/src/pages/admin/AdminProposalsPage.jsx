@@ -38,6 +38,7 @@ import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
+import { canOwnerEditProposal } from '../../utils/proposalOwnerLock';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { COUNTDOWN_CONFIG_EVENT, getCountdownFlags, loadCountdownConfig } from '../../utils/countdownConfig';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
@@ -889,8 +890,10 @@ const AdminProposalsPage = () => {
         {label}
       </button>
     );
-    if (isAdmin || isSales) {
-      items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
+    if (isAdmin || isSales || user?.role === 'NPP') {
+      if (isSuperAdmin || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row))) {
+        items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
+      }
     }
     if (isSuperAdmin) {
       items.push(item('force', <Repeat size={14} />, 'Đổi trạng thái', () => setForceModal({ open: true, id: row.id, status: row.status, reason: '', ack: false, saving: false })));
@@ -960,8 +963,7 @@ const AdminProposalsPage = () => {
 
   const renderActions = (row) => (
     <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
-      {user?.role !== 'NPP' || Number(row.user_id) === Number(user.id) ? (
-        <>
+      <>
       {canPauseProposals && row.status && row.status !== 'CANCELLED'
         && !(row.status === 'APPROVED' && row.signed_file_id) && (
         <button
@@ -985,8 +987,7 @@ const AdminProposalsPage = () => {
       <button className="btn btn-ghost btn-xs btn-square shrink-0" onClick={(e) => openRowMenu(e, row.id)} title="Thao tác khác">
         <MoreVertical size={14} />
       </button>
-        </>
-      ) : null}
+      </>
     </div>
   );
 
@@ -1528,7 +1529,8 @@ const AdminProposalsPage = () => {
           recordId={popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))}
           viewId={proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin || isSales}
+          allowEdit={isAdmin || isSales || user?.role === 'NPP'}
+          canEditRecord={(rec) => isSuperAdmin || (Number(rec.user_id) === Number(user?.id) && canOwnerEditProposal(rec))}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null });
             navigate(activeTab === 'all' ? '/admin/proposals' : `/admin/proposals?tab=${activeTab}`);

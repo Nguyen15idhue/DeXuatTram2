@@ -48,9 +48,15 @@ const resolveRegion = (value) => {
 const isTgdTitle = (department, chucVu) => {
   const title = normalizeText(chucVu);
   const dept = normalizeText(department);
-  if (title.includes('pho tong giam doc')) return false;
-  return title.includes('tong giam doc') || dept.includes('tong giam doc');
+  return !title.includes('pho tong giam doc')
+    && title.includes('tong giam doc')
+    && dept.includes('ban tong giam doc');
 };
+
+const isPhoTgdTitle = (department, chucVu) => (
+  normalizeText(chucVu).includes('pho tong giam doc')
+  && normalizeText(department).includes('ban tong giam doc')
+);
 
 const getUserProfile = async (userId) => {
   if (!userId) return { department: null, chucVu: null, customData: {} };
@@ -64,12 +70,11 @@ const getUserProfile = async (userId) => {
 };
 
 const resolveRoleKey = ({ role, department, chucVu }) => {
-  const normalizedDepartment = normalizeText(department);
   if (role === 'SUPER_ADMIN') return REVIEW_ROLE.ADMIN;
-  if (role === 'ADMIN') {
-    return normalizedDepartment.includes('ban tong giam doc') ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN;
-  }
-  if (isTgdTitle(department, chucVu)) return REVIEW_ROLE.TGD;
+  if (role === 'ADMIN') return isTgdTitle(department, chucVu) ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN;
+  if (role === 'SALES' && isTgdTitle(department, chucVu)) return REVIEW_ROLE.TGD;
+  // Vai trò quy trình theo phòng ban/chức vụ chỉ áp dụng cho nhân sự nội bộ (SALES); CTV/NPP không kế thừa.
+  if (role !== 'SALES') return null;
   const gradingRole = resolveGradingRole(department);
   if (gradingRole) return gradingRole;
   const title = normalizeText(chucVu);
@@ -101,6 +106,7 @@ const resolveReviewer = async (user) => {
     isAdmin: ['SUPER_ADMIN', 'ADMIN'].includes(user && user.role),
     isSuperAdmin: user?.role === 'SUPER_ADMIN',
     roleKey,
+    isPhoTgd: isPhoTgdTitle(profile.department, profile.chucVu),
     roleLabel: REVIEW_ROLE_LABELS[roleKey] || null,
     region,
     regionLabel: REGION_LABELS[region] || null,
@@ -189,6 +195,11 @@ const listReviews = async ({
 
   const where = [];
   const params = [];
+
+  if (scope.isPhoTgd && !scope.isSuperAdmin) {
+    where.push('p.status <> ?');
+    params.push(TGD_STATUS);
+  }
 
   if (safeTab === 'all') {
     where.push('p.review_level IS NOT NULL');
@@ -337,6 +348,9 @@ const getReviewDetail = async (id, user) => {
     [proposalId]
   );
   if (!rows.length) throw err('Không tìm thấy đề xuất', 404);
+  if (scope.isPhoTgd && !scope.isSuperAdmin && rows[0].status === TGD_STATUS) {
+    throw err('Bạn không có quyền xem đề xuất này', 403);
+  }
   const row = rows[0];
   if (!scope.isAdmin && scope.roleKey === REVIEW_ROLE.GDTTKD) assertBranch(scope, row);
 
@@ -681,6 +695,8 @@ exports.REVIEW_LEVEL_LABELS = REVIEW_LEVEL_LABELS;
 exports.REGION_LABELS = REGION_LABELS;
 exports.resolveRegion = resolveRegion;
 exports.resolveRoleKey = resolveRoleKey;
+exports.isTgdTitle = isTgdTitle;
+exports.isPhoTgdTitle = isPhoTgdTitle;
 exports.resolveReviewer = resolveReviewer;
 exports.listReviews = listReviews;
 exports.getReviewDetail = getReviewDetail;

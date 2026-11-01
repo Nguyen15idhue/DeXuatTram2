@@ -9,11 +9,14 @@ import {
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
+  CS_DEPOSIT_LABELS,
+  CS_DEPOSIT_VARIANT,
   CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
-  formatCsDate
+  formatCsDate,
+  getCsDeadlineLabel
 } from '../../utils/chargingStation';
 import { Badge, Button, DataTable, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 
@@ -152,7 +155,21 @@ const ChargingStationContractTabs = () => {
     {
       key: 'payment_status',
       label: 'Tài chính',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_DEPOSIT_VARIANT[row.deposit_status] || 'ghost'} size="sm" outline>{CS_DEPOSIT_LABELS[row.deposit_status] || '—'}</Badge>
+          <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
+        </div>
+      )
+    },
+    {
+      key: 'contract_deadline_at',
+      label: 'Hạn 15 ngày',
+      render: (value, row) => (
+        <span className={row.contract_status === 'DONE' ? 'text-success text-xs' : 'text-xs'}>
+          {getCsDeadlineLabel(value, row.contract_status === 'DONE', row.deadline_active === false)}
+        </span>
+      )
     },
     { key: 'created_at', label: 'Ngày tạo', render: formatDateTime },
 
@@ -300,7 +317,7 @@ const ChargingStationContractTabs = () => {
       >
         <div className="space-y-4">
           <p className="text-sm text-base-content/70">
-            Chọn file PDF hoặc DOCX. Xác nhận sẽ lưu hợp đồng, chuyển hợp đồng sang Đã ký và trạng thái thanh toán sang Đã thanh toán 1 phần.
+            Chọn file PDF hoặc DOCX. Xác nhận sẽ lưu hợp đồng và chuyển hợp đồng sang Đã ký.
           </p>
           <input
             type="file"

@@ -200,7 +200,7 @@ const ChargingStationProcessTabs = ({ stage = 'lap-tru' }) => {
       if (row.status === 'INSTALLING' && row.sub_status === 'INSTALLING') {
         return <Button variant="primary" size="xs" disabled={busy} onClick={() => confirmInstallation(row)}>Đã lắp đặt xong</Button>;
       }
-      if (['ACCEPTANCE', 'OPERATING'].includes(row.status)) {
+      if (['ACCEPTANCE', 'CONFIGURING', 'OPERATING'].includes(row.status)) {
         return <Badge variant="success" size="sm">Đã lắp đặt</Badge>;
       }
     }
@@ -236,10 +236,10 @@ const ChargingStationProcessTabs = ({ stage = 'lap-tru' }) => {
         </div>
       );
     }
-    if (stage === 'nghiem-thu' && row.status === 'OPERATING') {
+    if (stage === 'nghiem-thu' && ['CONFIGURING', 'OPERATING'].includes(row.status)) {
       return <Badge variant="success" size="sm">Đã nghiệm thu đạt</Badge>;
     }
-    if (stage === 'on-tram' && row.status === 'OPERATING' && row.sub_status === 'CONFIGURING') {
+    if (stage === 'on-tram' && row.status === 'CONFIGURING') {
       return <Button size="xs" disabled={busy} onClick={() => {
         setConfigurationForm({ cms_station_code: row.cms_station_code || '', on_date: row.on_date || '' });
         setConfigurationStation(row);

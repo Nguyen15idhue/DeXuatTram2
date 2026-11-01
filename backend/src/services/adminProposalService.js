@@ -18,7 +18,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   const where = [];
   const params = [];
 
-  if (scope.role === 'SALES' && scope.branchIds) {
+  if (scope.role === 'SALES' && scope.branchIds && !scope.isTgdOwnerManager) {
     if (scope.branchIds.length === 0 && !scope.userId) {
       return { proposals: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
@@ -127,6 +127,12 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.paused_from_status, p.paused_at,
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
             p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
+            EXISTS (
+              SELECT 1 FROM proposal_requests r
+               WHERE r.proposal_id = p.id AND r.status = 'OPEN'
+                 AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
+                 AND r.target_user_id = p.user_id
+            ) AS owner_update_request_open,
             u.full_name as user_name, u.email as user_email,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             u.parent_id AS manager_user_id, manager.full_name AS manager_name,
@@ -164,6 +170,12 @@ exports.getProposalById = async (id) => {
 exports.getProposalWithUser = async (id) => {
   const [proposals] = await pool.query(
     `SELECT p.*, u.full_name as user_name,
+            EXISTS (
+              SELECT 1 FROM proposal_requests r
+               WHERE r.proposal_id = p.id AND r.status = 'OPEN'
+                 AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
+                 AND r.target_user_id = p.user_id
+            ) AS owner_update_request_open,
             l.id AS lead_id, l.lead_code AS lead_code
        FROM station_proposals p
        LEFT JOIN users u ON p.user_id = u.id

@@ -84,7 +84,7 @@ const requireSuperAdmin = (req, res, next) => {
   next();
 };
 
-// Middleware: Check quyền quản lý users (ADMIN, SUPER_ADMIN, SALES - sales chỉ tạo CTV, check tiếp ở controller)
+// Middleware: Roles allowed on user-management routes; controllers enforce branch/action scope.
 const requireUserManager = (req, res, next) => {
   if (!['ADMIN', 'SUPER_ADMIN', 'SALES'].includes(req.user.role)) {
     return res.status(403).json({
@@ -95,9 +95,19 @@ const requireUserManager = (req, res, next) => {
   next();
 };
 
-// Middleware: Check quyền quản lý đề xuất (ADMIN, SUPER_ADMIN, SALES, CTV)
+const requireUserAccountManager = (req, res, next) => {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES', 'NPP'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
+// Middleware: Check quyền quản lý đề xuất (ADMIN, SUPER_ADMIN, SALES, CTV, NPP)
 const requireProposalManager = (req, res, next) => {
-  if (!['ADMIN', 'SUPER_ADMIN', 'SALES', 'CTV'].includes(req.user.role)) {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES', 'CTV', 'NPP'].includes(req.user.role)) {
     return res.status(403).json({
       success: false,
       message: 'Không có quyền truy cập'
@@ -209,6 +219,7 @@ module.exports = {
   requireAdmin,
   requireSuperAdmin,
   requireUserManager,
+  requireUserAccountManager,
   requireProposalManager,
   requireProposalInfoManager,
   requireLeadManager,

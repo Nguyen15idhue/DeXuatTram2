@@ -67,8 +67,10 @@ const AdminFinancePage = lazy(() => import('./pages/admin/AdminFinancePage'));
 const SUPER_ONLY = ['SUPER_ADMIN'];
 const ADMIN_AND_SALES = ['SUPER_ADMIN', 'ADMIN', 'SALES'];
 const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'];
-const PROPOSAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV'];
-const PROPOSAL_INFO_ROLES = [...PROPOSAL_ROLES, 'NPP'];
+const USER_MANAGER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'NPP'];
+const PROPOSAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
+const PROPOSAL_INFO_ROLES = PROPOSAL_ROLES;
+const PROPOSAL_FILE_ROLES = PROPOSAL_INFO_ROLES;
 const SIGNING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const ESIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
 const PANEL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
@@ -154,8 +156,8 @@ function App() {
                 </RoleRoute>
               }
             />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/users/*" element={<AdminUsersPage />} />
+            <Route path="/admin/users" element={<RoleRoute allowed={USER_MANAGER_ROLES}><AdminUsersPage /></RoleRoute>} />
+            <Route path="/admin/users/*" element={<RoleRoute allowed={USER_MANAGER_ROLES}><AdminUsersPage /></RoleRoute>} />
             <Route path="/admin/stations" element={<AdminStationsPage />} />
             <Route path="/admin/stations/*" element={<AdminStationsPage />} />
             <Route path="/admin/proposals" element={<RoleRoute allowed={PROPOSAL_INFO_ROLES}><AdminProposalsPage /></RoleRoute>} />
@@ -242,7 +244,7 @@ function App() {
             <Route
               path="/admin/proposals/duyet-bcdx"
               element={
-                <RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']} accessCheck={canSeeApprovalPage}>
+                <RoleRoute allowed={ADMIN_AND_SALES} accessCheck={canSeeApprovalPage}>
                   <AdminProposalsDuyetBCDXPage />
                 </RoleRoute>
               }
@@ -250,7 +252,7 @@ function App() {
             <Route
               path="/admin/proposals/duyet-bcdx/:id/cau-hinh-ky"
               element={
-                <RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']} accessCheck={canSeeApprovalPage}>
+                <RoleRoute allowed={ADMIN_AND_SALES} accessCheck={canSeeApprovalPage}>
                   <ProposalSignatureConfigPage />
                 </RoleRoute>
               }
@@ -258,7 +260,7 @@ function App() {
             <Route
               path="/admin/proposals/duyet-bcdx/:id"
               element={
-                <RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']} accessCheck={canSeeApprovalPage}>
+                <RoleRoute allowed={ADMIN_AND_SALES} accessCheck={canSeeApprovalPage}>
                   <AdminProposalApprovalDetailPage />
                 </RoleRoute>
               }
@@ -384,7 +386,7 @@ function App() {
             <Route path="/admin/forms/:id/edit" element={<RoleRoute allowed={SUPER_ONLY}><AdminFormBuilderPage /></RoleRoute>} />
             <Route path="/admin/views" element={<RoleRoute allowed={SUPER_ONLY}><AdminViewsPage /></RoleRoute>} />
             <Route path="/admin/views/:id/edit" element={<RoleRoute allowed={SUPER_ONLY}><AdminViewBuilderPage /></RoleRoute>} />
-            <Route path="/admin/:entity/:id/files" element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminRecordFilesPage /></RoleRoute>} />
+            <Route path="/admin/:entity/:id/files" element={<RoleRoute allowed={PROPOSAL_FILE_ROLES}><AdminRecordFilesPage /></RoleRoute>} />
             <Route path="/admin/data-lists" element={<RoleRoute allowed={SUPER_ONLY}><AdminDataListsPage /></RoleRoute>} />
             <Route path="/admin/data-lists/:id" element={<RoleRoute allowed={SUPER_ONLY}><AdminDataListsPage /></RoleRoute>} />
             <Route path="/admin/map-config" element={<RoleRoute allowed={SUPER_ONLY}><AdminMapConfigPage /></RoleRoute>} />

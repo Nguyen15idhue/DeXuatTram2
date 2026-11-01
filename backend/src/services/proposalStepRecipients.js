@@ -29,7 +29,7 @@ const proposalRegion = (proposal) => {
 const userCanGrade = (user, department) => {
   const gradingService = require('./proposalGradingService');
   if (user.role === 'SUPER_ADMIN') return true;
-  return user.role === 'ADMIN' && gradingService.resolveGradingRole(user.department) === department;
+  return ['ADMIN', 'SALES'].includes(user.role) && gradingService.resolveGradingRole(user.department) === department;
 };
 
 const gradingUsers = async (proposal, departments, { requireMissingScore = true } = {}) => {
@@ -95,13 +95,15 @@ const reportUploadUsers = async (proposal) => {
   const region = proposalRegion(proposal);
   const users = await loadActiveUsers();
   const ownerId = Number(proposal.user_id) || null;
-  const owner = users.find((user) => user.id === ownerId);
+  const ancestorIds = new Set(
+    ownerId ? (await require('./adminUserService').getAncestorIds(ownerId)).map(Number) : []
+  );
 
   return users
     .filter((user) => {
       if (user.role === 'SUPER_ADMIN') return true;
       if (ownerId && user.id === ownerId) return true;
-      if (owner && owner.parentId === user.id) return true;
+      if (ancestorIds.has(user.id)) return true;
 
       const roleKey = proposalReviewService.resolveRoleKey({
         role: user.role,

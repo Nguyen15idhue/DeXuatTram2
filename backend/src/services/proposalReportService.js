@@ -35,6 +35,11 @@ const isBackOffice = (department) => {
   return !!dept && (dept.includes('back office') || dept.includes('backoffice'));
 };
 
+const isFinanceDepartment = (department) => {
+  const dept = normalizeText(department);
+  return !!dept && (dept.includes('tai chinh') || dept.includes('finance'));
+};
+
 const getUserProfile = async (userId) => {
   if (!userId) return { department: null, chucVu: null, customData: {} };
   const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ? LIMIT 1', [userId]);
@@ -64,6 +69,7 @@ const resolveScope = async (user) => {
     role: user && user.role,
     isAdmin,
     isBackOffice: isBackOffice(profile.department),
+    isFinance: isFinanceDepartment(profile.department),
     roleKey,
     region,
     department: profile.department,
@@ -96,8 +102,10 @@ const scopeClause = async (scope, params) => {
 
 const canUploadReport = async (scope, proposal) => {
   if (scope.role === 'SUPER_ADMIN') return true;
-  if (Number(proposal.user_id) === Number(scope.userId)) return true;
-  if (Number(proposal.owner_parent_id) === Number(scope.userId)) return true;
+  if (await require('./proposalAccessService').canActAsProposalOwner(
+    { id: scope.userId, role: scope.role },
+    { user_id: proposal.user_id }
+  )) return true;
   if (scope.roleKey === 'GDTTKD' && scope.region) {
     const region = proposalRegion(proposal.custom_data);
     return !!region && region === scope.region;
@@ -134,6 +142,7 @@ exports.UPDATE_INFO_REQUEST_TYPE = UPDATE_INFO_REQUEST_TYPE;
 exports.TAB_STATUSES = TAB_STATUSES;
 exports.resolveScope = resolveScope;
 exports.isBackOffice = isBackOffice;
+exports.isFinanceDepartment = isFinanceDepartment;
 
 exports.listProposals = async ({
   user,

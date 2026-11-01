@@ -14,7 +14,7 @@ const LIVE_PROPOSAL_STATUSES = [
 
 const proposalRank = (status, hasStation) => {
   if (status === 'ACTIVE') return 7;
-  if (status === 'CONTRACT_SIGNED' || hasStation) return 6;
+  if (status === 'CONTRACT_SIGNED' || status === 'DEPLOYING' || hasStation) return 6;
   if (LIVE_PROPOSAL_STATUSES.includes(status)) return 5;
   return 0;
 };

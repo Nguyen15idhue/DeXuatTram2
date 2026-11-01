@@ -52,6 +52,7 @@ const ProposalSignatureConfigPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [signatureConfigWarning, setSignatureConfigWarning] = useState("");
 
   const reportFiles = useMemo(() => getReportFiles(proposal), [proposal]);
   const selectedFile = reportFiles.find(
@@ -71,15 +72,39 @@ const ProposalSignatureConfigPage = () => {
           proposalApprovalService.getSignatureConfig(id, token),
         ]);
       const loadedProposal = proposalResponse?.data || null;
-      const loadedFileId =
-        configResponse?.data?.signers?.[0]?.file_id ||
-        getReportFiles(loadedProposal)[0]?.id ||
-        null;
-      const loadedFile = getReportFiles(loadedProposal).find(
+      const availableReportFiles = getReportFiles(loadedProposal);
+      const availableFileIds = new Set(availableReportFiles.map((file) => Number(file.id)));
+      const configuredSigners = configResponse?.data?.signers || [];
+      const configuredFileIds = [...new Set(configuredSigners
+        .map((signer) => Number(signer.file_id))
+        .filter((fileId) => Number.isInteger(fileId) && fileId > 0))];
+      const selectedConfiguredFileId = configuredFileIds.find((configuredId) => availableFileIds.has(configuredId));
+      const loadedFileId = selectedConfiguredFileId || availableReportFiles[0]?.id || null;
+      const signerCounts = new Map();
+      configuredSigners.forEach((signer) => {
+        const userId = Number(signer.user_id);
+        signerCounts.set(userId, (signerCounts.get(userId) || 0) + 1);
+      });
+      const hasDuplicateSigners = [...signerCounts.values()].some((count) => count > 1);
+      const hasStaleOrMixedConfig = configuredFileIds.length > 1
+        || configuredFileIds.some((configuredId) => !availableFileIds.has(configuredId))
+        || hasDuplicateSigners;
+      setSignatureConfigWarning(hasStaleOrMixedConfig
+        ? "Cấu hình ký cũ đang có nhiều file hoặc người ký bị lặp. Hãy chọn đúng file BCĐX duy nhất; lưu cấu hình sẽ hủy các ô ký cũ và yêu cầu toàn bộ người ký ký lại."
+        : "");
+      const loadedFile = availableReportFiles.find(
         (file) => Number(file.id) === Number(loadedFileId),
       );
       const loadedMinBoxHeightRatio = getSignerBoxMinHeightRatio(loadedFile);
-      const loadedSigners = (configResponse?.data?.signers || []).map((signer) => normalizeSignerBox({
+      const signerByUser = new Map();
+      configuredSigners.forEach((signer) => {
+        const userId = Number(signer.user_id);
+        const previous = signerByUser.get(userId);
+        if (!previous || Number(signer.file_id) === Number(loadedFileId)) {
+          signerByUser.set(userId, signer);
+        }
+      });
+      const loadedSigners = [...signerByUser.values()].map((signer) => normalizeSignerBox({
           user_id: signer.user_id,
           full_name: signer.full_name,
           signer_title: signer.signer_title,
@@ -299,6 +324,10 @@ const ProposalSignatureConfigPage = () => {
         title={`Cấu hình ký BCĐX — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
         actions={<ProposalLocationMapButton proposal={proposal} />}
       />
+
+      {signatureConfigWarning && (
+        <div className="alert alert-warning text-sm">{signatureConfigWarning}</div>
+      )}
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(500px,1.4fr)]">
         <section className="space-y-3 rounded-lg border bg-base-100 p-4">

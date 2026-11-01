@@ -65,7 +65,7 @@ const assignedTypesForUser = (user) => {
   const gradingService = require('./proposalGradingService');
   const reportService = require('./proposalReportService');
   const types = [];
-  if (user.role === 'SUPER_ADMIN' || (user.role === 'ADMIN' && gradingService.resolveGradingRole(user.department))) {
+  if (user.role === 'SUPER_ADMIN' || (['ADMIN', 'SALES'].includes(user.role) && gradingService.resolveGradingRole(user.department))) {
     types.push('RE_GRADE');
   }
   if (reportService.isBackOffice(user.department)) types.push('REVISE_BCDX');
@@ -150,26 +150,17 @@ exports.closeRequests = async (proposalId, types = null, { resolvedBy = null, st
 const scopeClause = (scope, params, workScope = 'all', user = null) => {
   if (!scope || !scope.role) return '';
   if (workScope === 'mine') return '';
-  if (workScope === 'subordinates') return '';
   if (scope.role === 'SALES' || scope.role === 'NPP') {
+    if (workScope === 'subordinates') return ' AND r.target_user_id = p.user_id';
     const ors = [];
     const ids = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
-    const allowedIds = workScope === 'subordinates'
-      ? ids.filter((id) => id !== Number(scope.userId))
-      : ids;
-    if (allowedIds.length > 0) {
-      ors.push(`p.user_id IN (${allowedIds.map(() => '?').join(',')})`);
-      params.push(...allowedIds);
+    if (scope.isTgdOwnerManager) {
+      ors.push('r.target_user_id = p.user_id');
+    } else if (ids.length > 0) {
+      ors.push(`(r.target_user_id = p.user_id AND p.user_id IN (${ids.map(() => '?').join(',')}))`);
+      params.push(...ids);
     }
-    if (workScope !== 'subordinates' && scope.userId) {
-      ors.push('r.target_user_id = ?');
-      params.push(Number(scope.userId));
-    }
-    if (workScope !== 'subordinates' && scope.region) {
-      ors.push("LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?");
-      params.push(regionPattern(scope.region) || `%${String(scope.region).toLowerCase()}%`);
-    }
-    if (workScope === 'all' && user) {
+    if (user) {
       ors.push(requestAssignmentClause(user, params));
     }
     if (ors.length === 0) return ' AND 1 = 0';
@@ -179,7 +170,7 @@ const scopeClause = (scope, params, workScope = 'all', user = null) => {
     if (workScope === 'subordinates') return ' AND 1 = 0';
     if (!scope.userId) return ' AND 1 = 0';
     params.push(Number(scope.userId));
-    return ' AND p.user_id = ?';
+    return ' AND p.user_id = ? AND r.target_user_id = p.user_id';
   }
   return '';
 };
@@ -290,12 +281,20 @@ exports.listRequests = async ({
   const params = [];
   const normalizedWorkScope = workScope || (my ? 'mine' : 'all');
   const managerUser = scope.userId ? await loadUserById(scope.userId) : null;
+  const reviewProfile = managerUser ? getReviewProfile(managerUser) : {};
 
   if (status && ['OPEN', 'DONE', 'CANCELLED'].includes(status)) {
     where.push('r.status = ?');
     params.push(status);
   }
   if (status === 'OPEN') where.push("p.status <> 'PAUSED'");
+  if (managerUser && managerUser.role !== 'SUPER_ADMIN'
+    && require('./proposalReviewService').isPhoTgdTitle(managerUser.department, managerUser.chucVu)) {
+    where.push("r.request_type <> 'TGD_REVIEW'");
+  }
+  if (managerUser && managerUser.role !== 'SUPER_ADMIN' && reviewProfile.roleKey === 'TGD') {
+    where.push("r.request_type <> 'RE_GRADE'");
+  }
   if (type && REQUEST_TYPES.includes(type)) {
     where.push('r.request_type = ?');
     params.push(type);
@@ -316,7 +315,6 @@ exports.listRequests = async ({
     proposalStatus, model, province, region, ownerUserId, managerUserId, dateFrom, dateTo
   }, 'r.created_at');
 
-  const reviewProfile = managerUser ? getReviewProfile(managerUser) : {};
   const effectiveScope = {
     ...scope,
     region: reviewProfile.roleKey === 'GDTTKD' ? reviewProfile.region : null
@@ -375,14 +373,14 @@ exports.listRequests = async ({
     [...params, safeLimit, offset]
   );
 
-  const branchIds = ['SALES', 'NPP'].includes(managerUser?.role)
+  const branchIds = ['SALES', 'NPP'].includes(managerUser?.role) && !scope.isTgdOwnerManager
     ? new Set((await require('./adminUserService').getBranchIds(managerUser.id)).map(Number))
     : new Set();
   const canManageOwner = (row) => {
     if (!managerUser || !row.owner_id) return false;
-    if (managerUser.role === 'ADMIN') return false;
-    if (Number(row.owner_id) === Number(managerUser.id)) return true;
     if (Number(row.target_user_id) !== Number(row.owner_id)) return false;
+    if (['SUPER_ADMIN', 'ADMIN'].includes(managerUser.role) || scope.isTgdOwnerManager) return true;
+    if (Number(row.owner_id) === Number(managerUser.id)) return true;
     if (branchIds.has(Number(row.owner_id))) return true;
     if (reviewProfile.roleKey === 'GDTTKD' && reviewProfile.region) {
       const proposalRegion = require('./proposalReviewService').resolveRegion(row.vung_mien);
@@ -415,7 +413,7 @@ exports.listRequests = async ({
 exports.getFilterOptions = async (scope = {}) => {
   const params = [];
   const visibility = [];
-  if (['SALES', 'NPP'].includes(scope.role)) {
+  if (['SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
     const branchIds = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
     if (branchIds.length === 0) visibility.push('1 = 0');
     else {
@@ -496,7 +494,7 @@ const requestAssignedToUser = (request, user) => {
     if (user.role === 'SUPER_ADMIN') return true;
     const gradingRole = require('./proposalGradingService').resolveGradingRole(user.department);
     if (gradingRole && (request.target_department === gradingRole || request.target_title === 'Hai phòng chấm điểm')) {
-      return user.role === 'ADMIN';
+      return ['ADMIN', 'SALES'].includes(user.role);
     }
     const reviewProfile = getReviewProfile(user);
     if (reviewProfile.roleKey === require('./proposalReviewService').REVIEW_ROLE.GDTTKD
@@ -524,13 +522,13 @@ const requestAssignedToUser = (request, user) => {
 const canManageProposalOwner = async (user, request) => {
   if (!user || !request || !request.owner_id) return false;
   const ownerId = Number(request.owner_id);
-  if (Number(user.id) === ownerId) return true;
   if (user.role === 'SUPER_ADMIN') return true;
+  if (Number(request.target_user_id) !== ownerId) return false;
+  if (Number(user.id) === ownerId) return true;
   const profile = await loadUserById(user.id);
   if (!profile) return false;
-  if (profile.role === 'ADMIN') return requestAssignedToUser(request, profile);
-  const targetUserId = Number(request.target_user_id);
-  if (targetUserId !== ownerId) return false;
+  if (profile.role === 'ADMIN') return true;
+  if (getReviewProfile(profile).roleKey === 'TGD') return true;
 
   const ancestors = await require('./adminUserService').getAncestorIds(ownerId);
   if (ancestors.includes(Number(user.id))) return true;
@@ -559,14 +557,29 @@ const canUpdateProposalForRequest = async (user, request) => {
   if (!user || !request) return false;
   if (!['SUPPLEMENT', 'UPDATE_INFO', 'LAYOUT_SUPPLEMENT', 'REVISE_BCDX'].includes(request.request_type)) return false;
   if (user.role === 'SUPER_ADMIN') return true;
-  if (user.role === 'ADMIN') return requestAssignedToUser(request, await loadUserById(user.id));
-  if (Number(request.target_user_id) !== Number(request.owner_id)) return false;
-  return canManageProposalOwner(user, request);
+  const profile = await loadUserById(user.id);
+  return requestAssignedToUser(request, profile);
 };
 
 exports.canManageProposalOwner = canManageProposalOwner;
 exports.canActOnRequest = canActOnRequest;
 exports.canUpdateProposalForRequest = canUpdateProposalForRequest;
+
+const OWNER_UPDATE_REQUEST_TYPES = ['SUPPLEMENT', 'UPDATE_INFO', 'LAYOUT_SUPPLEMENT', 'REVISE_BCDX'];
+
+// Đề xuất chỉ được sửa khi đang ở trạng thái chờ bổ sung hoặc có yêu cầu cập nhật đang mở gửi tới người đề xuất.
+exports.hasOpenOwnerUpdateRequest = async (proposalId) => {
+  const [rows] = await pool.query(
+    `SELECT 1 FROM proposal_requests r
+       JOIN station_proposals p ON p.id = r.proposal_id
+      WHERE r.proposal_id = ? AND r.status = 'OPEN'
+        AND r.request_type IN (${OWNER_UPDATE_REQUEST_TYPES.map(() => '?').join(',')})
+        AND r.target_user_id = p.user_id
+      LIMIT 1`,
+    [Number(proposalId), ...OWNER_UPDATE_REQUEST_TYPES]
+  );
+  return rows.length > 0;
+};
 
 exports.getRequestContext = async (id, user) => {
   const request = await exports.getRequestById(id);

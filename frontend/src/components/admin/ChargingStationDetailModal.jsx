@@ -6,6 +6,9 @@ import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
+  CS_FLOW_VARIANT,
+  CS_DEPOSIT_LABELS,
+  CS_DEPOSIT_VARIANT,
   CS_NEXT_STATUS,
   CS_PAYMENT_LABELS,
   CS_ROLLBACK_STATUS,
@@ -204,7 +207,7 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
     }
   });
 
-  const nextStatus = record ? CS_NEXT_STATUS[record.status] : null;
+  const nextStatus = record && record.status === 'ONBOARDING' ? CS_NEXT_STATUS[record.status] : null;
   const rollbackStatus = record ? CS_ROLLBACK_STATUS[record.status] : null;
   const subOptions = useMemo(
     () => toOptions(Object.fromEntries((record ? CS_SUB_STATUS_BY_STATUS[record.status] || [] : []).map((key) => [key, CS_SUB_STATUS_LABELS[key]]))),
@@ -311,8 +314,11 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
                     </div>
                   </div>
                   <div>
-                    <span className="label-text font-medium">Thanh toán</span>
-                    <div className="mt-1">
+                    <span className="label-text font-medium">Tiền cọc / Thanh toán</span>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge variant={CS_DEPOSIT_VARIANT[record.deposit_status] || 'ghost'} outline>
+                        {CS_DEPOSIT_LABELS[record.deposit_status] || '—'}
+                      </Badge>
                       <Badge variant={CS_FLOW_VARIANT[record.payment_status] || 'ghost'} outline>
                         {CS_PAYMENT_LABELS[record.payment_status] || '—'}
                       </Badge>

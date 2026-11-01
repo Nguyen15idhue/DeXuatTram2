@@ -16,6 +16,7 @@ const scopeFor = async (user) => {
       branchIds,
       userId: user.id,
       region: reviewProfile.roleKey === 'GDTTKD' ? reviewProfile.region : null,
+      isTgdOwnerManager: reviewProfile.roleKey === 'TGD',
       department: profile?.department,
       chucVu: profile?.chucVu
     };
@@ -30,7 +31,7 @@ exports.list = async (req, res) => {
   try {
     const {
       status = 'OPEN', type = '', search = '', page = 1, limit = 10, my = '',
-      work_scope = '', proposal_status = '', model = '', province = '', region = '',
+      work_scope = 'all', proposal_status = '', model = '', province = '', region = '',
       owner_user_id = '', manager_user_id = '', date_from = '', date_to = ''
     } = req.query;
     const scope = await scopeFor(req.user);
@@ -64,7 +65,9 @@ exports.filterOptions = async (req, res) => {
   try {
     const scope = await scopeFor(req.user);
     const data = await proposalRequestService.getFilterOptions(scope);
-    const hasSubordinates = ['SALES', 'NPP'].includes(req.user.role) && (scope.branchIds || []).length > 1;
+    const hasSubordinates = ['SALES', 'NPP'].includes(req.user.role)
+      && !scope.isTgdOwnerManager
+      && (scope.branchIds || []).length > 1;
     res.json({
       success: true,
       data: {

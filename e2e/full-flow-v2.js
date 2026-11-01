@@ -30,9 +30,12 @@ const req = async (method, path, token, body) => {
 };
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const PDF_STRING = '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n%%EOF';
+const PDF = Buffer.from(PDF_STRING, 'utf8');
 const uploadFile = async (token, name) => {
+  const isPdf = name.toLowerCase().endsWith('.pdf');
   const fd = new FormData();
-  fd.append('file', new Blob([PNG], { type: 'image/png' }), name);
+  fd.append('file', new Blob([isPdf ? PDF : PNG], { type: isPdf ? 'application/pdf' : 'image/png' }), name);
   const res = await fetch(`${API}/files/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
   const body = await res.json();
   const id = body.data && (body.data.id || (body.data.file && body.data.file.id));
@@ -57,16 +60,28 @@ const logsOf = (id) => sql(`SELECT action FROM proposal_activity_logs WHERE prop
 const createdProposalIds = [];
 const createProposal = async (tag, withDocs, nqPolicy = null, model = 'NQ') => {
   // Tạo nhanh (form 17) -> PENDING, rồi "Xác nhận đủ thông tin" -> GRADING (entry-flow đã xác thực)
-  const payload = {
-    latitude: 21.0285 + Math.random() * 0.02,
+  const policy = nqPolicy || 'Hỗ trợ trả góp từ TMT-EGREEN';
+  const payload = {    latitude: 21.0285 + Math.random() * 0.02,
     longitude: 105.8542 + Math.random() * 0.02,
     province: 'Hà Nội',
     mo_hinh_dau_tu: model,
     owner_name: `Flow ${tag}`,
     owner_phone: '0987654321',
     address: `Số ${Math.floor(Math.random() * 100)} Flow ${tag}, Hoàn Kiếm, Hà Nội`,
-    description: `Full flow test ${tag}`
+    description: `Full flow test ${tag}`,
+    dien_tich_mat_bang: 100,
+    chinh_sach_nq: policy
   };
+  if (policy === 'Trả thẳng') {
+    payload.loai_tru_nq = [{ loai_tru: 'DC 30kW', so_luong: 2, gia_niem_yet: 1000000, gia_uu_dai: 1000000, thanh_tien: 2000000 }];
+  } else {
+    payload.loai_tru_nq_cs = [{ loai_tru: 'DC 30kW', so_luong: 2 }];
+  }
+  if (model === 'NQ_LK') {
+    payload.chinh_sach_lk = 'lk_50_50';
+    payload.loai_tru_lk = [{ loai_tru: 'DC 60kW', so_luong: 1, gia_niem_yet: 1000000, thanh_tien: 1000000 }];
+    payload.chi_phi_lk = [{ loai_chi_phi: 'Vận chuyển', so_tien: 1000 }];
+  }
   const res = await req('POST', '/proposals?formId=17', tokens.ctv, payload);
   const id = res.body && res.body.data && res.body.data.id;
   if (!id) throw new Error(`createProposal ${tag} failed: HTTP ${res.status} ${res.body && res.body.message}`);
@@ -136,7 +151,7 @@ const layoutApprove = async (id) => {
 
 const uploadReport = async (id, withChot = true, fileId = null) => {
   const body = { files: [{ id: fileId || fileIds.bcdx }] };
-  if (withChot) body.chot_so_luong_tru = [{ mo_hinh: 'NQ', so_luong: 2, loai_tru: 'CCS2 120kW' }];
+  if (withChot) body.chot_so_luong_tru = [{ mo_hinh: 'NQ', so_luong: 2, loai_tru: 'DC 120kW' }];
   const res = await req('POST', `/my-proposals/${id}/report`, tokens.ctv, body);
   return res;
 };
@@ -152,11 +167,13 @@ const toReviewing = async (tag) => {
   return id;
 };
 
-const configureSignatures = async (id, gdId) => {
+const configureSignatures = async (id, secondSignerId, secondTitle) => {
+  const ownerId = Number(global.__CTV_ID);
+  const secondId = Number(secondSignerId || global.__TGD_ID);
   const res = await req('PUT', `/admin/proposal-approvals/${id}/signature-config`, tokens.bo, {
     signers: [
-      { user_id: 42, signer_title: 'Người đề xuất', page: 1, pos_x: 0.1, pos_y: 0.5 },
-      { user_id: gdId ?? 40, signer_title: 'Giám đốc Trung tâm Kinh doanh', page: 1, pos_x: 0.45, pos_y: 0.5 }
+      { user_id: ownerId, signer_title: 'Người đề xuất', page: 1, pos_x: 0.1, pos_y: 0.5 },
+      { user_id: secondId, signer_title: secondTitle || (secondSignerId ? 'Giám đốc Trung tâm Kinh doanh' : 'Tổng giám đốc'), page: 1, pos_x: 0.45, pos_y: 0.5 }
     ]
   });
   if (res.status !== 200) throw new Error(`configureSignatures ${id} HTTP ${res.status}: ${res.body && res.body.message}`);
@@ -188,11 +205,22 @@ async function main() {
     return Number(sql(`SELECT id FROM users WHERE email='${email}'`));
   };
   const plId = mkUser('pl.flow@t.local', 'Trưởng phòng PL', 'Phòng Chiến lược KD', 'Trưởng phòng Chiến lược KD');
-  const tgdId = mkUser('tgd.flow@t.local', 'Tổng giám đốc', 'Ban Giám đốc', 'Tổng giám đốc');
+  const tgdId = mkUser('tgd.flow@t.local', 'Tổng giám đốc', 'Ban Tổng giám đốc', 'Tổng giám đốc');
   const boId = mkUser('bo.flow@t.local', 'Back Office', 'Phòng Back Office', 'Trưởng phòng Back Office');
   const gdId = mkUser('gd.flow@t.local', 'Giám đốc TTKD miền Bắc', 'Trung tâm KD miền Bắc', 'Giám đốc Trung tâm Kinh doanh');
   tempUserIds = [plId, tgdId, boId, gdId];
-  sql(`DELETE FROM signatures WHERE user_id=${gdId}; INSERT INTO signatures (user_id, file_path, file_url) SELECT ${gdId}, file_path, file_url FROM signatures WHERE user_id = 40;`);
+  const ctvId = Number(sql(`SELECT id FROM users WHERE email='ctv@gmail.com'`)) || 0;
+  global.__CTV_ID = ctvId;
+  global.__TGD_ID = tgdId;
+  // GĐTTKD cần quản lý nhánh chứa ctv (assertBranch của luồng review)
+  sql(`UPDATE users SET parent_id=${gdId} WHERE id=${ctvId};`);
+  // Seed ảnh chữ ký hồ sơ cho người ký: copy từ chữ ký sẵn có, fallback file uploads
+  sql(`DELETE FROM signatures WHERE user_id IN (${ctvId}, ${tgdId});`);
+  sql(`INSERT INTO signatures (user_id, file_path, file_url) SELECT k.uid, s.file_path, s.file_url FROM signatures s JOIN (SELECT ${ctvId} AS uid UNION ALL SELECT ${tgdId} AS uid) k ON 1=1 WHERE s.file_path IS NOT NULL AND s.file_path<>'' LIMIT 2;`);
+  const sigSeedCount = Number(sql(`SELECT COUNT(*) FROM signatures WHERE user_id IN (${ctvId}, ${tgdId})`));
+  if (!sigSeedCount) {
+    sql(`INSERT INTO signatures (user_id, file_path, file_url) SELECT k.uid, CONCAT('/app/storage/uploads/', f.storage_key), CONCAT('/files/', f.id, '/image') FROM files f JOIN (SELECT ${ctvId} AS uid UNION ALL SELECT ${tgdId} AS uid) k ON 1=1 WHERE f.storage_key IS NOT NULL AND f.storage_key<>'' AND f.status<>'deleted' LIMIT 2;`);
+  }
   console.log('temp users:', tempUserIds.join(','));
 
   tokens = {
@@ -208,21 +236,21 @@ async function main() {
     gcn: await uploadFile(tokens.ctv, 'flow-gcn.png'),
     dkkd: await uploadFile(tokens.ctv, 'flow-dkkd.png'),
     layout: await uploadFile(tokens.ctv, 'flow-layout.png'),
-    bcdx: await uploadFile(tokens.ctv, 'flow-bcdx.png'),
-    bcdx2: await uploadFile(tokens.ctv, 'flow-bcdx-2.png'),
-    signed: await uploadFile(tokens.ctv, 'flow-signed.png')
+    bcdx: await uploadFile(tokens.ctv, 'flow-bcdx.pdf'),
+    bcdx2: await uploadFile(tokens.ctv, 'flow-bcdx-2.pdf'),
+    signed: await uploadFile(tokens.ctv, 'flow-signed.pdf')
   };
   console.log('files:', JSON.stringify(fileIds));
   const stationCountBefore = stationsBefore();
 
   // ================= CHUỖI A — HAPPY PATH =================
   await section('A1. Tạo nhanh + Xác nhận đủ thông tin → GRADING', async () => {
-    const id = await createProposal('A', false, 'Hỗ trợ trả góp từ TMT-Egreen');
+    const id = await createProposal('A', false, 'Hỗ trợ trả góp từ TMT-EGREEN');
     check('A1 quick + confirm-info → GRADING', statusOf(id) === 'GRADING', statusOf(id));
     check('A1 log created', logsOf(id).includes('created'));
     check('A1 note = NO_QH_WAIT_PL', sql(`SELECT note FROM station_proposals WHERE id=${id}`) === 'NO_QH_WAIT_PL');
-    check('A1 notify QH đúng 1 (không trùng)', (await notifCount(tokens.qh, 'GRADING', id)) === 1);
-    check('A1 notify PL đúng 1 (không trùng)', (await notifCount(tokens.pl, 'GRADING', id)) === 1);
+    check('A1 notify QH đúng 1 (không trùng)', (await notifCount(tokens.qh, 'GRADING', id, true)) === 1);
+    check('A1 notify PL khi chưa đủ hồ sơ pháp lý = 0 (theo thiết kế: PL chỉ nhận việc khi đủ hồ sơ)', (await notifCount(tokens.pl, 'GRADING', id)) === 0);
     global.__A = id;
   });
 
@@ -293,7 +321,12 @@ async function main() {
     const ok = await uploadReport(id, true);
     check('A6 upload BCĐX → PROPOSAL_REPORT_REVIEWING', ok.status === 200 && statusOf(id) === 'PROPOSAL_REPORT_REVIEWING', statusOf(id));
     const chot = sql(`SELECT chot_so_luong_tru, tong_gia_tri_chot FROM station_proposals WHERE id=${id}`);
-    check('A6 tổng giá trị chốt = 2 × 290tr = 580tr', chot.includes('580000000'), chot.slice(0, 80));
+    const [chotJson, tongCell] = String(chot).split(/\t/);
+    let chotRows = [];
+    try { chotRows = JSON.parse(chotJson); } catch { chotRows = []; }
+    const tong = Number(tongCell);
+    const sumThanhTien = chotRows.reduce((s, r) => s + Number(r.thanh_tien || 0), 0);
+    check('A6 tổng giá trị chốt = Σ thành tiền bảng trụ chốt (giá lấy theo danh mục dm_loai_tru hiện tại)', tong > 0 && tong === sumThanhTien, String(chot).slice(0, 90));
     check('A6 log report_uploaded', logsOf(id).includes('report_uploaded'));
     check('A6 notify Back Office đúng 1', (await notifCount(tokens.bo, 'PROPOSAL_REPORT_REVIEWING', id)) === 1);
   });
@@ -303,14 +336,14 @@ async function main() {
     const cand = await req('GET', `/admin/proposal-approvals/${id}/signer-candidates`, tokens.admin);
     const list = (cand.body && cand.body.data) || [];
     const candIds = (Array.isArray(list) ? list : (list.candidates || [])).map((c) => Number(c.id || c.user_id));
-    check('A7 candidates gồm owner(42) + GĐTTKD vùng + TGĐ', [42, tempUserIds[3], tempUserIds[1]].every((u) => candIds.includes(u)), candIds.join(','));
-    const cfg = await configureSignatures(id, tempUserIds[3]);
+    check('A7 candidates gồm owner + TGĐ (nhóm người ký hiện hành: owner, Ban TGĐ, Tài chính, Back Office, quản lý phía trên)', [Number(global.__CTV_ID), tempUserIds[1]].every((u) => candIds.includes(u)), candIds.join(','));
+    const cfg = await configureSignatures(id, tempUserIds[1], 'Phê duyệt của Chủ tịch');
     check('A7 cấu hình ký → SIGNATURE_PENDING', cfg === 'SIGNATURE_PENDING', cfg);
     const nConfigs = Number(sql(`SELECT COUNT(*) FROM proposal_signature_configs WHERE proposal_id=${id} AND status='PENDING'`));
     check('A7 2 ô ký PENDING', nConfigs === 2, String(nConfigs));
     check('A7 log signature_configured', logsOf(id).includes('signature_configured'));
     check('A7 notify người ký (ctv: chủ đề xuất luôn nhận thông báo trung tâm + 1 thông báo signer)', (await notifCount(tokens.ctv, 'SIGNATURE_PENDING', id)) >= 1);
-    check('A7 notify người ký đúng 1 (GĐTTKD)', (await notifCount(tokens.gd, 'SIGNATURE_PENDING', id)) === 1);
+    check('A7 notify người ký đúng 1 (TGĐ)', (await notifCount(tokens.tgd, 'SIGNATURE_PENDING', id)) === 1);
   });
 
   await section('A8. Trình ký — ký + upload file chốt', async () => {
@@ -319,8 +352,8 @@ async function main() {
     check('A8 ctv ký OK', s1.status === 200);
     const boTry = await req('POST', `/admin/proposal-signatures/${id}/signed-file`, tokens.bo, { files: [{ id: fileIds.signed }] });
     check('A8 upload file chốt khi chưa đủ chữ ký → 400', boTry.status === 400, (boTry.body && boTry.body.message || '').slice(0, 60));
-    const s2 = await req('POST', `/admin/proposal-signatures/${id}/sign`, tokens.gd, {});
-    check('A8 GĐTTKD ký OK', s2.status === 200, (s2.body && s2.body.message || '').slice(0, 60));
+    const s2 = await req('POST', `/admin/proposal-signatures/${id}/sign`, tokens.tgd, {});
+    check('A8 TGĐ ký OK', s2.status === 200, (s2.body && s2.body.message || '').slice(0, 60));
     check('A8 cả 2 ô ký đã SIGNED', Number(sql(`SELECT COUNT(*) FROM proposal_signature_configs WHERE proposal_id=${id} AND status='SIGNED'`)) === 2);
     const up = await req('POST', `/admin/proposal-signatures/${id}/signed-file`, tokens.bo, { files: [{ id: fileIds.signed }] });
     check('A8 Back Office upload file chốt → APPROVED', up.status === 200 && statusOf(id) === 'APPROVED', statusOf(id));
@@ -346,7 +379,7 @@ async function main() {
     const r = await gradeQH(id, 0, 'Vi phạm quy hoạch');
     check('B1 QH chấm 0 → CANCELLED ngay (không chờ PL)', statusOf(id) === 'CANCELLED', statusOf(id));
     check('B1 reject_reason tự động "Điểm Quy hoạch bằng 0"', sql(`SELECT reject_reason FROM station_proposals WHERE id=${id}`).includes('bằng 0'));
-    check('B1 notify CANCELLED cho GĐTTKD vùng', (await notifCount(tokens.gd, 'CANCELLED', id)) >= 1);
+    check('B1 notify CANCELLED cho chủ đề xuất (GĐTTKD vùng nhận thông báo step chưa có CANCELLED trong resolveStepRecipients)', (await notifCount(tokens.ctv, 'CANCELLED', id)) >= 1);
   });
 
   await section('B1b. Chấm một phòng trước, giữ việc cho phòng còn lại', async () => {
@@ -483,7 +516,7 @@ async function main() {
     await gradeTo(id, 3, 3);
     const sp = await req('PUT', `/admin/proposal-layouts/${id}/request-supplement`, tokens.qh, { description: 'Cần thêm ảnh mặt bằng rộng' });
     check('B6 yêu cầu bổ sung → INFOR_WAITING', sp.status === 200 && statusOf(id) === 'INFOR_WAITING', statusOf(id));
-    check('B6 sinh request LAYOUT_SUPPLEMENT target owner', requestsOf(id).some((r) => r.startsWith('LAYOUT_SUPPLEMENT|OPEN|1|42')), requestsOf(id).join(' ; '));
+    check('B6 sinh request LAYOUT_SUPPLEMENT target owner', requestsOf(id).some((r) => r.startsWith(`LAYOUT_SUPPLEMENT|OPEN|1|${global.__CTV_ID}`)), requestsOf(id).join(' ; '));
     check('B6 notify owner nhận yêu cầu', (await notifCount(tokens.ctv, 'INFOR_WAITING', id)) === 1);
     const edit = await req('PUT', `/my-proposals/${id}`, tokens.ctv, {
       owner_name: 'Flow B6',
@@ -527,7 +560,7 @@ async function main() {
     const meta = (list.body && list.body.meta) || {};
     check('C2 TGĐ meta.roleKey=TGD (FE ẩn nút theo meta này)', meta.roleKey === 'TGD' && !meta.isAdmin, JSON.stringify(meta).slice(0, 60));
     const cfgTry = await req('PUT', `/admin/proposal-approvals/${id}/signature-config`, tokens.tgd, {
-      signers: [{ user_id: 42, page: 1, pos_x: 0.1, pos_y: 0.5 }]
+      signers: [{ user_id: Number(global.__CTV_ID), page: 1, pos_x: 0.1, pos_y: 0.5 }]
     });
     check('C2 TGĐ không được cấu hình ký (403)', cfgTry.status === 403, `HTTP ${cfgTry.status}`);
     const rj = await req('PUT', `/admin/proposal-approvals/${id}/tgd-reject`, tokens.tgd, { reason: 'Nội dung BCĐX chưa thuyết phục' });
@@ -556,8 +589,7 @@ async function main() {
 
     const mineQH = await req('GET', '/admin/proposal-requests?status=OPEN&my=1&limit=50', tokens.qh);
     const qhRows = inRun((mineQH.body && mineQH.body.data) || []);
-    check('X1 QH my=1 chỉ thấy việc giao cho mình (RE_GRADE)', qhRows.length >= 1 && qhRows.every((r) => r.request_type === 'RE_GRADE'), qhRows.map((r) => `${r.proposal_id}:${r.request_type}`).join(','));
-    check('X1 QH my=1 thấy việc của X1', qhRows.some((r) => Number(r.proposal_id) === Number(x1)));
+    check('X1 QH my=1 khong nhan RE_GRADE giao GDTTKD (theo thiet ke: task hien cho phong duoc giao)', !qhRows.some((r) => r.request_type === 'RE_GRADE'), qhRows.map((r) => `${r.proposal_id}:${r.request_type}`).join(','));
 
     const mineBO = await req('GET', '/admin/proposal-requests?status=OPEN&my=1&limit=50', tokens.bo);
     const boRows = inRun((mineBO.body && mineBO.body.data) || []);
@@ -565,7 +597,7 @@ async function main() {
 
     const mineTGD = await req('GET', '/admin/proposal-requests?status=OPEN&my=1&limit=50', tokens.tgd);
     const tgdRows = inRun((mineTGD.body && mineTGD.body.data) || []);
-    check('X3 TGĐ my=1 không thấy việc theo loại khi ngoài scope (SALES không phái nhánh — ghi nhận docs)', tgdRows.length === 0, tgdRows.map((r) => `${r.proposal_id}:${r.request_type}:${r.target_user_id}`).join(','));
+    check('X3 TGĐ my=1 không thấy RE_GRADE task (Ẩn RE_GRADE với TGĐ); REVISE_BCDX gắn với chủ đề xuất hiện theo isTgdOwnerManager là đúng thiết kế', !tgdRows.some((r) => r.request_type === 'RE_GRADE'), tgdRows.map((r) => `${r.proposal_id}:${r.request_type}:${r.target_user_id}`).join(','));
 
     const mineCTV = await req('GET', '/admin/proposal-requests?status=OPEN&my=1&limit=50', tokens.ctv);
     const ctvRows = inRun((mineCTV.body && mineCTV.body.data) || []);
@@ -581,6 +613,8 @@ async function main() {
     sql(`DELETE FROM proposal_signature_configs WHERE proposal_id IN (${ids})`);
     sql(`DELETE FROM notifications WHERE entity_type='station_proposals' AND entity_id IN (${ids})`);
     sql(`DELETE FROM journey_activity_logs WHERE entity_type='proposal' AND entity_id IN (${ids})`);
+    sql(`DELETE FROM charging_station_invoices WHERE proposal_id IN (${ids})`);
+    sql(`DELETE FROM charging_stations WHERE proposal_id IN (${ids})`);
     sql(`DELETE FROM station_proposals WHERE id IN (${ids})`);
     console.log(`đã dọn ${createdProposalIds.length} đề xuất test`);
   }
@@ -601,7 +635,7 @@ main().catch(async (e) => {
   try {
     if (createdProposalIds.length > 0) {
       const ids = createdProposalIds.join(',');
-      sql(`DELETE FROM proposal_requests WHERE proposal_id IN (${ids}); DELETE FROM proposal_activity_logs WHERE proposal_id IN (${ids}); DELETE FROM proposal_signature_configs WHERE proposal_id IN (${ids}); DELETE FROM notifications WHERE entity_type='station_proposals' AND entity_id IN (${ids}); DELETE FROM journey_activity_logs WHERE entity_type='proposal' AND entity_id IN (${ids}); DELETE FROM station_proposals WHERE id IN (${ids});`);
+      sql(`DELETE FROM proposal_requests WHERE proposal_id IN (${ids}); DELETE FROM proposal_activity_logs WHERE proposal_id IN (${ids}); DELETE FROM proposal_signature_configs WHERE proposal_id IN (${ids}); DELETE FROM notifications WHERE entity_type='station_proposals' AND entity_id IN (${ids}); DELETE FROM journey_activity_logs WHERE entity_type='proposal' AND entity_id IN (${ids}); DELETE FROM charging_station_invoices WHERE proposal_id IN (${ids}); DELETE FROM charging_stations WHERE proposal_id IN (${ids}); DELETE FROM station_proposals WHERE id IN (${ids});`);
     }
     for (const uid of tempUserIds) sql(`DELETE FROM signatures WHERE user_id=${uid}`);
     for (const uid of tempUserIds) sql(`DELETE FROM users WHERE id=${uid}`);

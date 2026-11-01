@@ -37,7 +37,7 @@ SET @proposal_status_enum_sql := IF(
     ''INFOR_WAITING'',
     ''PROPOSAL_REPORT_CREATING'',''PROPOSAL_REPORT_RE_CREATING'',
     ''PROPOSAL_REPORT_REVIEWING'',''PROPOSAL_REPORT_UPDATING'',
-    ''SIGNATURE_PENDING'',''PAUSED''
+    ''SIGNATURE_PENDING'',''PAUSED'',''DEPLOYING'',''ACTIVE''
   ) NULL DEFAULT ''PENDING''',
   'SELECT ''COMPLETED is already absent from station_proposals.status'' AS info'
 );

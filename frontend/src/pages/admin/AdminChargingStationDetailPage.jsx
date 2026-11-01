@@ -11,6 +11,8 @@ import {
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
+  CS_DEPOSIT_LABELS,
+  CS_DEPOSIT_VARIANT,
   CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
@@ -180,7 +182,12 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
               {CS_FLOW_LABELS[record.infra_site_status] || '—'}
             </Badge>
           </InfoItem>
-          <InfoItem label="Tài chính">
+          <InfoItem label="Tiền cọc">
+            <Badge variant={CS_DEPOSIT_VARIANT[record.deposit_status] || 'ghost'} outline>
+              {CS_DEPOSIT_LABELS[record.deposit_status] || '—'}
+            </Badge>
+          </InfoItem>
+          <InfoItem label="Thanh toán">
             <Badge variant={CS_FLOW_VARIANT[record.payment_status] || 'ghost'} outline>
               {CS_PAYMENT_LABELS[record.payment_status] || '—'}
             </Badge>

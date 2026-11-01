@@ -115,10 +115,7 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
  *               on_date:
  *                 type: string
  *                 format: date
- *               payment_status:
- *                 type: string
- *                 enum: [NOT, DOING, DONE]
- *               sub_status:
+ *                sub_status:
  *                 type: string
  *               description:
  *                 type: string
@@ -184,7 +181,7 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *                 type: integer
  *     responses:
  *       200:
- *         description: File hợp đồng đã lưu, contract_status chuyển DONE và payment_status chuyển DOING; trạm tự chuyển sang Giao trụ nếu đủ điều kiện
+ *         description: File hợp đồng đã lưu, contract_status chuyển DONE; trạm tự chuyển sang Giao trụ nếu đủ điều kiện theo mô hình đầu tư (TĐT không cần cọc/thanh toán)
  *       400:
  *         description: Trạng thái hoặc file không hợp lệ
  *       403:
@@ -282,6 +279,35 @@ router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, 
  *       403: { description: Không thuộc phạm vi đề xuất }
  */
 router.post('/:id/delivery/early-request', requireChargingStationViewer, chargingStationController.requestEarlyDelivery);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/deadline/extend:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Gia hạn hạn 15 ngày của ON trạm (+3 ngày, tối đa 3 lần)
+ *     description: Người đề xuất, cấp trên trong nhánh và Admin/Super Admin; bắt buộc lý do. Chỉ áp dụng khi chưa có hạng mục hợp đồng/hạ tầng/tài chính nào hoàn thành và chưa giao trụ. Quá hạn mà chưa hoàn thành thì ON trạm và đề xuất tự động bị hủy.
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: Đã gia hạn }
+ *       400: { description: Hết lượt, quá hạn hoặc không còn đếm hạn }
+ *       403: { description: Không thuộc phạm vi đề xuất }
+ */
+router.post('/:id/deadline/extend', requireChargingStationViewer, chargingStationController.extendDeadline);
 
 /**
  * @swagger
@@ -450,7 +476,7 @@ router.post('/:id/configuration/complete', requireChargingStationViewer, chargin
  *             properties:
  *               to_status:
  *                 type: string
- *                 enum: [ONBOARDING, DELIVERING, INSTALLING, ACCEPTANCE, OPERATING]
+ *                 enum: [ONBOARDING, DELIVERING, INSTALLING, ACCEPTANCE, CONFIGURING, OPERATING]
  *               sub_status:
  *                 type: string
  *               reason:

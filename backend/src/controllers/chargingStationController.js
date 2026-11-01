@@ -109,6 +109,20 @@ exports.requestEarlyDelivery = async (req, res) => {
   }
 };
 
+exports.extendDeadline = async (req, res) => {
+  try {
+    const data = await chargingStationService.extendOnboardingDeadline(
+      req.params.id,
+      req.body || {},
+      req.user,
+      actorOf(req)
+    );
+    res.json({ success: true, data, message: 'Đã gia hạn thêm 3 ngày cho ON trạm' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.createDeliveryExport = async (req, res) => {
   try {
     const data = await chargingStationService.createDeliveryExport(

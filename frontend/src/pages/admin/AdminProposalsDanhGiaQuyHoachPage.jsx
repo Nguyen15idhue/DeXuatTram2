@@ -27,10 +27,9 @@ const AdminProposalsDanhGiaQuyHoachPage = () => {
   };
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-  const isDepartmentAdmin = user?.role === "ADMIN";
   const gradingRole = resolveGradingRole(user?.department);
-  const canGradeQH = isSuperAdmin || (isDepartmentAdmin && gradingRole === "QH");
-  const canGradePL = isSuperAdmin || (isDepartmentAdmin && gradingRole === "PL");
+  const canGradeQH = isSuperAdmin || gradingRole === "QH";
+  const canGradePL = isSuperAdmin || gradingRole === "PL";
   return (
     <div>
       <PageHeader title="Chấm điểm Quy hoạch và Pháp lý" />

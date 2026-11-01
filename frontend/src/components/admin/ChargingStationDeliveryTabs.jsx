@@ -9,6 +9,8 @@ import {
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
+  CS_DEPOSIT_LABELS,
+  CS_DEPOSIT_VARIANT,
   CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
@@ -44,11 +46,7 @@ const formatMoney = (value) => {
   return Number.isFinite(number) ? `${number.toLocaleString('vi-VN')} đ` : '—';
 };
 
-const getMissingItems = (station) => [
-  station.contract_status !== 'DONE' ? 'Hợp đồng' : null,
-  !['DOING', 'DONE'].includes(station.payment_status) ? 'Tài chính / tiền cọc' : null,
-  station.infra_site_status !== 'DONE' ? 'Hạ tầng mặt bằng' : null
-].filter(Boolean);
+const getMissingItems = (station) => station.delivery_missing_items || [];
 
 const ChargingStationDeliveryTabs = () => {
   const { token, user } = useAuth();
@@ -66,6 +64,8 @@ const ChargingStationDeliveryTabs = () => {
   const [busy, setBusy] = useState(false);
   const [earlyStation, setEarlyStation] = useState(null);
   const [earlyForm, setEarlyForm] = useState({ desired_delivery_date: '', reason: '' });
+  const [extendStation, setExtendStation] = useState(null);
+  const [extendReason, setExtendReason] = useState('');
   const [exportStation, setExportStation] = useState(null);
   const [exportForm, setExportForm] = useState(EMPTY_EXPORT);
   const [deliveryStation, setDeliveryStation] = useState(null);
@@ -182,6 +182,11 @@ const ChargingStationDeliveryTabs = () => {
             {CS_STATUS_LABELS[value] || value}
           </Badge>
           {row.sub_status && <span className="text-[11px] text-base-content/60">{CS_SUB_STATUS_LABELS[row.sub_status] || row.sub_status}</span>}
+          {row.status === 'ONBOARDING' && (
+            <span className="text-[11px] text-base-content/60">
+              Chưa giao trụ{row.delivery_missing_items?.length ? ` — chưa hoàn thành: ${row.delivery_missing_items.join(', ')}` : ''}
+            </span>
+          )}
         </div>
       )
     },
@@ -193,12 +198,22 @@ const ChargingStationDeliveryTabs = () => {
     {
       key: 'payment_status',
       label: 'Tài chính',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_DEPOSIT_VARIANT[row.deposit_status] || 'ghost'} size="sm" outline>{CS_DEPOSIT_LABELS[row.deposit_status] || '—'}</Badge>
+          <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
+        </div>
+      )
     },
     {
-      key: 'infra_site_status',
-      label: 'Hạ tầng mặt bằng',
-      render: (value) => <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_FLOW_LABELS[value] || '—'}</Badge>
+      key: 'infra_power_status',
+      label: 'Hạ tầng',
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>Điện: {CS_FLOW_LABELS[value] || '—'}</Badge>
+          <Badge variant={CS_FLOW_VARIANT[row.infra_site_status] || 'ghost'} size="sm" outline>Mặt bằng: {CS_FLOW_LABELS[row.infra_site_status] || '—'}</Badge>
+        </div>
+      )
     },
     {
       key: 'chot_so_luong_tru',
@@ -224,7 +239,7 @@ const ChargingStationDeliveryTabs = () => {
         return <Button variant="primary" size="xs" onClick={() => setDeliveryStation(row)}>Đã giao đến nơi</Button>;
       }
     }
-    if ((!isBackOfficeDept(user) || user?.role === 'SUPER_ADMIN') && row.status === 'ONBOARDING') {
+    if (row.status === 'ONBOARDING' && row.can_request_early_delivery) {
       return (
         <Button size="xs" onClick={() => {
           setEarlyForm({ desired_delivery_date: '', reason: '' });

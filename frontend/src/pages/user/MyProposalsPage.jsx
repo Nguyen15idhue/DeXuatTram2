@@ -30,7 +30,7 @@ const PROPOSALS_VIEW_ID = 8;
 const PROPOSALS_FORM_ID = 13;
 
 const MyProposalsPage = () => {
-  const { token, isAdmin } = useAuth();
+  const { token, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
@@ -416,7 +416,7 @@ const MyProposalsPage = () => {
   const renderActions = (row) => (
     <div className="flex gap-1">
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/my-proposals/view=${row.id}`)}>Xem</button>
-      {canOwnerEditProposal(row.status) && (
+      {(isSuperAdmin || canOwnerEditProposal(row)) && (
         <button className="btn btn-sm btn-warning" onClick={() => navigate(`/my-proposals/edit=${row.id}`)}>Sửa</button>
       )}
       {canUploadReport(row) && (
@@ -755,7 +755,7 @@ const MyProposalsPage = () => {
           recordId={isAdmin ? (popup.record ? undefined : (popup.recordId || parseInt(location.pathname.match(/=(\d+)/)?.[1]))) : undefined}
           viewId={popup.entity === 'stations' ? undefined : proposalsViewId}
           mode={popup.mode}
-          allowEdit={isAdmin || (!!popup.record && canOwnerEditProposal(popup.record.status))}
+          allowEdit={isSuperAdmin || (!!popup.record && canOwnerEditProposal(popup.record))}
           updateService={isAdmin ? undefined : myProposalService}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null, entity: 'station_proposals' });

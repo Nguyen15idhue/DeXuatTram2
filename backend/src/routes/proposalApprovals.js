@@ -10,7 +10,7 @@ const proposalApprovalController = require('../controllers/proposalApprovalContr
  *     tags: [Proposal Approvals]
  *     summary: Danh sách đề xuất cho trang Duyệt BCĐX
  *     description: >
- *       Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được truy cập.
+ *       Chỉ SUPER_ADMIN hoặc nhân sự thuộc Back Office được truy cập.
  *       tab=all: PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, APPROVED;
  *       tab=pending: PROPOSAL_REPORT_REVIEWING; tab=updating: PROPOSAL_REPORT_UPDATING;
  *       tab=completed: SIGNATURE_PENDING, APPROVED (chỉ hồ sơ đã upload file ký).
@@ -53,7 +53,7 @@ router.get('/', requireAuth, requireUserManager, proposalApprovalController.list
  *   get:
  *     tags: [Proposal Approvals]
  *     summary: Chi tiết đề xuất cho trang duyệt BCĐX
- *     description: Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được truy cập.
+ *     description: Chỉ SUPER_ADMIN hoặc nhân sự thuộc Back Office được truy cập.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -115,9 +115,9 @@ router.get('/:id', requireAuth, requireUserManager, proposalApprovalController.g
  * /api/admin/proposal-approvals/{id}/tgd-reject:
  *   put:
  *     tags: [Proposal Approvals]
- *     summary: ADMIN thuộc Back Office hoặc SUPER_ADMIN từ chối duyệt BCĐX
+ *     summary: Back Office hoặc SUPER_ADMIN từ chối duyệt BCĐX
  *     description: >
- *       Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office. Bắt buộc lý do; đề xuất chuyển PROPOSAL_REPORT_UPDATING,
+ *       Chỉ SUPER_ADMIN hoặc nhân sự thuộc Back Office. Bắt buộc lý do; đề xuất chuyển PROPOSAL_REPORT_UPDATING,
  *       tạo Yêu cầu đề xuất REVISE_BCDX cho GĐTTKD khu vực, notify người đề xuất + GĐTTKD vùng.
  *     security:
  *       - bearerAuth: []

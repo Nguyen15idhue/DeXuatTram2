@@ -72,7 +72,7 @@ const ProposalRequestsTab = ({ token }) => {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [type, setType] = useState('');
-  const [workScope, setWorkScope] = useState('mine');
+  const [workScope, setWorkScope] = useState('all');
   const [showFilter, setShowFilter] = useState(false);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [filterOptions, setFilterOptions] = useState({ owners: [], managers: [], workScopes: [] });
@@ -161,14 +161,14 @@ const ProposalRequestsTab = ({ token }) => {
     setSearch('');
     setSearchInput('');
     setType('');
-    setWorkScope('mine');
+    setWorkScope('all');
     setFilters(EMPTY_FILTERS);
     setPage(1);
   };
 
   const activeFilterCount = [
     type,
-    workScope !== 'mine' ? workScope : '',
+    workScope !== 'all' ? workScope : '',
     ...Object.values(filters)
   ].filter(Boolean).length;
 
