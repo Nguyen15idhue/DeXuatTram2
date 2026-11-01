@@ -42,6 +42,24 @@ exports.detail = async (req, res) => {
   }
 };
 
+exports.cancelOnStation = async (req, res) => {
+  try {
+    const data = await chargingStationService.cancelOnStation(req.params.id, req.user, actorOf(req));
+    res.json({ success: true, data, message: 'Đã hủy ON trạm và lưu trữ đề xuất' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.restoreOnStation = async (req, res) => {
+  try {
+    const data = await chargingStationService.restoreOnStation(req.params.id, req.user, actorOf(req));
+    res.json({ success: true, data, message: 'Đã khôi phục ON trạm và đề xuất về trạng thái trước đó' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.startContract = async (req, res) => {
   try {
     const data = await chargingStationService.startContractSigning(req.params.id, req.user, actorOf(req));

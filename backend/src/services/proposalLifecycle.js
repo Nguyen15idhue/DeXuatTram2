@@ -37,6 +37,7 @@ const ALLOWED_TRANSITIONS = {
 };
 
 const REASON_REQUIRED = ['REJECTED', 'CANCELLED'];
+const ON_STATION_RESTORABLE_STATUSES = ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'];
 
 const STATUS_STEP_LABELS = {
   PENDING: 'đang đề xuất',
@@ -414,6 +415,119 @@ exports.transition = async (id, to, opts = {}) => {
     stationCreated: stationCreated ? { id: stationCreated.id, name: stationCreated.name, ma_tram: stationCreated.ma_tram || null } : null,
     stationCreateError
   };
+};
+
+exports.transitionOnStation = async (connection, proposalId, toStatus, {
+  snapshot = null, actorId = null, actorRole = null, ip = null, stationCode = ''
+} = {}) => {
+  const [rows] = await connection.query(
+    `SELECT id, user_id, status, journey_id, custom_data
+       FROM station_proposals WHERE id = ? FOR UPDATE`,
+    [proposalId]
+  );
+  if (!rows.length) throw err('Không tìm thấy đề xuất liên quan đến ON trạm', 404);
+
+  const proposal = rows[0];
+  const fromStatus = proposal.status;
+  let nextStatus;
+  let reason;
+
+  if (toStatus === 'ARCHIVED') {
+    if (!ON_STATION_RESTORABLE_STATUSES.includes(fromStatus)) {
+      throw err(`Không thể lưu trữ đề xuất ON trạm từ trạng thái "${fromStatus}"`, 409);
+    }
+    nextStatus = 'ARCHIVED';
+    reason = `Hủy ON trạm ${stationCode || `#${proposalId}`}`;
+    const [updateResult] = await connection.query(
+      `UPDATE station_proposals
+          SET status = 'ARCHIVED', reject_reason = NULL, reviewed_by = ?, reviewed_at = NOW(),
+              supplement_deadline_at = NULL, transition_deadline_at = NULL, info_completed_at = NULL,
+              paused_from_status = NULL, paused_at = NULL, updated_at = NOW()
+        WHERE id = ? AND status = ?`,
+      [actorId, proposalId, fromStatus]
+    );
+    if (updateResult.affectedRows !== 1) throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại', 409);
+    await connection.query(
+      `UPDATE proposal_requests
+          SET status = 'CANCELLED', resolved_by = ?, resolved_at = NOW(),
+              resolution_note = 'Đã hủy ON trạm; đề xuất được lưu trữ'
+        WHERE proposal_id = ? AND status = 'OPEN'`,
+      [actorId, proposalId]
+    );
+  } else {
+    const restoredStatus = String(toStatus || '').trim();
+    if (fromStatus !== 'ARCHIVED' || !ON_STATION_RESTORABLE_STATUSES.includes(restoredStatus)
+      || !snapshot || snapshot.proposal_status !== restoredStatus) {
+      throw err('Không tìm thấy trạng thái đề xuất hợp lệ để khôi phục ON trạm', 409);
+    }
+    nextStatus = restoredStatus;
+    reason = `Khôi phục ON trạm ${stationCode || `#${proposalId}`}`;
+    const [updateResult] = await connection.query(
+      `UPDATE station_proposals
+          SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = ?,
+              supplement_deadline_at = ?, transition_deadline_at = ?, info_completed_at = ?,
+              paused_from_status = ?, paused_at = ?, updated_at = NOW()
+        WHERE id = ? AND status = 'ARCHIVED'`,
+      [
+        nextStatus, snapshot.reject_reason || null, snapshot.reviewed_by || null,
+        snapshot.reviewed_at || null, snapshot.supplement_deadline_at || null,
+        snapshot.transition_deadline_at || null, snapshot.info_completed_at || null,
+        snapshot.paused_from_status || null, snapshot.paused_at || null, proposalId
+      ]
+    );
+    if (updateResult.affectedRows !== 1) throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại', 409);
+  }
+
+  await exports.logActivity({
+    proposalId,
+    action: 'status_change',
+    fromStatus,
+    toStatus: nextStatus,
+    reason,
+    actorId,
+    actorRole,
+    source: 'user',
+    ip,
+    connection
+  });
+
+  return { proposal, fromStatus, toStatus: nextStatus, reason, actorId, actorRole, ip };
+};
+
+exports.completeOnStationTransition = async (transition) => {
+  if (!transition) return;
+  const { proposal, fromStatus, toStatus, reason, actorId, actorRole, ip } = transition;
+  try {
+    await exports.notifyStepReceivers(proposal.id, toStatus, { actorId, reason });
+  } catch (error) {
+    console.error(`[ProposalNotifications] Failed to notify proposal ${proposal.id} after ON station status change:`, error);
+  }
+
+  if (proposal.user_id) {
+    try {
+      const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
+      const actorName = (await notificationService.getUserName(actorId)) || 'Hệ thống';
+      await notificationService.create({
+        userId: proposal.user_id,
+        type: toStatus,
+        title: notificationService.statusTitle(toStatus),
+        message: notificationService.statusMessage({ code, actorName, reason, status: toStatus }),
+        entityType: 'station_proposals',
+        entityId: proposal.id,
+        createdBy: actorId || null
+      });
+    } catch (error) {
+      console.error(`[ProposalNotifications] Failed to notify owner of proposal ${proposal.id}:`, error);
+    }
+  }
+
+  try {
+    if (proposal.journey_id) {
+      await require('./journeySyncService').onProposalTransition(proposal.id, {
+        from: fromStatus, to: toStatus, actorId, actorRole, source: 'user', ip
+      });
+    }
+  } catch { /* do not fail an ON station status change because of journey sync */ }
 };
 
 exports.pauseProposal = async (id, opts = {}) => exports.transition(id, 'PAUSED', {

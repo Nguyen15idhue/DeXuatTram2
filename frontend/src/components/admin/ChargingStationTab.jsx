@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { Badge, Button, DataTable, FilterBar, Input, Pagination, Toast } from '../ui';
+import { Badge, Button, ConfirmDialog, DataTable, FilterBar, Input, Pagination, Toast } from '../ui';
 import ChargingStationDetailModal from './ChargingStationDetailModal';
 import ChargingStationCareModal from './ChargingStationCareModal';
+import { notifyBellRefresh } from '../layout/NotificationBell';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
@@ -45,6 +46,9 @@ const ChargingStationTab = ({ stage }) => {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [selectedId, setSelectedId] = useState(null);
   const [careStation, setCareStation] = useState(null);
+  const [statusDialog, setStatusDialog] = useState({ open: false, action: '', row: null });
+  const [statusSaving, setStatusSaving] = useState(false);
+  const statusSavingRef = useRef(false);
   const [toast, setToast] = useState(EMPTY_TOAST);
   const closeToast = useCallback(() => setToast(EMPTY_TOAST), []);
 
@@ -79,6 +83,33 @@ const ChargingStationTab = ({ stage }) => {
     const next = new URLSearchParams(searchParams);
     next.set('tab', nextTab);
     setSearchParams(next);
+  };
+
+  const confirmStatusChange = async () => {
+    if (statusSavingRef.current || !statusDialog.row) return;
+    statusSavingRef.current = true;
+    setStatusSaving(true);
+    try {
+      const mutate = statusDialog.action === 'cancel'
+        ? chargingStationService.cancelOnStation
+        : chargingStationService.restoreOnStation;
+      const res = await mutate(statusDialog.row.id, token);
+      if (res?.success === false) throw new Error(res.message || 'Không thể cập nhật trạng thái ON trạm');
+      setToast({
+        message: res?.message || (statusDialog.action === 'cancel'
+          ? 'Đã hủy ON trạm và lưu trữ đề xuất'
+          : 'Đã khôi phục ON trạm và đề xuất'),
+        type: 'success'
+      });
+      setStatusDialog({ open: false, action: '', row: null });
+      notifyBellRefresh();
+      await load(page);
+    } catch (error) {
+      setToast({ message: error?.message || 'Không thể cập nhật trạng thái ON trạm', type: 'error' });
+    } finally {
+      statusSavingRef.current = false;
+      setStatusSaving(false);
+    }
   };
 
   const columns = useMemo(() => [
@@ -168,12 +199,45 @@ const ChargingStationTab = ({ stage }) => {
       <Button variant="outline" size="xs" onClick={() => setCareStation({ id: row.id, code: row.ma_tram })}>
         CSKH
       </Button>
+      {stage === 'thong-tin-chung' && row.can_cancel_on_station && (
+        <Button
+          variant="outline-error"
+          size="xs"
+          onClick={() => setStatusDialog({ open: true, action: 'cancel', row })}
+        >
+          Hủy ON trạm
+        </Button>
+      )}
+      {stage === 'thong-tin-chung' && row.can_restore_on_station && (
+        <Button
+          variant="outline-warning"
+          size="xs"
+          onClick={() => setStatusDialog({ open: true, action: 'restore', row })}
+        >
+          Khôi phục
+        </Button>
+      )}
     </div>
   );
 
   return (
     <div className="space-y-4">
       <Toast message={toast.message} type={toast.type} onClose={closeToast} />
+
+      <ConfirmDialog
+        isOpen={statusDialog.open}
+        title={statusDialog.action === 'cancel' ? 'Hủy ON trạm' : 'Khôi phục ON trạm'}
+        message={statusDialog.action === 'cancel'
+          ? `Bạn có chắc muốn hủy ON trạm ${statusDialog.row?.ma_tram || `#${statusDialog.row?.id}`}? Đề xuất ${statusDialog.row?.ma_de_xuat || ''} sẽ chuyển sang Đã lưu trữ. Bạn có thể khôi phục sau.`
+          : `Bạn có chắc muốn khôi phục ON trạm ${statusDialog.row?.ma_tram || `#${statusDialog.row?.id}`}? ON trạm và đề xuất sẽ trở về trạng thái trước khi hủy.`}
+        confirmText={statusSaving ? 'Đang xử lý...' : statusDialog.action === 'cancel' ? 'Hủy ON trạm' : 'Khôi phục'}
+        cancelText="Quay lại"
+        type={statusDialog.action === 'cancel' ? 'danger' : 'warning'}
+        onConfirm={confirmStatusChange}
+        onCancel={() => {
+          if (!statusSavingRef.current) setStatusDialog({ open: false, action: '', row: null });
+        }}
+      />
 
       <div role="tablist" className="tabs tabs-bordered">
         {TABS.map((item) => (

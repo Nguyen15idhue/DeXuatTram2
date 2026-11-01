@@ -144,8 +144,10 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     DATE_FORMAT(cs.infra_deadline_at, '%Y-%m-%d %H:%i:%s') AS infra_deadline_at,
     DATE_FORMAT(cs.finance_deadline_at, '%Y-%m-%d %H:%i:%s') AS finance_deadline_at,
     cs.deadline_extension_count,
+    cs.manual_cancelled_at, cs.manual_cancelled_by,
     cs.description, cs.note, cs.created_at, cs.updated_at,
     p.ma_de_xuat_gen AS ma_de_xuat,
+    p.status AS proposal_status,
     p.user_id AS proposal_user_id,
     p.chot_so_luong_tru,
     COALESCE(NULLIF(p.owner_name, ''), JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.owner_name'))) AS owner_name,
@@ -304,6 +306,13 @@ const assertCanViewChargingStation = async (id, user) => {
   if (!await canViewChargingStation(id, user)) {
     throw err('Không có quyền xem ON trạm này', 403);
   }
+};
+
+const resolveOnStationStatusManager = async (user) => {
+  const scope = await require('./proposalReportService').resolveScope(user);
+  if (['SUPER_ADMIN', 'ADMIN'].includes(user?.role)) return scope;
+  if (user?.role === 'SALES' && scope.roleKey === 'GDTTKD') return scope;
+  throw err('Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD được hủy/khôi phục ON trạm', 403);
 };
 
 const assertBackOfficeManager = async (user) => {
@@ -582,6 +591,8 @@ const listChargingStations = async ({
   const userScope = await require('./proposalReportService').resolveScope(user);
   const ownerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user);
   const canRequestEarly = !userScope.isBackOffice || user?.role === 'SUPER_ADMIN';
+  const canManageOnStationStatus = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role)
+    || (user?.role === 'SALES' && userScope.roleKey === 'GDTTKD');
 
   return {
     items: rows.map((row) => {
@@ -597,7 +608,14 @@ const listChargingStations = async ({
           && record.status === STATUS.ONBOARDING
           && !record.delivery_ready
           && (!record.requires_deposit || readiness.isDepositReceived(record.deposit_status))
-          && ownerMatcher(record.proposal_user_id)
+          && ownerMatcher(record.proposal_user_id),
+        can_cancel_on_station: canManageOnStationStatus
+          && record.status !== 'CANCELLED'
+          && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
+        can_restore_on_station: canManageOnStationStatus
+          && record.status === 'CANCELLED'
+          && Boolean(record.manual_cancelled_at)
+          && record.proposal_status === 'ARCHIVED'
       };
     }),
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) }
@@ -748,6 +766,164 @@ const getChargingStationDetail = async (id, user = null) => {
     delivery_export: deliveryExport,
     timeline: timeline.map((row) => ({ ...row, changed_fields: parseJson(row.changed_fields) }))
   };
+};
+
+const loadOnStationStatusRow = async (connection, stationId) => {
+  const [rows] = await connection.query(
+    `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status,
+            cs.manual_cancelled_at, cs.manual_cancelled_by, cs.manual_cancel_snapshot,
+            p.user_id, p.custom_data, p.status AS proposal_status, p.reject_reason,
+            p.reviewed_by, DATE_FORMAT(p.reviewed_at, '%Y-%m-%d %H:%i:%s') AS reviewed_at,
+            DATE_FORMAT(p.supplement_deadline_at, '%Y-%m-%d %H:%i:%s') AS supplement_deadline_at,
+            DATE_FORMAT(p.transition_deadline_at, '%Y-%m-%d %H:%i:%s') AS transition_deadline_at,
+            DATE_FORMAT(p.info_completed_at, '%Y-%m-%d %H:%i:%s') AS info_completed_at,
+            p.paused_from_status,
+            DATE_FORMAT(p.paused_at, '%Y-%m-%d %H:%i:%s') AS paused_at
+       FROM charging_stations cs
+       JOIN station_proposals p ON p.id = cs.proposal_id
+      WHERE cs.id = ? FOR UPDATE`,
+    [stationId]
+  );
+  return rows[0] || null;
+};
+
+const cancelOnStation = async (id, user, ctx = {}) => {
+  await resolveOnStationStatusManager(user);
+  const stationId = normalizeId(id, 'Mã bản ghi');
+  await assertCanViewChargingStation(stationId, user);
+  const connection = await pool.getConnection();
+  let transactionStarted = false;
+  let proposalTransition = null;
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const current = await loadOnStationStatusRow(connection, stationId);
+    if (!current) throw err('Không tìm thấy bản ghi ON trạm', 404);
+    if (current.status === 'CANCELLED') throw err('ON trạm đã ở trạng thái Đã hủy', 409);
+    if (current.manual_cancelled_at) throw err('ON trạm đã được hủy thủ công', 409);
+
+    const snapshot = {
+      charging_status: current.status,
+      charging_sub_status: current.sub_status,
+      proposal_status: current.proposal_status,
+      reject_reason: current.reject_reason,
+      reviewed_by: current.reviewed_by,
+      reviewed_at: current.reviewed_at,
+      supplement_deadline_at: current.supplement_deadline_at,
+      transition_deadline_at: current.transition_deadline_at,
+      info_completed_at: current.info_completed_at,
+      paused_from_status: current.paused_from_status,
+      paused_at: current.paused_at
+    };
+
+    const [updateResult] = await connection.query(
+      `UPDATE charging_stations
+          SET status = 'CANCELLED', sub_status = NULL,
+              manual_cancelled_at = NOW(), manual_cancelled_by = ?, manual_cancel_snapshot = ?
+        WHERE id = ? AND status = ? AND manual_cancelled_at IS NULL`,
+      [user.id, JSON.stringify(snapshot), stationId, current.status]
+    );
+    if (updateResult.affectedRows !== 1) throw err('ON trạm vừa được thay đổi; hãy tải lại danh sách', 409);
+
+    proposalTransition = await require('./proposalLifecycle').transitionOnStation(
+      connection,
+      current.proposal_id,
+      'ARCHIVED',
+      { actorId: user.id, actorRole: user.role, ip: ctx.ip, stationCode: current.ma_tram }
+    );
+    await writeActivity(connection, {
+      chargingStationId: stationId,
+      action: 'manual_cancelled',
+      fromStatus: current.status,
+      toStatus: 'CANCELLED',
+      changedFields: {
+        status: { label: 'Trạng thái ON trạm', old: current.status, new: 'CANCELLED' },
+        sub_status: { label: 'Trạng thái phụ', old: current.sub_status || '', new: '' }
+      },
+      reason: 'Hủy ON trạm; đề xuất được chuyển sang Đã lưu trữ',
+      actorId: user.id,
+      actorRole: user.role,
+      source: 'user',
+      ip: ctx.ip
+    });
+    await connection.commit();
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  await require('./proposalLifecycle').completeOnStationTransition(proposalTransition);
+  return getChargingStationDetail(stationId, user);
+};
+
+const restoreOnStation = async (id, user, ctx = {}) => {
+  await resolveOnStationStatusManager(user);
+  const stationId = normalizeId(id, 'Mã bản ghi');
+  await assertCanViewChargingStation(stationId, user);
+  const connection = await pool.getConnection();
+  let transactionStarted = false;
+  let proposalTransition = null;
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const current = await loadOnStationStatusRow(connection, stationId);
+    if (!current) throw err('Không tìm thấy bản ghi ON trạm', 404);
+    if (current.status !== 'CANCELLED' || !current.manual_cancelled_at || !current.manual_cancel_snapshot) {
+      throw err('Chỉ có thể khôi phục ON trạm đã được hủy thủ công', 409);
+    }
+
+    const snapshot = parseJson(current.manual_cancel_snapshot);
+    const restoredStatus = String(snapshot.charging_status || '');
+    const restoredSubStatus = snapshot.charging_sub_status || null;
+    if (!Object.hasOwn(SUB_STATUS_BY_STATUS, restoredStatus)
+      || (restoredSubStatus && !(SUB_STATUS_BY_STATUS[restoredStatus] || []).includes(restoredSubStatus))) {
+      throw err('Không tìm thấy trạng thái ON trạm hợp lệ để khôi phục', 409);
+    }
+
+    proposalTransition = await require('./proposalLifecycle').transitionOnStation(
+      connection,
+      current.proposal_id,
+      snapshot.proposal_status,
+      { snapshot, actorId: user.id, actorRole: user.role, ip: ctx.ip, stationCode: current.ma_tram }
+    );
+    const [updateResult] = await connection.query(
+      `UPDATE charging_stations
+          SET status = ?, sub_status = ?, manual_cancelled_at = NULL,
+              manual_cancelled_by = NULL, manual_cancel_snapshot = NULL
+        WHERE id = ? AND status = 'CANCELLED' AND manual_cancelled_at IS NOT NULL`,
+      [restoredStatus, restoredSubStatus, stationId]
+    );
+    if (updateResult.affectedRows !== 1) throw err('ON trạm vừa được thay đổi; hãy tải lại danh sách', 409);
+
+    await writeActivity(connection, {
+      chargingStationId: stationId,
+      action: 'manual_restored',
+      fromStatus: 'CANCELLED',
+      toStatus: restoredStatus,
+      changedFields: {
+        status: { label: 'Trạng thái ON trạm', old: 'CANCELLED', new: restoredStatus },
+        sub_status: { label: 'Trạng thái phụ', old: '', new: restoredSubStatus || '' }
+      },
+      reason: 'Khôi phục ON trạm và trạng thái đề xuất trước khi hủy',
+      actorId: user.id,
+      actorRole: user.role,
+      source: 'user',
+      ip: ctx.ip
+    });
+    await connection.commit();
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  await require('./proposalLifecycle').completeOnStationTransition(proposalTransition);
+  return getChargingStationDetail(stationId, user);
 };
 
 const createFromApprovedProposal = async (proposalId, { actorId = null, actorRole = null, source = 'user', ip = null } = {}) => {
@@ -2117,6 +2293,8 @@ exports.SUB_STATUS_LABELS = SUB_STATUS_LABELS;
 exports.listChargingStations = listChargingStations;
 exports.getChargingStationTaskCounts = getChargingStationTaskCounts;
 exports.getChargingStationDetail = getChargingStationDetail;
+exports.cancelOnStation = cancelOnStation;
+exports.restoreOnStation = restoreOnStation;
 exports.canViewChargingStation = canViewChargingStation;
 exports.createFromApprovedProposal = createFromApprovedProposal;
 exports.updateChargingStation = updateChargingStation;
