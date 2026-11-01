@@ -41,8 +41,8 @@ const proposalRequestController = require('../controllers/proposalRequestControl
  *         schema:
  *           type: string
  *           enum: [mine, subordinates, all]
- *           default: mine
- *         description: Phạm vi công việc; cấp quản lý chỉ thấy cấp dưới trong nhánh, GĐTTKD còn thấy yêu cầu theo miền.
+ *         default: all
+ *         description: Công việc owner-level mặc định gồm người dùng và toàn bộ nhánh; tác vụ chuyên môn vẫn theo quyền được phân công.
  *       - in: query
  *         name: proposal_status
  *         schema:

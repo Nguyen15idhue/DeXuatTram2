@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireUserManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserAccountManager } = require('../middlewares/auth');
 const { validateCreateUser, validateUpdateUser } = require('../middlewares/validators');
 const adminUserController = require('../controllers/adminUserController');
 
@@ -49,7 +49,7 @@ const adminUserController = require('../controllers/adminUserController');
  *       403:
  *         description: Không có quyền Admin
  */
-router.get('/', requireAuth, requireUserManager, adminUserController.getAll);
+router.get('/', requireAuth, requireUserAccountManager, adminUserController.getAll);
 
 /**
  * @swagger
@@ -100,14 +100,15 @@ router.get('/options/all', requireAuth, adminUserController.getOptions);
  *       404:
  *         description: Không tìm thấy user
  */
-router.get('/:id', requireAuth, requireUserManager, adminUserController.getById);
+router.get('/:id', requireAuth, requireUserAccountManager, adminUserController.getById);
 
 /**
  * @swagger
  * /api/admin/users:
  *   post:
  *     tags: [Admin - Users]
- *     summary: Admin tạo user mới
+ *     summary: Tạo user mới trong phạm vi quyền của người gọi
+ *     description: NPP chỉ được tạo CTV và tài khoản mới tự động thuộc nhánh của NPP.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -137,7 +138,7 @@ router.get('/:id', requireAuth, requireUserManager, adminUserController.getById)
  *                 example: 123456
  *               role:
  *                 type: string
- *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV, NPP, MKT]
  *                 default: USER
  *               status:
  *                 type: string
@@ -162,14 +163,15 @@ router.get('/:id', requireAuth, requireUserManager, adminUserController.getById)
  *       403:
  *         description: Không có quyền Admin
  */
-router.post('/', requireAuth, requireUserManager, validateCreateUser, adminUserController.create);
+router.post('/', requireAuth, requireUserAccountManager, validateCreateUser, adminUserController.create);
 
 /**
  * @swagger
  * /api/admin/users/{id}:
  *   put:
  *     tags: [Admin - Users]
- *     summary: Admin cập nhật user
+ *     summary: Cập nhật user trong phạm vi quyền của người gọi
+ *     description: NPP chỉ sửa hồ sơ/mật khẩu CTV trong nhánh; không được khóa, xóa, đổi role hoặc đổi parent.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -197,7 +199,7 @@ router.post('/', requireAuth, requireUserManager, validateCreateUser, adminUserC
  *                 description: Để trống nếu không đổi mật khẩu
  *               role:
  *                 type: string
- *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV, NPP, MKT]
  *               status:
  *                 type: string
  *                 enum: [ACTIVE, LOCKED]
@@ -213,14 +215,14 @@ router.post('/', requireAuth, requireUserManager, validateCreateUser, adminUserC
  *       404:
  *         description: Không tìm thấy user
  */
-router.put('/:id', requireAuth, requireUserManager, validateUpdateUser, adminUserController.update);
+router.put('/:id', requireAuth, requireUserAccountManager, validateUpdateUser, adminUserController.update);
 
 /**
  * @swagger
  * /api/admin/users/{id}:
  *   delete:
  *     tags: [Admin - Users]
- *     summary: Admin xóa user
+ *     summary: Admin hoặc SALES xóa user thuộc phạm vi được phép
  *     description: Không thể xóa admin hoặc chính mình
  *     security:
  *       - bearerAuth: []
@@ -242,7 +244,7 @@ router.put('/:id', requireAuth, requireUserManager, validateUpdateUser, adminUse
  *       404:
  *         description: Không tìm thấy user
  */
-router.delete('/:id', requireAuth, requireUserManager, adminUserController.delete);
+router.delete('/:id', requireAuth, requireUserAccountManager, adminUserController.delete);
 
 /**
  * @swagger
@@ -303,7 +305,7 @@ router.patch('/:id/lock', requireAuth, requireAdmin, adminUserController.toggleL
  *             properties:
  *               role:
  *                 type: string
- *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV]
+ *                 enum: [SUPER_ADMIN, ADMIN, SALES, CTV, NPP, MKT]
  *     responses:
  *       200:
  *         description: Đổi role thành công
@@ -323,7 +325,8 @@ router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeR
  * /api/admin/users/{id}/password:
  *   patch:
  *     tags: [Admin - Users]
- *     summary: Admin đổi mật khẩu user (tự đổi cần mật khẩu cũ old_password)
+ *     summary: Đổi mật khẩu user trong phạm vi được phép (tự đổi cần mật khẩu cũ old_password)
+ *     description: NPP chỉ được đổi mật khẩu tài khoản CTV trong nhánh của mình hoặc tự đổi mật khẩu.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -358,6 +361,6 @@ router.patch('/:id/role', requireAuth, requireAdmin, adminUserController.changeR
  *       404:
  *         description: Không tìm thấy user
  */
-router.patch('/:id/password', requireAuth, requireUserManager, adminUserController.changePassword);
+router.patch('/:id/password', requireAuth, requireUserAccountManager, adminUserController.changePassword);
 
 module.exports = router;

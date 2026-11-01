@@ -31,12 +31,8 @@ const loadProfile = async (userId) => {
 
 const inBranch = async (userId, ownerId) => {
   if (!ownerId) return false;
-  try {
-    const branchIds = await adminProposalService.getBranchUserIds(userId);
-    return (branchIds || []).map(Number).includes(Number(ownerId));
-  } catch {
-    return false;
-  }
+  const branchIds = await adminProposalService.getBranchUserIds(userId);
+  return (branchIds || []).map(Number).includes(Number(ownerId));
 };
 
 const canViewProposal = async (user, proposal) => {
@@ -54,18 +50,19 @@ const canViewProposal = async (user, proposal) => {
   if (user.role === 'SALES' && await inBranch(user.id, ownerId)) return true;
   if (user.role === 'NPP' && await inBranch(user.id, ownerId)) return true;
 
-  if (!WORKFLOW_STATUSES.has(proposal.status)) return false;
-
   const profile = await loadProfile(user.id);
-  if (proposalGradingService.resolveGradingRole(profile.department)) return true;
-  if (proposalReportService.isBackOffice(profile.department)) return true;
-
   const roleKey = proposalReviewService.resolveRoleKey({
     role: user.role,
     department: profile.department,
     chucVu: profile.chucVu
   });
   if (roleKey === proposalReviewService.REVIEW_ROLE.TGD) return true;
+
+  if (!WORKFLOW_STATUSES.has(proposal.status)) return false;
+
+  if (proposalGradingService.resolveGradingRole(profile.department)) return true;
+  if (proposalReportService.isBackOffice(profile.department)) return true;
+
   if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) {
     const region = proposalReviewService.resolveRegion(profile.department)
       || proposalReviewService.resolveRegion(profile.customData.vung_mien);
@@ -80,3 +77,55 @@ const canViewProposal = async (user, proposal) => {
 
 exports.loadAccessRow = loadAccessRow;
 exports.canViewProposal = canViewProposal;
+
+const isTgdUser = async (user) => {
+  if (!['SALES', 'ADMIN'].includes(user?.role)) return false;
+  const profile = await loadProfile(user.id);
+  const roleKey = proposalReviewService.resolveRoleKey({
+    role: user.role,
+    department: profile.department,
+    chucVu: profile.chucVu
+  });
+  return roleKey === proposalReviewService.REVIEW_ROLE.TGD;
+};
+
+// Quyền ngang người đề xuất: chính chủ, cấp trên trong nhánh (đệ quy), TGĐ và quản trị viên.
+const canActAsProposalOwner = async (user, proposal) => {
+  if (!user || !proposal) return false;
+  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role)) return true;
+  const ownerId = proposal.user_id === null || proposal.user_id === undefined
+    ? null
+    : Number(proposal.user_id);
+  if (ownerId && ownerId === Number(user.id)) return true;
+  if (['SALES', 'NPP'].includes(user.role) && await inBranch(user.id, ownerId)) return true;
+  return isTgdUser(user);
+};
+
+// Điều kiện SQL tương ứng với canActAsProposalOwner, dùng cho đếm/lọc theo bảng station_proposals (alias p).
+const buildOwnerScopeSql = async (user, alias = 'p') => {
+  if (!user?.id) return { sql: '1 = 0', params: [] };
+  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role) || await isTgdUser(user)) {
+    return { sql: '1 = 1', params: [] };
+  }
+  if (['SALES', 'NPP'].includes(user.role)) {
+    const branchIds = ((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number);
+    if (!branchIds.length) return { sql: '1 = 0', params: [] };
+    return { sql: `${alias}.user_id IN (${branchIds.map(() => '?').join(',')})`, params: branchIds };
+  }
+  return { sql: `${alias}.user_id = ?`, params: [Number(user.id)] };
+};
+
+const buildOwnerMatcher = async (user) => {
+  if (!user?.id) return () => false;
+  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role) || await isTgdUser(user)) return () => true;
+  if (['SALES', 'NPP'].includes(user.role)) {
+    const ids = new Set(((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number));
+    return (ownerId) => ids.has(Number(ownerId));
+  }
+  return (ownerId) => Number(ownerId) === Number(user.id);
+};
+
+exports.isTgdUser = isTgdUser;
+exports.canActAsProposalOwner = canActAsProposalOwner;
+exports.buildOwnerScopeSql = buildOwnerScopeSql;
+exports.buildOwnerMatcher = buildOwnerMatcher;

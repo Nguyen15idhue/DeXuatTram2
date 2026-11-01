@@ -9,11 +9,14 @@ import {
   CS_CONTRACT_VARIANT,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
+  CS_DEPOSIT_LABELS,
+  CS_DEPOSIT_VARIANT,
   CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
-  formatCsDate
+  formatCsDate,
+  getCsDeadlineLabel
 } from '../../utils/chargingStation';
 import { Badge, Button, DataTable, FilterBar, Input, Pagination, Toast } from '../ui';
 
@@ -146,12 +149,25 @@ const ChargingStationInfrastructureTabs = () => {
     })),
     {
       key: 'payment_status',
-      label: 'Thanh toán',
-      render: (value) => (
-        <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>
-          {CS_PAYMENT_LABELS[value] || '—'}
-        </Badge>
+      label: 'Tài chính',
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_DEPOSIT_VARIANT[row.deposit_status] || 'ghost'} size="sm" outline>{CS_DEPOSIT_LABELS[row.deposit_status] || '—'}</Badge>
+          <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
+        </div>
       )
+    },
+    {
+      key: 'infra_deadline_at',
+      label: 'Hạn 15 ngày',
+      render: (value, row) => {
+        const done = row.infra_power_status === 'DONE' && row.infra_site_status === 'DONE';
+        return (
+          <span className={done ? 'text-success text-xs' : 'text-xs'}>
+            {getCsDeadlineLabel(value, done, row.deadline_active === false)}
+          </span>
+        );
+      }
     },
     { key: 'on_date', label: 'Ngày ON', render: (value) => formatCsDate(value) },
 

@@ -1,5 +1,6 @@
 const proposalActivityService = require('../services/proposalActivityService');
 const adminProposalService = require('../services/adminProposalService');
+const proposalAccessService = require('../services/proposalAccessService');
 
 const scopeFor = async (req) => {
   if (req.user.role !== 'SALES') return { role: req.user.role };
@@ -59,8 +60,7 @@ exports.timeline = async (req, res) => {
     if (!light) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    const scope = await scopeFor(req);
-    if (scope.role === 'SALES' && !scope.branchIds.includes(Number(light.user_id))) {
+    if (!await proposalAccessService.canViewProposal(req.user, light)) {
       return res.status(403).json({ success: false, message: 'Không có quyền xem đề xuất này' });
     }
     const items = await proposalActivityService.timeline(req.params.proposalId);

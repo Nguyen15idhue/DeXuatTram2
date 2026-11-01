@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireUserManager } = require('../middlewares/auth');
+const { requireAuth, requireUserManager, requireProposalInfoManager } = require('../middlewares/auth');
 const proposalActivityController = require('../controllers/proposalActivityController');
 
 /**
@@ -153,10 +153,10 @@ router.get('/journey', requireAuth, requireUserManager, proposalActivityControll
  *       200:
  *         description: Thành công
  *       403:
- *         description: Ngoài nhánh (SALES)
+ *         description: Ngoài phạm vi đề xuất được phép xem
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:proposalId/timeline', requireAuth, requireUserManager, proposalActivityController.timeline);
+router.get('/:proposalId/timeline', requireAuth, requireProposalInfoManager, proposalActivityController.timeline);
 
 module.exports = router;

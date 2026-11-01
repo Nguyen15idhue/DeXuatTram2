@@ -8,7 +8,7 @@ const scopeFor = async (user) => {
   }
   const department = await proposalGradingService.getUserDepartment(user.id);
   const gradeRole = proposalGradingService.resolveGradingRole(department);
-  if (user.role === 'ADMIN') {
+  if (user.role === 'ADMIN' || gradeRole) {
     return { all: true, role: user.role, userId: user.id, gradeRole, department };
   }
   if (user.role === 'SALES') {

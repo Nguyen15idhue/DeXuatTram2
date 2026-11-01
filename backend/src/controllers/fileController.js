@@ -168,6 +168,7 @@ const canAccessFile = async (file, req) => {
         if (!containsFileId(p.custom_data, fid)) continue;
         if (p.user_id !== null && Number(p.user_id) === Number(requesterId)) return true;
         if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
+        if (isTgdUser) return true;
         if (isGradingDepartment && gradingStatuses.has(p.status)) return true;
         if ((isGdttkdUser || isTgdUser || isBackOfficeUser) && gradingStatuses.has(p.status)) {
           if (isGdttkdUser && requesterRegion) {

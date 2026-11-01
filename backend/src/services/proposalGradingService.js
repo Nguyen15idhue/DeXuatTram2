@@ -408,13 +408,13 @@ exports.listProposals = async ({
     if (!Number.isInteger(proposalId) || proposalId <= 0) throw Object.assign(new Error('Đề xuất không hợp lệ'), { statusCode: 400 });
     const params = [proposalId];
     let scopeClause = '';
-    if (scope.role === 'SALES') {
+    if (!scope.all && scope.role === 'SALES') {
       const ids = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
       if (!ids.includes(Number(scope.userId))) ids.push(Number(scope.userId));
       if (!ids.length) throw Object.assign(new Error('Bạn không có quyền xem đề xuất này'), { statusCode: 403 });
       scopeClause = ` AND p.user_id IN (${ids.map(() => '?').join(',')})`;
       params.push(...ids);
-    } else if (['CTV', 'NPP'].includes(scope.role)) {
+    } else if (!scope.all && ['CTV', 'NPP'].includes(scope.role)) {
       scopeClause = ' AND p.user_id = ?';
       params.push(Number(scope.userId));
     }
@@ -615,9 +615,7 @@ exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} }
 
   const role = userRole === 'SUPER_ADMIN'
     ? BOTH_ROLE
-    : userRole === 'ADMIN'
-      ? (gradeRole || resolveGradingRole(await getUserDepartment(userId)))
-      : null;
+    : (gradeRole || resolveGradingRole(await getUserDepartment(userId)));
   const canQH = role === BOTH_ROLE || role === QH_ROLE;
   const canPL = role === BOTH_ROLE || role === PL_ROLE;
   if (!canQH && !canPL) {

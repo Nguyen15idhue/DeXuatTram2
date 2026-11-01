@@ -3,6 +3,7 @@ export const CS_STATUS = {
   DELIVERING: 'DELIVERING',
   INSTALLING: 'INSTALLING',
   ACCEPTANCE: 'ACCEPTANCE',
+  CONFIGURING: 'CONFIGURING',
   OPERATING: 'OPERATING'
 };
 
@@ -11,6 +12,7 @@ export const CS_STATUS_ORDER = [
   CS_STATUS.DELIVERING,
   CS_STATUS.INSTALLING,
   CS_STATUS.ACCEPTANCE,
+  CS_STATUS.CONFIGURING,
   CS_STATUS.OPERATING
 ];
 
@@ -19,7 +21,9 @@ export const CS_STATUS_LABELS = {
   DELIVERING: 'Đang giao hàng',
   INSTALLING: 'Đang lắp đặt',
   ACCEPTANCE: 'Đang nghiệm thu',
-  OPERATING: 'Đang hoạt động'
+  CONFIGURING: 'Đang cấu hình',
+  OPERATING: 'Đang hoạt động',
+  CANCELLED: 'Đã hủy'
 };
 
 export const CS_STATUS_VARIANT = {
@@ -27,7 +31,9 @@ export const CS_STATUS_VARIANT = {
   DELIVERING: 'info',
   INSTALLING: 'info',
   ACCEPTANCE: 'info',
-  OPERATING: 'success'
+  CONFIGURING: 'info',
+  OPERATING: 'success',
+  CANCELLED: 'ghost'
 };
 
 export const CS_SUB_STATUS_BY_STATUS = {
@@ -35,7 +41,8 @@ export const CS_SUB_STATUS_BY_STATUS = {
   DELIVERING: ['NOT_DELIVERED', 'DELIVERING', 'DELIVERED'],
   INSTALLING: ['NOT_INSTALLED', 'INSTALLING', 'INSTALLED'],
   ACCEPTANCE: ['NOT_ACCEPTED', 'ACCEPT_FAILED', 'ACCEPT_PASSED'],
-  OPERATING: ['CONFIGURING', 'ACTIVE']
+  CONFIGURING: ['NOT_CONFIGURED'],
+  OPERATING: ['ACTIVE']
 };
 
 export const CS_SUB_STATUS_LABELS = {
@@ -48,6 +55,7 @@ export const CS_SUB_STATUS_LABELS = {
   NOT_ACCEPTED: 'Chưa nghiệm thu',
   ACCEPT_FAILED: 'Nghiệm thu không đạt',
   ACCEPT_PASSED: 'Nghiệm thu đạt',
+  NOT_CONFIGURED: 'Chưa cấu hình',
   CONFIGURING: 'Đang cấu hình',
   ACTIVE: 'Đã hoạt động'
 };
@@ -56,7 +64,8 @@ export const CS_NEXT_STATUS = {
   ONBOARDING: CS_STATUS.DELIVERING,
   DELIVERING: CS_STATUS.INSTALLING,
   INSTALLING: CS_STATUS.ACCEPTANCE,
-  ACCEPTANCE: CS_STATUS.OPERATING,
+  ACCEPTANCE: CS_STATUS.CONFIGURING,
+  CONFIGURING: CS_STATUS.OPERATING,
   OPERATING: null
 };
 
@@ -85,12 +94,30 @@ export const CS_FLOW_LABELS = {
 };
 
 export const CS_PAYMENT_LABELS = {
+  NOT_REQUIRED: 'Không yêu cầu',
   NOT: 'Chưa thanh toán',
   DOING: 'Đã thanh toán 1 phần',
   DONE: 'Đã thanh toán toàn bộ'
 };
 
+export const CS_DEPOSIT_LABELS = {
+  NOT_REQUIRED: 'Không yêu cầu',
+  NOT_RECEIVED: 'Chưa nhận cọc',
+  RECEIVED: 'Đã nhận cọc',
+  REFUND_PENDING: 'Chờ hoàn cọc',
+  REFUNDED: 'Đã hoàn cọc'
+};
+
+export const CS_DEPOSIT_VARIANT = {
+  NOT_REQUIRED: 'ghost',
+  NOT_RECEIVED: 'ghost',
+  RECEIVED: 'success',
+  REFUND_PENDING: 'warning',
+  REFUNDED: 'info'
+};
+
 export const CS_FLOW_VARIANT = {
+  NOT_REQUIRED: 'ghost',
   NOT: 'ghost',
   DOING: 'warning',
   DONE: 'success'
@@ -116,4 +143,18 @@ export const formatCsDate = (value) => {
   if (!value) return '—';
   const [y, m, d] = String(value).slice(0, 10).split('-');
   return y && m && d ? `${d}/${m}/${y}` : String(value);
+};
+
+export const getCsDeadlineLabel = (value, completed, stopped = false) => {
+  if (completed) return 'Đã hoàn thành';
+  if (stopped) return 'Ngừng đếm hạn';
+  if (!value) return '—';
+  const deadline = new Date(String(value).replace(' ', 'T')).getTime();
+  if (Number.isNaN(deadline)) return '—';
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return 'Quá hạn';
+  const totalHours = Math.ceil(remaining / (60 * 60 * 1000));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return days > 0 ? `Còn ${days} ngày ${hours} giờ` : `Còn ${totalHours} giờ`;
 };

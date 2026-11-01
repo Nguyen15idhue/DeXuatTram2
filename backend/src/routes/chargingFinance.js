@@ -27,7 +27,7 @@ router.use(requireAuth);
  *         schema: { type: integer, default: 20 }
  *     responses:
  *       200: { description: Thành công }
- *       403: { description: Chỉ Back Office hoặc quản trị viên }
+ *       403: { description: Chỉ Phòng Tài chính, Back Office hoặc quản trị viên }
  */
 router.get('/stations', chargingFinanceController.listStations);
 
@@ -61,6 +61,9 @@ router.get('/invoices', chargingFinanceController.listInvoices);
  *   post:
  *     tags: [Charging Finance]
  *     summary: Ghi nhận hóa đơn ON trạm
+ *     description: >
+ *       DEPOSIT ghi nhận ngay deposit_status=RECEIVED; PAYMENT yêu cầu đã nhận cọc và đưa payment_status từ NOT sang DOING;
+ *       REFUND chỉ cho mô hình Liên kết sau khi trạm đã ON. Mô hình Tự đầu tư không thu cọc/thanh toán.
  *     security: [ { bearerAuth: [] } ]
  *     parameters:
  *       - in: path

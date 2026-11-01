@@ -256,6 +256,12 @@ const AdminProposalSignDetailPage = () => {
         showNotes={false}
       />
 
+      {detail.signature_config_conflict && !detail.signed_file_id && (
+        <div className="alert alert-error text-sm">
+          Cấu hình người ký đang gắn với nhiều file hoặc lặp người ký. Tạm khóa ký và tải file; Back Office cần cấu hình lại toàn bộ người ký trên một file BCĐX duy nhất.
+        </div>
+      )}
+
       <div className="border rounded-lg bg-base-100 p-4 grid gap-3 grid-cols-2 md:grid-cols-4">
         <InfoItem label="Người đề xuất" value={detail.owner_name} />
         <InfoItem label="Tên pháp nhân" value={getProposalLegalName(detail)} />

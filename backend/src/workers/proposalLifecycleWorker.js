@@ -2,6 +2,8 @@ const pool = require('../utils/db');
 const cronMatcher = require('../utils/cronMatcher');
 const proposalLifecycle = require('../services/proposalLifecycle');
 const stationService = require('../services/stationService');
+const chargingStationService = require('../services/chargingStationService');
+const chargingStationReadiness = require('../services/chargingStationReadiness');
 const notificationService = require('../services/notificationService');
 
 const TICK_MS = 60 * 1000;
@@ -183,10 +185,20 @@ const processDeadlines = async (maxRetries = 5) => {
   const warnHours = await proposalLifecycle.getCountdownWarnHours();
   const placeholders = enabledStatuses.map(() => '?').join(', ');
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, supplement_deadline_at, transition_deadline_at, info_completed_at, custom_data FROM station_proposals
-      WHERE status IN (${placeholders})
-        AND (supplement_deadline_at IS NOT NULL OR transition_deadline_at IS NOT NULL)
-        AND NOT (status = 'APPROVED' AND signed_file_id IS NOT NULL)`,
+    `SELECT p.id, p.user_id, p.status, p.supplement_deadline_at, p.transition_deadline_at,
+            p.info_completed_at, p.custom_data
+       FROM station_proposals p
+      WHERE p.status IN (${placeholders})
+        AND (p.supplement_deadline_at IS NOT NULL OR p.transition_deadline_at IS NOT NULL)
+        AND NOT (p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL)
+        AND NOT EXISTS (
+          SELECT 1
+            FROM charging_stations cs
+            JOIN station_proposals station_proposal ON station_proposal.id = cs.proposal_id
+           WHERE cs.proposal_id = p.id
+             AND ${chargingStationReadiness.deadlineActiveSql('cs', 'station_proposal')}
+             AND cs.contract_deadline_at IS NOT NULL
+        )`,
     enabledStatuses
   );
   let acted = 0;
@@ -298,6 +310,15 @@ const tick = async () => {
   if (running) return;
   running = true;
   try {
+    try {
+      const cancelledStations = await chargingStationService.cancelOverdueStations();
+      if (cancelledStations > 0) {
+        console.log(`[LifecycleWorker] auto-cancel ${cancelledStations} overdue ON stations`);
+      }
+    } catch (error) {
+      console.error('[LifecycleWorker] ON-station deadline check failed:', error.message);
+    }
+
     const cfg = await getConfig();
     if (!cronMatcher.validate(cfg.cron)) {
       console.warn(`[LifecycleWorker] cron khong hop le: "${cfg.cron}"`);

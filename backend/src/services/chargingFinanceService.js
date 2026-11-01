@@ -1,9 +1,10 @@
 const pool = require('../utils/db');
-const proposalReportService = require('./proposalReportService');
 const chargingStationService = require('./chargingStationService');
+const readiness = require('./chargingStationReadiness');
 
 const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
 const INVOICE_TYPES = new Set(['DEPOSIT', 'REFUND', 'PAYMENT']);
+const INVOICE_LABELS = { DEPOSIT: 'tiền cọc', REFUND: 'hoàn cọc', PAYMENT: 'thanh toán' };
 const MAX_AMOUNT = 9999999999999.99;
 
 const toId = (value, label) => {
@@ -12,12 +13,10 @@ const toId = (value, label) => {
   return id;
 };
 
-const assertFinanceManager = async (user) => {
-  const scope = await proposalReportService.resolveScope(user);
-  if (!scope.isAdmin && !scope.isBackOffice) {
-    throw err('Chỉ Back Office hoặc quản trị viên được quản lý tài chính ON trạm', 403);
-  }
-};
+const assertFinanceManager = (user) => chargingStationService.assertFinanceManager(
+  user,
+  'Chỉ Phòng Tài chính, Back Office hoặc quản trị viên được quản lý tài chính ON trạm'
+);
 
 const listInvoices = async (stationId, user, { page = 1, limit = 20 } = {}) => {
   await assertFinanceManager(user);
@@ -81,10 +80,56 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     await connection.beginTransaction();
     transactionStarted = true;
     const [stations] = await connection.query(
-      'SELECT id, proposal_id FROM charging_stations WHERE id = ? FOR UPDATE',
+      `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status, cs.deposit_status, cs.payment_status,
+              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu
+         FROM charging_stations cs
+         JOIN station_proposals p ON p.id = cs.proposal_id
+        WHERE cs.id = ? FOR UPDATE`,
       [id]
     );
     if (!stations.length) throw err('Không tìm thấy trạm sạc', 404);
+    const station = stations[0];
+    const model = readiness.normalizeInvestmentModel(station.mo_hinh_dau_tu);
+    if (!readiness.getFinanceRequirements(model).requiresDeposit) {
+      throw err('Mô hình Tự đầu tư không thu cọc hoặc thanh toán', 400);
+    }
+
+    const [[totals]] = await connection.query(
+      `SELECT COALESCE(SUM(CASE WHEN invoice_type = 'DEPOSIT' THEN amount ELSE 0 END), 0) AS deposit_total,
+              COALESCE(SUM(CASE WHEN invoice_type = 'REFUND' THEN amount ELSE 0 END), 0) AS refund_total
+         FROM charging_station_invoices
+        WHERE charging_station_id = ?`,
+      [id]
+    );
+    const depositTotal = Number(totals.deposit_total);
+    const refundTotal = Number(totals.refund_total);
+    const statusChanges = {};
+    let nextDepositStatus = station.deposit_status;
+    let nextPaymentStatus = station.payment_status;
+
+    if (invoiceType === 'DEPOSIT') {
+      if (['REFUND_PENDING', 'REFUNDED'].includes(station.deposit_status)) {
+        throw err('Tiền cọc đã chuyển sang giai đoạn hoàn cọc, không thể ghi nhận thêm khoản cọc', 409);
+      }
+      nextDepositStatus = 'RECEIVED';
+    } else if (invoiceType === 'PAYMENT') {
+      if (!readiness.isDepositReceived(station.deposit_status)) {
+        throw err('Chưa có đặt cọc. Vui lòng tạo hóa đơn cọc trước rồi mới tạo hóa đơn thanh toán', 409);
+      }
+      if (station.payment_status === 'NOT') nextPaymentStatus = 'DOING';
+    } else {
+      if (model !== 'LK') throw err('Chỉ mô hình Liên kết được hoàn cọc', 400);
+      if (station.status !== 'OPERATING' || station.sub_status !== 'ACTIVE') {
+        throw err('Chỉ được hoàn cọc sau khi trạm đã ON', 409);
+      }
+      if (!['RECEIVED', 'REFUND_PENDING'].includes(station.deposit_status)) {
+        throw err('Trạm không có khoản cọc đang chờ hoàn', 409);
+      }
+      if (refundTotal + amount > depositTotal) {
+        throw err('Số tiền hoàn vượt quá tổng tiền cọc đã nhận', 400);
+      }
+      nextDepositStatus = refundTotal + amount >= depositTotal ? 'REFUNDED' : 'REFUND_PENDING';
+    }
 
     if (evidenceFileId) {
       const [files] = await connection.query(
@@ -101,7 +146,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
       }
     }
 
-    const proposalId = stations[0].proposal_id;
+    const proposalId = station.proposal_id;
     const [result] = await connection.query(
       `INSERT INTO charging_station_invoices
         (charging_station_id, proposal_id, invoice_type, amount, content, evidence_file_id, created_by)
@@ -126,6 +171,38 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
         ctx.ip || null
       ]
     );
+
+    if (nextDepositStatus !== station.deposit_status) {
+      statusChanges.deposit_status = {
+        label: chargingStationService.FIELD_LABELS.deposit_status,
+        old: station.deposit_status,
+        new: nextDepositStatus
+      };
+    }
+    if (nextPaymentStatus !== station.payment_status) {
+      statusChanges.payment_status = {
+        label: chargingStationService.FIELD_LABELS.payment_status,
+        old: station.payment_status,
+        new: nextPaymentStatus
+      };
+    }
+    if (Object.keys(statusChanges).length > 0) {
+      await connection.query(
+        'UPDATE charging_stations SET deposit_status = ?, payment_status = ? WHERE id = ?',
+        [nextDepositStatus, nextPaymentStatus, id]
+      );
+      await chargingStationService.writeActivity(connection, {
+        chargingStationId: id,
+        action: 'finance_status_changed',
+        changedFields: statusChanges,
+        reason: `Ghi nhận hóa đơn ${INVOICE_LABELS[invoiceType]}`,
+        actorId: ctx.actorId,
+        actorRole: ctx.actorRole,
+        source: 'user',
+        ip: ctx.ip
+      });
+      await chargingStationService.advanceToDeliveryIfReady(connection, { id }, ctx);
+    }
     await connection.commit();
     transactionStarted = false;
   } catch (error) {
@@ -133,6 +210,10 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     throw error;
   } finally {
     connection.release();
+  }
+
+  if (invoiceType === 'DEPOSIT') {
+    await chargingStationService.advanceProposalToDeploying(station.proposal_id, ctx);
   }
 
   const [rows] = await pool.query(

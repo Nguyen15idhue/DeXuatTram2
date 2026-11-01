@@ -7,10 +7,18 @@ const proposalReviewService = require('../services/proposalReviewService');
 const proposalProgressService = require('../services/proposalProgressService');
 
 const scopeFor = async (req) => {
-  if (req.user.role !== 'SALES' && req.user.role !== 'CTV' && req.user.role !== 'NPP') return { role: req.user.role };
+  if (!['SALES', 'CTV', 'NPP'].includes(req.user.role)) return { role: req.user.role };
   if (req.user.role === 'SALES' || req.user.role === 'NPP') {
     const branchIds = await adminProposalService.getBranchUserIds(req.user.id);
-    return { role: req.user.role, branchIds, userId: req.user.id };
+    const reviewProfile = req.user.role === 'SALES'
+      ? await proposalReviewService.resolveReviewer(req.user)
+      : null;
+    return {
+      role: req.user.role,
+      branchIds,
+      userId: req.user.id,
+      isTgdOwnerManager: reviewProfile?.roleKey === proposalReviewService.REVIEW_ROLE.TGD
+    };
   }
   // CTV: only see their own proposals (where they are the creator)
   return { role: 'CTV', userId: req.user.id };
@@ -23,10 +31,14 @@ const isAssignee = (proposal, userId) => {
 };
 
 const denyOutsideBranch = (proposal, scope) => {
-  if (scope.role !== 'SALES' && scope.role !== 'CTV') return false;
+  if (scope.role === 'SALES' && scope.isTgdOwnerManager) return false;
+  if (!['SALES', 'NPP', 'CTV'].includes(scope.role)) return false;
   if (scope.role === 'SALES') {
     if (scope.branchIds.includes(Number(proposal.user_id))) return false;
     return !isAssignee(proposal, scope.userId);
+  }
+  if (scope.role === 'NPP') {
+    return !scope.branchIds.includes(Number(proposal.user_id));
   }
   // CTV: only allow access to their own proposals (where they are the creator/user_id)
   if (scope.role === 'CTV') {
@@ -42,7 +54,7 @@ exports.duplicates = async (req, res) => {
     const result = await proximityService.findDuplicates({
       minM: min_m,
       maxM: max_m,
-      branchUserIds: scope.role === 'SALES' ? scope.branchIds : null
+      branchUserIds: ['SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager ? scope.branchIds : null
     });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -236,6 +248,19 @@ exports.update = async (req, res) => {
     }
     if (denyOutsideBranch(existing, await scopeFor(req))) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    if (req.user.role !== 'SUPER_ADMIN' && Number(existing.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Chỉ chủ đề xuất được sửa khi có yêu cầu cập nhật; cấp trên không được sửa thay.'
+      });
+    }
+    if (req.user.role !== 'SUPER_ADMIN'
+      && !await require('../services/proposalRequestService').hasOpenOwnerUpdateRequest(id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Đề xuất chỉ được chỉnh sửa khi có yêu cầu cập nhật thông tin. Chỉ SUPER_ADMIN được sửa ở mọi thời điểm.'
+      });
     }
 
     const updated = await adminProposalService.updateProposal(id, req.body, {

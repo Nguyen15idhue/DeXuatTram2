@@ -105,7 +105,7 @@ const AdminProposalSigningPage = () => {
               <ArrowLeft size={16} />
               Quay lại
             </button>
-            <button type="button" className="btn btn-outline btn-sm gap-1" onClick={handleExport} disabled={exporting || loading || !detail}>
+            <button type="button" className="btn btn-outline btn-sm gap-1" onClick={handleExport} disabled={exporting || loading || !detail || (detail?.signature_config_conflict && !detail?.signed_file_id)}>
               <Download size={16} />
               {exporting ? 'Đang tạo file…' : (detail?.signer_signed > 0 ? 'Tải file đã ký' : 'Tải tài liệu')}
             </button>
@@ -116,6 +116,12 @@ const AdminProposalSigningPage = () => {
       {loading && <div className="flex justify-center py-8"><span className="loading loading-spinner" /></div>}
 
       {!loading && error && <div className="alert alert-error text-sm">{error}</div>}
+
+      {!loading && detail?.signature_config_conflict && !detail?.signed_file_id && (
+        <div className="alert alert-error text-sm">
+          Cấu hình người ký đang gắn với nhiều file hoặc lặp người ký. Tạm khóa ký và tải file; Back Office cần cấu hình lại toàn bộ người ký trên một file BCĐX duy nhất.
+        </div>
+      )}
 
       {!loading && detail && (
         <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.7fr)_minmax(0,1.3fr)]">

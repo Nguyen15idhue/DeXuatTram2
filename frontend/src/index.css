@@ -329,6 +329,20 @@ body {
 .badge-success { color: #059669; background: #ECFDF5; border-color: #059669; }
 .badge-warning { color: #D97706; background: #FFFBEB; border-color: #D97706; }
 .badge-error { color: #DC2626; background: #FEF2F2; border-color: #DC2626; }
+.badge-error.sidebar-task-badge {
+  min-width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 9px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 600;
+  text-align: center;
+}
 .badge-info { color: #2563EB; background: #EFF6FF; border-color: #2563EB; }
 .badge-neutral, .badge-ghost { color: #4B5563; background: #F3F4F6; border-color: #4B5563; }
 

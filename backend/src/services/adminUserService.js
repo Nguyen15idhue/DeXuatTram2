@@ -11,14 +11,12 @@ exports.getAncestorIds = async (userId) => {
   let guard = 0;
   while (cur && guard < 20) {
     guard++;
-    try {
-      const [rows] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [cur]);
-      const pid = rows.length > 0 ? Number(rows[0].parent_id) : 0;
-      if (!pid || seen.has(pid)) break;
-      seen.add(pid);
-      ids.push(pid);
-      cur = pid;
-    } catch { break; }
+    const [rows] = await pool.query('SELECT parent_id FROM users WHERE id = ?', [cur]);
+    const pid = rows.length > 0 ? Number(rows[0].parent_id) : 0;
+    if (!pid || seen.has(pid)) break;
+    seen.add(pid);
+    ids.push(pid);
+    cur = pid;
   }
   return ids;
 };
@@ -32,10 +30,11 @@ exports.getBranchIds = async (userId) => {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     ids.push(id);
-    try {
-      const [rows] = await pool.query('SELECT id FROM users WHERE parent_id = ?', [id]);
-      rows.forEach(r => { if (!seen.has(r.id)) frontier.push(r.id); });
-    } catch { /* silent */ }
+    const [rows] = await pool.query('SELECT id FROM users WHERE parent_id = ?', [id]);
+    rows.forEach((row) => {
+      const childId = Number(row.id);
+      if (!seen.has(childId)) frontier.push(childId);
+    });
   }
   return ids;
 };
@@ -45,7 +44,7 @@ exports.getAllUsers = async (search, page, limit, scope = {}, filters = {}) => {
   const params = [];
   let ancestorSet = null;
 
-  if (scope.role === 'SALES' && scope.userId) {
+  if (['SALES', 'NPP'].includes(scope.role) && scope.userId) {
     const branchIds = await exports.getBranchIds(scope.userId);
     const ancestorIds = await exports.getAncestorIds(scope.userId);
     ancestorSet = new Set(ancestorIds);
@@ -277,6 +276,7 @@ exports.deleteUserWithOrphan = async (id, newOwnerId) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    await conn.query('UPDATE users SET parent_id = ? WHERE parent_id = ?', [newOwnerId, id]);
     await conn.query('UPDATE station_proposals SET user_id = ? WHERE user_id = ?', [newOwnerId, id]);
     await conn.query('DELETE FROM users WHERE id = ?', [id]);
     await conn.commit();

@@ -14,7 +14,7 @@ const ALLOWED_TRANSITIONS = {
   PENDING: ['REVIEWING', 'GRADING', 'REJECTED', 'CANCELLED'],
   REVIEWING: ['APPROVED', 'CANCELLED', 'ARCHIVED'],
   PRINCIPLE_APPROVED: ['APPROVED', 'CANCELLED'],
-  APPROVED: ['CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED'],
+  APPROVED: ['CONTRACT_SIGNED', 'CONTRACT_FAILED', 'CANCELLED', 'DEPLOYING'],
   ARCHIVED: ['CONTRACT_SIGNED', 'CANCELLED'],
   CONTRACT_SIGNED: ['CANCELLED', 'DEPLOYING', 'ACTIVE'],
   DEPLOYING: ['CANCELLED', 'ACTIVE'],
@@ -38,13 +38,6 @@ const ALLOWED_TRANSITIONS = {
 
 const REASON_REQUIRED = ['REJECTED', 'CANCELLED'];
 
-// Trang thai ma nguoi de xuat duoc tu sua noi dung. Cac khau phong ban dang lam viec
-// (GRADING..SIGNATURE_PENDING) khoa sua; chi mo khi phong ban yeu cau bo sung.
-const OWNER_EDITABLE_STATUSES = [
-  'PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED',
-  'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'
-];
-
 const STATUS_STEP_LABELS = {
   PENDING: 'đang đề xuất',
   GRADING: 'đánh giá Quy hoạch và Pháp lý',
@@ -62,7 +55,6 @@ const STATUS_STEP_LABELS = {
   ACTIVE: 'đang hoạt động'
 };
 
-exports.OWNER_EDITABLE_STATUSES = OWNER_EDITABLE_STATUSES;
 exports.STATUS_STEP_LABELS = STATUS_STEP_LABELS;
 
 const SKIP_DIFF_KEYS = new Set([
@@ -185,7 +177,8 @@ exports.transition = async (id, to, opts = {}) => {
   if (forceOverride && !String(reason || '').trim()) {
     throw err('Ghi đè trạng thái cần nhập lý do', 400);
   }
-  if (isSignedApproval && !forceOverride) {
+  const isStationFlowTransition = source === 'system_auto' && ['DEPLOYING', 'ACTIVE', 'CANCELLED'].includes(to);
+  if (isSignedApproval && !forceOverride && !isStationFlowTransition) {
     await exports.logActivity({
       proposalId: id, action: 'status_change_denied',
       fromStatus: from, toStatus: to,

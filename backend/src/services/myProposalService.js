@@ -61,6 +61,12 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
             p.address, p.area, p.land_type, p.description, p.status,
             p.reject_reason, p.custom_data, p.created_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.pending_station_code, p.note, p.chot_so_luong_tru, p.tong_gia_tri_chot,
+            EXISTS (
+              SELECT 1 FROM proposal_requests r
+               WHERE r.proposal_id = p.id AND r.status = 'OPEN'
+                 AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
+                 AND r.target_user_id = p.user_id
+            ) AS owner_update_request_open,
             DATE_FORMAT(p.ngay_du_kien_on, '%Y-%m-%d') AS ngay_du_kien_on
     FROM station_proposals p
     ${whereClause}
@@ -80,7 +86,17 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
 };
 
 exports.getProposalById = async (id) => {
-  const [proposals] = await pool.query('SELECT * FROM station_proposals WHERE id = ?', [id]);
+  const [proposals] = await pool.query(
+    `SELECT p.*,
+            EXISTS (
+              SELECT 1 FROM proposal_requests r
+               WHERE r.proposal_id = p.id AND r.status = 'OPEN'
+                 AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
+                 AND r.target_user_id = p.user_id
+            ) AS owner_update_request_open
+       FROM station_proposals p WHERE p.id = ?`,
+    [id]
+  );
   if (proposals.length === 0) return null;
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
@@ -96,9 +112,10 @@ exports.getProposalByIdAndUser = async (id, userId) => {
   return existing.length > 0 ? existing[0] : null;
 };
 
-const assertOwnerEditable = (status) => {
+const assertOwnerEditable = async (proposalId, status, actorRole) => {
+  if (actorRole === 'SUPER_ADMIN') return;
+  if (await require('./proposalRequestService').hasOpenOwnerUpdateRequest(proposalId)) return;
   const proposalLifecycle = require('./proposalLifecycle');
-  if (proposalLifecycle.OWNER_EDITABLE_STATUSES.includes(status)) return;
   const step = proposalLifecycle.STATUS_STEP_LABELS[status];
   const where = step ? `Đề xuất đang ở khâu ${step}` : `Đề xuất đang ở trạng thái ${status}`;
   throw Object.assign(
@@ -136,17 +153,21 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   if (st.length === 0) {
     throw Object.assign(new Error('Không tìm thấy đề xuất'), { statusCode: 404 });
   }
-  let gradingSupplementUpdate = false;
-  if (opts.deferRequestCompletion && opts.requestId && opts.requestType === 'SUPPLEMENT'
-    && ['GRADING', 'RE_GRADING'].includes(st[0].status)) {
-    const request = await require('./proposalRequestService').getRequestById(opts.requestId);
-    gradingSupplementUpdate = !!request
+  let requestScopedUpdate = false;
+  if (opts.deferRequestCompletion && opts.requestId && opts.requestType) {
+    const proposalRequestService = require('./proposalRequestService');
+    const request = await proposalRequestService.getRequestById(opts.requestId);
+    requestScopedUpdate = !!request
       && Number(request.proposal_id) === Number(id)
       && Number(request.owner_id) === Number(userId)
-      && request.request_type === 'SUPPLEMENT'
-      && request.status === 'OPEN';
+      && request.request_type === opts.requestType
+      && request.status === 'OPEN'
+      && await proposalRequestService.canUpdateProposalForRequest(
+        { id: actorId, role: opts.actorRole },
+        request
+      );
   }
-  if (!gradingSupplementUpdate) assertOwnerEditable(st[0].status);
+  if (!requestScopedUpdate) assertOwnerEditable(id, st[0].status, opts.actorRole);
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const { fixedData, dynamicData } = dynamicUtils.splitData('station_proposals', data, fieldDefs);
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});

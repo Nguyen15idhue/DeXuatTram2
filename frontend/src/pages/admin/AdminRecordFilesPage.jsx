@@ -31,7 +31,7 @@ const getFileIcon = (file) => {
 const VIEW_MAP = { stations: 6, users: 7, station_proposals: 8, leads: 0 };
 
 const AdminRecordFilesPage = () => {
-  const { token, isAdmin } = useAuth();
+  const { token, isAdmin, user } = useAuth();
   const navigate = useNavigate();
   const { entity, id } = useParams();
   const [searchParams] = useSearchParams();
@@ -52,6 +52,7 @@ const AdminRecordFilesPage = () => {
       setLoading(true);
       setError('');
       if (entity === 'users' && !isAdmin) { setError('Không có quyền truy cập'); return; }
+      if (['CTV', 'NPP'].includes(user?.role) && entity !== 'station_proposals') { setError('Không có quyền truy cập'); return; }
       const viewId = VIEW_MAP[entity];
       if (!viewId) { setError('Entity không hợp lệ'); return; }
 

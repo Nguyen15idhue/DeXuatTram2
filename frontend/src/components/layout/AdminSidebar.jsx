@@ -221,7 +221,7 @@ const mainItems = [
     label: "Quản lý Users",
     group: "Quản trị",
     icon: Users,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "NPP"],
   },
   {
     path: "/admin/reports",
@@ -384,7 +384,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const canSeeProposalMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
   const canSeeChargingStationMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
   const canSeeGradingTaskCount = user?.role === "SUPER_ADMIN"
-    || (user?.role === "ADMIN" && ["QH", "PL"].includes(gradingRole));
+    || ["QH", "PL"].includes(gradingRole);
   const proposalTaskTotal = proposalTaskCounts
     ? Object.values(proposalTaskCounts).every(Number.isFinite)
       ? Object.values(proposalTaskCounts).reduce((total, count) => total + count, 0)
@@ -436,7 +436,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       const sources = [{
         key: "requests",
         load: () => proposalRequestService.getAll(
-          "status=OPEN&work_scope=mine&page=1&limit=1",
+          "status=OPEN&work_scope=all&page=1&limit=1",
           token,
         ),
       }];
@@ -621,14 +621,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const linkClass = (isActive) =>
     `group flex items-center gap-3 h-11 px-3 rounded-lg text-[14px] font-medium transition-colors duration-150 mb-0.5 ${
       isActive
-        ? "bg-[#4F35E8] text-white font-semibold"
+        ? "bg-primary text-primary-content font-semibold shadow-sm"
         : "text-[#52525B] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"
     }`;
 
   const childLinkClass = (isActive) =>
     `group flex items-center gap-3 h-10 pl-10 pr-3 rounded-lg text-[13px] font-medium transition-colors duration-150 mb-0.5 ${
       isActive
-        ? "bg-[#F0EDFF] text-[#4F35E8] font-semibold border-l-2 border-[#4F35E8]"
+        ? "bg-primary text-primary-content font-semibold shadow-sm"
         : "text-[#71717A] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"
     }`;
 
@@ -662,14 +662,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <item.icon
           size={isChild ? 16 : 18}
           strokeWidth={1.8}
-          className={isActive ? "text-white" : "text-[#71717A] group-hover:text-[#4F35E8]"}
+          className={isActive ? "text-primary-content" : "text-[#71717A] group-hover:text-[#4F35E8]"}
         />
         <span className="truncate" title={item.label}>
           {item.label}
         </span>
         {Number.isFinite(taskCount) && taskCount > 0 && (
           <span
-            className={`inline-flex items-center justify-center h-6 min-w-[26px] px-[7px] text-[12px] font-semibold rounded-[6px] ml-auto ${isActive ? "bg-white text-[#4F35E8]" : "bg-[#F0EDFF] text-[#5538D5]"}`}
+            className="badge badge-error sidebar-task-badge ml-auto flex-shrink-0"
             title={`${taskCount} ${taskTitle}`}
             aria-label={`${taskCount} ${taskTitle}`}
           >
@@ -708,14 +708,14 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           <button
             type="button"
             onClick={() => toggleMainItem(item.path)}
-            className={`group w-full flex items-center justify-between h-11 px-3 rounded-lg text-[14px] font-medium transition-colors duration-150 mb-0.5 ${isActive ? "bg-[#4F35E8] text-white font-semibold" : "text-[#52525B] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"}`}
+            className={`group w-full flex items-center justify-between h-11 px-3 rounded-lg text-[14px] font-medium transition-colors duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content font-semibold shadow-sm" : "text-[#52525B] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"}`}
             title={item.label}
           >
             <span className="flex items-center gap-3">
               <item.icon
                 size={18}
                 strokeWidth={1.8}
-                className={isActive ? "text-white" : "text-[#71717A] group-hover:text-[#4F35E8]"}
+                className={isActive ? "text-primary-content" : "text-[#71717A] group-hover:text-[#4F35E8]"}
               />
               <span className="truncate" title={item.label}>
                 {item.label}
@@ -724,7 +724,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
             <span className="flex items-center gap-2">
               {Number.isFinite(taskCount) && taskCount > 0 && (
                 <span
-                  className={`inline-flex items-center justify-center h-6 min-w-[26px] px-[7px] text-[12px] font-semibold rounded-[6px] ${isActive ? "bg-white text-[#4F35E8]" : "bg-[#F0EDFF] text-[#5538D5]"}`}
+                  className="badge badge-error sidebar-task-badge"
                   title={`${taskCount} ${taskTitle}`}
                   aria-label={`${taskCount} ${taskTitle}`}
                 >

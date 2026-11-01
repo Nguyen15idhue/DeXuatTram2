@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const adminUserService = require('../services/adminUserService');
 
-const ALLOWED_PARENT_ROLES = ['SALES', 'ADMIN', 'SUPER_ADMIN'];
+const ALLOWED_PARENT_ROLES = ['SALES', 'ADMIN', 'SUPER_ADMIN', 'NPP'];
 const { isGdkv, isGdtt } = require('../constants/salesRanks');
 
 const parseCustomData = (val) => {
@@ -9,6 +9,12 @@ const parseCustomData = (val) => {
   if (typeof val === 'object') return val;
   try { return JSON.parse(val); } catch { return {}; }
 };
+
+const isAllowedParent = (parent, childRole) => (
+  parent
+  && ALLOWED_PARENT_ROLES.includes(parent.role)
+  && (parent.role !== 'NPP' || childRole === 'CTV')
+);
 
 exports.getAll = async (req, res) => {
   try {
@@ -38,21 +44,25 @@ exports.getOptions = async (req, res) => {
 exports.getById = async (req, res) => {
   try {
     const targetId = parseInt(req.params.id);
-    const user = await adminUserService.findById(targetId);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
-    }
-    if (req.user.role === 'SALES') {
+    let scope = null;
+    if (['SALES', 'NPP'].includes(req.user.role)) {
       const branchIds = await adminUserService.getBranchIds(req.user.id);
       if (branchIds.includes(targetId)) {
-        user._scope = 'branch';
+        scope = 'branch';
       } else {
         const ancestorIds = await adminUserService.getAncestorIds(req.user.id);
         if (!ancestorIds.includes(targetId)) {
           return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
         }
-        user._scope = 'ancestor';
+        scope = 'ancestor';
       }
+    }
+    const user = await adminUserService.findById(targetId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
+    }
+    if (scope) {
+      user._scope = scope;
     } else if (req.user.role === 'ADMIN') {
       if (user.role === 'SUPER_ADMIN') {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
@@ -76,7 +86,14 @@ exports.create = async (req, res) => {
     }
 
     let parentId = null;
-    if (creatorRole === 'SALES') {
+    if (creatorRole === 'NPP') {
+      if (role && role !== 'CTV') {
+        return res.status(403).json({ success: false, message: 'NPP chỉ được tạo tài khoản CTV' });
+      }
+      role = 'CTV';
+      status = 'ACTIVE';
+      parentId = req.user.id;
+    } else if (creatorRole === 'SALES') {
       if (role && !['CTV', 'NPP'].includes(role)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
@@ -85,13 +102,18 @@ exports.create = async (req, res) => {
       const creatorCd = parseCustomData(creator && creator.custom_data);
       if (isGdkv(creatorCd.chuc_vu, creatorCd.department)) {
         parentId = req.user.id;
-      } else if (isGdtt(creatorCd.chuc_vu, creatorCd.department) && parent_id) {
-        const parentUser = await adminUserService.findById(Number(parent_id));
-        const parentCd = parseCustomData(parentUser && parentUser.custom_data);
-        const sameDept = parentCd.department && parentCd.department === creatorCd.department;
-        parentId = (parentUser && parentUser.role === 'SALES' && isGdkv(parentCd.chuc_vu, parentCd.department) && sameDept)
-          ? parentUser.id
-          : req.user.id;
+      } else if (isGdtt(creatorCd.chuc_vu, creatorCd.department)) {
+        if (!parent_id) {
+          parentId = req.user.id;
+        } else {
+          const parentUser = await adminUserService.findById(Number(parent_id));
+          const parentCd = parseCustomData(parentUser && parentUser.custom_data);
+          const sameDept = parentCd.department && parentCd.department === creatorCd.department;
+          if (!parentUser || parentUser.role !== 'SALES' || !isGdkv(parentCd.chuc_vu, parentCd.department) || !sameDept) {
+            return res.status(400).json({ success: false, message: 'Cấp trên phải là GĐKV cùng phòng ban' });
+          }
+          parentId = parentUser.id;
+        }
       } else {
         parentId = req.user.id;
       }
@@ -102,17 +124,19 @@ exports.create = async (req, res) => {
       role = role || 'CTV';
       if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
-        if (parentUser && ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
-          parentId = parentUser.id;
+        if (!isAllowedParent(parentUser, role)) {
+          return res.status(400).json({ success: false, message: 'Cấp trên không hợp lệ với role của user' });
         }
+        parentId = parentUser.id;
       }
     } else {
       role = role || 'CTV';
       if (['CTV', 'NPP', 'SALES'].includes(role) && parent_id) {
         const parentUser = await adminUserService.findById(Number(parent_id));
-        if (parentUser && ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
-          parentId = parentUser.id;
+        if (!isAllowedParent(parentUser, role)) {
+          return res.status(400).json({ success: false, message: 'Cấp trên không hợp lệ với role của user' });
         }
+        parentId = parentUser.id;
       }
     }
 
@@ -143,10 +167,13 @@ exports.update = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy user' });
     }
 
-    if (editorRole === 'SALES') {
+    if (['SALES', 'NPP'].includes(editorRole)) {
       const branchIds = await adminUserService.getBranchIds(req.user.id);
       if (!branchIds.includes(targetId)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      if (editorRole === 'NPP' && targetId !== Number(req.user.id) && existing.role !== 'CTV') {
+        return res.status(403).json({ success: false, message: 'NPP chỉ được sửa hồ sơ CTV trong nhánh' });
       }
       role = existing.role;
       status = existing.status;
@@ -193,8 +220,8 @@ exports.update = async (req, res) => {
         parentId = null;
       } else {
         const parentUser = await adminUserService.findById(Number(parent_id));
-        if (!parentUser || !ALLOWED_PARENT_ROLES.includes(parentUser.role)) {
-          return res.status(400).json({ success: false, message: 'Cấp trên phải là tài khoản SALES/ADMIN/SUPER_ADMIN' });
+        if (!isAllowedParent(parentUser, role)) {
+          return res.status(400).json({ success: false, message: 'Cấp trên không hợp lệ với role của user' });
         }
         const branchIds = await adminUserService.getBranchIds(targetId);
         if (branchIds.includes(Number(parentUser.id))) {
@@ -228,6 +255,10 @@ exports.delete = async (req, res) => {
     const { id } = req.params;
     const targetId = parseInt(id);
     const deleterRole = req.user.role;
+
+    if (deleterRole === 'NPP') {
+      return res.status(403).json({ success: false, message: 'NPP không có quyền xóa tài khoản' });
+    }
 
     const existing = await adminUserService.findByIdWithRole(targetId);
     if (!existing) {
@@ -359,10 +390,13 @@ exports.changePassword = async (req, res) => {
       }
     }
 
-    if (req.user.role === 'SALES') {
+    if (['SALES', 'NPP'].includes(req.user.role)) {
       const branchIds = await adminUserService.getBranchIds(req.user.id);
       if (!branchIds.includes(targetId)) {
         return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+      }
+      if (req.user.role === 'NPP' && targetId !== Number(req.user.id) && existing.role !== 'CTV') {
+        return res.status(403).json({ success: false, message: 'NPP chỉ được đổi mật khẩu CTV trong nhánh' });
       }
     }
 

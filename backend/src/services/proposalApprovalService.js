@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const path = require('path');
 const dynamicUtils = require('./dynamicUtils');
 const proposalGradingService = require('./proposalGradingService');
 const proposalReportService = require('./proposalReportService');
@@ -67,8 +68,14 @@ const scopeClause = async (scope, params) => {
 };
 
 const assertApprovalAccess = (scope) => {
-  if (scope.role === 'SUPER_ADMIN' || (scope.role === 'ADMIN' && scope.isBackOffice)) return;
-  throw err('Chỉ SUPER_ADMIN hoặc ADMIN thuộc Back Office được duyệt BCĐX', 403);
+  if (scope.role === 'SUPER_ADMIN' || scope.isBackOffice || scope.roleKey === 'TGD') return;
+  throw err('Chỉ SUPER_ADMIN, nhân sự Back Office hoặc Tổng giám đốc được duyệt BCĐX', 403);
+};
+
+// Thao tác ghi cần Back Office hoặc SUPER_ADMIN; TGĐ chỉ đọc + từ chối duyệt
+const assertApprovalMutation = (scope) => {
+  if (scope.role === 'SUPER_ADMIN' || scope.isBackOffice) return;
+  throw err('Chỉ SUPER_ADMIN hoặc nhân sự Back Office được thao tác', 403);
 };
 
 const loadProposal = async (id) => {
@@ -210,6 +217,7 @@ const buildMessage = async (proposal, actorId, { status, actionLabel, reason }) 
 exports.requestUpdate = async ({ user, id, description, ip } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
   assertApprovalAccess(scope);
+  assertApprovalMutation(scope);
   const proposal = await loadProposal(id);
   if (proposal.status !== REVIEWING_STATUS) {
     throw err('Đề xuất không ở trạng thái đang duyệt BCĐX', 400);
@@ -473,6 +481,7 @@ exports.getSignerCandidates = async ({ user, id } = {}) => {
 exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
   const scope = await proposalReportService.resolveScope(user);
   assertApprovalAccess(scope);
+  assertApprovalMutation(scope);
   const proposal = await loadProposal(id);
   if (proposal.status !== REVIEWING_STATUS) {
     throw err('Chỉ cấu hình ký cho đề xuất đang duyệt BCĐX', 400);
@@ -481,12 +490,18 @@ exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
   if (normalized.length === 0) {
     throw err('Vui lòng chọn ít nhất một người ký', 400);
   }
+  if (new Set(normalized.map((signer) => signer.user_id)).size !== normalized.length) {
+    throw err('Mỗi người chỉ được cấu hình một ô ký trên cùng hồ sơ', 400);
+  }
 
   const custom = parseCustomData(proposal.custom_data);
   const reportFiles = toFileSummaries(custom[REPORT_FIELD]);
   const resolvedFileId = Number(fileId) || (reportFiles[0] ? Number(reportFiles[0].id) : null);
   if (!resolvedFileId) {
     throw err('Đề xuất chưa có file tờ trình BCĐX', 400);
+  }
+  if (!reportFiles.some((file) => Number(file.id) === resolvedFileId)) {
+    throw err('Chỉ được cấu hình ký trên file BCĐX đang có trong hồ sơ', 400);
   }
 
   const signerIds = [...new Set(normalized.map((signer) => signer.user_id))];
@@ -507,36 +522,77 @@ exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
   }
 
   const [fileRows] = await pool.query(
-    'SELECT id, original_name FROM files WHERE id = ? LIMIT 1',
+    "SELECT id, original_name, mime_type FROM files WHERE id = ? AND status <> 'deleted' LIMIT 1",
     [resolvedFileId]
   );
   if (fileRows.length === 0) {
     throw err('Không tìm thấy file tờ trình BCĐX', 400);
   }
+  const mimeType = String(fileRows[0].mime_type || '').toLowerCase();
+  const extension = path.extname(fileRows[0].original_name || '').toLowerCase();
+  const isPdf = mimeType === 'application/pdf' || extension === '.pdf';
+  const isDocx = mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    || extension === '.docx';
+  if (!isPdf && !isDocx) {
+    throw err('File BCĐX để cấu hình ký phải có định dạng PDF hoặc DOCX', 400);
+  }
 
-  await pool.query(
-    "DELETE FROM proposal_signature_configs WHERE proposal_id = ? AND status = 'PENDING'",
-    [proposal.id]
-  );
-  for (const signer of normalized) {
-    await pool.query(
-      `INSERT INTO proposal_signature_configs
-        (proposal_id, file_id, user_id, signer_title, signer_department, page, pos_x, pos_y, box_width, box_height, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        proposal.id,
-        resolvedFileId,
-        signer.user_id,
-        signer.signer_title,
-        signerDepartments.get(signer.user_id),
-        signer.page,
-        signer.pos_x,
-        signer.pos_y,
-        signer.box_width,
-        signer.box_height,
-        user.id
-      ]
+  const connection = await pool.getConnection();
+  let transactionStarted = false;
+  let previousConfigs = [];
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const [lockedProposals] = await connection.query(
+      'SELECT id, status FROM station_proposals WHERE id = ? FOR UPDATE',
+      [proposal.id]
     );
+    if (!lockedProposals.length) throw err('Không tìm thấy đề xuất', 404);
+    if (lockedProposals[0].status !== REVIEWING_STATUS) {
+      throw err('Chỉ cấu hình ký cho đề xuất đang duyệt BCĐX', 400);
+    }
+
+    const [existingConfigs] = await connection.query(
+      `SELECT id, user_id, file_id, status
+         FROM proposal_signature_configs
+        WHERE proposal_id = ? AND status <> 'CANCELLED'
+        FOR UPDATE`,
+      [proposal.id]
+    );
+    previousConfigs = existingConfigs;
+    await connection.query(
+      `UPDATE proposal_signature_configs
+          SET status = 'CANCELLED'
+        WHERE proposal_id = ? AND status <> 'CANCELLED'`,
+      [proposal.id]
+    );
+    for (const signer of normalized) {
+      await connection.query(
+        `INSERT INTO proposal_signature_configs
+          (proposal_id, file_id, user_id, signer_title, signer_department, page, pos_x, pos_y, box_width, box_height, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          proposal.id,
+          resolvedFileId,
+          signer.user_id,
+          signer.signer_title,
+          signerDepartments.get(signer.user_id),
+          signer.page,
+          signer.pos_x,
+          signer.pos_y,
+          signer.box_width,
+          signer.box_height,
+          user.id
+        ]
+      );
+    }
+    await connection.commit();
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
 
   const proposalLifecycle = require('./proposalLifecycle');
@@ -554,8 +610,16 @@ exports.configureSignature = async ({ user, id, fileId, signers, ip } = {}) => {
     fromStatus: REVIEWING_STATUS,
     toStatus: SIGNATURE_STATUS,
     changedFields: {
-      signers: { label: 'Người ký', old: '', new: normalized.map((s) => s.user_id).join(', ') },
-      file_id: { label: 'File BCĐX', old: '', new: String(resolvedFileId) }
+      signers: {
+        label: 'Người ký',
+        old: [...new Set(previousConfigs.map((s) => Number(s.user_id)))].join(', '),
+        new: normalized.map((s) => s.user_id).join(', ')
+      },
+      file_id: {
+        label: 'File BCĐX',
+        old: [...new Set(previousConfigs.map((s) => Number(s.file_id)))].join(', '),
+        new: String(resolvedFileId)
+      }
     },
     actorId: user.id,
     actorRole: user.role,
