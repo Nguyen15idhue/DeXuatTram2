@@ -625,6 +625,12 @@ export const chargingStationService = {
   getDetail(id, token) {
     return api.getWithAuth(`/admin/charging-stations/${id}`, token);
   },
+  cancelOnStation(id, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/cancel`, {}, token));
+  },
+  restoreOnStation(id, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/restore`, {}, token));
+  },
   update(id, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-stations/${id}`, data || {}, token));
   },

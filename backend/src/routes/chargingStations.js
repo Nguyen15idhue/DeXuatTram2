@@ -93,6 +93,56 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
 
 /**
  * @swagger
+ * /api/admin/charging-stations/{id}/cancel:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Hủy ON trạm và lưu trữ đề xuất liên kết
+ *     description: Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD trong phạm vi quản lý.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: ON trạm đã hủy; đề xuất được lưu trữ
+ *       403:
+ *         description: Không có quyền hoặc ngoài phạm vi
+ *       409:
+ *         description: Trạng thái hiện tại không thể hủy
+ */
+router.post('/:id/cancel', requireChargingStationViewer, chargingStationController.cancelOnStation);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/restore:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Khôi phục ON trạm bị hủy thủ công
+ *     description: Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD trong phạm vi quản lý; khôi phục cả trạng thái đề xuất đã lưu.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: ON trạm và đề xuất đã được khôi phục
+ *       403:
+ *         description: Không có quyền hoặc ngoài phạm vi
+ *       409:
+ *         description: Không thể khôi phục bản ghi này
+ */
+router.post('/:id/restore', requireChargingStationViewer, chargingStationController.restoreOnStation);
+
+/**
+ * @swagger
  * /api/admin/charging-stations/{id}:
  *   put:
  *     tags: [Charging Stations]
@@ -115,7 +165,7 @@ router.get('/:id', requireChargingStationViewer, chargingStationController.detai
  *               on_date:
  *                 type: string
  *                 format: date
- *                sub_status:
+ *               sub_status:
  *                 type: string
  *               description:
  *                 type: string
