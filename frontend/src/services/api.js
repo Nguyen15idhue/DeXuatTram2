@@ -446,6 +446,15 @@ export const adminProposalService = {
   }
 };
 
+export const proposalSheetSyncService = {
+  getStatus(token) {
+    return api.getWithAuth('/admin/proposal-sheet-sync/status', token);
+  },
+  syncDaily(token) {
+    return api.postWithAuth('/admin/proposal-sheet-sync/daily', {}, token);
+  }
+};
+
 export const proposalRequestService = {
   getAll(params, token) {
     const qs = params ? `?${params}` : '';

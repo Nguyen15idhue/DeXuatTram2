@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import FieldRenderer from '../dynamic/FieldRenderer';
 import DynamicField from '../dynamic/DynamicField';
+import ProposalGoogleMapLink from './ProposalGoogleMapLink';
 import LocationMapModal from '../LocationMapModal';
 import ProposalActivityPopup from './ProposalActivityPopup';
 import StationActivityPopup from './StationActivityPopup';
@@ -33,7 +34,7 @@ const ENTITY_SERVICES = {
 
 const DEFAULT_VIEW_IDS = { stations: 6, users: 7, station_proposals: 8, leads: 0 };
 
-const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, updateService = null, beforeActions = null, readOnlyKeys = [] }) => {
+const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: recordProp, onClose, onSaved, onSwitchMode, allowEdit = true, canEditRecord = null, updateService = null, beforeActions = null, readOnlyKeys = [] }) => {
   const { token, user: authUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -654,6 +655,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
       const def = allFields.find(f => f.key === key) || field;
       const computed = computeFormulaValue(def, allFields, formData);
       if (computed !== '') value = computed;
+    }
+    if (entity === 'station_proposals' && ['link_google_map', 'link_gg_map'].includes(key)) {
+      return <ProposalGoogleMapLink value={value} latitude={record?.latitude} longitude={record?.longitude} />;
     }
     let userLocked = false;
     if (mode === 'edit' && field.type === 'user') {

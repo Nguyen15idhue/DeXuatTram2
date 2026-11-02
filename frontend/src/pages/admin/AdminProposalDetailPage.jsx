@@ -105,8 +105,8 @@ const formatValue = (value) => {
 };
 
 const FieldValue = ({ field, value, record, onViewFile }) => {
-  if (field.key === 'link_google_map') {
-    return <ProposalGoogleMapLink value={value} />;
+  if (['link_google_map', 'link_gg_map'].includes(field.key)) {
+    return <ProposalGoogleMapLink value={value} latitude={record?.latitude} longitude={record?.longitude} />;
   }
   if (field.type === 'file') {
     const files = getFiles(value);
