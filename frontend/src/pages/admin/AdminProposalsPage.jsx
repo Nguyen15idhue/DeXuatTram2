@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { adminProposalService, proposalService, excelService, formService, documentService, adminUserService, leadService } from '../../services/api';
+import { adminProposalService, proposalService, excelService, formService, documentService, adminUserService, leadService, proposalSheetSyncService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
@@ -110,6 +110,8 @@ const AdminProposalsPage = () => {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [proposalSheetSyncStatus, setProposalSheetSyncStatus] = useState(null);
+  const [proposalSheetSyncLoading, setProposalSheetSyncLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [pageSize, setPageSize] = useState(20);
@@ -322,6 +324,49 @@ const AdminProposalsPage = () => {
       setLoading(false);
     }
   }, [filter, filterUuTien, filterProvince, filterRegion, filterDepartment, filterOwner, filterLeadLink, dateFrom, dateTo, dateField, debouncedSearch, columnFilters, token, pageSize]);
+
+  const loadProposalSheetSyncStatus = useCallback(async () => {
+    if (!token || !isAdmin) return;
+    try {
+      const res = await proposalSheetSyncService.getStatus(token);
+      if (res?.success) setProposalSheetSyncStatus(res.data || null);
+    } catch { /* status card is optional if the integration is unavailable */ }
+  }, [token, isAdmin]);
+
+  const startProposalSheetDailySync = async () => {
+    if (proposalSheetSyncLoading) return;
+    setProposalSheetSyncLoading(true);
+    try {
+      const res = await proposalSheetSyncService.syncDaily(token);
+      if (!res?.success) throw new Error(res?.message || 'Không thể bắt đầu đồng bộ Google Sheets');
+      if (res.data) {
+        setProposalSheetSyncStatus((current) => ({
+          ...(current || {}),
+          configured: true,
+          activeRun: ['QUEUED', 'RUNNING'].includes(res.data.status) ? res.data : null,
+          recentRuns: [res.data, ...((current?.recentRuns || []).filter((run) => Number(run.id) !== Number(res.data.id)))].slice(0, 5)
+        }));
+      }
+      setToast({ message: res.message || 'Đã xếp đồng bộ Google Sheets vào hàng đợi', type: 'success' });
+      await loadProposalSheetSyncStatus();
+    } catch (syncError) {
+      setToast({ message: syncError?.message || 'Không thể đồng bộ Google Sheets', type: 'error' });
+    } finally {
+      setProposalSheetSyncLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    loadProposalSheetSyncStatus();
+    return undefined;
+  }, [isAdmin, loadProposalSheetSyncStatus]);
+
+  useEffect(() => {
+    if (!isAdmin || !proposalSheetSyncStatus?.activeRun) return undefined;
+    const timer = setInterval(loadProposalSheetSyncStatus, 3000);
+    return () => clearInterval(timer);
+  }, [isAdmin, proposalSheetSyncStatus?.activeRun?.id, loadProposalSheetSyncStatus]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -1005,6 +1050,22 @@ const AdminProposalsPage = () => {
           <button className="btn btn-primary btn-sm gap-1" onClick={() => openCreateForm(PROPOSALS_CREATE_FORM_ID)}>
             <Plus size={14} /> Tạo đề xuất
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm gap-1"
+              onClick={startProposalSheetDailySync}
+              disabled={!proposalSheetSyncStatus?.configured || proposalSheetSyncLoading || Boolean(proposalSheetSyncStatus?.activeRun)}
+              title={!proposalSheetSyncStatus?.configured
+                ? proposalSheetSyncStatus?.message || 'Google Sheets chưa được cấu hình'
+                : 'Đối soát toàn bộ đề xuất, hàng chờ và các mục đồng bộ lỗi'}
+            >
+              <RefreshCw size={14} className={proposalSheetSyncStatus?.activeRun ? 'animate-spin' : ''} />
+              {proposalSheetSyncStatus?.activeRun
+                ? `Đang đồng bộ ${proposalSheetSyncStatus.activeRun.synced_count || 0}/${proposalSheetSyncStatus.activeRun.total_count || 0}`
+                : proposalSheetSyncLoading ? 'Đang xếp hàng...' : 'Đồng bộ cuối ngày'}
+            </button>
+          )}
           {quickFormId && (
             <button className="btn btn-outline btn-primary btn-sm gap-1" onClick={() => openCreateForm(quickFormId)} title="Chỉ nhập tọa độ + thông tin cơ bản">
               <Zap size={14} /> Tạo nhanh
