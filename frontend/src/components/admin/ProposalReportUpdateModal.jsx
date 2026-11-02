@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { dataListService, proposalReportService } from '../../services/api';
+import { dataListService, proposalReportService, supplierService } from '../../services/api';
 import FileUpload from '../dynamic/FileUpload';
 import { Plus, Trash2, Upload, X } from 'lucide-react';
 import {
@@ -24,7 +24,7 @@ const MODEL_OPTIONS = [
   { value: 'NQ_LK', label: 'Nhượng quyền + Liên kết (NQ_LK)' }
 ];
 
-const emptyRow = () => ({ mo_hinh: '', so_luong: '', loai_tru: '', gia_chot: '' });
+const emptyRow = () => ({ mo_hinh: '', so_luong: '', loai_tru: '', supplier_id: '', supplier_name: '', gia_chot: '' });
 
 const isAllowedReportFile = (file) => {
   const extension = `.${String(file?.name || '').split('.').pop()}`.toLowerCase();
@@ -161,6 +161,7 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
   const [chotRows, setChotRows] = useState([emptyRow()]);
   const [expectedOnDate, setExpectedOnDate] = useState('');
   const [truTypes, setTruTypes] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -193,12 +194,17 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
         mo_hinh: row.mo_hinh || '',
         so_luong: row.so_luong ?? '',
         loai_tru: row.loai_tru || '',
+        supplier_id: row.supplier_id ? String(row.supplier_id) : '',
+        supplier_name: row.supplier_name || '',
         gia_chot: row.gia_chot ?? ''
       }))
-      : getProposedPoleRows(record));
+      : getProposedPoleRows(record).map((row) => ({ ...row, supplier_id: '', supplier_name: '', gia_chot: '' })));
     setError('');
     setSaving(false);
     setLoadingTypes(true);
+    supplierService.getAll('limit=200', token)
+      .then((res) => { if (!cancelled) setSuppliers(res?.data || []); })
+      .catch(() => { if (!cancelled) setSuppliers([]); });
     dataListService.getById(TRU_LIST_ID)
       .then((res) => {
         if (cancelled) return;
@@ -234,6 +240,10 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
       if (Object.prototype.hasOwnProperty.call(patch, 'loai_tru')) {
         next.gia_chot = pricesByName.get(String(patch.loai_tru)) ?? '';
       }
+      if (Object.prototype.hasOwnProperty.call(patch, 'supplier_id')) {
+        const supplier = suppliers.find((item) => String(item.id) === String(patch.supplier_id));
+        next.supplier_name = supplier ? supplier.name : '';
+      }
       return next;
     }));
   };
@@ -255,6 +265,7 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
         return `Dòng ${index + 1}: số lượng phải là số nguyên lớn hơn 0`;
       }
       if (!row.loai_tru) return `Dòng ${index + 1}: vui lòng chọn loại trụ`;
+      if (!row.supplier_id) return `Dòng ${index + 1}: vui lòng chọn nhà cung cấp`;
       if (!Number.isFinite(pricesByName.get(String(row.loai_tru)))) {
         return `Dòng ${index + 1}: loại trụ chưa có giá hiện tại`;
       }
@@ -275,6 +286,8 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
           mo_hinh: row.mo_hinh,
           so_luong: Number(row.so_luong),
           loai_tru: row.loai_tru,
+          supplier_id: row.supplier_id ? Number(row.supplier_id) : null,
+          supplier_name: row.supplier_name || '',
           gia_chot: Number(row.gia_chot)
         })),
         ...(onUpload ? { ngay_du_kien_on: parseExpectedOnDate(expectedOnDate) } : {})
@@ -415,6 +428,19 @@ const ProposalReportUpdateModal = ({ open, record, onClose, onSaved, onUpload })
                               ))}
                             </select>
                           </td>
+                        <td>
+                          <select
+                            className="select select-bordered select-xs min-w-36"
+                            value={row.supplier_id}
+                            onChange={(event) => updateRow(index, { supplier_id: event.target.value })}
+                            disabled={saving}
+                          >
+                            <option value="">Chọn NCC</option>
+                            {suppliers.map((item) => (
+                              <option key={item.id} value={item.id}>{item.name}</option>
+                            ))}
+                          </select>
+                        </td>
                           <td className="whitespace-nowrap">{price === undefined ? '—' : formatMoney(price)}</td>
                           <td className="whitespace-nowrap font-medium">{lineTotal === null ? '—' : formatMoney(lineTotal)}</td>
                           <td>

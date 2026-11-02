@@ -86,3 +86,11 @@ exports.getStock = async (req, res) => {
     res.json({ success: true, data });
   } catch (error) { sendError(res, error); }
 };
+
+exports.exportExcel = async (req, res) => {
+  try {
+    await require('../services/warehouseExcelService').export(req, res);
+  } catch (error) {
+    sendError(res, error);
+  }
+};

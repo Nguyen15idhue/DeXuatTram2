@@ -1,0 +1,1 @@
+﻿const s=require('./src/services/warehouseExcelService'); const req={params:{resource:'stock'},query:{}}; const res={setHeader(){},end(){console.log('end')},}; res.write=()=>{}; s.export(req,res).then(()=>console.log('done')).catch(console.error);

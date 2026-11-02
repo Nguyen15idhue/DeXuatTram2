@@ -26,10 +26,14 @@ const normalizeItems = (items) => {
   const map = new Map();
   items.forEach((item) => {
     const poleId = toInt(item.pole_id || item.id, 'Trụ sạc');
+    const supplierId = toInt(item.supplier_id, 'Nhà cung cấp');
     const quantity = toInt(item.quantity, 'Số lượng');
-    map.set(poleId, (map.get(poleId) || 0) + quantity);
+    const key = `${supplierId}:${poleId}`;
+    const current = map.get(key) || { pole_id: poleId, supplier_id: supplierId, quantity: 0 };
+    current.quantity += quantity;
+    map.set(key, current);
   });
-  return [...map.entries()].map(([pole_id, quantity]) => ({ pole_id, quantity }));
+  return [...map.values()];
 };
 
 const listPoles = async ({ search = '', page = 1, limit = 20 } = {}) => {
@@ -48,9 +52,14 @@ const listPoles = async ({ search = '', page = 1, limit = 20 } = {}) => {
 
   const [[countRow]] = await pool.query(`SELECT COUNT(*) AS total FROM charging_poles ${whereClause}`, params);
   const [rows] = await pool.query(
-    `SELECT id, name, charging_type, power_kw, quantity, supplier, note, created_at, updated_at
-     FROM charging_poles ${whereClause}
-     ORDER BY id DESC LIMIT ? OFFSET ?`,
+    `SELECT cp.id, cp.name, cp.charging_type, cp.power_kw, cp.quantity, cp.note, cp.created_at, cp.updated_at,
+            GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR ', ') AS suppliers
+     FROM charging_poles cp
+     LEFT JOIN supplier_charging_poles scp ON scp.charging_pole_id = cp.id
+     LEFT JOIN suppliers s ON s.id = scp.supplier_id
+     ${whereClause.replace('name', 'cp.name').replace('supplier', 's.name')}
+     GROUP BY cp.id
+     ORDER BY cp.id DESC LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
   );
 
@@ -67,15 +76,26 @@ const createPole = async (data = {}) => {
   if (!['AC', 'DC'].includes(chargingType)) throw err('Loại sạc chỉ được AC hoặc DC', 400);
   const powerKw = Number(data.power_kw);
   if (!Number.isFinite(powerKw) || powerKw <= 0) throw err('Công suất phải lớn hơn 0', 400);
-  const supplier = data.supplier ? String(data.supplier).trim() : null;
   const note = data.note ? String(data.note).trim() : null;
 
+  const [existing] = await pool.query(
+    'SELECT * FROM charging_poles WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND charging_type = ? AND power_kw = ? LIMIT 1',
+    [name, chargingType, powerKw]
+  );
+  if (existing.length > 0) {
+    if (note && !existing[0].note) {
+      await pool.query('UPDATE charging_poles SET note = ? WHERE id = ?', [note, existing[0].id]);
+    }
+    const [rows] = await pool.query('SELECT * FROM charging_poles WHERE id = ?', [existing[0].id]);
+    return { ...rows[0], created: false };
+  }
+
   const [result] = await pool.query(
-    'INSERT INTO charging_poles (name, charging_type, power_kw, quantity, supplier, note) VALUES (?, ?, ?, 0, ?, ?)',
-    [name, chargingType, powerKw, supplier, note]
+    'INSERT INTO charging_poles (name, charging_type, power_kw, quantity, note) VALUES (?, ?, ?, 0, ?)',
+    [name, chargingType, powerKw, note]
   );
   const [rows] = await pool.query('SELECT * FROM charging_poles WHERE id = ?', [result.insertId]);
-  return rows[0];
+  return { ...rows[0], created: true };
 };
 
 const updatePole = async (id, data = {}) => {
@@ -157,9 +177,10 @@ const listImports = async ({ page = 1, limit = 20 } = {}) => {
 
   const ids = rows.map((row) => row.id);
   const [items] = await pool.query(
-    `SELECT wii.import_id, wii.id, wii.pole_id, wii.quantity, cp.name, cp.charging_type, cp.power_kw
+    `SELECT wii.import_id, wii.id, wii.supplier_id, wii.pole_id, wii.quantity, cp.name, s.name AS supplier_name, cp.charging_type, cp.power_kw
      FROM warehouse_import_items wii
      JOIN charging_poles cp ON cp.id = wii.pole_id
+     LEFT JOIN suppliers s ON s.id = wii.supplier_id
      WHERE wii.import_id IN (${ids.map(() => '?').join(',')})`,
     ids
   );
@@ -232,6 +253,21 @@ const createImport = async (data = {}, ctx = {}) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    const relationParams = [];
+    const relationClauses = items.map((item) => {
+      relationParams.push(item.supplier_id, item.pole_id);
+      return '(supplier_id = ? AND charging_pole_id = ?)';
+    });
+    const [relations] = await conn.query(
+      `SELECT supplier_id, charging_pole_id FROM supplier_charging_poles WHERE ${relationClauses.join(' OR ')}`,
+      relationParams
+    );
+    const relationSet = new Set(relations.map((row) => `${row.supplier_id}:${row.charging_pole_id}`));
+    for (const item of items) {
+      if (!relationSet.has(`${item.supplier_id}:${item.pole_id}`)) {
+        throw err('Loại trụ chưa được gán cho nhà cung cấp đã chọn', 400);
+      }
+    }
     const [headerResult] = await conn.query(
       `INSERT INTO warehouse_imports (importer_user_id, import_date, charging_station_id, note)
        VALUES (?, ?, ?, ?)`,
@@ -239,15 +275,22 @@ const createImport = async (data = {}, ctx = {}) => {
     );
     const importId = headerResult.insertId;
     await conn.query(
-      `INSERT INTO warehouse_import_items (import_id, pole_id, quantity) VALUES ?`,
-      [items.map((item) => [importId, item.pole_id, item.quantity])]
+      `INSERT INTO warehouse_import_items (import_id, supplier_id, pole_id, quantity) VALUES ?`,
+      [items.map((item) => [importId, item.supplier_id, item.pole_id, item.quantity])]
     );
     for (const item of items) {
-      const [result] = await conn.query(
-        'UPDATE charging_poles SET quantity = quantity + ? WHERE id = ?',
-        [item.quantity, item.pole_id]
+      await conn.query(
+        `INSERT INTO supplier_charging_poles (supplier_id, charging_pole_id, quantity)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)`,
+        [item.supplier_id, item.pole_id, item.quantity]
       );
-      if (result.affectedRows === 0) throw err(`Không tìm thấy trụ sạc #${item.pole_id}`, 404);
+      await conn.query(
+        `UPDATE charging_poles
+         SET quantity = (SELECT COALESCE(SUM(quantity),0) FROM supplier_charging_poles WHERE charging_pole_id = ?)
+         WHERE id = ?`,
+        [item.pole_id, item.pole_id]
+      );
     }
     if (evidenceFileIds.length > 0) {
       const [fileRows] = await conn.query(
@@ -300,9 +343,10 @@ const listExports = async ({ page = 1, limit = 20 } = {}) => {
 
   const ids = rows.map((row) => row.id);
   const [items] = await pool.query(
-    `SELECT wei.export_id, wei.id, wei.pole_id, wei.quantity, cp.name, cp.charging_type, cp.power_kw
+    `SELECT wei.export_id, wei.id, wei.supplier_id, wei.pole_id, wei.quantity, cp.name, s.name AS supplier_name, cp.charging_type, cp.power_kw
      FROM warehouse_export_items wei
      JOIN charging_poles cp ON cp.id = wei.pole_id
+     LEFT JOIN suppliers s ON s.id = wei.supplier_id
      WHERE wei.export_id IN (${ids.map(() => '?').join(',')})`,
     ids
   );
@@ -382,27 +426,42 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
     const poleName = String(row?.loai_tru || '').trim().toLowerCase();
     const quantity = Number(row?.so_luong);
     if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
+    const supplierId = row?.supplier_id ? Number(row.supplier_id) : null;
+    if (!Number.isInteger(supplierId) || supplierId <= 0 || !String(row?.supplier_name || '').trim()) {
+      throw err('Số lượng trụ chốt chưa có nhà cung cấp, không thể xuất kho', 409);
+    }
     const [poleRows] = await conn.query(
       'SELECT id FROM charging_poles WHERE LOWER(TRIM(name)) = ? LIMIT 2',
       [poleName]
     );
     if (poleRows.length === 1) {
-      committedMap.set(poleRows[0].id, (committedMap.get(poleRows[0].id) || 0) + quantity);
+      const key = supplierId ? `${supplierId}:${poleRows[0].id}` : `any:${poleRows[0].id}`;
+      committedMap.set(key, (committedMap.get(key) || 0) + quantity);
     }
   }
 
+  const stockParams = [];
+  const stockClauses = items.map((item) => {
+    stockParams.push(item.supplier_id, item.pole_id);
+    return '(supplier_id = ? AND charging_pole_id = ?)';
+  });
   const [stockRows] = await conn.query(
-    `SELECT id, quantity FROM charging_poles WHERE id IN (${items.map(() => '?').join(',')}) FOR UPDATE`,
-    items.map((item) => item.pole_id)
+    `SELECT supplier_id, charging_pole_id, quantity FROM supplier_charging_poles
+     WHERE ${stockClauses.join(' OR ')} FOR UPDATE`,
+    stockParams
   );
-  const stockMap = new Map(stockRows.map((row) => [row.id, row.quantity]));
+  const stockMap = new Map(stockRows.map((row) => [`${row.supplier_id}:${row.charging_pole_id}`, row.quantity]));
   for (const item of items) {
-    if (!stockMap.has(item.pole_id)) throw err(`Không tìm thấy trụ sạc #${item.pole_id}`, 404);
-    const committedQty = committedMap.get(item.pole_id);
+    const stockKey = `${item.supplier_id}:${item.pole_id}`;
+    if (!stockMap.has(stockKey)) throw err(`Không tìm thấy tồn kho của nhà cung cấp cho trụ #${item.pole_id}`, 404);
+    const committedKey = committedMap.has(`${item.supplier_id}:${item.pole_id}`)
+      ? `${item.supplier_id}:${item.pole_id}`
+      : `any:${item.pole_id}`;
+    const committedQty = committedMap.get(committedKey);
     if (!committedQty) {
       throw err(`Trụ sạc #${item.pole_id} không thuộc số lượng đã chốt của trạm`, 400);
     }
-    const maxAllowed = Math.min(committedQty, stockMap.get(item.pole_id));
+    const maxAllowed = Math.min(committedQty, stockMap.get(stockKey));
     if (item.quantity > maxAllowed) {
       throw err(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 400);
     }
@@ -416,13 +475,19 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   );
   const exportId = headerResult.insertId;
   await conn.query(
-    'INSERT INTO warehouse_export_items (export_id, pole_id, quantity) VALUES ?',
-    [items.map((item) => [exportId, item.pole_id, item.quantity])]
+    'INSERT INTO warehouse_export_items (export_id, supplier_id, pole_id, quantity) VALUES ?',
+    [items.map((item) => [exportId, item.supplier_id, item.pole_id, item.quantity])]
   );
   for (const item of items) {
     await conn.query(
-      'UPDATE charging_poles SET quantity = quantity - ? WHERE id = ?',
-      [item.quantity, item.pole_id]
+      'UPDATE supplier_charging_poles SET quantity = quantity - ? WHERE supplier_id = ? AND charging_pole_id = ?',
+      [item.quantity, item.supplier_id, item.pole_id]
+    );
+    await conn.query(
+      `UPDATE charging_poles
+       SET quantity = (SELECT COALESCE(SUM(quantity),0) FROM supplier_charging_poles WHERE charging_pole_id = ?)
+       WHERE id = ?`,
+      [item.pole_id, item.pole_id]
     );
   }
   return exportId;
