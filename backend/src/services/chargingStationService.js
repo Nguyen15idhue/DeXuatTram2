@@ -2354,7 +2354,9 @@ const getCommittedExportItems = async (id) => {
         charging_type: poleRows[0].charging_type,
         power_kw: poleRows[0].power_kw,
         committed_quantity: quantity,
-        stock_quantity: poleRows[0].stock_quantity
+        stock_quantity: poleRows[0].stock_quantity,
+        supplier_id: row?.supplier_id || null,
+        supplier_name: row?.supplier_name || ''
       });
     }
   }

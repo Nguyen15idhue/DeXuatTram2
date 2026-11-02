@@ -238,4 +238,6 @@ router.post('/exports', warehouseController.createExport);
  */
 router.get('/stock', warehouseController.getStock);
 
+router.get('/export/:resource', warehouseController.exportExcel);
+
 module.exports = router;

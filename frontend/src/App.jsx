@@ -62,6 +62,7 @@ const AdminChargingStationsPage = lazy(() => import('./pages/admin/AdminCharging
 const AdminChargingStationDetailPage = lazy(() => import('./pages/admin/AdminChargingStationDetailPage'));
 const AdminComingSoonPage = lazy(() => import('./pages/admin/AdminComingSoonPage'));
 const AdminWarehousePage = lazy(() => import('./pages/admin/AdminWarehousePage'));
+const AdminWarehouseStockDetailPage = lazy(() => import('./pages/admin/AdminWarehouseStockDetailPage'));
 const AdminFinancePage = lazy(() => import('./pages/admin/AdminFinancePage'));
 
 const SUPER_ONLY = ['SUPER_ADMIN'];
@@ -366,6 +367,10 @@ function App() {
             <Route
               path="/admin/kho/*"
               element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehousePage /></RoleRoute>}
+            />
+            <Route
+              path="/admin/kho/ton-kho"
+              element={<RoleRoute allowed={['SUPER_ADMIN', 'ADMIN']}><AdminWarehouseStockDetailPage /></RoleRoute>}
             />
             <Route
               path="/admin/e-sign"
