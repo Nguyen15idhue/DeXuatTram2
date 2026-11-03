@@ -491,7 +491,7 @@ const ImportsTab = ({ token, onToast }) => {
   const [poles, setPoles] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [dialog, setDialog] = useState({ open: false });
-  const [form, setForm] = useState({ import_date: '', charging_station_id: '', note: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }], evidence: [] });
+  const [form, setForm] = useState({ import_date: '', note: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }], evidence: [] });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (targetPage = 1) => {
@@ -534,7 +534,7 @@ const ImportsTab = ({ token, onToast }) => {
   }));
 
   const openCreate = () => {
-    setForm({ import_date: new Date().toISOString().slice(0, 16), charging_station_id: '', note: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }], evidence: [] });
+    setForm({ import_date: new Date().toISOString().slice(0, 16), note: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }], evidence: [] });
     setDialog({ open: true });
   };
 
@@ -543,7 +543,6 @@ const ImportsTab = ({ token, onToast }) => {
     try {
       await warehouseService.createImport({
         import_date: form.import_date,
-        charging_station_id: form.charging_station_id || null,
         note: form.note,
         items: form.items.map((row) => ({ supplier_id: Number(row.supplier_id), pole_id: Number(row.pole_id), quantity: Number(row.quantity) })),
         evidence_file_ids: (form.evidence || []).map((file) => file.id)
@@ -562,7 +561,6 @@ const ImportsTab = ({ token, onToast }) => {
     { key: 'id', label: 'Mã phiếu' },
     { key: 'importer_name', label: 'Người nhập', render: (value) => value || '—' },
     { key: 'import_date', label: 'Ngày nhập', render: (value) => formatDateTime(value) },
-    { key: 'ma_de_xuat', label: 'Trạm liên quan', render: (value, row) => row.ma_tram || value || '—' },
     {
       key: 'items',
       label: 'Chi tiết',
