@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supplierService, warehouseService } from '../../services/api';
 import { Badge, Button, ConfirmDialog, DataTable, Dialog, FilterBar, Input, Loading, Pagination, Select, Toast } from '../../components/ui';
 import FileUpload from '../../components/dynamic/FileUpload';
+import WarehouseFilterBar from '../../components/admin/WarehouseFilterBar';
 import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 
@@ -78,6 +79,8 @@ const AdminWarehousePage = () => {
 const SuppliersTab = ({ token, onToast }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ search: '', supplier_id: '' });
+  const debouncedSearch = useDebouncedValue(filters.search, 400);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [dialog, setDialog] = useState({ open: false, record: null });
@@ -89,7 +92,7 @@ const SuppliersTab = ({ token, onToast }) => {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await supplierService.getAll(`page=${targetPage}&limit=20`, token);
+      const res = await supplierService.getAll(`page=${targetPage}&limit=20&search=${encodeURIComponent(debouncedSearch)}`, token);
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: 20, total: 0, totalPages: 1 });
     } catch (error) {
@@ -97,7 +100,7 @@ const SuppliersTab = ({ token, onToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, debouncedSearch]);
 
   useEffect(() => { setPage(1); load(1); }, [load]);
 
@@ -154,6 +157,7 @@ const SuppliersTab = ({ token, onToast }) => {
         <span className="text-sm text-base-content/60">Tổng: <strong>{pagination.total}</strong> nhà cung cấp</span>
         <Button size="sm" onClick={openCreate}>Thêm nhà cung cấp</Button>
       </div>
+      <WarehouseFilterBar filters={filters} onChange={setFilters} showSupplier={false} note="Tìm kiếm nhà cung cấp" />
 
       <DataTable columns={columns} data={items} loading={loading} emptyMessage="Chưa có nhà cung cấp nào" startIndex={(page - 1) * 20} actions={(row) => (
         <div className="flex gap-1">
@@ -209,8 +213,8 @@ const SuppliersTab = ({ token, onToast }) => {
 const PolesTab = ({ token, onToast }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebouncedValue(search, 400);
+  const [filters, setFilters] = useState({ search: '', supplier_id: '' });
+  const debouncedSearch = useDebouncedValue(filters.search, 400);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [dialog, setDialog] = useState({ open: false, record: null });
@@ -225,6 +229,7 @@ const PolesTab = ({ token, onToast }) => {
     try {
       const params = new URLSearchParams({ page: targetPage, limit: 20 });
       if (debouncedSearch) params.set('search', debouncedSearch);
+      if (filters.supplier_id) params.set('supplier_id', filters.supplier_id);
       const res = await warehouseService.listPoles(params.toString(), token);
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: 20, total: 0, totalPages: 1 });
@@ -233,7 +238,7 @@ const PolesTab = ({ token, onToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, debouncedSearch]);
+  }, [token, debouncedSearch, filters.supplier_id]);
 
   useEffect(() => { setPage(1); load(1); }, [load]);
 
@@ -329,11 +334,7 @@ const PolesTab = ({ token, onToast }) => {
         <Button size="sm" onClick={openCreate}>Thêm loại trụ</Button>
       </div>
 
-      <FilterBar>
-        <div className="flex-1 min-w-0">
-          <Input placeholder="Tìm tên hoặc nhà cung cấp..." value={search} onChange={(e) => setSearch(e.target.value)} className="!mb-0" />
-        </div>
-      </FilterBar>
+      <WarehouseFilterBar filters={filters} onChange={setFilters} suppliers={suppliers} note="Tìm loại trụ theo tên hoặc nhà cung cấp" />
 
       <DataTable columns={columns} data={items} loading={loading} emptyMessage="Chưa có trụ sạc nào" startIndex={(page - 1) * 20} actions={(row) => (
         <div className="flex gap-1">
@@ -397,8 +398,9 @@ const StockTab = ({ token, onToast }) => {
   const navigate = useNavigate();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebouncedValue(search, 400);
+  const [suppliers, setSuppliers] = useState([]);
+  const [filters, setFilters] = useState({ search: '', supplier_id: '' });
+  const debouncedSearch = useDebouncedValue(filters.search, 400);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,8 +409,10 @@ const StockTab = ({ token, onToast }) => {
       try {
         const supplierRes = await supplierService.getAll('limit=200', token);
         const suppliers = supplierRes?.data || [];
+        if (!cancelled) setSuppliers(suppliers);
         const rows = [];
         await Promise.all(suppliers.map(async (supplier) => {
+          if (filters.supplier_id && String(supplier.id) !== String(filters.supplier_id)) return;
           try {
             const res = await supplierService.getPoles(supplier.id, token);
             (res?.data || []).forEach((pole) => {
@@ -448,7 +452,7 @@ const StockTab = ({ token, onToast }) => {
       }
     })();
     return () => { cancelled = true; };
-  }, [token, debouncedSearch]);
+  }, [token, debouncedSearch, filters.supplier_id]);
 
   const columns = [
     { key: 'charging_type', label: 'Loại sạc', render: (value) => <Badge variant={value === 'DC' ? 'info' : 'success'} size="sm">{value}</Badge> },
@@ -458,11 +462,7 @@ const StockTab = ({ token, onToast }) => {
 
   return (
     <div className="space-y-4">
-      <FilterBar>
-        <div className="flex-1 min-w-0">
-          <Input placeholder="Tìm loại sạc, công suất, nhà cung cấp..." value={search} onChange={(e) => setSearch(e.target.value)} className="!mb-0" />
-        </div>
-      </FilterBar>
+      <WarehouseFilterBar filters={filters} onChange={setFilters} suppliers={suppliers} note="Tìm kiếm và lọc tồn kho" />
 
       <DataTable
         columns={columns}
@@ -471,7 +471,7 @@ const StockTab = ({ token, onToast }) => {
         emptyMessage="Chưa có tồn kho nào"
         startIndex={0}
         actions={(row) => (
-          <Button variant="outline" size="xs" onClick={() => navigate(`/admin/kho/ton-kho?type=${encodeURIComponent(row.charging_type)}&power=${encodeURIComponent(row.power_kw)}`)}>
+          <Button variant="outline" size="xs" onClick={() => navigate(`/admin/kho/ton-kho?type=${encodeURIComponent(row.charging_type)}&power=${encodeURIComponent(row.power_kw)}${filters.supplier_id ? `&supplier_id=${encodeURIComponent(filters.supplier_id)}` : ''}`)}>
             Chi tiết
           </Button>
         )}
@@ -484,6 +484,8 @@ const StockTab = ({ token, onToast }) => {
 const ImportsTab = ({ token, onToast }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ search: '', supplier_id: '', date_from: '', date_to: '' });
+  const debouncedSearch = useDebouncedValue(filters.search, 400);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [poles, setPoles] = useState([]);
@@ -496,7 +498,12 @@ const ImportsTab = ({ token, onToast }) => {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await warehouseService.listImports(`page=${targetPage}&limit=20`, token);
+      const params = new URLSearchParams({ page: targetPage, limit: 20 });
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (filters.supplier_id) params.set('supplier_id', filters.supplier_id);
+      if (filters.date_from) params.set('date_from', filters.date_from);
+      if (filters.date_to) params.set('date_to', filters.date_to);
+      const res = await warehouseService.listImports(params.toString(), token);
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: 20, total: 0, totalPages: 1 });
     } catch (error) {
@@ -504,7 +511,7 @@ const ImportsTab = ({ token, onToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, debouncedSearch, filters.supplier_id, filters.date_from, filters.date_to]);
 
   useEffect(() => { setPage(1); load(1); }, [load]);
 
@@ -578,6 +585,8 @@ const ImportsTab = ({ token, onToast }) => {
         <span className="text-sm text-base-content/60">Tổng: <strong>{pagination.total}</strong> phiếu nhập</span>
         <Button size="sm" onClick={openCreate}>Tạo phiếu nhập</Button>
       </div>
+
+      <WarehouseFilterBar filters={filters} onChange={setFilters} suppliers={suppliers} showDate note="Tìm phiếu nhập theo mã, trạm, người nhập, NCC hoặc ngày" />
 
       <DataTable columns={columns} data={items} loading={loading} emptyMessage="Chưa có phiếu nhập kho nào" startIndex={(page - 1) * 20} />
 
@@ -657,6 +666,8 @@ const ImportsTab = ({ token, onToast }) => {
 const ExportsTab = ({ token, onToast }) => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ search: '', supplier_id: '', destination_type: '', date_from: '', date_to: '' });
+  const debouncedSearch = useDebouncedValue(filters.search, 400);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [poles, setPoles] = useState([]);
@@ -664,14 +675,20 @@ const ExportsTab = ({ token, onToast }) => {
   const [stations, setStations] = useState([]);
   const [committedItems, setCommittedItems] = useState([]);
   const [dialog, setDialog] = useState({ open: false });
-  const [form, setForm] = useState({ export_date: '', charging_station_id: '', reason: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }] });
+  const [form, setForm] = useState({ export_date: '', destination_type: 'STATION', charging_station_id: '', destination_name: '', destination_address: '', destination_note: '', reason: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }] });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (targetPage = 1) => {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await warehouseService.listExports(`page=${targetPage}&limit=20`, token);
+      const params = new URLSearchParams({ page: targetPage, limit: 20 });
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (filters.supplier_id) params.set('supplier_id', filters.supplier_id);
+      if (filters.destination_type) params.set('destination_type', filters.destination_type);
+      if (filters.date_from) params.set('date_from', filters.date_from);
+      if (filters.date_to) params.set('date_to', filters.date_to);
+      const res = await warehouseService.listExports(params.toString(), token);
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: 20, total: 0, totalPages: 1 });
     } catch (error) {
@@ -679,7 +696,7 @@ const ExportsTab = ({ token, onToast }) => {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, debouncedSearch, filters.supplier_id, filters.destination_type, filters.date_from, filters.date_to]);
 
   useEffect(() => { setPage(1); load(1); }, [load]);
 
@@ -728,7 +745,7 @@ const ExportsTab = ({ token, onToast }) => {
   }));
 
   const openCreate = () => {
-    setForm({ export_date: new Date().toISOString().slice(0, 16), charging_station_id: '', reason: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }] });
+    setForm({ export_date: new Date().toISOString().slice(0, 16), destination_type: 'STATION', charging_station_id: '', destination_name: '', destination_address: '', destination_note: '', reason: '', items: [{ supplier_id: '', pole_id: '', quantity: 1, poleOptions: [] }] });
     setDialog({ open: true });
   };
 
@@ -766,7 +783,11 @@ const ExportsTab = ({ token, onToast }) => {
     try {
       await warehouseService.createExport({
         export_date: form.export_date,
-        charging_station_id: Number(form.charging_station_id),
+        destination_type: form.destination_type,
+        charging_station_id: form.destination_type === 'STATION' ? Number(form.charging_station_id) : null,
+        destination_name: form.destination_name,
+        destination_address: form.destination_address,
+        destination_note: form.destination_note,
         reason: form.reason,
         items: normalizedItems
       }, token);
@@ -784,7 +805,7 @@ const ExportsTab = ({ token, onToast }) => {
     { key: 'id', label: 'Mã phiếu' },
     { key: 'exporter_name', label: 'Người xuất', render: (value) => value || '—' },
     { key: 'export_date', label: 'Ngày xuất', render: (value) => formatDateTime(value) },
-    { key: 'ma_tram', label: 'Trạm nhận', render: (value, row) => value || row.ma_de_xuat || '—' },
+    { key: 'destination_name', label: 'Nơi nhận', render: (value, row) => value || row.ma_tram || row.ma_de_xuat || '—' },
     { key: 'reason', label: 'Lý do', render: (value) => value || '—' },
     {
       key: 'items',
@@ -800,6 +821,8 @@ const ExportsTab = ({ token, onToast }) => {
         <Button size="sm" onClick={openCreate}>Tạo phiếu xuất</Button>
       </div>
 
+      <WarehouseFilterBar filters={filters} onChange={setFilters} suppliers={suppliers} showDate showDestination note="Tìm phiếu xuất theo mã, nơi nhận, NCC hoặc ngày" />
+
       <DataTable columns={columns} data={items} loading={loading} emptyMessage="Chưa có phiếu xuất kho nào" startIndex={(page - 1) * 20} />
 
       <Pagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total} onPageChange={(next) => { setPage(next); load(next); }} />
@@ -808,7 +831,15 @@ const ExportsTab = ({ token, onToast }) => {
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Ngày xuất" type="datetime-local" value={form.export_date} onChange={(e) => setForm({ ...form, export_date: e.target.value })} required />
-            <Select label="Trạm nhận" options={stations.map((station) => ({ value: String(station.id), label: `${station.ma_tram || `#${station.id}`} - ${station.owner_name || ''}`.trim() }))} value={form.charging_station_id} onChange={(e) => setForm({ ...form, charging_station_id: e.target.value })} placeholder="Chọn trạm" />
+            <Select label="Loại nơi nhận" options={[{ value: 'STATION', label: 'Trạm sạc' }, { value: 'WAREHOUSE', label: 'Kho' }, { value: 'PROJECT', label: 'Dự án/công trình' }, { value: 'OTHER', label: 'Khác' }]} value={form.destination_type} onChange={(e) => setForm({ ...form, destination_type: e.target.value, charging_station_id: '' })} placeholder={null} />
+            {form.destination_type === 'STATION' ? (
+              <Select label="Trạm nhận" options={stations.map((station) => ({ value: String(station.id), label: `${station.ma_tram || `#${station.id}`} - ${station.owner_name || ''}`.trim() }))} value={form.charging_station_id} onChange={(e) => setForm({ ...form, charging_station_id: e.target.value })} placeholder="Chọn trạm" />
+            ) : (
+              <>
+                <Input label="Tên nơi nhận" value={form.destination_name} onChange={(e) => setForm({ ...form, destination_name: e.target.value })} required />
+                <Input label="Địa chỉ nơi nhận" value={form.destination_address} onChange={(e) => setForm({ ...form, destination_address: e.target.value })} />
+              </>
+            )}
             {committedItems.length > 0 && (
               <div className="rounded-lg border border-base-300 bg-base-200/40 p-3 text-xs space-y-1">
                 <div className="font-medium text-base-content/70">Số lượng đã chốt / tồn kho:</div>
@@ -824,7 +855,8 @@ const ExportsTab = ({ token, onToast }) => {
               </div>
             )}
           </div>
-          <Input label="Lý do xuất kho" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+            <Input label="Lý do xuất kho" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+            {form.destination_type !== 'STATION' && <Input label="Ghi chú nơi nhận" value={form.destination_note} onChange={(e) => setForm({ ...form, destination_note: e.target.value })} />}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-medium text-sm">Chi tiết xuất</span>
@@ -892,7 +924,7 @@ const ExportsTab = ({ token, onToast }) => {
           })()}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setDialog({ open: false })} disabled={busy}>Hủy</Button>
-            <Button loading={busy} onClick={save} disabled={busy || !form.charging_station_id || form.items.some((row) => {
+            <Button loading={busy} onClick={save} disabled={busy || (form.destination_type === 'STATION' ? !form.charging_station_id : !form.destination_name.trim()) || form.items.some((row) => {
               const pole = poles.find((p) => p.id === Number(row.pole_id));
               const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
               if (!row.pole_id || !Number.isInteger(Number(row.pole_id)) || Number(row.pole_id) <= 0) return true;
