@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Building2, User, ShieldAlert } from 'lucide-
 const ROLE_RANK = { SUPER_ADMIN: 0, ADMIN: 1, SALES: 2, CTV: 3, NPP: 3 };
 const SPECIAL_LABEL = 'Phòng ban đặc biệt';
 const UNASSIGNED_LABEL = 'Chưa phân phòng ban';
-const ROOT_LABEL = 'Công ty TMT EGREEN Việt Nam';
+const ROOT_LABEL = 'TMT-EGREEN';
 
 const deptOf = (u) => (u.department && String(u.department).trim()) || '';
 

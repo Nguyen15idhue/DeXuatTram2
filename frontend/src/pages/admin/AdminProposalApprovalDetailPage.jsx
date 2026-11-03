@@ -27,6 +27,7 @@ import { canConfigureSignature, canRequestUpdate, getReportFiles } from '../../u
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 
 const AdminProposalApprovalDetailPage = () => {
   const { id } = useParams();
@@ -157,6 +158,9 @@ const AdminProposalApprovalDetailPage = () => {
             <ProposalModelBadge value={proposal.mo_hinh_dau_tu} options={modelOptions} />
           </DetailField>
           <DetailField label="Địa chỉ" value={getProposalAddress(proposal)} />
+          <DetailField label="Google Maps">
+            <ProposalGoogleMapLink proposal={proposal} />
+          </DetailField>
           <DetailField label="Quy mô trụ đề xuất" value={formatProposedScale(proposal)} />
           <DetailField label="Tổng chi phí dự kiến" value={formatProposalCost(proposal)} />
           <DetailField label="Người đề xuất" value={proposal.user_name || proposal.owner_name} />

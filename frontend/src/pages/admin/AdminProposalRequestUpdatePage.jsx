@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MapPinned, Save } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { proposalRequestService } from "../../services/api";
 import DynamicForm from "../../components/dynamic/DynamicForm";
 import ProposalLocationMapButton from "../../components/admin/ProposalLocationMapButton";
+import { buildGoogleMapsHref as buildProposalGoogleMapsHref } from "../../components/admin/ProposalGoogleMapLink";
 
 const REQUEST_LABELS = {
   UPDATE_INFO: "Yêu cầu cập nhật thông tin",
@@ -110,7 +111,23 @@ const AdminProposalRequestUpdatePage = () => {
             Mã đề xuất: <strong>{request?.ma_de_xuat || "-"}</strong>
           </p>
         </div>
-        {proposal && <ProposalLocationMapButton proposal={proposal} />}
+        {proposal && (
+          <div className="flex gap-2">
+            {buildProposalGoogleMapsHref(proposal) && (
+              <a
+                href={buildProposalGoogleMapsHref(proposal)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline btn-sm gap-1"
+                title="Mở vị trí đề xuất trên Google Maps"
+              >
+                <MapPinned size={15} />
+                Mở Google Maps
+              </a>
+            )}
+            <ProposalLocationMapButton proposal={proposal} />
+          </div>
+        )}
       </div>
 
       {loading && (

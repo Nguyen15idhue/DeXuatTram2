@@ -21,6 +21,7 @@ import Toast from '../../components/Toast';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 import { getProposalStatusLabel, PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
 const formatDate = (value) => {
@@ -193,6 +194,7 @@ const AdminProposalReportDetailPage = () => {
             <OverviewItem label="Ngày dự kiến ON" value={formatExpectedOnDate(proposal.ngay_du_kien_on)} />
             <OverviewItem label="Ngày tạo" value={formatDate(proposal.created_at)} />
             <OverviewItem label="Địa chỉ" value={getProposalAddress(proposal)} />
+            <OverviewItem label="Google Maps" value={<ProposalGoogleMapLink proposal={proposal} />} />
           </dl>
         </div>
       </section>

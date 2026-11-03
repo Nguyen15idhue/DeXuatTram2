@@ -8,6 +8,7 @@ import Toast from '../../components/Toast';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 import FileViewer from '../../components/dynamic/FileViewer';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 import { useAuth } from '../../contexts/AuthContext';
@@ -116,6 +117,9 @@ const formatValue = (value) => {
 };
 
 const FieldValue = ({ field, value, record, onViewFile }) => {
+  if (['link_google_map', 'link_gg_map'].includes(field.key)) {
+    return <ProposalGoogleMapLink proposal={record} value={value} />;
+  }
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;
@@ -278,6 +282,9 @@ const AdminProposalReviewDetailPage = () => {
             <ProposalModelBadge value={proposal.mo_hinh_dau_tu} options={modelOptions} />
           </DetailField>
           <DetailField label="Địa chỉ" value={getProposalAddress(proposal)} />
+          <DetailField label="Google Maps">
+            <ProposalGoogleMapLink proposal={proposal} />
+          </DetailField>
           <DetailField label="Quy mô trụ đề xuất" value={formatProposedScale(proposal)} />
           <DetailField label="Tổng chi phí dự kiến" value={formatProposalCost(proposal)} />
           <DetailField label="Mức độ xem xét" value={getReviewLevelLabel(proposal.review_level)} />

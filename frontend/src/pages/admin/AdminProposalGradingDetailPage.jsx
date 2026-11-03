@@ -8,6 +8,7 @@ import ProposalGradingModal from '../../components/admin/ProposalGradingModal';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 import FileViewer from '../../components/dynamic/FileViewer';
 import Toast from '../../components/Toast';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
@@ -68,6 +69,9 @@ const displayValue = (value) => {
 };
 
 const FieldValue = ({ field, record, value, onViewFile }) => {
+  if (['link_google_map', 'link_gg_map'].includes(field.key)) {
+    return <ProposalGoogleMapLink proposal={record} value={value} />;
+  }
   if (field.type === 'file') {
     const files = getFiles(value);
     if (!files.length) return <span className="text-base-content/50">—</span>;
@@ -373,6 +377,7 @@ const AdminProposalGradingDetailPage = () => {
           <div><dt className="text-xs text-base-content/60">Quy mô trụ đề xuất</dt><dd className="mt-1 text-sm font-medium">{formatProposedScale(proposal)}</dd></div>
           <div><dt className="text-xs text-base-content/60">Tổng chi phí dự kiến</dt><dd className="mt-1 text-sm font-medium">{formatProposalCost(proposal)}</dd></div>
           <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-base-content/60">Địa chỉ</dt><dd className="mt-1 text-sm font-medium">{getProposalAddress(proposal)}</dd></div>
+          <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-base-content/60">Google Maps</dt><dd className="mt-1 text-sm font-medium"><ProposalGoogleMapLink proposal={proposal} /></dd></div>
         </dl>
       </section>
 
