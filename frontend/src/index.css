@@ -380,6 +380,45 @@ body {
   border-color: #E5E7EB !important;
 }
 
+.warehouse-filter-bar {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  overflow: visible;
+}
+
+.warehouse-filter-bar > * {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.warehouse-filter-note {
+  display: none;
+}
+
+.warehouse-filter-panel {
+  animation: warehouse-filter-reveal 150ms ease-out;
+}
+
+.warehouse-filter-bar .form-control {
+  margin-bottom: 0;
+}
+
+.warehouse-filter-bar .label {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .warehouse-filter-bar {
+    padding: 10px;
+  }
+}
+
+@keyframes warehouse-filter-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .table td > div.flex,
 .table td > div.flex-wrap {
   gap: 6px !important;

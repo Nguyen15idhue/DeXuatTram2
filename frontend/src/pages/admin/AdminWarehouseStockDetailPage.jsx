@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supplierService, warehouseService } from '../../services/api';
 import { Badge, Button, DataTable, FilterBar, Input, Loading, PageHeader } from '../../components/ui';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import WarehouseFilterBar from '../../components/admin/WarehouseFilterBar';
 
 const AdminWarehouseStockDetailPage = () => {
   const { token } = useAuth();
@@ -11,11 +12,13 @@ const AdminWarehouseStockDetailPage = () => {
   const [searchParams] = useSearchParams();
   const type = searchParams.get('type') || '';
   const power = searchParams.get('power') || '';
+  const initialSupplierId = searchParams.get('supplier_id') || '';
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebouncedValue(search, 400);
+  const [suppliers, setSuppliers] = useState([]);
+  const [filters, setFilters] = useState({ search: '', supplier_id: initialSupplierId });
+  const debouncedSearch = useDebouncedValue(filters.search, 400);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,9 +27,11 @@ const AdminWarehouseStockDetailPage = () => {
       try {
         const supplierRes = await supplierService.getAll('limit=200', token);
         const suppliers = supplierRes?.data || [];
+        if (!cancelled) setSuppliers(suppliers);
         const collected = [];
         await Promise.all(suppliers.map(async (supplier) => {
           try {
+            if (filters.supplier_id && String(supplier.id) !== String(filters.supplier_id)) return;
             const res = await supplierService.getPoles(supplier.id, token);
             (res?.data || []).forEach((pole) => {
               if (type && String(pole.charging_type) !== String(type)) return;
@@ -52,7 +57,7 @@ const AdminWarehouseStockDetailPage = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [token, type, power]);
+  }, [token, type, power, filters.supplier_id]);
 
   const filtered = useMemo(() => {
     if (!debouncedSearch) return rows;
@@ -95,11 +100,7 @@ const AdminWarehouseStockDetailPage = () => {
       <div className="text-sm text-base-content/60">
         Tổng tồn: <strong className="text-base-content">{total}</strong>
       </div>
-      <FilterBar>
-        <div className="flex-1 min-w-0">
-          <Input placeholder="Tìm nhà cung cấp hoặc loại trụ..." value={search} onChange={(e) => setSearch(e.target.value)} className="!mb-0" />
-        </div>
-      </FilterBar>
+      <WarehouseFilterBar filters={filters} onChange={setFilters} suppliers={suppliers} note="Tìm kiếm tồn kho chi tiết" />
       <DataTable columns={columns} data={filtered.map((row, index) => ({ ...row, id: row.id }))} loading={loading} emptyMessage="Chưa có dữ liệu tồn kho" startIndex={0} />
     </div>
   );

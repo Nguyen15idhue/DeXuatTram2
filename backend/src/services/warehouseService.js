@@ -45,19 +45,26 @@ const listPoles = async ({ search = '', page = 1, limit = 20 } = {}) => {
   const params = [];
   if (search) {
     const like = `%${String(search).trim()}%`;
-    where.push('(name LIKE ? OR supplier LIKE ?)');
+    where.push('(cp.name LIKE ? OR s.name LIKE ?)');
     params.push(like, like);
   }
   const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const [[countRow]] = await pool.query(`SELECT COUNT(*) AS total FROM charging_poles ${whereClause}`, params);
+  const [[countRow]] = await pool.query(
+    `SELECT COUNT(DISTINCT cp.id) AS total
+     FROM charging_poles cp
+     LEFT JOIN supplier_charging_poles scp ON scp.charging_pole_id = cp.id
+     LEFT JOIN suppliers s ON s.id = scp.supplier_id
+     ${whereClause}`,
+    params
+  );
   const [rows] = await pool.query(
     `SELECT cp.id, cp.name, cp.charging_type, cp.power_kw, cp.quantity, cp.note, cp.created_at, cp.updated_at,
             GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR ', ') AS suppliers
      FROM charging_poles cp
      LEFT JOIN supplier_charging_poles scp ON scp.charging_pole_id = cp.id
      LEFT JOIN suppliers s ON s.id = scp.supplier_id
-     ${whereClause.replace('name', 'cp.name').replace('supplier', 's.name')}
+     ${whereClause}
      GROUP BY cp.id
      ORDER BY cp.id DESC LIMIT ? OFFSET ?`,
     [...params, safeLimit, offset]
@@ -153,12 +160,20 @@ const deletePole = async (id) => {
   return true;
 };
 
-const listImports = async ({ page = 1, limit = 20 } = {}) => {
+const listImports = async ({ page = 1, limit = 20, search = '', supplier_id = '', date_from = '', date_to = '' } = {}) => {
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
   const offset = (safePage - 1) * safeLimit;
 
-  const [[countRow]] = await pool.query('SELECT COUNT(*) AS total FROM warehouse_imports');
+  const where = [];
+  const params = [];
+  if (search) { where.push('(wi.id = ? OR p.ma_de_xuat_gen LIKE ? OR cs.ma_tram LIKE ? OR u.full_name LIKE ?)'); params.push(Number(search) || 0, `%${search}%`, `%${search}%`, `%${search}%`); }
+  if (supplier_id) { where.push('wii_filter.supplier_id = ?'); params.push(Number(supplier_id)); }
+  if (date_from) { where.push('wi.import_date >= ?'); params.push(`${date_from} 00:00:00`); }
+  if (date_to) { where.push('wi.import_date <= ?'); params.push(`${date_to} 23:59:59`); }
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const joinFilter = supplier_id ? 'JOIN warehouse_import_items wii_filter ON wii_filter.import_id = wi.id' : '';
+  const [[countRow]] = await pool.query(`SELECT COUNT(DISTINCT wi.id) AS total FROM warehouse_imports wi LEFT JOIN users u ON u.id=wi.importer_user_id LEFT JOIN charging_stations cs ON cs.id=wi.charging_station_id LEFT JOIN station_proposals p ON p.id=cs.proposal_id ${joinFilter} ${whereClause}`, params);
   const [rows] = await pool.query(
     `SELECT wi.id, wi.importer_user_id, wi.import_date, wi.charging_station_id, wi.note, wi.created_at,
             u.full_name AS importer_name,
@@ -166,9 +181,9 @@ const listImports = async ({ page = 1, limit = 20 } = {}) => {
      FROM warehouse_imports wi
      LEFT JOIN users u ON u.id = wi.importer_user_id
      LEFT JOIN charging_stations cs ON cs.id = wi.charging_station_id
-     LEFT JOIN station_proposals p ON p.id = cs.proposal_id
+     LEFT JOIN station_proposals p ON p.id = cs.proposal_id ${joinFilter} ${whereClause}
      ORDER BY wi.id DESC LIMIT ? OFFSET ?`,
-    [safeLimit, offset]
+    [...params, safeLimit, offset]
   );
 
   if (rows.length === 0) {
@@ -319,12 +334,21 @@ const createImport = async (data = {}, ctx = {}) => {
   }
 };
 
-const listExports = async ({ page = 1, limit = 20 } = {}) => {
+const listExports = async ({ page = 1, limit = 20, search = '', supplier_id = '', destination_type = '', date_from = '', date_to = '' } = {}) => {
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
   const offset = (safePage - 1) * safeLimit;
 
-  const [[countRow]] = await pool.query('SELECT COUNT(*) AS total FROM warehouse_exports');
+  const where = [];
+  const params = [];
+  if (search) { where.push('(we.id = ? OR we.destination_name LIKE ? OR cs.ma_tram LIKE ? OR u.full_name LIKE ?)'); params.push(Number(search) || 0, `%${search}%`, `%${search}%`, `%${search}%`); }
+  if (supplier_id) { where.push('wei_filter.supplier_id = ?'); params.push(Number(supplier_id)); }
+  if (destination_type) { where.push('we.destination_type = ?'); params.push(destination_type); }
+  if (date_from) { where.push('we.export_date >= ?'); params.push(`${date_from} 00:00:00`); }
+  if (date_to) { where.push('we.export_date <= ?'); params.push(`${date_to} 23:59:59`); }
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const joinFilter = supplier_id ? 'JOIN warehouse_export_items wei_filter ON wei_filter.export_id = we.id' : '';
+  const [[countRow]] = await pool.query(`SELECT COUNT(DISTINCT we.id) AS total FROM warehouse_exports we LEFT JOIN users u ON u.id=we.exporter_user_id LEFT JOIN charging_stations cs ON cs.id=we.charging_station_id ${joinFilter} ${whereClause}`, params);
   const [rows] = await pool.query(
     `SELECT we.id, we.exporter_user_id, we.export_date, we.reason, we.charging_station_id, we.created_at,
             u.full_name AS exporter_name,
@@ -332,9 +356,9 @@ const listExports = async ({ page = 1, limit = 20 } = {}) => {
      FROM warehouse_exports we
      LEFT JOIN users u ON u.id = we.exporter_user_id
      LEFT JOIN charging_stations cs ON cs.id = we.charging_station_id
-     LEFT JOIN station_proposals p ON p.id = cs.proposal_id
+     LEFT JOIN station_proposals p ON p.id = cs.proposal_id ${joinFilter} ${whereClause}
      ORDER BY we.id DESC LIMIT ? OFFSET ?`,
-    [safeLimit, offset]
+    [...params, safeLimit, offset]
   );
 
   if (rows.length === 0) {
@@ -386,7 +410,13 @@ const getExport = async (id) => {
 const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   const exporterUserId = ctx.userId || toInt(data.exporter_user_id, 'Người xuất kho');
   const exportDate = normalizeDate(data.export_date || new Date().toISOString(), 'Ngày xuất kho');
-  const chargingStationId = toInt(data.charging_station_id, 'Trạm sạc');
+  const destinationType = String(data.destination_type || 'STATION').trim().toUpperCase();
+  if (!['STATION', 'WAREHOUSE', 'PROJECT', 'OTHER'].includes(destinationType)) throw err('Loại nơi nhận không hợp lệ', 400);
+  const chargingStationId = destinationType === 'STATION' ? toInt(data.charging_station_id, 'Trạm sạc') : null;
+  const destinationName = data.destination_name ? String(data.destination_name).trim() : null;
+  const destinationAddress = data.destination_address ? String(data.destination_address).trim() : null;
+  const destinationNote = data.destination_note ? String(data.destination_note).trim() : null;
+  if (destinationType !== 'STATION' && !destinationName) throw err('Tên nơi nhận là bắt buộc', 400);
   const reason = data.reason ? String(data.reason).trim() : null;
   const carrier = data.carrier ? String(data.carrier).trim() : null;
   const transportCode = data.transport_code ? String(data.transport_code).trim() : null;
@@ -469,9 +499,9 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
 
   const [headerResult] = await conn.query(
     `INSERT INTO warehouse_exports
-      (exporter_user_id, export_date, reason, charging_station_id, carrier, transport_code, transport_status, total_amount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [exporterUserId, exportDate, reason, chargingStationId, carrier, transportCode, transportStatus, totalAmount]
+      (exporter_user_id, export_date, reason, charging_station_id, destination_type, destination_name, destination_address, destination_note, carrier, transport_code, transport_status, total_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [exporterUserId, exportDate, reason, chargingStationId, destinationType, destinationName, destinationAddress, destinationNote, carrier, transportCode, transportStatus, totalAmount]
   );
   const exportId = headerResult.insertId;
   await conn.query(
