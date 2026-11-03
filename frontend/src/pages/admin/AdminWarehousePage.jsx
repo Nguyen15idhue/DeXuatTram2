@@ -9,11 +9,11 @@ import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 
 const TABS = [
-  { key: 'suppliers', label: 'Nhà cung cấp' },
   { key: 'stock', label: 'Tồn kho' },
   { key: 'imports', label: 'Nhập kho' },
   { key: 'exports', label: 'Xuất kho' },
-  { key: 'poles', label: 'Loại trụ sạc' }
+  { key: 'poles', label: 'Loại trụ sạc' },
+  { key: 'suppliers', label: 'Nhà cung cấp' }
 ];
 
 const EMPTY_TOAST = { message: '', type: 'success' };
@@ -748,8 +748,12 @@ const ExportsTab = ({ token, onToast }) => {
   };
 
   const save = async () => {
-    if (!form.charging_station_id) {
+    if (form.destination_type === 'STATION' && !form.charging_station_id) {
       onToast('Vui lòng chọn trạm nhận', 'error');
+      return;
+    }
+    if (form.destination_type !== 'STATION' && !String(form.destination_name || '').trim()) {
+      onToast('Vui lòng nhập tên nơi nhận', 'error');
       return;
     }
     const normalizedItems = form.items.map((row) => ({

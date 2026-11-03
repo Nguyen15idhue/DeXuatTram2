@@ -350,7 +350,7 @@ const listExports = async ({ page = 1, limit = 20, search = '', supplier_id = ''
   const joinFilter = supplier_id ? 'JOIN warehouse_export_items wei_filter ON wei_filter.export_id = we.id' : '';
   const [[countRow]] = await pool.query(`SELECT COUNT(DISTINCT we.id) AS total FROM warehouse_exports we LEFT JOIN users u ON u.id=we.exporter_user_id LEFT JOIN charging_stations cs ON cs.id=we.charging_station_id ${joinFilter} ${whereClause}`, params);
   const [rows] = await pool.query(
-    `SELECT we.id, we.exporter_user_id, we.export_date, we.reason, we.charging_station_id, we.created_at,
+    `SELECT we.id, we.exporter_user_id, we.export_date, we.reason, we.charging_station_id, we.destination_type, we.destination_name, we.destination_address, we.destination_note, we.created_at,
             u.full_name AS exporter_name,
             cs.ma_tram, p.ma_de_xuat_gen AS ma_de_xuat
      FROM warehouse_exports we
@@ -432,41 +432,43 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
     throw err('Tổng số tiền vận chuyển phải là số không âm', 400);
   }
 
-  const [stationRows] = await conn.query(
-    `SELECT cs.id, p.chot_so_luong_tru
-     FROM charging_stations cs
-     JOIN station_proposals p ON p.id = cs.proposal_id
-     WHERE cs.id = ?`,
-    [chargingStationId]
-  );
-  if (stationRows.length === 0) throw err('Không tìm thấy trạm sạc', 404);
-
-  const committedRows = (() => {
-    const value = stationRows[0].chot_so_luong_tru;
-    if (!value) return [];
-    if (Array.isArray(value)) return value;
-    try { return JSON.parse(value); } catch { return []; }
-  })();
-  if (!Array.isArray(committedRows) || committedRows.length === 0) {
-    throw err('Trạm chưa có số lượng trụ chốt để xuất kho', 409);
-  }
-
-  const committedMap = new Map();
-  for (const row of committedRows) {
-    const poleName = String(row?.loai_tru || '').trim().toLowerCase();
-    const quantity = Number(row?.so_luong);
-    if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
-    const supplierId = row?.supplier_id ? Number(row.supplier_id) : null;
-    if (!Number.isInteger(supplierId) || supplierId <= 0 || !String(row?.supplier_name || '').trim()) {
-      throw err('Số lượng trụ chốt chưa có nhà cung cấp, không thể xuất kho', 409);
-    }
-    const [poleRows] = await conn.query(
-      'SELECT id FROM charging_poles WHERE LOWER(TRIM(name)) = ? LIMIT 2',
-      [poleName]
+  let committedMap = new Map();
+  if (destinationType === 'STATION') {
+    const [stationRows] = await conn.query(
+      `SELECT cs.id, p.chot_so_luong_tru
+       FROM charging_stations cs
+       JOIN station_proposals p ON p.id = cs.proposal_id
+       WHERE cs.id = ?`,
+      [chargingStationId]
     );
-    if (poleRows.length === 1) {
-      const key = supplierId ? `${supplierId}:${poleRows[0].id}` : `any:${poleRows[0].id}`;
-      committedMap.set(key, (committedMap.get(key) || 0) + quantity);
+    if (stationRows.length === 0) throw err('Không tìm thấy trạm sạc', 404);
+
+    const committedRows = (() => {
+      const value = stationRows[0].chot_so_luong_tru;
+      if (!value) return [];
+      if (Array.isArray(value)) return value;
+      try { return JSON.parse(value); } catch { return []; }
+    })();
+    if (!Array.isArray(committedRows) || committedRows.length === 0) {
+      throw err('Trạm chưa có số lượng trụ chốt để xuất kho', 409);
+    }
+
+    for (const row of committedRows) {
+      const poleName = String(row?.loai_tru || '').trim().toLowerCase();
+      const quantity = Number(row?.so_luong);
+      if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
+      const supplierId = row?.supplier_id ? Number(row.supplier_id) : null;
+      if (!Number.isInteger(supplierId) || supplierId <= 0 || !String(row?.supplier_name || '').trim()) {
+        throw err('Số lượng trụ chốt chưa có nhà cung cấp, không thể xuất kho', 409);
+      }
+      const [poleRows] = await conn.query(
+        'SELECT id FROM charging_poles WHERE LOWER(TRIM(name)) = ? LIMIT 2',
+        [poleName]
+      );
+      if (poleRows.length === 1) {
+        const key = `${supplierId}:${poleRows[0].id}`;
+        committedMap.set(key, (committedMap.get(key) || 0) + quantity);
+      }
     }
   }
 
@@ -484,16 +486,21 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   for (const item of items) {
     const stockKey = `${item.supplier_id}:${item.pole_id}`;
     if (!stockMap.has(stockKey)) throw err(`Không tìm thấy tồn kho của nhà cung cấp cho trụ #${item.pole_id}`, 404);
-    const committedKey = committedMap.has(`${item.supplier_id}:${item.pole_id}`)
-      ? `${item.supplier_id}:${item.pole_id}`
-      : `any:${item.pole_id}`;
-    const committedQty = committedMap.get(committedKey);
-    if (!committedQty) {
-      throw err(`Trụ sạc #${item.pole_id} không thuộc số lượng đã chốt của trạm`, 400);
-    }
-    const maxAllowed = Math.min(committedQty, stockMap.get(stockKey));
-    if (item.quantity > maxAllowed) {
-      throw err(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 400);
+    if (destinationType === 'STATION') {
+      const committedKey = `${item.supplier_id}:${item.pole_id}`;
+      const committedQty = committedMap.get(committedKey);
+      if (!committedQty) {
+        throw err(`Trụ sạc #${item.pole_id} không thuộc số lượng đã chốt của trạm`, 400);
+      }
+      const maxAllowed = Math.min(committedQty, stockMap.get(stockKey));
+      if (item.quantity > maxAllowed) {
+        throw err(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 400);
+      }
+    } else {
+      const stockQty = stockMap.get(stockKey);
+      if (item.quantity > stockQty) {
+        throw err(`Số lượng xuất vượt quá tồn kho. Số lượng tối đa có thể xuất là ${stockQty} trụ. Vui lòng kiểm tra lại.`, 400);
+      }
     }
   }
 
