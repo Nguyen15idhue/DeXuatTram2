@@ -16,6 +16,7 @@ import {
 import signerTextLayout from "../../utils/signatureTextLayout.json";
 import SignerDetailsText from "../../components/admin/SignerDetailsText";
 import ProposalLocationMapButton from "../../components/admin/ProposalLocationMapButton";
+import ProposalGoogleMapLink from "../../components/admin/ProposalGoogleMapLink";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -322,7 +323,12 @@ const ProposalSignatureConfigPage = () => {
     <div className="space-y-4">
       <PageHeader
         title={`Cấu hình ký BCĐX — ${proposal.ma_de_xuat || `#${proposal.id}`}`}
-        actions={<ProposalLocationMapButton proposal={proposal} />}
+        actions={(
+          <div className="flex items-center gap-3">
+            <ProposalGoogleMapLink proposal={proposal} />
+            <ProposalLocationMapButton proposal={proposal} />
+          </div>
+        )}
       />
 
       {signatureConfigWarning && (

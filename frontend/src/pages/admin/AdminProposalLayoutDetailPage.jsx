@@ -10,6 +10,7 @@ import ProposalGradingSummary from '../../components/admin/ProposalGradingSummar
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
 import ProposalTableFieldValue from '../../components/admin/ProposalTableFieldValue';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 import PageHeader from '../../components/ui/PageHeader';
 import { PROPOSAL_PROCESS_FIELD_KEYS } from '../../utils/proposalProgress';
 
@@ -165,6 +166,10 @@ const AdminProposalLayoutDetailPage = () => {
             <div><span className="font-semibold">SĐT:</span> {proposal.owner_phone || '—'}</div>
             <div className="sm:col-span-2 lg:col-span-4">
               <span className="font-semibold">Địa chỉ:</span> {proposal.address || '—'}
+            </div>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <span className="font-semibold">Google Maps:</span>{' '}
+              <ProposalGoogleMapLink proposal={proposal} />
             </div>
           </div>
         </div>

@@ -100,8 +100,11 @@ const setInfoCompleted = async (req, res, completed) => {
     res.json({
       success: true,
       data: proposal,
-      message: completed ? 'Đã xác nhận đủ thông tin' : 'Đã mở lại để bổ sung thông tin',
-      unchanged: !!result.unchanged
+      message: completed && result.movedTo === 'GRADING'
+        ? 'Đã xác nhận đủ thông tin và chuyển đề xuất sang chấm điểm'
+        : (completed ? 'Đã xác nhận đủ thông tin' : 'Đã mở lại để bổ sung thông tin'),
+      unchanged: !!result.unchanged,
+      movedTo: result.movedTo || null
     });
   } catch (error) {
     if (error.statusCode) {

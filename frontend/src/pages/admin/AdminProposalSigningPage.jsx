@@ -5,6 +5,7 @@ import { proposalSignatureService } from '../../services/api';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
+import { buildGoogleMapsHref } from '../../components/admin/ProposalGoogleMapLink';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Toast from '../../components/Toast';
 import {
@@ -15,7 +16,7 @@ import {
   getSignStatusColor,
   getSignStatusLabel
 } from '../../utils/proposalSignature';
-import { ArrowLeft, CheckCircle2, Crosshair, Download } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Crosshair, Download, MapPinned } from 'lucide-react';
 
 const AdminProposalSigningPage = () => {
   const { id } = useParams();
@@ -101,6 +102,18 @@ const AdminProposalSigningPage = () => {
         actions={(
           <div className="flex gap-2">
             <ProposalLocationMapButton proposal={detail} />
+            {detail && !loading && buildGoogleMapsHref(detail) && (
+              <a
+                href={buildGoogleMapsHref(detail)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline btn-sm gap-1"
+                title="Mở vị trí đề xuất trên Google Maps"
+              >
+                <MapPinned size={15} />
+                Mở Google Maps
+              </a>
+            )}
             <button type="button" className="btn btn-ghost btn-sm gap-1" onClick={() => navigate('/admin/proposals/trinh-ky')}>
               <ArrowLeft size={16} />
               Quay lại

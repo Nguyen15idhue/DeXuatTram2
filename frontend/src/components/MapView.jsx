@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { stationService, proposalService, evReportService, api } from '../services/api';
-import { getMarkerColor, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
+import { getMarkerColor, getMapMarkerStyle, parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../utils/mapHelpers';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import MarkerIcon, { MapBadge } from './MarkerIcon';
 import useMarkerIcons from '../hooks/useMarkerIcons';
@@ -294,7 +294,8 @@ function createProposalPopupContent(item, user) {
   statusP.appendChild(statusStrong);
   const statusSpan = document.createElement('span');
   const mapStatus = getProposalMapStatus(item.status);
-  statusSpan.style.color = getMarkerColor(mapStatus, 'proposal');
+  const markerStyle = getMapMarkerStyle(mapStatus, 'proposal');
+  statusSpan.style.color = markerStyle.color;
   statusSpan.textContent = getMapStatusLabel(mapStatus, 'proposal');
   statusP.appendChild(statusSpan);
   div.appendChild(statusP);
@@ -379,12 +380,15 @@ const MapView = ({
   const MAP_LEGEND = { stations: stationStatuses, proposals: proposalLegendStatuses };
   const proposalChunks = [];
   for (let i = 0; i < MAP_LEGEND.proposals.length; i += 5) proposalChunks.push(MAP_LEGEND.proposals.slice(i, i + 5));
-  const renderProposalLegendItem = (item) => (
-    <div key={`p-${item.value}`} className="map-legend-item">
-      <MapBadge icon={getMarkerIcon(item.value, 'proposal')} color={getMarkerColor(item.value, 'proposal')} bg={getMarkerIconBg(item.value, 'proposal')} />
-      <span className="map-legend-label">{item.label}</span>
-    </div>
-  );
+  const renderProposalLegendItem = (item) => {
+    const style = getMapMarkerStyle(item.value, 'proposal');
+    return (
+      <div key={`p-${item.value}`} className="map-legend-item">
+        <MapBadge icon={style.icon} color={style.color} bg={style.bg} />
+        <span className="map-legend-label">{item.label}</span>
+      </div>
+    );
+  };
   const [loading, setLoading] = useState(true);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [createTarget, setCreateTarget] = useState('proposal');
@@ -867,7 +871,8 @@ const MapView = ({
   const canvasProposals = useMemo(
     () => layerProposals.map(p => {
       const mapStatus = getProposalMapStatus(p.status);
-      return { ...p, _color: getMarkerColor(mapStatus, 'proposal'), _icon: getMarkerIcon(mapStatus, 'proposal'), _bg: getMarkerIconBg(mapStatus, 'proposal') };
+      const style = getMapMarkerStyle(mapStatus, 'proposal');
+      return { ...p, _color: style.color, _icon: style.icon, _bg: style.bg };
     }),
     [layerProposals, markerIconsVersion]
   );

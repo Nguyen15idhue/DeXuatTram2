@@ -9,6 +9,7 @@ import ProposalGradingSummary from '../../components/admin/ProposalGradingSummar
 import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
 import ProposalLocationMapButton from '../../components/admin/ProposalLocationMapButton';
+import ProposalGoogleMapLink from '../../components/admin/ProposalGoogleMapLink';
 import FileViewer from '../../components/dynamic/FileViewer';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Toast from '../../components/Toast';
@@ -268,6 +269,7 @@ const AdminProposalSignDetailPage = () => {
         <InfoItem label="SĐT liên hệ" value={getProposalPhone(detail)} />
         <InfoItem label="Mô hình đầu tư" value={detail.mo_hinh_dau_tu || '-'} />
         <InfoItem label="Địa chỉ" value={getProposalAddress(detail)} />
+        <InfoItem label="Google Maps" value={<ProposalGoogleMapLink proposal={detail} />} />
         <InfoItem label="Quy mô trụ đề xuất" value={formatProposedScale(detail)} />
         <InfoItem label="Số lượng trụ chốt" value={formatChotTruRows(detail.chot_so_luong_tru)} />
         <InfoItem label="Tổng giá trị chốt" value={formatChotTotal(detail.tong_gia_tri_chot)} />

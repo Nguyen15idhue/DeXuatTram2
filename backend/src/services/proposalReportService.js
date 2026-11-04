@@ -446,14 +446,6 @@ const normalizeChotRows = (rows, prices) => {
     if (!loaiTru) {
       throw err(`Dòng ${index + 1}: thiếu loại trụ`, 400);
     }
-    const supplierId = Number(row.supplier_id);
-    if (!Number.isInteger(supplierId) || supplierId <= 0) {
-      throw err(`Dòng ${index + 1}: thiếu nhà cung cấp`, 400);
-    }
-    const supplierName = String(row.supplier_name || '').trim();
-    if (!supplierName) {
-      throw err(`Dòng ${index + 1}: thiếu tên nhà cung cấp`, 400);
-    }
     const giaChot = prices.get(loaiTru);
     if (giaChot === undefined || !Number.isFinite(giaChot) || giaChot < 0) {
       throw err(`Dòng ${index + 1}: thiếu giá chốt cho loại trụ "${loaiTru}"`, 400);
@@ -462,8 +454,6 @@ const normalizeChotRows = (rows, prices) => {
       mo_hinh: moHinh,
       so_luong: soLuong,
       loai_tru: loaiTru,
-      supplier_id: supplierId,
-      supplier_name: supplierName,
       gia_chot: giaChot,
       thanh_tien: soLuong * giaChot
     });
@@ -510,14 +500,6 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, i
   const chotRows = normalizeChotRows(chotSoLuongTru, prices);
   if (chotRows.length === 0) {
     throw err('Vui lòng nhập số lượng trụ chốt (mô hình liên kết, số lượng, loại trụ, giá chốt)', 400);
-  }
-  const supplierIds = [...new Set(chotRows.map((row) => row.supplier_id))];
-  const [supplierRows] = await pool.query(
-    `SELECT id FROM suppliers WHERE id IN (${supplierIds.map(() => '?').join(',')})`,
-    supplierIds
-  );
-  if (supplierRows.length !== supplierIds.length) {
-    throw err('Nhà cung cấp không tồn tại', 400);
   }
   const totalValue = sumChotTotal(chotRows);
 

@@ -612,6 +612,12 @@ const listChargingStations = async ({
         can_cancel_on_station: canManageOnStationStatus
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
+        can_mark_on_station_active: user?.role === 'SUPER_ADMIN'
+          && record.status !== 'CANCELLED'
+          && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status)
+          && !(record.status === STATUS.OPERATING
+            && record.sub_status === 'ACTIVE'
+            && record.proposal_status === 'ACTIVE'),
         can_restore_on_station: canManageOnStationStatus
           && record.status === 'CANCELLED'
           && Boolean(record.manual_cancelled_at)
@@ -926,7 +932,7 @@ const restoreOnStation = async (id, user, ctx = {}) => {
   return getChargingStationDetail(stationId, user);
 };
 
-const createFromApprovedProposal = async (proposalId, { actorId = null, actorRole = null, source = 'user', ip = null } = {}) => {
+const createChargingStationFromProposal = async (proposalId, { actorId = null, actorRole = null, source = 'user', ip = null, reason = null } = {}, requireSignedFile = true) => {
   const id = normalizeId(proposalId, 'Mã đề xuất');
   const [rows] = await pool.query(
     'SELECT id, signed_file_id, pending_station_code, custom_data FROM station_proposals WHERE id = ?',
@@ -934,7 +940,7 @@ const createFromApprovedProposal = async (proposalId, { actorId = null, actorRol
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
   const proposal = rows[0];
-  if (!proposal.signed_file_id) throw err('Đề xuất chưa có file đã ký', 400);
+  if (requireSignedFile && !proposal.signed_file_id) throw err('Đề xuất chưa có file đã ký', 400);
 
   const existing = await findByProposal(id);
   if (existing) return { record: existing, created: false };
@@ -973,6 +979,7 @@ const createFromApprovedProposal = async (proposalId, { actorId = null, actorRol
     chargingStationId: insertId,
     action: 'created',
     toStatus: STATUS.ONBOARDING,
+    reason,
     changedFields: {
       proposal_id: { label: FIELD_LABELS.proposal_id, old: '', new: String(id) },
       ma_tram: { label: FIELD_LABELS.ma_tram, old: '', new: toText(maTram) }
@@ -990,6 +997,50 @@ const createFromApprovedProposal = async (proposalId, { actorId = null, actorRol
   }
 
   return { record: await getRecord(insertId), created: true };
+};
+
+const createFromApprovedProposal = async (proposalId, opts = {}) => (
+  createChargingStationFromProposal(proposalId, opts, true)
+);
+
+const createDirectFromProposal = async (proposalId, user, { reason } = {}, ctx = {}) => {
+  if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được chuyển trực tiếp đề xuất sang ON trạm', 403);
+  const cleanReason = String(reason || '').trim();
+  if (cleanReason.length < 3 || cleanReason.length > 5000) {
+    throw err('Vui lòng nhập lý do chuyển trực tiếp ON trạm (3–5000 ký tự)', 400);
+  }
+
+  const id = normalizeId(proposalId, 'Mã đề xuất');
+  const [rows] = await pool.query('SELECT id, status FROM station_proposals WHERE id = ?', [id]);
+  if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
+  if (['CANCELLED', 'ARCHIVED', 'PAUSED', 'ACTIVE'].includes(rows[0].status)) {
+    throw err(`Không thể chuyển đề xuất từ trạng thái "${rows[0].status}" sang ON trạm`, 409);
+  }
+
+  if (rows[0].status !== 'DEPLOYING') {
+    await require('./proposalLifecycle').transition(id, 'DEPLOYING', {
+      reason: cleanReason,
+      actorId: user.id,
+      actorRole: user.role,
+      source: 'user',
+      isSuperAdmin: true,
+      directOnStation: true,
+      ip: ctx.ip || null
+    });
+  }
+
+  try {
+    const result = await createChargingStationFromProposal(id, {
+      actorId: user.id,
+      actorRole: user.role,
+      source: 'admin_override',
+      ip: ctx.ip || null,
+      reason: cleanReason
+    }, false);
+    return { ...result, proposal_status: 'DEPLOYING' };
+  } catch (error) {
+    throw err(`Đề xuất đã chuyển sang Đang triển khai nhưng chưa tạo được ON trạm. Có thể thử lại. ${error.message}`, error.statusCode || 500);
+  }
 };
 
 const updateChargingStation = async (id, body = {}, ctx = {}) => {
@@ -1942,6 +1993,134 @@ const updateAcceptanceResult = async (id, result, user, ctx = {}) => {
   return getChargingStationDetail(stationId, user);
 };
 
+const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_date: onDate, reason } = {}, user, ctx = {}) => {
+  if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
+  const cleanReason = String(reason || '').trim();
+  if (cleanReason.length < 3 || cleanReason.length > 5000) {
+    throw err('Vui lòng nhập lý do đánh dấu ON trạm (3–5000 ký tự)', 400);
+  }
+
+  const stationId = normalizeId(id, 'Mã bản ghi');
+  const connection = await pool.getConnection();
+  let transactionStarted = false;
+  let proposalTransition = null;
+  let fromStationStatus = null;
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const [rows] = await connection.query(
+      `SELECT cs.*, DATE_FORMAT(cs.on_date, '%Y-%m-%d') AS current_on_date,
+              p.status AS proposal_status
+         FROM charging_stations cs
+         JOIN station_proposals p ON p.id = cs.proposal_id
+        WHERE cs.id = ?
+        FOR UPDATE`,
+      [stationId]
+    );
+    if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
+    const current = rows[0];
+    fromStationStatus = current.status;
+
+    if (current.status === 'CANCELLED' || ['CANCELLED', 'ARCHIVED', 'PAUSED'].includes(current.proposal_status)) {
+      throw err('Không thể đánh dấu ON trạm cho bản ghi đã hủy, lưu trữ hoặc tạm dừng', 409);
+    }
+    if (!['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(current.proposal_status)) {
+      throw err(`Đề xuất đang ở trạng thái "${current.proposal_status}" nên không thể chuyển sang Hoạt động`, 409);
+    }
+    if (
+      current.status === STATUS.OPERATING
+      && current.sub_status === 'ACTIVE'
+      && current.proposal_status === 'ACTIVE'
+    ) {
+      await connection.commit();
+      transactionStarted = false;
+      return getChargingStationDetail(stationId, user);
+    }
+
+    const cleanCmsCode = toText(cmsStationCode).trim() || toText(current.cms_station_code).trim();
+    if (!cleanCmsCode) throw err('Mã trạm trên CMS là bắt buộc', 400);
+    let normalizedOnDate = normalizeDate(onDate);
+    if (!normalizedOnDate) {
+      const [dateRows] = await connection.query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today");
+      normalizedOnDate = dateRows[0]?.today || null;
+    }
+    if (!normalizedOnDate) throw err('Không xác định được ngày ON trạm', 400);
+
+    const investmentModel = readiness.normalizeInvestmentModel(await loadInvestmentModel(connection, current.proposal_id));
+    const startsRefund = investmentModel === 'LK' && current.deposit_status === 'RECEIVED';
+    await connection.query(
+      `UPDATE charging_stations
+          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE'${startsRefund ? ", deposit_status = 'REFUND_PENDING'" : ''}
+        WHERE id = ?`,
+      [cleanCmsCode, normalizedOnDate, stationId]
+    );
+
+    const changedFields = {
+      status: { label: FIELD_LABELS.status, old: current.status, new: STATUS.OPERATING },
+      sub_status: { label: FIELD_LABELS.sub_status, old: current.sub_status || '', new: 'ACTIVE' },
+      cms_station_code: { label: FIELD_LABELS.cms_station_code, old: current.cms_station_code || '', new: cleanCmsCode },
+      on_date: { label: FIELD_LABELS.on_date, old: current.current_on_date || '', new: normalizedOnDate }
+    };
+    if (startsRefund) {
+      changedFields.deposit_status = { label: FIELD_LABELS.deposit_status, old: current.deposit_status, new: 'REFUND_PENDING' };
+    }
+    await writeActivity(connection, {
+      chargingStationId: stationId,
+      action: 'manual_marked_active',
+      fromStatus: current.status,
+      toStatus: STATUS.OPERATING,
+      changedFields,
+      reason: cleanReason,
+      actorId: user.id,
+      actorRole: user.role,
+      source: 'admin_override',
+      ip: ctx.ip
+    });
+
+    if (current.proposal_status !== 'ACTIVE') {
+      proposalTransition = await require('./proposalLifecycle').transitionOnStation(
+        connection,
+        current.proposal_id,
+        'ACTIVE',
+        {
+          directActivation: true,
+          reason: cleanReason,
+          actorId: user.id,
+          actorRole: user.role,
+          ip: ctx.ip
+        }
+      );
+    }
+
+    if (startsRefund) {
+      await notifyFinanceTeams(connection, { id: stationId }, ctx, {
+        type: 'CHARGING_STATION_REFUND_TASK',
+        title: 'Trạm sạc đã ON — cần hoàn cọc',
+        message: `Mã trạm: ${current.ma_tram || `#${stationId}`} · Mô hình Liên kết đã ON trạm. Vui lòng hoàn tiền cọc cho nhà đầu tư.`
+      });
+    }
+
+    await connection.commit();
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  if (proposalTransition) await require('./proposalLifecycle').completeOnStationTransition(proposalTransition);
+  await require('./journeySyncService').onStationStatus(stationId, {
+    from: fromStationStatus,
+    to: 'ACTIVE',
+    actorId: user.id,
+    actorRole: user.role,
+    source: 'admin_override',
+    ip: ctx.ip
+  });
+  return getChargingStationDetail(stationId, user);
+};
+
 const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_date: onDate } = {}, user, ctx = {}) => {
   await assertSetupOperationsManager(user);
   const stationId = normalizeId(id, 'Mã bản ghi');
@@ -2297,6 +2476,7 @@ exports.cancelOnStation = cancelOnStation;
 exports.restoreOnStation = restoreOnStation;
 exports.canViewChargingStation = canViewChargingStation;
 exports.createFromApprovedProposal = createFromApprovedProposal;
+exports.createDirectFromProposal = createDirectFromProposal;
 exports.updateChargingStation = updateChargingStation;
 exports.updatePaymentStatus = updatePaymentStatus;
 exports.startContractSigning = startContractSigning;
@@ -2305,6 +2485,7 @@ exports.updateInfrastructureStatus = updateInfrastructureStatus;
 exports.requestEarlyDelivery = requestEarlyDelivery;
 exports.createDeliveryExport = createDeliveryExport;
 exports.confirmDelivery = confirmDelivery;
+exports.markOnStationActive = markOnStationActive;
 exports.updateInstallation = updateInstallation;
 exports.updateAcceptanceResult = updateAcceptanceResult;
 exports.completeConfiguration = completeConfiguration;

@@ -436,6 +436,8 @@ exports.createGuestProposal = async (data, ip) => {
       actorId: null, purpose: 'create', ip: ip || null
     });
   } catch { finalData.autoInfoCompleted = null; }
+  const [currentRows] = await pool.query('SELECT status FROM station_proposals WHERE id = ?', [recordId]);
+  if (currentRows.length > 0) finalData.status = currentRows[0].status;
   return { proposal: finalData, warnings };
 };
 

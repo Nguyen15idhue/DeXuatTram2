@@ -366,10 +366,18 @@ exports.listProposals = async ({
               WHERE rq.proposal_id = p.id AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
                 AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
               ORDER BY rq.created_at DESC, rq.id DESC LIMIT 1) AS quy_hoach_regrade_request_id,
+            (SELECT rq.description FROM proposal_requests rq
+              WHERE rq.proposal_id = p.id AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
+                AND (rq.target_department = 'QH' OR rq.target_title IN ('Quy hoạch', 'Hai phòng chấm điểm'))
+              ORDER BY rq.created_at DESC, rq.id DESC LIMIT 1) AS quy_hoach_regrade_description,
             (SELECT rp.id FROM proposal_requests rp
               WHERE rp.proposal_id = p.id AND rp.request_type = 'RE_GRADE' AND rp.status = 'OPEN'
                 AND (rp.target_department = 'PL' OR rp.target_title IN ('Pháp lý', 'Hai phòng chấm điểm'))
               ORDER BY rp.created_at DESC, rp.id DESC LIMIT 1) AS phap_ly_regrade_request_id,
+            (SELECT rp.description FROM proposal_requests rp
+              WHERE rp.proposal_id = p.id AND rp.request_type = 'RE_GRADE' AND rp.status = 'OPEN'
+                AND (rp.target_department = 'PL' OR rp.target_title IN ('Pháp lý', 'Hai phòng chấm điểm'))
+              ORDER BY rp.created_at DESC, rp.id DESC LIMIT 1) AS phap_ly_regrade_description,
             (SELECT MAX(rt.created_at) FROM proposal_requests rt
               WHERE rt.proposal_id = p.id AND rt.request_type = 'RE_GRADE' AND rt.status = 'OPEN') AS grading_task_created_at,
             ${supplementExists} AS supplement_pending

@@ -166,11 +166,18 @@ const GuestProposalPage = () => {
       if (res.success) {
         setResult(res.data);
         saveCode(res.data);
-        const warns = res.warnings || [];
+        const warns = [...(res.warnings || [])];
+        if (res.infoCompleted?.error) {
+          warns.push(`Đã gửi đề xuất nhưng chưa tự chuyển sang chấm điểm: ${res.infoCompleted.error}`);
+        }
+        let message = warns.length > 0
+          ? `Gửi đề xuất thành công! Hãy lưu lại mã tra cứu. Lưu ý: ${warns.join('; ')}`
+          : 'Gửi đề xuất thành công! Hãy lưu lại mã tra cứu.';
+        if (res.infoCompleted?.movedTo === 'GRADING' && !res.infoCompleted?.error) {
+          message += ' Đề xuất đã được chuyển sang bước chấm điểm.';
+        }
         setToast({
-          message: warns.length > 0
-            ? `Gửi đề xuất thành công! Hãy lưu lại mã tra cứu. Lưu ý: ${warns.join('; ')}`
-            : 'Gửi đề xuất thành công! Hãy lưu lại mã tra cứu.',
+          message,
           type: warns.length > 0 ? 'warning' : 'success'
         });
         resetCaptcha();
