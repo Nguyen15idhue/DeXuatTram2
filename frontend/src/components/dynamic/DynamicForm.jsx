@@ -442,6 +442,9 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
           if (keySet.has('vung_mien') && empty(prev.vung_mien) && admin.vung_mien) next.vung_mien = admin.vung_mien;
           return next;
         });
+        if (keySet.has('province') && (formData.province === undefined || formData.province === null || String(formData.province).trim() === '') && admin.province && onValuesChangeRef.current) {
+          onValuesChangeRef.current({ province: admin.province });
+        }
       } catch { /* bỏ qua lỗi geocode */ } finally {
         if (seq === geocodeSeqRef.current) setGeocoding(false);
       }

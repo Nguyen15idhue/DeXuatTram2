@@ -98,6 +98,14 @@ exports.createProposal = async (userId, data, opts = {}) => {
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
 
   const initialStatus = opts.initialStatus || await resolveInitialStatus(opts.formId);
+  const provinceForZone = String(fixedData.province ?? dynamicData.province ?? '').trim();
+  const radiusForZone = proximityService.getMinProposalDistanceM(provinceForZone);
+  const nearbyForZone = await proximityService.checkNearby(Number(fixedData.latitude), Number(fixedData.longitude), radiusForZone);
+  if (nearbyForZone.is_duplicate) {
+    const zoneErr = new Error(`Vị trí này nằm trong vùng không thể tạo đề xuất (cách ${nearbyForZone.nearest.distance_m}m < ${radiusForZone}m). Vui lòng chọn vị trí khác.`);
+    zoneErr.statusCode = 400;
+    throw zoneErr;
+  }
   let supplementMinutes = null;
   let transitionMinutes = null;
   try {
@@ -282,18 +290,6 @@ exports.createGuestProposal = async (data, ip) => {
     throw err;
   }
   const warnings = [];
-  let nearby;
-  try {
-    nearby = await proximityService.checkNearby(lat, lng, 200);
-  } catch (err) {
-    err.statusCode = err.statusCode || 400;
-    throw err;
-  }
-  if (nearby.is_duplicate) {
-    const n = nearby.nearest;
-    const who = n.kind === 'station' ? 'trạm' : 'đề xuất';
-    warnings.push(`Vị trí này gần với ${who} #${n.id} (cách ${n.distance_m}m < 200m)`);
-  }
 
   if (phone) {
     const [samePhone] = await pool.query(
@@ -311,6 +307,14 @@ exports.createGuestProposal = async (data, ip) => {
 
   await addressEnrichment.enrichDynamicData({ dynamicData, fixedData }).catch(() => {});
   await dataListService.applyDiaGioi(dynamicData);
+  const zoneRadiusM = proximityService.getMinProposalDistanceM(String(fixedData.province ?? dynamicData.province ?? '').trim());
+  const zoneNearby = await proximityService.checkNearby(lat, lng, zoneRadiusM);
+  if (zoneNearby.is_duplicate) {
+    const n = zoneNearby.nearest;
+    const zoneErr = new Error(`Vị trí này nằm trong vùng không thể tạo đề xuất (cách ${n.distance_m}m < ${zoneRadiusM}m). Vui lòng chọn vị trí khác.`);
+    zoneErr.statusCode = 400;
+    throw zoneErr;
+  }
   await dynamicUtils.resolveTablePrices({ ...fixedData, ...dynamicData }, dynamicData, fieldDefs).catch(() => {});
 
   const fileKeys = fieldDefs.filter(f => f.type === 'file' && f.source_type === 'json').map(f => f.key);

@@ -42,6 +42,7 @@ import { canOwnerEditProposal } from '../../utils/proposalOwnerLock';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { COUNTDOWN_CONFIG_EVENT, getCountdownFlags, loadCountdownConfig } from '../../utils/countdownConfig';
 import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
+import { getProposalMinDistanceM } from '../../utils/proposalZone';
 import { ClipboardList, Download, Eye, Pencil, Trash2, RotateCcw, Plus, X, Upload, MoreVertical, ChevronDown, AlertTriangle, FileSpreadsheet, Zap, MapPinned, MapPin, Link2, Ban, Lock, History, GitBranch, Search, Repeat, Info, RefreshCw, Pause, Play, CheckCircle2 } from 'lucide-react';
 import { notifyBellRefresh } from '../../components/layout/NotificationBell';
 
@@ -838,6 +839,11 @@ const AdminProposalsPage = () => {
     if (!submitData.owner_name || !submitData.address || !submitData.latitude || !submitData.longitude) {
       throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
     }
+    const radiusM = getProposalMinDistanceM(submitData.province);
+    const check = await proposalService.checkNearby({ latitude: submitData.latitude, longitude: submitData.longitude, radius_m: radiusM }, token);
+    if (check?.data?.is_duplicate) {
+      throw new Error(`Vị trí này nằm trong vùng không thể tạo đề xuất (cách ${check.data.nearest.distance_m}m < ${radiusM}m). Vui lòng chọn vị trí khác.`);
+    }
     const res = await proposalService.create(submitData, token, createFormId);
     if (res.success) {
       const transitionError = res.infoCompleted?.error;
@@ -969,7 +975,11 @@ const AdminProposalsPage = () => {
       </button>
     );
     if (isAdmin || isSales || user?.role === 'NPP') {
-      if (isSuperAdmin || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row))) {
+      const canEditProposalInfo =
+        isSuperAdmin
+        || row.status === 'PENDING'
+        || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row));
+      if (canEditProposalInfo) {
         items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
       }
     }
@@ -1719,7 +1729,7 @@ const AdminProposalsPage = () => {
           viewId={proposalsViewId}
           mode={popup.mode}
           allowEdit={isAdmin || isSales || user?.role === 'NPP'}
-          canEditRecord={(rec) => isSuperAdmin || (Number(rec.user_id) === Number(user?.id) && canOwnerEditProposal(rec))}
+          canEditRecord={(rec) => isSuperAdmin || rec?.status === 'PENDING' || (Number(rec.user_id) === Number(user?.id) && canOwnerEditProposal(rec))}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null });
             navigate(activeTab === 'all' ? '/admin/proposals' : `/admin/proposals?tab=${activeTab}`);

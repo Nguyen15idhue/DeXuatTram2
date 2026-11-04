@@ -6,6 +6,7 @@ import { proposalService, stationService, formService } from '../../services/api
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
 import Toast from '../../components/Toast';
+import { getProposalMinDistanceM } from '../../utils/proposalZone';
 import AssistantChat from '../../components/help/AssistantChat';
 import { MapPin, MapPinned, X } from 'lucide-react';
 
@@ -15,12 +16,35 @@ const MapPage = () => {
   const [showStationForm, setShowStationForm] = useState(false);
   const [coords, setCoords] = useState({ lat: 0, lng: 0 });
   const [error, setError] = useState('');
+  const [zoneWarning, setZoneWarning] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [mapKey, setMapKey] = useState(0);
   const [selectingLocation, setSelectingLocation] = useState(false);
   const [highlightPosition, setHighlightPosition] = useState(null);
   const [pendingTarget, setPendingTarget] = useState('proposal');
   const [formCoords, setFormCoords] = useState({ latitude: '', longitude: '' });
+  useEffect(() => {
+    const lat = (formCoords.latitude !== '' && formCoords.latitude != null) ? formCoords.latitude : coords.lat;
+    const lng = (formCoords.longitude !== '' && formCoords.longitude != null) ? formCoords.longitude : coords.lng;
+    if (!lat || !lng) { setZoneWarning(''); return; }
+    const province = formCoords.province;
+    const radiusM = getProposalMinDistanceM(province || '');
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await proposalService.checkNearby({ latitude: lat, longitude: lng, radius_m: radiusM }, token);
+        if (cancelled) return;
+        if (res?.data?.is_duplicate) {
+          setZoneWarning(`Vị trí này nằm trong vùng không thể tạo đề xuất (cách ${res.data.nearest.distance_m}m < ${radiusM}m). Vui lòng chọn vị trí khác.`);
+        } else {
+          setZoneWarning('');
+        }
+      } catch {
+        if (!cancelled) setZoneWarning('');
+      }
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [formCoords.latitude, formCoords.longitude, formCoords.province, coords.lat, coords.lng, token]);
   const [showPreview, setShowPreview] = useState(false);
   const [previewSnapshot, setPreviewSnapshot] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -141,7 +165,17 @@ const MapPage = () => {
 
   const handleSubmit = async (formData) => {
     setError('');
+    if (zoneWarning) {
+      setError(zoneWarning);
+      return;
+    }
     try {
+      const radiusM = getProposalMinDistanceM(formData?.province);
+      const check = await proposalService.checkNearby({ latitude: coords.lat, longitude: coords.lng, radius_m: radiusM }, token);
+      if (check?.data?.is_duplicate) {
+        setError(`Vị trí này nằm trong vùng không thể tạo đề xuất (cách ${check.data.nearest.distance_m}m < ${radiusM}m). Vui lòng chọn vị trí khác.`);
+        return;
+      }
       const res = await proposalService.create({
         latitude: coords.lat,
         longitude: coords.lng,
@@ -243,6 +277,7 @@ const MapPage = () => {
               </div>
 
               {error && <div className="alert alert-error text-sm mb-4">{error}</div>}
+              {zoneWarning && <div className="alert alert-warning text-sm mb-4">{zoneWarning}</div>}
 
 
               <DynamicForm
@@ -251,7 +286,7 @@ const MapPage = () => {
                 formId={quickMode && quickFormId ? quickFormId : undefined}
                 onSubmit={handleSubmit}
                 initialData={proposalInitialData}
-                onValuesChange={setFormCoords}
+                onValuesChange={(vals) => setFormCoords(prev => ({ ...prev, ...vals }))}
                 hideActions
                 htmlId="map-proposal-create-form"
               />
