@@ -46,16 +46,12 @@ exports.getById = async (req, res) => {
     const targetId = parseInt(req.params.id);
     let scope = null;
     if (['SALES', 'NPP'].includes(req.user.role)) {
+      // Chỉ được đọc hồ sơ trong nhánh DƯỚI mình — cấp dưới không xem cấp trên.
       const branchIds = await adminUserService.getBranchIds(req.user.id);
-      if (branchIds.includes(targetId)) {
-        scope = 'branch';
-      } else {
-        const ancestorIds = await adminUserService.getAncestorIds(req.user.id);
-        if (!ancestorIds.includes(targetId)) {
-          return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
-        }
-        scope = 'ancestor';
+      if (!branchIds.includes(targetId)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
       }
+      scope = 'branch';
     }
     const user = await adminUserService.findById(targetId);
     if (!user) {

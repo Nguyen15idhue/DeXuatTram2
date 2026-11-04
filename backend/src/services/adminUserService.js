@@ -42,18 +42,15 @@ exports.getBranchIds = async (userId) => {
 exports.getAllUsers = async (search, page, limit, scope = {}, filters = {}) => {
   const where = [];
   const params = [];
-  let ancestorSet = null;
 
   if (['SALES', 'NPP'].includes(scope.role) && scope.userId) {
+    // Chỉ thấy nhánh DƯỚI mình (mình + con/descendants) — cấp dưới không xem cấp trên.
     const branchIds = await exports.getBranchIds(scope.userId);
-    const ancestorIds = await exports.getAncestorIds(scope.userId);
-    ancestorSet = new Set(ancestorIds);
-    const ids = [...new Set([...branchIds, ...ancestorIds])];
-    if (ids.length === 0) {
+    if (branchIds.length === 0) {
       return { users: [], pagination: { page, limit, total: 0, totalPages: 0 } };
     }
-    where.push(`(id IN (${ids.map(() => '?').join(',')}))`);
-    params.push(...ids);
+    where.push(`(id IN (${branchIds.map(() => '?').join(',')}))`);
+    params.push(...branchIds);
   }
 
   if (scope.role && scope.role !== 'SUPER_ADMIN') {
@@ -94,7 +91,7 @@ exports.getAllUsers = async (search, page, limit, scope = {}, filters = {}) => {
     );
     const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
     const merged = users.map(u => dynamicUtils.mergeData(u, fieldDefs));
-    if (ancestorSet) merged.forEach(u => { u._scope = ancestorSet.has(Number(u.id)) ? 'ancestor' : 'branch'; });
+    if (['SALES', 'NPP'].includes(scope.role)) merged.forEach(u => { u._scope = 'branch'; });
     return { users: merged, pagination: { page: 1, limit: total, total, totalPages: 1 } };
   }
 
@@ -106,7 +103,7 @@ exports.getAllUsers = async (search, page, limit, scope = {}, filters = {}) => {
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('users');
   const merged = users.map(u => dynamicUtils.mergeData(u, fieldDefs));
-  if (ancestorSet) merged.forEach(u => { u._scope = ancestorSet.has(Number(u.id)) ? 'ancestor' : 'branch'; });
+  if (['SALES', 'NPP'].includes(scope.role)) merged.forEach(u => { u._scope = 'branch'; });
 
   return {
     users: merged,
