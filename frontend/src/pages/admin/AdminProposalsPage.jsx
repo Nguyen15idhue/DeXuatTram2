@@ -975,7 +975,11 @@ const AdminProposalsPage = () => {
       </button>
     );
     if (isAdmin || isSales || user?.role === 'NPP') {
-      if (isSuperAdmin || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row))) {
+      const canEditProposalInfo =
+        isSuperAdmin
+        || row.status === 'PENDING'
+        || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row));
+      if (canEditProposalInfo) {
         items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
       }
     }
@@ -1725,7 +1729,7 @@ const AdminProposalsPage = () => {
           viewId={proposalsViewId}
           mode={popup.mode}
           allowEdit={isAdmin || isSales || user?.role === 'NPP'}
-          canEditRecord={(rec) => isSuperAdmin || (Number(rec.user_id) === Number(user?.id) && canOwnerEditProposal(rec))}
+          canEditRecord={(rec) => isSuperAdmin || rec?.status === 'PENDING' || (Number(rec.user_id) === Number(user?.id) && canOwnerEditProposal(rec))}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null });
             navigate(activeTab === 'all' ? '/admin/proposals' : `/admin/proposals?tab=${activeTab}`);
