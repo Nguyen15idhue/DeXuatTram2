@@ -565,6 +565,31 @@ export const proposalApprovalService = {
   }
 };
 
+export const supplierService = {
+  getAll(queryString, token) {
+    const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
+    return api.getWithAuth(`/admin/suppliers${qs}`, token);
+  },
+  getDetail(id, token) {
+    return api.getWithAuth(`/admin/suppliers/${id}`, token);
+  },
+  create(data, token) {
+    return api.postWithAuth('/admin/suppliers', data || {}, token);
+  },
+  update(id, data, token) {
+    return api.putWithAuth(`/admin/suppliers/${id}`, data || {}, token);
+  },
+  getPoles(id, token) {
+    return api.getWithAuth(`/admin/suppliers/${id}/poles`, token);
+  },
+  assignPole(id, data, token) {
+    return api.postWithAuth(`/admin/suppliers/${id}/assign-pole`, data || {}, token);
+  },
+  syncPoleSuppliers(poleId, suppliers, token) {
+    return api.postWithAuth('/admin/suppliers/sync-pole', { pole_id: poleId, suppliers: suppliers || [] }, token);
+  }
+};
+
 export const warehouseService = {
   listPoles(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
@@ -602,6 +627,9 @@ export const warehouseService = {
   getStock(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/warehouse/stock${qs}`, token);
+  },
+  exportExcel(resource, token, queryString = '') {
+    return excelService.downloadBlob(`/admin/warehouse/export/${resource}${queryString ? `?${queryString}` : ''}`, token, `warehouse_${resource}.xlsx`);
   }
 };
 
