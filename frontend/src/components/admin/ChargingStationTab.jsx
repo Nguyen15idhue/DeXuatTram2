@@ -24,6 +24,11 @@ import {
 
 const PAGE_SIZE = 20;
 const EMPTY_TOAST = { message: '', type: 'success' };
+const getLocalDateInput = () => {
+  const date = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
 const TABS = [
   { key: 'all', label: 'Tất cả trạm sạc' },
   { key: 'need', label: 'Trạm sạc cần thực hiện' },
@@ -37,6 +42,7 @@ const ChargingStationTab = ({ stage }) => {
   const requestedTab = searchParams.get('tab');
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'all';
   const canEdit = CS_EDITOR_ROLES.includes(user?.role);
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +53,9 @@ const ChargingStationTab = ({ stage }) => {
   const [selectedId, setSelectedId] = useState(null);
   const [careStation, setCareStation] = useState(null);
   const [statusDialog, setStatusDialog] = useState({ open: false, action: '', row: null });
+  const [onStationDialog, setOnStationDialog] = useState({ open: false, row: null, cms_station_code: '', on_date: '', reason: '', acknowledged: false });
   const [statusSaving, setStatusSaving] = useState(false);
+  const [onStationSaving, setOnStationSaving] = useState(false);
   const statusSavingRef = useRef(false);
   const [toast, setToast] = useState(EMPTY_TOAST);
   const closeToast = useCallback(() => setToast(EMPTY_TOAST), []);
@@ -109,6 +117,40 @@ const ChargingStationTab = ({ stage }) => {
     } finally {
       statusSavingRef.current = false;
       setStatusSaving(false);
+    }
+  };
+
+  const openOnStationDialog = (row) => {
+    setOnStationDialog({
+      open: true,
+      row,
+      cms_station_code: row.cms_station_code || '',
+      on_date: getLocalDateInput(),
+      reason: '',
+      acknowledged: false
+    });
+  };
+
+  const confirmMarkOnStation = async () => {
+    if (!onStationDialog.row || !onStationDialog.cms_station_code.trim()
+      || !onStationDialog.on_date || onStationDialog.reason.trim().length < 3
+      || !onStationDialog.acknowledged || onStationSaving) return;
+    setOnStationSaving(true);
+    try {
+      const res = await chargingStationService.markOnStationActive(onStationDialog.row.id, {
+        cms_station_code: onStationDialog.cms_station_code.trim(),
+        on_date: onStationDialog.on_date,
+        reason: onStationDialog.reason.trim()
+      }, token);
+      if (!res?.success) throw new Error(res?.message || 'Không thể đánh dấu ON trạm');
+      setOnStationDialog({ open: false, row: null, cms_station_code: '', on_date: '', reason: '', acknowledged: false });
+      setToast({ message: res.message || 'Đã đánh dấu ON trạm; đề xuất đã chuyển sang Hoạt động', type: 'success' });
+      notifyBellRefresh();
+      await load(page);
+    } catch (error) {
+      setToast({ message: error?.message || 'Không thể đánh dấu ON trạm', type: 'error' });
+    } finally {
+      setOnStationSaving(false);
     }
   };
 
@@ -217,6 +259,16 @@ const ChargingStationTab = ({ stage }) => {
           Khôi phục
         </Button>
       )}
+      {stage === 'thong-tin-chung' && isSuperAdmin && row.can_mark_on_station_active && (
+        <button
+          type="button"
+          className="btn btn-success btn-xs whitespace-nowrap"
+          onClick={() => openOnStationDialog(row)}
+          title="SUPER_ADMIN xác nhận trạm đã ON và chuyển đề xuất sang Hoạt động"
+        >
+          Đã ON Trạm
+        </button>
+      )}
     </div>
   );
 
@@ -238,6 +290,82 @@ const ChargingStationTab = ({ stage }) => {
           if (!statusSavingRef.current) setStatusDialog({ open: false, action: '', row: null });
         }}
       />
+
+      {onStationDialog.open && (
+        <dialog className="modal modal-open" onCancel={(event) => event.preventDefault()}>
+          <div className="modal-box max-w-lg">
+            <h3 className="text-lg font-bold">Xác nhận đã ON trạm</h3>
+            <div className="alert alert-warning mt-3 py-2 text-sm">
+              <span>Thao tác SUPER_ADMIN bỏ qua các bước vận hành trung gian. Trạng thái hợp đồng, hạ tầng và thanh toán sẽ giữ nguyên; bản ghi đã hủy không thể kích hoạt lại.</span>
+            </div>
+            <div className="mt-3 rounded-lg bg-base-200 p-3 text-sm">
+              <div><b>Mã trạm:</b> {onStationDialog.row?.ma_tram || `#${onStationDialog.row?.id}`}</div>
+              <div><b>Mã đề xuất:</b> {onStationDialog.row?.ma_de_xuat || `#${onStationDialog.row?.proposal_id}`}</div>
+              <div><b>Trạng thái ON trạm:</b> {CS_STATUS_LABELS[onStationDialog.row?.status] || onStationDialog.row?.status}</div>
+            </div>
+            <div className="form-control mt-3">
+              <label className="label"><span className="label-text">Mã trạm trên CMS *</span></label>
+              <input
+                className="input input-bordered"
+                value={onStationDialog.cms_station_code}
+                onChange={(event) => setOnStationDialog((prev) => ({ ...prev, cms_station_code: event.target.value }))}
+                disabled={onStationSaving}
+              />
+            </div>
+            <div className="form-control mt-2">
+              <label className="label"><span className="label-text">Ngày ON thực tế *</span></label>
+              <input
+                type="date"
+                className="input input-bordered"
+                value={onStationDialog.on_date}
+                onChange={(event) => setOnStationDialog((prev) => ({ ...prev, on_date: event.target.value }))}
+                disabled={onStationSaving}
+              />
+            </div>
+            <div className="form-control mt-2">
+              <label className="label"><span className="label-text">Lý do đánh dấu ON trực tiếp *</span></label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={3}
+                value={onStationDialog.reason}
+                onChange={(event) => setOnStationDialog((prev) => ({ ...prev, reason: event.target.value }))}
+                placeholder="Nhập lý do SUPER_ADMIN xác nhận trạm đã ON..."
+                disabled={onStationSaving}
+              />
+            </div>
+            <label className="label mt-1 cursor-pointer justify-start gap-3">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm checkbox-warning"
+                checked={onStationDialog.acknowledged}
+                onChange={(event) => setOnStationDialog((prev) => ({ ...prev, acknowledged: event.target.checked }))}
+                disabled={onStationSaving}
+              />
+              <span className="label-text text-xs">Tôi xác nhận trạm đã ON thực tế và chịu trách nhiệm về thao tác bỏ qua các bước trung gian.</span>
+            </label>
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setOnStationDialog({ open: false, row: null, cms_station_code: '', on_date: '', reason: '', acknowledged: false })}
+                disabled={onStationSaving}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn btn-success btn-sm"
+                onClick={confirmMarkOnStation}
+                disabled={!onStationDialog.cms_station_code.trim() || !onStationDialog.on_date
+                  || onStationDialog.reason.trim().length < 3 || !onStationDialog.acknowledged || onStationSaving}
+              >
+                {onStationSaving ? 'Đang cập nhật...' : 'Đã ON Trạm'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
 
       <div role="tablist" className="tabs tabs-bordered">
         {TABS.map((item) => (

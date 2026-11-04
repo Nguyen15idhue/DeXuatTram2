@@ -123,6 +123,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
             p.address, p.area, p.land_type, p.description, p.status,
             p.custom_data, p.created_at, p.user_id,
             p.station_id, p.signed_file_id,
+            (SELECT cs.id FROM charging_stations cs WHERE cs.proposal_id = p.id LIMIT 1) AS charging_station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
             p.paused_from_status, p.paused_at,
             p.review_level, p.quy_hoach_score, p.quy_hoach_note, p.phap_ly_score, p.phap_ly_note,
@@ -247,16 +248,16 @@ exports.batchAutoConfirm = async ({ limit = 500, actorId = null } = {}) => {
   const placeholders = suppStatuses.map(() => '?').join(', ');
   const [countRows] = await pool.query(
     `SELECT COUNT(*) AS n FROM station_proposals
-     WHERE info_completed_at IS NULL AND supplement_deadline_at IS NOT NULL
-       AND status IN (${placeholders})`,
+      WHERE (info_completed_at IS NULL OR status = 'PENDING') AND supplement_deadline_at IS NOT NULL
+        AND status IN (${placeholders})`,
     suppStatuses
   );
   const total = countRows[0] ? countRows[0].n : 0;
 
   const [rows] = await pool.query(
     `SELECT id, ma_de_xuat_gen AS code FROM station_proposals
-     WHERE info_completed_at IS NULL AND supplement_deadline_at IS NOT NULL
-       AND status IN (${placeholders})
+      WHERE (info_completed_at IS NULL OR status = 'PENDING') AND supplement_deadline_at IS NOT NULL
+        AND status IN (${placeholders})
      ORDER BY id ASC LIMIT ?`,
     [...suppStatuses, limit]
   );
@@ -268,8 +269,8 @@ exports.batchAutoConfirm = async ({ limit = 500, actorId = null } = {}) => {
     try {
       const res = await proposalLifecycle.maybeAutoConfirmInfo(r.id, { actorId, purpose: 'view' });
       if (res.confirmed) report.confirmed++;
-      else if (res.already) report.already++;
       else if (res.error) report.failed++;
+      else if (res.already) report.already++;
       else {
         report.incomplete++;
         if (report.missingSamples.length < 10) {

@@ -294,11 +294,16 @@ const MyProposalsPage = () => {
     }
     const res = await myProposalService.create(submitData, token, createFormId);
     if (res.success) {
-      const warns = res.warnings || [];
+      const warns = [...(res.warnings || [])];
+      if (res.infoCompleted?.error) {
+        warns.push(`Đã tạo đề xuất nhưng chưa tự chuyển sang chấm điểm: ${res.infoCompleted.error}`);
+      }
       let message = warns.length > 0
         ? `Tạo đề xuất thành công! Lưu ý: ${warns.join('; ')}`
         : 'Tạo đề xuất thành công';
-      if (res.infoCompleted && res.infoCompleted.confirmed) {
+      if (res.infoCompleted?.movedTo === 'GRADING') {
+        message += ' · Đã chuyển sang chấm điểm';
+      } else if (res.infoCompleted?.confirmed) {
         message += ' · Đã tự xác nhận đủ thông tin';
       }
       setToast({

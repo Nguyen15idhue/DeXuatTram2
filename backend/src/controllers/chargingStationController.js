@@ -42,6 +42,28 @@ exports.detail = async (req, res) => {
   }
 };
 
+exports.createDirectFromProposal = async (req, res) => {
+  try {
+    const result = await chargingStationService.createDirectFromProposal(
+      req.params.proposalId,
+      req.user,
+      req.body || {},
+      actorOf(req)
+    );
+    res.status(result.created ? 201 : 200).json({
+      success: true,
+      data: result.record,
+      created: result.created,
+      proposal_status: result.proposal_status,
+      message: result.created
+        ? 'Đã chuyển đề xuất sang Đang triển khai và tạo bản ghi ON trạm'
+        : 'Đề xuất đã có bản ghi ON trạm; không tạo trùng'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.cancelOnStation = async (req, res) => {
   try {
     const data = await chargingStationService.cancelOnStation(req.params.id, req.user, actorOf(req));
@@ -208,6 +230,20 @@ exports.completeConfiguration = async (req, res) => {
       actorOf(req)
     );
     res.json({ success: true, data, message: 'Đã hoàn tất cấu hình; trạm và đề xuất đã chuyển sang Hoạt động' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.markOnStationActive = async (req, res) => {
+  try {
+    const data = await chargingStationService.markOnStationActive(
+      req.params.id,
+      req.body || {},
+      req.user,
+      actorOf(req)
+    );
+    res.json({ success: true, data, message: 'Đã đánh dấu ON trạm; trạm và đề xuất đã chuyển sang Hoạt động' });
   } catch (error) {
     sendError(res, error);
   }

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
-import { getMarkerColor } from "../utils/mapHelpers";
-import { getMarkerIcon, getMarkerIconBg } from "../utils/mapMarkerIcons";
+import { getMapMarkerStyle } from "../utils/mapHelpers";
 import useMarkerIcons from "../hooks/useMarkerIcons";
 import useMapStatuses from "../hooks/useMapStatuses";
 import { MapBadge } from "./MarkerIcon";
@@ -13,6 +12,8 @@ const DEFAULT_PROPOSAL_STATUSES = [
   "PENDING",
   "REVIEWING",
   "APPROVED",
+  "DEPLOYING",
+  "ACTIVE",
 ];
 const DEFAULT_PLANNING_PRIORITIES = PRIORITY_OPTIONS.map((option) => option.value);
 
@@ -103,9 +104,9 @@ const MapFilterPanel = ({ filters, onChange, isMobile = false }) => {
           >
             <MapBadge
               type="filter"
-              icon={getMarkerIcon(s.value, entity)}
-              color={getMarkerColor(s.value, entity)}
-              bg={getMarkerIconBg(s.value, entity)}
+              icon={getMapMarkerStyle(s.value, entity).icon}
+              color={getMapMarkerStyle(s.value, entity).color}
+              bg={getMapMarkerStyle(s.value, entity).bg}
               size={11}
             />
 

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { MapPinned, Ruler, LayoutGrid } from 'lucide-react';
 import { stationService, proposalService, evReportService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { getMarkerColor } from '../utils/mapHelpers';
+import { getMarkerColor, getMapMarkerStyle } from '../utils/mapHelpers';
 import { getMapStatusLabel, getStatusLabel, getStationStatuses, getProposalMapStatus, getProposalMapStatuses, PLANNING_PRIORITY_COLORS } from '../utils/mapStatuses';
 import { getMarkerIcon, getMarkerIconBg } from '../utils/mapMarkerIcons';
 import { formatDistanceM, haversineM, measureTotalM } from '../utils/formatDistance';
@@ -135,7 +135,8 @@ function createNearbyPopup(title, item, status, entity) {
   statusP.appendChild(statusStrong);
   const span = document.createElement('span');
   const mapStatus = entity === 'proposal' ? getProposalMapStatus(status) : status;
-  span.style.color = getMarkerColor(mapStatus, entity);
+  const popupStyle = getMapMarkerStyle(mapStatus, entity);
+  span.style.color = popupStyle.color;
   span.textContent = getMapStatusLabel(mapStatus, entity);
   statusP.appendChild(span);
   div.appendChild(statusP);
@@ -453,7 +454,8 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
   });
   const canvasProposals = nearby.proposals.map(p => {
     const mapStatus = getProposalMapStatus(p.status);
-    return { ...p, _color: getMarkerColor(mapStatus, 'proposal'), _icon: getMarkerIcon(mapStatus, 'proposal'), _bg: getMarkerIconBg(mapStatus, 'proposal') };
+    const style = getMapMarkerStyle(mapStatus, 'proposal');
+    return { ...p, _color: style.color, _icon: style.icon, _bg: style.bg };
   });
   const canvasEvReports = nearby.evReports.map(r => ({ ...r, _color: getMarkerColor('ACTIVE', 'ev_report'), _icon: getMarkerIcon('ACTIVE', 'ev_report'), _bg: getMarkerIconBg('ACTIVE', 'ev_report') }));
   const renderStationPopup = (item) => createNearbyPopup(item.ma_tram || item.ma_tram_gen || item.name || `Trạm #${item.id}`, item, item.status, 'station');
@@ -604,12 +606,15 @@ const LocationMapModal = ({ open, lat, lng, title = 'Vị trí', radiusKm = 20, 
                   <div className="map-legend-subcols">
                     {[0, 1].map((chunk) => (proposalLegendStatuses && proposalLegendStatuses.length > 0 ? proposalLegendStatuses : allProposalStatuses).slice(chunk * 5, chunk * 5 + 5)).filter((g) => g.length > 0).map((group, gi) => (
                       <div key={gi} className="map-legend-subcol">
-                        {group.map((item) => (
-                          <div key={`p-${item.value}`} className="map-legend-item">
-                            <MapBadge icon={getMarkerIcon(item.value, 'proposal')} color={getMarkerColor(item.value, 'proposal')} bg={getMarkerIconBg(item.value, 'proposal')} />
-                            <span className="map-legend-label">{item.label}</span>
-                          </div>
-                        ))}
+                        {group.map((item) => {
+                          const legendStyle = getMapMarkerStyle(item.value, 'proposal');
+                          return (
+                            <div key={`p-${item.value}`} className="map-legend-item">
+                              <MapBadge icon={legendStyle.icon} color={legendStyle.color} bg={legendStyle.bg} />
+                              <span className="map-legend-label">{item.label}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>

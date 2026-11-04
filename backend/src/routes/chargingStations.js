@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireChargingStationViewer, requireChargingStationEditor } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin, requireChargingStationViewer, requireChargingStationEditor } = require('../middlewares/auth');
 const chargingStationController = require('../controllers/chargingStationController');
 
 router.use(requireAuth);
@@ -68,6 +68,43 @@ router.get('/', requireChargingStationViewer, chargingStationController.list);
  *         description: Không có quyền xem ON trạm
  */
 router.get('/task-counts', requireChargingStationViewer, chargingStationController.taskCounts);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/from-proposal/{proposalId}:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: SUPER_ADMIN tạo trực tiếp ON trạm từ đề xuất
+ *     description: Bỏ qua các bước luồng đề xuất, chuyển đề xuất sang DEPLOYING và tạo charging_stations ở ONBOARDING. Không cho phép đề xuất CANCELLED, ARCHIVED hoặc PAUSED.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 5000
+ *     responses:
+ *       201:
+ *         description: Đã tạo bản ghi ON trạm
+ *       403:
+ *         description: Chỉ SUPER_ADMIN được sử dụng
+ *       409:
+ *         description: Đề xuất không thể chuyển trực tiếp hoặc đã ở trạng thái kết thúc
+ */
+router.post('/from-proposal/:proposalId', requireSuperAdmin, chargingStationController.createDirectFromProposal);
 
 /**
  * @swagger
@@ -501,6 +538,37 @@ router.put('/:id/acceptance/result', requireChargingStationViewer, chargingStati
  *       403: { description: Không thuộc Phòng Setup và Vận hành }
  */
 router.post('/:id/configuration/complete', requireChargingStationViewer, chargingStationController.completeConfiguration);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/on-station/mark-active:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: SUPER_ADMIN xác nhận ON trạm và chuyển đề xuất sang ACTIVE
+ *     description: Bỏ qua các bước ON trạm thông thường; không tự thay đổi trạng thái hợp đồng, hạ tầng hoặc thanh toán. Không thể kích hoạt lại bản ghi đã hủy.
+ *     security: [ { bearerAuth: [] } ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [cms_station_code, on_date, reason]
+ *             properties:
+ *               cms_station_code: { type: string }
+ *               on_date: { type: string, format: date }
+ *               reason: { type: string, minLength: 3, maxLength: 5000 }
+ *     responses:
+ *       200: { description: ON trạm và đề xuất đã chuyển sang Hoạt động }
+ *       403: { description: Chỉ SUPER_ADMIN được sử dụng }
+ *       409: { description: Bản ghi đã hủy hoặc trạng thái đề xuất không phù hợp }
+ */
+router.post('/:id/on-station/mark-active', requireSuperAdmin, chargingStationController.markOnStationActive);
 
 /**
  * @swagger

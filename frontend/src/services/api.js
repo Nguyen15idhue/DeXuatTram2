@@ -624,6 +624,13 @@ export const chargingFinanceService = {
 };
 
 export const chargingStationService = {
+  createDirectFromProposal(proposalId, reason, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(
+      `/admin/charging-stations/from-proposal/${proposalId}`,
+      { reason },
+      token
+    ));
+  },
   getTaskCounts(token) {
     return api.getWithAuth('/admin/charging-stations/task-counts', token);
   },
@@ -678,6 +685,9 @@ export const chargingStationService = {
   },
   completeConfiguration(id, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/configuration/complete`, data || {}, token));
+  },
+  markOnStationActive(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/on-station/mark-active`, data || {}, token));
   },
   changeStatus(id, data, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/status`, data || {}, token));

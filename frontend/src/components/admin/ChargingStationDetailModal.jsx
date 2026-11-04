@@ -46,6 +46,7 @@ const ACTION_LABELS = {
   updated: 'Cập nhật thông tin',
   contract_signing_started: 'Bắt đầu ký hợp đồng',
   contract_completed: 'Hoàn tất hợp đồng',
+  manual_marked_active: 'SUPER_ADMIN xác nhận ON trạm trực tiếp',
   infrastructure_status_changed: 'Cập nhật trạng thái hạ tầng',
   status_changed: 'Chuyển trạng thái',
   status_rolled_back: 'Lùi bước',

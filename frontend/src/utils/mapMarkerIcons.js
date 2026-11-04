@@ -2617,10 +2617,15 @@ export const STATUS_ICON_DEFAULTS = {
     CANCELLED: "ban",
     CONTRACT_SIGNED: "document",
     ACTIVE: "evStation",
+    DEPLOYING: "wrench",
     CONTRACT_FAILED: "alert",
   },
   ev_report: { ACTIVE: "evCar", INACTIVE: "ban" },
 };
+
+// Trạng thái đề xuất hiển thị trên bản đồ bằng icon/màu của Trạm
+// (resolve động theo cấu hình icon của field status entity stations).
+export const MAP_SHARED_STATION_STATUSES = new Set(["DEPLOYING", "ACTIVE"]);
 
 const ENTITY_TO_MAP = {
   stations: "station",

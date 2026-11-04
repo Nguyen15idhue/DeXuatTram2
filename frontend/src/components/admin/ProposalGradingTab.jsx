@@ -44,6 +44,7 @@ const GRADING_COLUMNS = [
   { key: 'user_name', field_key: 'user_name', label: 'Người đề xuất', width: 160, sortable: false, filterable: false, visible: true },
   ...PROPOSAL_CONTEXT_COLUMNS,
   { key: 'status', field_key: 'status', label: 'Trạng thái Quy trình', width: 170, sortable: false, filterable: false, visible: true },
+  { key: 'regrade_reason', field_key: 'regrade_reason', label: 'Lý do yêu cầu chấm lại', width: 280, sortable: false, filterable: false, visible: true },
   { key: 'quy_hoach_status', field_key: 'quy_hoach_status', label: 'Trạng thái Quy hoạch', width: 180, sortable: false, filterable: false, visible: true },
   { key: 'phap_ly_status', field_key: 'phap_ly_status', label: 'Trạng thái Pháp lý', width: 190, sortable: false, filterable: false, visible: true },
   { key: 'grading_result', field_key: 'grading_result', label: 'Trạng thái chấm điểm', width: 150, sortable: false, filterable: false, visible: true }
@@ -104,6 +105,34 @@ const PhapLyStatusCell = ({ row, onShowScore }) => {
     );
   }
   return <span className="text-base-content/60">Pháp lý chưa chấm xong</span>;
+};
+
+const RegradeReasonCell = ({ row }) => {
+  const reasons = [
+    { department: 'Quy hoạch', value: row.quy_hoach_regrade_description },
+    { department: 'Pháp lý', value: row.phap_ly_regrade_description }
+  ].map((item) => ({ ...item, value: String(item.value || '').trim() }))
+    .filter((item) => item.value);
+
+  if (!reasons.length) return <span className="text-base-content/50">—</span>;
+
+  const groupedReasons = [...reasons.reduce((groups, item) => {
+    const group = groups.get(item.value) || [];
+    group.push(item.department);
+    groups.set(item.value, group);
+    return groups;
+  }, new Map()).entries()];
+
+  return (
+    <div className="min-w-60 space-y-1 whitespace-normal py-1">
+      {groupedReasons.map(([reason, departments]) => (
+        <p key={reason} className="text-xs">
+          <span className="font-medium">{departments.join(' + ')}:</span>{' '}
+          <span className="whitespace-pre-wrap break-words">{reason}</span>
+        </p>
+      ))}
+    </div>
+  );
 };
 
 const ScoreDetailDialog = ({ detail, onClose }) => {
@@ -285,6 +314,7 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
     },
     user_name: (row, value) => <ProposalPersonLink id={row.user_id} name={value} />,
     status: (row, value) => <ProposalStatusBadge value={value || row.status} optionMap={statusOptions} />,
+    regrade_reason: (row) => <RegradeReasonCell row={row} />,
     quy_hoach_status: (row) => <QuyHoachStatusCell row={row} onShowScore={setScoreDetail} />,
     phap_ly_status: (row) => <PhapLyStatusCell row={row} onShowScore={setScoreDetail} />,
     grading_result: (row) => {

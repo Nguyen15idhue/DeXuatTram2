@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import { mapService } from '../services/api';
 import { STATION_STATUS_MAP, PROPOSAL_STATUS_MAP, EV_REPORT_STATUS_MAP, getStatusColor } from './mapStatuses';
-import { iconSvgMarkup, isValidMarkerBadge, MARKER_ICON_BG } from './mapMarkerIcons';
+import { iconSvgMarkup, isValidMarkerBadge, MARKER_ICON_BG, MAP_SHARED_STATION_STATUSES, getMarkerIcon, getMarkerIconBg } from './mapMarkerIcons';
 
 export const MARKER_COLORS = {
   PLANNING: '#a855f7',
@@ -37,6 +37,20 @@ export const getMarkerColor = (status, entity) => {
   if (STATION_STATUS_MAP[status]) return STATION_STATUS_MAP[status].color;
   if (PROPOSAL_STATUS_MAP[status]) return PROPOSAL_STATUS_MAP[status].color;
   return MARKER_COLORS[status] || '#6b7280';
+};
+
+// Status đề xuất dùng chung biểu tượng với Trạm → resolve icon/màu từ entity station.
+export const resolveMarkerStyleEntity = (status, entity) => (
+  entity === 'proposal' && MAP_SHARED_STATION_STATUSES.has(status) ? 'station' : entity
+);
+
+export const getMapMarkerStyle = (status, entity) => {
+  const source = resolveMarkerStyleEntity(status, entity);
+  return {
+    color: getMarkerColor(status, source),
+    icon: getMarkerIcon(status, source),
+    bg: getMarkerIconBg(status, source)
+  };
 };
 
 export const createCustomIcon = (color, icon, badge, bg) => {

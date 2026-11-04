@@ -113,7 +113,7 @@ exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changed
 exports.transition = async (id, to, opts = {}) => {
   const {
     reason, actorId, actorRole, source = 'user', manualOverride = false, ip,
-    isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false
+    isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false, directOnStation = false
   } = opts;
   if (!ALL_STATUSES.includes(to)) {
     throw err('Trạng thái không hợp lệ', 400);
@@ -135,6 +135,19 @@ exports.transition = async (id, to, opts = {}) => {
     && proposal.paused_from_status === to
     && Boolean(proposal.paused_at);
   const isPausedCancellation = from === 'PAUSED' && to === 'CANCELLED';
+  const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
+  const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
+  const isDirectOnStation = directOnStation === true
+    && to === 'DEPLOYING'
+    && source === 'user'
+    && actorRole === 'SUPER_ADMIN'
+    && isSuperAdmin === true;
+  if (directOnStation && !isDirectOnStation) {
+    throw err('Chỉ SUPER_ADMIN được chuyển trực tiếp đề xuất sang ON trạm', 403);
+  }
+  if (isDirectOnStation && ['CANCELLED', 'ARCHIVED', 'PAUSED', 'ACTIVE'].includes(from)) {
+    throw err(`Không thể chuyển trực tiếp đề xuất từ trạng thái "${from}" sang ON trạm`, 409);
+  }
   if (from === to) {
     if (to === 'PAUSED') throw err('Đề xuất đã tạm dừng', 409);
     return { id, status: to, prevStatus: from, unchanged: true };
@@ -168,18 +181,16 @@ exports.transition = async (id, to, opts = {}) => {
   if (to === 'ACTIVE' && source !== 'system_auto') {
     throw err('Chỉ quy trình ON trạm được chuyển đề xuất sang Hoạt động', 403);
   }
-  if (to === 'DEPLOYING' && source !== 'system_auto') {
+  if (to === 'DEPLOYING' && source !== 'system_auto' && !isDirectOnStation) {
     throw err('Chỉ quy trình ON trạm được chuyển đề xuất sang Đang triển khai', 403);
   }
-  const isEmergencyReopen = from === 'CANCELLED' && to === 'PENDING' && source === 'user' && isSuperAdmin === true;
-  const forceOverride = force === true && source === 'user' && isSuperAdmin === true;
   const isSignedApproval = from === 'APPROVED' && Boolean(proposal.signed_file_id);
   const isSignedApprovalTarget = to === 'APPROVED' && Boolean(proposal.signed_file_id);
   if (forceOverride && !String(reason || '').trim()) {
     throw err('Ghi đè trạng thái cần nhập lý do', 400);
   }
   const isStationFlowTransition = source === 'system_auto' && ['DEPLOYING', 'ACTIVE', 'CANCELLED'].includes(to);
-  if (isSignedApproval && !forceOverride && !isStationFlowTransition) {
+  if (isSignedApproval && !forceOverride && !isDirectOnStation && !isStationFlowTransition) {
     await exports.logActivity({
       proposalId: id, action: 'status_change_denied',
       fromStatus: from, toStatus: to,
@@ -187,7 +198,7 @@ exports.transition = async (id, to, opts = {}) => {
     });
     throw err('Đề xuất đã được Chủ tịch phê duyệt; không thể thay đổi trạng thái', 400);
   }
-  if (!forceOverride) {
+  if (!forceOverride && !isDirectOnStation) {
     if (!isPauseTransition && !isResumeTransition && !isPausedCancellation
       && !(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen) {
       await exports.logActivity({
@@ -210,19 +221,22 @@ exports.transition = async (id, to, opts = {}) => {
       throw err('Mở lại khẩn cấp cần nhập lý do', 400);
     }
   }
-  const reasonCarriesMessage = isPauseTransition || REASON_REQUIRED.includes(to)
+  const reasonCarriesMessage = isPauseTransition || isDirectOnStation || REASON_REQUIRED.includes(to)
     || ['INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(to);
-  const cleanReason = forceOverride
-    ? String(reason).trim()
+  const cleanReason = forceOverride || isDirectOnStation
+    ? String(reason || '').trim()
     : (reasonCarriesMessage ? (String(reason || '').trim() || null) : null);
-  if (!forceOverride && REASON_REQUIRED.includes(to) && !cleanReason) {
+  if ((forceOverride || isDirectOnStation) && !cleanReason) {
+    throw err('Ghi đè trạng thái cần nhập lý do', 400);
+  }
+  if (!forceOverride && !isDirectOnStation && REASON_REQUIRED.includes(to) && !cleanReason) {
     throw err(to === 'REJECTED' ? 'Vui lòng nhập lý do từ chối' : 'Vui lòng nhập lý do hủy', 400);
   }
   if (isPauseTransition && !cleanReason) {
     throw err('Vui lòng nhập lý do tạm dừng đề xuất', 400);
   }
   const auditReason = cleanReason || (isEmergencyReopen ? String(reason || '').trim() : null);
-  const rejectReasonValue = REASON_REQUIRED.includes(to) || forceOverride ? cleanReason : null;
+  const rejectReasonValue = REASON_REQUIRED.includes(to) || (forceOverride && !isDirectOnStation) ? cleanReason : null;
 
   let statusActivityLogged = false;
   let updateResult;
@@ -374,7 +388,7 @@ exports.transition = async (id, to, opts = {}) => {
     }
   }
 
-  const overrideActive = (typeof forceOverride !== 'undefined' && forceOverride) || isEmergencyReopen;
+  const overrideActive = forceOverride || isEmergencyReopen || isDirectOnStation;
   try {
     const proposalRequestService = require('./proposalRequestService');
     if (!isPauseTransition && !isResumeTransition && to === 'REJECTED' && proposal.user_id) {
@@ -418,7 +432,8 @@ exports.transition = async (id, to, opts = {}) => {
 };
 
 exports.transitionOnStation = async (connection, proposalId, toStatus, {
-  snapshot = null, actorId = null, actorRole = null, ip = null, stationCode = ''
+  snapshot = null, actorId = null, actorRole = null, ip = null, stationCode = '',
+  directActivation = false, reason: directReason = null
 } = {}) => {
   const [rows] = await connection.query(
     `SELECT id, user_id, status, journey_id, custom_data
@@ -431,8 +446,42 @@ exports.transitionOnStation = async (connection, proposalId, toStatus, {
   const fromStatus = proposal.status;
   let nextStatus;
   let reason;
+  let changedFields = null;
+  let source = 'user';
+  let manualOverride = false;
 
-  if (toStatus === 'ARCHIVED') {
+  if (toStatus === 'ACTIVE') {
+    if (!directActivation || actorRole !== 'SUPER_ADMIN') {
+      throw err('Chỉ SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
+    }
+    if (!['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING'].includes(fromStatus)) {
+      throw err(`Không thể chuyển đề xuất sang Hoạt động từ trạng thái "${fromStatus}"`, 409);
+    }
+    reason = String(directReason || '').trim();
+    if (reason.length < 3 || reason.length > 5000) {
+      throw err('Vui lòng nhập lý do đánh dấu ON trạm (3–5000 ký tự)', 400);
+    }
+    nextStatus = 'ACTIVE';
+    source = 'admin_override';
+    manualOverride = true;
+    const [updateResult] = await connection.query(
+      `UPDATE station_proposals
+          SET status = 'ACTIVE', reject_reason = NULL, reviewed_by = ?, reviewed_at = NOW(),
+              supplement_deadline_at = NULL, transition_deadline_at = NULL, info_completed_at = NULL,
+              paused_from_status = NULL, paused_at = NULL, updated_at = NOW()
+        WHERE id = ? AND status = ?`,
+      [actorId, proposalId, fromStatus]
+    );
+    if (updateResult.affectedRows !== 1) throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại', 409);
+    await connection.query(
+      `UPDATE proposal_requests
+          SET status = 'CANCELLED', resolved_by = ?, resolved_at = NOW(),
+              resolution_note = 'Đã đánh dấu ON trạm trực tiếp bởi SUPER_ADMIN'
+        WHERE proposal_id = ? AND status = 'OPEN'`,
+      [actorId, proposalId]
+    );
+    changedFields = { status: { label: 'Trạng thái đề xuất', old: fromStatus, new: 'ACTIVE' } };
+  } else if (toStatus === 'ARCHIVED') {
     if (!ON_STATION_RESTORABLE_STATUSES.includes(fromStatus)) {
       throw err(`Không thể lưu trữ đề xuất ON trạm từ trạng thái "${fromStatus}"`, 409);
     }
@@ -483,20 +532,22 @@ exports.transitionOnStation = async (connection, proposalId, toStatus, {
     action: 'status_change',
     fromStatus,
     toStatus: nextStatus,
+    changedFields,
     reason,
     actorId,
     actorRole,
-    source: 'user',
+    source,
+    manualOverride,
     ip,
     connection
   });
 
-  return { proposal, fromStatus, toStatus: nextStatus, reason, actorId, actorRole, ip };
+  return { proposal, fromStatus, toStatus: nextStatus, reason, actorId, actorRole, source, manualOverride, ip };
 };
 
 exports.completeOnStationTransition = async (transition) => {
   if (!transition) return;
-  const { proposal, fromStatus, toStatus, reason, actorId, actorRole, ip } = transition;
+  const { proposal, fromStatus, toStatus, reason, actorId, actorRole, source = 'user', ip } = transition;
   try {
     await exports.notifyStepReceivers(proposal.id, toStatus, { actorId, reason });
   } catch (error) {
@@ -524,7 +575,7 @@ exports.completeOnStationTransition = async (transition) => {
   try {
     if (proposal.journey_id) {
       await require('./journeySyncService').onProposalTransition(proposal.id, {
-        from: fromStatus, to: toStatus, actorId, actorRole, source: 'user', ip
+        from: fromStatus, to: toStatus, actorId, actorRole, source, ip
       });
     }
   } catch { /* do not fail an ON station status change because of journey sync */ }
@@ -612,7 +663,8 @@ exports.maybeAutoConfirmInfo = async (id, opts = {}) => {
     if (!row.supplement_deadline_at) return { confirmed: false, skipped: 'not_in_supplement' };
     const suppStatuses = await exports.getEnabledSupplementStatuses();
     if (!suppStatuses.includes(row.status)) return { confirmed: false, skipped: 'not_in_supplement' };
-    if (row.info_completed_at != null) return { confirmed: false, already: true };
+    const already = row.info_completed_at != null;
+    if (already && row.status !== 'PENDING') return { confirmed: false, already: true };
 
     const dynamicUtils = require('./dynamicUtils');
     const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
@@ -621,12 +673,14 @@ exports.maybeAutoConfirmInfo = async (id, opts = {}) => {
     if (!complete) return { confirmed: false, missing };
 
     try {
-      await exports.setInfoCompleted(id, true, { actorId, source: 'system_auto', ip });
+      const result = await exports.setInfoCompleted(id, true, { actorId, source: 'system_auto', ip });
+      return { confirmed: true, movedTo: result.movedTo || null, already };
     } catch (e) {
+      console.error(`[ProposalLifecycle] Auto-confirm info failed for proposal #${id}: ${e.message}`);
       return { confirmed: false, missing: [], error: e.message };
     }
-    return { confirmed: true };
   } catch (e) {
+    console.error(`[ProposalLifecycle] Auto-confirm info failed for proposal #${id}: ${e.message}`);
     return { confirmed: false, missing: [], error: e.message };
   }
 };
@@ -1091,19 +1145,44 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
     throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
   }
   const already = proposal.info_completed_at != null;
-  if ((completed && already) || (!completed && !already)) {
+  const movePendingToGrading = completed && proposal.status === 'PENDING';
+  if ((completed && already && !movePendingToGrading) || (!completed && !already)) {
     return { id, completed: already, unchanged: true };
   }
-  if (completed) {
+  let movedTo = null;
+  if (movePendingToGrading) {
+    try {
+      const result = await exports.transition(id, 'GRADING', { actorId, actorRole, source, ip });
+      if (result?.status !== 'GRADING') throw err('Đề xuất chưa được chuyển sang chấm điểm', 409);
+      movedTo = 'GRADING';
+    } catch (transitionError) {
+      let currentStatus = null;
+      try {
+        const [currentRows] = await pool.query('SELECT status FROM station_proposals WHERE id = ?', [id]);
+        currentStatus = currentRows[0]?.status || null;
+      } catch { /* giữ lỗi chuyển trạng thái ban đầu */ }
+      if (currentStatus !== 'GRADING') throw transitionError;
+      movedTo = 'GRADING';
+      console.error(`[ProposalLifecycle] Proposal #${id} reached GRADING with a post-transition error: ${transitionError.message}`);
+    }
+  } else if (completed && !already) {
     await pool.query('UPDATE station_proposals SET info_completed_at = NOW(), updated_at = NOW() WHERE id = ?', [id]);
-  } else {
+  } else if (!completed) {
     await pool.query('UPDATE station_proposals SET info_completed_at = NULL, updated_at = NOW() WHERE id = ?', [id]);
   }
-  await exports.logActivity({
-    proposalId: id, action: completed ? 'info_completed' : 'info_reopened',
-    fromStatus: proposal.status, toStatus: proposal.status,
-    actorId, actorRole, source, ip
-  });
+  if (!already) {
+    const activity = {
+      proposalId: id, action: completed ? 'info_completed' : 'info_reopened',
+      fromStatus: proposal.status, toStatus: movedTo || proposal.status,
+      actorId, actorRole, source, ip
+    };
+    try {
+      await exports.logActivity(activity);
+    } catch (activityError) {
+      if (!movedTo) throw activityError;
+      console.error(`[ProposalLifecycle] Failed to log info completion after proposal #${id} reached GRADING: ${activityError.message}`);
+    }
+  }
   try {
     const proposalRequestService = require('./proposalRequestService');
     if (completed) {
@@ -1120,28 +1199,33 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
       });
     }
   } catch { /* silent: khong chan thao tac vi yeu cau de xuat */ }
-  if (completed) {
-    const code = notificationService.proposalCode(proposal.custom_data, id);
-    const actorName = source === 'system_auto'
-      ? 'Hệ thống'
-      : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
-    const userIds = await collectInfoNotifyIds(proposal);
-    userIds.delete(Number(actorId));
-    for (const uid of userIds) {
-      if (!uid) continue;
-      try {
-        await notificationService.create({
-          userId: uid,
-          type: 'INFO_COMPLETED',
-          title: notificationService.statusTitle('INFO_COMPLETED'),
-          message: notificationService.statusMessage({ code, actorName, status: 'INFO_COMPLETED', actionLabel: 'Người xác nhận' }),
-          entityType: 'station_proposals',
-          entityId: id,
-          createdBy: actorId || null
-        });
-      } catch { /* silent */ }
+  if (completed && !already) {
+    try {
+      const code = notificationService.proposalCode(proposal.custom_data, id);
+      const actorName = source === 'system_auto'
+        ? 'Hệ thống'
+        : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
+      const userIds = await collectInfoNotifyIds(proposal);
+      userIds.delete(Number(actorId));
+      for (const uid of userIds) {
+        if (!uid) continue;
+        try {
+          await notificationService.create({
+            userId: uid,
+            type: 'INFO_COMPLETED',
+            title: notificationService.statusTitle('INFO_COMPLETED'),
+            message: notificationService.statusMessage({ code, actorName, status: 'INFO_COMPLETED', actionLabel: 'Người xác nhận' }),
+            entityType: 'station_proposals',
+            entityId: id,
+            createdBy: actorId || null
+          });
+        } catch { /* silent */ }
+      }
+    } catch (notificationError) {
+      if (!movedTo) throw notificationError;
+      console.error(`[ProposalLifecycle] Failed to notify info completion for proposal #${id}: ${notificationError.message}`);
     }
-  } else {
+  } else if (!completed) {
     const code = notificationService.proposalCode(proposal.custom_data, id);
     const actorName = source === 'system_auto'
       ? 'Hệ thống'
@@ -1163,10 +1247,5 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
       } catch { /* silent */ }
     }
   }
-  let movedTo = null;
-  if (completed && proposal.status === 'PENDING') {
-    await exports.transition(id, 'GRADING', { actorId, actorRole, source, ip });
-    movedTo = 'GRADING';
-  }
-  return { id, completed: !!completed, unchanged: false, movedTo };
+  return { id, completed: !!completed, unchanged: already && !movedTo, movedTo };
 };

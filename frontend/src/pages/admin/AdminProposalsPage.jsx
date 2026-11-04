@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { adminProposalService, proposalService, excelService, formService, documentService, adminUserService, leadService, proposalSheetSyncService } from '../../services/api';
+import { adminProposalService, proposalService, excelService, formService, documentService, adminUserService, leadService, proposalSheetSyncService, chargingStationService } from '../../services/api';
 import DynamicTable from '../../components/dynamic/DynamicTable';
 import DynamicForm from '../../components/dynamic/DynamicForm';
 import LocationMapModal, { PREVIEW_STATUS_FILTER } from '../../components/LocationMapModal';
@@ -121,6 +121,8 @@ const AdminProposalsPage = () => {
   const [flowInfoOpen, setFlowInfoOpen] = useState(false);
   const [stationModal, setStationModal] = useState({ open: false, id: null, name: '', saving: false });
   const stationRow = stationModal.id ? proposals.find(p => p.id === stationModal.id) : null;
+  const [directOnStationModal, setDirectOnStationModal] = useState({ open: false, id: null, reason: '', ack: false, saving: false });
+  const directOnStationRow = directOnStationModal.id ? proposals.find(p => p.id === directOnStationModal.id) : null;
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [dupMode, setDupMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -547,6 +549,30 @@ const AdminProposalsPage = () => {
     }
   };
 
+  const handleDirectOnStation = async () => {
+    const reason = directOnStationModal.reason.trim();
+    if (!directOnStationModal.id || reason.length < 3 || !directOnStationModal.ack) return;
+    setDirectOnStationModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await chargingStationService.createDirectFromProposal(directOnStationModal.id, reason, token);
+      if (!res?.success) throw new Error(res?.message || 'Không thể chuyển đề xuất sang ON trạm');
+      const chargingStationId = res.data?.id;
+      setDirectOnStationModal({ open: false, id: null, reason: '', ack: false, saving: false });
+      setToast({
+        message: res.message || 'Đã chuyển đề xuất sang ON trạm',
+        type: 'success',
+        action: chargingStationId
+          ? { label: 'Xem ON trạm', onClick: () => navigate(`/admin/on-tram/thong-tin-chung/${chargingStationId}`) }
+          : null
+      });
+      notifyBellRefresh();
+      loadProposals(pagination.page);
+    } catch (err) {
+      setError(err?.message || 'Không thể chuyển đề xuất sang ON trạm');
+      setDirectOnStationModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
   const handleDeleteClick = (id) => {
     setConfirmDelete({ isOpen: true, id });
   };
@@ -814,7 +840,14 @@ const AdminProposalsPage = () => {
     }
     const res = await proposalService.create(submitData, token, createFormId);
     if (res.success) {
-      setToast({ message: 'Tạo đề xuất thành công', type: 'success' });
+      const transitionError = res.infoCompleted?.error;
+      const movedToGrading = res.infoCompleted?.movedTo === 'GRADING';
+      setToast({
+        message: transitionError
+          ? `Đã tạo đề xuất nhưng chưa tự chuyển sang chấm điểm: ${transitionError}`
+          : `Tạo đề xuất thành công${movedToGrading ? ' và đã chuyển sang chấm điểm' : ''}`,
+        type: transitionError ? 'warning' : 'success'
+      });
       setShowCreateForm(false);
       loadProposals(1);
     } else {
@@ -910,9 +943,9 @@ const AdminProposalsPage = () => {
         }
         if (isAdmin) {
           return (
-            <button className="btn btn-primary btn-xs gap-1 shrink-0" onClick={() => openStationModal(row)} title="Tạo trạm từ đề xuất (tự sinh thông tin)">
+            <button className="btn btn-primary btn-xs gap-1 shrink-0" onClick={() => openStationModal(row)} title="Tạo trạm bản đồ (stations) từ đề xuất">
               <MapPinned size={12} />
-              Tạo trạm
+              Tạo trạm bản đồ
             </button>
           );
         }
@@ -1006,9 +1039,36 @@ const AdminProposalsPage = () => {
       || 'trước khi tạm dừng'
     : 'trước khi tạm dừng';
 
-  const renderActions = (row) => (
-    <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
-      <>
+  const renderActions = (row) => {
+    const showOnStationLink = Boolean(row.charging_station_id)
+      && ['DEPLOYING', 'ACTIVE', 'CANCELLED', 'ARCHIVED', 'PAUSED'].includes(row.status);
+    const canDirectToOnStation = isSuperAdmin
+      && activeTab === 'all'
+      && !['CANCELLED', 'ARCHIVED', 'PAUSED', 'ACTIVE'].includes(row.status);
+    return (
+      <div className="flex gap-1 items-center flex-nowrap whitespace-nowrap">
+        <>
+      {isSuperAdmin && activeTab === 'all' && showOnStationLink ? (
+        <button
+          type="button"
+          className="btn btn-info btn-outline btn-xs gap-1 shrink-0"
+          onClick={() => navigate(`/admin/on-tram/thong-tin-chung/${row.charging_station_id}`)}
+          title={`Xem ON trạm #${row.charging_station_id}`}
+        >
+          <Eye size={12} />
+          Xem ON trạm
+        </button>
+      ) : canDirectToOnStation ? (
+        <button
+          type="button"
+          className="btn btn-accent btn-xs gap-1 shrink-0"
+          onClick={() => setDirectOnStationModal({ open: true, id: row.id, reason: '', ack: false, saving: false })}
+          title="Bỏ qua luồng đề xuất và tạo ON trạm trực tiếp"
+        >
+          <MapPinned size={12} />
+          Chuyển ON trạm
+        </button>
+      ) : null}
       {canPauseProposals && row.status && row.status !== 'CANCELLED'
         && !(row.status === 'APPROVED' && row.signed_file_id) && (
         <button
@@ -1034,7 +1094,8 @@ const AdminProposalsPage = () => {
       </button>
       </>
     </div>
-  );
+    );
+  };
 
   return (
     <div>
@@ -1462,6 +1523,73 @@ const AdminProposalsPage = () => {
           </dialog>
         );
       })()}
+
+      {directOnStationModal.open && (
+        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
+          <div className="modal-box max-w-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Chuyển ON trạm</h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() => setDirectOnStationModal({ open: false, id: null, reason: '', ack: false, saving: false })}
+                disabled={directOnStationModal.saving}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="alert alert-warning py-2 px-3 text-sm">
+              <AlertTriangle size={16} />
+              <span>Thao tác SUPER_ADMIN bỏ qua các bước của luồng đề xuất, chuyển đề xuất sang <b>Đang triển khai</b> và tạo bản ghi ON trạm ở bước <b>Đang hoàn thiện thủ tục</b>.</span>
+            </div>
+            <div className="mt-3 rounded-lg bg-base-200 p-3 text-sm">
+              <div><b>Mã đề xuất:</b> {directOnStationRow?.ma_de_xuat || `#${directOnStationModal.id}`}</div>
+              <div><b>Trạng thái hiện tại:</b> {PROPOSAL_STATUSES.find((status) => status.value === directOnStationRow?.status)?.label || directOnStationRow?.status || '—'}</div>
+            </div>
+            <div className="form-control mt-3">
+              <label className="label"><span className="label-text">Lý do chuyển trực tiếp *</span></label>
+              <textarea
+                className="textarea textarea-bordered"
+                rows={3}
+                value={directOnStationModal.reason}
+                onChange={(event) => setDirectOnStationModal((prev) => ({ ...prev, reason: event.target.value }))}
+                placeholder="Nhập lý do bỏ qua luồng đề xuất..."
+                disabled={directOnStationModal.saving}
+              />
+            </div>
+            <label className="label cursor-pointer gap-3 mt-2 justify-start">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm checkbox-warning"
+                checked={directOnStationModal.ack}
+                onChange={(event) => setDirectOnStationModal((prev) => ({ ...prev, ack: event.target.checked }))}
+                disabled={directOnStationModal.saving}
+              />
+              <span className="label-text text-xs">Tôi xác nhận đây là thao tác bỏ qua quy trình đề xuất và đã kiểm tra thông tin.</span>
+            </label>
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setDirectOnStationModal({ open: false, id: null, reason: '', ack: false, saving: false })}
+                disabled={directOnStationModal.saving}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning btn-sm gap-1"
+                onClick={handleDirectOnStation}
+                disabled={directOnStationModal.reason.trim().length < 3 || !directOnStationModal.ack || directOnStationModal.saving}
+              >
+                {directOnStationModal.saving ? <span className="loading loading-spinner loading-xs" /> : <MapPinned size={14} />}
+                {directOnStationModal.saving ? 'Đang chuyển...' : 'Xác nhận chuyển ON trạm'}
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop bg-black/50" />
+        </dialog>
+      )}
 
       {rejectModal.open && (
         <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
