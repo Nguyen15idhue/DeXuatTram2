@@ -1577,19 +1577,11 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
     if (current.status !== STATUS.ONBOARDING) {
       throw err('Chỉ có thể đề xuất giao trụ sớm khi trạm đang hoàn thiện thủ tục', 400);
     }
-    if (readiness.getFinanceRequirements(current.mo_hinh_dau_tu).requiresDeposit
-      && !readiness.isDepositReceived(current.deposit_status)) {
-      throw err('Chưa có đặt cọc. Vui lòng tạo hóa đơn cọc trước rồi mới đề xuất giao trụ', 409);
-    }
 
     const committedRows = parseJson(current.chot_so_luong_tru);
-    if (!Array.isArray(committedRows) || committedRows.length === 0) {
-      throw err('Đề xuất chưa có số lượng trụ chốt để xuất kho', 409);
-    }
-    const { ready, missingLabels: missingItems } = readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu);
-    if (ready) {
-      throw err('Trạm đã đủ điều kiện giao trụ; hãy tải lại danh sách để tiếp tục quy trình', 409);
-    }
+    const { missingLabels: missingItems } = (committedRows && committedRows.length > 0)
+      ? readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu)
+      : { missingLabels: [] };
 
     const nextStatus = STATUS.DELIVERING;
     const nextSubStatus = INITIAL_SUB_STATUS[nextStatus];
