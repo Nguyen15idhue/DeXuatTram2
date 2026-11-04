@@ -35,6 +35,28 @@ async function getCachedPoints() {
 
 exports.invalidatePointsCache = () => { pointsCache = { ts: 0, data: null }; };
 
+const normalizeProvinceKey = (value) => String(value || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]/g, '');
+
+const BIG_CITY_PROVINCES = new Set([
+  'hanoi',
+  'hochiminh',
+  'hcm',
+  'hno',
+  'thanhphohanoi',
+  'thanhphohochiminh',
+  'tphochiminh'
+]);
+
+exports.getMinProposalDistanceM = (province) => {
+  const key = normalizeProvinceKey(province);
+  if (BIG_CITY_PROVINCES.has(key)) return 100;
+  return 1000;
+};
+
 async function loadPoints() {
   const [stations] = await pool.query(
     'SELECT id, name, latitude, longitude, status, custom_data FROM stations'
