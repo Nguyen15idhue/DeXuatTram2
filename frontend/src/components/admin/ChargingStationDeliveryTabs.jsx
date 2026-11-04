@@ -14,7 +14,8 @@ import {
   CS_PAYMENT_LABELS,
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
-  CS_SUB_STATUS_LABELS
+  CS_SUB_STATUS_LABELS,
+  getCsDeadlineLabel
 } from '../../utils/chargingStation';
 import { Badge, Button, DataTable, Dialog, FilterBar, Input, Pagination, Select, Toast } from '../ui';
 
@@ -193,7 +194,16 @@ const ChargingStationDeliveryTabs = () => {
     {
       key: 'contract_status',
       label: 'Hợp đồng',
-      render: (value) => <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline>{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline>{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+          {value !== 'DONE' && row.contract_deadline_at && (
+            <span className={`text-xs ${new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now() ? 'text-error font-semibold' : 'text-base-content/60'}`}>
+              {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
+            </span>
+          )}
+        </div>
+      )
     },
     {
       key: 'payment_status',
@@ -239,7 +249,7 @@ const ChargingStationDeliveryTabs = () => {
         return <Button variant="primary" size="xs" onClick={() => setDeliveryStation(row)}>Đã giao đến nơi</Button>;
       }
     }
-    if (row.status === 'ONBOARDING' && row.can_request_early_delivery) {
+    if (row.status === 'ONBOARDING') {
       return (
         <Button size="xs" onClick={() => {
           setEarlyForm({ desired_delivery_date: '', reason: '' });

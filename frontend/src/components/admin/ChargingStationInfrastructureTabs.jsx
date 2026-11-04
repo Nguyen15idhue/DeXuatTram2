@@ -132,10 +132,17 @@ const ChargingStationInfrastructureTabs = () => {
     {
       key: 'contract_status',
       label: 'Hợp đồng',
-      render: (value) => (
-        <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">
-          {CS_CONTRACT_LABELS[value] || '—'}
-        </Badge>
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">
+            {CS_CONTRACT_LABELS[value] || '—'}
+          </Badge>
+          {value !== 'DONE' && row.contract_deadline_at && (
+            <span className={`text-xs ${new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now() ? 'text-error font-semibold' : 'text-base-content/60'}`}>
+              {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
+            </span>
+          )}
+        </div>
       )
     },
     ...INFRASTRUCTURE_ITEMS.map(({ field, columnLabel }) => ({
@@ -156,18 +163,6 @@ const ChargingStationInfrastructureTabs = () => {
           <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>{CS_PAYMENT_LABELS[value] || '—'}</Badge>
         </div>
       )
-    },
-    {
-      key: 'infra_deadline_at',
-      label: 'Hạn 15 ngày',
-      render: (value, row) => {
-        const done = row.infra_power_status === 'DONE' && row.infra_site_status === 'DONE';
-        return (
-          <span className={done ? 'text-success text-xs' : 'text-xs'}>
-            {getCsDeadlineLabel(value, done, row.deadline_active === false)}
-          </span>
-        );
-      }
     },
     { key: 'on_date', label: 'Ngày ON', render: (value) => formatCsDate(value) },
 

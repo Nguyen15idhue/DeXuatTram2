@@ -54,6 +54,8 @@ const ChargingStationContractTabs = () => {
   const [busyId, setBusyId] = useState(null);
   const [uploadStation, setUploadStation] = useState(null);
   const [contractFile, setContractFile] = useState(null);
+  const [extendStation, setExtendStation] = useState(null);
+  const [extendReason, setExtendReason] = useState('');
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
@@ -136,11 +138,34 @@ const ChargingStationContractTabs = () => {
     {
       key: 'contract_status',
       label: 'Hợp đồng',
-      render: (value) => (
-        <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">
-          {CS_CONTRACT_LABELS[value] || '—'}
-        </Badge>
-      )
+      render: (value, row) => {
+        if (value === 'DONE') {
+          return <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{CS_CONTRACT_LABELS[value]}</Badge>;
+        }
+        const expired = row.contract_deadline_at && new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now();
+        const canExtend = expired && Number(row.deadline_extension_count || 0) < 3;
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+            <span className={`text-xs ${expired ? 'text-error font-semibold' : 'text-base-content/60'}`}>
+              {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
+            </span>
+            {canExtend && (
+              <Button
+                variant="outline-warning"
+                size="xs"
+                disabled={busyId !== null}
+                onClick={() => setExtendStation(row)}
+              >
+                Gia hạn ({3 - Number(row.deadline_extension_count || 0)})
+              </Button>
+            )}
+            {!canExtend && expired && Number(row.deadline_extension_count || 0) >= 3 && (
+              <span className="text-[11px] text-error">Hết lượt gia hạn</span>
+            )}
+          </div>
+        );
+      }
     },
     {
       key: 'infra_power_status',
@@ -162,15 +187,7 @@ const ChargingStationContractTabs = () => {
         </div>
       )
     },
-    {
-      key: 'contract_deadline_at',
-      label: 'Hạn 15 ngày',
-      render: (value, row) => (
-        <span className={row.contract_status === 'DONE' ? 'text-success text-xs' : 'text-xs'}>
-          {getCsDeadlineLabel(value, row.contract_status === 'DONE', row.deadline_active === false)}
-        </span>
-      )
-    },
+
     { key: 'created_at', label: 'Ngày tạo', render: formatDateTime },
 
   ], [location.pathname, location.search]);
@@ -228,6 +245,23 @@ const ChargingStationContractTabs = () => {
       setToast({ message: error?.message || 'Không thể hoàn tất hợp đồng', type: 'error' });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const extendDeadline = async () => {
+    if (!extendStation || !extendReason.trim()) return;
+    setBusyId(extendStation.id);
+    try {
+      const res = await chargingStationService.extendDeadline(extendStation.id, { reason: extendReason }, token);
+      if (!res?.success) throw new Error(res?.message || 'Gia hạn thất bại');
+      setExtendStation(null);
+      setExtendReason('');
+      setToast({ message: res.message || 'Đã gia hạn 3 ngày', type: 'success' });
+      await load(page);
+    } catch (error) {
+      setToast({ message: error?.message || 'Gia hạn thất bại', type: 'error' });
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -334,6 +368,20 @@ const ChargingStationContractTabs = () => {
             <Button variant="primary" loading={uploading} disabled={!contractFile || uploading} onClick={completeContract}>
               Xác nhận tải lên
             </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog isOpen={!!extendStation} onClose={() => { if (busyId === null) { setExtendStation(null); setExtendReason(''); } }} title={extendStation ? `Gia hạn hạn ký - ${extendStation.ma_tram || `#${extendStation.id}`}` : 'Gia hạn'} size="sm">
+        <div className="space-y-3">
+          <p className="text-sm text-base-content/70">Gia hạn thêm 3 ngày (tối đa 3 lần).</p>
+          <div className="form-control w-full">
+            <span className="label-text font-medium mb-1">Lý do gia hạn</span>
+            <textarea className="textarea textarea-bordered w-full" rows={3} value={extendReason} onChange={(e) => setExtendReason(e.target.value)} disabled={busyId !== null} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={busyId !== null} onClick={() => { setExtendStation(null); setExtendReason(''); }}>Hủy</Button>
+            <Button variant="warning" loading={busyId !== null} disabled={!extendReason.trim() || busyId !== null} onClick={extendDeadline}>Gia hạn</Button>
           </div>
         </div>
       </Dialog>
