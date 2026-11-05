@@ -19,7 +19,8 @@ import {
   CS_STATUS_LABELS,
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
-  formatCsDate
+  formatCsDate,
+  getCsDeadlineLabel
 } from '../../utils/chargingStation';
 
 const PAGE_SIZE = 20;
@@ -199,7 +200,16 @@ const ChargingStationTab = ({ stage }) => {
     {
       key: 'contract_status',
       label: 'Hợp đồng',
-      render: (value) => <Badge variant={CS_CONTRACT_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+      render: (value, row) => (
+        <div className="flex flex-col items-start gap-1">
+          <Badge variant={CS_CONTRACT_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>
+          {value !== 'DONE' && row.contract_deadline_at && (
+            <span className={`text-xs ${new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now() ? 'text-error font-semibold' : 'text-base-content/60'}`}>
+              {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
+            </span>
+          )}
+        </div>
+      )
     },
     {
       key: 'infra_power_status',
