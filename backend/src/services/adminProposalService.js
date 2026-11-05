@@ -121,7 +121,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.custom_data, p.created_at, p.user_id,
+            p.custom_data, p.created_at, p.updated_at, p.user_id,
             p.station_id, p.signed_file_id,
             (SELECT cs.id FROM charging_stations cs WHERE cs.proposal_id = p.id LIMIT 1) AS charging_station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,

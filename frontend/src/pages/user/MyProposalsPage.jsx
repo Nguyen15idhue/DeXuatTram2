@@ -16,6 +16,7 @@ import { ImportSheetsSummary } from '../../components/admin/ImportViewPanel';
 import ProposalReportUpdateModal from '../../components/admin/ProposalReportUpdateModal';
 import { canUploadReport } from '../../utils/proposalReport';
 import { canOwnerDeleteProposal, canOwnerEditProposal } from '../../utils/proposalOwnerLock';
+import { PROPOSAL_CONTEXT_COLUMNS } from '../../components/admin/ProposalTableCells';
 import Pagination from '../../components/Pagination';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
@@ -781,6 +782,7 @@ const MyProposalsPage = () => {
         entity="station_proposals"
         viewId={proposalsViewId}
         data={proposals}
+        additionalColumns={PROPOSAL_CONTEXT_COLUMNS.filter(c => c.key === 'created_at' || c.key === 'updated_at')}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}
         onColumnFiltersChange={handleColumnFiltersChange}
