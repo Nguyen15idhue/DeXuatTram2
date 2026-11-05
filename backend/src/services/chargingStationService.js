@@ -150,6 +150,10 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     p.status AS proposal_status,
     p.user_id AS proposal_user_id,
     p.chot_so_luong_tru,
+    p.tong_gia_tri_chot AS contract_amount,
+    (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'DEPOSIT' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS deposit_total,
+    (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'PAYMENT' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS payment_total,
+    (SELECT COALESCE(SUM(CASE WHEN invoice_type = 'REFUND' THEN amount ELSE 0 END), 0) FROM charging_station_invoices WHERE charging_station_id = cs.id) AS refund_total,
     COALESCE(NULLIF(p.owner_name, ''), JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.owner_name'))) AS owner_name,
     COALESCE(NULLIF(p.owner_phone, ''), JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.owner_phone'))) AS owner_phone,
     COALESCE(NULLIF(p.address, ''), JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.address'))) AS address,
@@ -600,6 +604,17 @@ const listChargingStations = async ({
       const deadlineActive = readiness.isDeadlineActive(record);
       return {
         ...record,
+        contract_amount: Number(record.contract_amount) || 0,
+        paid_total: (Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0),
+        remaining_amount: Math.max(0, (Number(record.contract_amount) || 0) - ((Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0))),
+        paid_percent: (() => {
+          const model = String(record.mo_hinh_dau_tu || '').toUpperCase();
+          if (!['LK', 'NQ', 'NQ_LK'].includes(model)) return null;
+          const contract = Number(record.contract_amount) || 0;
+          const paid = (Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0);
+          if (contract <= 0) return 0;
+          return Math.min(100, Math.max(0, Math.round((paid / contract) * 100)));
+        })(),
         deadline_active: deadlineActive,
         can_extend_deadline: deadlineActive
           && Number(record.deadline_extension_count || 0) < readiness.MAX_DEADLINE_EXTENSIONS

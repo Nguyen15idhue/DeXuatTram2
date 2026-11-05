@@ -982,6 +982,9 @@ const AdminProposalsPage = () => {
       if (canEditProposalInfo) {
         items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
       }
+      if (row.status === 'PENDING' && row.owner_role === 'CTV') {
+        items.push(item('approve', <CheckCircle2 size={14} />, 'Duyệt (chuyển sang chấm điểm)', () => handleStatusChange(row.id, 'GRADING')));
+      }
     }
     if (isSuperAdmin) {
       items.push(item('force', <Repeat size={14} />, 'Đổi trạng thái', () => setForceModal({ open: true, id: row.id, status: row.status, reason: '', ack: false, saving: false })));

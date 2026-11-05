@@ -896,7 +896,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
                     className="btn btn-sm btn-primary"
                     onClick={() => setConfirmDialog({ open: true, action: 'confirm' })}
                   >
-                    Xác nhận đã đủ thông tin
+                    Xác nhận {record?.owner_role === 'CTV' ? 'đã đủ thông tin' : 'duyệt'}
                   </button>
                   {canExtend && (
                     <button

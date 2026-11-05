@@ -434,8 +434,6 @@ const DynamicForm = ({ entity, formId: formIdProp, purpose, onSubmit, initialDat
         setFormData(prev => {
           const next = { ...prev };
           const empty = (v) => v === undefined || v === null || String(v).trim() === '';
-          const addr = data.address || data.formatted;
-          if (keySet.has('address') && empty(prev.address) && addr) next.address = addr;
           if (keySet.has('province') && empty(prev.province) && admin.province) next.province = admin.province;
           if (keySet.has('xa_phuong') && empty(prev.xa_phuong) && admin.xa_phuong) next.xa_phuong = admin.xa_phuong;
           if (keySet.has('ma_tinh') && empty(prev.ma_tinh) && admin.ma_tinh) next.ma_tinh = admin.ma_tinh;

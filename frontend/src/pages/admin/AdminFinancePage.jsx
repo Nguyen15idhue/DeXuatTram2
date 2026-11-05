@@ -274,7 +274,7 @@ const AdminFinancePage = () => {
       key: 'infra_power_status',
       label: 'Hạ tầng',
       render: (_, row) => (
-        <div className="flex flex-col items-start gap-1">
+        <div className="flex flex-col items-start gap-1 min-w-32">
           <span className="text-xs">Điện: {FLOW_LABELS[row.infra_power_status] || row.infra_power_status || '—'}</span>
           <span className="text-xs">Mặt bằng: {FLOW_LABELS[row.infra_site_status] || row.infra_site_status || '—'}</span>
         </div>
@@ -289,6 +289,21 @@ const AdminFinancePage = () => {
       key: 'payment_status',
       label: 'Thanh toán',
       render: (value) => <Badge variant={PAYMENT_VARIANTS[value] || 'ghost'} outline>{CS_PAYMENT_LABELS[value] || value || '—'}</Badge>
+    },
+    {
+      key: 'contract_amount',
+      label: 'Số tiền hợp đồng',
+      render: (value) => formatMoney(value || 0)
+    },
+    {
+      key: 'remaining_amount',
+      label: 'Số tiền còn lại',
+      render: (value) => formatMoney(value || 0)
+    },
+    {
+      key: 'paid_percent',
+      label: 'Phần trăm đã thanh toán',
+      render: (value) => (value === null || value === undefined ? '—' : `${value}%`)
     },
     {
       key: 'finance_deadline_at',
@@ -318,10 +333,7 @@ const AdminFinancePage = () => {
 
   const renderActions = (station) => (
     <div className="flex flex-wrap justify-center gap-1">
-      <Button size="xs" variant="outline" onClick={() => openInvoices(station)}>Hóa đơn</Button>
-      {station.payment_status === 'NOT' && (
-        <Button size="xs" disabled={busy} onClick={() => openStatusChange(station, 'DOING')}>Bắt đầu thanh toán</Button>
-      )}
+      <Button size="xs" variant="outline" onClick={() => openInvoices(station)}>Thanh toán</Button>
       {station.payment_status === 'DOING' && (
         <Button size="xs" disabled={busy} onClick={() => openStatusChange(station, 'DONE')}>Hoàn tất</Button>
       )}

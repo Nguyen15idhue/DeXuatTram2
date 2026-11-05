@@ -121,7 +121,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
   const [proposals] = await pool.query(
     `SELECT p.id, p.latitude, p.longitude, p.owner_name, p.owner_phone,
             p.address, p.area, p.land_type, p.description, p.status,
-            p.custom_data, p.created_at, p.user_id,
+            p.custom_data, p.created_at, p.updated_at, p.user_id,
             p.station_id, p.signed_file_id,
             (SELECT cs.id FROM charging_stations cs WHERE cs.proposal_id = p.id LIMIT 1) AS charging_station_id,
             p.reject_reason, p.reviewed_by, p.reviewed_at, p.supplement_deadline_at, p.transition_deadline_at, p.info_completed_at,
@@ -134,7 +134,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
                  AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
                  AND r.target_user_id = p.user_id
             ) AS owner_update_request_open,
-            u.full_name as user_name, u.email as user_email,
+            u.role AS owner_role, u.full_name as user_name, u.email as user_email,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             p.journey_id,
@@ -170,7 +170,7 @@ exports.getProposalById = async (id) => {
 
 exports.getProposalWithUser = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.*, u.full_name as user_name,
+    `SELECT p.*, u.full_name as user_name, u.role AS owner_role,
             EXISTS (
               SELECT 1 FROM proposal_requests r
                WHERE r.proposal_id = p.id AND r.status = 'OPEN'
