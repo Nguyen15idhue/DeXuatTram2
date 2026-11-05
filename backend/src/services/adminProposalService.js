@@ -134,7 +134,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
                  AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
                  AND r.target_user_id = p.user_id
             ) AS owner_update_request_open,
-            u.full_name as user_name, u.email as user_email,
+            u.role AS owner_role, u.full_name as user_name, u.email as user_email,
             JSON_UNQUOTE(JSON_EXTRACT(u.custom_data, '$.department')) AS owner_department,
             u.parent_id AS manager_user_id, manager.full_name AS manager_name,
             p.journey_id,

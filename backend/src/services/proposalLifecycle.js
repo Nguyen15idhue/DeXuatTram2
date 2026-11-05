@@ -1140,12 +1140,14 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
     throw err('Không tìm thấy đề xuất', 404);
   }
   const proposal = rows[0];
+  const [ownerRows] = await pool.query('SELECT role FROM users WHERE id = ?', [proposal.user_id]);
+  const ownerIsCtv = ownerRows.length > 0 && ownerRows[0].role === 'CTV';
   const supplementStatuses = await exports.getEnabledSupplementStatuses();
   if (!proposal.supplement_deadline_at || !supplementStatuses.includes(proposal.status)) {
     throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
   }
   const already = proposal.info_completed_at != null;
-  const movePendingToGrading = completed && proposal.status === 'PENDING';
+  const movePendingToGrading = completed && proposal.status === 'PENDING' && !ownerIsCtv;
   if ((completed && already && !movePendingToGrading) || (!completed && !already)) {
     return { id, completed: already, unchanged: true };
   }
@@ -1247,5 +1249,5 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
       } catch { /* silent */ }
     }
   }
-  return { id, completed: !!completed, unchanged: already && !movedTo, movedTo };
+  return { id, completed: !!completed, unchanged: already && !movedTo, movedTo, waitingManagerApproval: ownerIsCtv && completed && proposal.status === 'PENDING' };
 };

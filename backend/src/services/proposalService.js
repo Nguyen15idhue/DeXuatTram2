@@ -97,7 +97,15 @@ exports.createProposal = async (userId, data, opts = {}) => {
   const customDataObj = { ...dynamicData };
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
 
-  const initialStatus = opts.initialStatus || await resolveInitialStatus(opts.formId);
+  let initialStatus = opts.initialStatus || await resolveInitialStatus(opts.formId);
+  if (!opts.initialStatus) {
+    try {
+      const [ownerRows] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
+      if (ownerRows.length > 0 && ownerRows[0].role === 'CTV') {
+        initialStatus = 'PENDING';
+      }
+    } catch { /* silent */ }
+  }
   const provinceForZone = String(fixedData.province ?? dynamicData.province ?? '').trim();
   const radiusForZone = proximityService.getMinProposalDistanceM(provinceForZone);
   const nearbyForZone = await proximityService.checkNearby(Number(fixedData.latitude), Number(fixedData.longitude), radiusForZone);
