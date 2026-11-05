@@ -140,7 +140,7 @@ const ScoreCell = ({ score, note }) => {
   );
 };
 
-const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
+const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false, isAdmin = false }) => {
   const { token } = useAuth();
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const { getSelectOptions } = useFieldOptions("station_proposals", [
@@ -149,8 +149,8 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
   ]);
   const modelOptions = getSelectOptions("mo_hinh_dau_tu");
 
-  const canActAsGdttkd = roleKey === "GDTTKD" || isSuperAdmin;
-  const canActAsTgd = roleKey === "TGD" || isSuperAdmin;
+  const canActAsGdttkd = roleKey === "GDTTKD" || isSuperAdmin || isAdmin;
+  const canActAsTgd = roleKey === "TGD" || isSuperAdmin || isAdmin;
   const isCompleted = tab === "completed";
 
   const [items, setItems] = useState([]);

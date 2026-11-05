@@ -341,21 +341,16 @@ const ProposalGradingTab = ({ tab, canGradeQH, canGradePL }) => {
   };
 
   const renderActions = (row) => {
-    const active = ['GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING'].includes(row.status);
-    const qhMissing = row.quy_hoach_score === null || row.quy_hoach_score === undefined;
-    const plMissing = row.phap_ly_score === null || row.phap_ly_score === undefined;
-    const qhCanGrade = row.status === 'RE_GRADING'
-      ? qhMissing || row.quy_hoach_regrade_pending
-      : qhMissing;
-    const plCanGrade = row.status === 'RE_GRADING'
-      ? plMissing || row.phap_ly_regrade_pending
-      : plMissing;
+    const active = ['GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'DESIGNING', 'RE_GDTTKD_EVALUATING'].includes(row.status);
+    const regradeAllowedStatuses = ['GRADING', 'GDTTKD_EVALUATING', 'DESIGNING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING'];
+    const qhCanGrade = regradeAllowedStatuses.includes(row.status);
+    const plCanGrade = regradeAllowedStatuses.includes(row.status);
     const rowCanGrade = (canGradeQH && qhCanGrade) || (canGradePL && plCanGrade);
     const bothScored = row.quy_hoach_score !== null && row.quy_hoach_score !== undefined
       && row.phap_ly_score !== null && row.phap_ly_score !== undefined;
     const rowCanAct = !row.supplement_pending && rowCanGrade;
     const showAction = active && canGrade && (
-      isPending ? rowCanGrade : isAll ? (!bothScored || row.status === 'RE_GRADING') && rowCanAct : rowCanAct
+      isPending ? rowCanGrade : isAll ? (!bothScored || row.status === 'RE_GRADING' || row.status === 'DESIGNING') && rowCanAct : rowCanAct
     );
     if (!showAction) return null;
     return (

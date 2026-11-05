@@ -69,6 +69,7 @@ const AdminProposalsReviewPage = () => {
         tab={activeTab}
         roleKey={effectiveRole}
         isSuperAdmin={user?.role === 'SUPER_ADMIN'}
+        isAdmin={user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'}
       />
     </div>
   );
