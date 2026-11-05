@@ -228,6 +228,10 @@ const listReviews = async ({
     }
   }
 
+  if (scope.roleKey === REVIEW_ROLE.GDTTKD && safeTab === 'completed') {
+    where.push('p.status <> ?');
+    params.push('GDTTKD_EVALUATING');
+  }
   if (scope.roleKey === REVIEW_ROLE.GDTTKD && safeTab !== 'pending') {
     where.push(branchClause(scope.branchIds, params));
   }
@@ -410,7 +414,7 @@ const loadProposal = async (id) => {
 };
 
 const assertRole = (scope, allowed) => {
-  if (scope.isSuperAdmin) return;
+  if (scope.isSuperAdmin || scope.isAdmin) return;
   if (!scope.roleKey || !allowed.includes(scope.roleKey)) {
     throw err('Bạn không có quyền thực hiện thao tác này', 403);
   }
