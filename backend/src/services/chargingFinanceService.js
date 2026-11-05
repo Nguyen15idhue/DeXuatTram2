@@ -81,7 +81,8 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     transactionStarted = true;
     const [stations] = await connection.query(
       `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status, cs.deposit_status, cs.payment_status,
-              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu
+              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
+              p.tong_gia_tri_chot
          FROM charging_stations cs
          JOIN station_proposals p ON p.id = cs.proposal_id
         WHERE cs.id = ? FOR UPDATE`,
@@ -96,12 +97,14 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
 
     const [[totals]] = await connection.query(
       `SELECT COALESCE(SUM(CASE WHEN invoice_type = 'DEPOSIT' THEN amount ELSE 0 END), 0) AS deposit_total,
+              COALESCE(SUM(CASE WHEN invoice_type = 'PAYMENT' THEN amount ELSE 0 END), 0) AS payment_total,
               COALESCE(SUM(CASE WHEN invoice_type = 'REFUND' THEN amount ELSE 0 END), 0) AS refund_total
          FROM charging_station_invoices
         WHERE charging_station_id = ?`,
       [id]
     );
     const depositTotal = Number(totals.deposit_total);
+    const paymentTotal = Number(totals.payment_total);
     const refundTotal = Number(totals.refund_total);
     const statusChanges = {};
     let nextDepositStatus = station.deposit_status;
@@ -116,7 +119,6 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
       if (!readiness.isDepositReceived(station.deposit_status)) {
         throw err('Chưa có đặt cọc. Vui lòng tạo hóa đơn cọc trước rồi mới tạo hóa đơn thanh toán', 409);
       }
-      if (station.payment_status === 'NOT') nextPaymentStatus = 'DOING';
     } else {
       if (model !== 'LK') throw err('Chỉ mô hình Liên kết được hoàn cọc', 400);
       if (station.status !== 'OPERATING' || station.sub_status !== 'ACTIVE') {
@@ -129,6 +131,20 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
         throw err('Số tiền hoàn vượt quá tổng tiền cọc đã nhận', 400);
       }
       nextDepositStatus = refundTotal + amount >= depositTotal ? 'REFUNDED' : 'REFUND_PENDING';
+    }
+
+    const contractAmount = Number(station.tong_gia_tri_chot) || 0;
+    let newDepositTotal = depositTotal;
+    let newPaymentTotal = paymentTotal;
+    let newRefundTotal = refundTotal;
+    if (invoiceType === 'DEPOSIT') newDepositTotal += amount;
+    else if (invoiceType === 'PAYMENT') newPaymentTotal += amount;
+    else if (invoiceType === 'REFUND') newRefundTotal += amount;
+    const netReceived = newDepositTotal + newPaymentTotal - newRefundTotal;
+    if (contractAmount > 0) {
+      if (netReceived <= 0) nextPaymentStatus = 'NOT';
+      else if (netReceived >= contractAmount) nextPaymentStatus = 'DONE';
+      else nextPaymentStatus = 'DOING';
     }
 
     if (evidenceFileId) {
@@ -203,6 +219,9 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
       });
       await chargingStationService.advanceToDeliveryIfReady(connection, { id }, ctx);
     }
+    if (invoiceType === 'DEPOSIT') {
+      await chargingStationService.advanceProposalToDeploying(proposalId, ctx);
+    }
     await connection.commit();
     transactionStarted = false;
   } catch (error) {
@@ -210,10 +229,6 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     throw error;
   } finally {
     connection.release();
-  }
-
-  if (invoiceType === 'DEPOSIT') {
-    await chargingStationService.advanceProposalToDeploying(station.proposal_id, ctx);
   }
 
   const [rows] = await pool.query(
