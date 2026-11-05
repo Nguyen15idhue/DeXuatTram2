@@ -249,17 +249,17 @@ exports.update = async (req, res) => {
     if (denyOutsideBranch(existing, await scopeFor(req))) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
-    if (req.user.role !== 'SUPER_ADMIN' && Number(existing.user_id) !== Number(req.user.id)) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'SALES'].includes(req.user.role) && Number(existing.user_id) !== Number(req.user.id)) {
       return res.status(403).json({
         success: false,
-        message: 'Chỉ chủ đề xuất được sửa khi có yêu cầu cập nhật; cấp trên không được sửa thay.'
+        message: 'Chỉ chủ đề xuất, SALES, ADMIN hoặc SUPER_ADMIN được sửa khi có yêu cầu cập nhật; cấp trên không được sửa thay.'
       });
     }
-    if (req.user.role !== 'SUPER_ADMIN'
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)
       && !await require('../services/proposalRequestService').hasOpenOwnerUpdateRequest(id)) {
       return res.status(403).json({
         success: false,
-        message: 'Đề xuất chỉ được chỉnh sửa khi có yêu cầu cập nhật thông tin. Chỉ SUPER_ADMIN được sửa ở mọi thời điểm.'
+        message: 'Đề xuất chỉ được chỉnh sửa khi có yêu cầu cập nhật thông tin. ADMIN và SUPER_ADMIN được sửa ở mọi thời điểm.'
       });
     }
 
