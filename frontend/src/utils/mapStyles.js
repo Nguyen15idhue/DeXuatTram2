@@ -191,7 +191,7 @@ function keepHybridLayer(layer) {
 function localizeLabelField(layer) {
   if (layer.type !== 'symbol' || !layer.layout || !layer.layout['text-field']) return;
   if (/shield|one_way/.test(layer.id)) return;
-  layer.layout['text-field'] = ['coalesce', ['get', 'name:vi'], ['get', 'name'], layer.layout['text-field']];
+  layer.layout['text-field'] = ['coalesce', ['get', 'name:vi'], ['get', 'name_en'], ['get', 'name:en'], ['get', 'name']];
 }
 
 export function buildHybridStyle(baseStyle, options = {}) {
@@ -238,6 +238,15 @@ export function buildHybridStyle(baseStyle, options = {}) {
   };
 }
 
+export function buildStreetsStyle(baseStyle) {
+  if (!baseStyle || !Array.isArray(baseStyle.layers)) return null;
+  const clone = JSON.parse(JSON.stringify(baseStyle));
+  (clone.layers || []).forEach((layer) => {
+    localizeLabelField(layer);
+  });
+  return clone;
+}
+
 export function buildMapStyle(mode, options = {}) {
   const { styleUrl, pmtilesUrl } = options;
   const m = mode || DEFAULT_MODE;
@@ -267,6 +276,11 @@ export function buildMapStyle(mode, options = {}) {
         { id: 'labels', type: 'raster', source: 'labels' },
       ],
     };
+  }
+
+  if (m === 'streets' && options.libertyBase) {
+    const localized = buildStreetsStyle(options.libertyBase);
+    if (localized) return localized;
   }
 
   if (pmtilesUrl) return buildPmtilesStyle(pmtilesUrl) || OPENFREEMAP_STYLES.streets;
