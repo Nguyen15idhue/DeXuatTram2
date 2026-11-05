@@ -170,7 +170,7 @@ exports.getProposalById = async (id) => {
 
 exports.getProposalWithUser = async (id) => {
   const [proposals] = await pool.query(
-    `SELECT p.*, u.full_name as user_name,
+    `SELECT p.*, u.full_name as user_name, u.role AS owner_role,
             EXISTS (
               SELECT 1 FROM proposal_requests r
                WHERE r.proposal_id = p.id AND r.status = 'OPEN'

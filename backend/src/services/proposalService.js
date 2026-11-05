@@ -75,14 +75,7 @@ exports.getProposalFullById = async (id) => {
 };
 
 const resolveInitialStatus = async (formId) => {
-  if (!formId) return 'GRADING';
-  const [rows] = await pool.query(
-    "SELECT purpose, is_default FROM forms WHERE id = ? AND entity = 'station_proposals' AND status = 'active' LIMIT 1",
-    [formId]
-  );
-  if (rows.length === 0) return 'GRADING';
-  const isQuickCreate = rows[0].purpose === 'create' && Number(rows[0].is_default) === 0;
-  return isQuickCreate ? 'PENDING' : 'GRADING';
+  return 'PENDING';
 };
 
 exports.createProposal = async (userId, data, opts = {}) => {
@@ -98,14 +91,6 @@ exports.createProposal = async (userId, data, opts = {}) => {
   const customData = Object.keys(customDataObj).length > 0 ? JSON.stringify(customDataObj) : null;
 
   let initialStatus = opts.initialStatus || await resolveInitialStatus(opts.formId);
-  if (!opts.initialStatus) {
-    try {
-      const [ownerRows] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
-      if (ownerRows.length > 0 && ownerRows[0].role === 'CTV') {
-        initialStatus = 'PENDING';
-      }
-    } catch { /* silent */ }
-  }
   const provinceForZone = String(fixedData.province ?? dynamicData.province ?? '').trim();
   const radiusForZone = proximityService.getMinProposalDistanceM(provinceForZone);
   const nearbyForZone = await proximityService.checkNearby(Number(fixedData.latitude), Number(fixedData.longitude), radiusForZone);

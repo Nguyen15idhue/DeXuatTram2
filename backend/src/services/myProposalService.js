@@ -88,13 +88,16 @@ exports.getUserProposals = async (userId, status, search, page, limit, columnFil
 exports.getProposalById = async (id) => {
   const [proposals] = await pool.query(
     `SELECT p.*,
+            u.role AS owner_role,
             EXISTS (
               SELECT 1 FROM proposal_requests r
                WHERE r.proposal_id = p.id AND r.status = 'OPEN'
                  AND r.request_type IN ('SUPPLEMENT','UPDATE_INFO','LAYOUT_SUPPLEMENT','REVISE_BCDX')
                  AND r.target_user_id = p.user_id
             ) AS owner_update_request_open
-       FROM station_proposals p WHERE p.id = ?`,
+       FROM station_proposals p
+       LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.id = ?`,
     [id]
   );
   if (proposals.length === 0) return null;
