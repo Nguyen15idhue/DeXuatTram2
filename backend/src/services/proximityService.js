@@ -59,10 +59,10 @@ exports.getMinProposalDistanceM = (province) => {
 
 async function loadPoints() {
   const [stations] = await pool.query(
-    'SELECT id, name, latitude, longitude, status, custom_data FROM stations'
+    "SELECT id, name, latitude, longitude, status, custom_data FROM stations WHERE status IN ('DEPLOYING', 'ACTIVE')"
   );
   const [proposals] = await pool.query(
-    "SELECT id, owner_name, latitude, longitude, status, user_id, custom_data FROM station_proposals WHERE status NOT IN ('REJECTED', 'CANCELLED')"
+    "SELECT id, owner_name, latitude, longitude, status, user_id, custom_data FROM station_proposals WHERE status NOT IN ('CANCELLED', 'ARCHIVED', 'REJECTED')"
   );
   return {
     stations: stations.map(s => ({
