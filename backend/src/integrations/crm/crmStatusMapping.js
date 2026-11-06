@@ -7,7 +7,7 @@
 
 // ---------- Inbound: CRM -> TMT-EGREEN ----------
 
-// CRM classify values -> TMT-EGREEN customer_classification
+// CRM classify values -> TMT-EGREEN customer_classification (identity)
 const CRM_CLASSIFY_TO_TMT = {
   'Quan tâm': 'Quan tâm',
   'Tiềm năng': 'Tiềm năng',
@@ -21,16 +21,6 @@ const CRM_STATUS_TO_STAGE = {
   // Thêm mapping mới ở đây khi CRM gửi thêm status
 };
 
-// CRM channel/contact/classify/saleResult valid values (form "Ghi nhận liên hệ" của CRM).
-// Hiện chưa có danh sách chính thức -> để rỗng, user cập nhật sau.
-const CRM_CARE_VALUES = {
-  channel: [],   // vd: ['Gọi điện', 'Zalo', 'SMS']
-  contact: [],   // vd: ['Liên hệ thành công', 'Không liên lạc được']
-  classify: [],  // vd: ['Quan tâm', 'Tiềm năng', ...]
-  saleResult: [],// vd: ['Đặt cọc', 'Mua xe', 'Không mua']
-  reason: []     // vd: ['Sai số điện thoại', 'Chọn hãng khác']
-};
-
 // ---------- Outbound: TMT-EGREEN -> CRM ----------
 
 // TMT-EGREEN lead stage -> CRM status code
@@ -40,6 +30,7 @@ const TMT_STAGE_TO_CRM = {
   'CSKH': 'contacted',
   'QUALIFIED': 'interested',
   'TVBH': 'interested',
+  // 'test_drive' và 'deposit' chưa có stage tương ứng trong TMT-EGREEN — cập nhật sau nếu thêm stage
 };
 
 // TMT-EGREEN sales_outcome -> CRM status code
@@ -49,7 +40,44 @@ const TMT_OUTCOME_TO_CRM = {
   'CANCELLED': 'lost',
 };
 
-// Milestone note templates (used in lead.care events)
+// TMT-EGREEN customer_classification -> CRM status code (cho lead.result khi bad_quality)
+const TMT_CLASSIFICATION_TO_CRM = {
+  'KHONG_CHAT_LUONG': 'bad_quality',
+  'Không chất lượng': 'bad_quality',
+};
+
+// ---------- lead.care valid values (CRM form "Ghi nhận liên hệ") ----------
+
+// Giá trị đã biết từ spec CRM + TMT-EGREEN. Mảng rỗng = chưa có danh sách → chấp nhận mọi giá trị.
+const CRM_CARE_VALUES = {
+  channel: ['Gọi điện'],                          // known (CRM sample)
+  contact: ['Liên hệ thành công', 'Không liên lạc được'],  // known (spec CRM)
+  classify: ['Quan tâm', 'Tiềm năng', 'Theo dõi thêm', 'Không chất lượng'],  // identity with TMT-EGREEN
+  saleResult: [],  // TODO: chưa có danh sách từ CRM — user cập nhật sau
+  reason: []       // TODO: chưa có danh sách từ CRM — user cập nhật sau
+};
+
+// Giá trị mặc định khi không có giá trị hợp lệ (user cập nhật sau)
+const CRM_CARE_DEFAULTS = {
+  channel: 'Gọi điện',            // default
+  contact: 'Liên hệ thành công',  // default
+  classify: 'Tiềm năng',          // default
+  saleResult: '',                 // default empty (ít nhất 1 trong contact/classify/saleResult)
+  reason: ''
+};
+
+// Map giá trị care field sang giá trị hợp lệ CRM. Unknown → default.
+function mapCareValue(field, value) {
+  const v = String(value || '').trim();
+  if (!v) return CRM_CARE_DEFAULTS[field] || '';
+  const known = CRM_CARE_VALUES[field] || [];
+  if (known.length === 0) return v;  // chưa có danh sách → chấp nhận as-is
+  if (known.includes(v)) return v;
+  return CRM_CARE_DEFAULTS[field] || '';  // unknown → default
+}
+
+// ---------- Milestone note templates ----------
+
 const MILESTONE_NOTES = {
   assignGdttkd: (name) => `Giao cho GĐTTKD ${name || ''}`.trim(),
   assignGdkv: (name) => `Giao cho GĐKV ${name || ''}`.trim(),
@@ -70,7 +98,7 @@ function mapCrmClassifyToTmt(value) {
 function mapCrmStatusToStage(value) {
   const v = String(value || '').trim();
   if (!v) return null;
-  return CRM_STATUS_TO_STAGE[v] || null; // unknown -> null (caller decides)
+  return CRM_STATUS_TO_STAGE[v] || null;
 }
 
 function mapTmtStageToCrm(stage) {
@@ -81,6 +109,11 @@ function mapTmtStageToCrm(stage) {
 function mapTmtOutcomeToCrm(outcome) {
   const o = String(outcome || '').trim().toUpperCase();
   return TMT_OUTCOME_TO_CRM[o] || null;
+}
+
+function mapTmtClassificationToCrm(classification) {
+  const c = String(classification || '').trim();
+  return TMT_CLASSIFICATION_TO_CRM[c] || null;
 }
 
 function isKnownCrmClassify(value) {
@@ -95,13 +128,17 @@ module.exports = {
   CRM_CLASSIFY_TO_TMT,
   CRM_STATUS_TO_STAGE,
   CRM_CARE_VALUES,
+  CRM_CARE_DEFAULTS,
   TMT_STAGE_TO_CRM,
   TMT_OUTCOME_TO_CRM,
+  TMT_CLASSIFICATION_TO_CRM,
   MILESTONE_NOTES,
   mapCrmClassifyToTmt,
   mapCrmStatusToStage,
   mapTmtStageToCrm,
   mapTmtOutcomeToCrm,
+  mapTmtClassificationToCrm,
+  mapCareValue,
   isKnownCrmClassify,
   isKnownCrmStatus
 };

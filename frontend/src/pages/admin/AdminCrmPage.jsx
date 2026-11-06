@@ -11,8 +11,19 @@ const AdminCrmPage = () => {
   const [logPagination, setLogPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
   const [logFilter, setLogFilter] = useState({ direction: '', status: '', lead_id: '', crm_lead_id: '', date_from: '', date_to: '' });
   const [logDetail, setLogDetail] = useState(null);
+  const [outboxDetail, setOutboxDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState(null);
+
+  const viewOutboxDetail = async (id) => {
+    const res = await fetch(`/api/admin/crm/outbox/${id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    setOutboxDetail(res.data);
+  };
+
+  const cancelOutbox = async (id) => {
+    await fetch(`/api/admin/crm/outbox/${id}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    await loadOutbox();
+  };
 
   const loadConfig = async () => {
     try {
@@ -151,7 +162,11 @@ const AdminCrmPage = () => {
                   <td>{o.crm_lead_id || o.lead_id}</td>
                   <td>{o.status}</td>
                   <td>{o.attempts}</td>
-                  <td>{o.status === 'failed' && <button className="btn btn-xs" onClick={() => retry(o.id)}>Retry</button>}</td>
+                  <td className="flex gap-1">
+                    <button className="btn btn-xs btn-ghost" onClick={() => viewOutboxDetail(o.id)} title="Xem payload">Xem</button>
+                    {o.status === 'failed' && <button className="btn btn-xs" onClick={() => retry(o.id)}>Retry</button>}
+                    {o.status === 'pending' && <button className="btn btn-xs btn-error btn-outline" onClick={() => cancelOutbox(o.id)}>Hủy</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -209,6 +224,37 @@ const AdminCrmPage = () => {
               <button className="join-item btn btn-xs" disabled={logPagination.page >= logPagination.totalPages} onClick={() => loadLogs(logPagination.page + 1)}>»</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {outboxDetail && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-3xl">
+            <h3 className="font-bold text-lg mb-3">Chi tiết outbox #{outboxDetail.id}</h3>
+            <div className="text-sm space-y-2">
+              <div><b>Event ID:</b> {outboxDetail.event_id}</div>
+              <div><b>Event type:</b> {outboxDetail.event_type}</div>
+              <div><b>Lead ID:</b> {outboxDetail.lead_id} | <b>CRM Lead ID:</b> {outboxDetail.crm_lead_id}</div>
+              <div><b>Status:</b> {outboxDetail.status} | <b>Attempts:</b> {outboxDetail.attempts}</div>
+              <div><b>Created:</b> {outboxDetail.created_at} | <b>Sent:</b> {outboxDetail.sent_at || '—'}</div>
+              <div><b>Next retry:</b> {outboxDetail.next_retry_at || '—'}</div>
+              {outboxDetail.last_error && <div className="alert alert-error text-xs">{outboxDetail.last_error}</div>}
+              <div>
+                <b>Payload:</b>
+                <pre className="bg-base-200 p-2 rounded text-xs overflow-auto max-h-60">{JSON.stringify(outboxDetail.payload, null, 2)}</pre>
+              </div>
+              {outboxDetail.response && (
+                <div>
+                  <b>Response:</b>
+                  <pre className="bg-base-200 p-2 rounded text-xs overflow-auto max-h-60">{outboxDetail.response}</pre>
+                </div>
+              )}
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-sm" onClick={() => setOutboxDetail(null)}>Đóng</button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setOutboxDetail(null)}></div>
         </div>
       )}
 

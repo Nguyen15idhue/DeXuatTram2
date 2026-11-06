@@ -66,6 +66,28 @@ exports.retryOutbox = async (req, res) => {
   }
 };
 
+exports.getOutboxDetail = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [rows] = await pool.query('SELECT * FROM crm_outbox WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Không tìm thấy event' });
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
+exports.cancelOutbox = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [r] = await pool.query("UPDATE crm_outbox SET status = 'cancelled', last_error = 'Cancelled by admin' WHERE id = ? AND status IN ('pending','failed')", [id]);
+    if (r.affectedRows === 0) return res.status(400).json({ success: false, message: 'Event không ở trạng thái pending/failed' });
+    res.json({ success: true, message: 'Đã hủy event' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
 exports.retryAllOutbox = async (req, res) => {
   try {
     const [r] = await pool.query("UPDATE crm_outbox SET status = 'pending', attempts = 0, next_retry_at = NOW(), last_error = NULL WHERE status IN ('pending','failed')");
