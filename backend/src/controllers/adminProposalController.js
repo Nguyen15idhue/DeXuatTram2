@@ -256,7 +256,7 @@ exports.update = async (req, res) => {
       });
     }
     if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)
-      && !['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(existing.status)
+      && !['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(existing.status)
       && !await require('../services/proposalRequestService').hasOpenOwnerUpdateRequest(id)) {
       return res.status(403).json({
         success: false,

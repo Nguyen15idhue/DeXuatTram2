@@ -975,7 +975,7 @@ const AdminProposalsPage = () => {
       </button>
     );
     if (isAdmin || isSales || user?.role === 'NPP') {
-      const editableStatuses = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'];
+      const editableStatuses = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'];
       const canEditProposalInfo =
         isSuperAdmin
         || editableStatuses.includes(row.status)
