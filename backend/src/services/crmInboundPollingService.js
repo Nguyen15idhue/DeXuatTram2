@@ -40,10 +40,15 @@ const pollOnce = async () => {
       const url = `${CRM_API_BASE}/leads?limit=${POLL_LIMIT}` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
       const res = await fetch(url, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' }
+        headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json', 'Accept': 'application/json' }
       });
       if (!res.ok) {
         return { processed: totalProcessed, error: `HTTP ${res.status}` };
+      }
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        return { processed: totalProcessed, error: `CRM trả về ${contentType}, không phải JSON: ${text.slice(0, 100)}` };
       }
       const body = await res.json();
       const leads = Array.isArray(body && body.data) ? body.data : [];
