@@ -340,6 +340,54 @@ exports.transition = async (id, to, opts = {}) => {
     console.error(`[ProposalNotifications] Failed to notify proposal ${id} after transition to ${to}:`, error);
   }
 
+  // CRM outbound: notify milestones (best-effort)
+  try {
+    if (proposal.journey_id) {
+      const [leadRows] = await pool.query('SELECT id, external_crm_id FROM leads WHERE journey_id = ? LIMIT 1', [proposal.journey_id]);
+      const lead = leadRows[0];
+      const crmLeadId = lead && lead.external_crm_id;
+      if (crmLeadId) {
+        const crmOutboundService = require('./crmOutboundService');
+        const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+        const code = notificationService.proposalCode(proposal.custom_data, id);
+        const crmActorName = source === 'system_auto'
+          ? 'Hệ thống'
+          : ((await notificationService.getUserName(actorId)) || 'Hệ thống');
+        if (to === 'APPROVED' && proposal.signed_file_id) {
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_signed_${id}`,
+            eventType: 'lead.care',
+            leadId: lead.id,
+            crmLeadId,
+            payload: { leadId: crmLeadId, note: crmStatusMapping.MILESTONE_NOTES.signedFileUploaded, staff: crmActorName, ref: code }
+          });
+        }
+        if (to === 'CONTRACT_SIGNED') {
+          let value = null;
+          try { value = proposal.custom_data ? JSON.parse(proposal.custom_data).tong_gia_tri_chot : null; } catch { value = null; }
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_contract_${id}`,
+            eventType: 'lead.result',
+            leadId: lead.id,
+            crmLeadId,
+            payload: { leadId: crmLeadId, status: 'won', value, note: crmStatusMapping.MILESTONE_NOTES.contractSigned, ref: code }
+          });
+        }
+        if (to === 'ACTIVE') {
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_on_${id}`,
+            eventType: 'lead.result',
+            leadId: lead.id,
+            crmLeadId,
+            payload: { leadId: crmLeadId, status: 'won', note: crmStatusMapping.MILESTONE_NOTES.stationOn, ref: code }
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[CrmOutbound] Failed to enqueue for proposal ${id} transition to ${to}:`, error.message);
+  }
+
   let stationCreated = null;
   let stationCreateError = null;
   if (!isResumeTransition && to === 'CONTRACT_SIGNED') {
@@ -1143,6 +1191,15 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
   const [ownerRows] = await pool.query('SELECT role FROM users WHERE id = ?', [proposal.user_id]);
   const ownerIsCtv = ownerRows.length > 0 && ownerRows[0].role === 'CTV';
   const supplementStatuses = await exports.getEnabledSupplementStatuses();
+  // Đảm bảo PENDING luôn có supplement_deadline_at để cho phép xác nhận duyệt
+  if (!proposal.supplement_deadline_at && proposal.status === 'PENDING') {
+    await pool.query(
+      'UPDATE station_proposals SET supplement_deadline_at = COALESCE(transition_deadline_at, DATE_ADD(NOW(), INTERVAL 3 DAY)) WHERE id = ?',
+      [id]
+    );
+    const [refreshed] = await pool.query('SELECT supplement_deadline_at FROM station_proposals WHERE id = ?', [id]);
+    proposal.supplement_deadline_at = refreshed[0]?.supplement_deadline_at || null;
+  }
   if (!proposal.supplement_deadline_at || !supplementStatuses.includes(proposal.status)) {
     throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
   }

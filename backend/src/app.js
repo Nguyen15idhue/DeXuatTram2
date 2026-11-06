@@ -55,6 +55,9 @@ const adminAssistantRoutes = require('./routes/adminAssistant');
 const adminDocumentsRoutes = require('./routes/adminDocuments');
 const adminHelpVideosRoutes = require('./routes/adminHelpVideos');
 const assistantRoutes = require('./routes/assistant');
+const crmPartnerRoutes = require('./routes/crmPartner');
+const crmConfigRoutes = require('./routes/crmConfig');
+const { crmWebhookLimiter } = require('./middlewares/rateLimits');
 const evReportsRoutes = require('./routes/evReports');
 const proposalSheetSyncRoutes = require('./routes/proposalSheetSync');
 const signaturesRoutes = require('./routes/signatures');
@@ -62,6 +65,8 @@ const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 const importWorker = require('./workers/importWorker');
 const evReportSheetSyncWorker = require('./workers/evReportSheetSyncWorker');
 const proposalSheetSyncWorker = require('./workers/proposalSheetSyncWorker');
+const crmInboundPollingWorker = require('./workers/crmInboundPollingWorker');
+const crmOutboundWorker = require('./workers/crmOutboundWorker');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -82,7 +87,7 @@ app.use(cors({
 // 3. Body parser với size limit — Chống payload attacks
 // Import Excel confirm gửi cả mảng rows (500 dòng ~ MB) nên nâng lên 50mb;
 // nginx (client_max_body_size 210m) vẫn là lớp chặn ngoài.
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '50mb', verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Body parse errors return JSON instead of the default Express HTML page.
@@ -179,6 +184,8 @@ app.use('/api/admin/help/videos', adminLimiter, adminHelpVideosRoutes);
 app.use('/api/admin/assistant', adminLimiter, adminAssistantRoutes);
 app.use('/api/admin/documents', adminLimiter, adminDocumentsRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/v1/partner', crmWebhookLimiter, crmPartnerRoutes);
+app.use('/api/admin/crm', adminLimiter, crmConfigRoutes);
 app.use('/tiles', tilesRoutes);
 
 // Health check
@@ -201,6 +208,12 @@ app.listen(PORT, '0.0.0.0', () => {
   });
   proposalSheetSyncWorker.start().catch((err) => {
     console.error('[ProposalSheetSyncWorker] start error:', err.message);
+  });
+  crmInboundPollingWorker.start().catch((err) => {
+    console.error('[CrmInboundPollingWorker] start error:', err.message);
+  });
+  crmOutboundWorker.start().catch((err) => {
+    console.error('[CrmOutboundWorker] start error:', err.message);
   });
 });
 

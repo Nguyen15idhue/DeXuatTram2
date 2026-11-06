@@ -272,7 +272,7 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
   const infoSvc = (updateService && updateService.confirmInfo) ? updateService : adminProposalService;
   const showInfoConfirm = entity === 'station_proposals'
     && record && record.id
-    && record.supplement_deadline_at
+    && (record.supplement_deadline_at || record.status === 'PENDING')
     && confirmStatuses.includes(record.status)
     && allowEdit;
   const infoCompleted = !!(record && record.info_completed_at);

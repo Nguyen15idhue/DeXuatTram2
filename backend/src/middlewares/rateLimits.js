@@ -80,4 +80,12 @@ const assistantFileLimiter = rateLimit({
   legacyHeaders: false
 });
 
-module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, assistantLimiter, assistantFileLimiter };
+const crmWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { success: false, message: 'Quá nhiều yêu cầu webhook, vui lòng thử lại sau' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+module.exports = { authLimiter, adminLimiter, excelLimiter, guestSubmitLimiter, guestUploadLimiter, guestTrackLimiter, publicDataLimiter, geocodeLimiter, assistantLimiter, assistantFileLimiter, crmWebhookLimiter };

@@ -58,6 +58,7 @@ const AdminRolesPage = lazy(() => import('./pages/admin/AdminRolesPage'));
 const AdminAuditLogPage = lazy(() => import('./pages/admin/AdminAuditLogPage'));
 const AdminHelpPage = lazy(() => import('./pages/admin/AdminHelpPage'));
 const AdminDocumentsPage = lazy(() => import('./pages/admin/AdminDocumentsPage'));
+const AdminCrmPage = lazy(() => import('./pages/admin/AdminCrmPage'));
 const AdminChargingStationsPage = lazy(() => import('./pages/admin/AdminChargingStationsPage'));
 const AdminChargingStationDetailPage = lazy(() => import('./pages/admin/AdminChargingStationDetailPage'));
 const AdminComingSoonPage = lazy(() => import('./pages/admin/AdminComingSoonPage'));
@@ -398,6 +399,7 @@ function App() {
             <Route path="/admin/roles" element={<RoleRoute allowed={SUPER_ONLY}><AdminRolesPage /></RoleRoute>} />
             <Route path="/admin/help" element={<RoleRoute allowed={SUPER_ONLY}><AdminHelpPage /></RoleRoute>} />
             <Route path="/admin/documents" element={<RoleRoute allowed={SUPER_ONLY}><AdminDocumentsPage /></RoleRoute>} />
+            <Route path="/admin/crm" element={<RoleRoute allowed={SUPER_ONLY}><AdminCrmPage /></RoleRoute>} />
             <Route path="/admin/audit-log" element={<RoleRoute allowed={ADMIN_AND_SALES}><AdminAuditLogPage /></RoleRoute>} />
             <Route path="/admin/huong-dan" element={<HelpPage />} />
           </Route>

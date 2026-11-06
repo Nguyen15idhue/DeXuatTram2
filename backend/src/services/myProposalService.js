@@ -115,8 +115,11 @@ exports.getProposalByIdAndUser = async (id, userId) => {
   return existing.length > 0 ? existing[0] : null;
 };
 
+const OWNER_EDITABLE_STATUSES = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'];
+
 const assertOwnerEditable = async (proposalId, status, actorRole) => {
   if (actorRole === 'SUPER_ADMIN') return;
+  if (OWNER_EDITABLE_STATUSES.includes(status)) return;
   if (await require('./proposalRequestService').hasOpenOwnerUpdateRequest(proposalId)) return;
   const proposalLifecycle = require('./proposalLifecycle');
   const step = proposalLifecycle.STATUS_STEP_LABELS[status];

@@ -42,6 +42,7 @@ export function getSupplementStatuses(config) {
   const rules = config && Array.isArray(config.rules) ? config.rules : null;
   if (!rules) return FALLBACK_SUPPLEMENT_STATUSES;
   const enabled = rules.filter((r) => r && r.status && partEnabled(r.supplement)).map((r) => r.status);
+  if (!enabled.includes('PENDING')) enabled.unshift('PENDING');
   return enabled.length > 0 ? enabled : FALLBACK_SUPPLEMENT_STATUSES;
 }
 

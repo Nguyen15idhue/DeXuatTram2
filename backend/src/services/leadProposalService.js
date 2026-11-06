@@ -89,6 +89,24 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
   });
   await journeySyncService.recomputeStage(lead.journey_id);
 
+  // CRM outbound: notify proposal created
+  try {
+    const crmLeadId = lead.external_crm_id || null;
+    if (crmLeadId) {
+      const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+      const maDeXuat = (proposal && (proposal.ma_de_xuat || proposal.custom_data?.ma_de_xuat)) || `DX${proposalId}`;
+      const crmOutboundService = require('./crmOutboundService');
+      await crmOutboundService.enqueue({
+        eventId: `eg_${leadId}_proposal_${proposalId}`,
+        eventType: 'lead.care',
+        leadId,
+        crmLeadId,
+        payload: { leadId: crmLeadId, note: crmStatusMapping.MILESTONE_NOTES.proposalCreated(maDeXuat), staff: actor.full_name || '', ref: `EG-${leadId}` }
+      });
+    }
+  } catch { /* silent */ }
+
+
   if (idemKey) {
     ttlCache.set(`leadprop:${leadId}:${String(idemKey).slice(0, 128)}`, proposalId, 10 * 60 * 1000);
   }
