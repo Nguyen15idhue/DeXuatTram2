@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
+// Chiều cao page (pt) override — null để dùng page height từ tài liệu
+const PAGE_HEIGHT_PT_OVERRIDE = 920;
+
 const getFileType = (file) => {
   const name = String(file?.name || file?.original_name || '').toLowerCase();
   const mime = String(file?.mime_type || '').toLowerCase();
@@ -205,10 +208,21 @@ const ProposalDocumentPages = forwardRef(({
             section.dataset.docxSection = String(index + 1);
             const style = getComputedStyle(section);
             const rect = section.getBoundingClientRect();
-            const pageHeight = Number.parseFloat(style.minHeight)
-              || Number.parseFloat(section.style.minHeight)
-              || rect.height
-              || 1122.5;
+            const rawMinHeight = style.minHeight || section.style.minHeight || '';
+            let pageHeight;
+            if (PAGE_HEIGHT_PT_OVERRIDE) {
+              pageHeight = PAGE_HEIGHT_PT_OVERRIDE * (96 / 72);
+            } else {
+              const ptMatch = String(rawMinHeight).match(/^([\d.]+)pt$/i);
+              const pxMatch = String(rawMinHeight).match(/^([\d.]+)px$/i);
+              if (ptMatch) pageHeight = parseFloat(ptMatch[1]) * (96 / 72);
+              else if (pxMatch) pageHeight = parseFloat(pxMatch[1]);
+              else if (rawMinHeight) {
+                const n = parseFloat(rawMinHeight);
+                if (Number.isFinite(n) && n > 0) pageHeight = n;
+              }
+              if (!pageHeight || pageHeight < 100) pageHeight = 842 * (96 / 72);
+            }
             const sectionHeight = Math.max(pageHeight, rect.height);
             const pageCount = Math.max(
               1,

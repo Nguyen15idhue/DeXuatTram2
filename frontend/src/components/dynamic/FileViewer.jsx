@@ -181,10 +181,12 @@ const FileViewer = ({
             if (!docxContainerRef.current)
               throw new Error("Không tìm thấy vùng xem trước tài liệu");
             docxContainerRef.current.innerHTML = "";
+            await new Promise((r) => requestAnimationFrame(() => r()));
             await renderAsync(buf, docxContainerRef.current, null, {
               className: "approval-docx",
               breakPages: true,
             });
+            if (docxContainerRef.current) docxContainerRef.current.scrollTop = 0;
             setDocxRenderVersion((version) => version + 1);
           } catch (renderError) {
             if (inline) throw renderError;
@@ -406,6 +408,7 @@ const FileViewer = ({
           <div
             ref={docxContainerRef}
             className="approval-docx-container min-w-full"
+            style={{ minHeight: "1px" }}
           />
           {loading && (
             <div className="p-4 text-center text-base-content">

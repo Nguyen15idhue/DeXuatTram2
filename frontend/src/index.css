@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @plugin "daisyui";
 
 /* Override Tailwind v4 preflight for Leaflet */
@@ -678,3 +678,10 @@ aside nav::-webkit-scrollbar-thumb {
   .re-hide-sm { display: none; }
   .re-panel { width: 100%; flex-basis: 100%; }
 }
+
+/* DOCX page break visualization */
+.approval-docx-container { counter-reset: docx-page; }
+.approval-docx-container section.approval-docx { box-shadow: 0 0 0 1px #94a3b8, 0 4px 16px rgba(0,0,0,0.12); margin: 16px auto; background: #fff; border-radius: 6px; position: relative; counter-increment: docx-page; }
+.approval-docx-container section.approval-docx::before { content: 'Trang ' counter(docx-page); position: absolute; top: -22px; left: 8px; font-size: 11px; font-weight: 600; color: #475569; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; border: 1px solid #cbd5e1; }
+.approval-docx-container section.approval-docx:not(:last-child) { border-bottom: 3px dashed #64748b; }
+.approval-docx-container section.approval-docx:not(:last-child)::after { content: '--- Hết trang ---'; display: block; text-align: center; font-size: 11px; color: #64748b; margin-top: 8px; border-top: 1px dashed #cbd5e1; padding-top: 6px; }
