@@ -1,14 +1,27 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { useAuth } from "../../contexts/AuthContext";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
+// Chiều cao = chiều rộng × tỉ lệ (null = dùng page height từ tài liệu)
+const PAGE_ASPECT_RATIO = 1.55; // vd: 1.414 = A4 portrait (842/595.35). Đặt null để dùng page height từ tài liệu.
 const getFileType = (file) => {
-  const name = String(file?.name || file?.original_name || '').toLowerCase();
-  const mime = String(file?.mime_type || '').toLowerCase();
-  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
-  if (mime.includes('word') || mime.includes('officedocument.wordprocessingml') || name.endsWith('.docx')) return 'docx';
-  return 'unsupported';
+  const name = String(file?.name || file?.original_name || "").toLowerCase();
+  const mime = String(file?.mime_type || "").toLowerCase();
+  if (mime.includes("pdf") || name.endsWith(".pdf")) return "pdf";
+  if (
+    mime.includes("word") ||
+    mime.includes("officedocument.wordprocessingml") ||
+    name.endsWith(".docx")
+  )
+    return "docx";
+  return "unsupported";
 };
 
 const PageOverlayContent = ({
@@ -17,14 +30,16 @@ const PageOverlayContent = ({
   showPageLabel,
   top = 0,
   height,
-  children
+  children,
 }) => (
   <div
     data-proposal-overlay-page={pageNumber}
-    className={`pointer-events-none absolute z-20 ${height ? 'left-0 w-full' : 'inset-0'}`}
+    className={`pointer-events-none absolute z-20 ${height ? "left-0 w-full" : "inset-0"}`}
     style={height ? { top: `${top}px`, height: `${height}px` } : undefined}
   >
-    {active && <div className="absolute inset-0 z-10 border-2 border-primary" />}
+    {active && (
+      <div className="absolute inset-0 z-10 border-2 border-primary" />
+    )}
     {showPageLabel && (
       <span className="absolute left-2 top-2 z-20 whitespace-nowrap rounded bg-base-300/90 px-1.5 py-0.5 text-[10px] font-semibold text-base-content">
         Trang {pageNumber}
@@ -34,15 +49,24 @@ const PageOverlayContent = ({
   </div>
 );
 
-const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, renderPageOverlay }) => {
+const PdfPageItem = ({
+  pdf,
+  pageNumber,
+  pageElsRef,
+  activePage,
+  showPageLabel,
+  renderPageOverlay,
+}) => {
   const canvasRef = useRef(null);
   const wrapperRef = useRef(null);
-  const [ratio, setRatio] = useState(1 / 1.414);
+  const [ratio, setRatio] = useState(1 / 1.55);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (wrapper) pageElsRef.current[pageNumber] = wrapper;
-    return () => { delete pageElsRef.current[pageNumber]; };
+    return () => {
+      delete pageElsRef.current[pageNumber];
+    };
   }, [pageNumber, pageElsRef]);
 
   useEffect(() => {
@@ -55,10 +79,13 @@ const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, r
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       setRatio(viewport.width / viewport.height);
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport })
+        .promise;
     };
     render().catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [pdf, pageNumber]);
 
   return (
@@ -80,214 +107,298 @@ const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, r
   );
 };
 
-const ProposalDocumentPages = forwardRef(({
-  file,
-  renderPageOverlay = null,
-  activePage = null,
-  onActivePageChange = null,
-  showPageLabel = false,
-  containerClassName = 'max-h-[75vh] min-h-[50vh] overflow-auto bg-base-200 p-3',
-}, ref) => {
-  const { token } = useAuth();
-  const containerRef = useRef(null);
-  const docxContainerRef = useRef(null);
-  const pdfPageElsRef = useRef({});
-  const [fileType, setFileType] = useState('');
-  const [pdf, setPdf] = useState(null);
-  const [docxPages, setDocxPages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  useImperativeHandle(ref, () => ({
-    scrollToPage(pageNumber) {
-      const target = Number(pageNumber) || 1;
-      const el = pdfPageElsRef.current[target]
-        || containerRef.current?.querySelector(`[data-proposal-overlay-page="${target}"]`)
-        || null;
-      if (el?.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+const ProposalDocumentPages = forwardRef(
+  (
+    {
+      file,
+      renderPageOverlay = null,
+      activePage = null,
+      onActivePageChange = null,
+      showPageLabel = false,
+      containerClassName = "max-h-[75vh] min-h-[50vh] overflow-auto bg-base-200 p-3",
     },
-    scrollToOverlay(pageNumber, signerId = null) {
-      const target = Number(pageNumber) || 1;
-      const pageEl = pdfPageElsRef.current[target]
-        || containerRef.current?.querySelector(`[data-proposal-overlay-page="${target}"]`)
-        || null;
-      if (!pageEl) return;
-      const overlayEl = [...pageEl.querySelectorAll('[data-signer-overlay]')]
-        .find((element) => !signerId || element.dataset.signerOverlayId === String(signerId));
-      (overlayEl || pageEl).scrollIntoView({ behavior: 'smooth', block: 'center' });
-    },
-    getPageCount() {
-      if (fileType === 'pdf') return pdf?.numPages || 0;
-      if (fileType === 'docx') return docxPages.length;
-      return 0;
-    },
-  }), [fileType, pdf, docxPages]);
+    ref,
+  ) => {
+    const { token } = useAuth();
+    const containerRef = useRef(null);
+    const docxContainerRef = useRef(null);
+    const pdfPageElsRef = useRef({});
+    const [fileType, setFileType] = useState("");
+    const [pdf, setPdf] = useState(null);
+    const [docxPages, setDocxPages] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !onActivePageChange || typeof IntersectionObserver === 'undefined') {
-      return undefined;
-    }
-    const pages = [...container.querySelectorAll('[data-proposal-overlay-page]')];
-    if (pages.length === 0) return undefined;
-    const visibleRatios = new Map(pages.map((page) => [page, 0]));
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToPage(pageNumber) {
+          const target = Number(pageNumber) || 1;
+          const el =
+            pdfPageElsRef.current[target] ||
+            containerRef.current?.querySelector(
+              `[data-proposal-overlay-page="${target}"]`,
+            ) ||
+            null;
+          if (el?.scrollIntoView)
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+        },
+        scrollToOverlay(pageNumber, signerId = null) {
+          const target = Number(pageNumber) || 1;
+          const pageEl =
+            pdfPageElsRef.current[target] ||
+            containerRef.current?.querySelector(
+              `[data-proposal-overlay-page="${target}"]`,
+            ) ||
+            null;
+          if (!pageEl) return;
+          const overlayEl = [
+            ...pageEl.querySelectorAll("[data-signer-overlay]"),
+          ].find(
+            (element) =>
+              !signerId || element.dataset.signerOverlayId === String(signerId),
+          );
+          (overlayEl || pageEl).scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        },
+        getPageCount() {
+          if (fileType === "pdf") return pdf?.numPages || 0;
+          if (fileType === "docx") return docxPages.length;
+          return 0;
+        },
+      }),
+      [fileType, pdf, docxPages],
+    );
 
-    const observer = new IntersectionObserver((entries) => {
-      const containerRect = container.getBoundingClientRect();
-      entries.forEach((entry) => {
-        const rect = entry.target.getBoundingClientRect();
-        const visibleHeight = Math.max(
-          0,
-          Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top)
-        );
-        visibleRatios.set(entry.target, visibleHeight / Math.max(1, rect.height));
-      });
-      const candidates = [...visibleRatios.entries()]
-        .map(([element, ratio]) => ({
-          page: Number(element.dataset.proposalOverlayPage),
-          ratio
-        }))
-        .filter((entry) => entry.page > 0 && entry.ratio > 0)
-        .sort((left, right) => right.ratio - left.ratio);
-      if (candidates.length > 0) onActivePageChange(candidates[0].page);
-    }, { root: container, threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
+    useEffect(() => {
+      const container = containerRef.current;
+      if (
+        !container ||
+        !onActivePageChange ||
+        typeof IntersectionObserver === "undefined"
+      ) {
+        return undefined;
+      }
+      const pages = [
+        ...container.querySelectorAll("[data-proposal-overlay-page]"),
+      ];
+      if (pages.length === 0) return undefined;
+      const visibleRatios = new Map(pages.map((page) => [page, 0]));
 
-    pages.forEach((page) => observer.observe(page));
-    return () => observer.disconnect();
-  }, [fileType, pdf, docxPages, onActivePageChange]);
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const containerRect = container.getBoundingClientRect();
+          entries.forEach((entry) => {
+            const rect = entry.target.getBoundingClientRect();
+            const visibleHeight = Math.max(
+              0,
+              Math.min(rect.bottom, containerRect.bottom) -
+                Math.max(rect.top, containerRect.top),
+            );
+            visibleRatios.set(
+              entry.target,
+              visibleHeight / Math.max(1, rect.height),
+            );
+          });
+          const candidates = [...visibleRatios.entries()]
+            .map(([element, ratio]) => ({
+              page: Number(element.dataset.proposalOverlayPage),
+              ratio,
+            }))
+            .filter((entry) => entry.page > 0 && entry.ratio > 0)
+            .sort((left, right) => right.ratio - left.ratio);
+          if (candidates.length > 0) onActivePageChange(candidates[0].page);
+        },
+        { root: container, threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] },
+      );
 
-  useEffect(() => {
-    if (!file?.id) {
+      pages.forEach((page) => observer.observe(page));
+      return () => observer.disconnect();
+    }, [fileType, pdf, docxPages, onActivePageChange]);
+
+    useEffect(() => {
+      if (!file?.id) {
+        setPdf(null);
+        setDocxPages([]);
+        setFileType("");
+        setError("Chưa có file BCĐX");
+        return undefined;
+      }
+      let cancelled = false;
+      let pdfDocument = null;
+      setLoading(true);
+      setError("");
       setPdf(null);
       setDocxPages([]);
-      setFileType('');
-      setError('Chưa có file BCĐX');
-      return undefined;
-    }
-    let cancelled = false;
-    let pdfDocument = null;
-    setLoading(true);
-    setError('');
-    setPdf(null);
-    setDocxPages([]);
-    const type = getFileType(file);
-    setFileType(type);
-    const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/files/${file.id}/download?token=${encodeURIComponent(token || '')}`;
+      const type = getFileType(file);
+      setFileType(type);
+      const url = `${import.meta.env.VITE_API_URL || "http://localhost:3000/api"}/files/${file.id}/download?token=${encodeURIComponent(token || "")}`;
 
-    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.arrayBuffer();
-      })
-      .then(async (buffer) => {
-        if (cancelled) return;
-        if (type === 'pdf') {
-          const pdfjs = await import('pdfjs-dist/build/pdf.mjs');
-          pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-          pdfDocument = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
-          if (!cancelled) setPdf(pdfDocument);
-          return;
-        }
-        if (type === 'docx') {
-          const { renderAsync } = await import('docx-preview');
-          if (!docxContainerRef.current) throw new Error('Không tìm thấy vùng hiển thị tài liệu');
-          docxContainerRef.current.innerHTML = '';
-          await renderAsync(buffer, docxContainerRef.current, null, {
-            className: 'approval-docx',
-            breakPages: true
-          });
-          let sections = [...docxContainerRef.current.querySelectorAll('section.approval-docx')];
-          if (sections.length === 0) sections = [docxContainerRef.current];
-          let pageNumber = 1;
-          const renderedPages = [];
-          sections.forEach((section, index) => {
-            section.style.position = 'relative';
-            section.dataset.docxSection = String(index + 1);
-            const style = getComputedStyle(section);
-            const rect = section.getBoundingClientRect();
-            const pageHeight = Number.parseFloat(style.minHeight)
-              || Number.parseFloat(section.style.minHeight)
-              || rect.height
-              || 1122.5;
-            const sectionHeight = Math.max(pageHeight, rect.height);
-            const pageCount = Math.max(
-              1,
-              Math.ceil((sectionHeight - pageHeight * 0.01) / pageHeight),
-            );
-            section.style.minHeight = `${pageCount * pageHeight}px`;
-            for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-              renderedPages.push({
-                section,
-                pageNumber,
-                top: pageIndex * pageHeight,
-                height: pageHeight,
-              });
-              pageNumber += 1;
-            }
-          });
-          if (!cancelled) setDocxPages(renderedPages);
-          return;
-        }
-        throw new Error('Chỉ hỗ trợ hiển thị file PDF hoặc DOCX');
-      })
-      .catch((loadError) => {
-        if (!cancelled) setError(loadError.message || 'Không tải được tài liệu');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.arrayBuffer();
+        })
+        .then(async (buffer) => {
+          if (cancelled) return;
+          if (type === "pdf") {
+            const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
+            pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+            pdfDocument = await pdfjs.getDocument({
+              data: new Uint8Array(buffer),
+            }).promise;
+            if (!cancelled) setPdf(pdfDocument);
+            return;
+          }
+          if (type === "docx") {
+            const { renderAsync } = await import("docx-preview");
+            if (!docxContainerRef.current)
+              throw new Error("Không tìm thấy vùng hiển thị tài liệu");
+            docxContainerRef.current.innerHTML = "";
+            await renderAsync(buffer, docxContainerRef.current, null, {
+              className: "approval-docx",
+              breakPages: true,
+            });
+            let sections = [
+              ...docxContainerRef.current.querySelectorAll(
+                "section.approval-docx",
+              ),
+            ];
+            if (sections.length === 0) sections = [docxContainerRef.current];
+            let pageNumber = 1;
+            const renderedPages = [];
+            sections.forEach((section, index) => {
+              section.style.position = "relative";
+              section.dataset.docxSection = String(index + 1);
+              const style = getComputedStyle(section);
+              const rect = section.getBoundingClientRect();
+              const rawMinHeight =
+                style.minHeight || section.style.minHeight || "";
+              const rawWidth = style.width || section.style.width || "";
+              let pageWidth = 595.35 * (96 / 72); // A4 portrait width fallback
+              const wPtMatch = String(rawWidth).match(/^([\d.]+)pt$/i);
+              const wPxMatch = String(rawWidth).match(/^([\d.]+)px$/i);
+              if (wPtMatch) pageWidth = parseFloat(wPtMatch[1]) * (96 / 72);
+              else if (wPxMatch) pageWidth = parseFloat(wPxMatch[1]);
+              else if (rawWidth) {
+                const n = parseFloat(rawWidth);
+                if (Number.isFinite(n) && n > 0) pageWidth = n;
+              }
+              if (!pageWidth || pageWidth < 100) pageWidth = 595.35 * (96 / 72);
 
-    return () => {
-      cancelled = true;
-      pdfDocument?.destroy();
-    };
-  }, [file?.id, file?.mime_type, file?.name, file?.original_name, token]);
+              let pageHeight;
+              if (PAGE_ASPECT_RATIO) {
+                pageHeight = pageWidth * PAGE_ASPECT_RATIO;
+              } else {
+                const ptMatch = String(rawMinHeight).match(/^([\d.]+)pt$/i);
+                const pxMatch = String(rawMinHeight).match(/^([\d.]+)px$/i);
+                if (ptMatch) pageHeight = parseFloat(ptMatch[1]) * (96 / 72);
+                else if (pxMatch) pageHeight = parseFloat(pxMatch[1]);
+                else if (rawMinHeight) {
+                  const n = parseFloat(rawMinHeight);
+                  if (Number.isFinite(n) && n > 0) pageHeight = n;
+                }
+                if (!pageHeight || pageHeight < 100)
+                  pageHeight = 842 * (96 / 72);
+              }
+              const sectionHeight = Math.max(pageHeight, rect.height);
+              const pageCount = Math.max(
+                1,
+                Math.ceil((sectionHeight - pageHeight * 0.01) / pageHeight),
+              );
+              section.style.minHeight = `${pageCount * pageHeight}px`;
+            section.style.setProperty('--page-height', `${pageHeight}px`);
+              for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+                renderedPages.push({
+                  section,
+                  pageNumber,
+                  top: pageIndex * pageHeight,
+                  height: pageHeight,
+                });
+                pageNumber += 1;
+              }
+            });
+            if (!cancelled) setDocxPages(renderedPages);
+            return;
+          }
+          throw new Error("Chỉ hỗ trợ hiển thị file PDF hoặc DOCX");
+        })
+        .catch((loadError) => {
+          if (!cancelled)
+            setError(loadError.message || "Không tải được tài liệu");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
 
-  const clampPage = (pageNumber) => Math.min(pageNumber, Math.max(1, pdf?.numPages || docxPages.length || 1));
+      return () => {
+        cancelled = true;
+        pdfDocument?.destroy();
+      };
+    }, [file?.id, file?.mime_type, file?.name, file?.original_name, token]);
 
-  return (
-    <div ref={containerRef} className={containerClassName}>
-      {fileType === 'docx' && (
-        <div
-          ref={docxContainerRef}
-          className="proposal-document-pages-docx min-w-full bg-white"
-        />
-      )}
-      {loading && <div className="flex min-h-[50vh] items-center justify-center"><span className="loading loading-spinner" /></div>}
-      {!loading && error && <div className="alert alert-error">{error}</div>}
-      {!loading && !error && fileType === 'unsupported' && (
-        <div className="alert alert-warning">Chỉ hỗ trợ hiển thị file PDF hoặc DOCX</div>
-      )}
-      {!loading && !error && fileType === 'pdf' && pdf && (
-        Array.from({ length: pdf.numPages }, (_, index) => (
-          <PdfPageItem
-            key={index + 1}
-            pdf={pdf}
-            pageNumber={index + 1}
-            pageElsRef={pdfPageElsRef}
-            activePage={activePage === null ? null : clampPage(activePage)}
-            showPageLabel={showPageLabel}
-            renderPageOverlay={renderPageOverlay}
+    const clampPage = (pageNumber) =>
+      Math.min(pageNumber, Math.max(1, pdf?.numPages || docxPages.length || 1));
+
+    return (
+      <div ref={containerRef} className={containerClassName}>
+        {fileType === "docx" && (
+          <div
+            ref={docxContainerRef}
+            className="proposal-document-pages-docx min-w-full bg-white"
           />
-        ))
-      )}
-      {!loading && !error && fileType === 'docx' && docxPages.map((page) => {
-        return createPortal(
-          <PageOverlayContent
-            pageNumber={page.pageNumber}
-            active={activePage !== null && Number(activePage) === page.pageNumber}
-            showPageLabel={showPageLabel}
-            top={page.top}
-            height={page.height}
-          >
-            {renderPageOverlay ? renderPageOverlay(page.pageNumber) : null}
-          </PageOverlayContent>,
-          page.section,
-          `proposal-page-overlay-${page.pageNumber}`
-        );
-      })}
-    </div>
-  );
-});
+        )}
+        {loading && (
+          <div className="flex min-h-[50vh] items-center justify-center">
+            <span className="loading loading-spinner" />
+          </div>
+        )}
+        {!loading && error && <div className="alert alert-error">{error}</div>}
+        {!loading && !error && fileType === "unsupported" && (
+          <div className="alert alert-warning">
+            Chỉ hỗ trợ hiển thị file PDF hoặc DOCX
+          </div>
+        )}
+        {!loading &&
+          !error &&
+          fileType === "pdf" &&
+          pdf &&
+          Array.from({ length: pdf.numPages }, (_, index) => (
+            <PdfPageItem
+              key={index + 1}
+              pdf={pdf}
+              pageNumber={index + 1}
+              pageElsRef={pdfPageElsRef}
+              activePage={activePage === null ? null : clampPage(activePage)}
+              showPageLabel={showPageLabel}
+              renderPageOverlay={renderPageOverlay}
+            />
+          ))}
+        {!loading &&
+          !error &&
+          fileType === "docx" &&
+          docxPages.map((page) => {
+            return createPortal(
+              <PageOverlayContent
+                pageNumber={page.pageNumber}
+                active={
+                  activePage !== null && Number(activePage) === page.pageNumber
+                }
+                showPageLabel={showPageLabel}
+                top={page.top}
+                height={page.height}
+              >
+                {renderPageOverlay ? renderPageOverlay(page.pageNumber) : null}
+              </PageOverlayContent>,
+              page.section,
+              `proposal-page-overlay-${page.pageNumber}`,
+            );
+          })}
+      </div>
+    );
+  },
+);
 
 export default ProposalDocumentPages;
