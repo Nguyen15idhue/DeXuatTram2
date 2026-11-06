@@ -1347,6 +1347,28 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
     connection.release();
   }
   await advanceProposalToDeploying(proposalId, ctx);
+  // CRM outbound: notify contract signed
+  try {
+    const [propRows] = await pool.query('SELECT journey_id, custom_data FROM station_proposals WHERE id = ?', [proposalId]);
+    const prop = propRows[0];
+    if (prop && prop.journey_id) {
+      const [leadRows] = await pool.query('SELECT id, external_crm_id FROM leads WHERE journey_id = ? LIMIT 1', [prop.journey_id]);
+      const lead = leadRows[0];
+      if (lead && lead.external_crm_id) {
+        let value = null;
+        try { value = prop.custom_data ? JSON.parse(prop.custom_data).tong_gia_tri_chot : null; } catch { value = null; }
+        const crmOutboundService = require('./crmOutboundService');
+        const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+        await crmOutboundService.enqueue({
+          eventId: `eg_${lead.id}_contract_${proposalId}`,
+          eventType: 'lead.result',
+          leadId: lead.id,
+          crmLeadId: lead.external_crm_id,
+          payload: { leadId: lead.external_crm_id, status: 'won', value, note: crmStatusMapping.MILESTONE_NOTES.contractSigned, ref: `EG-${lead.id}` }
+        });
+      }
+    }
+  } catch { /* silent */ }
   return getChargingStationDetail(stationId, user);
 };
 
@@ -2125,6 +2147,28 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
     source: 'admin_override',
     ip: ctx.ip
   });
+  // CRM outbound: notify station ON
+  try {
+    const [propRows] = await pool.query('SELECT journey_id, custom_data FROM station_proposals WHERE id = ?', [current.proposal_id]);
+    const prop = propRows[0];
+    if (prop && prop.journey_id) {
+      const [leadRows] = await pool.query('SELECT id, external_crm_id FROM leads WHERE journey_id = ? LIMIT 1', [prop.journey_id]);
+      const lead = leadRows[0];
+      if (lead && lead.external_crm_id) {
+        const crmOutboundService = require('./crmOutboundService');
+        const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+        let value = null;
+        try { value = prop.custom_data ? JSON.parse(prop.custom_data).tong_gia_tri_chot : null; } catch { value = null; }
+        await crmOutboundService.enqueue({
+          eventId: `eg_${lead.id}_on_${stationId}`,
+          eventType: 'lead.result',
+          leadId: lead.id,
+          crmLeadId: lead.external_crm_id,
+          payload: { leadId: lead.external_crm_id, status: 'won', value, note: crmStatusMapping.MILESTONE_NOTES.stationOn, ref: `EG-${lead.id}` }
+        });
+      }
+    }
+  } catch { /* silent */ }
   return getChargingStationDetail(stationId, user);
 };
 

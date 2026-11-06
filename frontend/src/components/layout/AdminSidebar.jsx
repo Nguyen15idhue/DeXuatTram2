@@ -45,6 +45,7 @@ import {
   Wallet,
   Warehouse,
   FileSpreadsheet,
+  Link2,
 } from "lucide-react";
 import NotificationBell from "./NotificationBell";
 import {
@@ -292,6 +293,12 @@ const configGroups = [
         path: "/admin/documents",
         label: "Quản lý tài liệu",
         icon: FileText,
+        roles: ["SUPER_ADMIN"],
+      },
+      {
+        path: "/admin/crm",
+        label: "Tích hợp CRM",
+        icon: Link2,
         roles: ["SUPER_ADMIN"],
       },
     ],

@@ -407,6 +407,40 @@ exports.updateLead = async (id, data, user, opts = {}) => {
     await conn.beginTransaction();
     const updated = await applyLeadUpdate(conn, lead, data, user, opts);
     await conn.commit();
+    // CRM outbound: notify customer care if history changed
+    try {
+      const crmLeadId = lead.external_crm_id || null;
+      if (crmLeadId) {
+        const beforeCustom = parseCustomData(lead.custom_data);
+        const afterCustom = parseCustomData(updated.custom_data);
+        const beforeCare = (beforeCustom.cskh_history || []).length + (beforeCustom.tvbh_history || []).length;
+        const afterCare = (afterCustom.cskh_history || []).length + (afterCustom.tvbh_history || []).length;
+        if (afterCare > beforeCare) {
+          const crmOutboundService = require('./crmOutboundService');
+          const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+          // find the latest care entry
+          const allAfter = [...(afterCustom.cskh_history || []), ...(afterCustom.tvbh_history || [])];
+          const latest = allAfter[allAfter.length - 1] || {};
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_care_${Date.now()}`,
+            eventType: 'lead.care',
+            leadId: lead.id,
+            crmLeadId,
+            payload: {
+              leadId: crmLeadId,
+              channel: latest.channel || 'Gọi điện',
+              contact: latest.contact || '',
+              classify: latest.classify || '',
+              saleResult: latest.saleResult || '',
+              reason: latest.reason || '',
+              note: latest.note || '',
+              staff: user.full_name || '',
+              ref: `EG-${lead.id}`
+            }
+          });
+        }
+      }
+    } catch { /* silent */ }
     return updated;
   } catch (err) {
     try { await conn.rollback(); } catch { /* silent */ }

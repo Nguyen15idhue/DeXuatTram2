@@ -143,6 +143,25 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
   }, conn);
   const journeySyncService = require('./journeySyncService');
   await journeySyncService.recomputeStage(lead.journey_id, conn);
+  // CRM outbound: notify assignment
+  try {
+    const crmLeadId = lead.external_crm_id || null;
+    if (crmLeadId) {
+      const tcd = parseCustomData(target.custom_data);
+      const isGdttTarget = isGdtt(tcd.chuc_vu, tcd.department || '');
+      const note = isGdttTarget
+        ? `Giao cho GĐTTKD ${target.full_name || ''}`.trim()
+        : `Giao cho GĐKV ${target.full_name || ''}`.trim();
+      const crmOutboundService = require('./crmOutboundService');
+      await crmOutboundService.enqueue({
+        eventId: `eg_${leadId}_assign_${Date.now()}`,
+        eventType: 'lead.care',
+        leadId,
+        crmLeadId,
+        payload: { leadId: crmLeadId, channel: 'Hệ thống', note, staff: target.full_name || '', ref: `EG-${leadId}` }
+      });
+    }
+  } catch { /* silent */ }
   return {
     assignment: { id: ares.insertId, lead_id: Number(leadId), assignee_user_id: targetId, assigned_department: department, assignment_type: type },
     lead: await leadService.getLeadById(leadId),
