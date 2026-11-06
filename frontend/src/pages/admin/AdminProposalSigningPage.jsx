@@ -234,13 +234,18 @@ const AdminProposalSigningPage = () => {
               <p className="text-xs text-base-content/60">
                 Nhấn "Ký ngay" tại ô ký của bạn để đóng dấu chữ ký số đã tải trong hồ sơ cá nhân.
               </p>
+              {detail.can_sign && !detail.has_signature && (
+                <div className="alert alert-warning text-sm py-2">
+                  <span>Bạn chưa tải chữ ký số. Vui lòng vào <a href="/profile" className="link link-primary">Hồ sơ cá nhân</a> để tải chữ ký trước khi ký.</span>
+                </div>
+              )}
               <ProposalSigningDocument
                 ref={docRef}
                 file={detail.report_files?.[0] || null}
                 proposalId={detail.id}
                 myConfig={detail.my_config}
                 signers={detail.signers}
-                canSign={detail.can_sign}
+                canSign={detail.can_sign && detail.has_signature}
                 onSign={handleSign}
                 signing={signing}
               />

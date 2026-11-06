@@ -296,6 +296,11 @@ const buildDetail = async (proposal, scope) => {
   const layoutFiles = toFileSummaries(custom['ban_ve_layout']);
   const revisionRequests = await loadRevisionRequests(proposal.id);
   const myConfig = configs.find((config) => Number(config.user_id) === Number(scope.userId));
+  const [signatureRows] = await pool.query(
+    'SELECT id, file_url FROM signatures WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
+    [scope.userId]
+  );
+  const hasSignature = signatureRows.length > 0;
   return {
     id: proposal.id,
     ma_de_xuat: proposal.ma_de_xuat,
@@ -334,6 +339,8 @@ const buildDetail = async (proposal, scope) => {
         ? SIGN_STATUS.DONE
         : (configs.some((config) => config.status === 'SIGNED') ? SIGN_STATUS.DOING : SIGN_STATUS.PENDING)),
     can_sign: !signatureConfigConflict && !!myConfig && myConfig.status === 'PENDING',
+    has_signature: hasSignature,
+    signature_url: hasSignature ? (signatureRows[0].file_url || null) : null,
     is_my_signed: !!myConfig && myConfig.status === 'SIGNED',
     my_config: myConfig || null
   };
