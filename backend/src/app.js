@@ -215,6 +215,15 @@ app.listen(PORT, '0.0.0.0', () => {
   crmOutboundWorker.start().catch((err) => {
     console.error('[CrmOutboundWorker] start error:', err.message);
   });
+  // Cleanup old webhook logs (120 days) daily at 02:00
+  const runCrmLogCleanup = async () => {
+    try {
+      const crmWebhookLogService = require('./services/crmWebhookLogService');
+      await crmWebhookLogService.cleanupOld(120);
+    } catch (e) { /* silent */ }
+  };
+  setInterval(runCrmLogCleanup, 24 * 60 * 60 * 1000);
+  setTimeout(runCrmLogCleanup, 60 * 1000);
 });
 
 const fileService = require('./services/fileService');

@@ -359,7 +359,17 @@ exports.transition = async (id, to, opts = {}) => {
             eventType: 'lead.care',
             leadId: lead.id,
             crmLeadId,
-            payload: { leadId: crmLeadId, note: crmStatusMapping.MILESTONE_NOTES.signedFileUploaded, staff: crmActorName, ref: code }
+            payload: {
+              leadId: crmLeadId,
+              channel: crmStatusMapping.mapCareValue('channel', ''),
+              contact: crmStatusMapping.mapCareValue('contact', ''),
+              classify: crmStatusMapping.mapCareValue('classify', ''),
+              saleResult: crmStatusMapping.mapCareValue('saleResult', ''),
+              reason: '',
+              note: crmStatusMapping.MILESTONE_NOTES.signedFileUploaded,
+              staff: crmActorName,
+              ref: code
+            }
           });
         }
         if (to === 'CONTRACT_SIGNED') {

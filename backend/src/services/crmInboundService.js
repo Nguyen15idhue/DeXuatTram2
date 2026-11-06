@@ -187,10 +187,10 @@ const upsertLeadFromCrm = async (data, conn) => {
     const crmOutboundService = require('./crmOutboundService');
     await crmOutboundService.enqueue({
       eventId: `eg_${leadId}_received_${Date.now()}`,
-      eventType: 'lead.care',
+      eventType: 'lead.result',
       leadId,
       crmLeadId: crmId,
-      payload: { leadId: crmId, channel: 'Hệ thống', note: 'Đã nhận khách từ CRM', staff: 'Hệ thống', ref: `EG-${leadId}` },
+      payload: { leadId: crmId, status: 'received', note: 'Đã nhận khách từ CRM', staff: 'Hệ thống', ref: `EG-${leadId}` },
       conn
     });
   } catch (e) {
@@ -253,7 +253,17 @@ const autoAssignCrmLead = async (leadId, region, provinceCode, conn) => {
         eventType: 'lead.care',
         leadId,
         crmLeadId,
-        payload: { leadId: crmLeadId, channel: 'Hệ thống', note: `Giao cho GĐTTKD ${gdttkd.full_name || ''}`.trim(), staff: gdttkd.full_name || '', ref: `EG-${leadId}` },
+        payload: {
+          leadId: crmLeadId,
+          channel: 'Gọi điện',                                    // default (CRM care value)
+          contact: 'Liên hệ thành công',                          // default
+          classify: crmStatusMapping.mapCareValue('classify', cls || 'Tiềm năng'),  // mapped (identity)
+          saleResult: '',                                         // TODO: user fills valid CRM saleResult values later
+          reason: '',
+          note: `Giao cho GĐTTKD ${gdttkd.full_name || ''}`.trim(),
+          staff: gdttkd.full_name || '',
+          ref: `EG-${leadId}`
+        },
         conn
       });
     } catch { /* silent */ }

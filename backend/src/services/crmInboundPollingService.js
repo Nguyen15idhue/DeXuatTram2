@@ -43,11 +43,15 @@ const pollOnce = async () => {
         headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json', 'Accept': 'application/json' }
       });
       if (!res.ok) {
+        const crmWebhookLogService = require('./crmWebhookLogService');
+        await crmWebhookLogService.logInbound({ eventId: null, eventType: 'poll', status: 'failed', httpStatus: res.status, error: `HTTP ${res.status}`, durationMs: 0 });
         return { processed: totalProcessed, error: `HTTP ${res.status}` };
       }
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await res.text();
+        const crmWebhookLogService = require('./crmWebhookLogService');
+        await crmWebhookLogService.logInbound({ eventId: null, eventType: 'poll', status: 'failed', httpStatus: res.status, error: `Non-JSON: ${text.slice(0,100)}`, durationMs: 0 });
         return { processed: totalProcessed, error: `CRM trả về ${contentType}, không phải JSON: ${text.slice(0, 100)}` };
       }
       const body = await res.json();
@@ -62,6 +66,8 @@ const pollOnce = async () => {
       }
       cursor = body.nextCursor || null;
       const more = body.more === true;
+      const crmWebhookLogService = require('./crmWebhookLogService');
+      await crmWebhookLogService.logInbound({ eventId: null, eventType: 'poll', status: 'processed', httpStatus: res.status, payload: { cursor: cursor || null, count: leads.length }, response: { nextCursor: cursor, more }, durationMs: 0 });
       if (!more || !cursor) break;
       pages++;
     }

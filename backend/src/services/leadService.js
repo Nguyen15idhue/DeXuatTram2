@@ -428,15 +428,44 @@ exports.updateLead = async (id, data, user, opts = {}) => {
             crmLeadId,
             payload: {
               leadId: crmLeadId,
-              channel: latest.channel || 'Gọi điện',
-              contact: latest.contact || '',
-              classify: latest.classify || '',
-              saleResult: latest.saleResult || '',
+              channel: crmStatusMapping.mapCareValue('channel', latest.channel),
+              contact: crmStatusMapping.mapCareValue('contact', latest.contact),
+              classify: crmStatusMapping.mapCareValue('classify', latest.classify || updated.customer_classification),
+              saleResult: crmStatusMapping.mapCareValue('saleResult', latest.saleResult),
               reason: latest.reason || '',
               note: latest.note || '',
               staff: user.full_name || '',
               ref: `EG-${lead.id}`
             }
+          });
+        }
+      }
+    } catch { /* silent */ }
+    // CRM outbound: notify stage change + bad_quality
+    try {
+      const crmLeadId = lead.external_crm_id || null;
+      if (crmLeadId && updated) {
+        const crmOutboundService = require('./crmOutboundService');
+        const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
+        if (lead.stage !== updated.stage) {
+          const crmStatus = crmStatusMapping.mapTmtStageToCrm(updated.stage);
+          if (crmStatus) {
+            await crmOutboundService.enqueue({
+              eventId: `eg_${lead.id}_stage_${Date.now()}`,
+              eventType: 'lead.result',
+              leadId: lead.id,
+              crmLeadId,
+              payload: { leadId: crmLeadId, status: crmStatus, note: `Trạng thái: ${updated.stage}`, staff: user.full_name || '', ref: `EG-${lead.id}` }
+            });
+          }
+        }
+        if (lead.customer_classification !== updated.customer_classification && normalizeClassification(updated.customer_classification) === 'KHONG_CHAT_LUONG') {
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_badquality_${Date.now()}`,
+            eventType: 'lead.result',
+            leadId: lead.id,
+            crmLeadId,
+            payload: { leadId: crmLeadId, status: 'bad_quality', reason: 'Không chất lượng', note: 'Phân loại: Không chất lượng', staff: user.full_name || '', ref: `EG-${lead.id}` }
           });
         }
       }

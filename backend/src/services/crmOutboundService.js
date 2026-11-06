@@ -94,6 +94,19 @@ const processBatch = async (batchSize = 500) => {
       [JSON.stringify(result.response || {}), ...ids]
     );
     report.sent = batch.length;
+    const crmWebhookLogService = require('./crmWebhookLogService');
+    await crmWebhookLogService.logOutbound({
+      eventId: batch.map((r) => r.event_id).join(','),
+      eventType: 'batch',
+      leadId: null,
+      crmLeadId: null,
+      status: 'sent',
+      httpStatus: result.status,
+      payload: { events: events.map((e) => e.id) },
+      response: result.response,
+      error: null,
+      durationMs: null
+    });
   } else {
     // retry with backoff
     for (const r of batch) {
@@ -111,6 +124,19 @@ const processBatch = async (batchSize = 500) => {
       if (status === 'failed') report.failed++;
       else report.retried++;
     }
+    const crmWebhookLogService = require('./crmWebhookLogService');
+    await crmWebhookLogService.logOutbound({
+      eventId: batch.map((r) => r.event_id).join(','),
+      eventType: 'batch',
+      leadId: null,
+      crmLeadId: null,
+      status: 'failed',
+      httpStatus: result.status || null,
+      payload: { events: events.map((e) => e.id) },
+      response: result.response || null,
+      error: result.error || 'send failed',
+      durationMs: null
+    });
   }
   return report;
 };

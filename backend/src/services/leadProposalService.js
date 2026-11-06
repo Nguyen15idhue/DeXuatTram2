@@ -101,7 +101,17 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
         eventType: 'lead.care',
         leadId,
         crmLeadId,
-        payload: { leadId: crmLeadId, note: crmStatusMapping.MILESTONE_NOTES.proposalCreated(maDeXuat), staff: actor.full_name || '', ref: `EG-${leadId}` }
+        payload: {
+          leadId: crmLeadId,
+          channel: crmStatusMapping.mapCareValue('channel', ''),
+          contact: crmStatusMapping.mapCareValue('contact', ''),
+          classify: crmStatusMapping.mapCareValue('classify', lead.customer_classification || ''),
+          saleResult: crmStatusMapping.mapCareValue('saleResult', ''),
+          reason: '',
+          note: crmStatusMapping.MILESTONE_NOTES.proposalCreated(maDeXuat),
+          staff: actor.full_name || '',
+          ref: `EG-${leadId}`
+        }
       });
     }
   } catch { /* silent */ }
