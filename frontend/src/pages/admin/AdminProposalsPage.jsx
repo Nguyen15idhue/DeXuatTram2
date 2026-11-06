@@ -975,9 +975,10 @@ const AdminProposalsPage = () => {
       </button>
     );
     if (isAdmin || isSales || user?.role === 'NPP') {
+      const editableStatuses = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'];
       const canEditProposalInfo =
         isSuperAdmin
-        || row.status === 'PENDING'
+        || editableStatuses.includes(row.status)
         || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row));
       if (canEditProposalInfo) {
         items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
