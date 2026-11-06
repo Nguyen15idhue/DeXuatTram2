@@ -66,6 +66,15 @@ exports.retryOutbox = async (req, res) => {
   }
 };
 
+exports.retryAllOutbox = async (req, res) => {
+  try {
+    const [r] = await pool.query("UPDATE crm_outbox SET status = 'pending', attempts = 0, next_retry_at = NOW(), last_error = NULL WHERE status IN ('pending','failed')");
+    res.json({ success: true, data: { affected: r.affectedRows }, message: `Đã reset ${r.affectedRows} event vào hàng chờ gửi lại` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
 exports.testWebhook = async (req, res) => {
   try {
     const config = crmOutboundService.getConfig();

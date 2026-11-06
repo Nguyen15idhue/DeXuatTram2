@@ -7,6 +7,7 @@ router.get('/config', requireAuth, requireSuperAdmin, crmConfigController.getCon
 router.post('/sync-now', requireAuth, requireSuperAdmin, crmConfigController.syncNow);
 router.get('/outbox', requireAuth, requireSuperAdmin, crmConfigController.listOutbox);
 router.post('/outbox/:id/retry', requireAuth, requireSuperAdmin, crmConfigController.retryOutbox);
+router.post('/outbox/retry-all', requireAuth, requireSuperAdmin, crmConfigController.retryAllOutbox);
 router.post('/test-webhook', requireAuth, requireSuperAdmin, crmConfigController.testWebhook);
 
 module.exports = router;

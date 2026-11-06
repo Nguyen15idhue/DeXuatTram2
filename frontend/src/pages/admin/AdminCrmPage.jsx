@@ -53,6 +53,15 @@ const AdminCrmPage = () => {
     await load();
   };
 
+  const retryAll = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/crm/outbox/retry-all', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+      alert(res.message || 'Done');
+      await load();
+    } catch (e) { alert(e.message); } finally { setLoading(false); }
+  };
+
   return (
     <div className="p-4 space-y-4">
       <PageHeader title="Tích hợp TMT CRM" />
@@ -75,6 +84,7 @@ const AdminCrmPage = () => {
       </div>
       <div className="card bg-base-100 shadow p-4">
         <h3 className="font-semibold mb-2">Outbox (gửi về CRM)</h3>
+        <button className="btn btn-xs btn-outline mb-2" onClick={retryAll} disabled={loading}>Retry tất cả</button>
         <table className="table table-sm">
           <thead><tr><th>ID</th><th>Event</th><th>Lead</th><th>Status</th><th>Attempts</th><th>Thao tác</th></tr></thead>
           <tbody>
