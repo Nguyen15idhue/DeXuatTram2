@@ -1191,6 +1191,15 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
   const [ownerRows] = await pool.query('SELECT role FROM users WHERE id = ?', [proposal.user_id]);
   const ownerIsCtv = ownerRows.length > 0 && ownerRows[0].role === 'CTV';
   const supplementStatuses = await exports.getEnabledSupplementStatuses();
+  // Đảm bảo PENDING luôn có supplement_deadline_at để cho phép xác nhận duyệt
+  if (!proposal.supplement_deadline_at && proposal.status === 'PENDING') {
+    await pool.query(
+      'UPDATE station_proposals SET supplement_deadline_at = COALESCE(transition_deadline_at, DATE_ADD(NOW(), INTERVAL 3 DAY)) WHERE id = ?',
+      [id]
+    );
+    const [refreshed] = await pool.query('SELECT supplement_deadline_at FROM station_proposals WHERE id = ?', [id]);
+    proposal.supplement_deadline_at = refreshed[0]?.supplement_deadline_at || null;
+  }
   if (!proposal.supplement_deadline_at || !supplementStatuses.includes(proposal.status)) {
     throw err('Đề xuất không trong thời gian bổ sung thông tin', 400);
   }
