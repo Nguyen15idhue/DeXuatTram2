@@ -322,6 +322,7 @@ router.get('/:id/journey', requireAuth, requireLeadManager, adminLeadController.
 router.get('/:id', requireAuth, requireLeadManager, adminLeadController.getById);
 router.put('/:id', requireAuth, requireLeadManager, validateUpdateLead, adminLeadController.update);
 router.delete('/:id', requireAuth, requireLeadWriter, adminLeadController.remove);
+router.post('/:id/restore', requireAuth, requireLeadWriter, adminLeadController.restore);
 
 /**
  * @swagger

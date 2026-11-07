@@ -56,6 +56,7 @@ const AdminLeadsPage = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dateField, setDateField] = useState('created_at');
+  const [filterDeleted, setFilterDeleted] = useState('all');
   const [showFilter, setShowFilter] = useState(false);
   const [columnFilters, setColumnFilters] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
@@ -123,6 +124,7 @@ const AdminLeadsPage = () => {
       const dt = overrides.dateTo !== undefined ? overrides.dateTo : dateTo;
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
+      const fdel = overrides.filterDeleted !== undefined ? overrides.filterDeleted : filterDeleted;
       if (s) params.append('search', s);
       if (st) params.append('stage', st);
       if (so) params.append('source', so);
@@ -131,6 +133,7 @@ const AdminLeadsPage = () => {
       if (oc) params.append('sales_outcome', oc);
       if (dp) params.append('assigned_department', dp);
       if (asg) params.append('assigned_user_id', asg);
+      if (fdel && fdel !== 'all') params.append('deleted', fdel);
       if (df || dt) {
         params.append('date_field', dfield);
         if (df) params.append('date_from', df);
@@ -152,7 +155,7 @@ const AdminLeadsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filterStage, filterSource, filterProvince, filterClassification, filterSalesOutcome, filterDepartment, filterAssignee, dateFrom, dateTo, dateField, columnFilters, pageSize, token]);
+  }, [debouncedSearch, filterStage, filterSource, filterProvince, filterClassification, filterSalesOutcome, filterDepartment, filterAssignee, dateFrom, dateTo, dateField, columnFilters, pageSize, filterDeleted, token]);
 
   const handleColumnFiltersChange = useCallback((next) => {
     setColumnFilters(prev => (JSON.stringify(prev) === JSON.stringify(next || {}) ? prev : (next || {})));
@@ -180,7 +183,7 @@ const AdminLeadsPage = () => {
     loadLeads(1, {
       search: '', filterStage: '', filterSource: '', filterProvince: '',
       filterClassification: '', filterSalesOutcome: '', filterDepartment: '',
-      filterAssignee: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}
+      filterAssignee: '', dateFrom: '', dateTo: '', dateField: 'created_at', columnFilters: {}, filterDeleted: 'all'
     });
   };
 
@@ -196,6 +199,7 @@ const AdminLeadsPage = () => {
   };
 
   const handleDeleteClick = (id, name) => setConfirmDelete({ isOpen: true, id, name });
+  const handleRestore = async (id) => { try { const res = await leadService.restore(id, token); if (res && res.success) { setToast({ message: 'Khôi phục Lead thành công', type: 'success' }); loadLeads(pagination.page || 1); } else { setToast({ message: res?.message || 'Khôi phục thất bại', type: 'error' }); } } catch (e) { setToast({ message: e?.message || 'Khôi phục thất bại', type: 'error' }); } };
 
   const handleConfirmDelete = async () => {
     const { id } = confirmDelete;
@@ -256,6 +260,7 @@ const AdminLeadsPage = () => {
         <option value="__empty__">Chưa cập nhật</option>
         {salesOutcomeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+      <select className="select select-bordered select-sm w-full" value={filterDeleted} onChange={(e) => setFilterDeleted(e.target.value)}><option value="all">Tất cả trạng thái xóa</option><option value="active">Đang hoạt động</option><option value="deleted">Đã xóa mềm</option></select>
       <select className="select select-bordered select-sm w-full" value={filterProvince} onChange={(e) => setFilterProvince(e.target.value)}>
         <option value="">Tất cả tỉnh/thành</option>
         {provinceOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -442,11 +447,15 @@ const AdminLeadsPage = () => {
   };
 
   const renderActions = (row) => (
-    <div className="flex gap-1">
+    <div className="flex gap-1 items-center">
+      {row.deleted_at && <span className="badge badge-error badge-sm mr-1">Đã xóa</span>}
       <button className="btn btn-sm btn-primary" onClick={() => navigate(`/admin/leads/view=${row.id}`)}>Xem</button>
       <button className="btn btn-sm btn-warning" onClick={() => navigate(`/admin/leads/edit=${row.id}`)}>Sửa</button>
       {role !== 'SALES' && (
         <button className="btn btn-sm btn-error" onClick={() => handleDeleteClick(row.id, row.full_name)}>Xóa</button>
+      )}
+      {row.deleted_at && (
+        <button className="btn btn-sm btn-success gap-1" onClick={() => handleRestore(row.id)} title="Khôi phục Lead đã xóa"><RotateCcw size={12} /> Khôi phục</button>
       )}
     </div>
   );

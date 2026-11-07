@@ -296,6 +296,9 @@ export const leadService = {
   delete(id, token) {
     return api.deleteWithAuth(`/admin/leads/${id}`, token);
   },
+  restore(id, token) {
+    return api.postWithAuth(`/admin/leads/${id}/restore`, {}, token);
+  },
   bulkDelete(ids, token) {
     return api.postWithAuth('/admin/leads/bulk-delete', { ids }, token);
   },
@@ -452,6 +455,33 @@ export const proposalSheetSyncService = {
   },
   syncDaily(token) {
     return api.postWithAuth('/admin/proposal-sheet-sync/daily', {}, token);
+  }
+};
+
+export const onStationSheetSyncService = {
+  getStatus(token) {
+    return api.getWithAuth('/admin/on-station-sheet-sync/status', token);
+  },
+  syncDaily(token) {
+    return api.postWithAuth('/admin/on-station-sheet-sync/daily', {}, token);
+  }
+};
+
+export const crmFullSyncService = {
+  start(token) {
+    return api.postWithAuth('/admin/crm/full-sync', {}, token);
+  },
+  getStatus(token) {
+    return api.getWithAuth('/admin/crm/full-sync/status', token);
+  },
+  getRuns(token, limit = 10) {
+    return api.getWithAuth(`/admin/crm/full-sync/runs?limit=${limit}`, token);
+  },
+  resume(id, token) {
+    return api.postWithAuth(`/admin/crm/full-sync/${id}/resume`, {}, token);
+  },
+  cancel(id, token) {
+    return api.postWithAuth(`/admin/crm/full-sync/${id}/cancel`, {}, token);
   }
 };
 

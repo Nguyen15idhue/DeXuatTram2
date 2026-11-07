@@ -28,9 +28,9 @@ exports.getConfig = async (req, res) => {
 
 exports.syncNow = async (req, res) => {
   try {
-    const result = await crmInboundPollingService.pollOnce();
-    const outbox = await crmOutboundService.processBatch();
-    res.json({ success: true, data: { inbound: result, outbound: outbox } });
+    const inbound = await crmInboundPollingService.pollOnce({ source: 'manual' });
+    const outbound = await crmOutboundService.processBatch();
+    res.json({ success: true, data: { inbound, outbound } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
   }
@@ -127,6 +127,37 @@ exports.testWebhook = async (req, res) => {
     res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };
+const summarizeLog = (row) => {
+  let payload = row.payload;
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload); } catch { payload = null; }
+  }
+  if (!payload || typeof payload !== 'object') return '';
+  if (row.event_type === 'poll' || row.event_type === 'manual_sync') {
+    const parts = [];
+    parts.push(payload.source === 'manual' ? 'Thủ công' : 'Tự động');
+    const fetched = payload.fetched !== undefined ? payload.fetched : payload.count;
+    if (fetched !== undefined) parts.push(`${fetched} khách trả về`);
+    if (payload.processed !== undefined) parts.push(`${payload.processed} cập nhật`);
+    return parts.join(' · ');
+  }
+  if (row.event_type === 'batch') {
+    const n = Array.isArray(payload.events) ? payload.events.length : 0;
+    return `${n} sự kiện`;
+  }
+  if (row.event_type === 'full_sync') {
+    const parts = [];
+    if (payload.runId) parts.push(`Lần #${payload.runId}`);
+    if (payload.fetched !== undefined) parts.push(`${payload.fetched} khách`);
+    if (payload.inserted !== undefined) parts.push(`thêm ${payload.inserted}`);
+    if (payload.updated !== undefined) parts.push(`cập nhật ${payload.updated}`);
+    if (payload.skipped) parts.push(`bỏ qua ${payload.skipped}`);
+    if (payload.failed) parts.push(`lỗi ${payload.failed}`);
+    return parts.join(' · ');
+  }
+  return '';
+};
+
 exports.listLogs = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -134,6 +165,7 @@ exports.listLogs = async (req, res) => {
     const offset = (page - 1) * limit;
     const direction = req.query.direction || null;
     const status = req.query.status || null;
+    const eventType = req.query.event_type || null;
     const leadId = req.query.lead_id ? Number(req.query.lead_id) : null;
     const crmLeadId = req.query.crm_lead_id || null;
     const dateFrom = req.query.date_from || null;
@@ -142,19 +174,28 @@ exports.listLogs = async (req, res) => {
     const params = [];
     if (direction) { where.push('direction = ?'); params.push(direction); }
     if (status) { where.push('status = ?'); params.push(status); }
+    if (eventType === 'sync') { where.push("event_type IN ('poll','manual_sync','full_sync')"); }
+    else if (eventType) { where.push('event_type = ?'); params.push(eventType); }
     if (leadId) { where.push('lead_id = ?'); params.push(leadId); }
     if (crmLeadId) { where.push('crm_lead_id = ?'); params.push(crmLeadId); }
     if (dateFrom) { where.push('created_at >= ?'); params.push(`${String(dateFrom).slice(0,10)} 00:00:00`); }
     if (dateTo) { where.push('created_at <= ?'); params.push(`${String(dateTo).slice(0,10)} 23:59:59`); }
     const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const [rows] = await pool.query(
-      `SELECT id, direction, sender, receiver, event_id, event_type, lead_id, crm_lead_id, status, http_status, duration_ms, created_at
+      `SELECT id, direction, sender, receiver, event_id, event_type, lead_id, crm_lead_id, status, http_status, duration_ms, payload, created_at
          FROM crm_webhook_logs ${whereClause} ORDER BY id DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
+    const data = rows.map((row) => {
+      const { payload, ...rest } = row;
+      return { ...rest, summary: summarizeLog(row) };
+    });
     const [countRows] = await pool.query(`SELECT COUNT(*) AS n FROM crm_webhook_logs ${whereClause}`, params);
-    res.json({ success: true, data: rows, pagination: { page, limit, total: countRows[0].n, totalPages: Math.ceil(countRows[0].n / limit) } });
+    res.json({ success: true, data, pagination: { page, limit, total: countRows[0].n, totalPages: Math.ceil(countRows[0].n / limit) } });
   } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({ success: false, message: 'Bảng crm_webhook_logs chưa tồn tại — cần chạy migration 102-crm-webhook-logs.sql' });
+    }
     res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
   }
 };
@@ -175,12 +216,15 @@ exports.exportLogs = async (req, res) => {
     const XLSX = require('xlsx');
     const direction = req.query.direction || null;
     const status = req.query.status || null;
+    const eventType = req.query.event_type || null;
     const dateFrom = req.query.date_from || null;
     const dateTo = req.query.date_to || null;
     const where = [];
     const params = [];
     if (direction) { where.push('direction = ?'); params.push(direction); }
     if (status) { where.push('status = ?'); params.push(status); }
+    if (eventType === 'sync') { where.push("event_type IN ('poll','manual_sync','full_sync')"); }
+    else if (eventType) { where.push('event_type = ?'); params.push(eventType); }
     if (dateFrom) { where.push('created_at >= ?'); params.push(`${String(dateFrom).slice(0,10)} 00:00:00`); }
     if (dateTo) { where.push('created_at <= ?'); params.push(`${String(dateTo).slice(0,10)} 23:59:59`); }
     const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
@@ -196,6 +240,7 @@ exports.exportLogs = async (req, res) => {
       'Bên nhận': r.receiver,
       'Event ID': r.event_id,
       'Event type': r.event_type,
+      'Nội dung': summarizeLog(r),
       'Lead ID': r.lead_id,
       'CRM Lead ID': r.crm_lead_id,
       'Trạng thái': r.status,

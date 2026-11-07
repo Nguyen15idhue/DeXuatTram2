@@ -188,6 +188,14 @@ exports.remove = async (req, res) => {
   }
 };
 
+exports.restore = async (req, res) => {
+  try {
+    const result = await leadService.restoreLead(req.params.id, req.user);
+    res.json({ success: true, data: result, message: 'Khôi phục Lead thành công' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
 exports.bulkDelete = async (req, res) => {
   try {
     const results = await leadService.bulkDeleteLeads(req.body.ids, req.user);
