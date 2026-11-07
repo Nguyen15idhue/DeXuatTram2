@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import PageHeader from '../../components/ui/PageHeader';
+import CrmFullSyncPanel from '../../components/admin/CrmFullSyncPanel';
+
+const EVENT_TYPE_LABELS = {
+  poll: 'Tự động đồng bộ',
+  manual_sync: 'Đồng bộ thủ công',
+  full_sync: 'Đồng bộ toàn bộ',
+  batch: 'Gửi lên CRM',
+  'lead.created': 'Lead mới từ CRM',
+  'lead.updated': 'Lead cập nhật',
+  'lead.care': 'Chăm sóc lead',
+  'lead.result': 'Kết quả lead',
+  'lead.assigned': 'Phân chia lead'
+};
 
 const AdminCrmPage = () => {
   const { token } = useAuth();
@@ -9,7 +22,7 @@ const AdminCrmPage = () => {
   const [outbox, setOutbox] = useState([]);
   const [logs, setLogs] = useState([]);
   const [logPagination, setLogPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
-  const [logFilter, setLogFilter] = useState({ direction: '', status: '', lead_id: '', crm_lead_id: '', date_from: '', date_to: '' });
+  const [logFilter, setLogFilter] = useState({ direction: '', status: '', event_type: '', lead_id: '', crm_lead_id: '', date_from: '', date_to: '' });
   const [logDetail, setLogDetail] = useState(null);
   const [outboxDetail, setOutboxDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -45,6 +58,7 @@ const AdminCrmPage = () => {
       const params = new URLSearchParams({ page: String(page), limit: String(logPagination.limit) });
       if (logFilter.direction) params.set('direction', logFilter.direction);
       if (logFilter.status) params.set('status', logFilter.status);
+      if (logFilter.event_type) params.set('event_type', logFilter.event_type);
       if (logFilter.lead_id) params.set('lead_id', logFilter.lead_id);
       if (logFilter.crm_lead_id) params.set('crm_lead_id', logFilter.crm_lead_id);
       if (logFilter.date_from) params.set('date_from', logFilter.date_from);
@@ -107,6 +121,7 @@ const AdminCrmPage = () => {
     const params = new URLSearchParams();
     if (logFilter.direction) params.set('direction', logFilter.direction);
     if (logFilter.status) params.set('status', logFilter.status);
+    if (logFilter.event_type) params.set('event_type', logFilter.event_type);
     if (logFilter.lead_id) params.set('lead_id', logFilter.lead_id);
     if (logFilter.crm_lead_id) params.set('crm_lead_id', logFilter.crm_lead_id);
     if (logFilter.date_from) params.set('date_from', logFilter.date_from);
@@ -119,6 +134,7 @@ const AdminCrmPage = () => {
       <PageHeader title="Tích hợp TMT CRM" />
       <div className="tabs tabs-bordered mb-4">
         <button className={`tab ${tab === 'config' ? 'tab-active' : ''}`} onClick={() => setTab('config')}>Cấu hình</button>
+        <button className={`tab ${tab === 'fullsync' ? 'tab-active' : ''}`} onClick={() => setTab('fullsync')}>Đồng bộ toàn bộ</button>
         <button className={`tab ${tab === 'outbox' ? 'tab-active' : ''}`} onClick={() => setTab('outbox')}>Outbox</button>
         <button className={`tab ${tab === 'logs' ? 'tab-active' : ''}`} onClick={() => { setTab('logs'); loadLogs(1); }}>Nhật ký webhook</button>
       </div>
@@ -136,6 +152,7 @@ const AdminCrmPage = () => {
           ) : 'Đang tải...'}
           <div className="flex gap-2 mt-3">
             <button className="btn btn-sm btn-primary" onClick={syncNow} disabled={loading}>Sync ngay</button>
+            <button className="btn btn-sm btn-outline" onClick={() => setTab('fullsync')}>Đồng bộ toàn bộ</button>
             <button className="btn btn-sm btn-outline" onClick={testWebhook} disabled={loading}>Test webhook</button>
           </div>
           {testResult && (
@@ -145,6 +162,8 @@ const AdminCrmPage = () => {
           )}
         </div>
       )}
+
+      {tab === 'fullsync' && <CrmFullSyncPanel />}
 
       {tab === 'outbox' && (
         <div className="card bg-base-100 shadow p-4">
@@ -182,6 +201,14 @@ const AdminCrmPage = () => {
               <option value="inbound">Inbound</option>
               <option value="outbound">Outbound</option>
             </select>
+            <select className="select select-bordered select-sm" value={logFilter.event_type} onChange={(e) => setLogFilter(f => ({ ...f, event_type: e.target.value }))}>
+              <option value="">Tất cả loại</option>
+              <option value="sync">Đồng bộ (tự động + thủ công)</option>
+              <option value="manual_sync">Đồng bộ thủ công</option>
+              <option value="poll">Tự động đồng bộ</option>
+              <option value="full_sync">Đồng bộ toàn bộ</option>
+              <option value="batch">Gửi lên CRM</option>
+            </select>
             <select className="select select-bordered select-sm" value={logFilter.status} onChange={(e) => setLogFilter(f => ({ ...f, status: e.target.value }))}>
               <option value="">Tất cả trạng thái</option>
               <option value="received">received</option>
@@ -199,7 +226,7 @@ const AdminCrmPage = () => {
             <button className="btn btn-sm btn-outline" onClick={exportLogs}>Xuất Excel</button>
           </div>
           <table className="table table-sm">
-            <thead><tr><th>Thời gian</th><th>Hướng</th><th>Bên gửi</th><th>Bên nhận</th><th>Event type</th><th>Lead</th><th>Trạng thái</th><th>HTTP</th><th>Hành động</th></tr></thead>
+            <thead><tr><th>Thời gian</th><th>Hướng</th><th>Bên gửi</th><th>Bên nhận</th><th>Loại</th><th>Nội dung</th><th>Lead</th><th>Trạng thái</th><th>HTTP</th><th>Hành động</th></tr></thead>
             <tbody>
               {logs.map((l) => (
                 <tr key={l.id}>
@@ -207,13 +234,17 @@ const AdminCrmPage = () => {
                   <td><span className={`badge badge-sm ${l.direction === 'inbound' ? 'badge-info' : 'badge-success'}`}>{l.direction}</span></td>
                   <td>{l.sender}</td>
                   <td>{l.receiver}</td>
-                  <td className="text-xs">{l.event_type || '—'}</td>
+                  <td className="text-xs">{EVENT_TYPE_LABELS[l.event_type] || l.event_type || '—'}</td>
+                  <td className="text-xs">{l.summary || '—'}</td>
                   <td className="text-xs">{l.crm_lead_id || l.lead_id || '—'}</td>
                   <td><span className={`badge badge-sm ${l.status === 'failed' ? 'badge-error' : 'badge-ghost'}`}>{l.status}</span></td>
                   <td>{l.http_status || '—'}</td>
                   <td><button className="btn btn-xs" onClick={() => viewLogDetail(l.id)}>Xem chi tiết</button></td>
                 </tr>
               ))}
+              {logs.length === 0 && (
+                <tr><td colSpan={10} className="text-center text-xs text-base-content/60 py-4">Chưa có bản ghi nhật ký</td></tr>
+              )}
             </tbody>
           </table>
           <div className="flex justify-between items-center mt-2">
@@ -264,6 +295,7 @@ const AdminCrmPage = () => {
             <h3 className="font-bold text-lg mb-3">Chi tiết webhook log #{logDetail.id}</h3>
             <div className="text-sm space-y-2">
               <div><b>Hướng:</b> {logDetail.direction} ({logDetail.sender} → {logDetail.receiver})</div>
+              <div><b>Loại:</b> {EVENT_TYPE_LABELS[logDetail.event_type] || logDetail.event_type || '—'} <span className="text-base-content/50">({logDetail.event_type || '—'})</span></div>
               <div><b>Thời gian:</b> {new Date(logDetail.created_at).toLocaleString('vi-VN')}</div>
               <div><b>Trạng thái:</b> {logDetail.status} (HTTP {logDetail.http_status || '—'}, {logDetail.duration_ms || 0}ms)</div>
               {logDetail.error && <div className="alert alert-error text-xs">{logDetail.error}</div>}

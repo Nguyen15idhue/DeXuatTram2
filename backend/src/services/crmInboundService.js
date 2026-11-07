@@ -2,8 +2,7 @@
 const pool = require('../utils/db');
 const crypto = require('crypto');
 const leadService = require('./leadService');
-const leadAssignmentService = require('./leadAssignmentService');
-const { isGdtt, gdttTitlesFor } = require('../constants/salesRanks');
+const { isGdtt } = require('../constants/salesRanks');
 const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
 
 const parseCustomData = (val) => {
@@ -15,37 +14,66 @@ const parseCustomData = (val) => {
 const normalizeProvinceName = (name) => String(name || '').trim().toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
-const lookupProvinceFlexible = async (province, conn = pool) => {
-  if (!province) return null;
+const loadProvinceRows = async (conn = pool) => {
   const [lists] = await conn.query("SELECT id FROM data_lists WHERE name IN ('Tỉnh', 'dm_tinh') ORDER BY (name = 'Tỉnh') DESC LIMIT 1");
   if (lists.length === 0) return null;
   const [rows] = await conn.query('SELECT `data` FROM data_list_rows WHERE list_id = ?', [lists[0].id]);
-  const target = normalizeProvinceName(province);
+  const parsed = [];
   for (const r of rows) {
     let d = r.data;
     if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
+    if (d && typeof d === 'object') parsed.push(d);
+  }
+  return parsed;
+};
+
+const matchProvince = (rows, province) => {
+  const target = normalizeProvinceName(province);
+  for (const d of rows) {
     const name = d.ten_tinh || d.tinh || '';
     if (normalizeProvinceName(name) === target) {
       return { province_code: d.ma_tinh || null, region: d.vung_mien || null, province_name: name };
     }
   }
-  // fuzzy: contains
-  for (const r of rows) {
-    let d = r.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { continue; } }
-    const name = d.ten_tinh || d.tinh || '';
-    if (normalizeProvinceName(name).includes(target) || target.includes(normalizeProvinceName(name))) {
-      return { province_code: d.ma_tinh || null, region: d.vung_mien || null, province_name: name };
+  // fuzzy: contains (bỏ qua tên rỗng để tránh khớp nhầm)
+  if (target) {
+    for (const d of rows) {
+      const name = d.ten_tinh || d.tinh || '';
+      const normalized = normalizeProvinceName(name);
+      if (!normalized) continue;
+      if (normalized.includes(target) || target.includes(normalized)) {
+        return { province_code: d.ma_tinh || null, region: d.vung_mien || null, province_name: name };
+      }
     }
   }
   return { notFound: true };
 };
 
-const findGdttkdByDepartment = async (department, conn = pool) => {
-  if (!department) return null;
+const lookupProvinceFlexible = async (province, conn = pool, cache = null) => {
+  if (!province) return null;
+  let rows;
+  if (cache) {
+    if (cache.provinceRows === undefined) cache.provinceRows = await loadProvinceRows(conn);
+    rows = cache.provinceRows;
+  } else {
+    rows = await loadProvinceRows(conn);
+  }
+  if (!rows) return null;
+  return matchProvince(rows, province);
+};
+
+const getActiveSalesUsers = async (conn = pool, cache = null) => {
+  if (cache && cache.salesUsers) return cache.salesUsers;
   const [rows] = await conn.query(
     "SELECT id, full_name, role, status, custom_data FROM users WHERE role = 'SALES' AND status = 'ACTIVE'"
   );
+  if (cache) cache.salesUsers = rows;
+  return rows;
+};
+
+const findGdttkdByDepartment = async (department, conn = pool, cache = null) => {
+  if (!department) return null;
+  const rows = await getActiveSalesUsers(conn, cache);
   for (const u of rows) {
     const cd = parseCustomData(u.custom_data);
     if (String(cd.department || '').trim() !== String(department).trim()) continue;
@@ -54,26 +82,74 @@ const findGdttkdByDepartment = async (department, conn = pool) => {
   return null;
 };
 
-const getSystemUserId = async (conn = pool) => {
+const getSystemUserId = async (conn = pool, cache = null) => {
+  if (cache && cache.systemUserId !== undefined) return cache.systemUserId;
+  let resolved = null;
   const envId = Number(process.env.CRM_IMPORT_USER_ID);
   if (Number.isInteger(envId) && envId > 0) {
     const [rows] = await conn.query('SELECT id FROM users WHERE id = ? AND status = "ACTIVE" LIMIT 1', [envId]);
-    if (rows.length) return envId;
+    if (rows.length) resolved = envId;
   }
-  const [rows] = await conn.query("SELECT id FROM users WHERE role IN ('SUPER_ADMIN','ADMIN') AND status = 'ACTIVE' ORDER BY id ASC LIMIT 1");
-  return rows.length ? rows[0].id : null;
+  if (!resolved) {
+    const [rows] = await conn.query("SELECT id FROM users WHERE role IN ('SUPER_ADMIN','ADMIN') AND status = 'ACTIVE' ORDER BY id ASC LIMIT 1");
+    resolved = rows.length ? rows[0].id : null;
+  }
+  if (cache) cache.systemUserId = resolved;
+  return resolved;
 };
 
-const upsertLeadFromCrm = async (data, conn) => {
+const getRoutingDepartmentCached = async (region, conn = pool, cache = null) => {
+  if (!cache) return leadService.getRoutingDepartment(region, conn);
+  if (!cache.routing) cache.routing = new Map();
+  if (cache.routing.has(region)) return cache.routing.get(region);
+  const department = await leadService.getRoutingDepartment(region, conn);
+  cache.routing.set(region, department || null);
+  return department;
+};
+
+// Gộp custom_data: giữ dữ liệu local (lịch sử CSKH/TVBH, cờ nội bộ) và cập nhật các field CRM.
+const mergeCustomData = (current, incoming) => {
+  const base = parseCustomData(current);
+  const merged = { ...base, ...incoming };
+  const currentCskh = Array.isArray(base.cskh_history) ? base.cskh_history : [];
+  const lastNote = currentCskh.length ? String(currentCskh[currentCskh.length - 1]?.note || '') : '';
+  const incomingCskh = Array.isArray(incoming.cskh_history) ? incoming.cskh_history : [];
+  const newNote = incomingCskh.length ? String(incomingCskh[0]?.note || '') : '';
+  if (currentCskh.length) {
+    merged.cskh_history = newNote && newNote !== lastNote
+      ? [...currentCskh, incomingCskh[0]]
+      : currentCskh;
+  }
+  if (Array.isArray(base.tvbh_history) && base.tvbh_history.length) {
+    merged.tvbh_history = base.tvbh_history;
+  }
+  if (base.needs_assignment !== undefined) merged.needs_assignment = base.needs_assignment;
+  return merged;
+};
+
+const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
+  const onExisting = options.onExisting === 'skip' ? 'skip' : 'update';
+  const skipOutbound = options.skipOutbound === true;
+  const cache = options.cache || null;
+
   const crmId = String(data.id || '').trim();
   if (!crmId) throw new Error('Thiếu id khách hàng CRM');
 
   // find existing by external_crm_id
-  const [existing] = await conn.query('SELECT id FROM leads WHERE external_crm_id = ? LIMIT 1', [crmId]);
-  const systemUserId = await getSystemUserId(conn);
+  const [existing] = await conn.query('SELECT id, deleted_at, custom_data FROM leads WHERE external_crm_id = ? LIMIT 1', [crmId]);
+
+  // lead đã bị xóa mềm ở local: giữ nguyên xóa, không khôi phục
+  if (existing.length && existing[0].deleted_at) {
+    return { id: existing[0].id, created: false, result: 'skipped', reason: 'Lead đã bị xóa trong Quản lý leads' };
+  }
+  if (existing.length && onExisting === 'skip') {
+    return { id: existing[0].id, created: false, result: 'skipped', reason: 'Lead đã tồn tại' };
+  }
+
+  const systemUserId = await getSystemUserId(conn, cache);
 
   const province = data.province ? String(data.province).trim() : '';
-  const geo = await lookupProvinceFlexible(province, conn);
+  const geo = await lookupProvinceFlexible(province, conn, cache);
 
   const customData = {
     crm_lead_id: crmId,
@@ -96,6 +172,7 @@ const upsertLeadFromCrm = async (data, conn) => {
 
   if (existing.length) {
     const leadId = existing[0].id;
+    const mergedCustomData = mergeCustomData(existing[0].custom_data, customData);
     await conn.query(
       `UPDATE leads SET full_name = ?, phone = ?, email = ?, address = ?, province = ?, ward = ?,
          province_code = ?, region = ?, customer_type = ?, source = ?, note = ?,
@@ -114,11 +191,11 @@ const upsertLeadFromCrm = async (data, conn) => {
         data.source ? String(data.source).trim() : null,
         data.cskhNote ? String(data.cskhNote).trim() : null,
         crmStatusMapping.mapCrmClassifyToTmt(data.classify),
-        JSON.stringify(customData),
+        JSON.stringify(mergedCustomData),
         leadId
       ]
     );
-    return { id: leadId, created: false };
+    return { id: leadId, created: false, result: 'updated' };
   }
 
   // create new lead
@@ -176,44 +253,40 @@ const upsertLeadFromCrm = async (data, conn) => {
 
   // auto-assign to GĐTTKD by region (Q3)
   try {
-    await autoAssignCrmLead(leadId, geo && !geo.notFound ? geo.region : null, geo && !geo.notFound ? geo.province_code : null, conn);
+    await autoAssignCrmLead(leadId, geo && !geo.notFound ? geo.region : null, geo && !geo.notFound ? geo.province_code : null, conn, { skipOutbound, cache });
   } catch (e) {
     // don't fail inbound on assignment error; flag needs_assignment
     await conn.query('UPDATE leads SET custom_data = JSON_SET(COALESCE(custom_data, JSON_OBJECT()), "$.needs_assignment", true) WHERE id = ?', [leadId]);
   }
 
   // CRM outbound: notify received (best-effort, after commit)
-  try {
-    const crmOutboundService = require('./crmOutboundService');
-    await crmOutboundService.enqueue({
-      eventId: `eg_${leadId}_received_${Date.now()}`,
-      eventType: 'lead.result',
-      leadId,
-      crmLeadId: crmId,
-      payload: { leadId: crmId, status: 'received', note: 'Đã nhận khách từ CRM', staff: 'Hệ thống', ref: `EG-${leadId}` },
-      conn
-    });
-  } catch (e) {
-    console.error('[CrmInbound] received-event enqueue failed:', e.message);
+  if (!skipOutbound) {
+    try {
+      const crmOutboundService = require('./crmOutboundService');
+      await crmOutboundService.enqueue({
+        eventId: `eg_${leadId}_received_${Date.now()}`,
+        eventType: 'lead.result',
+        leadId,
+        crmLeadId: crmId,
+        payload: { leadId: crmId, status: 'received', note: 'Đã nhận khách từ CRM', staff: 'Hệ thống', ref: `EG-${leadId}` },
+        conn
+      });
+    } catch (e) {
+      console.error('[CrmInbound] received-event enqueue failed:', e.message);
+    }
   }
 
-  return { id: leadId, created: true };
+  return { id: leadId, created: true, result: 'inserted' };
 };
 
-const autoAssignCrmLead = async (leadId, region, provinceCode, conn) => {
+const autoAssignCrmLead = async (leadId, region, provinceCode, conn = pool, options = {}) => {
   if (!region) return;
-  const department = await leadService.getRoutingDepartment(region, conn);
+  const skipOutbound = options.skipOutbound === true;
+  const cache = options.cache || null;
+  const department = await getRoutingDepartmentCached(region, conn, cache);
   if (!department) return;
   // find active GĐTTKD in department
-  const [users] = await conn.query(
-    "SELECT id, full_name, role, status, custom_data FROM users WHERE role = 'SALES' AND status = 'ACTIVE'"
-  );
-  let gdttkd = null;
-  for (const u of users) {
-    const cd = parseCustomData(u.custom_data);
-    if (String(cd.department || '').trim() !== String(department).trim()) continue;
-    if (isGdtt(cd.chuc_vu, cd.department)) { gdttkd = u; break; }
-  }
+  const gdttkd = await findGdttkdByDepartment(department, conn, cache);
   if (!gdttkd) return;
   // only assign if classification is TIEM_NANG (auto-routing rule)
   const [leadRows] = await conn.query('SELECT customer_classification, journey_id, external_crm_id FROM leads WHERE id = ?', [leadId]);
@@ -245,7 +318,7 @@ const autoAssignCrmLead = async (leadId, region, provinceCode, conn) => {
     ip: null,
   }, conn);
   // CRM outbound: notify assignment to GĐTTKD
-  if (crmLeadId) {
+  if (!skipOutbound && crmLeadId) {
     try {
       const crmOutboundService = require('./crmOutboundService');
       await crmOutboundService.enqueue({

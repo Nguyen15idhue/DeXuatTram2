@@ -4,14 +4,20 @@ import ChargingStationContractTabs from '../../components/admin/ChargingStationC
 import ChargingStationInfrastructureTabs from '../../components/admin/ChargingStationInfrastructureTabs';
 import ChargingStationDeliveryTabs from '../../components/admin/ChargingStationDeliveryTabs';
 import ChargingStationProcessTabs from '../../components/admin/ChargingStationProcessTabs';
+import OnStationSheetSyncButton from '../../components/admin/OnStationSheetSyncButton';
 import { getStageConfig } from '../../utils/chargingStation';
 
 const AdminChargingStationsPage = ({ stage = 'thong-tin-chung' }) => {
   const config = getStageConfig(stage);
+  const showSheetSync = ['thong-tin-chung', 'on-tram'].includes(config.key);
 
   return (
     <div>
-      <PageHeader title={config.title} subtitle="Quản lý ON trạm từ đề xuất đã ký" />
+      <PageHeader
+        title={config.title}
+        subtitle="Quản lý ON trạm từ đề xuất đã ký"
+        actions={showSheetSync ? <OnStationSheetSyncButton /> : undefined}
+      />
       {config.key === 'khoi-tao-hop-dong'
         ? <ChargingStationContractTabs />
         : config.key === 'xay-dung-ha-tang'

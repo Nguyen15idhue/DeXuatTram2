@@ -28,12 +28,43 @@ const setCursor = async (cursor) => {
   );
 };
 
-const pollOnce = async () => {
+const pollOnce = async (options = {}) => {
+  const source = options.source === 'manual' ? 'manual' : 'auto';
+  const eventType = source === 'manual' ? 'manual_sync' : 'poll';
+  const startedAt = Date.now();
   const config = getConfig();
-  if (!config.configured) return { processed: 0, error: config.message };
+  const crmWebhookLogService = require('./crmWebhookLogService');
+  if (!config.configured) {
+    if (source === 'manual') {
+      await crmWebhookLogService.logInbound({
+        eventId: null, eventType, status: 'failed', httpStatus: null,
+        payload: { source }, error: config.message, durationMs: Date.now() - startedAt
+      });
+    }
+    return { processed: 0, error: config.message };
+  }
+
+  // Tạm dừng đồng bộ tăng dần khi đang chạy đồng bộ toàn bộ (tránh tranh cursor).
+  let fullSyncActive = false;
+  try {
+    const [active] = await pool.query("SELECT id FROM crm_full_sync_runs WHERE status IN ('QUEUED','RUNNING') LIMIT 1");
+    fullSyncActive = active.length > 0;
+  } catch { /* bảng chưa migrate */ }
+  if (fullSyncActive) {
+    if (source === 'manual') {
+      await crmWebhookLogService.logInbound({
+        eventId: null, eventType, status: 'skipped', httpStatus: null,
+        payload: { source, reason: 'full_sync_running' },
+        durationMs: Date.now() - startedAt
+      });
+    }
+    return { processed: 0, skipped: true, reason: 'Đang chạy đồng bộ toàn bộ khách hàng' };
+  }
+
   let cursor = await getCursor();
   let totalProcessed = 0;
   let pages = 0;
+  let fetched = 0;
   const maxPages = 50;
   try {
     while (pages < maxPages) {
@@ -43,19 +74,26 @@ const pollOnce = async () => {
         headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json', 'Accept': 'application/json' }
       });
       if (!res.ok) {
-        const crmWebhookLogService = require('./crmWebhookLogService');
-        await crmWebhookLogService.logInbound({ eventId: null, eventType: 'poll', status: 'failed', httpStatus: res.status, error: `HTTP ${res.status}`, durationMs: 0 });
+        await crmWebhookLogService.logInbound({
+          eventId: null, eventType, status: 'failed', httpStatus: res.status,
+          payload: { source, cursor: cursor || null }, error: `HTTP ${res.status}`,
+          durationMs: Date.now() - startedAt
+        });
         return { processed: totalProcessed, error: `HTTP ${res.status}` };
       }
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await res.text();
-        const crmWebhookLogService = require('./crmWebhookLogService');
-        await crmWebhookLogService.logInbound({ eventId: null, eventType: 'poll', status: 'failed', httpStatus: res.status, error: `Non-JSON: ${text.slice(0,100)}`, durationMs: 0 });
+        await crmWebhookLogService.logInbound({
+          eventId: null, eventType, status: 'failed', httpStatus: res.status,
+          payload: { source, cursor: cursor || null }, error: `Non-JSON: ${text.slice(0, 100)}`,
+          durationMs: Date.now() - startedAt
+        });
         return { processed: totalProcessed, error: `CRM trả về ${contentType}, không phải JSON: ${text.slice(0, 100)}` };
       }
       const body = await res.json();
       const leads = Array.isArray(body && body.data) ? body.data : [];
+      fetched += leads.length;
       for (const lead of leads) {
         try {
           await crmInboundService.upsertLeadFromCrm(lead, pool);
@@ -66,14 +104,22 @@ const pollOnce = async () => {
       }
       cursor = body.nextCursor || null;
       const more = body.more === true;
-      const crmWebhookLogService = require('./crmWebhookLogService');
-      await crmWebhookLogService.logInbound({ eventId: null, eventType: 'poll', status: 'processed', httpStatus: res.status, payload: { cursor: cursor || null, count: leads.length }, response: { nextCursor: cursor, more }, durationMs: 0 });
+      await crmWebhookLogService.logInbound({
+        eventId: null, eventType, status: 'processed', httpStatus: res.status,
+        payload: { source, fetched: leads.length, processed: totalProcessed, cursor: cursor || null },
+        response: { nextCursor: cursor, more }, durationMs: Date.now() - startedAt
+      });
       if (!more || !cursor) break;
       pages++;
     }
     if (cursor) await setCursor(cursor);
     return { processed: totalProcessed };
   } catch (error) {
+    await crmWebhookLogService.logInbound({
+      eventId: null, eventType, status: 'failed', httpStatus: null,
+      payload: { source, fetched }, error: error.message || 'poll error',
+      durationMs: Date.now() - startedAt
+    });
     return { processed: totalProcessed, error: error.message || 'poll error' };
   }
 };

@@ -60,13 +60,16 @@ const crmConfigRoutes = require('./routes/crmConfig');
 const { crmWebhookLimiter } = require('./middlewares/rateLimits');
 const evReportsRoutes = require('./routes/evReports');
 const proposalSheetSyncRoutes = require('./routes/proposalSheetSync');
+const onStationSheetSyncRoutes = require('./routes/onStationSheetSync');
 const signaturesRoutes = require('./routes/signatures');
 const proposalLifecycleWorker = require('./workers/proposalLifecycleWorker');
 const importWorker = require('./workers/importWorker');
 const evReportSheetSyncWorker = require('./workers/evReportSheetSyncWorker');
 const proposalSheetSyncWorker = require('./workers/proposalSheetSyncWorker');
+const onStationSheetSyncWorker = require('./workers/onStationSheetSyncWorker');
 const crmInboundPollingWorker = require('./workers/crmInboundPollingWorker');
 const crmOutboundWorker = require('./workers/crmOutboundWorker');
+const crmFullSyncWorker = require('./workers/crmFullSyncWorker');
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -142,6 +145,7 @@ app.use('/api/ev-reports', evReportsRoutes);
 app.use('/api/admin/signatures', adminLimiter, signaturesRoutes);
 app.use('/api/admin/proposals', adminLimiter, adminProposalsRoutes);
 app.use('/api/admin/proposal-sheet-sync', adminLimiter, proposalSheetSyncRoutes);
+app.use('/api/admin/on-station-sheet-sync', adminLimiter, onStationSheetSyncRoutes);
 app.use('/api/admin/proposal-requests', adminLimiter, proposalRequestsRoutes);
 app.use('/api/admin/proposal-grading', adminLimiter, proposalGradingRoutes);
 app.use('/api/admin/proposal-reviews', adminLimiter, proposalReviewRoutes);
@@ -209,11 +213,17 @@ app.listen(PORT, '0.0.0.0', () => {
   proposalSheetSyncWorker.start().catch((err) => {
     console.error('[ProposalSheetSyncWorker] start error:', err.message);
   });
+  onStationSheetSyncWorker.start().catch((err) => {
+    console.error('[OnStationSheetSyncWorker] start error:', err.message);
+  });
   crmInboundPollingWorker.start().catch((err) => {
     console.error('[CrmInboundPollingWorker] start error:', err.message);
   });
   crmOutboundWorker.start().catch((err) => {
     console.error('[CrmOutboundWorker] start error:', err.message);
+  });
+  crmFullSyncWorker.start().catch((err) => {
+    console.error('[CrmFullSyncWorker] start error:', err.message);
   });
   // Cleanup old webhook logs (120 days) daily at 02:00
   const runCrmLogCleanup = async () => {

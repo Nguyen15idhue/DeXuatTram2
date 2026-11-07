@@ -8,7 +8,9 @@ const logInbound = async ({ eventId, eventType, crmLeadId, leadId, status, httpS
        VALUES ('inbound', 'CRM', 'TMT-EGREEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [eventId || null, eventType || null, leadId || null, crmLeadId || null, status || 'received', httpStatus || 200, payload ? JSON.stringify(payload) : null, response ? JSON.stringify(response) : null, error || null, durationMs || null]
     );
-  } catch (e) { /* silent */ }
+  } catch (e) {
+    console.error('[CrmWebhookLog] inbound insert failed:', e.message);
+  }
 };
 
 const logOutbound = async ({ eventId, eventType, leadId, crmLeadId, status, httpStatus, payload, response, error, durationMs }) => {
@@ -18,13 +20,17 @@ const logOutbound = async ({ eventId, eventType, leadId, crmLeadId, status, http
        VALUES ('outbound', 'TMT-EGREEN', 'CRM', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [eventId || null, eventType || null, leadId || null, crmLeadId || null, status || 'sent', httpStatus || null, payload ? JSON.stringify(payload) : null, response ? JSON.stringify(response) : null, error || null, durationMs || null]
     );
-  } catch (e) { /* silent */ }
+  } catch (e) {
+    console.error('[CrmWebhookLog] outbound insert failed:', e.message);
+  }
 };
 
 const cleanupOld = async (days = 120) => {
   try {
     await pool.query('DELETE FROM crm_webhook_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [days]);
-  } catch (e) { /* silent */ }
+  } catch (e) {
+    console.error('[CrmWebhookLog] cleanup failed:', e.message);
+  }
 };
 
 module.exports = { logInbound, logOutbound, cleanupOld };
