@@ -32,7 +32,7 @@ import {
   formatCommittedPoles,
   uploadButtonLabel
 } from '../../utils/proposalReport';
-import { Pencil, RotateCcw, Search } from 'lucide-react';
+import { Pencil, RotateCcw, Search, FileText } from 'lucide-react';
 
 const EMPTY_FILTERS = {
   proposalStatus: '', model: '', province: '', region: '',
@@ -95,6 +95,7 @@ const ProposalReportTab = ({ tab }) => {
   const [toastType, setToastType] = useState('success');
 
   const [uploadModal, setUploadModal] = useState({ open: false, record: null });
+  const [generatingId, setGeneratingId] = useState(null);
 
   const loadItems = useCallback(async (
     targetPage = 1,
@@ -142,6 +143,28 @@ const ProposalReportTab = ({ tab }) => {
 
   const openUpload = (record) => {
     setUploadModal({ open: true, record });
+  };
+
+  const handleGenerate = async (record) => {
+    if (!record || !record.id) return;
+    if (!window.confirm('Tạo tờ trình BCĐX từ mẫu cho đề xuất này?')) return;
+    setGeneratingId(record.id);
+    try {
+      const res = await proposalReportService.generate(record.id, {}, token);
+      if (res && res.success) {
+        setToastType('success');
+        setToastMessage(res.message || 'Đã tạo tờ trình BCĐX từ mẫu');
+        loadItems(page, pageSize, debouncedSearch, appliedFilters);
+      } else {
+        setToastType('error');
+        setToastMessage(res?.message || 'Tạo BCĐX thất bại');
+      }
+    } catch (e) {
+      setToastType('error');
+      setToastMessage(e?.message || 'Tạo BCĐX thất bại');
+    } finally {
+      setGeneratingId(null);
+    }
   };
 
   const handleUploaded = (result) => {
@@ -205,6 +228,16 @@ const ProposalReportTab = ({ tab }) => {
           {uploadButtonLabel(row)}
         </button>
       )}
+      <button
+        type="button"
+        className="btn btn-xs btn-outline gap-1"
+        title="Tạo tờ trình BCĐX từ mẫu"
+        onClick={() => handleGenerate(row)}
+        disabled={generatingId === row.id}
+      >
+        {generatingId === row.id ? <RotateCcw size={14} className="animate-spin" /> : <FileText size={14} />}
+        Tạo từ mẫu
+      </button>
     </div>
   );
 

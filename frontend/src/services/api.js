@@ -565,6 +565,9 @@ export const proposalReportService = {
   upload(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token));
   },
+  generate(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-reports/${id}/generate`, data || {}, token));
+  },
   requestRevision(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token));
   }

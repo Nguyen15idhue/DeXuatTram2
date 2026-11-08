@@ -31,7 +31,13 @@ const normalizeMapping = (m) => {
   const src = (m && typeof m === 'object') ? m : {};
   const loops = {};
   Object.entries(src.loops || {}).forEach(([k, cfg]) => { loops[k] = normalizeLoopForEdit(cfg); });
-  return { tokens: { ...(src.tokens || {}) }, loops };
+  return {
+    tokens: { ...(src.tokens || {}) },
+    loops,
+    signatureAnchors: Array.isArray(src.signatureAnchors) ? src.signatureAnchors : [],
+    signers: Array.isArray(src.signers) ? src.signers : [],
+    signatureBox: src.signatureBox || { width: 0.30, height: 0.08 },
+  };
 };
 
 const partIdOf = (p) => (p.kind === 'datalist' ? `dl:${p.listId}` : `t:${p.table}`);
@@ -583,7 +589,9 @@ const DocumentTemplateEditor = ({ templateId, onClose, onSaved }) => {
         </div>
       </div>
 
-      {errors.length > 0 && (
+<details className="collapse collapse-arrow bg-base-100 border border-base-300 rounded-lg mb-3"><summary className="collapse-title text-sm font-medium">Cau hinh chu ky (anchor + signer)</summary><div className="collapse-content space-y-2"><div><label className="text-xs font-medium">signatureAnchors (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={4} value={JSON.stringify(mapping.signatureAnchors || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signatureAnchors: v })); } catch { } }} /></div><div><label className="text-xs font-medium">signers (JSON)</label><textarea className="textarea textarea-bordered w-full text-xs font-mono" rows={6} value={JSON.stringify(mapping.signers || [], null, 2)} onChange={(e) => { try { const v = JSON.parse(e.target.value); setMapping((p) => ({ ...p, signers: v })); } catch { } }} /></div></div></details>
+
+            {errors.length > 0 && (
         <div className="alert alert-error mb-3">
           <AlertTriangle size={16} />
           <div className="text-sm">
