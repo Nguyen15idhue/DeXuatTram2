@@ -35,8 +35,46 @@ const resolveSigner = async (signerCfg) => {
 
 const generate = async ({ proposalId, templateId, user, ip } = {}) => {
   const proposal = await loadProposal(proposalId);
-  const model = proposal.mo_hinh_dau_tu || '';
-  const template = await documentService.resolveTemplate(model, templateId, 'proposal_report');
+  // Parse chot_so_luong_tru if string
+  if (typeof proposal.chot_so_luong_tru === 'string') {
+    try { proposal.chot_so_luong_tru = JSON.parse(proposal.chot_so_luong_tru); } catch { proposal.chot_so_luong_tru = []; }
+  }
+  if (!Array.isArray(proposal.chot_so_luong_tru)) proposal.chot_so_luong_tru = [];
+
+  // Enrich chot rows with stt, don_vi, gia_niem_yet, gia_uu_dai, ghi_chu
+  const [priceRows] = await pool.query('SELECT data FROM data_list_rows WHERE list_id = 18');
+  const priceMap = new Map();
+  priceRows.forEach((r) => {
+    const d = typeof r.data === 'string' ? (function(){ try { return JSON.parse(r.data); } catch { return {}; } })() : (r.data || {});
+    if (d.ten) {
+      const gia = Number(d.gia);
+      const giaUuDai = d.gia_uu_dai !== undefined && d.gia_uu_dai !== null && d.gia_uu_dai !== '' ? Number(d.gia_uu_dai) : gia;
+      priceMap.set(String(d.ten), { gia: Number.isFinite(gia) ? gia : 0, gia_uu_dai: Number.isFinite(giaUuDai) ? giaUuDai : gia });
+    }
+  });
+
+  proposal.chot_so_luong_tru = proposal.chot_so_luong_tru.map((row, idx) => {
+    const loaiTru = String(row.loai_tru || '').trim();
+    const priceInfo = priceMap.get(loaiTru) || { gia: Number(row.gia_chot) || 0, gia_uu_dai: Number(row.gia_chot) || 0 };
+    return {
+      ...row,
+      stt: idx + 1,
+      don_vi: 'Trụ',
+      gia_niem_yet: row.gia_niem_yet || priceInfo.gia,
+      gia_uu_dai: row.gia_uu_dai || priceInfo.gia_uu_dai,
+      ghi_chu: row.ghi_chu || '',
+    };
+  });
+  let template;
+  try {
+    template = await documentService.resolveTemplate(model, templateId, 'proposal_report');
+  } catch (e) {
+    try {
+      template = await documentService.resolveTemplate(model, templateId, 'station_proposals');
+    } catch (e2) {
+      throw err('Chưa cấu hình template BCĐX cho mô hình ' + (model || '(trống)'), 400);
+    }
+  }
 
   const mapping = template.mapping || {};
   const { data, loopInfos } = await documentService.buildData(proposal, mapping);

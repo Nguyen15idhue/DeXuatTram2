@@ -29,18 +29,36 @@ const AUTH_MIME_TYPES = Object.keys(MIME_TO_EXT);
 const BLOCKED_EXTS = new Set(['.svg', '.html', '.htm', '.js', '.mjs', '.exe', '.php', '.phtml', '.sh', '.bat', '.cmd', '.msi', '.dll', '.jar', '.py', '.pl', '.cgi']);
 
 const checkUploadFile = (file, allowedMimes) => {
-  const mime = String(file.mimetype || '').toLowerCase().split(';')[0].trim();
-  if (!allowedMimes.includes(mime)) return false;
+  let mime = String(file.mimetype || '').toLowerCase().split(';')[0].trim();
   const raw = String(file.originalname || '');
   const base = raw.split(/[\\/]/).pop() || '';
   const lower = base.toLowerCase();
+  const ext = path.extname(lower);
+
+  // Một số trình duyệt gửi MIME generic (zip/octet-stream) cho file .docx/.xlsx.
+  // Nếu phần mở rộng hợp lệ và MIME là generic, chấp nhận để verifyMagic kiểm tra tiếp.
+  const genericMimes = new Set(['application/zip', 'application/x-zip-compressed', 'application/octet-stream', '']);
+  const extToMime = {
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.doc': 'application/msword',
+    '.xls': 'application/vnd.ms-excel',
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.csv': 'text/csv',
+  };
+  if (genericMimes.has(mime) && extToMime[ext]) {
+    mime = extToMime[ext];
+    file.mimetype = mime; // normalize for downstream
+  }
+
+  if (!allowedMimes.includes(mime)) return false;
   const parts = lower.split('.');
   if (parts.length > 1) {
     for (let i = 1; i < parts.length; i++) {
       if (BLOCKED_EXTS.has('.' + parts[i])) return false;
     }
   }
-  const ext = path.extname(lower);
   const expected = MIME_TO_EXT[mime];
   if (expected && ext && ext !== expected) {
     const compat = {

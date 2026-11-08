@@ -421,9 +421,14 @@ const loadTruPrices = async () => {
   rows.forEach((row) => {
     const data = typeof row.data === 'string' ? parseCustomData(row.data) : (row.data || {});
     const ten = data.ten;
-    if (!ten || data.gia === null || data.gia === undefined || data.gia === '') return;
+    if (!ten) return;
     const gia = Number(data.gia);
-    if (Number.isFinite(gia)) map.set(String(ten), gia);
+    const giaUuDai = data.gia_uu_dai !== undefined && data.gia_uu_dai !== null && data.gia_uu_dai !== ''
+      ? Number(data.gia_uu_dai)
+      : (Number.isFinite(gia) ? gia : null);
+    if (Number.isFinite(gia)) {
+      map.set(String(ten), { gia, gia_uu_dai: Number.isFinite(giaUuDai) ? giaUuDai : gia });
+    }
   });
   return map;
 };
@@ -446,7 +451,9 @@ const normalizeChotRows = (rows, prices) => {
     if (!loaiTru) {
       throw err(`Dòng ${index + 1}: thiếu loại trụ`, 400);
     }
-    const giaChot = prices.get(loaiTru);
+    const priceInfo = prices.get(loaiTru);
+    const giaChot = priceInfo ? priceInfo.gia : undefined;
+    const giaUuDai = priceInfo ? priceInfo.gia_uu_dai : undefined;
     if (giaChot === undefined || !Number.isFinite(giaChot) || giaChot < 0) {
       throw err(`Dòng ${index + 1}: thiếu giá chốt cho loại trụ "${loaiTru}"`, 400);
     }
@@ -455,7 +462,10 @@ const normalizeChotRows = (rows, prices) => {
       so_luong: soLuong,
       loai_tru: loaiTru,
       gia_chot: giaChot,
-      thanh_tien: soLuong * giaChot
+      gia_niem_yet: giaChot,
+      gia_uu_dai: Number.isFinite(giaUuDai) ? giaUuDai : giaChot,
+      thanh_tien: soLuong * giaChot,
+      ghi_chu: String(row.ghi_chu || '').trim(),
     });
   });
   return result;

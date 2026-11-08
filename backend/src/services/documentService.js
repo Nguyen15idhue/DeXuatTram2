@@ -234,7 +234,11 @@ const partRows = async (ctx, part) => {
     (((dl && (dl.columns_config || dl.columns)) || [])).forEach((c) => { defs[c.key] = c; });
     return { rows, defs };
   }
-  const arr = ctx.proposal[part.table];
+  let arr = ctx.proposal[part.table];
+  // Parse JSON string columns (e.g. chot_so_luong_tru) into arrays
+  if (typeof arr === 'string') {
+    try { arr = JSON.parse(arr); } catch { arr = []; }
+  }
   return { rows: (Array.isArray(arr) ? arr : []).map((r) => ({ ...(r || {}) })), defs: tableColDefs(ctx, part.table) };
 };
 
