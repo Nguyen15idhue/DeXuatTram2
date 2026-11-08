@@ -189,6 +189,7 @@ router.get('/:id', requireAuth, requireProposalInfoManager, proposalReportContro
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id', requireAuth, requireProposalInfoManager, proposalReportController.upload);
+router.post('/:id/generate', requireAuth, requireProposalInfoManager, proposalReportController.generate);
 
 /**
  * @swagger

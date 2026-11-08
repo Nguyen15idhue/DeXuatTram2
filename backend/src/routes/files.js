@@ -226,7 +226,7 @@ router.get('/:id', requireAuth, fileController.getById);
  *       404:
  *         description: Không tìm thấy file
  */
-router.get('/:id/download', optionalAuth, fileController.download);
+router.get('/:id/preview', optionalAuth, fileController.preview);
 
 /**
  * @swagger

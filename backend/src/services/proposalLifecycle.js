@@ -340,6 +340,16 @@ exports.transition = async (id, to, opts = {}) => {
     console.error(`[ProposalNotifications] Failed to notify proposal ${id} after transition to ${to}:`, error);
   }
 
+  // Auto-generate BCĐX from template (best-effort, non-blocking)
+  if (to === 'PROPOSAL_REPORT_CREATING') {
+    try {
+      const gen = require('./proposalReportGenerationService');
+      gen.generate({ proposalId: id, user: { id: actorId, role: actorRole }, ip }).catch((e) => {
+        console.error(`[ProposalReportGen] Failed for proposal ${id}:`, e.message);
+      });
+    } catch (e) { console.error('[ProposalReportGen] trigger failed:', e.message); }
+  }
+
   // CRM outbound: notify milestones (best-effort)
   try {
     if (proposal.journey_id) {

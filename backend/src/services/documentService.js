@@ -355,11 +355,11 @@ const stripEmptyLoopRow = (zip, loopKey) => {
   }
 };
 
-const resolveTemplate = async (model, templateId) => {
+const resolveTemplate = async (model, templateId, entity = 'station_proposals') => {
   if (templateId) {
     const [rows] = await pool.query(
-      "SELECT id, `name`, entity, model, file_id, mapping, status FROM document_templates WHERE id = ? AND entity = 'station_proposals' AND status = 'active' LIMIT 1",
-      [templateId]
+      "SELECT id, `name`, entity, model, file_id, mapping, status FROM document_templates WHERE id = ? AND entity = ? AND status = 'active' LIMIT 1",
+      [templateId, entity]
     );
     if (rows.length === 0 || !rows[0].file_id) {
       throw Object.assign(new Error('Template không khả dụng'), { statusCode: 400 });
@@ -369,7 +369,7 @@ const resolveTemplate = async (model, templateId) => {
   }
   const [rows] = await pool.query(
     `SELECT id, \`name\`, entity, model, file_id, mapping, status FROM document_templates
-     WHERE entity = 'station_proposals' AND status = 'active' AND (model = ? OR model IS NULL)
+     WHERE entity = ? AND status = 'active' AND (model = ? OR model IS NULL)
      ORDER BY CASE WHEN model = ? THEN 0 ELSE 1 END, is_default DESC, id ASC LIMIT 1`,
     [model, model]
   );
@@ -391,6 +391,8 @@ const safeName = (s, fallback) => {
   return v || fallback;
 };
 
+exports.buildData = buildData;
+exports.resolveTemplate = resolveTemplate;
 exports.exportReports = async (proposalIds, opts = {}) => {
   const warnings = [];
   const skipped = [];

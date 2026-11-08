@@ -14,6 +14,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import PdfPageViewer from "../common/PdfPageViewer";
 import { downloadFile, openFileInNewTab } from "../../utils/filePreviewActions";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
@@ -395,6 +396,9 @@ const FileViewer = ({
   }
 
   const renderContent = () => {
+    if ((fileType === "word" || fileType === "pdf") && file?.id) {
+      return <PdfPageViewer fileId={file.id} token={token} />;
+    }
     if (fileType === "word") {
       if (!inline && htmlContent) {
         return (

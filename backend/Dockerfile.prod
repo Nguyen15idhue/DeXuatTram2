@@ -2,7 +2,7 @@ FROM node:20
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends imagemagick \
+    && apt-get install -y --no-install-recommends imagemagick libreoffice-writer libreoffice-common fontconfig \
     && sample_dir="$(mktemp -d)" \
     && convert -size 2x2 xc:white "$sample_dir/source.png" \
     && for format in jpg png gif webp; do \
@@ -16,4 +16,4 @@ RUN npm ci --omit=dev
 COPY . .
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["sh", "-c", "mkdir -p /usr/share/fonts/truetype/tmt-egreen && cp -f /app/signature-fonts/* /usr/share/fonts/truetype/tmt-egreen/ 2>/dev/null; fc-cache -f 2>/dev/null; npm start"]
