@@ -137,8 +137,10 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
   const role = scope.role;
   const userId = scope.userId;
 
-  if (poolType === 'gdkv' || poolType === 'gdtt') {
-    const group = poolType === 'gdkv' ? 'Giám đốc Khu vực' : 'Giám đốc Trung tâm Kinh doanh';
+  if (poolType === 'gdkv' || poolType === 'gdtt' || poolType === 'sales') {
+    const gdkvGroup = 'Giám đốc Khu vực';
+    const gdttGroup = 'Giám đốc Trung tâm Kinh doanh';
+    const primaryGroup = poolType === 'gdkv' ? gdkvGroup : gdttGroup;
 
     if (role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'MKT') {
       const roleFilter = role === 'SUPER_ADMIN'
@@ -146,11 +148,21 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
         : `role IN ('SALES','ADMIN')`;
       const [rows] = await pool.query(`SELECT ${USER_OPTION_META} FROM users
         WHERE status = 'ACTIVE' AND ${roleFilter} ORDER BY full_name`, []);
-      const isPrimary = (r) => r.role === 'SALES' && (poolType === 'gdkv' ? isGdkv(r.chuc_vu, r.department) : isGdtt(r.chuc_vu, r.department));
-      return [
-        ...rows.filter(isPrimary).map(r => ({ ...r, group })),
+      const isPrimary = (r) => r.role === 'SALES' && (poolType === 'gdkv'
+        ? isGdkv(r.chuc_vu, r.department)
+        : poolType === 'gdtt'
+          ? isGdtt(r.chuc_vu, r.department)
+          : isGdtt(r.chuc_vu, r.department) || isGdkv(r.chuc_vu, r.department));
+      const result = [
+        ...rows.filter(isPrimary).map(r => ({
+          ...r,
+          group: poolType === 'sales'
+            ? (isGdtt(r.chuc_vu, r.department) ? gdttGroup : gdkvGroup)
+            : primaryGroup,
+        })),
         ...rows.filter(r => !isPrimary(r)).map(r => ({ ...r, group: 'Khác' })),
       ];
+      return poolType === 'sales' ? result.filter(r => r.group !== 'Khác') : result;
     }
 
     if (role === 'SALES' && userId) {
@@ -158,12 +170,34 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
         `SELECT ${USER_OPTION_META} FROM users WHERE id = ? LIMIT 1`, [userId]
       );
       const me = meRows[0] || {};
-      if (poolType === 'gdkv' && isGdkv(me.chuc_vu, me.department)) {
-        return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group }];
+      const meIsGdkv = isGdkv(me.chuc_vu, me.department || '');
+      const meIsGdtt = isGdtt(me.chuc_vu, me.department || '');
+
+      // pool=sales: SALES chỉ giao được cho cấp dưới — GĐTT → GĐKV cùng phòng ban, GĐKV → chính mình.
+      if (poolType === 'sales') {
+        if (meIsGdkv) {
+          return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: gdkvGroup }];
+        }
+        const dept = me.department || null;
+        if (!meIsGdtt || !dept) return [];
+        const titles = gdkvTitlesFor(dept);
+        const [rows] = await pool.query(
+          `SELECT ${USER_OPTION_META} FROM users
+           WHERE status = 'ACTIVE' AND role = 'SALES'
+             AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.chuc_vu')) IN (${titles.map(() => '?').join(',')})
+             AND JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.department')) = ?
+           ORDER BY full_name`,
+          [...titles, dept]
+        );
+        return rows.map(r => ({ ...r, group: gdkvGroup }));
+      }
+
+      if (poolType === 'gdkv' && meIsGdkv) {
+        return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: gdkvGroup }];
       }
       const dept = me.department || null;
       if (!dept) {
-        if (poolType === 'gdkv' && isGdtt(me.chuc_vu, me.department) && me.id) {
+        if (poolType === 'gdkv' && meIsGdtt && me.id) {
           return [{ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: 'Chính bạn' }];
         }
         return [];
@@ -177,8 +211,8 @@ exports.getUserOptions = async (scope = {}, poolType = null) => {
          ORDER BY full_name`,
         [...titles, dept]
       );
-      const listed = rows.map(r => ({ ...r, group }));
-      if (poolType === 'gdkv' && isGdtt(me.chuc_vu, me.department) && me.id) {
+      const listed = rows.map(r => ({ ...r, group: primaryGroup }));
+      if (poolType === 'gdkv' && meIsGdtt && me.id) {
         if (!listed.some(r => Number(r.id) === Number(me.id))) {
           listed.push({ id: me.id, full_name: me.full_name, role: me.role, chuc_vu: me.chuc_vu, department: me.department, group: 'Chính bạn' });
         }

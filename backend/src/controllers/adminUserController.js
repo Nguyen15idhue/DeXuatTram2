@@ -32,7 +32,7 @@ exports.getAll = async (req, res) => {
 
 exports.getOptions = async (req, res) => {
   try {
-    const pool = ['gdkv', 'gdtt'].includes(req.query.pool) ? req.query.pool : null;
+    const pool = ['gdkv', 'gdtt', 'sales'].includes(req.query.pool) ? req.query.pool : null;
     const options = await adminUserService.getUserOptions({ role: req.user.role, userId: req.user.id }, pool);
     res.json({ success: true, data: options });
   } catch (error) {
