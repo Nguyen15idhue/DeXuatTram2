@@ -26,11 +26,36 @@ const formatIsoVn = (date) => {
 const enqueue = async ({ eventId, eventType, leadId, crmLeadId, payload, conn = pool }) => {
   if (!eventId) return null;
   try {
+    let finalPayload = { ...(payload || {}) };
+    const localId = leadId || null;
+    if (localId) {
+      const [rows] = await conn.query(
+        `SELECT external_crm_id, full_name, phone, email, address, province, ward, region, customer_type, source
+           FROM leads WHERE id = ? LIMIT 1`,
+        [localId]
+      );
+      const l = rows && rows[0];
+      if (l) {
+        finalPayload = {
+          ...finalPayload,
+          id: crmLeadId || l.external_crm_id || finalPayload.id || null,
+          name: finalPayload.name || l.full_name || null,
+          phone: finalPayload.phone || l.phone || null,
+          email: finalPayload.email || l.email || null,
+          address: finalPayload.address || l.address || null,
+          province: finalPayload.province || l.province || null,
+          ward: finalPayload.ward || l.ward || null,
+          region: finalPayload.region || l.region || null,
+          customer_type: finalPayload.customer_type || l.customer_type || null,
+          source: finalPayload.source || l.source || null
+        };
+      }
+    }
     await conn.query(
       `INSERT INTO crm_outbox (event_id, event_type, lead_id, crm_lead_id, payload, status, next_retry_at)
        VALUES (?, ?, ?, ?, ?, 'pending', NOW())
        ON DUPLICATE KEY UPDATE id = id`,
-      [eventId, eventType, leadId || null, crmLeadId || null, JSON.stringify(payload || {})]
+      [eventId, eventType, leadId || null, crmLeadId || null, JSON.stringify(finalPayload)]
     );
   } catch (e) {
     // ignore duplicate

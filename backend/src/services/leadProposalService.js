@@ -94,7 +94,7 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
     const crmLeadId = lead.external_crm_id || null;
     if (crmLeadId) {
       const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
-      const maDeXuat = (proposal && (proposal.ma_de_xuat || proposal.custom_data?.ma_de_xuat)) || `DX${proposalId}`;
+      const maDeXuat = (created && (created.ma_de_xuat || created.custom_data?.ma_de_xuat)) || `DX${proposalId}`;
       const crmOutboundService = require('./crmOutboundService');
       await crmOutboundService.enqueue({
         eventId: `eg_${leadId}_proposal_${proposalId}`,
@@ -114,7 +114,9 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
         }
       });
     }
-  } catch { /* silent */ }
+  } catch (notifyErr) {
+    console.error(`[CRM] notify proposal created failed: leadId=${leadId} proposalId=${proposalId} error=${notifyErr && notifyErr.message}`);
+  }
 
 
   if (idemKey) {
