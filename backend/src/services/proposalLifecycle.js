@@ -411,6 +411,26 @@ exports.transition = async (id, to, opts = {}) => {
             }
           });
         }
+        // Thông báo CRM cho mọi lần thay đổi trạng thái đề xuất (best-effort).
+        if (from !== to) {
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_status_${id}_${from}_${to}`,
+            eventType: 'lead.care',
+            leadId: lead.id,
+            crmLeadId,
+            payload: {
+              leadId: crmLeadId,
+              channel: crmStatusMapping.mapCareValue('channel', ''),
+              contact: crmStatusMapping.mapCareValue('contact', ''),
+              classify: crmStatusMapping.mapCareValue('classify', ''),
+              saleResult: crmStatusMapping.mapCareValue('saleResult', ''),
+              reason: '',
+              note: `Đã chuyển đề xuất ${code} từ trạng thái "${from}" sang "${to}"`,
+              staff: crmActorName,
+              ref: code
+            }
+          });
+        }
       }
     }
   } catch (error) {
