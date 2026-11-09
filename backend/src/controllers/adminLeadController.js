@@ -1,6 +1,13 @@
 const leadService = require('../services/leadService');
 const leadAssignmentService = require('../services/leadAssignmentService');
 
+exports.taskCounts = async (req, res) => {
+  try {
+    const data = await require('../services/leadTabsService').getTaskCounts(req.user);
+    res.json({ success: true, data });
+  } catch (error) { sendError(res, error); }
+};
+
 exports.assigneeOptions = async (req, res) => {
   try {
     const ctx = await require('../services/leadAccessService').getContext(req.user);

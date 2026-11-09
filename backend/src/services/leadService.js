@@ -187,12 +187,13 @@ const buildScope = async (user) => {
 };
 
 exports.getLeads = async (query, user) => {
+  const { condition } = await require('./leadTabsService').getTabFilter(normalizeQueryValue(query.tab), user);
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 10));
   const search = String(normalizeQueryValue(query.search) || '').trim();
 
-  const where = [];
-  const params = [];
+  const where = [condition.sql];
+  const params = [...condition.params];
 
   if (search) {
     where.push('(l.full_name LIKE ? OR l.phone LIKE ? OR l.lead_code LIKE ?)');

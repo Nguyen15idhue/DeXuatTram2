@@ -553,18 +553,20 @@ function getAllData(entity, filters = {}) {
   if (entity === 'leads') {
     const where = [];
     const params = [];
-    if (search) { where.push('(full_name LIKE ? OR phone LIKE ? OR lead_code LIKE ?)'); params.push(like, like, like); }
+    if (search) { where.push('(l.full_name LIKE ? OR l.phone LIKE ? OR l.lead_code LIKE ?)'); params.push(like, like, like); }
     // status (param cũ) = stage; + toàn bộ filter của trang Leads (dùng chung helper).
     const leadQuery = { ...filters.query, stage: filters.query && filters.query.stage ? filters.query.stage : status };
-    try {
-      require('./leadService').applyLeadListFilters(where, params, leadQuery, '');
-    } catch { /* fallback: chỉ stage */ }
+    require('./leadService').applyLeadListFilters(where, params, leadQuery, 'l.');
+    if (filters.tabCondition) {
+      where.push(filters.tabCondition.sql);
+      params.push(...filters.tabCondition.params);
+    }
     if (filters.scope && filters.scope.sql) {
-      where.push(filters.scope.sql.replace(/\bl\./g, ''));
+      where.push(filters.scope.sql);
       params.push(...(filters.scope.params || []));
     }
     const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
-    return pool.query(`SELECT * FROM leads ${whereClause} ORDER BY id DESC`, params);
+    return pool.query(`SELECT l.* FROM leads l ${whereClause} ORDER BY l.id DESC`, params);
   }
   return pool.query(`SELECT * FROM ${table} ORDER BY id DESC`);
 }
@@ -1062,8 +1064,10 @@ exports.exportDynamic = async (req, res) => {
     }
 
     let leadScope = null;
+    let tabCondition = null;
     if (entity === 'leads') {
       leadScope = await require('./leadService').buildScope(req.user);
+      ({ condition: tabCondition } = await require('./leadTabsService').getTabFilter(req.query.tab, req.user));
     }
 
     if (req.query.layout === 'form') {
@@ -1079,7 +1083,7 @@ exports.exportDynamic = async (req, res) => {
           userMap = m.byId;
         } catch { /* silent */ }
       }
-      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope, query: req.query });
+      const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope, tabCondition, query: req.query });
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet(entity);
       sheet.addRow(columns.map(() => null));
@@ -1103,7 +1107,7 @@ exports.exportDynamic = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chưa có view bảng cho entity này' });
     }
 
-    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope, query: req.query });
+    const [rows] = await getAllData(entity, { search, status, scopeUserId, scopeBranchUserIds, scope: leadScope, tabCondition, query: req.query });
 
     const workbook = new ExcelJS.Workbook();
     const multi = views.length > 1;
@@ -1137,7 +1141,7 @@ exports.exportDynamic = async (req, res) => {
     res.end();
   } catch (error) {
     console.error('Export dynamic error:', error);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Lỗi server' });
   }
 };
 

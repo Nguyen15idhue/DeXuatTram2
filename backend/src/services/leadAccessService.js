@@ -56,8 +56,8 @@ const permissionResolver = async (user, executor = pool) => {
       || (ctx.isGdtt && lead.assigned_department === ctx.department);
     return {
       can_view: inScope,
-      can_consult: inScope && (ctx.isSuper || ctx.isTgd || (ctx.isBusiness && !ctx.isPlanning)),
-      can_assign: inScope && (ctx.isSuper || ctx.isGdtt),
+      can_consult: inScope && (ctx.isSuper || (!ctx.isTgd && !ctx.isPlanning && (ctx.isGdtt || ctx.isGdkv))),
+      can_assign: inScope && (ctx.isSuper || (!ctx.isTgd && !ctx.isPlanning && ctx.isGdtt)),
       can_write_general: ctx.isSuper
     };
   };
@@ -65,4 +65,15 @@ const permissionResolver = async (user, executor = pool) => {
 
 const permissions = async (lead, user, executor = pool) => (await permissionResolver(user, executor))(lead);
 
-module.exports = { normalize, context, getContext, assertAccess, buildScope, permissions, permissionResolver };
+const tabPolicy = (ctx) => {
+  if (ctx.isSuper || ctx.isTgd || ctx.isPlanning) {
+    return { tabs: ['allocation', 'allocated', 'first-contact', 'consulting', 'completed', 'all'],
+      defaultTab: 'all', taskTabs: ['allocation', 'first-contact', 'consulting'] };
+  }
+  if (ctx.isGdtt) return { tabs: ['allocation', 'allocated', 'all'], defaultTab: 'allocation', taskTabs: ['allocation'] };
+  if (ctx.isGdkv) return { tabs: ['first-contact', 'consulting', 'completed', 'all'],
+    defaultTab: 'first-contact', taskTabs: ['first-contact', 'consulting'] };
+  return { tabs: ['all'], defaultTab: 'all', taskTabs: [] };
+};
+
+module.exports = { normalize, context, getContext, assertAccess, buildScope, permissions, permissionResolver, tabPolicy };

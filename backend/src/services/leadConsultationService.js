@@ -26,6 +26,9 @@ const same = (a, b) => (isEmpty(a) && isEmpty(b))
 const assertUpdateAllowed = async (lead, data, user, executor = pool) => {
   const permissions = await access.permissions(lead, user, executor);
   if (!permissions.can_view) throw fail('Không có quyền xem khách hàng', 403);
+  if (!permissions.can_consult && !permissions.can_assign && !permissions.can_write_general) {
+    throw fail('Bạn chỉ có quyền xem khách hàng', 403);
+  }
   const cd = parse(lead.custom_data);
   const fixed = ['full_name', 'phone', 'email', 'address', 'province', 'ward', 'customer_type', 'source',
     'note', 'customer_classification', 'sales_outcome', 'cskh_note', 'tvbh_note', 'cskh_history', 'tvbh_history', 'assigned_user_id'];

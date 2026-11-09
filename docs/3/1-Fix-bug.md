@@ -1,5 +1,20 @@
 # Fix Bug Log
 
+## E-sign: `mySignature is not defined`
+
+Trang `/admin/e-sign` gọi `renderMySignature()` nhưng chưa khai báo `mySignature`,
+gây crash khi xem chữ ký cá nhân. Đã bổ sung giá trị suy ra từ danh sách chữ ký
+theo `user_id` của tài khoản đăng nhập, không chọn nhầm chữ ký của người khác.
+
+Kiểm thử: `cd frontend` rồi `node test-e-sign.cjs` (cần Docker local đang chạy).
+Test tạo và dọn tài khoản tạm, kiểm tra SALES và ADMIN: chưa có chữ ký, tải ảnh,
+hiển thị ảnh, tải lại trang và xóa chữ ký.
+
+Lỗi 404 tại `/api/admin/signatures/:id/image` là vấn đề riêng: API trả 404 khi
+bản ghi hoặc tệp `signatures.file_path` không tồn tại. Nếu DB còn bản ghi nhưng
+tệp bị thiếu, cần khôi phục thư mục uploads đúng đường dẫn/mount hoặc tải lại ảnh
+chữ ký qua giao diện. Không xóa bản ghi thật hoặc tạo ảnh thay thế tự động.
+
 ## Bug #1: `setSuccess` undefined — AdminStationsPage.jsx:103
 
 **Mô tả:** Dòng `setSuccess('')` gọi biến chưa khai báo, gây crash khi submit form tạo/sửa trạm.

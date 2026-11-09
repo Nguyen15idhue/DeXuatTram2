@@ -19,6 +19,22 @@ router.get('/assignee-options', requireAuth, requireLeadManager, adminLeadContro
 
 /**
  * @swagger
+ * /api/admin/leads/task-counts:
+ *   get:
+ *     tags: [Leads]
+ *     summary: Số khách theo tab và tổng công việc theo quyền, không áp dụng bộ lọc bảng
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: counts theo tab được phép, total, tabs và default_tab
+ *       403:
+ *         description: Không có quyền Quản lý khách hàng
+ */
+router.get('/task-counts', requireAuth, requireLeadManager, adminLeadController.taskCounts);
+
+/**
+ * @swagger
  * /api/admin/leads:
  *   get:
  *     tags: [Leads]
@@ -27,9 +43,16 @@ router.get('/assignee-options', requireAuth, requireLeadManager, adminLeadContro
  *       Super Admin, TGĐ và Phòng Công nghệ và Quy hoạch xem toàn bộ.
  *       Nhân sự Kinh doanh ba miền xem theo cây quản lý; GĐTTKD theo phòng ban.
  *       ADMIN/MKT không có quyền mặc định, phải thuộc chức danh/phòng ban cho phép.
+ *       TGĐ, CN&QH và nhân sự kinh doanh không phải GĐTTKD/GĐKV chỉ đọc.
  *     security:
  *       - bearerAuth: []
  *     parameters:
+ *       - in: query
+ *         name: tab
+ *         schema:
+ *           type: string
+ *           enum: [allocation, allocated, first-contact, consulting, completed, all]
+ *         description: Mặc định theo nhóm; tab không được phép trả 403
  *       - in: query
  *         name: search
  *         schema:

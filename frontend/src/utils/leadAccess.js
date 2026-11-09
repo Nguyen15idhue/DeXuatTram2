@@ -17,13 +17,31 @@ export const canManageBusinessCalendar = (user) => !!user && (user.role === 'SUP
 export const canWriteLeadGeneral = (user, record) => user?.role === 'SUPER_ADMIN'
   && record?.permissions?.can_write_general !== false;
 export const canAssignLead = (user, record) => canAccessCustomers(user)
-  && (user?.role === 'SUPER_ADMIN' || (!isLeadPlanning(user) && isLeadCenterDirector(user)))
+  && (user?.role === 'SUPER_ADMIN' || (!isLeadCeo(user) && !isLeadPlanning(user) && isLeadCenterDirector(user)))
   && record?.permissions?.can_assign !== false;
 export const canConsultLead = (user, record) => {
-  if (!user || (isLeadPlanning(user) && user?.role !== 'SUPER_ADMIN' && !isLeadCeo(user))) return false;
+  if (!user) return false;
+  if (user.role !== 'SUPER_ADMIN' && (isLeadCeo(user) || isLeadPlanning(user)
+    || !isLeadBusinessCenter(user) || (!isLeadCenterDirector(user) && !isLeadAreaDirector(user)))) return false;
   if (typeof record?.permissions?.can_consult === 'boolean') return record.permissions.can_consult;
   if (!canAccessCustomers(user)) return false;
-  return user?.role === 'SUPER_ADMIN' || isLeadCeo(user);
+  return user?.role === 'SUPER_ADMIN';
+};
+export const LEAD_TABS = [
+  { key: 'allocation', label: 'Cần phân chia', task: true },
+  { key: 'allocated', label: 'Đã phân chia' },
+  { key: 'first-contact', label: 'Cần tư vấn lần đầu', task: true },
+  { key: 'consulting', label: 'Đang tư vấn', task: true },
+  { key: 'completed', label: 'Đã hoàn thành' },
+  { key: 'all', label: 'Tất cả' },
+];
+export const leadTabPolicy = (user) => {
+  if (user?.role === 'SUPER_ADMIN' || isLeadCeo(user) || isLeadPlanning(user)) {
+    return { tabs: LEAD_TABS, defaultTab: 'all' };
+  }
+  const keys = isLeadCenterDirector(user) ? ['allocation', 'allocated', 'all']
+    : isLeadAreaDirector(user) ? ['first-contact', 'consulting', 'completed', 'all'] : ['all'];
+  return { tabs: LEAD_TABS.filter(tab => keys.includes(tab.key)), defaultTab: keys[0] };
 };
 export const canEditLead = (user, record) => canWriteLeadGeneral(user, record) || canConsultLead(user, record);
 export const LEAD_CONSULTATION_OPTIONS = [

@@ -25,6 +25,16 @@ test('full form empty and scalar user values compare consistently', () => {
   assert.equal(consultation.same({ id: 12 }, 13), false);
 });
 
+test('tab policies follow title priority and defaults', () => {
+  const policy = (role, department, title) => access.tabPolicy(access.context(user(role, department, title)));
+  assert.equal(policy('SUPER_ADMIN').tabs.length, 6);
+  assert.equal(policy('ADMIN', '', 'Tổng Giám đốc').defaultTab, 'all');
+  assert.equal(policy('SALES', 'Phòng Công nghệ và Quy hoạch').tabs.length, 6);
+  assert.deepEqual(policy('MKT', 'Trung tâm KD miền Bắc', 'Giám đốc Trung tâm Kinh doanh').tabs, ['allocation', 'allocated', 'all']);
+  assert.deepEqual(policy('SALES', 'Trung tâm KD miền Nam', 'Giám đốc Khu vực').taskTabs, ['first-contact', 'consulting']);
+  assert.deepEqual(policy('SALES', 'Trung tâm KD miền Nam', 'Chuyên viên').tabs, ['all']);
+});
+
 test('empty TVBH row or timestamp alone does not count as first contact', async () => {
   for (const row of [{}, { thoi_gian: '2026-11-10T08:00:00+07:00' }]) {
     const calls = [];

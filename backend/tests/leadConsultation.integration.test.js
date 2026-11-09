@@ -13,6 +13,8 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
   const calendar = require('../src/services/businessCalendarService');
   const worker = require('../src/workers/leadConsultationWorker');
   const importJobs = require('../src/services/importJobService');
+  const tabsService = require('../src/services/leadTabsService');
+  const access = require('../src/services/leadAccessService');
   const prefix = `lead-workflow-${crypto.randomUUID()}`;
   const users = [];
   const journeys = [];
@@ -34,6 +36,17 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     const planning = await newUser('ADMIN', 'Phòng Công nghệ và Quy hoạch', 'Chuyên viên');
     const tgd = await newUser('ADMIN', 'Ban Tổng Giám đốc', 'Tổng Giám đốc');
     const admin = await newUser('ADMIN', 'Back office', 'Chuyên viên');
+    const staff = await newUser('SALES', department, 'Chuyên viên', director.id);
+    const compareCounts = async (actor) => {
+      const summary = await tabsService.getTaskCounts(actor);
+      for (const tab of summary.tabs) {
+        const list = await leads.getLeads({ tab, limit: 1 }, actor);
+        assert.equal(list.pagination.total, summary.counts[tab], `count for ${actor.id}/${tab}`);
+      }
+      const policy = access.tabPolicy(await access.getContext(actor));
+      assert.equal(summary.total, policy.taskTabs.reduce((sum, tab) => sum + summary.counts[tab], 0));
+      return summary;
+    };
     await importJobs.create({ id: prefix, entity: 'leads', rows: [], createdBy: superAdmin.id });
     await assert.rejects(() => importJobs.getByIdScoped(prefix, planning), { statusCode: 403 });
     await assert.rejects(() => importJobs.listScoped({ entity: 'leads' }, 1, 20, planning), { statusCode: 403 });
@@ -52,6 +65,17 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
       return result.insertId;
     };
     const id = await newLead();
+    assert.equal((await leads.getLeads({ search: prefix }, director)).leads[0].id, id);
+    await compareCounts(superAdmin);
+    await compareCounts(director);
+    await compareCounts(tgd);
+    await compareCounts(planning);
+    assert.equal((await compareCounts(staff)).total, 0);
+    await assert.rejects(() => leads.getLeads({ tab: 'completed' }, director), { statusCode: 403 });
+    await assert.rejects(() => leads.getLeads({ tab: 'allocation' }, gdkv), { statusCode: 403 });
+    await assert.rejects(() => leads.getLeads({ tab: 'unknown' }, superAdmin), { statusCode: 400 });
+    await assert.rejects(() => leads.updateLead(id, { tvbh_note: 'TGĐ chỉ đọc' }, tgd), { statusCode: 403 });
+    await assert.rejects(() => leads.updateLead(id, { tvbh_note: 'Nhân sự khác chỉ đọc' }, staff), { statusCode: 403 });
     assert.equal(await leads.canAccessLead(await leads.getLeadById(id), planning), true);
     await assert.rejects(() => leads.getLeads({}, admin), { statusCode: 403 });
     await assert.rejects(() => assignments.assignLead(id, gdkv.id, tgd), { statusCode: 403 });
@@ -60,6 +84,9 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     let lead = await leads.getLeadById(id);
     assert.equal(lead.consultation_status, 'WAITING_FIRST_CONTACT');
     assert.equal(lead.consultation_round, 1);
+    await compareCounts(gdkv);
+    assert.equal((await leads.getLeads({ tab: 'allocation', search: prefix }, director)).pagination.total, 0);
+    assert.equal((await leads.getLeads({ tab: 'allocated', search: prefix }, director)).pagination.total, 1);
     assert.ok(lead.consultation_calendar_id);
     const activeCalendar = await calendar.getCalendarById(lead.consultation_calendar_id);
     assert.ok(Math.abs(calendar.workingMinutesBetween(lead.first_contact_started_at, lead.first_contact_deadline_at, activeCalendar) - 240) < 0.1);
@@ -75,6 +102,9 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     await leads.updateLead(id, { tvbh_history: [{ ghi_chu: 'Đã tư vấn lần đầu' }] }, director);
     lead = await leads.getLeadById(id);
     assert.equal(lead.consultation_status, 'CONSULTING');
+    assert.equal((await leads.getLeads({ tab: 'first-contact', search: prefix }, secondGdkv)).pagination.total, 0);
+    assert.equal((await leads.getLeads({ tab: 'consulting', search: prefix }, secondGdkv)).pagination.total, 1);
+    await compareCounts(secondGdkv);
     assert.ok(lead.first_contact_at);
     assert.equal(await consultation.getTiming(lead), null);
     await assignments.assignLead(id, gdkv.id, director);
@@ -83,6 +113,11 @@ test('customer workflow, scope, calendar snapshot and warning idempotency', {
     assert.equal(lead.consultation_round, 2);
     await leads.updateLead(id, { sales_outcome: 'SUCCESS' }, gdkv);
     assert.equal((await leads.getLeadById(id)).consultation_status, 'SUCCESS');
+    assert.equal((await leads.getLeads({ tab: 'consulting', search: prefix }, gdkv)).pagination.total, 0);
+    assert.equal((await leads.getLeads({ tab: 'completed', search: prefix }, gdkv)).pagination.total, 1);
+    assert.equal((await leads.getLeads({ tab: 'allocated', search: prefix }, director)).pagination.total, 1);
+    await compareCounts(gdkv);
+    await assert.rejects(() => require('../src/services/leadProposalService').createProposalFromLead(id, {}, tgd), { statusCode: 403 });
 
     const warningId = await newLead('warning');
     await assignments.assignLead(warningId, gdkv.id, director);
