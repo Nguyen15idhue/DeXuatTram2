@@ -88,13 +88,20 @@ const scopeClause = async (scope, params) => {
     }
     return '';
   }
-  if (scope.role === 'SALES') {
+  if (['SALES', 'NPP'].includes(scope.role)) {
     const adminProposalService = require('./adminProposalService');
     const branchUserIds = await adminProposalService.getBranchUserIds(scope.userId);
     const ids = [scope.userId, ...branchUserIds].filter(Boolean).map(Number);
     if (ids.length === 0) return ' AND 1 = 0';
+    const placeholders = ids.map(() => '?').join(',');
+    const ors = [];
+    ors.push(`p.user_id IN (${placeholders})`);
     params.push(...ids);
-    return ` AND p.user_id IN (${ids.map(() => '?').join(',')})`;
+    ors.push(`(CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) IN (${placeholders}))`);
+    params.push(...ids);
+    ors.push(`(CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) IN (${placeholders}))`);
+    params.push(...ids);
+    return ` AND (${ors.join(' OR ')})`;
   }
   params.push(scope.userId);
   return ' AND p.user_id = ?';
@@ -106,6 +113,21 @@ const canUploadReport = async (scope, proposal) => {
     { id: scope.userId, role: scope.role },
     { user_id: proposal.user_id }
   )) return true;
+  // Giao việc theo GĐKV quản lý của người đề xuất: cho phép upload nếu
+  // nguoi_phu_trach/sales_quan_ly thuộc branch (chính mình + cấp dưới đệ quy).
+  if (['SALES', 'NPP'].includes(scope.role)) {
+    const cd = parseCustomData(proposal.custom_data);
+    const managerIds = [cd.nguoi_phu_trach?.id, cd.sales_quan_ly?.id]
+      .filter((v) => v !== null && v !== undefined && v !== '')
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    if (managerIds.length > 0) {
+      const adminProposalService = require('./adminProposalService');
+      const branchIds = await adminProposalService.getBranchUserIds(scope.userId);
+      const allowed = new Set([Number(scope.userId), ...branchIds.map(Number)]);
+      if (managerIds.some((mid) => allowed.has(mid))) return true;
+    }
+  }
   if (scope.roleKey === 'GDTTKD' && scope.region) {
     const region = proposalRegion(proposal.custom_data);
     return !!region && region === scope.region;

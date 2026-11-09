@@ -214,6 +214,17 @@ const optionalAuth = (req, res, next) => {
   next();
 };
 
+// Middleware: Quyền quản lý Lập tờ trình BCĐX (SUPER_ADMIN, ADMIN, SALES, NPP) — không CTV.
+const requireProposalReportManager = (req, res, next) => {
+  if (!['ADMIN', 'SUPER_ADMIN', 'SALES', 'NPP'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Không có quyền truy cập'
+    });
+  }
+  next();
+};
+
 module.exports = {
   requireAuth,
   requireAdmin,
@@ -222,6 +233,7 @@ module.exports = {
   requireUserAccountManager,
   requireProposalManager,
   requireProposalInfoManager,
+  requireProposalReportManager,
   requireLeadManager,
   requireLeadWriter,
   requireReportViewer,
