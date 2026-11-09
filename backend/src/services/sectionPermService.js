@@ -231,7 +231,7 @@ exports.enforceLeadEdit = async (user, data, conn = pool, before = null) => {
   }
 };
 
-const ALWAYS_VISIBLE = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at', 'deleted_at']);
+const ALWAYS_VISIBLE = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
 
 exports.stripLeadView = async (record, user, conn = pool) => {
   if (!record || !user) return record;

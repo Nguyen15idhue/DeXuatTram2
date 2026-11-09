@@ -72,6 +72,7 @@ const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'];
 const USER_MANAGER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'NPP'];
 const PROPOSAL_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const PROPOSAL_INFO_ROLES = PROPOSAL_ROLES;
+const PROPOSAL_REPORT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'NPP'];
 const PROPOSAL_FILE_ROLES = PROPOSAL_INFO_ROLES;
 const SIGNING_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'CTV', 'NPP'];
 const ESIGN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT', 'CTV', 'NPP'];
@@ -230,7 +231,7 @@ function App() {
             <Route
               path="/admin/proposals/lap-to-trinh/:id"
               element={
-                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
+                <RoleRoute allowed={PROPOSAL_REPORT_ROLES}>
                   <AdminProposalReportDetailPage />
                 </RoleRoute>
               }
@@ -238,7 +239,7 @@ function App() {
             <Route
               path="/admin/proposals/lap-to-trinh"
               element={
-                <RoleRoute allowed={PROPOSAL_INFO_ROLES}>
+                <RoleRoute allowed={PROPOSAL_REPORT_ROLES}>
                   <AdminProposalsLapToTrinhPage />
                 </RoleRoute>
               }

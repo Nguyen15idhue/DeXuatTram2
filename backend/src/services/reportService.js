@@ -66,7 +66,7 @@ async function buildReportScope(user) {
 }
 
 async function leadWhere(user, f) {
-  const where = ['l.deleted_at IS NULL'];
+  const where = [];
   const params = [];
   if (f.date_from) { where.push('l.created_at >= ?'); params.push(`${f.date_from} 00:00:00`); }
   if (f.date_to) { where.push('l.created_at <= ?'); params.push(`${f.date_to} 23:59:59`); }
@@ -109,7 +109,7 @@ function proposalScopeClause(scope, user, alias) {
     return { sql: `(${ors.join(' OR ')})`, params };
   }
   return {
-    sql: `(${alias}.journey_id IN (SELECT l2.journey_id FROM leads l2 WHERE l2.created_by = ? AND l2.deleted_at IS NULL) OR ${alias}.user_id = ?)`,
+    sql: `(${alias}.journey_id IN (SELECT l2.journey_id FROM leads l2 WHERE l2.created_by = ?) OR ${alias}.user_id = ?)`,
     params: [Number(user.id), Number(user.id)],
   };
 }
@@ -827,7 +827,7 @@ exports.getLead360 = async (leadId, user) => {
      WHERE l.id = ? LIMIT 1`,
     [id]
   );
-  if (lrows.length === 0 || lrows[0].deleted_at) {
+  if (lrows.length === 0) {
     throw Object.assign(new Error('Không tìm thấy Lead'), { statusCode: 404 });
   }
   const lead = lrows[0];

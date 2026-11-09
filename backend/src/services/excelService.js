@@ -551,7 +551,7 @@ function getAllData(entity, filters = {}) {
     return pool.query(`SELECT id, full_name, email, phone, role, status, parent_id, custom_data, created_at, updated_at FROM users ${whereClause} ORDER BY id DESC`, params);
   }
   if (entity === 'leads') {
-    const where = ['deleted_at IS NULL'];
+    const where = [];
     const params = [];
     if (search) { where.push('(full_name LIKE ? OR phone LIKE ? OR lead_code LIKE ?)'); params.push(like, like, like); }
     // status (param cũ) = stage; + toàn bộ filter của trang Leads (dùng chung helper).

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { api, API_URL } from "../../services/api";
-import { AlertCircle, Image as ImageIcon, Loader2, Pencil, Trash2, Upload } from "lucide-react";
+import { api, API_URL, adminUserService } from "../../services/api";
+import { AlertCircle, Image as ImageIcon, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import Button from "../../components/ui/Button";
 import Dialog from "../../components/ui/Dialog";
 import PageHeader from "../../components/ui/PageHeader";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import Toast from "../../components/Toast";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024;
@@ -105,6 +106,10 @@ const AdminESignPage = () => {
   const [createFile, setCreateFile] = useState(null);
   const [createPreview, setCreatePreview] = useState(null);
 
+  const [createForUserModal, setCreateForUserModal] = useState({ open: false, userId: "", file: null, preview: null });
+  const [createForUserUsers, setCreateForUserUsers] = useState([]);
+  const [createForUserLoading, setCreateForUserLoading] = useState(false);
+
   const [updateModal, setUpdateModal] = useState({ open: false, sig: null, file: null, preview: null });
   const [confirmUpdate, setConfirmUpdate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState({ open: false, sig: null });
@@ -136,11 +141,6 @@ const AdminESignPage = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  const mySignature = useMemo(
-    () => signatures.find((sig) => Number(sig.user_id) === Number(user?.id)),
-    [signatures, user?.id],
-  );
 
   const imageSrc = (sig) =>
     sig?.id ? `${API_URL}/admin/signatures/${sig.id}/image?token=${encodeURIComponent(token || "")}` : "";
@@ -217,6 +217,58 @@ const AdminESignPage = () => {
       await loadData();
     } catch (err) {
       setError(err.message || "Lỗi cập nhật chữ ký");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openCreateForUserModal = async () => {
+    setCreateForUserModal({ open: true, userId: "", file: null, preview: null });
+    setCreateForUserLoading(true);
+    try {
+      const res = await adminUserService.getOptions(token);
+      const opts = Array.isArray(res?.data) ? res.data : [];
+      const existingIds = new Set(signatures.map((s) => Number(s.user_id)));
+      setCreateForUserUsers(opts.filter((u) => !existingIds.has(Number(u.id))));
+    } catch {
+      setCreateForUserUsers([]);
+    } finally {
+      setCreateForUserLoading(false);
+    }
+  };
+
+  const closeCreateForUserModal = () => {
+    setCreateForUserModal((prev) => {
+      if (prev.preview) URL.revokeObjectURL(prev.preview);
+      return { open: false, userId: "", file: null, preview: null };
+    });
+  };
+
+  const pickCreateForUserFile = (file) => {
+    const message = validateFile(file);
+    if (message) {
+      setError(message);
+      return;
+    }
+    setError("");
+    setCreateForUserModal((prev) => {
+      if (prev.preview) URL.revokeObjectURL(prev.preview);
+      return { ...prev, file, preview: URL.createObjectURL(file) };
+    });
+  };
+
+  const handleCreateForUser = async () => {
+    const { userId, file } = createForUserModal;
+    if (!userId || !file) return;
+    setSaving(true);
+    setError("");
+    try {
+      await uploadSignature(file, userId);
+      closeCreateForUserModal();
+      setToast({ message: "Đã tạo chữ ký số cho người dùng", type: "success" });
+      await loadData();
+    } catch (err) {
+      setError(err.message || "Lỗi tạo chữ ký");
     } finally {
       setSaving(false);
     }
@@ -463,11 +515,68 @@ const AdminESignPage = () => {
             </button>
           </div>
 
-          {activeTab === "mine" ? renderMySignature() : renderTable()}
+          {activeTab === "mine"
+            ? renderMySignature()
+            : (
+              <>
+                {user?.role === "SUPER_ADMIN" && (
+                  <div className="flex justify-end">
+                    <Button onClick={openCreateForUserModal}>
+                      <Plus size={14} className="mr-1" /> Tạo chữ ký cho người dùng
+                    </Button>
+                  </div>
+                )}
+                {renderTable()}
+              </>
+            )}
         </>
       ) : (
         renderMySignature()
       )}
+
+      <Dialog
+        isOpen={createForUserModal.open}
+        onClose={closeCreateForUserModal}
+        title="Tạo chữ ký số cho người dùng"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Người dùng</label>
+            {createForUserLoading ? (
+              <div className="flex items-center gap-2 text-sm text-base-content/60">
+                <Loader2 size={14} className="animate-spin" /> Đang tải danh sách...
+              </div>
+            ) : (
+              <SearchableSelect
+                options={createForUserUsers.map((u) => ({
+                  value: u.id,
+                  label: `${u.full_name} (${u.role}${u.chuc_vu ? ` - ${u.chuc_vu}` : ""})`
+                }))}
+                value={createForUserModal.userId}
+                onChange={(v) => setCreateForUserModal((prev) => ({ ...prev, userId: v }))}
+                placeholder="-- Chọn người dùng chưa có chữ ký --"
+                searchPlaceholder="Tìm theo tên người dùng..."
+                emptyText="-- Chọn người dùng chưa có chữ ký --"
+                noResultText="Không tìm thấy người dùng phù hợp"
+                disabled={saving}
+              />
+            )}
+            {createForUserUsers.length === 0 && !createForUserLoading && (
+              <p className="text-xs text-base-content/50 mt-1">Tất cả người dùng đã có chữ ký.</p>
+            )}
+          </div>
+          <DropZone preview={createForUserModal.preview} onPick={pickCreateForUserFile} disabled={saving} />
+        </div>
+        <div className="modal-action">
+          <Button variant="ghost" onClick={closeCreateForUserModal} disabled={saving}>
+            Hủy
+          </Button>
+          <Button onClick={handleCreateForUser} disabled={!createForUserModal.userId || !createForUserModal.file || saving} loading={saving}>
+            Lưu chữ ký
+          </Button>
+        </div>
+      </Dialog>
 
       <Dialog
         isOpen={updateModal.open}

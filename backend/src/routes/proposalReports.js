@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireProposalInfoManager } = require('../middlewares/auth');
+const { requireAuth, requireProposalReportManager } = require('../middlewares/auth');
 const proposalReportController = require('../controllers/proposalReportController');
 
 /**
@@ -83,7 +83,7 @@ const proposalReportController = require('../controllers/proposalReportControlle
  *       403:
  *         description: Không có quyền
  */
-router.get('/', requireAuth, requireProposalInfoManager, proposalReportController.list);
+router.get('/', requireAuth, requireProposalReportManager, proposalReportController.list);
 
 /**
  * @swagger
@@ -97,7 +97,7 @@ router.get('/', requireAuth, requireProposalInfoManager, proposalReportControlle
  *       200:
  *         description: Thành công
  */
-router.get('/filter-options', requireAuth, requireProposalInfoManager, proposalReportController.filterOptions);
+router.get('/filter-options', requireAuth, requireProposalReportManager, proposalReportController.filterOptions);
 
 /**
  * @swagger
@@ -122,7 +122,7 @@ router.get('/filter-options', requireAuth, requireProposalInfoManager, proposalR
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.get('/:id', requireAuth, requireProposalInfoManager, proposalReportController.detail);
+router.get('/:id', requireAuth, requireProposalReportManager, proposalReportController.detail);
 
 /**
  * @swagger
@@ -228,6 +228,6 @@ router.post('/:id/generate', requireAuth, requireProposalInfoManager, proposalRe
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id/request-revision', requireAuth, requireProposalInfoManager, proposalReportController.requestRevision);
+router.put('/:id/request-revision', requireAuth, requireProposalReportManager, proposalReportController.requestRevision);
 
 module.exports = router;

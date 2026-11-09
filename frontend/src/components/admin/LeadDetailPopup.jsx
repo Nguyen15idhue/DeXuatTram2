@@ -8,7 +8,7 @@ import LeadJourneyPopup from './LeadJourneyPopup';
 import LeadAssignDialog from './LeadAssignDialog';
 import LeadReportTab from './LeadReportTab';
 import Toast from '../Toast';
-import { X, Pencil, Save, MapPinned, MapPin, Link2, FilePlus2, FileBarChart, Route, Split } from 'lucide-react';
+import { X, Pencil, Save, MapPinned, MapPin, Link2, FilePlus2, FileBarChart, FileText, Route, Split } from 'lucide-react';
 import useDataListMap from '../../hooks/useDataListMap';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import { collectTableDatalistIds } from '../../utils/tableColumnSource';
@@ -28,6 +28,20 @@ const getFieldValue = (rec, field) => {
   const cd = rec.custom_data && typeof rec.custom_data === 'object' ? rec.custom_data : null;
   if (cd && cd[key] !== undefined) return cd[key];
   return rec[key];
+};
+
+const buildCrmExtraNote = (extra) => {
+  const entries = extra && typeof extra === 'object' && !Array.isArray(extra) ? Object.entries(extra) : [];
+  const lines = [];
+  for (const [key, value] of entries) {
+    const fieldKey = String(key ?? '').trim();
+    if (!fieldKey) continue;
+    const text = value === null || value === undefined ? '' : String(value);
+    const clean = text.replace(/\r\n/g, ' ').trim();
+    if (!clean) continue;
+    lines.push(`${fieldKey}: ${clean}`);
+  }
+  return lines.join('\n');
 };
 
 const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, onSwitchMode }) => {
@@ -57,6 +71,7 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   const [saving, setSaving] = useState(false);
   const [showCreateProposal, setShowCreateProposal] = useState(false);
   const [creatingProposal, setCreatingProposal] = useState(false);
+  const [addingCrmExtra, setAddingCrmExtra] = useState(false);
   const [showJourney, setShowJourney] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -261,6 +276,37 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
     }
   };
 
+  const handleAddCrmExtraToCskh = async () => {
+    if (!record) return;
+    const extra = record.custom_data && typeof record.custom_data === 'object' ? record.custom_data.extra : null;
+    const noteText = buildCrmExtraNote(extra);
+    if (!noteText) {
+      setToast({ message: 'Lead chưa có nội dung extra từ CRM để thêm vào ghi chú CSKH', type: 'error' });
+      return;
+    }
+    const existing = Array.isArray(record.custom_data?.cskh_history) ? record.custom_data.cskh_history : [];
+    const lastNote = existing.length ? String(existing[existing.length - 1]?.note || '') : '';
+    const cskhHistory = lastNote === noteText
+      ? existing
+      : [...existing, { note: noteText, at: new Date().toISOString() }];
+    setAddingCrmExtra(true);
+    try {
+      const res = await leadService.update(record.id, { cskh_history: cskhHistory }, token);
+      if (res && res.success) {
+        setToast({ message: 'Đã thêm nội dung CRM vào ghi chú CSKH', type: 'success' });
+        const fresh = await leadService.getById(record.id, token);
+        if (fresh && fresh.success) setRecord(fresh.data);
+        if (onSaved) onSaved();
+      } else {
+        throw new Error((res && res.message) || 'Thêm nội dung CRM vào ghi chú CSKH thất bại');
+      }
+    } catch (err) {
+      setToast({ message: (err && err.message) || 'Lỗi thêm nội dung CRM vào ghi chú CSKH', type: 'error' });
+    } finally {
+      setAddingCrmExtra(false);
+    }
+  };
+
   const renderFieldInput = (field) => {
     const key = field.field_key || field.key;
     const value = getFieldValue(record, field);
@@ -290,6 +336,14 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   });
 
   const canCreateProposal = record && record.sales_outcome === 'SUCCESS';
+  const crmExtraNoteText = record ? buildCrmExtraNote(record.custom_data && typeof record.custom_data === 'object' ? record.custom_data.extra : null) : '';
+  const canEditCskhSection = useMemo(() => {
+    try {
+      return canEditLeadSection({ id: 'cskh_manual', title: 'Chăm sóc khách hàng (CSKH)' }, user);
+    } catch {
+      return false;
+    }
+  }, [user]);
 
   return (
     <div className="modal-overlay" onClick={mode === 'edit' ? undefined : onClose}>
@@ -361,6 +415,17 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
         <div className="popup-footer" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', padding: 12, borderTop: '1px solid #e2e8f0' }}>
           {mode === 'view' && (
             <>
+              {canEditCskhSection && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline btn-accent gap-1"
+                  onClick={handleAddCrmExtraToCskh}
+                  disabled={addingCrmExtra || !record || !crmExtraNoteText}
+                  title={crmExtraNoteText ? 'Thêm nội dung extra từ CRM vào ghi chú CSKH' : 'Lead chưa có nội dung extra từ CRM'}
+                >
+                  <FileText size={14} /> {addingCrmExtra ? 'Đang thêm...' : 'Thêm nội dung CRM vào ghi chú CSKH'}
+                </button>
+              )}
               <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={openCreateProposal} disabled={!canCreateProposal} title={canCreateProposal ? 'Tạo nhanh đề xuất từ Lead' : 'Lead chưa TVBH thành công'}>
                 <FilePlus2 size={14} /> Tạo đề xuất
               </button>

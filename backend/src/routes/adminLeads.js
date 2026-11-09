@@ -100,7 +100,7 @@ router.post('/bulk-delete', requireAuth, requireLeadWriter, adminLeadController.
  * /api/admin/leads/bulk-assign:
  *   post:
  *     tags: [Leads]
-  *     summary: Phân chia nhiều Lead cho 1 GĐKV (ADMIN/SUPER mọi GĐKV; GĐTT chỉ trong phòng ban; MKT/SALES khác không có quyền)
+  *     summary: Phân chia nhiều Lead cho 1 GĐTTKD/GĐKV (luật: chỉ Tiềm năng/Quan tâm; ADMIN/Super giao cả GĐTTKD; GĐTT chỉ GĐKV cùng phòng ban; MKT/CTV/NPP không có quyền)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -192,7 +192,10 @@ router.post('/bulk-assign', requireAuth, requireLeadManager, adminLeadController
  * /api/admin/leads/{id}/assign:
  *   post:
  *     tags: [Leads]
- *     summary: Giao Lead cho GĐKV (ghi lịch sử, đóng assignment cũ)
+ *     summary: Giao Lead cho GĐTTKD/GĐKV (ghi lịch sử, đóng assignment cũ)
+ *     description: |
+ *       Chỉ Lead phân loại "Tiềm năng"/"Quan tâm" được giao. Target phải là SALES GĐTTKD hoặc GĐKV đang hoạt động.
+ *       Giao cho GĐTTKD chỉ Quản trị viên (SUPER_ADMIN/ADMIN) được thực hiện; GĐTT chỉ giao được GĐKV cùng phòng ban.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -211,7 +214,7 @@ router.post('/bulk-assign', requireAuth, requireLeadManager, adminLeadController
  *             properties:
  *               assignee_user_id:
  *                 type: integer
- *                 description: ID SALES GĐKV ACTIVE cùng phòng ban
+ *                 description: ID SALES ACTIVE có chức vụ GĐTTKD hoặc GĐKV (GĐTTKD chỉ nhận từ ADMIN/SUPER)
  *               reason:
  *                 type: string
  *     responses:
@@ -322,7 +325,7 @@ router.get('/:id/journey', requireAuth, requireLeadManager, adminLeadController.
 router.get('/:id', requireAuth, requireLeadManager, adminLeadController.getById);
 router.put('/:id', requireAuth, requireLeadManager, validateUpdateLead, adminLeadController.update);
 router.delete('/:id', requireAuth, requireLeadWriter, adminLeadController.remove);
-router.post('/:id/restore', requireAuth, requireLeadWriter, adminLeadController.restore);
+
 
 /**
  * @swagger

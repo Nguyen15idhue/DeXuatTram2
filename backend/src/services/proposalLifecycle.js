@@ -402,6 +402,45 @@ exports.transition = async (id, to, opts = {}) => {
             payload: { leadId: crmLeadId, status: 'won', note: crmStatusMapping.MILESTONE_NOTES.stationOn, ref: code }
           });
         }
+        // CRM 'lost' = "Trạng thái Đã loại + lý do (reason)" — đề xuất chết báo CRM ngừng chờ.
+        if (to === 'CANCELLED' || to === 'REJECTED') {
+          const [reasonRows] = await pool.query('SELECT reject_reason FROM station_proposals WHERE id = ? LIMIT 1', [id]);
+          const reason = String((reasonRows[0] && reasonRows[0].reject_reason) || '').trim();
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_lost_${id}`,
+            eventType: 'lead.result',
+            leadId: lead.id,
+            crmLeadId,
+            payload: {
+              leadId: crmLeadId,
+              status: 'lost',
+              reason,
+              note: to === 'CANCELLED' ? crmStatusMapping.MILESTONE_NOTES.proposalCancelled : crmStatusMapping.MILESTONE_NOTES.proposalRejected,
+              staff: crmActorName,
+              ref: code
+            }
+          });
+        }
+        // Thông báo CRM cho mọi lần thay đổi trạng thái đề xuất (best-effort).
+        if (from !== to) {
+          await crmOutboundService.enqueue({
+            eventId: `eg_${lead.id}_status_${id}_${from}_${to}`,
+            eventType: 'lead.care',
+            leadId: lead.id,
+            crmLeadId,
+            payload: {
+              leadId: crmLeadId,
+              channel: crmStatusMapping.mapCareValue('channel', ''),
+              contact: crmStatusMapping.mapCareValue('contact', ''),
+              classify: crmStatusMapping.mapCareValue('classify', ''),
+              saleResult: crmStatusMapping.mapCareValue('saleResult', ''),
+              reason: '',
+              note: `Đã chuyển đề xuất ${code} từ trạng thái "${from}" sang "${to}"`,
+              staff: crmActorName,
+              ref: code
+            }
+          });
+        }
       }
     }
   } catch (error) {

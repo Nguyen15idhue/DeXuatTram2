@@ -4,6 +4,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { X, Users, Split } from 'lucide-react';
 
 const GDKV_GROUP = 'Giám đốc Khu vực';
+const GDTT_GROUP = 'Giám đốc Trung tâm Kinh doanh';
+const ASSIGNABLE_GROUPS = [GDKV_GROUP, GDTT_GROUP];
+
+const isAssignableClassification = (value) => {
+  const c = String(value || '').trim();
+  return ['TIEM_NANG', 'Tiềm năng', 'QUAN_TAM', 'Quan tâm'].includes(c);
+};
 
 const normalizeUserId = (v) => {
   if (v === undefined || v === null || v === '') return null;
@@ -28,7 +35,7 @@ const currentAssigneeLabelOf = (leads) => {
 };
 
 const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [assignee, setAssignee] = useState('');
@@ -36,6 +43,9 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [extraOption, setExtraOption] = useState(null);
+  // ADMIN/SUPER thấy cả GĐTTKD + GĐKV (pool=sales); SALES chỉ thấy GĐKV cấp dưới.
+  const isAdminLevel = (user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role));
+  const optionsTitle = isAdminLevel ? 'GĐTTKD/GĐKV phụ trách' : 'Giám đốc Khu vực phụ trách';
 
   useEffect(() => {
     if (!open || !token) return;
@@ -46,36 +56,34 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
     setAssignee(initial || '');
     setReason('');
     setExtraOption(null);
-    leadService.getGdkvOptions(token)
+    const load = isAdminLevel ? leadService.getSalesOptions(token) : leadService.getGdkvOptions(token);
+    load
       .then(res => {
         if (cancelled) return;
         if (res && res.success) {
           const all = res.data || [];
-          const gdkv = all.filter(o => (o.group || GDKV_GROUP) === GDKV_GROUP);
-          const list = gdkv.length > 0 ? gdkv : all;
+          const primary = all.filter(o => ASSIGNABLE_GROUPS.includes(o.group));
+          const list = primary.length > 0 ? primary : all;
           setOptions(list);
-          // Nếu GĐKV hiện tại không nằm trong danh sách (vd ngoài phạm vi chọn) → thêm option hiển thị tên đã giao.
+          // Người hiện tại không nằm trong danh sách (vd ngoài phạm vi chọn) → thêm option hiển thị tên đã giao.
           if (initial && !list.some(o => String(o.id) === String(initial))) {
-            setExtraOption({ id: initial, full_name: currentAssigneeLabelOf(leads) || `GĐKV #${initial}`, department: '' });
+            setExtraOption({ id: initial, full_name: currentAssigneeLabelOf(leads) || `GĐTTKD/GĐKV #${initial}`, department: '' });
           }
         } else {
-          setError((res && res.message) || 'Không tải được danh sách GĐKV');
+          setError((res && res.message) || 'Không tải được danh sách GĐTTKD/GĐKV');
         }
       })
-      .catch(() => { if (!cancelled) setError('Lỗi tải danh sách GĐKV'); })
+      .catch(() => { if (!cancelled) setError('Lỗi tải danh sách GĐTTKD/GĐKV'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, token]);
+  }, [open, token, isAdminLevel, user && user.role]);
 
   if (!open) return null;
 
-  const nonPotential = (leads || []).filter(l => {
-    const c = String(l.customer_classification || '').trim();
-    return c !== 'TIEM_NANG' && c !== 'Tiềm năng';
-  });
+  const nonPotential = (leads || []).filter(l => !isAssignableClassification(l.customer_classification));
 
   const handleConfirm = async () => {
-    if (!assignee) { setError('Vui lòng chọn Giám đốc Khu vực'); return; }
+    if (!assignee) { setError('Vui lòng chọn GĐTTKD/GĐKV'); return; }
     setSubmitting(true);
     setError('');
     try {
@@ -111,7 +119,7 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
 
         {nonPotential.length > 0 && (
           <div className="alert alert-warning text-sm mb-3">
-            Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban.
+            Chỉ Lead có Phân loại khách hàng là Tiềm năng hoặc Quan tâm mới được phân về phòng ban.
             {` Có ${nonPotential.length} Lead chưa đủ điều kiện sẽ bị bỏ qua/báo lỗi.`}
           </div>
         )}
@@ -132,25 +140,27 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
           </div>
 
           <div>
-            <div className="text-sm font-semibold mb-2">Giám đốc Khu vực phụ trách</div>
+            <div className="text-sm font-semibold mb-2">{optionsTitle}</div>
             <select
               className="select select-bordered w-full"
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
               disabled={loading}
             >
-              <option value="">{loading ? 'Đang tải...' : 'Chọn GĐKV'}</option>
+              <option value="">{loading ? 'Đang tải...' : 'Chọn GĐTTKD/GĐKV'}</option>
               {extraOption && (
                 <option value={extraOption.id}>{extraOption.full_name}{extraOption.department ? ` — ${extraOption.department}` : ''}</option>
               )}
               {options.map(o => (
                 <option key={o.id} value={o.id}>
-                  {o.full_name}{o.department ? ` — ${o.department}` : ''}
+                  {o.full_name}{o.department ? ` — ${o.department}` : ''}{isAdminLevel && o.group ? ` (${
+                    o.group === GDTT_GROUP ? 'GĐTTKD' : o.group === GDKV_GROUP ? 'GĐKV' : o.group
+                  })` : ''}
                 </option>
               ))}
             </select>
             <div className="text-xs text-base-content/60 mt-1">
-              {options.length} GĐKV khả dụng
+              {options.length} GĐTTKD/GĐKV khả dụng
             </div>
             <div className="form-control mt-3">
               <label className="label py-1"><span className="label-text text-xs">Lý do (tùy chọn)</span></label>

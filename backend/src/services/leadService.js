@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const pool = require('../utils/db');
 const { isGdtt, isGdkv } = require('../constants/salesRanks');
 
-const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at', 'deleted_at']);
+const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
 
 const normalizeUserValue = (value) => {
   if (value === undefined || value === null || value === '') return null;
@@ -86,6 +86,13 @@ const normalizeClassification = (value) => {
   const s = String(value).trim();
   return CLASSIFICATION_CODES[s] || s;
 };
+
+// Phân loại được phép phân chia/giao Lead — nguồn sự thật chung cho
+// leadAssignmentService + updateLead (PUT assigned_user_id).
+const ASSIGNABLE_CLASSIFICATIONS = ['TIEM_NANG', 'QUAN_TAM'];
+
+const isAssignableClassification = (value) =>
+  ASSIGNABLE_CLASSIFICATIONS.includes(normalizeClassification(value));
 
 // Chuẩn hóa giá trị query: Express trả mảng khi key lặp lại (panel + column filter
 // cùng field) — lấy giá trị cuối khác rỗng thay vì để mysql escape mảng gây 500.
@@ -206,11 +213,6 @@ exports.getLeads = async (query, user) => {
   const where = [];
   const params = [];
 
-  const deletedFilter = String(normalizeQueryValue(query.deleted) || 'all').toLowerCase();
-  if (deletedFilter === 'active') where.push('l.deleted_at IS NULL');
-  else if (deletedFilter === 'deleted') where.push('l.deleted_at IS NOT NULL');
-  // 'all' (default) → không lọc theo deleted_at
-
   if (search) {
     where.push('(l.full_name LIKE ? OR l.phone LIKE ? OR l.lead_code LIKE ?)');
     const like = `%${search}%`;
@@ -283,7 +285,7 @@ const getLeadRow = async (id, conn = pool) => {
     `SELECT l.*, j.journey_code, j.current_stage AS journey_stage
        FROM leads l
        JOIN business_journeys j ON j.id = l.journey_id
-      WHERE l.id = ? AND l.deleted_at IS NULL
+      WHERE l.id = ?
       LIMIT 1`,
     [id]
   );
@@ -533,8 +535,8 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     const effClassForAssign = patch.customer_classification !== undefined
       ? patch.customer_classification : lead.customer_classification;
     const changedAssignee = Number(n || 0) !== Number(lead.assigned_user_id || 0);
-    if (n && changedAssignee && normalizeClassification(effClassForAssign) !== 'TIEM_NANG') {
-      const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
+    if (n && changedAssignee && !isAssignableClassification(effClassForAssign)) {
+      const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng hoặc Quan tâm mới được phân về phòng ban');
       err.statusCode = 400;
       throw err;
     }
@@ -548,23 +550,41 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
       );
       const target = trows[0];
       const tcd = parseCustomData(target && target.custom_data);
-      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || !isGdkv(tcd.chuc_vu, tcd.department || '')) {
-        const err = new Error('Chỉ giao Lead cho Giám đốc Khu vực (GĐKV) đang hoạt động');
+      const targetIsGdtt = target && isGdtt(tcd.chuc_vu, tcd.department || '');
+      const targetIsGdkv = target && isGdkv(tcd.chuc_vu, tcd.department || '');
+      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || (!targetIsGdkv && !targetIsGdtt)) {
+        const err = new Error('Chỉ giao Lead cho GĐTTKD/GĐKV đang hoạt động');
         err.statusCode = 400;
         throw err;
       }
-      let dept = lead.assigned_department || null;
-      if (dept && tcd.department && String(tcd.department) !== String(dept)) {
-        const err = new Error(`GĐKV phải thuộc "${dept}" (đổi phòng ban phải dùng Phân chia Leads)`);
-        err.statusCode = 400;
+      if (targetIsGdtt && !['SUPER_ADMIN', 'ADMIN'].includes(user && user.role)) {
+        const err = new Error('Chỉ Quản trị viên mới được giao Lead cho GĐTTKD');
+        err.statusCode = 403;
         throw err;
       }
-      if (!dept) dept = tcd.department || null;
-      if (!dept && lead.region) dept = await getRoutingDepartment(lead.region, conn);
-      if (!dept) {
-        const err = new Error('Lead chưa có phòng ban (thiếu routing theo vùng)');
-        err.statusCode = 400;
-        throw err;
+      let dept;
+      if (targetIsGdtt) {
+        // Giao GĐTTKD (chỉ ADMIN/SUPER): phòng ban theo GĐTTKD được chọn.
+        dept = tcd.department || null;
+        if (!dept) {
+          const err = new Error('Không xác định được phòng ban của GĐTTKD');
+          err.statusCode = 400;
+          throw err;
+        }
+      } else {
+        dept = lead.assigned_department || null;
+        if (dept && tcd.department && String(tcd.department) !== String(dept)) {
+          const err = new Error(`GĐKV phải thuộc "${dept}" (đổi phòng ban phải dùng Phân chia Leads)`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (!dept) dept = tcd.department || null;
+        if (!dept && lead.region) dept = await getRoutingDepartment(lead.region, conn);
+        if (!dept) {
+          const err = new Error('Lead chưa có phòng ban (thiếu routing theo vùng)');
+          err.statusCode = 400;
+          throw err;
+        }
       }
       patch.assigned_department = dept;
     }
@@ -759,61 +779,8 @@ exports.deleteLead = async (id, user) => {
     err.statusCode = 409;
     throw err;
   }
-  await pool.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [id]);
-  try {
-    const journeyActivityService = require('./journeyActivityService');
-    await journeyActivityService.log({
-      journey_id: lead.journey_id,
-      entity_type: 'lead',
-      entity_id: Number(id),
-      action: 'lead_deleted',
-      actor_id: user ? user.id : null,
-      actor_role: user ? user.role : null,
-      source: 'admin',
-    });
-  } catch { /* silent */ }
+  await pool.query('DELETE FROM business_journeys WHERE id = ?', [lead.journey_id]);
   return { id: Number(id) };
-};
-
-exports.restoreLead = async (id, user) => {
-  const [rows] = await pool.query(
-    `SELECT l.*, j.journey_code, j.current_stage AS journey_stage
-       FROM leads l
-       JOIN business_journeys j ON j.id = l.journey_id
-      WHERE l.id = ?
-      LIMIT 1`,
-    [id]
-  );
-  const lead = rows[0] || null;
-  if (!lead) {
-    const err = new Error('Không tìm thấy Lead');
-    err.statusCode = 404;
-    throw err;
-  }
-  if (!lead.deleted_at) {
-    const err = new Error('Lead này chưa bị xóa');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (!(await canAccessLead(lead, user))) {
-    const err = new Error('Không có quyền khôi phục Lead này');
-    err.statusCode = 403;
-    throw err;
-  }
-  await pool.query('UPDATE leads SET deleted_at = NULL, updated_at = NOW() WHERE id = ?', [id]);
-  try {
-    const journeyActivityService = require('./journeyActivityService');
-    await journeyActivityService.log({
-      journey_id: lead.journey_id,
-      entity_type: 'lead',
-      entity_id: Number(id),
-      action: 'lead_restored',
-      actor_id: user ? user.id : null,
-      actor_role: user ? user.role : null,
-      source: 'admin',
-    });
-  } catch { /* silent */ }
-  return { id: Number(id), restored: true };
 };
 
 exports.bulkDeleteLeads = async (ids, user) => {
@@ -831,7 +798,7 @@ exports.bulkDeleteLeads = async (ids, user) => {
       const [rows] = await conn.query(
         `SELECT l.*, j.journey_code FROM leads l
            JOIN business_journeys j ON j.id = l.journey_id
-          WHERE l.id = ? AND l.deleted_at IS NULL LIMIT 1`,
+          WHERE l.id = ? LIMIT 1`,
         [lid]
       );
       const lead = rows[0];
@@ -854,19 +821,7 @@ exports.bulkDeleteLeads = async (ids, user) => {
         err.statusCode = 409;
         throw err;
       }
-      await conn.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [lid]);
-      try {
-        const journeyActivityService = require('./journeyActivityService');
-        await journeyActivityService.log({
-          journey_id: lead.journey_id,
-          entity_type: 'lead',
-          entity_id: lid,
-          action: 'lead_deleted',
-          actor_id: user ? user.id : null,
-          actor_role: user ? user.role : null,
-          source: 'admin',
-        }, conn);
-      } catch { /* silent */ }
+      await conn.query('DELETE FROM business_journeys WHERE id = ?', [lead.journey_id]);
       results.push({ id: lid });
     }
     await conn.commit();
@@ -917,6 +872,8 @@ exports.buildScope = buildScope;
 exports.lookupProvince = lookupProvince;
 exports.checkWard = checkWard;
 exports.normalizeClassification = normalizeClassification;
+exports.isAssignableClassification = isAssignableClassification;
+exports.ASSIGNABLE_CLASSIFICATIONS = ASSIGNABLE_CLASSIFICATIONS;
 exports.normalizeQueryValue = normalizeQueryValue;
 exports.applyLeadListFilters = applyLeadListFilters;
 exports.checkFieldOptionValue = checkFieldOptionValue;
