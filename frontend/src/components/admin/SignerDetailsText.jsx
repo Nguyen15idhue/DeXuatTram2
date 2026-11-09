@@ -5,12 +5,12 @@ const POINTS_TO_CSS_PIXELS = 4 / 3;
 const SignerDetailsText = ({ signer, timeText, className = '' }) => {
   const lineKeys = ['name', 'time'];
   const textByKey = {
-    name: signer.full_name || '',
-    time: timeText || ''
+    name: signer.full_name ? `Đã ký bởi: ${signer.full_name}` : '',
+    time: timeText ? (timeText.includes(':') ? `Đã ký lúc: ${timeText}` : timeText) : ''
   };
 
   return (
-    <div className={`overflow-hidden text-center ${className}`}>
+    <div className={`overflow-hidden text-left ${className}`}>
       {lineKeys.map((key) => {
         const line = signerTextLayout.lines[key];
         const value = textByKey[key];

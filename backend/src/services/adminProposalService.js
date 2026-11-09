@@ -142,7 +142,7 @@ exports.getAllProposals = async (status, search, page, limit, scope = {}, uuTien
     FROM station_proposals p
     LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN users manager ON manager.id = u.parent_id
-    LEFT JOIN leads l ON l.journey_id = p.journey_id AND l.deleted_at IS NULL
+    LEFT JOIN leads l ON l.journey_id = p.journey_id
     ${whereClause}
     ORDER BY p.created_at DESC
     LIMIT ? OFFSET ?`,
@@ -180,7 +180,7 @@ exports.getProposalWithUser = async (id) => {
             l.id AS lead_id, l.lead_code AS lead_code
        FROM station_proposals p
        LEFT JOIN users u ON p.user_id = u.id
-       LEFT JOIN leads l ON l.journey_id = p.journey_id AND l.deleted_at IS NULL
+       LEFT JOIN leads l ON l.journey_id = p.journey_id
       WHERE p.id = ?`,
     [id]
   );

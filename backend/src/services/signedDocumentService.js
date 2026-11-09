@@ -62,10 +62,18 @@ const formatSignedTime = (value) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('vi-VN', {
+  const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
     hour12: false
-  });
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('hour')}:${get('minute')}:${get('second')} ${get('day')}/${get('month')}/${get('year')}`;
 };
 
 const fontPaths = () => {
@@ -148,7 +156,7 @@ const drawSignerLine = (page, signer, box, pageWidth, pageHeight, fonts, key, va
   const textWidth = measureSignerText(fonts, key, text);
 
   page.drawText(text, {
-    x: innerLeft + Math.max(0, innerWidth - textWidth) / 2,
+    x: innerLeft,
     y: pageHeight - topPt - baselineFromTop,
     size: fontSize,
     font: font.embedded,
@@ -157,8 +165,8 @@ const drawSignerLine = (page, signer, box, pageWidth, pageHeight, fonts, key, va
 };
 
 const signerTextValues = (signer) => ({
-  name: signer.full_name || '',
-  time: formatSignedTime(signer.signed_at) || 'Thời gian ký'
+  name: `Đã ký bởi: ${signer.full_name || ''}`,
+  time: `Đã ký lúc: ${formatSignedTime(signer.signed_at) || 'Thời gian ký'}`
 });
 
 const measureSignerText = (fonts, key, text) => {
@@ -228,6 +236,15 @@ const convertSignatureImage = async (filePath) => {
   return stdout;
 };
 
+const parsePngDimensions = (buffer) => {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
+  if (buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4E || buffer[3] !== 0x47) return null;
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (!width || !height) return null;
+  return { width, height };
+};
+
 const readSignature = async (signer) => {
   const [rows] = await pool.query(
     'SELECT file_path FROM signatures WHERE id = ? LIMIT 1',
@@ -249,7 +266,8 @@ const readSignature = async (signer) => {
     }
     throw invalidDocument(`Ảnh chữ ký của ${signer.full_name || 'người ký'} không hợp lệ`);
   }
-  return { bytes, extension: 'png', contentType: 'image/png' };
+  const dims = parsePngDimensions(bytes);
+  return { bytes, extension: 'png', contentType: 'image/png', width: dims?.width, height: dims?.height };
 };
 
 exports.validateSignature = async (signatureId) => readSignature({ signature_id: signatureId });
@@ -307,11 +325,33 @@ const stampPdf = async (source, signers, { includeImages = true } = {}) => {
   return Buffer.from(await pdf.save());
 };
 
-const imageDrawing = ({ relationshipId, signer, box, imageId, pageWidth, pageHeight }) => {
-  const width = Math.max(1, Math.round(box.width * pageWidth));
-  const height = Math.max(1, Math.round(signerImageRegion(0, box.height * pageHeight, 20).height));
-  const x = Math.round(box.posX * pageWidth);
-  const y = Math.round(signerImageRegion(box.posY * pageHeight, box.height * pageHeight, 20).top);
+const imageDrawing = ({ relationshipId, signer, box, imageId, pageWidth, pageHeight, imageWidth, imageHeight }) => {
+  const boxWidthTwips = Math.max(1, Math.round(box.width * pageWidth));
+  const boxHeightTwips = Math.max(1, Math.round(box.height * pageHeight));
+  const leftPaddingTwips = signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 20;
+  const rightPaddingTwips = signerTextLayout.rightPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 20;
+  const availableWidthTwips = Math.max(1, boxWidthTwips - leftPaddingTwips - rightPaddingTwips);
+  const region = signerImageRegion(0, boxHeightTwips, 20);
+  const regionHeightTwips = Math.max(1, region.height);
+  const regionTopTwips = region.top;
+
+  let drawWidthTwips = availableWidthTwips;
+  let drawHeightTwips = regionHeightTwips;
+  if (imageWidth && imageHeight) {
+    const scale = Math.min(
+      (availableWidthTwips * 0.88) / imageWidth,
+      regionHeightTwips / imageHeight
+    );
+    drawWidthTwips = Math.max(1, Math.round(imageWidth * scale));
+    drawHeightTwips = Math.max(1, Math.round(imageHeight * scale));
+  }
+  const xTwips = Math.round(box.posX * pageWidth) + leftPaddingTwips + Math.max(0, Math.round((availableWidthTwips - drawWidthTwips) / 2));
+  const yTwips = Math.round(regionTopTwips + Math.max(0, (regionHeightTwips - drawHeightTwips) / 2));
+
+  const width = drawWidthTwips;
+  const height = drawHeightTwips;
+  const x = xTwips;
+  const y = yTwips;
   const name = xmlEscape(`Chữ ký ${signer.full_name || signer.user_id}`);
   return `<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${imageId}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${x * 635}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${y * 635}</wp:posOffset></wp:positionV><wp:extent cx="${width * 635}" cy="${height * 635}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="${imageId}" name="${name}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${imageId}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width * 635}" cy="${height * 635}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 };
@@ -338,7 +378,7 @@ const textDrawing = ({ signer, box, drawingId, pageWidth, pageHeight }) => {
     const run = value
       ? `<w:r><w:rPr><w:rFonts w:ascii="${fontFamily}" w:hAnsi="${fontFamily}" w:eastAsia="${fontFamily}" w:cs="${fontFamily}"/><w:color w:val="${color}"/><w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/><w:lang w:val="vi-VN"/>${bold}</w:rPr><w:t xml:space="preserve">${xmlEscape(value)}</w:t></w:r>`
       : '';
-    return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0" w:line="${lineHeightTwips}" w:lineRule="exact"/></w:pPr>${run}</w:p>`;
+    return `<w:p><w:pPr><w:jc w:val="left"/><w:spacing w:before="0" w:after="0" w:line="${lineHeightTwips}" w:lineRule="exact"/></w:pPr>${run}</w:p>`;
   }).join('');
   const drawingName = xmlEscape(`Thông tin người ký ${signer.full_name || signer.user_id}`);
   const inset = Math.round(signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL * 12700);
@@ -406,7 +446,9 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
         box,
         imageId,
         pageWidth,
-        pageHeight
+        pageHeight,
+        imageWidth: signature.width,
+        imageHeight: signature.height
       });
     }
     const requestedPage = Math.max(1, Number(signer.page) || 1);
@@ -450,8 +492,8 @@ const normalizedText = (value) => String(value || '')
 const hasSignerDetails = (text, signer) => {
   const content = normalizedText(text);
   return [
-    signer.full_name,
-    formatSignedTime(signer.signed_at) || 'Thời gian ký'
+    `Đã ký bởi: ${signer.full_name || ''}`,
+    `Đã ký lúc: ${formatSignedTime(signer.signed_at) || 'Thời gian ký'}`
   ].every((value) => content.includes(normalizedText(value)));
 };
 

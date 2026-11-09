@@ -119,8 +119,16 @@ export const formatSignedTime = (value) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('vi-VN', {
-    hour12: false,
-    timeZone: 'Asia/Ho_Chi_Minh'
-  });
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour12: false
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('hour')}:${get('minute')}:${get('second')} ${get('day')}/${get('month')}/${get('year')}`;
 };

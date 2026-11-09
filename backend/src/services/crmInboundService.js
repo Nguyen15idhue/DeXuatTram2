@@ -147,12 +147,7 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
   if (!crmId) throw new Error('Thiếu id khách hàng CRM');
 
   // find existing by external_crm_id
-  const [existing] = await conn.query('SELECT id, deleted_at, custom_data FROM leads WHERE external_crm_id = ? LIMIT 1', [crmId]);
-
-  // lead đã bị xóa mềm ở local: giữ nguyên xóa, không khôi phục
-  if (existing.length && existing[0].deleted_at) {
-    return { id: existing[0].id, created: false, result: 'skipped', reason: 'Lead đã bị xóa trong Quản lý leads' };
-  }
+  const [existing] = await conn.query('SELECT id, custom_data FROM leads WHERE external_crm_id = ? LIMIT 1', [crmId]);
   if (existing.length && onExisting === 'skip') {
     return { id: existing[0].id, created: false, result: 'skipped', reason: 'Lead đã tồn tại' };
   }

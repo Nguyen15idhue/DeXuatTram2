@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const pool = require('../utils/db');
 const { isGdtt, isGdkv } = require('../constants/salesRanks');
 
-const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at', 'deleted_at']);
+const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
 
 const normalizeUserValue = (value) => {
   if (value === undefined || value === null || value === '') return null;
@@ -213,11 +213,6 @@ exports.getLeads = async (query, user) => {
   const where = [];
   const params = [];
 
-  const deletedFilter = String(normalizeQueryValue(query.deleted) || 'all').toLowerCase();
-  if (deletedFilter === 'active') where.push('l.deleted_at IS NULL');
-  else if (deletedFilter === 'deleted') where.push('l.deleted_at IS NOT NULL');
-  // 'all' (default) → không lọc theo deleted_at
-
   if (search) {
     where.push('(l.full_name LIKE ? OR l.phone LIKE ? OR l.lead_code LIKE ?)');
     const like = `%${search}%`;
@@ -290,7 +285,7 @@ const getLeadRow = async (id, conn = pool) => {
     `SELECT l.*, j.journey_code, j.current_stage AS journey_stage
        FROM leads l
        JOIN business_journeys j ON j.id = l.journey_id
-      WHERE l.id = ? AND l.deleted_at IS NULL
+      WHERE l.id = ?
       LIMIT 1`,
     [id]
   );
@@ -784,61 +779,8 @@ exports.deleteLead = async (id, user) => {
     err.statusCode = 409;
     throw err;
   }
-  await pool.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [id]);
-  try {
-    const journeyActivityService = require('./journeyActivityService');
-    await journeyActivityService.log({
-      journey_id: lead.journey_id,
-      entity_type: 'lead',
-      entity_id: Number(id),
-      action: 'lead_deleted',
-      actor_id: user ? user.id : null,
-      actor_role: user ? user.role : null,
-      source: 'admin',
-    });
-  } catch { /* silent */ }
+  await pool.query('DELETE FROM business_journeys WHERE id = ?', [lead.journey_id]);
   return { id: Number(id) };
-};
-
-exports.restoreLead = async (id, user) => {
-  const [rows] = await pool.query(
-    `SELECT l.*, j.journey_code, j.current_stage AS journey_stage
-       FROM leads l
-       JOIN business_journeys j ON j.id = l.journey_id
-      WHERE l.id = ?
-      LIMIT 1`,
-    [id]
-  );
-  const lead = rows[0] || null;
-  if (!lead) {
-    const err = new Error('Không tìm thấy Lead');
-    err.statusCode = 404;
-    throw err;
-  }
-  if (!lead.deleted_at) {
-    const err = new Error('Lead này chưa bị xóa');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (!(await canAccessLead(lead, user))) {
-    const err = new Error('Không có quyền khôi phục Lead này');
-    err.statusCode = 403;
-    throw err;
-  }
-  await pool.query('UPDATE leads SET deleted_at = NULL, updated_at = NOW() WHERE id = ?', [id]);
-  try {
-    const journeyActivityService = require('./journeyActivityService');
-    await journeyActivityService.log({
-      journey_id: lead.journey_id,
-      entity_type: 'lead',
-      entity_id: Number(id),
-      action: 'lead_restored',
-      actor_id: user ? user.id : null,
-      actor_role: user ? user.role : null,
-      source: 'admin',
-    });
-  } catch { /* silent */ }
-  return { id: Number(id), restored: true };
 };
 
 exports.bulkDeleteLeads = async (ids, user) => {
@@ -856,7 +798,7 @@ exports.bulkDeleteLeads = async (ids, user) => {
       const [rows] = await conn.query(
         `SELECT l.*, j.journey_code FROM leads l
            JOIN business_journeys j ON j.id = l.journey_id
-          WHERE l.id = ? AND l.deleted_at IS NULL LIMIT 1`,
+          WHERE l.id = ? LIMIT 1`,
         [lid]
       );
       const lead = rows[0];
@@ -879,19 +821,7 @@ exports.bulkDeleteLeads = async (ids, user) => {
         err.statusCode = 409;
         throw err;
       }
-      await conn.query('UPDATE leads SET deleted_at = NOW() WHERE id = ?', [lid]);
-      try {
-        const journeyActivityService = require('./journeyActivityService');
-        await journeyActivityService.log({
-          journey_id: lead.journey_id,
-          entity_type: 'lead',
-          entity_id: lid,
-          action: 'lead_deleted',
-          actor_id: user ? user.id : null,
-          actor_role: user ? user.role : null,
-          source: 'admin',
-        }, conn);
-      } catch { /* silent */ }
+      await conn.query('DELETE FROM business_journeys WHERE id = ?', [lead.journey_id]);
       results.push({ id: lid });
     }
     await conn.commit();
