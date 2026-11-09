@@ -519,15 +519,6 @@ exports.build = async ({ reportFileId, signedFileId, signers }) => {
     throw Object.assign(new Error('Ký trực tiếp chỉ hỗ trợ file BCĐX định dạng PDF hoặc DOCX'), { statusCode: 400 });
   }
 
-  if (!signedFileId) {
-    const alreadyStamped = isPdf
-      ? await hasPdfSignatureBlock(source)
-      : await hasDocxSignatureBlock(source);
-    if (alreadyStamped) {
-      throw invalidDocument('File BCĐX nguồn đã có chữ ký được đóng dấu từ lần xuất trước. Hãy tải lại bản gốc chưa ký để xuất theo vị trí cấu hình hiện tại.');
-    }
-  }
-
   let signersToStamp = signers;
   let includeImages = true;
   if (signedFileId) {
@@ -535,9 +526,17 @@ exports.build = async ({ reportFileId, signedFileId, signers }) => {
     signersToStamp = isPdf
       ? (await hasPdfSignatureBlock(source) ? [] : signers)
       : await findMissingDocxDetails(source, signers);
-    if (signersToStamp.length === 0) {
-      return { ...fileData.file, bytes: source };
-    }
+  } else {
+    const alreadyStamped = isPdf
+      ? await hasPdfSignatureBlock(source)
+      : await hasDocxSignatureBlock(source);
+    // Cho phép tải xuất file BCĐX đã có sẵn chữ ký (đã stamped); nếu signer nào còn thiếu chi tiết thì bổ sung theo vị trí cấu hình.
+    signersToStamp = isPdf
+      ? (alreadyStamped ? [] : signers)
+      : await findMissingDocxDetails(source, signers);
+  }
+  if (signersToStamp.length === 0) {
+    return { ...fileData.file, bytes: source };
   }
 
   let bytes;
