@@ -87,6 +87,13 @@ const normalizeClassification = (value) => {
   return CLASSIFICATION_CODES[s] || s;
 };
 
+// Phân loại được phép phân chia/giao Lead — nguồn sự thật chung cho
+// leadAssignmentService + updateLead (PUT assigned_user_id).
+const ASSIGNABLE_CLASSIFICATIONS = ['TIEM_NANG', 'QUAN_TAM'];
+
+const isAssignableClassification = (value) =>
+  ASSIGNABLE_CLASSIFICATIONS.includes(normalizeClassification(value));
+
 // Chuẩn hóa giá trị query: Express trả mảng khi key lặp lại (panel + column filter
 // cùng field) — lấy giá trị cuối khác rỗng thay vì để mysql escape mảng gây 500.
 const normalizeQueryValue = (v) => {
@@ -533,8 +540,8 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     const effClassForAssign = patch.customer_classification !== undefined
       ? patch.customer_classification : lead.customer_classification;
     const changedAssignee = Number(n || 0) !== Number(lead.assigned_user_id || 0);
-    if (n && changedAssignee && normalizeClassification(effClassForAssign) !== 'TIEM_NANG') {
-      const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
+    if (n && changedAssignee && !isAssignableClassification(effClassForAssign)) {
+      const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng hoặc Quan tâm mới được phân về phòng ban');
       err.statusCode = 400;
       throw err;
     }
@@ -548,23 +555,41 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
       );
       const target = trows[0];
       const tcd = parseCustomData(target && target.custom_data);
-      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || !isGdkv(tcd.chuc_vu, tcd.department || '')) {
-        const err = new Error('Chỉ giao Lead cho Giám đốc Khu vực (GĐKV) đang hoạt động');
+      const targetIsGdtt = target && isGdtt(tcd.chuc_vu, tcd.department || '');
+      const targetIsGdkv = target && isGdkv(tcd.chuc_vu, tcd.department || '');
+      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || (!targetIsGdkv && !targetIsGdtt)) {
+        const err = new Error('Chỉ giao Lead cho GĐTTKD/GĐKV đang hoạt động');
         err.statusCode = 400;
         throw err;
       }
-      let dept = lead.assigned_department || null;
-      if (dept && tcd.department && String(tcd.department) !== String(dept)) {
-        const err = new Error(`GĐKV phải thuộc "${dept}" (đổi phòng ban phải dùng Phân chia Leads)`);
-        err.statusCode = 400;
+      if (targetIsGdtt && !['SUPER_ADMIN', 'ADMIN'].includes(user && user.role)) {
+        const err = new Error('Chỉ Quản trị viên mới được giao Lead cho GĐTTKD');
+        err.statusCode = 403;
         throw err;
       }
-      if (!dept) dept = tcd.department || null;
-      if (!dept && lead.region) dept = await getRoutingDepartment(lead.region, conn);
-      if (!dept) {
-        const err = new Error('Lead chưa có phòng ban (thiếu routing theo vùng)');
-        err.statusCode = 400;
-        throw err;
+      let dept;
+      if (targetIsGdtt) {
+        // Giao GĐTTKD (chỉ ADMIN/SUPER): phòng ban theo GĐTTKD được chọn.
+        dept = tcd.department || null;
+        if (!dept) {
+          const err = new Error('Không xác định được phòng ban của GĐTTKD');
+          err.statusCode = 400;
+          throw err;
+        }
+      } else {
+        dept = lead.assigned_department || null;
+        if (dept && tcd.department && String(tcd.department) !== String(dept)) {
+          const err = new Error(`GĐKV phải thuộc "${dept}" (đổi phòng ban phải dùng Phân chia Leads)`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (!dept) dept = tcd.department || null;
+        if (!dept && lead.region) dept = await getRoutingDepartment(lead.region, conn);
+        if (!dept) {
+          const err = new Error('Lead chưa có phòng ban (thiếu routing theo vùng)');
+          err.statusCode = 400;
+          throw err;
+        }
       }
       patch.assigned_department = dept;
     }
@@ -917,6 +942,8 @@ exports.buildScope = buildScope;
 exports.lookupProvince = lookupProvince;
 exports.checkWard = checkWard;
 exports.normalizeClassification = normalizeClassification;
+exports.isAssignableClassification = isAssignableClassification;
+exports.ASSIGNABLE_CLASSIFICATIONS = ASSIGNABLE_CLASSIFICATIONS;
 exports.normalizeQueryValue = normalizeQueryValue;
 exports.applyLeadListFilters = applyLeadListFilters;
 exports.checkFieldOptionValue = checkFieldOptionValue;

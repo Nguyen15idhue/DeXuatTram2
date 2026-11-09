@@ -25,6 +25,7 @@ exports.receiveLeads = async (req, res) => {
       });
     }
     return res.status(200).json({
+      ok: true,
       success: true,
       received: result.received,
       applied: result.applied,

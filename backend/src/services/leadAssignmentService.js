@@ -5,6 +5,7 @@ const leadService = require('./leadService');
 // Dùng chung từ leadService (một nguồn duy nhất, tránh lệch).
 const normalizeClassification = (...args) => leadService.normalizeClassification(...args);
 const getRoutingDepartment = (...args) => leadService.getRoutingDepartment(...args);
+const isAssignableClassification = (...args) => leadService.isAssignableClassification(...args);
 
 const parseCustomData = (val) => {
   if (!val) return {};
@@ -57,8 +58,8 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
     err.statusCode = 400;
     throw err;
   }
-  if (normalizeClassification(lead.customer_classification) !== 'TIEM_NANG') {
-    const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng mới được phân về phòng ban');
+  if (!isAssignableClassification(lead.customer_classification)) {
+    const err = new Error('Chỉ Lead có Phân loại khách hàng là Tiềm năng hoặc Quan tâm mới được phân về phòng ban');
     err.statusCode = 400;
     throw err;
   }
@@ -78,18 +79,35 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
     throw err;
   }
   const tcd = parseCustomData(target.custom_data);
-  if (!isGdkv(tcd.chuc_vu, tcd.department || '')) {
-    const err = new Error('Chỉ giao Lead cho Giám đốc Khu vực (GĐKV)');
+  const targetIsGdtt = isGdtt(tcd.chuc_vu, tcd.department || '');
+  const targetIsGdkv = isGdkv(tcd.chuc_vu, tcd.department || '');
+  if (!targetIsGdkv && !targetIsGdtt) {
+    const err = new Error('Chỉ giao Lead cho GĐTTKD hoặc GĐKV (Giám đốc)');
     err.statusCode = 400;
     throw err;
   }
+  // Luật cấp bậc: GĐTTKD là cấp cao nhất cây SALES, chỉ Quản trị viên được giao.
 
   const adminLevel = ['SUPER_ADMIN', 'ADMIN'].includes(actor.role);
-  let department = lead.assigned_department;
-  if (adminLevel) {
+  let department;
+  if (targetIsGdtt) {
+    if (!adminLevel && !(opts && opts.systemAuto)) {
+      const err = new Error('Chỉ Quản trị viên mới được giao Lead cho GĐTTKD');
+      err.statusCode = 403;
+      throw err;
+    }
+    // Giao GĐTTKD: phòng ban theo GĐTTKD được chọn (ADMIN/SUPER mọi phòng ban).
+    department = tcd.department || lead.assigned_department;
+    if (!department) {
+      const err = new Error('Không xác định được phòng ban của GĐTTKD');
+      err.statusCode = 400;
+      throw err;
+    }
+  } else if (adminLevel) {
     // ADMIN/SUPER được giao cho GĐKV bất kỳ → gán phòng ban theo GĐKV được chọn.
-    department = tcd.department || department;
+    department = tcd.department || lead.assigned_department;
   } else {
+    department = lead.assigned_department;
     if (!department && lead.region) {
       department = await getRoutingDepartment(lead.region);
     }
@@ -105,7 +123,7 @@ exports.assignLead = async (leadId, targetUserId, actor, opts = {}) => {
     }
   }
   if (!department) {
-    const err = new Error('Không xác định được phòng ban của GĐKV');
+    const err = new Error('Không xác định được phòng ban của người được giao');
     err.statusCode = 400;
     throw err;
   }
@@ -193,7 +211,7 @@ exports.bulkAssign = async (leadIds, targetUserId, actor, opts = {}) => {
 
 exports.tryAutoRoute = async (lead, actor) => {
   const code = normalizeClassification(lead.customer_classification);
-  if (code !== 'TIEM_NANG') return { routed: false };
+  if (!isAssignableClassification(code)) return { routed: false };
   const department = await getRoutingDepartment(lead.region);
   if (!department) {
     return { routed: false, warning: `Không tìm thấy routing cho vùng "${lead.region || ''}" — Lead đã tạo nhưng chưa giao phòng ban` };
@@ -205,10 +223,11 @@ exports.tryAutoRoute = async (lead, actor) => {
     'UPDATE leads SET assigned_department = ?' + (lead.stage === 'NEW' ? ", stage = 'ASSIGNED'" : '') + ' WHERE id = ?',
     [department, lead.id]
   );
-  const candidates = await getGdkvCandidates(department);
+  // Pool gồm GĐTTKD + GĐKV cùng phòng ban — auto-giao khi phòng chỉ có đúng 1 ứng viên.
+  const candidates = await getSalesCandidates(department);
   if (candidates.length === 1) {
     const sysActor = { id: actor.id, role: actor.role };
-    const result = await exports.assignLead(lead.id, candidates[0].id, sysActor, { type: 'auto', reason: 'Tự động theo routing vùng' });
+    const result = await exports.assignLead(lead.id, candidates[0].id, sysActor, { type: 'auto', reason: 'Tự động theo routing vùng', systemAuto: true });
     return { routed: true, department, autoAssigned: candidates[0], lead: result.lead };
   }
   const fresh = await leadService.getLeadById(lead.id);
@@ -218,8 +237,8 @@ exports.tryAutoRoute = async (lead, actor) => {
     suggestions: candidates,
     lead: fresh,
     warning: candidates.length === 0
-      ? `Đã gán phòng ban "${department}" nhưng chưa có GĐKV nào — cần giao tay`
-      : `Đã gán phòng ban "${department}" — có ${candidates.length} GĐKV, cần chọn tay`,
+      ? `Đã gán phòng ban "${department}" nhưng chưa có GĐTTKD/GĐKV nào — cần giao tay`
+      : `Đã gán phòng ban "${department}" — có ${candidates.length} GĐTTKD/GĐKV, cần chọn tay`,
   };
 };
 
@@ -238,4 +257,18 @@ exports.getAssignments = async (leadId) => {
 
 exports.normalizeClassification = normalizeClassification;
 exports.getRoutingDepartment = getRoutingDepartment;
+// Thêm `getSalesCandidates` — GĐTTKD + GĐKV cùng phòng ban (đề xuất/auto-assign).
+const getSalesCandidates = async (department, conn = pool) => {
+  const [rows] = await conn.query(
+    "SELECT id, full_name, custom_data FROM users WHERE status = 'ACTIVE' AND role = 'SALES'"
+  );
+  return rows
+    .map((r) => {
+      const cd = parseCustomData(r.custom_data);
+      return { id: r.id, full_name: r.full_name, chuc_vu: cd.chuc_vu || '', department: cd.department || '', is_gdtt: isGdtt(cd.chuc_vu, cd.department || ''), is_gdkv: isGdkv(cd.chuc_vu, cd.department || '') };
+    })
+    .filter((u) => String(u.department) === String(department) && (u.is_gdtt || u.is_gdkv));
+};
+
 exports.getGdkvCandidates = getGdkvCandidates;
+exports.getSalesCandidates = getSalesCandidates;

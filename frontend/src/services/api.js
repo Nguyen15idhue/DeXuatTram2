@@ -311,6 +311,9 @@ export const leadService = {
   getGdkvOptions(token) {
     return api.getWithAuth('/admin/users/options/all?pool=gdkv', token);
   },
+  getSalesOptions(token) {
+    return api.getWithAuth('/admin/users/options/all?pool=sales', token);
+  },
   assignments(id, token) {
     return api.getWithAuth(`/admin/leads/${id}/assignments`, token);
   },

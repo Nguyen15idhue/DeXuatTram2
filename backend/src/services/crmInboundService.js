@@ -14,6 +14,17 @@ const parseCustomData = (val) => {
 const normalizeProvinceName = (name) => String(name || '').trim().toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
+// Map tên tỉnh từ CRM (cả tên cũ 63 tỉnh lẫn tên mới 34 tỉnh, các kiểu tiền tố)
+// sang tên chuẩn của hệ thống trước khi tra Data List 'Tỉnh'. Lỗi mapping → null.
+const mapCrmProvinceToTmt = (province) => {
+  try {
+    return require('../integrations/crm/crmProvinceMapping').mapCrmProvinceToTmt(province);
+  } catch (e) {
+    console.error('[CrmInbound] province mapping failed:', e.message);
+    return null;
+  }
+};
+
 const loadProvinceRows = async (conn = pool) => {
   const [lists] = await conn.query("SELECT id FROM data_lists WHERE name IN ('Tỉnh', 'dm_tinh') ORDER BY (name = 'Tỉnh') DESC LIMIT 1");
   if (lists.length === 0) return null;
@@ -148,11 +159,15 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
 
   const systemUserId = await getSystemUserId(conn, cache);
 
-  const province = data.province ? String(data.province).trim() : '';
+  const rawProvince = data.province ? String(data.province).trim() : '';
+  // Mapping tên tỉnh CRM (63/34 tỉnh, đủ tiền tố) -> tên chuẩn hệ thống trước khi tra Data List.
+  const province = mapCrmProvinceToTmt(rawProvince) || rawProvince;
   const geo = await lookupProvinceFlexible(province, conn, cache);
 
   const customData = {
     crm_lead_id: crmId,
+    crm_province_raw: rawProvince || null,
+    ...(rawProvince && geo && geo.notFound ? { province_not_found: true } : {}),
     cskh_history: data.cskhNote ? [{ note: data.cskhNote, at: data.cskhContactAt || null }] : [],
     tvbh_history: [],
     extra: data.extra || {},
@@ -288,13 +303,13 @@ const autoAssignCrmLead = async (leadId, region, provinceCode, conn = pool, opti
   // find active GĐTTKD in department
   const gdttkd = await findGdttkdByDepartment(department, conn, cache);
   if (!gdttkd) return;
-  // only assign if classification is TIEM_NANG (auto-routing rule)
+  // Auto-giao GĐTTKD theo vùng cho lead Tiềm năng/Quan tâm; phân loại khác chỉ gán phòng ban.
   const [leadRows] = await conn.query('SELECT customer_classification, journey_id, external_crm_id FROM leads WHERE id = ?', [leadId]);
   const leadRow = leadRows[0] || {};
   const cls = leadRow.customer_classification;
   const crmLeadId = leadRow.external_crm_id || null;
   const journeyId = leadRow.journey_id;
-  if (crmStatusMapping.mapCrmClassifyToTmt(cls) !== 'TIEM_NANG' && cls !== 'Tiềm năng') {
+  if (!leadService.isAssignableClassification(cls)) {
     await conn.query('UPDATE leads SET assigned_department = ? WHERE id = ?', [department, leadId]);
     return;
   }

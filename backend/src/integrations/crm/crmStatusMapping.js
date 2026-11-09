@@ -66,13 +66,27 @@ const CRM_CARE_DEFAULTS = {
   reason: ''
 };
 
-// Map giá trị care field sang giá trị hợp lệ CRM. Unknown → default.
+// Chuẩn hóa nhãn: bỏ dấu tiếng Việt, bỏ ký tự đặc biệt, lowercase — CRM chấp nhận
+// "giá trị hoặc nhãn, không phân biệt hoa thường / dấu".
+const normalizeLabel = (value) => String(value || '')
+  .replace(/[\u0111\u0110]/g, (c) => (c === '\u0111' ? 'd' : 'D'))
+  .replace(/[\u01A1\u01A0]/g, (c) => (c === '\u01A1' ? 'o' : 'O'))
+  .replace(/[\u01B0\u01AF]/g, (c) => (c === '\u01B0' ? 'u' : 'U'))
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]/gi, '')
+  .toLowerCase();
+
+// Map giá trị care field sang giá trị hợp lệ CRM. So khớp không phân biệt hoa thường/dấu;
+// khớp → trả đúng giá trị canonical trong danh sách; unknown → default (tránh gửi giá trị CRM không nhận).
 function mapCareValue(field, value) {
-  const v = String(value || '').trim();
-  if (!v) return CRM_CARE_DEFAULTS[field] || '';
+  const raw = String(value || '').trim();
+  if (!raw) return CRM_CARE_DEFAULTS[field] || '';
   const known = CRM_CARE_VALUES[field] || [];
-  if (known.length === 0) return v;  // chưa có danh sách → chấp nhận as-is
-  if (known.includes(v)) return v;
+  if (known.length === 0) return raw;  // chưa có danh sách → chấp nhận as-is
+  const key = normalizeLabel(raw);
+  const hit = known.find((k) => normalizeLabel(k) === key);
+  if (hit) return hit;
   return CRM_CARE_DEFAULTS[field] || '';  // unknown → default
 }
 
@@ -84,7 +98,9 @@ const MILESTONE_NOTES = {
   proposalCreated: (code) => `Đã tạo đề xuất ${code || ''}`.trim(),
   signedFileUploaded: 'Đã upload BCĐX được chủ tịch ký',
   contractSigned: 'Đã ký hợp đồng',
-  stationOn: 'Trạm đã ON'
+  stationOn: 'Trạm đã ON',
+  proposalCancelled: 'Đề xuất đã bị hủy',
+  proposalRejected: 'Đề xuất bị từ chối'
 };
 
 // ---------- Helpers ----------
@@ -139,6 +155,7 @@ module.exports = {
   mapTmtOutcomeToCrm,
   mapTmtClassificationToCrm,
   mapCareValue,
+  normalizeLabel,
   isKnownCrmClassify,
   isKnownCrmStatus
 };
