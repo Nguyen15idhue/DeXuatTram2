@@ -1,11 +1,12 @@
 export const LEAD_CSKH_KEYS = ['cskh_history', 'cskh_note'];
-export const LEAD_TVBH_KEYS = ['tvbh_history', 'tvbh_note', 'sales_outcome'];
+export const LEAD_TVBH_KEYS = ['tvbh_history', 'tvbh_note', 'sales_outcome', 'consultation_status'];
 
-export const LEAD_CSKH_ROLES = ['MKT', 'ADMIN', 'SUPER_ADMIN'];
-export const LEAD_TVBH_ROLES = ['SALES', 'ADMIN', 'SUPER_ADMIN'];
+export const LEAD_CSKH_ROLES = ['SUPER_ADMIN'];
+export const LEAD_TVBH_ROLES = ['SUPER_ADMIN'];
 
 export { SECTION_PERM_ROLES } from './formSectionPerms';
-import { canViewSection, canEditSectionExplicit, userCtxFromAuthUser } from './formSectionPerms';
+import { canViewSection, userCtxFromAuthUser } from './formSectionPerms';
+import { canAccessCustomers, isLeadCeo, isLeadPlanning, isLeadBusinessCenter } from './leadAccess';
 
 const norm = (s) => String(s || '').toLowerCase();
 
@@ -26,38 +27,29 @@ export const leadReadOnlyKeysForRole = (role) => {
 };
 
 export const leadFocusSectionForRole = (role) => {
-  if (role === 'MKT') return 'marketing';
-  if (role === 'SALES') return 'tvbh';
-  return null;
+  return role === 'SUPER_ADMIN' ? null : 'tvbh';
 };
 
 export const leadSectionNotice = (role) => {
-  if (role === 'MKT') return 'Vai trò MKT chỉ được sửa section Thông tin Marketing và Chăm sóc khách hàng (CSKH).';
-  if (role === 'SALES') return 'Vai trò SALES chỉ được sửa section Tư vấn bán hàng (TVBH).';
+  if (role !== 'SUPER_ADMIN') return 'Chỉ được cập nhật thông tin tư vấn trong phạm vi được phân quyền. Thông tin chung và CSKH chỉ dành cho Super Admin.';
   return '';
-};
-
-const defaultEditRolesForKind = (kind) => {
-  if (kind === 'cskh') return LEAD_CSKH_ROLES;
-  if (kind === 'tvbh') return LEAD_TVBH_ROLES;
-  return null;
 };
 
 export const canViewLeadSection = (section, user) => {
   const ctx = (user && typeof user === 'object' && ('role' in user || 'id' in user))
     ? userCtxFromAuthUser(user) : { role: user, id: null, department: '', chuc_vu: '' };
+  if (getLeadSectionKind(section?.title) === 'tvbh' && canAccessCustomers(user)) return true;
   return canViewSection(section, ctx);
 };
 
 export const canEditLeadSection = (section, user) => {
   const ctx = (user && typeof user === 'object' && ('role' in user || 'id' in user))
     ? userCtxFromAuthUser(user) : { role: user, id: null, department: '', chuc_vu: '' };
-  const explicit = canEditSectionExplicit(section, ctx);
-  if (explicit !== null) return explicit;
+  if (ctx.role === 'SUPER_ADMIN') return true;
+  if (!canAccessCustomers(user) || (isLeadPlanning(user) && !isLeadCeo(user))) return false;
   const kind = getLeadSectionKind(section && section.title);
-  const roles = defaultEditRolesForKind(kind);
-  if (!roles) return true;
-  return roles.includes(ctx.role);
+  if (kind !== 'tvbh' || (!isLeadCeo(user) && !isLeadBusinessCenter(user))) return false;
+  return true;
 };
 
 export const leadFieldSectionKind = (fieldKey) => {

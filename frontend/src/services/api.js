@@ -309,7 +309,7 @@ export const leadService = {
     return api.postWithAuth('/admin/leads/bulk-assign', { ids, assignee_user_id: assigneeUserId, reason }, token);
   },
   getGdkvOptions(token) {
-    return api.getWithAuth('/admin/users/options/all?pool=gdkv', token);
+    return api.getWithAuth('/admin/leads/assignee-options', token);
   },
   getSalesOptions(token) {
     return api.getWithAuth('/admin/users/options/all?pool=sales', token);

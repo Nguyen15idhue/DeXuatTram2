@@ -246,7 +246,7 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
   );
   const leadId = lres.insertId;
   const leadCode = `LD-${String(leadId).padStart(6, '0')}`;
-  await conn.query('UPDATE leads SET lead_code = ? WHERE id = ?', [leadCode, leadId]);
+  await conn.query("UPDATE leads SET lead_code = ?, consultation_status = 'WAITING_ALLOCATION' WHERE id = ?", [leadCode, leadId]);
 
   const journeyActivityService = require('./journeyActivityService');
   await journeyActivityService.log({
@@ -265,7 +265,7 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
   try {
     await autoAssignCrmLead(leadId, geo && !geo.notFound ? geo.region : null, geo && !geo.notFound ? geo.province_code : null, conn, { skipOutbound, cache });
   } catch (e) {
-    // don't fail inbound on assignment error; flag needs_assignment
+    console.error(`[CrmInbound] assignment failed for lead #${leadId}:`, e.message);
     await conn.query('UPDATE leads SET custom_data = JSON_SET(COALESCE(custom_data, JSON_OBJECT()), "$.needs_assignment", true) WHERE id = ?', [leadId]);
   }
 
@@ -291,65 +291,13 @@ const upsertLeadFromCrm = async (data, conn = pool, options = {}) => {
 
 const autoAssignCrmLead = async (leadId, region, provinceCode, conn = pool, options = {}) => {
   if (!region) return;
-  const skipOutbound = options.skipOutbound === true;
-  const cache = options.cache || null;
-  const department = await getRoutingDepartmentCached(region, conn, cache);
-  if (!department) return;
-  // find active GĐTTKD in department
-  const gdttkd = await findGdttkdByDepartment(department, conn, cache);
-  if (!gdttkd) return;
-  // Auto-giao GĐTTKD theo vùng cho lead Tiềm năng/Quan tâm; phân loại khác chỉ gán phòng ban.
-  const [leadRows] = await conn.query('SELECT customer_classification, journey_id, external_crm_id FROM leads WHERE id = ?', [leadId]);
-  const leadRow = leadRows[0] || {};
-  const cls = leadRow.customer_classification;
-  const crmLeadId = leadRow.external_crm_id || null;
-  const journeyId = leadRow.journey_id;
-  if (!leadService.isAssignableClassification(cls)) {
-    await conn.query('UPDATE leads SET assigned_department = ? WHERE id = ?', [department, leadId]);
-    return;
-  }
-  await conn.query(
-    `UPDATE leads SET assigned_user_id = ?, assigned_department = ?, assigned_at = NOW(), stage = 'ASSIGNED' WHERE id = ?`,
-    [gdttkd.id, department, leadId]
-  );
-  const journeyActivityService = require('./journeyActivityService');
-  await journeyActivityService.log({
-    journey_id: journeyId,
-    entity_type: 'lead',
-    entity_id: leadId,
-    action: 'assigned',
-    stage_before: 'NEW',
-    stage_after: 'ASSIGNED',
-    changed_fields: { assigned_user_id: { from: null, to: gdttkd.id } },
-    actor_id: null,
-    actor_role: 'SYSTEM',
-    source: 'crm_inbound',
-    reason: 'Tự động giao cho GĐTTKD theo vùng',
-    ip: null,
-  }, conn);
-  // CRM outbound: notify assignment to GĐTTKD
-  if (!skipOutbound && crmLeadId) {
-    try {
-      const crmOutboundService = require('./crmOutboundService');
-      await crmOutboundService.enqueue({
-        eventId: `eg_${leadId}_assign_${Date.now()}`,
-        eventType: 'lead.care',
-        leadId,
-        crmLeadId,
-        payload: {
-          leadId: crmLeadId,
-          channel: 'Gọi điện',                                    // default (CRM care value)
-          contact: 'Liên hệ thành công',                          // default
-          classify: crmStatusMapping.mapCareValue('classify', cls || 'Tiềm năng'),  // mapped (identity)
-          saleResult: '',                                         // TODO: user fills valid CRM saleResult values later
-          reason: '',
-          note: `Giao cho GĐTTKD ${gdttkd.full_name || ''}`.trim(),
-          staff: gdttkd.full_name || '',
-          ref: `EG-${leadId}`
-        },
-        conn
-      });
-    } catch { /* silent */ }
+  const [[lead]] = await conn.query('SELECT * FROM leads WHERE id = ?', [leadId]);
+  if (!lead) return;
+  const result = await require('./leadAssignmentService').tryAutoRoute(lead, { id: null, role: 'SYSTEM' },
+    { conn, skipOutbound: options.skipOutbound, source: 'crm_inbound' });
+  if (result.warning) {
+    console.warn(`[CrmInbound] lead #${leadId}: ${result.warning}`);
+    await conn.query('UPDATE leads SET custom_data = JSON_SET(COALESCE(custom_data, JSON_OBJECT()), "$.needs_assignment", true) WHERE id = ?', [leadId]);
   }
 };
 

@@ -563,7 +563,7 @@ function getAllData(entity, filters = {}) {
       where.push(filters.scope.sql.replace(/\bl\./g, ''));
       params.push(...(filters.scope.params || []));
     }
-    const whereClause = 'WHERE ' + where.join(' AND ');
+    const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
     return pool.query(`SELECT * FROM leads ${whereClause} ORDER BY id DESC`, params);
   }
   return pool.query(`SELECT * FROM ${table} ORDER BY id DESC`);
@@ -1063,7 +1063,7 @@ exports.exportDynamic = async (req, res) => {
 
     let leadScope = null;
     if (entity === 'leads') {
-      try { leadScope = await require('./leadService').buildScope(req.user); } catch { leadScope = null; }
+      leadScope = await require('./leadService').buildScope(req.user);
     }
 
     if (req.query.layout === 'form') {
@@ -1803,6 +1803,17 @@ const MKT_ALLOWED_EXCEL_ENTITIES = new Set(['leads']);
 
 const denyEntityByRole = (req, res, entity, mode = 'write') => {
   const role = req.user && req.user.role;
+  if (entity === 'leads') {
+    if (mode !== 'read' && role !== 'SUPER_ADMIN') {
+      res.status(403).json({ success: false, message: 'Chỉ Super Admin được nhập hoặc tạo khách hàng' });
+      return true;
+    }
+    if (mode === 'read' && !req.leadAccessGranted && role !== 'SUPER_ADMIN') {
+      res.status(403).json({ success: false, message: 'Không có quyền xuất dữ liệu khách hàng' });
+      return true;
+    }
+    return false;
+  }
   if (role === 'SALES') {
     const allowed = mode === 'read' ? SALES_ALLOWED_EXCEL_READ : SALES_ALLOWED_EXCEL_WRITE;
     if (!allowed.has(entity)) {
@@ -2285,7 +2296,7 @@ exports.cancelImportJob = async (req, res) => {
 
 exports.getImportProgress = async (req, res) => {
   try {
-    const job = await importJobService.getById(String(req.params.jobId));
+    const job = await importJobService.getByIdScoped(String(req.params.jobId), req.user);
     if (job) {
       return res.json({
         success: true,
@@ -2295,7 +2306,10 @@ exports.getImportProgress = async (req, res) => {
         }
       });
     }
-  } catch { /* silent */ }
+  } catch (error) {
+    console.error('Get import progress error:', error);
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
   const legacy = importJobs.get(String(req.params.jobId));
   if (!legacy) return res.json({ success: true, data: { status: 'not_found', total: 0, done: 0 } });
   res.json({ success: true, data: { status: legacy.status, total: legacy.total, done: legacy.done } });

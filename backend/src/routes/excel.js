@@ -1,8 +1,26 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin, requireUserManager, requireLeadManager } = require('../middlewares/auth');
+const { requireAuth, requireAdmin, requireUserManager, requireLeadManager: requireCustomerManager } = require('../middlewares/auth');
 const { adminLimiter, excelLimiter } = require('../middlewares/rateLimits');
 const excelService = require('../services/excelService');
+const requireLeadManager = async (req, res, next) => {
+  try {
+    let entity = req.query.entity || req.body?.entity || (req.path === '/export/leads' ? 'leads' : null);
+    const jobId = req.params.jobId || req.params.id;
+    if (jobId) {
+      const job = await require('../services/importJobService').getByIdScoped(jobId, req.user);
+      if (job) entity = job.entity;
+    }
+    if (entity === 'leads') return requireCustomerManager(req, res, next);
+    if (!['SUPER_ADMIN', 'ADMIN', 'SALES', 'MKT'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập Excel' });
+    }
+    return next();
+  } catch (error) {
+    console.error('[ExcelAccess]', error);
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
 
 /**
  * @swagger
@@ -287,7 +305,8 @@ router.get('/template/by-model', requireAuth, requireUserManager, adminLimiter, 
  *       403:
  *         description: Không có quyền
  */
-router.get('/views', requireAuth, excelService.getViewsForEntity);
+router.get('/views', requireAuth, (req, res, next) => req.query.entity === 'leads'
+  ? requireCustomerManager(req, res, next) : next(), excelService.getViewsForEntity);
 
 /**
  * @swagger

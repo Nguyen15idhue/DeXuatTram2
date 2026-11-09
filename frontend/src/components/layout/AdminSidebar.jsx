@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useState, useEffect } from "react";
+import { canAccessCustomers, canManageBusinessCalendar } from "../../utils/leadAccess";
 import {
   proposalApprovalService,
   proposalGradingService,
@@ -212,10 +213,19 @@ const mainItems = [
   },
   {
     path: "/admin/leads",
-    label: "Quản lý Leads",
+    label: "Quản lý khách hàng",
     group: "Khách hàng",
     icon: Target,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT", "CTV", "NPP"],
+    access: canAccessCustomers,
+  },
+  {
+    path: "/admin/business-calendar",
+    label: "Lịch làm việc",
+    group: "Quản trị",
+    icon: History,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT", "CTV", "NPP"],
+    access: canManageBusinessCalendar,
   },
   {
     path: "/admin/users",

@@ -99,26 +99,17 @@ exports.createProposal = async (userId, data, opts = {}) => {
     zoneErr.statusCode = 400;
     throw zoneErr;
   }
-  let supplementMinutes = null;
-  let transitionMinutes = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    const configured = await proposalLifecycle.getDeadlineMinutes(initialStatus, 'supplement');
-    supplementMinutes = configured ? Math.max(1, Number(configured)) : (initialStatus === 'PENDING' ? 4320 : null);
-    const tConf = await proposalLifecycle.getDeadlineMinutes(initialStatus, 'transition');
-    transitionMinutes = tConf ? Math.max(1, Number(tConf)) : null;
-  } catch { /* silent */ }
-
   const conn = await pool.getConnection();
   let recordId;
   let postResults = {};
   try {
     await conn.beginTransaction();
+    const deadlines = await require('./proposalLifecycle').getDeadlineDates(initialStatus, conn);
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (status, user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, note, chot_so_luong_tru, supplement_deadline_at, transition_deadline_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
-      [initialStatus, userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, fixedData.note ?? null, dynamicUtils.toJsonParam(fixedData.chot_so_luong_tru), supplementMinutes, transitionMinutes]
+      `INSERT INTO station_proposals (status, user_id, tracking_code, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, note, chot_so_luong_tru, supplement_deadline_at, transition_deadline_at, countdown_calendar_id)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [initialStatus, userId, fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', fixedData.owner_phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, fixedData.note ?? null, dynamicUtils.toJsonParam(fixedData.chot_so_luong_tru), deadlines.supplement, deadlines.transition, deadlines.calendarId]
     );
 
     recordId = result.insertId;
@@ -370,26 +361,17 @@ exports.createGuestProposal = async (data, ip) => {
 
   const customData = Object.keys(dynamicData).length > 0 ? JSON.stringify(dynamicData) : null;
 
-  let guestSupplementMinutes = 4320;
-  let guestTransitionMinutes = null;
-  try {
-    const proposalLifecycle = require('./proposalLifecycle');
-    const configured = await proposalLifecycle.getDeadlineMinutes('PENDING', 'supplement');
-    guestSupplementMinutes = Math.max(1, Number(configured) || 4320);
-    const tConf = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
-    guestTransitionMinutes = tConf ? Math.max(1, Number(tConf)) : null;
-  } catch { /* silent */ }
-
   const conn = await pool.getConnection();
   let recordId;
   let postResults = {};
   try {
     await conn.beginTransaction();
+    const deadlines = await require('./proposalLifecycle').getDeadlineDates('PENDING', conn);
 
     const [result] = await conn.query(
-      `INSERT INTO station_proposals (status, user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip, supplement_deadline_at, transition_deadline_at)
-       VALUES ('PENDING', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
-      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, guestSupplementMinutes, guestTransitionMinutes]
+      `INSERT INTO station_proposals (status, user_id, latitude, longitude, owner_name, owner_phone, address, area, land_type, description, custom_data, submission_source, tracking_code, submitter_ip, supplement_deadline_at, transition_deadline_at, countdown_calendar_id)
+       VALUES ('PENDING', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'guest', NULL, ?, ?, ?, ?)`,
+      [fixedData.latitude, fixedData.longitude, fixedData.owner_name || '', phone || '', fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', customData, ip || null, deadlines.supplement, deadlines.transition, deadlines.calendarId]
     );
 
     recordId = result.insertId;

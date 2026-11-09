@@ -161,6 +161,7 @@ app.use('/api/admin/warehouse', adminLimiter, warehouseRoutes);
 app.use('/api/my-proposals', myProposalsRoutes);
 app.use('/api/admin/users', adminLimiter, adminUsersRoutes);
 app.use('/api/admin/leads', adminLimiter, adminLeadsRoutes);
+app.use('/api/admin/business-calendar', adminLimiter, require('./routes/businessCalendar'));
 app.use('/api/admin/reports', adminLimiter, adminReportsRoutes);
 app.use('/api/admin/excel/custom', adminLimiter, customExcelExportRoutes);
 app.use('/api/admin/excel', adminLimiter, excelRoutes);
@@ -201,6 +202,9 @@ app.get('/health', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
+  require('./workers/leadConsultationWorker').start().catch((error) => {
+    console.error('[LeadConsultationWorker] start error:', error);
+  });
   proposalLifecycleWorker.start().catch((err) => {
     console.error('[LifecycleWorker] start error:', err.message);
   });

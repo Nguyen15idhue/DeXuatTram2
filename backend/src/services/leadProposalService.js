@@ -37,6 +37,9 @@ exports.createProposalFromLead = async (leadId, body, actor, opts = {}) => {
   if (!(await leadService.canAccessLead(lead, actor))) {
     throw err('Không có quyền tạo đề xuất từ Lead này', 403);
   }
+  if (!(await require('./leadAccessService').permissions(lead, actor)).can_consult) {
+    throw err('Không có quyền tạo đề xuất từ khách hàng này', 403);
+  }
   if (lead.sales_outcome !== 'SUCCESS') {
     throw err('Lead chưa TVBH thành công (sales_outcome phải là Thành công)', 422);
   }

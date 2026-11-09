@@ -10,6 +10,7 @@ import AdminLayout from './layouts/AdminLayout';
 import RoleRoute from './components/RoleRoute';
 import AssistantChat from './components/help/AssistantChat';
 import { canSeeApprovalPage, canSeeFinancePage, canSeeReviewRequestsPage } from './utils/proposalAccess';
+import { canAccessCustomers, canManageBusinessCalendar } from './utils/leadAccess';
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
@@ -24,6 +25,7 @@ const HelpPage = lazy(() => import('./pages/HelpPage'));
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
 const AdminLeadsPage = lazy(() => import('./pages/admin/AdminLeadsPage'));
+const AdminBusinessCalendarPage = lazy(() => import('./pages/admin/AdminBusinessCalendarPage'));
 const ReportEditorPage = lazy(() => import('./pages/admin/ReportEditorPage'));
 const AdminStationsPage = lazy(() => import('./pages/admin/AdminStationsPage'));
 const AdminProposalsPage = lazy(() => import('./pages/admin/AdminProposalsPage'));
@@ -90,13 +92,19 @@ function GlobalAssistantChat() {
   return <AssistantChat variant="floating" />;
 }
 
+function CustomerAccessRoute({ children, access = canAccessCustomers }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div>Đang tải...</div>;
+  return access(user) ? children : <Navigate to="/map" replace />;
+}
+
 function AdminLanding() {
   const { user, loading } = useAuth();
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen text-base-content">Đang tải...</div>;
   }
-  if (user?.role === 'MKT') return <Navigate to="/admin/leads" replace />;
+  if (user?.role === 'MKT') return <Navigate to={canAccessCustomers(user) ? '/admin/leads' : '/map'} replace />;
   if (user?.role === 'CTV') return <Navigate to="/admin/proposals" replace />;
   if (user?.role === 'NPP') return <Navigate to="/admin/e-sign" replace />;
   return <AdminDashboard />;
@@ -138,19 +146,20 @@ function App() {
             <Route
               path="/admin/leads"
               element={
-                <RoleRoute allowed={LEAD_ROLES}>
+                <CustomerAccessRoute>
                   <AdminLeadsPage />
-                </RoleRoute>
+                </CustomerAccessRoute>
               }
             />
             <Route
               path="/admin/leads/*"
               element={
-                <RoleRoute allowed={LEAD_ROLES}>
+                <CustomerAccessRoute>
                   <AdminLeadsPage />
-                </RoleRoute>
+                </CustomerAccessRoute>
               }
             />
+            <Route path="/admin/business-calendar" element={<CustomerAccessRoute access={canManageBusinessCalendar}><AdminBusinessCalendarPage /></CustomerAccessRoute>} />
             <Route
               path="/admin/reports"
               element={

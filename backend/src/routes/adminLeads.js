@@ -6,14 +6,27 @@ const adminLeadController = require('../controllers/adminLeadController');
 
 /**
  * @swagger
+ * /api/admin/leads/assignee-options:
+ *   get:
+ *     tags: [Leads]
+ *     summary: Danh sách GĐTTKD/GĐKV trong phạm vi khách hàng
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Danh sách nhân sự }
+ *       403: { description: Không có quyền Quản lý khách hàng }
+ */
+router.get('/assignee-options', requireAuth, requireLeadManager, adminLeadController.assigneeOptions);
+
+/**
+ * @swagger
  * /api/admin/leads:
  *   get:
  *     tags: [Leads]
  *     summary: Lấy danh sách Lead (phân trang server-side)
  *     description: |
- *       Phân quyền theo contract docs/8/mkt/04 — SUPER_ADMIN/ADMIN thấy toàn bộ,
- *       MKT thấy Lead do mình tạo, SALES thấy theo scope (GĐTT: phòng ban đã phân,
- *       GĐKV: Lead được giao trực tiếp), CTV/NPP bị 403.
+ *       Super Admin, TGĐ và Phòng Công nghệ và Quy hoạch xem toàn bộ.
+ *       Nhân sự Kinh doanh ba miền xem theo cây quản lý; GĐTTKD theo phòng ban.
+ *       ADMIN/MKT không có quyền mặc định, phải thuộc chức danh/phòng ban cho phép.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -27,6 +40,12 @@ const adminLeadController = require('../controllers/adminLeadController');
  *         schema:
  *           type: string
  *         description: Lọc theo stage
+ *       - in: query
+ *         name: consultation_status
+ *         schema:
+ *           type: string
+ *           enum: [WAITING_ALLOCATION, WAITING_FIRST_CONTACT, CONSULTING, SUCCESS, FAILED]
+ *         description: Lọc theo trạng thái tư vấn; response có permissions và consultation_timing
  *       - in: query
  *         name: source
  *         schema:
@@ -100,7 +119,8 @@ router.post('/bulk-delete', requireAuth, requireLeadWriter, adminLeadController.
  * /api/admin/leads/bulk-assign:
  *   post:
  *     tags: [Leads]
-  *     summary: Phân chia nhiều Lead cho 1 GĐTTKD/GĐKV (luật: chỉ Tiềm năng/Quan tâm; ADMIN/Super giao cả GĐTTKD; GĐTT chỉ GĐKV cùng phòng ban; MKT/CTV/NPP không có quyền)
+  *     summary: Phân bổ nhiều khách hàng Tiềm năng/Quan tâm cho một GĐKV
+  *     description: Chỉ Super Admin hoặc GĐTTKD trong phạm vi quản lý; GĐTTKD chỉ giao trong phòng ban mình.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -153,6 +173,9 @@ router.post('/bulk-assign', requireAuth, requireLeadManager, adminLeadController
  *   put:
  *     tags: [Leads]
  *     summary: Cập nhật Lead (không cho đổi stage/journey qua PUT)
+ *     description: |
+ *       GĐKV được giao, cấp trên và Super Admin cập nhật TVBH/kết quả trong phạm vi.
+ *       CN&QH chỉ đọc; thông tin chung và CSKH chỉ Super Admin. Thất bại bắt buộc có lý do.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -192,10 +215,12 @@ router.post('/bulk-assign', requireAuth, requireLeadManager, adminLeadController
  * /api/admin/leads/{id}/assign:
  *   post:
  *     tags: [Leads]
- *     summary: Giao Lead cho GĐTTKD/GĐKV (ghi lịch sử, đóng assignment cũ)
+ *     summary: Phân bổ khách hàng cho GĐKV (ghi lịch sử, đóng assignment cũ)
  *     description: |
- *       Chỉ Lead phân loại "Tiềm năng"/"Quan tâm" được giao. Target phải là SALES GĐTTKD hoặc GĐKV đang hoạt động.
- *       Giao cho GĐTTKD chỉ Quản trị viên (SUPER_ADMIN/ADMIN) được thực hiện; GĐTT chỉ giao được GĐKV cùng phòng ban.
+ *       Chỉ khách hàng Tiềm năng/Quan tâm được giao cho GĐKV đang hoạt động.
+ *       Chỉ Super Admin và GĐTTKD được phân bổ; GĐTTKD chỉ giao GĐKV cùng phòng ban.
+ *       Giao lần đầu hoặc giao lại trước khi tư vấn bắt đầu hạn 240 phút làm việc.
+ *       GĐTTKD chỉ nhận qua auto-routing nội bộ, không qua endpoint phân bổ thủ công.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -214,7 +239,7 @@ router.post('/bulk-assign', requireAuth, requireLeadManager, adminLeadController
  *             properties:
  *               assignee_user_id:
  *                 type: integer
- *                 description: ID SALES ACTIVE có chức vụ GĐTTKD hoặc GĐKV (GĐTTKD chỉ nhận từ ADMIN/SUPER)
+ *                 description: ID người dùng ACTIVE có chức danh GĐKV thuộc kinh doanh ba miền
  *               reason:
  *                 type: string
  *     responses:

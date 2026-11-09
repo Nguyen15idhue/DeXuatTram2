@@ -1,5 +1,6 @@
 const pool = require('../utils/db');
 const notificationService = require('./notificationService');
+const businessDeadlines = require('./businessDeadlineService');
 
 const ALL_STATUSES = [
   'PENDING', 'REVIEWING', 'PRINCIPLE_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED',
@@ -61,7 +62,7 @@ exports.STATUS_STEP_LABELS = STATUS_STEP_LABELS;
 const SKIP_DIFF_KEYS = new Set([
   'id', 'user_id', 'created_at', 'updated_at', 'custom_data', 'status',
   'submission_source', 'submitter_ip', 'ma_de_xuat_gen',
-  'reviewed_by', 'reviewed_at', 'reject_reason', 'supplement_deadline_at', 'transition_deadline_at', 'info_completed_at'
+  'reviewed_by', 'reviewed_at', 'reject_reason', 'supplement_deadline_at', 'transition_deadline_at', 'info_completed_at', 'countdown_calendar_id'
 ]);
 
 const normVal = (v) => {
@@ -120,7 +121,7 @@ exports.transition = async (id, to, opts = {}) => {
   }
   const [rows] = await pool.query(
     `SELECT id, user_id, status, journey_id, custom_data, signed_file_id,
-            supplement_deadline_at, transition_deadline_at, paused_from_status, paused_at
+            supplement_deadline_at, transition_deadline_at, countdown_calendar_id, paused_from_status, paused_at
        FROM station_proposals WHERE id = ?`,
     [id]
   );
@@ -251,6 +252,29 @@ exports.transition = async (id, to, opts = {}) => {
             WHERE id = ? AND status = ? AND paused_at IS NULL`,
           [from, id, from]
         );
+      } else if (proposal.countdown_calendar_id != null) {
+        const [lockedRows] = await connection.query(
+          'SELECT * FROM station_proposals WHERE id = ? FOR UPDATE', [id]
+        );
+        const locked = lockedRows[0];
+        if (!locked || locked.status !== 'PAUSED' || locked.paused_from_status !== to || !locked.paused_at) {
+          throw err('Trạng thái đề xuất vừa được thay đổi; hãy tải lại danh sách', 409);
+        }
+        const resumedAt = new Date();
+        const supplement = await businessDeadlines.shiftPausedDeadline(
+          locked.supplement_deadline_at, locked.paused_at, resumedAt, locked.countdown_calendar_id, connection
+        );
+        const transition = await businessDeadlines.shiftPausedDeadline(
+          locked.transition_deadline_at, locked.paused_at, resumedAt, locked.countdown_calendar_id, connection
+        );
+        [updateResult] = await connection.query(
+          `UPDATE station_proposals
+              SET supplement_deadline_at = ?, transition_deadline_at = ?,
+                  updated_at = TIMESTAMPADD(SECOND, GREATEST(TIMESTAMPDIFF(SECOND, paused_at, NOW()), 0), updated_at),
+                  status = ?, paused_from_status = NULL, paused_at = NULL
+            WHERE id = ? AND status = 'PAUSED' AND paused_from_status = ? AND paused_at IS NOT NULL`,
+          [supplement, transition, to, id, to]
+        );
       } else {
         [updateResult] = await connection.query(
           `UPDATE station_proposals
@@ -286,44 +310,25 @@ exports.transition = async (id, to, opts = {}) => {
       connection.release();
     }
   } else {
+    const deadlines = isSignedApprovalTarget
+      ? { supplement: null, transition: null, calendarId: null }
+      : await exports.getDeadlineDates(to, pool, { pendingSupplementFallback: false });
     [updateResult] = await pool.query(
       `UPDATE station_proposals
        SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW(),
-           supplement_deadline_at = CASE WHEN ? = 1 THEN NULL ELSE supplement_deadline_at END,
-           transition_deadline_at = CASE WHEN ? = 1 THEN NULL ELSE transition_deadline_at END,
-           info_completed_at = CASE WHEN ? = 1 THEN NULL ELSE info_completed_at END,
+           supplement_deadline_at = ?, transition_deadline_at = ?, countdown_calendar_id = ?,
+           info_completed_at = NULL,
            paused_from_status = CASE WHEN ? = 1 THEN NULL ELSE paused_from_status END,
            paused_at = CASE WHEN ? = 1 THEN NULL ELSE paused_at END
        WHERE id = ?`,
       [
         to, rejectReasonValue, actorId || null,
-        isSignedApprovalTarget ? 1 : 0,
-        isSignedApprovalTarget ? 1 : 0,
-        isSignedApprovalTarget ? 1 : 0,
+        deadlines.supplement, deadlines.transition, deadlines.calendarId,
         isPausedCancellation ? 1 : 0,
         isPausedCancellation ? 1 : 0,
         id
       ]
     );
-  }
-
-  // Đặt SONG SONG 2 mốc countdown theo rule của trạng thái đích:
-  //   supplement_deadline_at (bổ sung thông tin) + transition_deadline_at (chuyển trạng thái).
-  if (!isPauseTransition && !isResumeTransition && !isSignedApprovalTarget) {
-    try {
-      const suppMinutes = await exports.getDeadlineMinutes(to, 'supplement');
-      const transMinutes = await exports.getDeadlineMinutes(to, 'transition');
-      const suppSet = suppMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
-      const transSet = transMinutes ? 'DATE_ADD(NOW(), INTERVAL ? MINUTE)' : 'NULL';
-      const params = [];
-      if (suppMinutes) params.push(suppMinutes);
-      if (transMinutes) params.push(transMinutes);
-      params.push(id);
-      await pool.query(
-        `UPDATE station_proposals SET supplement_deadline_at = ${suppSet}, transition_deadline_at = ${transSet}, info_completed_at = NULL WHERE id = ?`,
-        params
-      );
-    } catch { /* silent: khong chan chuyen trang thai vi deadline */ }
   }
 
   if (!isPauseTransition && !isResumeTransition) {
@@ -621,13 +626,13 @@ exports.transitionOnStation = async (connection, proposalId, toStatus, {
     const [updateResult] = await connection.query(
       `UPDATE station_proposals
           SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = ?,
-              supplement_deadline_at = ?, transition_deadline_at = ?, info_completed_at = ?,
+              supplement_deadline_at = ?, transition_deadline_at = ?, info_completed_at = ?, countdown_calendar_id = ?,
               paused_from_status = ?, paused_at = ?, updated_at = NOW()
         WHERE id = ? AND status = 'ARCHIVED'`,
       [
         nextStatus, snapshot.reject_reason || null, snapshot.reviewed_by || null,
         snapshot.reviewed_at || null, snapshot.supplement_deadline_at || null,
-        snapshot.transition_deadline_at || null, snapshot.info_completed_at || null,
+        snapshot.transition_deadline_at || null, snapshot.info_completed_at || null, snapshot.countdown_calendar_id ?? null,
         snapshot.paused_from_status || null, snapshot.paused_at || null, proposalId
       ]
     );
@@ -860,11 +865,11 @@ const parseRules = (raw) => {
   return DEFAULT_COUNTDOWN_RULES.map((d) => (map[d.status] ? normalizeRule(map[d.status], d) : cloneRule(d)));
 };
 
-exports.getCountdownConfig = async () => {
+exports.getCountdownConfig = async (executor = pool) => {
   let rules = null;
   let warnHours = 24;
   try {
-    const [rows] = await pool.query(
+    const [rows] = await executor.query(
       'SELECT `value` FROM proposal_lifecycle_configs WHERE `key` = ? LIMIT 1',
       [COUNTDOWN_CONFIG_KEY]
     );
@@ -873,10 +878,12 @@ exports.getCountdownConfig = async () => {
       rules = parseRules(parsed.rules);
       if (parsed.warn_hours) warnHours = Math.max(1, Math.min(168, Number(parsed.warn_hours) || 24));
     }
-  } catch { /* fallback below */ }
+  } catch (error) {
+    console.error('[ProposalLifecycle] Failed to load countdown config; using configured defaults:', error.message);
+  }
 
   if (!rules) {
-    const [legacy] = await pool.query(
+    const [legacy] = await executor.query(
       "SELECT `key`, `value` FROM proposal_lifecycle_configs WHERE `key` IN ('review_supplement_days','principle_supplement_days')"
     ).catch(() => [[]]);
     const legacyMap = {};
@@ -889,7 +896,7 @@ exports.getCountdownConfig = async () => {
       return { status: d.status, supplement: supp, transition: clonePart(d.transition) };
     });
   }
-  return { warn_hours: warnHours, rules, ...(await exports.getExtendLimits()) };
+  return { warn_hours: warnHours, rules, ...(await exports.getExtendLimits(executor)) };
 };
 
 exports.saveCountdownConfig = async (config) => {
@@ -924,6 +931,18 @@ exports.getDeadlineParts = async (status, kind = 'supplement') => {
 };
 
 exports.getDeadlineMinutes = async (status, kind = 'supplement') => exports.getDeadlineParts(status, kind);
+
+// options.pendingSupplementFallback defaults to true (PENDING: configured supplement or 3 workdays); false preserves a disabled supplement rule during status transitions.
+exports.getDeadlineDates = async (status, executor = pool, options = {}) => {
+  try {
+    return await businessDeadlines.getProposalDeadlineDates(
+      status, await exports.getCountdownConfig(executor), executor, options
+    );
+  } catch (error) {
+    console.error(`[ProposalLifecycle] Failed to calculate ${status} business deadlines:`, error.message);
+    throw error;
+  }
+};
 
 const enabledForKind = (rules, kind) => rules
   .filter((r) => r.status !== 'PAUSED' && r[kind] && r[kind].enabled)
@@ -979,11 +998,11 @@ const EXTEND_MAX_HOURS = 23;
 const DEFAULT_EXTEND_MAX_TIMES = 3;
 const DEFAULT_EXTEND_MAX_DAYS = 30;
 
-exports.getExtendLimits = async () => {
+exports.getExtendLimits = async (executor = pool) => {
   let maxTimes = DEFAULT_EXTEND_MAX_TIMES;
   let maxDaysPerTime = DEFAULT_EXTEND_MAX_DAYS;
   try {
-    const [rows] = await pool.query(
+    const [rows] = await executor.query(
       'SELECT `key`, `value` FROM proposal_lifecycle_configs WHERE `key` IN (?, ?)',
       [EXTEND_MAX_TIMES_KEY, EXTEND_MAX_DAYS_KEY]
     );
@@ -1053,7 +1072,7 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
     throw err('Vui lòng nhập lý do gia hạn', 400);
   }
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, custom_data, supplement_deadline_at, transition_deadline_at, info_completed_at FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, custom_data, supplement_deadline_at, transition_deadline_at, info_completed_at, countdown_calendar_id FROM station_proposals WHERE id = ?',
     [id]
   );
   if (rows.length === 0) {
@@ -1078,13 +1097,19 @@ exports.extendDeadline = async (id, { days = 0, hours = 0, reason = '' } = {}, o
   const oldSuppIso = proposal.supplement_deadline_at ? new Date(proposal.supplement_deadline_at).toISOString() : null;
   const oldTransIso = proposal.transition_deadline_at ? new Date(proposal.transition_deadline_at).toISOString() : null;
   const oldIso = oldSuppIso || oldTransIso;
+  const supplement = await businessDeadlines.extendDeadline(
+    proposal.supplement_deadline_at, { days: d, hours: h }, proposal.countdown_calendar_id
+  );
+  const transition = await businessDeadlines.extendDeadline(
+    proposal.transition_deadline_at, { days: d, hours: h }, proposal.countdown_calendar_id
+  );
   await pool.query(
     `UPDATE station_proposals
-     SET supplement_deadline_at = IF(supplement_deadline_at IS NULL, NULL, DATE_ADD(supplement_deadline_at, INTERVAL ? MINUTE)),
-         transition_deadline_at = IF(transition_deadline_at IS NULL, NULL, DATE_ADD(transition_deadline_at, INTERVAL ? MINUTE)),
+     SET supplement_deadline_at = ?,
+         transition_deadline_at = ?,
          info_completed_at = NULL, updated_at = NOW()
      WHERE id = ?`,
-    [totalMinutes, totalMinutes, id]
+    [supplement, transition, id]
   );
   const [after] = await pool.query('SELECT supplement_deadline_at, transition_deadline_at FROM station_proposals WHERE id = ?', [id]);
   const newIso = after[0].supplement_deadline_at ? new Date(after[0].supplement_deadline_at).toISOString() : (after[0].transition_deadline_at ? new Date(after[0].transition_deadline_at).toISOString() : null);
@@ -1240,7 +1265,7 @@ exports.notifyStepReceivers = async (id, to, opts = {}) => {
 exports.setInfoCompleted = async (id, completed, opts = {}) => {
   const { actorId, actorRole, source = 'user', ip } = opts;
   const [rows] = await pool.query(
-    'SELECT id, user_id, status, custom_data, supplement_deadline_at, info_completed_at FROM station_proposals WHERE id = ?',
+    'SELECT id, user_id, status, custom_data, supplement_deadline_at, transition_deadline_at, info_completed_at, countdown_calendar_id FROM station_proposals WHERE id = ?',
     [id]
   );
   if (rows.length === 0) {
@@ -1252,9 +1277,12 @@ exports.setInfoCompleted = async (id, completed, opts = {}) => {
   const supplementStatuses = await exports.getEnabledSupplementStatuses();
   // Đảm bảo PENDING luôn có supplement_deadline_at để cho phép xác nhận duyệt
   if (!proposal.supplement_deadline_at && proposal.status === 'PENDING') {
+    const fallback = proposal.transition_deadline_at
+      ? { supplement: proposal.transition_deadline_at, calendarId: proposal.countdown_calendar_id }
+      : await exports.getDeadlineDates('PENDING');
     await pool.query(
-      'UPDATE station_proposals SET supplement_deadline_at = COALESCE(transition_deadline_at, DATE_ADD(NOW(), INTERVAL 3 DAY)) WHERE id = ?',
-      [id]
+      'UPDATE station_proposals SET supplement_deadline_at = ?, countdown_calendar_id = ? WHERE id = ?',
+      [fallback.supplement, fallback.calendarId, id]
     );
     const [refreshed] = await pool.query('SELECT supplement_deadline_at FROM station_proposals WHERE id = ?', [id]);
     proposal.supplement_deadline_at = refreshed[0]?.supplement_deadline_at || null;

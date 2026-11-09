@@ -1,6 +1,22 @@
 const leadService = require('../services/leadService');
 const leadAssignmentService = require('../services/leadAssignmentService');
 
+exports.assigneeOptions = async (req, res) => {
+  try {
+    const ctx = await require('../services/leadAccessService').getContext(req.user);
+    const [rows] = await require('../utils/db').query("SELECT id, full_name, role, custom_data FROM users WHERE status = 'ACTIVE' ORDER BY id");
+    const options = rows.flatMap((row) => {
+      const target = require('../services/leadAccessService').context(row);
+      if (!target.isBusiness || (!target.isGdtt && !target.isGdkv)) return [];
+      if (!ctx.isSuper && !ctx.isTgd && !ctx.isPlanning && target.department !== ctx.department) return [];
+      const cd = typeof row.custom_data === 'string' ? JSON.parse(row.custom_data) : row.custom_data || {};
+      return [{ id: row.id, full_name: row.full_name, department: target.department,
+        chuc_vu: cd.chuc_vu || '', is_gdtt: target.isGdtt, is_gdkv: target.isGdkv }];
+    });
+    res.json({ success: true, data: options });
+  } catch (error) { sendError(res, error); }
+};
+
 const sendError = (res, error) => {
   if (error.statusCode) {
     return res.status(error.statusCode).json({ success: false, message: error.message });
@@ -48,7 +64,7 @@ exports.create = async (req, res) => {
     } catch (routeErr) {
       routing = { routed: false, warning: routeErr.message || 'Auto-routing thất bại' };
     }
-    const finalLead = await leadService.getLeadDetail(lead.id);
+    const finalLead = await leadService.getLeadDetail(lead.id, req.user);
     const message = routing && routing.warning
       ? `Tạo Lead thành công. ${routing.warning}`
       : 'Tạo Lead thành công';
@@ -74,7 +90,7 @@ exports.update = async (req, res) => {
         routing = { routed: false, warning: routeErr.message || 'Auto-routing thất bại' };
       }
     }
-    const finalLead = await leadService.getLeadDetail(req.params.id);
+    const finalLead = await leadService.getLeadDetail(req.params.id, req.user);
     const message = routing && routing.warning
       ? `Cập nhật Lead thành công. ${routing.warning}`
       : 'Cập nhật Lead thành công';

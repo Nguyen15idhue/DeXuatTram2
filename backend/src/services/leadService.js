@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const pool = require('../utils/db');
 const { isGdtt, isGdkv } = require('../constants/salesRanks');
+const leadAccess = require('./leadAccessService');
+const consultation = require('./leadConsultationService');
 
 const SYSTEM_KEYS = new Set(['id', 'journey_id', 'lead_code', 'stage', 'created_by', 'created_at', 'updated_at']);
 
@@ -55,6 +57,7 @@ const parseCustomData = (val) => {
 };
 
 const FILTER_COLUMNS = {
+  consultation_status: 'l.consultation_status',
   stage: 'l.stage',
   source: 'l.source',
   province: 'l.province',
@@ -180,29 +183,7 @@ const getRoutingDepartment = async (region, conn = pool) => {
 // Scope Lead theo contract docs/8/mkt/04 §3 — WHERE clause, khong filter FE.
 // Tra ve null (khong gioi han) hoac { sql, params } cho nguoi dung hien tai.
 const buildScope = async (user) => {
-  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return null;
-
-  if (user.role === 'MKT') {
-    return { sql: 'l.created_by = ?', params: [user.id] };
-  }
-
-  if (user.role === 'SALES') {
-    const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ?', [user.id]);
-    const cd = parseCustomData(rows[0] && rows[0].custom_data);
-    const department = cd.department || '';
-
-    if (department && isGdtt(cd.chuc_vu, department)) {
-      return { sql: 'l.assigned_department = ?', params: [department] };
-    }
-    if (isGdkv(cd.chuc_vu, department)) {
-      return { sql: 'l.assigned_user_id = ?', params: [user.id] };
-    }
-    // SALES khong phai GĐTT/GĐKV: khong thay lead nao (contract 04 §3)
-    return { sql: '1 = 0', params: [] };
-  }
-
-  // CTV/NPP khong co quyen Lead — bi chan o middleware, khong duoc vao day
-  return { sql: '1 = 0', params: [] };
+  return leadAccess.buildScope(user);
 };
 
 exports.getLeads = async (query, user) => {
@@ -251,8 +232,13 @@ exports.getLeads = async (query, user) => {
     enriched = await dynamicUtils.enrichUserFieldsMany(rows, fieldDefs);
   } catch { /* silent */ }
 
+  const resolvePermissions = await leadAccess.permissionResolver(user);
   return {
-    leads: enriched,
+    leads: await Promise.all(enriched.map(async (lead, index) => ({
+      ...lead,
+      permissions: resolvePermissions(rows[index]),
+      consultation_timing: await consultation.getTiming(lead)
+    }))),
     pagination: {
       page,
       limit,
@@ -264,20 +250,7 @@ exports.getLeads = async (query, user) => {
 
 const canAccessLead = async (lead, user) => {
   if (!lead) return false;
-  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return true;
-  if (user.role === 'MKT') return Number(lead.created_by) === Number(user.id);
-  if (user.role === 'SALES') {
-    const [rows] = await pool.query('SELECT custom_data FROM users WHERE id = ?', [user.id]);
-    const cd = parseCustomData(rows[0] && rows[0].custom_data);
-    const department = cd.department || '';
-    if (department && isGdtt(cd.chuc_vu, department)) {
-      return String(lead.assigned_department || '') === String(department);
-    }
-    if (isGdkv(cd.chuc_vu, department)) {
-      return Number(lead.assigned_user_id) === Number(user.id);
-    }
-  }
-  return false;
+  return (await leadAccess.permissions(lead, user)).can_view;
 };
 
 const getLeadRow = async (id, conn = pool) => {
@@ -293,6 +266,7 @@ const getLeadRow = async (id, conn = pool) => {
 };
 
 exports.createLead = async (data, user, opts = {}) => {
+  if (user.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được tạo khách hàng'), { statusCode: 403 });
   const fullName = String(data.full_name || '').trim();
   const phone = String(data.phone || '').trim();
   if (!fullName) {
@@ -372,7 +346,7 @@ exports.createLead = async (data, user, opts = {}) => {
     );
     const leadId = lres.insertId;
     const leadCode = `LD-${String(leadId).padStart(6, '0')}`;
-    await conn.query('UPDATE leads SET lead_code = ? WHERE id = ?', [leadCode, leadId]);
+    await conn.query("UPDATE leads SET lead_code = ?, consultation_status = 'WAITING_ALLOCATION' WHERE id = ?", [leadCode, leadId]);
 
     const journeyActivityService = require('./journeyActivityService');
     await journeyActivityService.log({
@@ -398,7 +372,7 @@ exports.createLead = async (data, user, opts = {}) => {
 };
 
 exports.updateLead = async (id, data, user, opts = {}) => {
-  const lead = await getLeadRow(id);
+  let lead = await getLeadRow(id);
   if (!lead) {
     const err = new Error('Không tìm thấy Lead');
     err.statusCode = 404;
@@ -412,42 +386,11 @@ exports.updateLead = async (id, data, user, opts = {}) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    const [locked] = await conn.query('SELECT id FROM leads WHERE id = ? FOR UPDATE', [id]);
+    if (!locked.length) throw Object.assign(new Error('Không tìm thấy khách hàng'), { statusCode: 404 });
+    lead = await getLeadRow(id, conn);
     const updated = await applyLeadUpdate(conn, lead, data, user, opts);
     await conn.commit();
-    // CRM outbound: notify customer care if history changed
-    try {
-      const crmLeadId = lead.external_crm_id || null;
-      if (crmLeadId) {
-        const beforeCustom = parseCustomData(lead.custom_data);
-        const afterCustom = parseCustomData(updated.custom_data);
-        const beforeCare = (beforeCustom.cskh_history || []).length + (beforeCustom.tvbh_history || []).length;
-        const afterCare = (afterCustom.cskh_history || []).length + (afterCustom.tvbh_history || []).length;
-        if (afterCare > beforeCare) {
-          const crmOutboundService = require('./crmOutboundService');
-          const crmStatusMapping = require('../integrations/crm/crmStatusMapping');
-          // find the latest care entry
-          const allAfter = [...(afterCustom.cskh_history || []), ...(afterCustom.tvbh_history || [])];
-          const latest = allAfter[allAfter.length - 1] || {};
-          await crmOutboundService.enqueue({
-            eventId: `eg_${lead.id}_care_${Date.now()}`,
-            eventType: 'lead.care',
-            leadId: lead.id,
-            crmLeadId,
-            payload: {
-              leadId: crmLeadId,
-              channel: crmStatusMapping.mapCareValue('channel', latest.channel),
-              contact: crmStatusMapping.mapCareValue('contact', latest.contact),
-              classify: crmStatusMapping.mapCareValue('classify', latest.classify || updated.customer_classification),
-              saleResult: crmStatusMapping.mapCareValue('saleResult', latest.saleResult),
-              reason: latest.reason || '',
-              note: latest.note || '',
-              staff: user.full_name || '',
-              ref: `EG-${lead.id}`
-            }
-          });
-        }
-      }
-    } catch { /* silent */ }
     // CRM outbound: notify stage change + bad_quality
     try {
       const crmLeadId = lead.external_crm_id || null;
@@ -490,17 +433,7 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
   const id = lead.id;
 
   const patch = {};
-  // Quyền sửa theo section (chỉ chặn sửa, vẫn xem bình thường):
-  // section có cấu hình permissions.edit riêng thì tuân theo đó
-  // (role/phòng ban/chức vụ/đích danh user); thiếu thì fallback mặc định:
-  // - Thông tin Marketing + CSKH: MKT, ADMIN, SUPER_ADMIN
-  // - Tư vấn bán hàng TVBH: SALES, ADMIN, SUPER_ADMIN
-  try {
-    const sectionPermService = require('./sectionPermService');
-    await sectionPermService.enforceLeadEdit(user, data, conn, lead);
-  } catch (err) {
-    if (err.statusCode) throw err;
-  }
+  await consultation.assertUpdateAllowed(lead, data, user, conn);
   // assigned_department KHÔNG nhận trực tiếp từ PUT (đi qua /assign hoặc tự resolve
   // nội bộ khi đổi người) — tránh ghi phòng ban bừa / NULL gây 500 ở history.
   const updatable = ['full_name', 'phone', 'email', 'address', 'province', 'ward',
@@ -552,13 +485,13 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
       const tcd = parseCustomData(target && target.custom_data);
       const targetIsGdtt = target && isGdtt(tcd.chuc_vu, tcd.department || '');
       const targetIsGdkv = target && isGdkv(tcd.chuc_vu, tcd.department || '');
-      if (!target || target.status !== 'ACTIVE' || target.role !== 'SALES' || (!targetIsGdkv && !targetIsGdtt)) {
+      if (!target || target.status !== 'ACTIVE' || !leadAccess.context(target).isBusiness || (!targetIsGdkv && !targetIsGdtt)) {
         const err = new Error('Chỉ giao Lead cho GĐTTKD/GĐKV đang hoạt động');
         err.statusCode = 400;
         throw err;
       }
-      if (targetIsGdtt && !['SUPER_ADMIN', 'ADMIN'].includes(user && user.role)) {
-        const err = new Error('Chỉ Quản trị viên mới được giao Lead cho GĐTTKD');
+      if (targetIsGdtt) {
+        const err = new Error('Phân bổ thủ công chỉ được giao cho GĐKV');
         err.statusCode = 403;
         throw err;
       }
@@ -674,19 +607,41 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
     params.push(id);
     await conn.query(`UPDATE leads SET ${sets.join(', ')} WHERE id = ?`, params);
   }
+  await consultation.afterUpdate(conn, lead, patch);
 
   const journeyActivityService = require('./journeyActivityService');
   const after = await getLeadRow(id, conn);
   const changed = {};
   ['full_name', 'phone', 'email', 'address', 'province', 'ward', 'customer_type',
-    'source', 'note', 'customer_classification', 'sales_outcome'].forEach((k) => {
-    if (patch[k] !== undefined && String(after[k] ?? '') !== String(lead[k] ?? '')) {
+    'source', 'note', 'customer_classification', 'sales_outcome', 'consultation_status'].forEach((k) => {
+    if ((patch[k] !== undefined || k === 'consultation_status') && String(after[k] ?? '') !== String(lead[k] ?? '')) {
       changed[k] = { from: lead[k] ?? null, to: after[k] ?? null };
     }
   });
 
   const beforeCd = parseCustomData(lead.custom_data);
   const afterCd = parseCustomData(after.custom_data);
+  const careKeys = ['cskh_history', 'tvbh_history'];
+  const addedCare = careKeys.find((key) => (afterCd[key] || []).length > (beforeCd[key] || []).length);
+  if (lead.external_crm_id && (addedCare || lead.sales_outcome !== after.sales_outcome)) {
+    const history = afterCd[addedCare || 'tvbh_history'] || [];
+    const latest = history[history.length - 1] || {};
+    const mapping = require('../integrations/crm/crmStatusMapping');
+    await require('./crmOutboundService').enqueue({
+      eventId: `eg_${lead.id}_care_${require('crypto').randomUUID()}`,
+      eventType: 'lead.care', leadId: lead.id, crmLeadId: lead.external_crm_id, conn,
+      payload: {
+        leadId: lead.external_crm_id,
+        channel: mapping.mapCareValue('channel', latest.channel),
+        contact: mapping.mapCareValue('contact', latest.contact || latest.tinh_trang),
+        classify: mapping.mapCareValue('classify', latest.classify || after.customer_classification),
+        saleResult: mapping.mapCareValue('saleResult', latest.saleResult || after.sales_outcome),
+        reason: latest.reason || latest.ly_do || (after.sales_outcome === 'FAILED' ? latest.ghi_chu || afterCd.tvbh_note || '' : ''),
+        note: latest.note || latest.ghi_chu || '',
+        staff: user.full_name || '', ref: `EG-${lead.id}`
+      }
+    });
+  }
   ['cskh_history', 'cskh_note', 'tvbh_history', 'tvbh_note'].forEach((k) => {
     const b = beforeCd[k] ?? null;
     const a = afterCd[k] ?? null;
@@ -759,6 +714,7 @@ const applyLeadUpdate = async (conn, lead, data, user, opts = {}) => {
 };
 
 exports.deleteLead = async (id, user) => {
+  if (user.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được xóa khách hàng'), { statusCode: 403 });
   const lead = await getLeadRow(id);
   if (!lead) {
     const err = new Error('Không tìm thấy Lead');
@@ -784,6 +740,7 @@ exports.deleteLead = async (id, user) => {
 };
 
 exports.bulkDeleteLeads = async (ids, user) => {
+  if (user.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được xóa khách hàng'), { statusCode: 403 });
   const list = [...new Set((ids || []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   if (list.length === 0) {
     const err = new Error('Danh sách id không hợp lệ');
@@ -848,6 +805,8 @@ exports.getLeadDetail = async (id, user = null) => {
       out = await sectionPermService.stripLeadView(out, user);
     } catch { /* silent */ }
   }
+  out.consultation_timing = await consultation.getTiming(row);
+  if (user) out.permissions = await leadAccess.permissions(row, user);
   return out;
 };
 
