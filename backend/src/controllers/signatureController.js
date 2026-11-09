@@ -58,8 +58,8 @@ exports.upload = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Chưa chọn file ảnh' });
     }
 
-    const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(req.user.role);
-    const targetUserId = isAdmin && req.body.user_id ? parseInt(req.body.user_id, 10) : req.user.id;
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const targetUserId = isSuperAdmin && req.body.user_id ? parseInt(req.body.user_id, 10) : req.user.id;
 
     const signature = await signatureService.upload(targetUserId, file);
     res.json({ success: true, data: signature });

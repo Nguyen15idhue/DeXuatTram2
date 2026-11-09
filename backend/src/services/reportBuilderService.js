@@ -30,7 +30,7 @@ const DATASETS = {
       id: { label: 'Số lượng', sql: 'l.id', type: 'number', aggs: ['count', 'count_distinct'] },
     },
     scope: async (user) => reportService.leadWhereClause(user, {}),
-    baseFilter: 'l.deleted_at IS NULL',
+    baseFilter: null,
   },
   proposals: {
     label: 'Đề xuất',
@@ -88,7 +88,7 @@ const DATASETS = {
         params: lw.params,
       };
     },
-    baseFilter: 'l.deleted_at IS NULL',
+    baseFilter: null,
   },
 };
 

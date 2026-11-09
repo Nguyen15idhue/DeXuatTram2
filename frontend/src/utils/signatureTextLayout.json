@@ -6,19 +6,19 @@
   "leftPaddingPx": 6,
   "rightPaddingPx": 6,
   "topPaddingPx": 2,
-  "lineHeightPt": 28,
+  "lineHeightPt": 18,
   "lines": {
     "name": {
       "fontSizePt": 13,
       "font": "bold",
       "fontWeight": 700,
-      "color": "#111827"
+      "color": "#dc2626"
     },
     "time": {
       "fontSizePt": 13,
       "font": "regular",
       "fontWeight": 400,
-      "color": "#374151"
+      "color": "#dc2626"
     }
   }
 }

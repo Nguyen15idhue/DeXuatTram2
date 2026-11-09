@@ -100,7 +100,7 @@ const mainItems = [
         path: "/admin/proposals/lap-to-trinh",
         label: "Lập tờ trình BCĐX",
         icon: FileCheck,
-        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV"],
+        roles: ["SUPER_ADMIN", "ADMIN", "SALES", "NPP"],
       },
       {
         path: "/admin/proposals/duyet-bcdx",
