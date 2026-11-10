@@ -1,7 +1,7 @@
 FROM node:20
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends imagemagick \
+    && apt-get install -y --no-install-recommends imagemagick libreoffice-writer libreoffice-common fontconfig fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea \
     && sample_dir="$(mktemp -d)" \
     && convert -size 2x2 xc:white "$sample_dir/source.png" \
     && for format in jpg png gif webp; do \

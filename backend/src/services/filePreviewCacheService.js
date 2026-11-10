@@ -8,7 +8,7 @@ const libreOfficeService = require('./libreOfficeService');
 const fileService = require('./fileService');
 
 const STORAGE_ROOT = path.join(__dirname, '../../storage/uploads');
-const SYSTEM_USER_ID = null;
+const pendingPreviews = new Map();
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
@@ -62,7 +62,7 @@ const savePdfToFiles = async (pdfBuffer, originalName, sourceFile) => {
   return rows[0];
 };
 
-const getPreviewPdfFileId = async (sourceFileId) => {
+const generatePreview = async (sourceFileId) => {
   const sourceFile = await fileService.getFileById(sourceFileId);
   if (!sourceFile || sourceFile.status === 'deleted') return null;
 
@@ -73,17 +73,19 @@ const getPreviewPdfFileId = async (sourceFileId) => {
 
   if (!isWord(mime)) return null;
 
-  // cache hit
-  const cached = await getCache(sourceFileId);
-  if (cached) {
-    const result = await fileService.getFilePath(cached.pdfFileId);
-    if (result) return cached.pdfFileId;
-  }
-
-  // convert
   const result = await fileService.getFilePath(sourceFileId);
   if (!result) return null;
   const inputBuffer = fs.readFileSync(result.filePath);
+  const sourceHash = sha256(Buffer.concat([
+    inputBuffer, Buffer.from(await libreOfficeService.getConversionSignature()),
+  ]));
+
+  const cached = await getCache(sourceFileId);
+  if (cached && cached.sourceHash === sourceHash) {
+    const cachedPath = await fileService.getFilePath(cached.pdfFileId);
+    if (cachedPath) return cached.pdfFileId;
+  }
+
   const ext = path.extname(sourceFile.original_name || '').toLowerCase() || '.docx';
   const { pdfBuffer } = await libreOfficeService.convertToPdf(inputBuffer, ext);
 
@@ -94,10 +96,18 @@ const getPreviewPdfFileId = async (sourceFileId) => {
     `INSERT INTO file_preview_cache (source_file_id, pdf_file_id, source_hash)
      VALUES (?, ?, ?)
      ON DUPLICATE KEY UPDATE pdf_file_id = VALUES(pdf_file_id), source_hash = VALUES(source_hash), created_at = NOW()`,
-    [sourceFileId, pdfFile.id, sha256(inputBuffer)]
+    [sourceFileId, pdfFile.id, sourceHash]
   );
 
   return pdfFile.id;
+};
+
+const getPreviewPdfFileId = (sourceFileId) => {
+  const id = Number(sourceFileId);
+  if (pendingPreviews.has(id)) return pendingPreviews.get(id);
+  const pending = generatePreview(id).finally(() => pendingPreviews.delete(id));
+  pendingPreviews.set(id, pending);
+  return pending;
 };
 
 module.exports = { getPreviewPdfFileId, isWord, isPdf };
