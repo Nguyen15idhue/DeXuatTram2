@@ -169,7 +169,12 @@ const formatPoleScale = (value) => {
   const rows = parseArray(value);
   if (!rows.length) return '';
   return rows
-    .map((row) => `${scalarValue(row.mo_hinh)}_${scalarValue(row.so_luong) || 0} ${scalarValue(row.loai_tru)}`.trim())
+    .map((row) => {
+      const model = scalarValue(row.mo_hinh);
+      const type = formatPoleType(row.loai_tru);
+      if (!model || !type) throw new Error('Dòng quy mô trụ thiếu mô hình hoặc loại trụ');
+      return `${model}_${poleQuantity(row)} ${type}`;
+    })
     .filter(Boolean)
     .join(' + ');
 };
@@ -177,25 +182,68 @@ const formatPoleScale = (value) => {
 const countPoles = (value) => {
   const rows = parseArray(value);
   if (!rows.length) return '';
-  const total = rows.reduce((sum, row) => sum + (Number(row.so_luong) || 0), 0);
+  const total = rows.reduce((sum, row) => sum + poleQuantity(row), 0);
   return total > 0 ? total : '';
 };
 
-const formatProposedScale = (custom) => {
-  const parts = [];
-  const tdt = scalarValue(custom.tdt_tru);
-  const nq = scalarValue(custom.loai_tru_nq);
-  const lk = scalarValue(custom.loai_tru_lk);
-  const general = scalarValue(custom.loai_tru);
-  if (general) parts.push(general);
-  if (tdt) parts.push(`TĐT: ${tdt}`);
-  if (nq) parts.push(`NQ: ${nq}`);
-  if (lk) parts.push(`LK: ${lk}`);
-  return parts.join(' | ');
+const poleQuantity = (row) => {
+  const quantity = Number(scalarValue(row.so_luong));
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+    throw new Error('Số lượng trụ phải là số nguyên dương');
+  }
+  return quantity;
+};
+
+const formatPoleType = (value) => scalarValue(value)
+  .replace(/\b(AC|DC)\s*(\d+(?:[.,]\d+)?)\s*kw\b/gi,
+    (_, type, power) => `${type.toUpperCase()} ${power}kW`);
+
+const tableRows = (value) => {
+  if (value === null || value === undefined || value === '') return [];
+  if (typeof value === 'string') {
+    try { return tableRows(JSON.parse(value)); } catch {
+      throw new Error('Bảng quy mô trụ không phải JSON hợp lệ');
+    }
+  }
+  if (Array.isArray(value)) return value;
+  const rows = value?.rows || value?.data || [];
+  if (!Array.isArray(rows)) throw new Error('Bảng quy mô trụ phải là danh sách dòng');
+  return rows;
+};
+
+const formatProposedScale = (custom, model) => {
+  const groups = {
+    TDT: [['TDT', 'tdt_tru']],
+    LK: [['LK', 'loai_tru_lk']],
+    NQ: [['NQ', 'loai_tru_nq']],
+    NQ_LK: [['NQ', 'loai_tru_nq'], ['LK', 'loai_tru_lk']]
+  }[model] || [];
+  const rows = groups.flatMap(([mo_hinh, key]) => tableRows(custom[key])
+    .map((row) => ({ ...row, mo_hinh })));
+  if (rows.length) return formatPoleScale(rows);
+  if (!scalarValue(custom.loai_tru)) return '';
+  return formatPoleScale([{ mo_hinh: model, so_luong: custom.so_luong_tru, loai_tru: custom.loai_tru }]);
+};
+
+const resolveSource = (proposal, model) => {
+  if (proposal.assignee_role === 'NPP') return 'NPP';
+  if (model === 'TDT') return 'TMT';
+  const department = scalarValue(parseObject(proposal.assignee_custom_data).department)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  if (/(kinh doanh|\bkd\b)/.test(department)) {
+    if (department.includes('mien bac')) return 'MB';
+    if (department.includes('mien trung')) return 'MT';
+    if (department.includes('mien nam')) return 'MN';
+  }
+  throw new Error(`Đề xuất ${proposal.id}: không xác định được nguồn từ phòng ban người phụ trách`);
 };
 
 const buildRow = (proposal, serial) => {
   const custom = parseObject(proposal.custom_data);
+  const model = scalarValue(proposal.mo_hinh_dau_tu || custom.mo_hinh_dau_tu).toUpperCase();
+  if (!scalarValue(proposal.cms_station_code)) throw new Error(`Đề xuất ${proposal.id}: thiếu mã trạm EMS`);
+  if (!scalarValue(proposal.assignee_name)) throw new Error(`Đề xuất ${proposal.id}: thiếu người phụ trách hợp lệ`);
+  if (!parseArray(proposal.chot_so_luong_tru).length) throw new Error(`Đề xuất ${proposal.id}: thiếu bảng trụ chốt BCĐX`);
   const legalName = scalarValue(custom.lk_ten_phap_nhan || custom.nq_ten_khach_hang || proposal.owner_name);
   const province = scalarValue(proposal.province || custom.province);
   const address = scalarValue(proposal.address || custom.address);
@@ -206,18 +254,18 @@ const buildRow = (proposal, serial) => {
     : '';
   return [
     serial,
-    scalarValue(proposal.ma_tram),
+    scalarValue(proposal.cms_station_code),
     scalarValue(proposal.station_name),
     legalName,
-    scalarValue(proposal.owner_name),
-    scalarValue(proposal.vung_mien || custom.vung_mien),
+    scalarValue(proposal.assignee_name),
+    resolveSource(proposal, model),
     mapUrl,
     scalarValue(proposal.latitude),
     scalarValue(proposal.longitude),
     address,
     oldProvince,
     province,
-    formatProposedScale(custom),
+    formatProposedScale(custom, model),
     formatPoleScale(proposal.chot_so_luong_tru),
     countPoles(proposal.chot_so_luong_tru),
     formatDate(proposal.on_date),
@@ -232,6 +280,8 @@ const loadProposals = async (proposalIds) => {
             p.status, p.custom_data, p.chot_so_luong_tru, p.ma_de_xuat_gen, p.station_id,
             cs.ma_tram, cs.cms_station_code, cs.on_date,
             st.name AS station_name,
+            assignee.full_name AS assignee_name, assignee.role AS assignee_role,
+            assignee.custom_data AS assignee_custom_data,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS vung_mien,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
@@ -245,6 +295,7 @@ const loadProposals = async (proposalIds) => {
        FROM station_proposals p
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
        LEFT JOIN stations st ON st.id = p.station_id
+       LEFT JOIN users assignee ON assignee.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
        WHERE p.id IN (${proposalIds.map(() => '?').join(',')}) AND p.status = 'ACTIVE'`,
     proposalIds
   );
@@ -254,46 +305,52 @@ const loadProposals = async (proposalIds) => {
 const loadProposalKeys = async (proposalIds) => {
   if (!proposalIds.length) return new Map();
   const [rows] = await pool.query(
-    `SELECT p.id, cs.ma_tram
+    `SELECT p.id, cs.cms_station_code
        FROM station_proposals p
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
       WHERE p.id IN (${proposalIds.map(() => '?').join(',')})`,
     proposalIds
   );
-  return new Map(rows.map((row) => [Number(row.id), String(row.ma_tram || '').trim()]));
+  const codes = rows.map((row) => String(row.cms_station_code || '').trim()).filter(Boolean);
+  if (codes.length) {
+    const [duplicates] = await pool.query(
+      `SELECT TRIM(cms_station_code) AS code FROM charging_stations
+        WHERE TRIM(cms_station_code) IN (?) GROUP BY TRIM(cms_station_code) HAVING COUNT(*) > 1`,
+      [codes]
+    );
+    if (duplicates.length) throw new Error(`Mã trạm EMS trùng trong DB: ${duplicates.map(row => row.code).join(', ')}`);
+  }
+  return new Map(rows.map((row) => [Number(row.id), String(row.cms_station_code || '').trim()]));
 };
 
 const readSheetRows = async (sheets, config) => {
   const tab = quoteTab(config.tabName);
-  try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A1:${LAST_COLUMN}`,
-      valueRenderOption: 'UNFORMATTED_VALUE'
-    });
-    const rows = response.data.values || [];
-    const rowById = new Map();
-    let maxSerial = 0;
-    rows.forEach((row, index) => {
-      if (!row || !row.length) return;
-      const serial = Number(row[0]);
-      const key = String(row[KEY_COLUMN_INDEX] || '').trim();
-      if (!key) return;
-      if (!Number.isFinite(serial)) return;
-      if (serial > maxSerial) maxSerial = serial;
-      if (!rowById.has(key)) rowById.set(key, { row: index + 1, serial });
-    });
-    return { rowById, maxSerial, empty: rows.length === 0 };
-  } catch (error) {
-    return { rowById: new Map(), maxSerial: 0, empty: false };
-  }
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId,
+    range: `${tab}!A1:${LAST_COLUMN}`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  const rows = response.data.values || [];
+  const rowById = new Map();
+  let maxSerial = 0;
+  rows.forEach((row, index) => {
+    if (!row || !row.length) return;
+    const serial = Number(row[0]);
+    const key = String(row[KEY_COLUMN_INDEX] || '').trim();
+    if (!key) return;
+    if (index === 0 && !Number.isFinite(serial)) return;
+    if (serial > maxSerial) maxSerial = serial;
+    if (rowById.has(key)) throw new Error(`Mã trạm EMS trùng trên Sheet: ${key}`);
+    rowById.set(key, { row: index + 1, serial: Number.isFinite(serial) ? serial : null });
+  });
+  return { rowById, maxSerial, empty: rows.length === 0, nextRow: Math.max(rows.length + 1, 2) };
 };
 
 const resolveKey = (keyById, proposalId, proposal) => {
   const fromKeyMap = String(keyById.get(Number(proposalId)) || '').trim();
   if (fromKeyMap) return fromKeyMap;
-  if (proposal && proposal.ma_tram) return String(proposal.ma_tram).trim();
-  return '';
+  if (proposal && proposal.cms_station_code) return String(proposal.cms_station_code).trim();
+  throw new Error(`Đề xuất ${proposalId}: thiếu mã trạm EMS để đối soát`);
 };
 
 const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
@@ -301,23 +358,18 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   const sheetIndex = await readSheetRows(sheets, config);
   const { rowById, maxSerial, empty } = sheetIndex;
   const updates = [];
-  const appends = [];
   const clears = [];
   let nextSerial = maxSerial + 1;
-
-  if (empty) {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A1:${LAST_COLUMN}1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [HEADER_ROW] }
-    });
-  }
+  let nextRow = sheetIndex.nextRow;
+  const seenKeys = new Set();
+  if (empty) updates.push({ range: `${tab}!A1:${LAST_COLUMN}1`, values: [HEADER_ROW] });
 
   for (const job of jobs) {
     const proposalId = Number(job.proposal_id);
     const proposal = proposalsById.get(proposalId) || null;
     const key = resolveKey(keyById, proposalId, proposal);
+    if (seenKeys.has(key)) throw new Error(`Mã trạm EMS trùng trong lượt đồng bộ: ${key}`);
+    seenKeys.add(key);
     const existing = key ? rowById.get(key) : null;
     if (job.operation === 'DELETE' || !proposal) {
       if (existing) clears.push({ row: existing.row });
@@ -328,8 +380,8 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
     if (existing) {
       updates.push({ range: `${tab}!A${existing.row}:${LAST_COLUMN}${existing.row}`, values: [row] });
     } else {
-      appends.push(row);
-      if (key) rowById.set(key, { row: null, serial });
+      updates.push({ range: `${tab}!A${nextRow}:${LAST_COLUMN}${nextRow}`, values: [row] });
+      nextRow++;
     }
   }
 
@@ -339,23 +391,10 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
       requestBody: { valueInputOption: 'RAW', data: batch }
     });
   }
-  if (appends.length) {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: config.spreadsheetId,
-      range: `${tab}!A1`,
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: appends }
-    });
-  }
   if (clears.length) {
-    const clearRanges = clears.map(({ row }) => `${tab}!A${row}:${LAST_COLUMN}${row}`);
-    // Xóa từ dưới lên để không làm lệch chỉ số các dòng phía trên
-    const orderedRows = [...clears].sort((a, b) => b.row - a.row);
-    for (const { row } of orderedRows) {
+    for (const { row } of clears) {
       await sheets.spreadsheets.values.clear({ spreadsheetId: config.spreadsheetId, range: `${tab}!A${row}:${LAST_COLUMN}${row}` });
     }
-    void clearRanges;
   }
 
   for (const job of jobs) {
@@ -408,9 +447,33 @@ const processBatch = async (limit = BATCH_SIZE) => {
     const proposalRows = await loadProposals(upsertIds);
     const proposalsById = new Map(proposalRows.map((p) => [Number(p.id), p]));
     const keyById = await loadProposalKeys([...new Set([...upsertIds, ...deleteIds])]);
+    const validJobs = [];
+    for (const job of jobs) {
+      let validationError;
+      try {
+        const proposal = proposalsById.get(Number(job.proposal_id));
+        resolveKey(keyById, job.proposal_id, proposal);
+        if (job.operation === 'UPSERT' && proposal) buildRow(proposal, 1);
+      } catch (error) {
+        validationError = error;
+      }
+      if (validationError) {
+        await pool.query(
+          `UPDATE on_station_sheet_sync_queue
+              SET status = 'FAILED', next_attempt_at = DATE_ADD(NOW(), INTERVAL 5 MINUTE),
+                  last_error = ?, updated_at = NOW()
+            WHERE proposal_id = ? AND requested_version = ?`,
+          [String(validationError.message).slice(0, 500), job.proposal_id, job.requested_version]
+        );
+      } else {
+        validJobs.push(job);
+      }
+    }
+    selectedJobs = validJobs;
+    if (!validJobs.length) return { processed: 0, failed: jobs.length };
     const sheets = await createSheetsClient(config);
-    await writeSheetRows(sheets, config, jobs, proposalsById, keyById);
-    return { processed: jobs.length };
+    await writeSheetRows(sheets, config, validJobs, proposalsById, keyById);
+    return { processed: validJobs.length, failed: jobs.length - validJobs.length };
   } catch (error) {
     for (const job of selectedJobs) {
       await pool.query(
@@ -516,3 +579,5 @@ exports.HEADER_ROW = HEADER_ROW;
 exports.buildRow = buildRow;
 exports.loadProposals = loadProposals;
 exports.resolveOldProvince = resolveOldProvince;
+exports.writeSheetRows = writeSheetRows;
+exports.loadProposalKeys = loadProposalKeys;

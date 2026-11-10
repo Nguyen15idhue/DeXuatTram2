@@ -17,6 +17,7 @@ const OnStationSheetSyncButton = () => {
   const { token, isAdmin } = useAuth();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [toast, setToast] = useState(EMPTY_TOAST);
   const timerRef = useRef(null);
 
@@ -24,9 +25,12 @@ const OnStationSheetSyncButton = () => {
     if (!token || !isAdmin) return;
     try {
       const res = await onStationSheetSyncService.getStatus(token);
-      if (res?.success) setStatus(res.data || null);
-    } catch {
-      /* trạng thái là tuỳ chọn, không chặn trang */
+      if (!res?.success) throw new Error(res?.message || 'Không tải được trạng thái đồng bộ Sheet trạm ON');
+      setStatus(res.data || null);
+      setLoadError('');
+    } catch (error) {
+      console.error('[OnStationSheetSyncButton] Status error:', error);
+      setLoadError(error?.message || 'Không tải được trạng thái đồng bộ Sheet trạm ON');
     }
   }, [token, isAdmin]);
 
@@ -76,6 +80,13 @@ const OnStationSheetSyncButton = () => {
         <RefreshCw size={14} className={pending ? 'animate-spin' : ''} />
         {pending ? `Đang đồng bộ ${pending}` : 'Đồng bộ Sheet trạm ON'}
       </button>
+      {(loadError || status?.recentErrors?.length > 0) && (
+        <div role="alert" className="text-sm text-error max-w-xl">
+          {loadError || status.recentErrors.map((item) => (
+            <div key={item.proposal_id}>Đề xuất #{item.proposal_id}: {item.last_error}</div>
+          ))}
+        </div>
+      )}
       <Toast message={toast.message} type={toast.type} onClose={() => setToast(EMPTY_TOAST)} />
     </>
   );
