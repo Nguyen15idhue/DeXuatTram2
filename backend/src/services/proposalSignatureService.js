@@ -4,7 +4,9 @@ const fs = require('fs');
 const dynamicUtils = require('./dynamicUtils');
 const proposalGradingService = require('./proposalGradingService');
 const proposalReportService = require('./proposalReportService');
+const proposalReportDocumentService = require('./proposalReportDocumentService');
 const signedDocumentService = require('./signedDocumentService');
+const JSZip = require('jszip');
 
 const { parseCustomData, toFileSummaries } = proposalGradingService;
 
@@ -28,13 +30,81 @@ const SIGN_STATUS_LABELS = {
   CEO_SIGNED: 'Chủ tịch đã phê duyệt'
 };
 
-const SIGNATURE_FILE_CONFLICT_MESSAGE = 'Cấu hình người ký đang gắn với nhiều file BCĐX. Hãy cấu hình ký lại trên một file duy nhất.';
-
 const configuredFileIds = (configs) => [...new Set(
   (configs || [])
     .map((config) => Number(config.file_id))
     .filter((fileId) => Number.isInteger(fileId) && fileId > 0)
 )];
+const documentIdOf = (document) => Number(document && document.id);
+const signingFileIdOf = (document) => Number(document && document.signing_file && document.signing_file.id);
+const isSignableFile = (file) => {
+  const extension = path.extname(String(file && file.original_name || '')).toLowerCase();
+  const mimeType = String(file && file.mime_type || '').toLowerCase();
+  if (extension === '.doc' || mimeType === 'application/msword') return false;
+  return extension === '.pdf' || extension === '.docx'
+    || mimeType === 'application/pdf'
+    || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+};
+const isDocumentReadyForSignature = (document) => !['PENDING', 'PROCESSING'].includes(
+  String(document && document.conversion_status || '').toUpperCase()
+) && isSignableFile(document && document.signing_file);
+const getSigningDocuments = (proposalId) => proposalReportDocumentService.getSigningDocuments(proposalId);
+const withSignatureMutationLock = async (proposalId, operation) => {
+  let connection = null;
+  const lockName = `proposal-signature:${Number(proposalId)}`;
+  let acquired = false;
+  const deadline = Date.now() + 10000;
+  try {
+    do {
+      connection = await pool.getConnection();
+      const [rows] = await connection.query('SELECT GET_LOCK(?, 0) AS acquired', [lockName]);
+      acquired = Number(rows[0]?.acquired) === 1;
+      if (acquired) break;
+      connection.release();
+      connection = null;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    if (!acquired) throw err('Hồ sơ đang được xử lý ký; vui lòng thử lại', 409);
+    return await operation(connection);
+  } finally {
+    try {
+      if (acquired) await connection.query('SELECT RELEASE_LOCK(?) AS released', [lockName]);
+    } finally {
+      if (connection) connection.release();
+    }
+  }
+};
+const validateDocumentSignerSets = (documents) => {
+  for (const document of documents || []) {
+    const signers = document.signers || [];
+    if (new Set(signers.map((signer) => Number(signer.user_id))).size !== signers.length) {
+      throw err('Một người chỉ được cấu hình một ô ký trên cùng tài liệu', 400);
+    }
+  }
+  return true;
+};
+const normalizeFinalDocuments = (activeDocuments, finalDocuments) => {
+  const expectedDocumentIds = activeDocuments.map(documentIdOf);
+  if (finalDocuments.length !== expectedDocumentIds.length
+    || new Set(finalDocuments.map((document) => document.document_id)).size !== expectedDocumentIds.length
+    || expectedDocumentIds.some((documentId) => !finalDocuments.some((document) => document.document_id === documentId))) {
+    throw err('Danh sách file đã ký phải khớp toàn bộ tài liệu BCĐX hiện hành', 400);
+  }
+  if (finalDocuments.some((document) => !Number.isInteger(document.file_id) || document.file_id <= 0)) {
+    throw err('Vui lòng tải lên file BCĐX đã ký cho từng tài liệu', 400);
+  }
+  if (new Set(finalDocuments.map((document) => document.file_id)).size !== finalDocuments.length) {
+    throw err('Mỗi tài liệu phải có file BCĐX đã ký riêng', 400);
+  }
+  return finalDocuments;
+};
+exports._internals = {
+  isSignableFile,
+  isDocumentReadyForSignature,
+  withSignatureMutationLock,
+  validateDocumentSignerSets,
+  normalizeFinalDocuments
+};
 
 const TAB_STATUSES = {
   all: [SIGNATURE_PENDING, APPROVED],
@@ -81,8 +151,7 @@ const computeSignStatus = (row) => {
 const mapSignatureRow = (row) => {
   const custom = parseCustomData(row.custom_data);
   const signStatus = computeSignStatus(row);
-  const signatureConfigConflict = Number(row.signer_file_count || 0) > 1
-    || Number(row.signer_distinct_total || 0) !== Number(row.signer_total || 0);
+  const signatureConfigConflict = Number(row.signer_distinct_total || 0) !== Number(row.signer_total || 0);
   return {
     ...row,
     custom_data: custom,
@@ -193,9 +262,10 @@ exports.listProposals = async ({
             p.signed_file_id,
             ${SIGNER_TOTAL_SQL} AS signer_total,
             ${SIGNER_SIGNED_SQL} AS signer_signed,
-            (SELECT COUNT(DISTINCT s.file_id) FROM proposal_signature_configs s
-              WHERE s.proposal_id = p.id AND s.status <> 'CANCELLED' AND s.file_id IS NOT NULL) AS signer_file_count,
-            (SELECT COUNT(DISTINCT s.user_id) FROM proposal_signature_configs s
+            (SELECT COUNT(DISTINCT CONCAT(
+               IF(s.document_id IS NULL, CONCAT('f', s.file_id), CONCAT('d', s.document_id)),
+               ':', s.user_id
+             )) FROM proposal_signature_configs s
               WHERE s.proposal_id = p.id AND s.status <> 'CANCELLED') AS signer_distinct_total,
             (SELECT COUNT(*) FROM proposal_signature_configs s
               WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status <> 'CANCELLED') AS my_config_count,
@@ -251,6 +321,7 @@ const loadConfigs = async (proposalId) => {
   return rows.map((row) => ({
     id: row.id,
     proposal_id: row.proposal_id,
+    document_id: row.document_id ? Number(row.document_id) : null,
     user_id: row.user_id,
     full_name: row.full_name,
     email: row.email,
@@ -265,6 +336,7 @@ const loadConfigs = async (proposalId) => {
     box_width: Number(row.box_width),
     box_height: Number(row.box_height),
     status: row.status,
+    created_by: row.created_by ? Number(row.created_by) : null,
     signed_at: row.signed_at,
     signature_id: row.signature_id,
     signature_url: row.signature_url
@@ -288,15 +360,41 @@ const loadRevisionRequests = async (proposalId) => {
 
 const buildDetail = async (proposal, scope) => {
   const configs = await loadConfigs(proposal.id);
-  const fileIds = configuredFileIds(configs);
-  const signerIds = configs.map((config) => Number(config.user_id));
-  const duplicateSigner = new Set(signerIds).size !== signerIds.length;
-  const signatureConfigConflict = fileIds.length > 1 || duplicateSigner;
+  const documents = await getSigningDocuments(proposal.id);
+  const legacyDocument = documents.length === 1 ? documents[0] : null;
+  const mappedConfigs = configs.map((config) => {
+    const document = documents.find((item) => (config.document_id && documentIdOf(item) === config.document_id)
+      || (!config.document_id && signingFileIdOf(item) === Number(config.file_id)))
+      || (!config.document_id ? legacyDocument : null);
+    return {
+      ...config,
+      document_id: config.document_id || (document ? documentIdOf(document) : null),
+      file_id: config.file_id || (document ? signingFileIdOf(document) : null)
+    };
+  });
+  const byDocument = documents.map((document) => {
+    const documentConfigs = mappedConfigs.filter((config) => Number(config.document_id) === documentIdOf(document));
+    const myConfig = documentConfigs.find((config) => Number(config.user_id) === Number(scope.userId)) || null;
+    const hasDuplicateSigner = new Set(documentConfigs.map((config) => Number(config.user_id))).size !== documentConfigs.length;
+    return {
+      ...document,
+      signers: documentConfigs,
+      has_config: documentConfigs.length > 0,
+      has_signed: !!document.signed_file_id || (documentConfigs.length > 0 && documentConfigs.every((config) => config.status === 'SIGNED')),
+      my_config: myConfig,
+      can_sign: proposal.status === SIGNATURE_PENDING && !hasDuplicateSigner && !!myConfig && myConfig.status === 'PENDING'
+    };
+  });
+  const signatureConfigConflict = byDocument.some((document) => (
+    new Set(document.signers.map((signer) => Number(signer.user_id))).size !== document.signers.length
+  ));
+  const fileIds = configuredFileIds(mappedConfigs);
   const custom = parseCustomData(proposal.custom_data);
   const reportFiles = toFileSummaries(custom[REPORT_FIELD]);
   const layoutFiles = toFileSummaries(custom['ban_ve_layout']);
   const revisionRequests = await loadRevisionRequests(proposal.id);
-  const myConfig = configs.find((config) => Number(config.user_id) === Number(scope.userId));
+  const myConfigs = mappedConfigs.filter((config) => Number(config.user_id) === Number(scope.userId));
+  const myConfig = myConfigs.find((config) => config.status === 'PENDING') || myConfigs[0] || null;
   const [signatureRows] = await pool.query(
     'SELECT id, file_url FROM signatures WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
     [scope.userId]
@@ -328,21 +426,22 @@ const buildDetail = async (proposal, scope) => {
     signed_file_id: proposal.signed_file_id,
     report_files: reportFiles,
     layout_files: layoutFiles,
+    documents: byDocument,
     revision_requests: revisionRequests,
-    signers: configs,
+    signers: mappedConfigs,
     signature_config_conflict: signatureConfigConflict,
     configured_file_ids: fileIds,
-    signer_total: configs.length,
-    signer_signed: configs.filter((config) => config.status === 'SIGNED').length,
+    signer_total: mappedConfigs.length,
+    signer_signed: mappedConfigs.filter((config) => config.status === 'SIGNED').length,
     sign_status: proposal.signed_file_id
       ? SIGN_STATUS.CEO_SIGNED
-      : (configs.length > 0 && configs.every((config) => config.status === 'SIGNED')
+      : (mappedConfigs.length > 0 && mappedConfigs.every((config) => config.status === 'SIGNED')
         ? SIGN_STATUS.DONE
-        : (configs.some((config) => config.status === 'SIGNED') ? SIGN_STATUS.DOING : SIGN_STATUS.PENDING)),
-    can_sign: !signatureConfigConflict && !!myConfig && myConfig.status === 'PENDING',
+        : (mappedConfigs.some((config) => config.status === 'SIGNED') ? SIGN_STATUS.DOING : SIGN_STATUS.PENDING)),
+    can_sign: !signatureConfigConflict && byDocument.some((document) => document.can_sign),
     has_signature: hasSignature,
     signature_url: hasSignature ? (signatureRows[0].file_url || null) : null,
-    is_my_signed: !!myConfig && myConfig.status === 'SIGNED',
+    is_my_signed: myConfigs.some((config) => config.status === 'SIGNED'),
     my_config: myConfig || null
   };
 };
@@ -355,8 +454,33 @@ exports.getDetail = async ({ user, id } = {}) => {
     throw err('Đề xuất không ở trạng thái trình ký', 400);
   }
   const detail = await buildDetail(proposal, scope);
-  const canView = scope.isManager || !!detail.can_sign
+  const canView = scope.isManager || !!detail.can_sign || !!detail.is_my_signed
     || Number(proposal.user_id) === Number(scope.userId);
+  if (!canView) throw err('Bạn không có quyền xem hồ sơ trình ký này', 403);
+  let visibleDetail = detail;
+  if (!scope.isManager && Number(proposal.user_id) !== Number(scope.userId)) {
+    const visibleDocuments = detail.documents.filter((document) => (
+      document.signers.some((config) => Number(config.user_id) === Number(scope.userId))
+    ));
+    if (visibleDocuments.length === 0) throw err('Bạn không được phân công ký tài liệu này', 403);
+    const visibleDocumentIds = new Set(visibleDocuments.map((document) => documentIdOf(document)));
+    const visibleFileIds = new Set(visibleDocuments.flatMap((document) => [
+      document.source_file_id, document.pdf_file_id, document.signing_file_id, document.signed_file_id
+    ].map(Number).filter(Boolean)));
+    const visibleSigners = detail.signers.filter((config) => visibleDocumentIds.has(Number(config.document_id)));
+    visibleDetail = {
+      ...detail,
+      documents: visibleDocuments,
+      signers: visibleSigners,
+      report_files: detail.report_files.filter((file) => visibleFileIds.has(Number(file.id))),
+      configured_file_ids: configuredFileIds(visibleSigners),
+      signer_total: visibleSigners.length,
+      signer_signed: visibleSigners.filter((config) => config.status === 'SIGNED').length,
+      can_sign: visibleDocuments.some((document) => document.can_sign),
+      is_my_signed: visibleSigners.some((config) => Number(config.user_id) === Number(scope.userId) && config.status === 'SIGNED'),
+      my_config: visibleSigners.find((config) => Number(config.user_id) === Number(scope.userId)) || null
+    };
+  }
   let progress = { requests: [], activity: [] };
   let fieldDefinitions = [];
   let initialProposalData = null;
@@ -369,15 +493,19 @@ exports.getDetail = async ({ user, id } = {}) => {
     );
   }
   return {
-    ...detail,
+    ...visibleDetail,
     progress,
     fieldDefinitions,
     initial_proposal_data: initialProposalData,
-    sign_status_label: SIGN_STATUS_LABELS[detail.sign_status],
+    sign_status_label: SIGN_STATUS_LABELS[visibleDetail.sign_status],
     can_reject: !!scope.isAdmin || !!scope.isTgd,
     can_upload_signed: !!scope.isAdmin || !!scope.isBackOffice,
-    can_request_rework: (!!scope.isAdmin || !!scope.isTgd || !!scope.isBackOffice) && !detail.is_my_signed
+    can_request_rework: (!!scope.isAdmin || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
       && proposal.status === SIGNATURE_PENDING,
+    can_withdraw: (user.role === 'SUPER_ADMIN' || scope.isBackOffice)
+      && proposal.status === SIGNATURE_PENDING && visibleDetail.signers.length > 0
+      && visibleDetail.signers.every((config) => Number(config.created_by) === Number(user.id))
+      && visibleDetail.signers.every((config) => config.status !== 'SIGNED'),
     can_view: canView
   };
 };
@@ -429,7 +557,7 @@ const notifyBackOfficeAndSigners = async ({ proposal, actorId, message, type = S
   });
 };
 
-exports.sign = async ({ user, id, ip } = {}) => {
+const sign = async ({ user, id, documentId, fileId, ip, mutationConnection } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -437,15 +565,34 @@ exports.sign = async ({ user, id, ip } = {}) => {
   }
 
   const configs = await loadConfigs(proposal.id);
-  const fileIds = configuredFileIds(configs);
-  if (fileIds.length > 1) throw err(SIGNATURE_FILE_CONFLICT_MESSAGE, 409);
-  const signerIds = configs.map((config) => Number(config.user_id));
-  if (new Set(signerIds).size !== signerIds.length) {
-    throw err('Một người ký đang có nhiều ô ký hoạt động. Hãy cấu hình lại danh sách người ký trước khi tiếp tục.', 409);
+  const documents = await getSigningDocuments(proposal.id);
+  let selectedDocument = null;
+  if (documentId) {
+    selectedDocument = documents.find((document) => documentIdOf(document) === Number(documentId));
+  } else if (fileId) {
+    selectedDocument = documents.find((document) => signingFileIdOf(document) === Number(fileId));
+  } else if (documents.length === 1) {
+    selectedDocument = documents[0];
   }
-  const myConfigs = configs.filter((config) => Number(config.user_id) === Number(scope.userId));
+  if (!selectedDocument) throw err('Vui lòng chọn tài liệu BCĐX cần ký', 400);
+  const selectedFileId = signingFileIdOf(selectedDocument);
+  if (['PENDING', 'PROCESSING'].includes(String(selectedDocument.conversion_status || '').toUpperCase())) {
+    throw err('Đang xử lý chuyển đổi tài liệu; vui lòng chờ hoàn tất trước khi ký', 409);
+  }
+  if (!isDocumentReadyForSignature(selectedDocument)) {
+    throw err('Chỉ ký trực tiếp tài liệu PDF hoặc DOCX; file .doc không được hỗ trợ', 400);
+  }
+  if (fileId && Number(fileId) !== selectedFileId) {
+    throw err('File ký không khớp với tài liệu đã chọn', 400);
+  }
+  const myConfigs = configs.filter((config) => Number(config.user_id) === Number(scope.userId)
+    && ((config.document_id && config.document_id === documentIdOf(selectedDocument))
+      || (!config.document_id && Number(config.file_id) === selectedFileId)));
   if (myConfigs.length === 0) {
     throw err('Bạn không được phân công ký đề xuất này', 403);
+  }
+  if (myConfigs.length > 1) {
+    throw err('Bạn có nhiều ô ký trên cùng tài liệu. Hãy cấu hình lại danh sách người ký.', 409);
   }
   const config = myConfigs[0];
   if (config.status === 'SIGNED') {
@@ -462,12 +609,31 @@ exports.sign = async ({ user, id, ip } = {}) => {
   const signature = signatureRows[0];
   await signedDocumentService.validateSignature(signature.id);
 
-  await pool.query(
-    `UPDATE proposal_signature_configs
-     SET status = 'SIGNED', signed_at = NOW(), signature_id = ?, signature_url = ?
-     WHERE id = ?`,
-    [signature.id, signature.file_url || null, config.id]
-  );
+  const connection = mutationConnection;
+  let transactionStarted = false;
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const [lockedProposals] = await connection.query(
+      'SELECT status FROM station_proposals WHERE id = ? FOR UPDATE',
+      [proposal.id]
+    );
+    if (!lockedProposals.length) throw err('Không tìm thấy đề xuất', 404);
+    if (lockedProposals[0].status !== SIGNATURE_PENDING) throw err('Đề xuất không ở trạng thái trình ký', 409);
+    const [updateResult] = await connection.query(
+      `UPDATE proposal_signature_configs
+       SET status = 'SIGNED', signed_at = NOW(), signature_id = ?, signature_url = ?
+       WHERE id = ? AND proposal_id = ? AND status = 'PENDING'
+         AND ((document_id = ? AND file_id = ?) OR (document_id IS NULL AND file_id = ?))`,
+      [signature.id, signature.file_url || null, config.id, proposal.id, documentIdOf(selectedDocument), selectedFileId, selectedFileId]
+    );
+    if (!updateResult.affectedRows) throw err('Ô ký đã được ký hoặc thay đổi, vui lòng tải lại', 409);
+    await connection.commit();
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) await connection.rollback();
+    throw error;
+  }
 
   const proposalLifecycle = require('./proposalLifecycle');
   await proposalLifecycle.logActivity({
@@ -492,7 +658,14 @@ exports.sign = async ({ user, id, ip } = {}) => {
   await notifyBackOfficeAndSigners({ proposal, actorId: user.id, message });
 
   const finalConfigs = await loadConfigs(proposal.id);
-  if (finalConfigs.length > 0 && finalConfigs.every((config) => config.status === 'SIGNED')) {
+  const finalDocuments = await getSigningDocuments(proposal.id);
+  const allDocumentsSigned = finalDocuments.length > 0 && finalDocuments.every((document) => {
+    const documentConfigs = finalConfigs.filter((item) => (item.document_id
+      ? item.document_id === documentIdOf(document)
+      : Number(item.file_id) === signingFileIdOf(document)));
+    return documentConfigs.length > 0 && documentConfigs.every((item) => item.status === 'SIGNED');
+  });
+  if (allDocumentsSigned) {
     const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
     const actorName = (await notificationService.getUserName(user.id)) || 'Hệ thống';
     await notifyRecipients((await backOfficeUserIds()), {
@@ -624,7 +797,7 @@ exports.requestRework = async ({ user, id, reason, ip } = {}) => {
   return { id: proposal.id, status: UPDATING_STATUS, roundNo: round, request, transition };
 };
 
-exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
+const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments, ip, mutationConnection } = {}) => {
   const scope = await resolveScope(user);
   if (!scope.isAdmin && !scope.isBackOffice) {
     throw err('Chỉ Back Office hoặc Admin được tải lên file đã ký', 403);
@@ -634,30 +807,69 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
     throw err('Đề xuất không ở trạng thái trình ký', 400);
   }
 
+  const activeDocuments = await getSigningDocuments(proposal.id);
+  if (activeDocuments.length === 0) throw err('Đề xuất chưa có tài liệu BCĐX hiện hành', 400);
   const configs = await loadConfigs(proposal.id);
-  if (configs.length === 0 || configs.some((config) => config.status !== 'SIGNED')) {
-    throw err('Chưa đủ chữ ký của các người được phân công', 400);
+  const docConfigs = activeDocuments.map((document) => configs.filter((config) => (
+    config.document_id
+      ? config.document_id === documentIdOf(document)
+      : Number(config.file_id) === signingFileIdOf(document)
+  )));
+  if (docConfigs.some((items) => items.length === 0 || items.some((config) => config.status !== 'SIGNED'))) {
+    throw err('Chưa đủ chữ ký trên toàn bộ tài liệu BCĐX', 400);
   }
 
-  const fileIds = (Array.isArray(files) ? files : [])
-    .map((file) => Number(file && typeof file === 'object' ? (file.id ?? file.file_id) : file))
-    .filter((fileId) => Number.isInteger(fileId) && fileId > 0);
-  if (fileIds.length === 0) {
-    throw err('Vui lòng tải lên file BCĐX đã ký', 400);
+  let finalDocuments;
+  if (Array.isArray(uploadedDocuments)) {
+    finalDocuments = uploadedDocuments.map((document) => ({
+      document_id: Number(document && document.document_id),
+      file_id: Number(document && (document.file_id ?? document.id))
+    }));
+  } else {
+    if (activeDocuments.length !== 1) throw err('Vui lòng tải lên file đã ký cho từng tài liệu BCĐX', 400);
+    const item = (Array.isArray(files) ? files : [files])[0];
+    finalDocuments = [{
+      document_id: documentIdOf(activeDocuments[0]),
+      file_id: Number(item && typeof item === 'object' ? (item.id ?? item.file_id) : item)
+    }];
   }
+  normalizeFinalDocuments(activeDocuments, finalDocuments);
+  const fileIds = [...new Set(finalDocuments.map((document) => document.file_id))];
   const [fileRows] = await pool.query(
     `SELECT id, original_name FROM files WHERE id IN (${fileIds.map(() => '?').join(',')}) AND status <> 'deleted'`,
     fileIds
   );
-  if (fileRows.length === 0) {
-    throw err('Không tìm thấy file đã ký', 400);
+  if (fileRows.length !== fileIds.length) throw err('Không tìm thấy một hoặc nhiều file đã ký', 400);
+  const signedFileId = finalDocuments[0].file_id;
+  const connection = mutationConnection;
+  let transactionStarted = false;
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+    const [lockedProposals] = await connection.query(
+      'SELECT status FROM station_proposals WHERE id = ? FOR UPDATE',
+      [proposal.id]
+    );
+    if (!lockedProposals.length) throw err('Không tìm thấy đề xuất', 404);
+    if (lockedProposals[0].status !== SIGNATURE_PENDING) throw err('Đề xuất không ở trạng thái trình ký', 409);
+    for (const document of finalDocuments) {
+      const [updatedDocument] = await connection.query(
+        `UPDATE proposal_report_documents SET signed_file_id = ?, updated_at = NOW()
+         WHERE id = ? AND proposal_id = ? AND is_current = 1`,
+        [document.file_id, document.document_id, proposal.id]
+      );
+      if (!updatedDocument.affectedRows) throw err('Không thể gắn file đã ký vào tài liệu hiện hành', 409);
+    }
+    await connection.query(
+      'UPDATE station_proposals SET signed_file_id = ?, updated_at = NOW() WHERE id = ?',
+      [signedFileId, proposal.id]
+    );
+    await connection.commit();
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) await connection.rollback();
+    throw error;
   }
-  const signedFileId = fileRows[0].id;
-
-  await pool.query(
-    'UPDATE station_proposals SET signed_file_id = ?, updated_at = NOW() WHERE id = ?',
-    [signedFileId, proposal.id]
-  );
 
   const proposalLifecycle = require('./proposalLifecycle');
   const transition = await proposalLifecycle.transition(proposal.id, APPROVED, {
@@ -674,7 +886,12 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
     fromStatus: SIGNATURE_PENDING,
     toStatus: APPROVED,
     changedFields: {
-      signed_file_id: { label: 'File BCĐX đã ký', old: '', new: String(signedFileId) }
+      signed_file_id: { label: 'File BCĐX đã ký đầu tiên', old: '', new: String(signedFileId) },
+      signed_files: {
+        label: 'Các file BCĐX đã ký',
+        old: '',
+        new: finalDocuments.map((document) => `${document.document_id}:${document.file_id}`).join(', ')
+      }
     },
     actorId: user.id,
     actorRole: user.role,
@@ -710,13 +927,28 @@ exports.uploadSignedFile = async ({ user, id, files, ip } = {}) => {
   return { id: proposal.id, status: APPROVED, signed_file_id: signedFileId, transition };
 };
 
-exports.getExportFile = async ({ user, id } = {}) => {
+exports.sign = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
+  sign({ ...args, mutationConnection })
+));
+exports.uploadSignedFile = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
+  uploadSignedFile({ ...args, mutationConnection })
+));
+
+exports.getExportFile = async ({ user, id, documentId, all = false, ip } = {}) => {
+  if (all) return exports.getSignedDocument({ user, id, all: true, ip });
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   const detail = await buildDetail(proposal, scope);
-  const signedFileId = proposal.signed_file_id;
-  const fallbackFileId = detail.report_files.length > 0 ? detail.report_files[0].id : null;
-  const fileId = signedFileId || fallbackFileId;
+  const document = documentId
+    ? detail.documents.find((item) => documentIdOf(item) === Number(documentId))
+    : detail.documents[0];
+  if (!document && documentId) throw err('Không tìm thấy tài liệu BCĐX', 404);
+  if (!documentId && detail.documents.length > 1) {
+    throw err('Vui lòng chọn tài liệu BCĐX cần xuất hoặc yêu cầu xuất tất cả', 400);
+  }
+  const fileId = document
+    ? (document.signed_file_id || document.signing_file_id || signingFileIdOf(document))
+    : (proposal.signed_file_id || detail.report_files[0]?.id);
   if (!fileId) {
     throw err('Đề xuất chưa có file BCĐX để xuất', 400);
   }
@@ -727,51 +959,91 @@ exports.getExportFile = async ({ user, id } = {}) => {
   if (fileRows.length === 0) {
     throw err('Không tìm thấy file BCĐX', 404);
   }
-  return { file_id: fileRows[0].id, original_name: fileRows[0].original_name, mime_type: fileRows[0].mime_type };
+  const fileData = await require('./fileService').getFilePath(fileId);
+  const canAccessFile = fileData
+    && await require('../controllers/fileController').canAccessFile(fileData.file, { user, ip });
+  if (!canAccessFile && !(scope.isManager || Number(proposal.user_id) === Number(scope.userId))) {
+    throw err('Bạn không có quyền xem file BCĐX này', 403);
+  }
+  return {
+    file_id: fileRows[0].id,
+    document_id: document ? documentIdOf(document) : null,
+    original_name: fileRows[0].original_name,
+    mime_type: fileRows[0].mime_type
+  };
 };
 
-exports.getSignedDocument = async ({ user, id } = {}) => {
+exports.getSignedDocument = async ({ user, id, documentId, all = false, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   const detail = await buildDetail(proposal, scope);
-  const canView = scope.isManager || detail.can_sign || detail.is_my_signed
-    || Number(proposal.user_id) === Number(scope.userId);
-  if (!canView) {
-    throw err('Bạn không có quyền xem file BCĐX này', 403);
+  let documents = detail.documents;
+  if (documentId) {
+    documents = documents.filter((document) => documentIdOf(document) === Number(documentId));
+    if (!documents.length) throw err('Không tìm thấy tài liệu BCĐX', 404);
+  } else if (!all) {
+    if (documents.length !== 1) throw err('Vui lòng chọn tài liệu BCĐX cần tải', 400);
   }
-  if (proposal.signed_file_id) {
-    return signedDocumentService.build({ signedFileId: proposal.signed_file_id, signers: [] });
-  }
-  const fileIds = configuredFileIds(detail.signers);
-  if (fileIds.length > 1) {
-    throw err(SIGNATURE_FILE_CONFLICT_MESSAGE, 400);
-  }
-  if (new Set(detail.signers.map((signer) => Number(signer.user_id))).size !== detail.signers.length) {
-    throw err('Cấu hình ký có người bị lặp. Hãy cấu hình lại danh sách người ký.', 400);
-  }
-  const reportFileId = fileIds[0] || detail.report_files.find((file) => Number(file.id) > 0)?.id;
-  if (!reportFileId) {
+  if (!documents.length) {
+    if (proposal.signed_file_id && detail.report_files.length === 0) {
+      if (!scope.isManager && Number(proposal.user_id) !== Number(scope.userId)) {
+        throw err('Bạn không có quyền xem file BCĐX này', 403);
+      }
+      return signedDocumentService.build({ signedFileId: proposal.signed_file_id, signers: [] });
+    }
     throw err('Đề xuất chưa có file BCĐX để xuất', 400);
   }
-  return signedDocumentService.build({
-    reportFileId,
-    signers: detail.signers.filter((signer) => signer.status === 'SIGNED')
-  });
+
+  const fileController = require('../controllers/fileController');
+  const buildDocument = async (document) => {
+    const fileId = document.signed_file_id || document.signing_file_id || signingFileIdOf(document);
+    if (!fileId) throw err('Tài liệu chưa có file ký chuẩn', 400);
+    const fileData = await require('./fileService').getFilePath(fileId);
+    if (!fileData || !await fileController.canAccessFile(fileData.file, { user, ip })) {
+      throw err('Bạn không có quyền xem file BCĐX này', 403);
+    }
+    const documentSigners = document.signers || [];
+    if (new Set(documentSigners.map((signer) => Number(signer.user_id))).size !== documentSigners.length) {
+      throw err('Một người ký đang có nhiều ô trên cùng tài liệu', 409);
+    }
+    if (document.signed_file_id) {
+      return signedDocumentService.build({ signedFileId: document.signed_file_id, signers: [] });
+    }
+    return signedDocumentService.build({
+      reportFileId: fileId,
+      signers: documentSigners.filter((signer) => signer.status === 'SIGNED')
+    });
+  };
+
+  if (all) {
+    const archive = new JSZip();
+    for (const document of documents) {
+      const file = await buildDocument(document);
+      const safeName = String(file.original_name || `BCDX-${documentIdOf(document)}`)
+        .replace(/[\\/\r\n"]/g, '_');
+      archive.file(`${documentIdOf(document)}_${safeName}`, file.bytes);
+    }
+    return {
+      original_name: `${proposal.ma_de_xuat || `BCDX-${proposal.id}`}-BCDX.zip`,
+      mime_type: 'application/zip',
+      bytes: await archive.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+    };
+  }
+  return buildDocument(documents[0]);
 };
 
 exports.getSignatureImagePath = async ({ user, id, configId } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   const detail = await buildDetail(proposal, scope);
-  const canView = scope.isManager || detail.can_sign || detail.is_my_signed
-    || Number(proposal.user_id) === Number(scope.userId);
-  if (!canView) {
-    throw err('Bạn không có quyền xem chữ ký này', 403);
-  }
   const config = detail.signers.find((item) => Number(item.id) === Number(configId));
   if (!config || !config.signature_id) {
     throw err('Không tìm thấy chữ ký', 404);
   }
+  const canView = scope.isManager || Number(proposal.user_id) === Number(scope.userId)
+    || detail.signers.some((item) => Number(item.user_id) === Number(scope.userId)
+      && Number(item.document_id) === Number(config.document_id));
+  if (!canView) throw err('Bạn không có quyền xem chữ ký này', 403);
   const [rows] = await pool.query('SELECT file_path FROM signatures WHERE id = ? LIMIT 1', [config.signature_id]);
   if (rows.length === 0 || !rows[0].file_path || !fs.existsSync(rows[0].file_path)) {
     throw err('Không tìm thấy file chữ ký', 404);

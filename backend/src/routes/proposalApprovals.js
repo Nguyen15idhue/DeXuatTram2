@@ -200,9 +200,10 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *     tags: [Proposal Approvals]
  *     summary: Cấu hình vị trí ký và trình ký BCĐX
  *     description: >
- *       Áp dụng cho đề xuất PROPOSAL_REPORT_REVIEWING. Gửi danh sách người ký kèm vị trí ô ký;
- *       box_width và box_height chuẩn hóa 0..1, được cấu hình độc lập. Xác nhận xong đề xuất chuyển
- *       sang SIGNATURE_PENDING và thông báo tới những người được cấu hình. Người ký phải thuộc Ban
+ *       Áp dụng cho đề xuất PROPOSAL_REPORT_REVIEWING. Gửi toàn bộ documents với document_id,
+ *       file_id chuẩn ký và danh sách người ký kèm vị trí; box_width và box_height chuẩn hóa 0..1.
+ *       Mỗi tài liệu cần ít nhất một người ký. Chỉ khi mọi tài liệu được cấu hình, đề xuất mới chuyển
+ *       sang SIGNATURE_PENDING. Payload file_id/signers cũ chỉ dùng với một tài liệu. Người ký phải thuộc Ban
  *       Tổng giám đốc, Phòng Tài chính, Back Office, là người đề xuất hoặc quản lý phía trên của người đề xuất.
  *     security:
  *       - bearerAuth: []
@@ -239,7 +240,35 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *                     box_width:
  *                       type: number
  *                     box_height:
- *                       type: number
+ *               documents:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [document_id, file_id, signers]
+ *                   properties:
+ *                     document_id:
+ *                       type: integer
+ *                     file_id:
+ *                       type: integer
+ *                     signers:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           user_id:
+ *                             type: integer
+ *                           signer_title:
+ *                             type: string
+ *                           page:
+ *                             type: integer
+ *                           pos_x:
+ *                             type: number
+ *                           pos_y:
+ *                             type: number
+ *                           box_width:
+ *                             type: number
+ *                           box_height:
+ *                             type: number
  *     responses:
  *       200:
  *         description: Thành công
@@ -251,5 +280,39 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *         description: Không tìm thấy đề xuất
  */
 router.put('/:id/signature-config', requireAuth, requireUserManager, proposalApprovalController.configureSignature);
+
+/**
+ * @swagger
+ * /api/admin/proposal-approvals/{id}/signature-config/withdraw:
+ *   post:
+ *     tags: [Proposal Approvals]
+ *     summary: Thu hồi cấu hình ký trước khi có người ký
+ *     description: Người tạo cấu hình có thể thu hồi toàn bộ cấu hình khi chưa có chữ ký; đề xuất quay lại bước duyệt BCĐX.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Cấu hình đã được thu hồi
+ *       403:
+ *         description: Không có quyền hoặc không phải người cấu hình
+ *       409:
+ *         description: Đã có chữ ký hoặc trạng thái không cho phép thu hồi
+ */
+router.post('/:id/signature-config/withdraw', requireAuth, requireUserManager, proposalApprovalController.withdrawSignatureConfig);
 
 module.exports = router;

@@ -565,6 +565,15 @@ export const proposalLayoutService = {
 };
 
 export const proposalReportService = {
+  getDocuments(id, token, owner = false) {
+    return api.getWithAuth(owner ? `/my-proposals/${id}/report/documents` : `/admin/proposal-reports/${id}/documents`, token);
+  },
+  prepareDocuments(id, files, token, owner = false) {
+    return api.postWithAuth(owner ? `/my-proposals/${id}/report/documents/prepare` : `/admin/proposal-reports/${id}/documents/prepare`, { files: files.map((file) => ({ id: file.id })) }, token);
+  },
+  convertDocument(id, documentId, token, owner = false) {
+    return api.postWithAuth(owner ? `/my-proposals/${id}/report/documents/${documentId}/convert` : `/admin/proposal-reports/${id}/documents/${documentId}/convert`, {}, token);
+  },
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-reports${qs}`, token);
@@ -587,6 +596,9 @@ export const proposalReportService = {
 };
 
 export const proposalApprovalService = {
+  withdrawSignature(id, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-approvals/${id}/signature-config/withdraw`, {}, token));
+  },
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-approvals${qs}`, token);
@@ -690,7 +702,7 @@ export const chargingFinanceService = {
     return api.getWithAuth(`/admin/charging-finance/invoices?${params.toString()}`, token);
   },
   createInvoice(stationId, data, token) {
-    return api.postWithAuth(`/admin/charging-finance/stations/${stationId}/invoices`, data || {}, token);
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-finance/stations/${stationId}/invoices`, data || {}, token));
   },
   updatePaymentStatus(stationId, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-finance/stations/${stationId}/payment-status`, data || {}, token));
@@ -698,6 +710,21 @@ export const chargingFinanceService = {
 };
 
 export const chargingStationService = {
+  getFulfillment(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/fulfillment`, token);
+  },
+  getDeployments(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/deployments`, token);
+  },
+  createShipment(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/shipments`, data, token));
+  },
+  shipmentAction(id, exportId, action, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/shipments/${exportId}/${action}`, data, token));
+  },
+  deploymentAction(id, deploymentId, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/deployments/${deploymentId}/actions`, data, token));
+  },
   createDirectFromProposal(proposalId, reason, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(
       `/admin/charging-stations/from-proposal/${proposalId}`,
@@ -803,8 +830,8 @@ export const proposalSignatureService = {
   getDetail(id, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}`, token);
   },
-  sign(id, token) {
-    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/sign`, {}, token));
+  sign(id, token, documentId) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/sign`, documentId ? { document_id: documentId } : {}, token));
   },
   reject(id, data, token) {
     return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-signatures/${id}/reject`, data || {}, token));
@@ -818,8 +845,9 @@ export const proposalSignatureService = {
   getExportFile(id, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
   },
-  async downloadSignedDocument(id, token) {
-    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/signed-document`, {
+  async downloadSignedDocument(id, token, options = {}) {
+    const query = options.all ? '?all=1' : options.documentId ? `?document_id=${encodeURIComponent(options.documentId)}` : '';
+    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/signed-document${query}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     handleUnauthorized(response);
@@ -830,7 +858,7 @@ export const proposalSignatureService = {
       throw new Error(message);
     }
     const contentDisposition = response.headers.get('Content-Disposition') || '';
-    const extension = response.headers.get('Content-Type')?.includes('pdf') ? '.pdf' : '.docx';
+    const extension = response.headers.get('Content-Type')?.includes('zip') ? '.zip' : response.headers.get('Content-Type')?.includes('pdf') ? '.pdf' : '.docx';
     return {
       blob: await response.blob(),
       filename: parseDispositionFilename(contentDisposition) || `BCDX${extension}`

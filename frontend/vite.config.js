@@ -11,11 +11,15 @@ const require = createRequire(import.meta.url);
 // => cần file worker + shared nằm cạnh chunk trong dist/assets (Vite không tự emit).
 function copyMaplibreWorkerPlugin() {
   const files = ["maplibre-gl-worker.mjs", "maplibre-gl-shared.mjs"];
+  let outputDirectory;
   return {
     name: "copy-maplibre-worker",
     apply: "build",
+    configResolved(config) {
+      outputDirectory = resolve(config.root, config.build.outDir, "assets");
+    },
     closeBundle() {
-      const outDir = resolve(process.cwd(), "dist", "assets");
+      const outDir = outputDirectory;
       const candidates = [
         resolve(process.cwd(), "node_modules", "maplibre-gl", "dist"),
       ];

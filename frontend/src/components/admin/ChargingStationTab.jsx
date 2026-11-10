@@ -3,8 +3,8 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { Badge, Button, ConfirmDialog, DataTable, FilterBar, Input, Pagination, Toast } from '../ui';
-import ChargingStationDetailModal from './ChargingStationDetailModal';
+import { Badge, Button, ConfirmDialog, FilterBar, Input, Pagination, Toast } from '../ui';
+import ChargingStationTable from './ChargingStationTable';
 import ChargingStationCareModal from './ChargingStationCareModal';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import {
@@ -51,7 +51,6 @@ const ChargingStationTab = ({ stage }) => {
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 });
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
-  const [selectedId, setSelectedId] = useState(null);
   const [careStation, setCareStation] = useState(null);
   const [statusDialog, setStatusDialog] = useState({ open: false, action: '', row: null });
   const [onStationDialog, setOnStationDialog] = useState({ open: false, row: null, cms_station_code: '', on_date: '', reason: '', acknowledged: false });
@@ -163,7 +162,7 @@ const ChargingStationTab = ({ stage }) => {
         <Link
           to={`/admin/on-tram/thong-tin-chung/${row.id}`}
           state={{ returnTo: `${location.pathname}${location.search}` }}
-          className="link link-primary font-mono text-xs font-semibold"
+          className="link link-primary underline text-left"
         >
           {value || `#${row.id}`}
         </Link>
@@ -173,7 +172,7 @@ const ChargingStationTab = ({ stage }) => {
       key: 'ma_de_xuat',
       label: 'Mã đề xuất',
       render: (value, row) => (
-        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary font-mono text-xs">
+        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary underline text-left">
           {value || `#${row.proposal_id}`}
         </Link>
       )
@@ -243,15 +242,10 @@ const ChargingStationTab = ({ stage }) => {
       >
         Chi tiết
       </Link>
-      {canEdit && (
-        <Button variant="ghost" size="xs" onClick={() => setSelectedId(row.id)}>
-          Sửa
-        </Button>
-      )}
       <Button variant="outline" size="xs" onClick={() => setCareStation({ id: row.id, code: row.ma_tram })}>
         CSKH
       </Button>
-      {stage === 'thong-tin-chung' && row.can_cancel_on_station && (
+      {stage === 'thong-tin-chung' && user?.role !== 'ADMIN' && row.can_cancel_on_station && (
         <Button
           variant="outline-error"
           size="xs"
@@ -260,7 +254,7 @@ const ChargingStationTab = ({ stage }) => {
           Hủy ON trạm
         </Button>
       )}
-      {stage === 'thong-tin-chung' && row.can_restore_on_station && (
+      {stage === 'thong-tin-chung' && user?.role !== 'ADMIN' && row.can_restore_on_station && (
         <Button
           variant="outline-warning"
           size="xs"
@@ -269,7 +263,8 @@ const ChargingStationTab = ({ stage }) => {
           Khôi phục
         </Button>
       )}
-      {stage === 'thong-tin-chung' && isSuperAdmin && row.can_mark_on_station_active && (
+      {stage === 'thong-tin-chung' && isSuperAdmin && row.can_mark_on_station_active
+        && !row.fulfillment?.items?.length && !row.deployments?.length && (
         <button
           type="button"
           className="btn btn-success btn-xs whitespace-nowrap"
@@ -406,7 +401,7 @@ const ChargingStationTab = ({ stage }) => {
         </span>
       </FilterBar>
 
-      <DataTable
+      <ChargingStationTable
         columns={columns}
         data={items}
         loading={loading}
@@ -425,17 +420,6 @@ const ChargingStationTab = ({ stage }) => {
         total={pagination.total}
         onPageChange={goPage}
       />
-
-      {selectedId && (
-        <ChargingStationDetailModal
-          id={selectedId}
-          token={token}
-          canEdit={canEdit}
-          onClose={() => setSelectedId(null)}
-          onChanged={() => load(page)}
-          onToast={(message, type = 'success') => setToast({ message, type })}
-        />
-      )}
 
       {careStation && (
         <ChargingStationCareModal

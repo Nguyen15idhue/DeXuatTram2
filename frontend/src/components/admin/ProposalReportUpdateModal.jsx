@@ -8,7 +8,9 @@ import {
   RE_CREATING_STATUS,
   UPDATING_STATUS,
 } from "../../utils/proposalReport";
-import { getProposalLegalName } from "../../utils/proposalGrading";
+import { getLegalDocFiles, getProposalLegalName } from "../../utils/proposalGrading";
+import ProposalDocumentConversionList from './ProposalDocumentConversionList';
+import { ensureDocumentResponse } from '../../utils/proposalDocuments';
 
 const FILE_ACCEPT =
   "application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx";
@@ -44,7 +46,7 @@ const isAllowedReportFile = (file) => {
 };
 
 const toUploadValue = (row) =>
-  getReportFiles(row)
+  (getLegalDocFiles(row, 'file_bc_dx_sources').length ? getLegalDocFiles(row, 'file_bc_dx_sources') : getReportFiles(row))
     .filter((file) => file.id)
     .map((file) => ({
       id: file.id,
@@ -219,6 +221,14 @@ const ProposalReportUpdateModal = ({
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [documents, setDocuments] = useState([]);
+  const [preparedKey, setPreparedKey] = useState('');
+  const [preparing, setPreparing] = useState(false);
+  const [acceptFailure, setAcceptFailure] = useState(false);
+  const selectionKey = files.map((file) => file.id).sort().join(',');
+  const hasFailed = documents.some((document) => document.conversion_status === 'FAILED');
+  const isPrepared = files.length > 0 && preparedKey === selectionKey &&
+    documents.length === files.length && documents.every((document) => ['READY', 'FAILED'].includes(document.conversion_status));
 
   const code = record?.ma_de_xuat || (record?.id ? `#${record.id}` : "");
   const legalName = useMemo(
@@ -274,6 +284,9 @@ const ProposalReportUpdateModal = ({
         : getProposedPoleRows(record).map((row) => ({ ...row, gia_chot: "" })),
     );
     setError("");
+    setDocuments([]);
+    setPreparedKey('');
+    setAcceptFailure(false);
     setSaving(false);
     setLoadingTypes(true);
     dataListService
@@ -319,6 +332,28 @@ const ProposalReportUpdateModal = ({
 
   if (!open || !record) return null;
 
+  const prepare = async (documentId) => {
+    if (files.length > 10) {
+      setError('Chỉ được chọn tối đa 10 tài liệu BCĐX');
+      return;
+    }
+    setPreparing(true);
+    setError('');
+    setAcceptFailure(false);
+    try {
+      const response = ensureDocumentResponse(documentId
+        ? await proposalReportService.convertDocument(record.id, documentId, token, !!onUpload)
+        : await proposalReportService.prepareDocuments(record.id, files, token, !!onUpload));
+      const next = response?.data?.documents || [];
+      setDocuments((current) => documentId ? current.map((document) => next.find((item) => String(item.id) === String(document.id)) || document) : next);
+      setPreparedKey(selectionKey);
+    } catch (err) {
+      setError(err.message || 'Không chuẩn bị được PDF');
+    } finally {
+      setPreparing(false);
+    }
+  };
+
   const updateRow = (index, patch) => {
     setChotRows((current) =>
       current.map((row, rowIndex) => {
@@ -333,6 +368,8 @@ const ProposalReportUpdateModal = ({
   };
 
   const validate = () => {
+    if (!isPrepared) return "Vui lòng chuẩn bị PDF cho tất cả tài liệu trước khi gửi duyệt";
+    if (hasFailed && !acceptFailure) return "Vui lòng xác nhận tiếp tục với bản Word khi chuyển PDF thất bại";
     if (!files || files.length === 0)
       return "Vui lòng tải lên file tờ trình BCĐX";
     if (
@@ -379,6 +416,7 @@ const ProposalReportUpdateModal = ({
     try {
       const payload = {
         files,
+        ...(hasFailed && acceptFailure ? { accept_conversion_failure: true } : {}),
         chot_so_luong_tru: chotRows.map((row) => ({
           mo_hinh: row.mo_hinh,
           so_luong: Number(row.so_luong),
@@ -395,8 +433,14 @@ const ProposalReportUpdateModal = ({
       const res = onUpload
         ? await onUpload(payload)
         : await proposalReportService.upload(record.id, payload, token);
+      ensureDocumentResponse(res);
       onSaved && onSaved(res?.data);
     } catch (err) {
+      if (err?.data?.documents) {
+        setDocuments(err.data.documents);
+        setPreparedKey(selectionKey);
+        setAcceptFailure(false);
+      }
       setError(err?.message || "Không tải lên được tờ trình BCĐX");
     } finally {
       setSaving(false);
@@ -419,7 +463,7 @@ const ProposalReportUpdateModal = ({
             className="btn btn-ghost btn-sm btn-circle"
             onClick={onClose}
             title="Đóng"
-            disabled={saving}
+            disabled={saving || preparing}
           >
             <X size={18} />
           </button>
@@ -435,16 +479,27 @@ const ProposalReportUpdateModal = ({
             <FileUpload
               value={files}
               onChange={(value) =>
-                setFiles(Array.isArray(value) ? value : value ? [value] : [])
+                { setFiles(Array.isArray(value) ? value : value ? [value] : []); setAcceptFailure(false); setPreparedKey(''); setDocuments([]); }
               }
               entityId={record.id}
               entityType="station_proposals"
               multiple
               accept={FILE_ACCEPT}
               validateFile={isAllowedReportFile}
-              disabled={saving}
+              disabled={saving || preparing}
               fileConfig={{ maxSize: 20 }}
             />
+            <div className="mt-2 space-y-2">
+              <button type="button" className="btn btn-outline btn-primary btn-sm" disabled={saving || preparing || !files.length} onClick={() => prepare()}>
+                {preparing ? 'Đang chuẩn bị PDF…' : 'Chuẩn bị PDF'}
+              </button>
+              <p className="text-xs text-base-content/60">Tối đa 10 tài liệu. Chuyển từng tài liệu sang PDF cố định trước khi gửi duyệt; luôn giữ bản gốc.</p>
+              <ProposalDocumentConversionList documents={documents} onRetry={prepare} busy={preparing || saving} />
+              {hasFailed && <label className="flex items-start gap-2 text-sm text-warning">
+                <input type="checkbox" className="checkbox checkbox-sm" checked={acceptFailure} disabled={preparing || saving} onChange={(event) => setAcceptFailure(event.target.checked)} />
+                Tôi xác nhận tiếp tục với bản Word khi chuyển PDF thất bại (.doc không hỗ trợ ký).
+              </label>}
+            </div>
           </section>
 
           <section className="space-y-2">
@@ -475,7 +530,7 @@ const ProposalReportUpdateModal = ({
                   className="input input-bordered input-sm"
                   value={expectedOnDate}
                   onChange={(event) => setExpectedOnDate(event.target.value)}
-                  disabled={saving}
+                  disabled={saving || preparing}
                 />
                 <span className="label py-1">
                   <span className="label-text-alt">
@@ -656,7 +711,7 @@ const ProposalReportUpdateModal = ({
             type="button"
             className="btn btn-primary gap-1"
             onClick={submit}
-            disabled={saving || loadingTypes}
+            disabled={saving || preparing || loadingTypes || !isPrepared || (hasFailed && !acceptFailure)}
           >
             <Upload size={16} />
             Tải lên và gửi duyệt
@@ -666,7 +721,7 @@ const ProposalReportUpdateModal = ({
       <form
         method="dialog"
         className="modal-backdrop"
-        onClick={saving ? undefined : onClose}
+        onClick={saving || preparing ? undefined : onClose}
       >
         <button type="button">close</button>
       </form>

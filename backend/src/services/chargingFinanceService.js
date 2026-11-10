@@ -19,7 +19,7 @@ const assertFinanceManager = (user) => chargingStationService.assertFinanceManag
 );
 
 const listInvoices = async (stationId, user, { page = 1, limit = 20 } = {}) => {
-  await assertFinanceManager(user);
+  await require('./chargingStationAccessService').assertFinanceViewer(user);
   const id = toId(stationId, 'Mã trạm');
   if (!await chargingStationService.canViewChargingStation(id, user)) {
     throw err('Không có quyền xem tài chính ON trạm này', 403);
@@ -80,7 +80,7 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
     await connection.beginTransaction();
     transactionStarted = true;
     const [stations] = await connection.query(
-      `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status, cs.deposit_status, cs.payment_status,
+      `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status, cs.deposit_status, cs.payment_status, cs.fulfillment_review_required,
               JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
               p.tong_gia_tri_chot
          FROM charging_stations cs
@@ -123,6 +123,16 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
       if (model !== 'LK') throw err('Chỉ mô hình Liên kết được hoàn cọc', 400);
       if (station.status !== 'OPERATING' || station.sub_status !== 'ACTIVE') {
         throw err('Chỉ được hoàn cọc sau khi trạm đã ON', 409);
+      }
+      const [progress] = await connection.query(`SELECT c.id,c.quantity,
+        COALESCE(SUM(CASE WHEN d.stage='OPERATING' THEN d.quantity ELSE 0 END),0) AS operating
+        FROM charging_station_commitments c
+        LEFT JOIN warehouse_export_items i ON i.commitment_id=c.id
+        LEFT JOIN charging_station_deployments d ON d.export_item_id=i.id AND d.charging_station_id=c.charging_station_id
+        WHERE c.charging_station_id=? GROUP BY c.id,c.quantity`, [id]);
+      if (station.fulfillment_review_required || !progress.length
+        || progress.some((row) => Number(row.operating) < Number(row.quantity))) {
+        throw err('Chỉ được hoàn cọc khi toàn bộ trụ chốt đã ON; hồ sơ cũ cần đối soát đầy đủ', 409);
       }
       if (!['RECEIVED', 'REFUND_PENDING'].includes(station.deposit_status)) {
         throw err('Trạm không có khoản cọc đang chờ hoàn', 409);
@@ -219,8 +229,9 @@ const createInvoice = async (stationId, data = {}, user, ctx = {}) => {
       });
       await chargingStationService.advanceToDeliveryIfReady(connection, { id }, ctx);
     }
-    if (invoiceType === 'DEPOSIT') {
-      await chargingStationService.advanceProposalToDeploying(proposalId, ctx);
+    await chargingStationService.advanceProposalToDeploying(proposalId, ctx, connection);
+    if (invoiceType === 'DEPOSIT' && station.status !== 'CANCELLED') {
+      await require('./chargingStationDeploymentService').refreshStationProgress(connection, id, ctx);
     }
     await connection.commit();
     transactionStarted = false;

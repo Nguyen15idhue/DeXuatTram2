@@ -367,7 +367,9 @@ const listExports = async ({ page = 1, limit = 20, search = '', supplier_id = ''
 
   const ids = rows.map((row) => row.id);
   const [items] = await pool.query(
-    `SELECT wei.export_id, wei.id, wei.supplier_id, wei.pole_id, wei.quantity, cp.name, s.name AS supplier_name, cp.charging_type, cp.power_kw
+    `SELECT wei.export_id, wei.id, wei.commitment_id, wei.supplier_id, wei.pole_id, wei.quantity,
+            wei.received_quantity, wei.return_pending_quantity, wei.returned_quantity,
+            cp.name, s.name AS supplier_name, cp.charging_type, cp.power_kw
      FROM warehouse_export_items wei
      JOIN charging_poles cp ON cp.id = wei.pole_id
      LEFT JOIN suppliers s ON s.id = wei.supplier_id
@@ -398,9 +400,12 @@ const getExport = async (id) => {
   );
   if (rows.length === 0) throw err('Không tìm thấy phiếu xuất', 404);
   const [items] = await pool.query(
-    `SELECT wei.id, wei.pole_id, wei.quantity, cp.name, cp.charging_type, cp.power_kw
+    `SELECT wei.id, wei.commitment_id, wei.supplier_id, wei.pole_id, wei.quantity,
+            wei.received_quantity, wei.return_pending_quantity, wei.returned_quantity,
+            cp.name, s.name AS supplier_name, cp.charging_type, cp.power_kw
      FROM warehouse_export_items wei
      JOIN charging_poles cp ON cp.id = wei.pole_id
+     LEFT JOIN suppliers s ON s.id = wei.supplier_id
      WHERE wei.export_id = ?`,
     [exportId]
   );
@@ -408,11 +413,23 @@ const getExport = async (id) => {
 };
 
 const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
-  const exporterUserId = ctx.userId || toInt(data.exporter_user_id, 'Người xuất kho');
-  const exportDate = normalizeDate(data.export_date || new Date().toISOString(), 'Ngày xuất kho');
   const destinationType = String(data.destination_type || 'STATION').trim().toUpperCase();
   if (!['STATION', 'WAREHOUSE', 'PROJECT', 'OTHER'].includes(destinationType)) throw err('Loại nơi nhận không hợp lệ', 400);
   const chargingStationId = destinationType === 'STATION' ? toInt(data.charging_station_id, 'Trạm sạc') : null;
+  if (destinationType === 'STATION') {
+    const shippingService = require('./chargingStationShippingService');
+    const actor = ctx.user || { id: ctx.userId || ctx.actorId };
+    const shipment = await shippingService.createExportWithinTransaction(
+      conn,
+      chargingStationId,
+      data,
+      actor,
+      ctx
+    );
+    return shipment.id;
+  }
+  const exporterUserId = ctx.userId || toInt(data.exporter_user_id, 'Người xuất kho');
+  const exportDate = normalizeDate(data.export_date || new Date().toISOString(), 'Ngày xuất kho');
   const destinationName = data.destination_name ? String(data.destination_name).trim() : null;
   const destinationAddress = data.destination_address ? String(data.destination_address).trim() : null;
   const destinationNote = data.destination_note ? String(data.destination_note).trim() : null;
@@ -432,46 +449,6 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
     throw err('Tổng số tiền vận chuyển phải là số không âm', 400);
   }
 
-  let committedMap = new Map();
-  if (destinationType === 'STATION') {
-    const [stationRows] = await conn.query(
-      `SELECT cs.id, p.chot_so_luong_tru
-       FROM charging_stations cs
-       JOIN station_proposals p ON p.id = cs.proposal_id
-       WHERE cs.id = ?`,
-      [chargingStationId]
-    );
-    if (stationRows.length === 0) throw err('Không tìm thấy trạm sạc', 404);
-
-    const committedRows = (() => {
-      const value = stationRows[0].chot_so_luong_tru;
-      if (!value) return [];
-      if (Array.isArray(value)) return value;
-      try { return JSON.parse(value); } catch { return []; }
-    })();
-    if (!Array.isArray(committedRows) || committedRows.length === 0) {
-      throw err('Trạm chưa có số lượng trụ chốt để xuất kho', 409);
-    }
-
-    for (const row of committedRows) {
-      const poleName = String(row?.loai_tru || '').trim().toLowerCase();
-      const quantity = Number(row?.so_luong);
-      if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
-      const supplierId = row?.supplier_id ? Number(row.supplier_id) : null;
-      if (!Number.isInteger(supplierId) || supplierId <= 0 || !String(row?.supplier_name || '').trim()) {
-        throw err('Số lượng trụ chốt chưa có nhà cung cấp, không thể xuất kho', 409);
-      }
-      const [poleRows] = await conn.query(
-        'SELECT id FROM charging_poles WHERE LOWER(TRIM(name)) = ? LIMIT 2',
-        [poleName]
-      );
-      if (poleRows.length === 1) {
-        const key = `${supplierId}:${poleRows[0].id}`;
-        committedMap.set(key, (committedMap.get(key) || 0) + quantity);
-      }
-    }
-  }
-
   const stockParams = [];
   const stockClauses = items.map((item) => {
     stockParams.push(item.supplier_id, item.pole_id);
@@ -486,21 +463,9 @@ const createExportWithinTransaction = async (conn, data = {}, ctx = {}) => {
   for (const item of items) {
     const stockKey = `${item.supplier_id}:${item.pole_id}`;
     if (!stockMap.has(stockKey)) throw err(`Không tìm thấy tồn kho của nhà cung cấp cho trụ #${item.pole_id}`, 404);
-    if (destinationType === 'STATION') {
-      const committedKey = `${item.supplier_id}:${item.pole_id}`;
-      const committedQty = committedMap.get(committedKey);
-      if (!committedQty) {
-        throw err(`Trụ sạc #${item.pole_id} không thuộc số lượng đã chốt của trạm`, 400);
-      }
-      const maxAllowed = Math.min(committedQty, stockMap.get(stockKey));
-      if (item.quantity > maxAllowed) {
-        throw err(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 400);
-      }
-    } else {
-      const stockQty = stockMap.get(stockKey);
-      if (item.quantity > stockQty) {
-        throw err(`Số lượng xuất vượt quá tồn kho. Số lượng tối đa có thể xuất là ${stockQty} trụ. Vui lòng kiểm tra lại.`, 400);
-      }
+    const stockQty = stockMap.get(stockKey);
+    if (item.quantity > stockQty) {
+      throw err(`Số lượng xuất vượt quá tồn kho. Số lượng tối đa có thể xuất là ${stockQty} trụ. Vui lòng kiểm tra lại.`, 400);
     }
   }
 

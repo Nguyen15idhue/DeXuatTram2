@@ -46,9 +46,12 @@ exports.detail = async (req, res) => {
 
 exports.sign = async (req, res) => {
   try {
+    const body = req.body || {};
     const result = await proposalSignatureService.sign({
       user: req.user,
       id: req.params.id,
+      documentId: body.document_id,
+      fileId: body.file_id,
       ip: req.ip
     });
     res.json({ success: true, data: result, message: 'Đã ký BCĐX' });
@@ -99,6 +102,7 @@ exports.uploadSignedFile = async (req, res) => {
       user: req.user,
       id: req.params.id,
       files: body.files,
+      documents: body.documents,
       ip: req.ip
     });
     res.json({
@@ -115,8 +119,18 @@ exports.exportFile = async (req, res) => {
   try {
     const result = await proposalSignatureService.getExportFile({
       user: req.user,
-      id: req.params.id
+      id: req.params.id,
+      documentId: req.query.document_id,
+      all: req.query.all === '1',
+      ip: req.ip
     });
+    if (result.bytes) {
+      const filename = String(result.original_name || 'BCDX.zip').replace(/[\\/\r\n"]/g, '_');
+      res.setHeader('Content-Type', result.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', result.bytes.length);
+      return res.send(result.bytes);
+    }
     res.json({ success: true, data: result });
   } catch (error) {
     sendError(res, error);
@@ -127,7 +141,10 @@ exports.downloadSignedDocument = async (req, res) => {
   try {
     const result = await proposalSignatureService.getSignedDocument({
       user: req.user,
-      id: req.params.id
+      id: req.params.id,
+      documentId: req.query.document_id,
+      all: req.query.all === '1',
+      ip: req.ip
     });
     const originalName = String(result.original_name || 'BCDX');
     const filename = originalName

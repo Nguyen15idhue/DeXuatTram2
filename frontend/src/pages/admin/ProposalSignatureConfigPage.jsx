@@ -4,7 +4,9 @@ import { ArrowLeft, Check, FileText, Plus, Send, Trash2 } from "lucide-react";
 import PageHeader from "../../components/ui/PageHeader";
 import ProposalDocumentPages from "../../components/admin/ProposalDocumentPages";
 import { useAuth } from "../../contexts/AuthContext";
-import { proposalApprovalService } from "../../services/api";
+import { proposalApprovalService, proposalReportService } from "../../services/api";
+import { documentFile, ensureDocumentResponse, fileName, getDocumentSigners, isDocumentAwaitingConversion, isUnsupportedSigningFile } from '../../utils/proposalDocuments';
+import ProposalDocumentConversionList from '../../components/admin/ProposalDocumentConversionList';
 import {
   DEFAULT_SIGNER_BOX,
   getReportFiles,
@@ -54,12 +56,19 @@ const ProposalSignatureConfigPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [signatureConfigWarning, setSignatureConfigWarning] = useState("");
+  const [documents, setDocuments] = useState([]);
+  const [documentId, setDocumentId] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [canWithdraw, setCanWithdraw] = useState(false);
 
-  const reportFiles = useMemo(() => getReportFiles(proposal), [proposal]);
+  const legacyFiles = useMemo(() => getReportFiles(proposal), [proposal]);
+  const reportFiles = documents.length ? documents.map(documentFile).filter(Boolean) : legacyFiles;
   const selectedFile = reportFiles.find(
     (file) => Number(file.id) === Number(fileId),
   );
   const minBoxHeightRatio = getSignerBoxMinHeightRatio(selectedFile);
+  const readOnly = documents.some((document) => document.has_signed) || isUnsupportedSigningFile(selectedFile) ||
+    isDocumentAwaitingConversion(documents.find((document) => String(document.id) === String(documentId)));
 
   const loadPage = useCallback(async () => {
     if (!token || !id) return;
@@ -73,6 +82,27 @@ const ProposalSignatureConfigPage = () => {
           proposalApprovalService.getSignatureConfig(id, token),
         ]);
       const loadedProposal = proposalResponse?.data || null;
+      ensureDocumentResponse(proposalResponse);
+      ensureDocumentResponse(candidateResponse);
+      ensureDocumentResponse(configResponse);
+      const nextDocuments = configResponse?.data?.documents || [];
+      setDocuments(nextDocuments);
+      setCanWithdraw(!!configResponse?.data?.can_withdraw);
+      if (nextDocuments.length) {
+        const nextDrafts = Object.fromEntries(nextDocuments.map((document) => [
+          document.id,
+          getDocumentSigners(document, configResponse.data.signers).map((signer) => normalizeSignerBox(signer, getSignerBoxMinHeightRatio(documentFile(document))))
+        ]));
+        setProposal(loadedProposal);
+        setCandidates(candidateResponse?.data?.candidates || []);
+        setDrafts(nextDrafts);
+        setDocumentId(nextDocuments[0].id);
+        setSigners(nextDrafts[nextDocuments[0].id]);
+        setFileId(documentFile(nextDocuments[0])?.id || null);
+        setActivePage(nextDrafts[nextDocuments[0].id][0]?.page || 1);
+        setSignatureConfigWarning('');
+        return;
+      }
       const availableReportFiles = getReportFiles(loadedProposal);
       const availableFileIds = new Set(availableReportFiles.map((file) => Number(file.id)));
       const configuredSigners = configResponse?.data?.signers || [];
@@ -199,6 +229,7 @@ const ProposalSignatureConfigPage = () => {
   }, [candidates]);
 
   const startDrag = (event, signer, mode) => {
+    if (readOnly || saving) return;
     event.preventDefault();
     event.stopPropagation();
     const pageEl = event.currentTarget.closest?.("[data-docx-section], [data-proposal-page]") || null;
@@ -232,6 +263,7 @@ const ProposalSignatureConfigPage = () => {
   };
 
   const addSigner = (candidateId) => {
+    if (documents.some((document) => document.has_signed) || isUnsupportedSigningFile(selectedFile)) return;
     const candidate = candidates.find(
       (item) => String(item.id) === String(candidateId),
     );
@@ -249,6 +281,7 @@ const ProposalSignatureConfigPage = () => {
         user_id: Number(candidate.id),
         full_name: candidate.full_name,
         signer_title: candidate.chuc_vu || candidate.department || null,
+        signer_department: candidate.department || null,
         ...DEFAULT_SIGNER_BOX,
         page: activePage,
       },
@@ -257,6 +290,11 @@ const ProposalSignatureConfigPage = () => {
 
   const submit = async () => {
     setError("");
+    const allDrafts = { ...drafts, [documentId]: signers };
+    if (documents.some((document) => !allDrafts[document.id]?.length || isUnsupportedSigningFile(documentFile(document)) || isDocumentAwaitingConversion(document))) {
+      setError('Mỗi tài liệu cần chuẩn bị PDF và có ít nhất một người ký. Định dạng .doc không hỗ trợ ký; hãy yêu cầu tải lại PDF hoặc DOCX.');
+      return;
+    }
     if (!fileId) {
       setError("Đề xuất chưa có file tờ trình BCĐX");
       return;
@@ -267,9 +305,13 @@ const ProposalSignatureConfigPage = () => {
     }
     setSaving(true);
     try {
-      await proposalApprovalService.configureSignature(
+      const response = await proposalApprovalService.configureSignature(
         proposal.id,
-        {
+        documents.length ? { documents: documents.map((document) => ({
+          document_id: document.id,
+          file_id: documentFile(document)?.id,
+          signers: allDrafts[document.id].map((signer) => normalizeSignerBox(signer, getSignerBoxMinHeightRatio(documentFile(document))))
+        })) } : {
           file_id: fileId,
           signers: signers.map((signer) => {
             const normalized = normalizeSignerBox(signer, minBoxHeightRatio);
@@ -286,12 +328,51 @@ const ProposalSignatureConfigPage = () => {
         },
         token,
       );
+      ensureDocumentResponse(response);
       navigate(`/admin/proposals/duyet-bcdx/${proposal.id}`);
     } catch (submitError) {
       setError(submitError?.message || "Không cấu hình được trình ký");
     } finally {
       setSaving(false);
     }
+  };
+
+  const switchFile = (nextFileId) => {
+    const nextDocument = documents.find((document) => Number(documentFile(document)?.id) === Number(nextFileId));
+    if (nextDocument) {
+      setDrafts((current) => ({ ...current, [documentId]: signers }));
+      setDocumentId(nextDocument.id);
+      setSigners(drafts[nextDocument.id] || []);
+      setActivePage(drafts[nextDocument.id]?.[0]?.page || 1);
+    } else {
+      setSigners([]);
+      setActivePage(1);
+    }
+    setFileId(nextFileId ? Number(nextFileId) : null);
+    setDrag(null);
+  };
+
+  const retryConversion = async (targetId) => {
+    setSaving(true);
+    setError('');
+    try {
+      const response = ensureDocumentResponse(await proposalReportService.convertDocument(id, targetId, token));
+      const nextDocuments = response?.data?.documents || [];
+      setDocuments((current) => current.map((document) => nextDocuments.find((item) => String(item.id) === String(document.id)) || document));
+      const active = nextDocuments.find((document) => String(document.id) === String(documentId));
+      if (active) setFileId(documentFile(active)?.id || null);
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  };
+
+  const withdraw = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      ensureDocumentResponse(await proposalApprovalService.withdrawSignature(id, token));
+      navigate(`/admin/proposals/duyet-bcdx/${id}`);
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
   };
 
   if (loading) {
@@ -334,7 +415,14 @@ const ProposalSignatureConfigPage = () => {
       {signatureConfigWarning && (
         <div className="alert alert-warning text-sm">{signatureConfigWarning}</div>
       )}
+      {documents.length > 0 && <section className="space-y-2 border rounded p-3">
+        <h2 className="font-semibold">Tài liệu và chuyển đổi PDF</h2>
+        <p className="text-sm">Cấu hình người ký riêng cho từng tài liệu; thay đổi được giữ khi chuyển file. Một người có thể ký nhiều tài liệu.</p>
+        <ProposalDocumentConversionList documents={documents} onRetry={retryConversion} busy={saving} />
+        {documents.find((document) => String(document.id) === String(documentId))?.conversion_status === 'FAILED' && <p className="text-warning text-sm">Đang dùng bản Word gốc; bố cục có thể thay đổi. Định dạng .doc không hỗ trợ ký.</p>}
+      </section>}
 
+      <fieldset disabled={saving}>
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(500px,1.4fr)]">
         <section className="space-y-3 rounded-lg border bg-base-100 p-4">
           <div>
@@ -375,7 +463,7 @@ const ProposalSignatureConfigPage = () => {
                       <button
                         type="button"
                         className={`btn btn-xs gap-1 ${isAdded ? "btn-success" : "btn-outline"}`}
-                        disabled={isAdded}
+                        disabled={isAdded || readOnly}
                         onClick={() => addSigner(candidate.id)}
                       >
                         {isAdded ? <Check size={13} /> : <Plus size={13} />}
@@ -415,6 +503,7 @@ const ProposalSignatureConfigPage = () => {
                       type="button"
                       className="btn btn-ghost btn-xs text-error"
                       title="Xóa người ký"
+                      disabled={readOnly}
                       onClick={() =>
                         setSigners((current) =>
                           current.filter(
@@ -444,16 +533,13 @@ const ProposalSignatureConfigPage = () => {
               <select
                 className="select select-bordered select-sm w-auto pr-10"
                 value={fileId || ""}
-                onChange={(event) =>
-                  setFileId(
-                    event.target.value ? Number(event.target.value) : null,
-                  )
-                }
+                aria-label="Tài liệu cấu hình ký"
+                onChange={(event) => switchFile(event.target.value)}
               >
                 <option value="">-- Chọn file --</option>
                 {reportFiles.map((file) => (
                   <option key={file.id} value={file.id}>
-                    {file.name || `File #${file.id}`}
+                    {fileName(file)}
                   </option>
                 ))}
               </select>
@@ -476,7 +562,7 @@ const ProposalSignatureConfigPage = () => {
                 ref={docPagesRef}
                 file={{
                   id: selectedFile.id,
-                  original_name: selectedFile.name,
+                  original_name: fileName(selectedFile),
                   mime_type: selectedFile.mime_type,
                 }}
                 showPageLabel
@@ -533,8 +619,10 @@ const ProposalSignatureConfigPage = () => {
         </section>
       </div>
 
+      </fieldset>
       {error && <div className="alert alert-error py-2">{error}</div>}
       <div className="flex justify-end gap-2 border-t pt-4">
+        {canWithdraw && <button type="button" className="btn btn-warning btn-outline" disabled={saving} onClick={withdraw}>Thu hồi cấu hình ký</button>}
         <button
           type="button"
           className="btn btn-ghost"
@@ -549,6 +637,7 @@ const ProposalSignatureConfigPage = () => {
           onClick={submit}
           disabled={
             saving ||
+            documents.some((document) => document.has_signed || isUnsupportedSigningFile(documentFile(document)) || isDocumentAwaitingConversion(document)) ||
             !selectedFile ||
             signers.length === 0 ||
             proposal.status !== "PROPOSAL_REPORT_REVIEWING"

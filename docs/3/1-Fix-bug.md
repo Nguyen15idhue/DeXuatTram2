@@ -1,5 +1,82 @@
 # Fix Bug Log
 
+## BCĐX: PDF cố định và nhiều tài liệu
+
+Áp dụng migration `database/225-proposal-report-documents.sql` trước khi chạy
+backend mới. Migration có thể chạy lại; không chuyển đổi hoặc thay file của hồ sơ
+đã cấu hình/đã ký. Bảng `proposal_report_documents` giữ quan hệ file gốc, PDF,
+file dùng ký và file phê duyệt cuối cho từng tài liệu. Các bản nộp cũ được giữ lại;
+`is_current` đánh dấu bộ hồ sơ hiện hành.
+
+Luồng nộp:
+
+1. Tải Word/PDF và chuẩn bị PDF (tối đa 10 tài liệu, 20 MB/tài liệu).
+2. Word được chuyển bằng LibreOffice; PDF tải trực tiếp được kiểm tra tính hợp lệ.
+   File Word gốc vẫn giữ nguyên. Mỗi lần chuyển có thư mục/profile riêng, timeout
+   60 giây; tác vụ được giới hạn đồng thời để tránh xung đột LibreOffice.
+3. Nếu chuyển lỗi, giao diện hiển thị lỗi và cho thử lại. Người nộp phải xác nhận
+   tiếp tục với Word nếu vẫn muốn sang duyệt; không tự chuyển trạng thái khi chưa xác nhận.
+4. Duyệt BCĐX cho phép thử chuyển lại trước khi cấu hình ký. Thành công thì toàn bộ
+   preview, cấu hình, ký và xuất dùng cùng file PDF cố định; không convert lại khi xuất.
+5. DOCX là dự phòng khi chuyển lỗi và vẫn có nguy cơ lệch bố cục giữa các phần mềm.
+   `.doc` chuyển lỗi không được cấu hình ký trực tiếp; phải thay DOCX/PDF.
+
+Mỗi tài liệu có danh sách người ký riêng. Một người có thể ký nhiều tài liệu,
+nhưng mỗi lần xác nhận chỉ ký file đang chọn. Chỉ đủ chữ ký khi hoàn tất toàn bộ
+phân công trên mọi tài liệu. Tải riêng từng file hoặc toàn bộ dưới dạng ZIP.
+Back Office tải file phê duyệt cuối tương ứng từng tài liệu; chỉ kết thúc khi đủ
+tất cả. `station_proposals.signed_file_id` vẫn giữ file đầu để tương thích các
+kiểm tra trạng thái cuối; quan hệ đầy đủ nằm ở bảng tài liệu.
+
+Tài liệu đã cấu hình ký không được convert lại; phải thu hồi cấu hình trước.
+Tài liệu đã có người ký không được thu hồi bằng thao tác này. Hồ sơ legacy đã
+cấu hình/đã ký tiếp tục dùng file và tọa độ cũ; không tự đổi sang PDF.
+
+Triển khai: rebuild image backend theo Dockerfile hiện có để có LibreOffice
+Writer và fontconfig. Mount/cài đủ font của tài liệu Word (đặc biệt Times New Roman)
+để tránh thay font khi chuyển; luôn đối chiếu PDF trước khi đặt ô ký. Việc dùng
+PDF cố định bảo vệ tọa độ sau convert, không đảm bảo Word và PDF giống nhau nếu
+server thiếu font. Không dùng dịch vụ chuyển đổi bên ngoài.
+Đặt `SIGNATURE_FONT_DIR`, hoặc `SIGNATURE_FONT_REGULAR` và
+`SIGNATURE_FONT_BOLD`, trỏ tới bộ font Times New Roman hợp lệ khi xuất PDF có chữ ký.
+Thiếu font sẽ báo lỗi rõ ràng, không tự thay font. Nginx tăng riêng timeout cho
+API chuẩn bị/nộp BCĐX lên 1.500 giây để hỗ trợ chuyển nhiều tài liệu; reverse proxy
+ngoài Docker cũng cần timeout tương ứng. Các API khác giữ nguyên timeout.
+Compose mount cùng `SIGNATURE_FONT_HOST_DIR` vào thư mục font hệ thống để
+LibreOffice cũng đọc được font đang dùng khi xuất chữ ký, thay vì chỉ thấy
+thư mục riêng của backend. Cần tạo lại container backend khi cập nhật mount này.
+
+API tài liệu: `GET /api/admin/proposal-reports/:id/documents`,
+`POST .../documents/prepare`, `POST .../documents/:documentId/convert`; chủ đề xuất
+dùng đường tương ứng `/api/my-proposals/:id/report/documents`.
+PUT nộp BCĐX chỉ nhận `accept_conversion_failure: true` sau xác nhận trên giao diện.
+Lỗi convert được lưu cùng tài liệu; lỗi quyền/sai bước trả HTTP lỗi, không giả thành công.
+Nút **Tạo từ mẫu** vẫn chỉ báo đang triển khai.
+Khôi phục đăng ký route download có kiểm tra quyền; preview/ký PDF sử dụng
+`GET /api/files/:id/download` để đọc đúng byte PDF gốc, hỗ trợ token và Range.
+
+Kiểm thử chuyển đổi thật trong backend:
+`RUN_REPORT_DOCUMENT_TESTS=1 node --test tests/proposalReportDocuments.integration.test.js`.
+Test tạo fixture tạm, dùng LibreOffice thật, kiểm tra PDF hai trang, thử lại, quyền
+truy cập và giữ nguyên DOCX legacy; dọn fixture sau khi chạy.
+
+Cấu hình nhiều tài liệu gửi `documents: [{document_id, file_id, signers}]`;
+mỗi tài liệu dùng `file_id` đúng bản PDF/DOCX hiện hành. Khi ký gửi
+`document_id` của tài liệu đang chọn, không ký đồng loạt các file của người dùng.
+Thu hồi dùng `POST /api/admin/proposal-approvals/:id/signature-config/withdraw`;
+chỉ thực hiện trước chữ ký đầu tiên. Xuất riêng chọn `document_id`, xuất ZIP
+chọn `all=1`. Nộp bản phê duyệt cuối gửi
+`documents: [{document_id, file_id}]` để ánh xạ đầy đủ từng tài liệu.
+
+Kiểm thử chữ ký và xuất PDF/ZIP:
+`node --test tests/proposalMultiDocumentSignature.test.js tests/proposalMultiDocumentExport.test.js`
+trong backend. Kiểm tra hai kích thước trang, tách chữ ký theo tài liệu, tọa độ
+ảnh chính xác trong 0,01 điểm PDF, và hai thứ tự chạy đồng thời ký/thu hồi.
+Smoke trình duyệt/API thật: `node frontend\test-bcdx-documents-real.cjs` từ
+root, khi hệ thống local đã chạy. Test tạo dữ liệu tạm, đi qua nộp hai tài liệu,
+cấu hình, ký, xuất ZIP và nộp đủ bản cuối tới `APPROVED`; dọn cả ON trạm được
+tự tạo và chặn queue fixture gửi sang Google Sheets.
+
 ## Đồng bộ Sheet trạm ON: nguồn dữ liệu và khóa EMS
 
 - Chỉ đồng bộ đề xuất ACTIVE, giữ nguyên quyền Admin/Super Admin.

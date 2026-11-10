@@ -3,7 +3,9 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api, chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { isBackOfficeDept } from '../../utils/proposalAccess';
+import { canOperateStation } from '../../utils/chargingFulfillment';
+import ChargingStationNeedBadge from './ChargingStationNeedBadge';
+import ChargingStationTable from './ChargingStationTable';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
@@ -18,7 +20,7 @@ import {
   formatCsDate,
   getCsDeadlineLabel
 } from '../../utils/chargingStation';
-import { Badge, Button, DataTable, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
+import { Badge, Button, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 
 const PAGE_SIZE = 20;
 const FILE_MAX_SIZE = 10 * 1024 * 1024;
@@ -44,7 +46,6 @@ const ChargingStationContractTabs = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'need';
-  const canManageContract = user?.role === 'SUPER_ADMIN' || isBackOfficeDept(user);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -99,7 +100,7 @@ const ChargingStationContractTabs = () => {
         <Link
           to={`/admin/on-tram/khoi-tao-hop-dong/${row.id}`}
           state={{ returnTo: `${location.pathname}${location.search}` }}
-          className="link link-primary font-mono text-xs font-semibold"
+          className="link link-primary underline text-left"
         >
           {value || `#${row.id}`}
         </Link>
@@ -109,7 +110,7 @@ const ChargingStationContractTabs = () => {
       key: 'ma_de_xuat',
       label: 'Mã đề xuất',
       render: (value, row) => (
-        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary font-mono text-xs">
+        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary underline text-left">
           {value || `#${row.proposal_id}`}
         </Link>
       )
@@ -150,7 +151,7 @@ const ChargingStationContractTabs = () => {
             <span className={`text-xs ${expired ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>
-            {canExtend && (
+            {canExtend && canOperateStation(user, row, 'back_office') && (
               <Button
                 variant="outline-warning"
                 size="xs"
@@ -190,7 +191,7 @@ const ChargingStationContractTabs = () => {
 
     { key: 'created_at', label: 'Ngày tạo', render: formatDateTime },
 
-  ], [location.pathname, location.search]);
+  ], [location.pathname, location.search, user, busyId]);
 
   const selectTab = (nextTab) => {
     const next = new URLSearchParams(searchParams);
@@ -266,7 +267,7 @@ const ChargingStationContractTabs = () => {
   };
 
   const renderActions = (row) => {
-    if (row.status !== 'ONBOARDING') return <span className="text-base-content/50">—</span>;
+    if (row.status === 'CANCELLED' || !canOperateStation(user, row, 'back_office')) return <span className="text-base-content/50">Chỉ xem</span>;
     if (row.contract_status === 'NOT') {
       return (
         <Button size="xs" loading={busyId === row.id} disabled={busyId !== null} onClick={() => startSigning(row)}>
@@ -305,7 +306,7 @@ const ChargingStationContractTabs = () => {
             className={`tab ${tab === item.key ? 'tab-active font-semibold' : ''}`}
             onClick={() => selectTab(item.key)}
           >
-            {item.label}
+            {item.label}{item.key === 'need' && <ChargingStationNeedBadge stage="khoi-tao-hop-dong" />}
           </button>
         ))}
       </div>
@@ -324,13 +325,13 @@ const ChargingStationContractTabs = () => {
         </span>
       </FilterBar>
 
-      <DataTable
+      <ChargingStationTable
         columns={columns}
         data={items}
         loading={loading}
         emptyMessage={tab === 'need' ? 'Không có trạm sạc cần thực hiện' : 'Không có trạm sạc'}
         startIndex={(pagination.page - 1) * PAGE_SIZE}
-        actions={canManageContract ? renderActions : undefined}
+        actions={renderActions}
       />
 
       <Pagination

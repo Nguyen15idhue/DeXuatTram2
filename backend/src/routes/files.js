@@ -244,6 +244,28 @@ router.get('/:id', requireAuth, fileController.getById);
  *       404:
  *         description: Không tìm thấy file
  */
+router.get('/:id/download', optionalAuth, fileController.download);
+
+/**
+ * @swagger
+ * /api/files/{id}/preview:
+ *   get:
+ *     tags: [Files]
+ *     summary: Xem trước Word hoặc PDF theo quyền truy cập file
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: PDF để xem trực tiếp
+ *       403:
+ *         description: Không có quyền truy cập
+ *       404:
+ *         description: Không tìm thấy file
+ */
 router.get('/:id/preview', optionalAuth, fileController.preview);
 
 /**

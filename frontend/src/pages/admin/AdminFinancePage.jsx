@@ -5,6 +5,8 @@ import { api, API_URL, chargingFinanceService } from '../../services/api';
 import { Badge, Button, DataTable, Dialog, FilterBar, Input, Pagination, Select, Toast } from '../../components/ui';
 import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import { canOperateStation } from '../../utils/chargingFulfillment';
+import ChargingStationNeedBadge from '../../components/admin/ChargingStationNeedBadge';
 import { CS_DEPOSIT_LABELS, CS_DEPOSIT_VARIANT, CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS } from '../../utils/chargingStation';
 
 const PAGE_SIZE = 20;
@@ -32,7 +34,11 @@ const isFinanceFinished = (station) => (
 const getInvoiceTypeOptions = (station) => {
   if (!station.requires_deposit) return [];
   const types = ['DEPOSIT', 'PAYMENT'];
-  if (String(station.mo_hinh_dau_tu || '').toUpperCase() === 'LK' && station.status === 'OPERATING') {
+  if (String(station.mo_hinh_dau_tu || '').toUpperCase() === 'LK' && (
+    station.deposit_status === 'REFUND_PENDING'
+    || (Number(station.fulfillment?.totals?.committed) > 0
+      && Number(station.fulfillment?.totals?.operating) >= Number(station.fulfillment?.totals?.committed))
+  )) {
     types.push('REFUND');
   }
   return INVOICE_TYPES.filter((item) => types.includes(item.value));
@@ -66,7 +72,7 @@ const getDeadlineLabel = (value, completed) => {
 };
 
 const AdminFinancePage = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'need';
@@ -334,10 +340,10 @@ const AdminFinancePage = () => {
   const renderActions = (station) => (
     <div className="flex flex-wrap justify-center gap-1">
       <Button size="xs" variant="outline" onClick={() => openInvoices(station)}>Thanh toán</Button>
-      {station.payment_status === 'DOING' && (
+      {canOperateStation(user, station, 'finance') && station.payment_status === 'DOING' && (
         <Button size="xs" disabled={busy} onClick={() => openStatusChange(station, 'DONE')}>Hoàn tất</Button>
       )}
-      {station.payment_status === 'DONE' && (
+      {canOperateStation(user, station, 'finance') && station.payment_status === 'DONE' && (
         <Button size="xs" variant="outline-warning" disabled={busy} onClick={() => openStatusChange(station, 'DOING')}>Mở lại</Button>
       )}
     </div>
@@ -362,7 +368,7 @@ const AdminFinancePage = () => {
             className={`tab ${tab === item.key ? 'tab-active' : ''}`}
             onClick={() => selectTab(item.key)}
           >
-            {item.label}
+            {item.label}{item.key === 'need' && <ChargingStationNeedBadge stage="finance" />}
           </button>
         ))}
       </div>
@@ -412,12 +418,12 @@ const AdminFinancePage = () => {
 
             <div className="flex items-center justify-between gap-2">
               <h4 className="font-semibold">Lịch sử hóa đơn</h4>
-              {getInvoiceTypeOptions(invoiceStation).length > 0 ? (
+              {canOperateStation(user, invoiceStation, 'finance') && getInvoiceTypeOptions(invoiceStation).length > 0 ? (
                 <Button size="sm" onClick={() => setAddingInvoice((value) => !value)}>
                   {addingInvoice ? 'Đóng biểu mẫu' : 'Ghi nhận hóa đơn'}
                 </Button>
               ) : (
-                <span className="text-xs text-base-content/60">Mô hình Tự đầu tư không thu cọc hoặc thanh toán</span>
+                <span className="text-xs text-base-content/60">Chỉ xem / không yêu cầu thanh toán</span>
               )}
             </div>
 

@@ -109,6 +109,7 @@ const FileViewer = ({
   const [docxOverlayPage, setDocxOverlayPage] = useState(null);
   const url = getViewUrl(file);
   const fileType = detectType(file);
+  const usesPdfPreview = (fileType === "word" || fileType === "pdf") && !!file.id;
   const name = file.original_name || file.name || "File";
   const objectUrlRef = useRef(null);
   const docxContainerRef = useRef(null);
@@ -167,6 +168,11 @@ const FileViewer = ({
       objectUrlRef.current = null;
     }
     setObjectUrl(null);
+
+    if (usesPdfPreview) {
+      setLoading(false);
+      return undefined;
+    }
 
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -243,7 +249,7 @@ const FileViewer = ({
         objectUrlRef.current = null;
       }
     };
-  }, [url, fileType, token, inline]);
+  }, [url, fileType, token, inline, usesPdfPreview]);
 
   useEffect(() => {
     if (zoom <= 1 && rotation % 180 === 0) setImagePan({ x: 0, y: 0 });
@@ -397,7 +403,7 @@ const FileViewer = ({
 
   const renderContent = () => {
     if ((fileType === "word" || fileType === "pdf") && file?.id) {
-      return <PdfPageViewer fileId={file.id} token={token} />;
+      return <PdfPageViewer fileId={file.id} token={token} initialPage={pdfPage} />;
     }
     if (fileType === "word") {
       if (!inline && htmlContent) {
@@ -701,7 +707,8 @@ const FileViewer = ({
         <div
           ref={fileType === "image" ? imageViewportRef : undefined}
           style={{
-            overflow: "auto",
+            overflow: usesPdfPreview ? "hidden" : "auto",
+            height: usesPdfPreview && !isFullScreen ? "70vh" : undefined,
             maxHeight: isFullScreen ? "none" : "calc(92vh - 80px)",
             background: bgColor,
             borderRadius: 8,

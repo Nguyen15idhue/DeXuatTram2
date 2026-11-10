@@ -55,6 +55,9 @@ const ACTION_LABEL = {
   layout_supplement_requested: 'Yêu cầu bổ sung thông tin vẽ layout',
   layout_cancelled: 'Hủy đề xuất ở bước đánh giá layout',
   report_uploaded: 'Tải lên tờ trình BCĐX',
+  report_pdf_converted: 'Chuyển tờ trình BCĐX sang PDF',
+  report_pdf_failed: 'Chuyển PDF thất bại',
+  signature_config_withdrawn: 'Thu hồi cấu hình ký BCĐX',
   report_revision_requested: 'Yêu cầu tạo lại tờ trình BCĐX',
   report_update_requested: 'Yêu cầu cập nhật thông tin BCĐX',
   signature_configured: 'Cấu hình trình ký BCĐX'

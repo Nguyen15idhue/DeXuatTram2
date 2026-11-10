@@ -3,7 +3,9 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { isBackOfficeDept } from '../../utils/proposalAccess';
+import { canOperateStation } from '../../utils/chargingFulfillment';
+import ChargingStationNeedBadge from './ChargingStationNeedBadge';
+import ChargingStationTable from './ChargingStationTable';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
@@ -18,7 +20,7 @@ import {
   formatCsDate,
   getCsDeadlineLabel
 } from '../../utils/chargingStation';
-import { Badge, Button, DataTable, FilterBar, Input, Pagination, Toast } from '../ui';
+import { Badge, Button, FilterBar, Input, Pagination, Toast } from '../ui';
 
 const PAGE_SIZE = 20;
 const TABS = [
@@ -43,7 +45,6 @@ const ChargingStationInfrastructureTabs = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'need';
-  const canManageInfrastructure = user?.role === 'SUPER_ADMIN' || isBackOfficeDept(user);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -93,7 +94,7 @@ const ChargingStationInfrastructureTabs = () => {
         <Link
           to={`/admin/on-tram/xay-dung-ha-tang/${row.id}`}
           state={{ returnTo: `${location.pathname}${location.search}` }}
-          className="link link-primary font-mono text-xs font-semibold"
+          className="link link-primary underline text-left"
         >
           {value || `#${row.id}`}
         </Link>
@@ -103,7 +104,7 @@ const ChargingStationInfrastructureTabs = () => {
       key: 'ma_de_xuat',
       label: 'Mã đề xuất',
       render: (value, row) => (
-        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary font-mono text-xs">
+        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary underline text-left">
           {value || `#${row.proposal_id}`}
         </Link>
       )
@@ -192,8 +193,8 @@ const ChargingStationInfrastructureTabs = () => {
   };
 
   const renderActions = (row) => {
-    if (!['ONBOARDING', 'DELIVERING'].includes(row.status)) {
-      return <span className="text-xs text-base-content/60">Không còn ở bước cập nhật hạ tầng</span>;
+    if (row.status === 'CANCELLED' || !canOperateStation(user, row, 'back_office')) {
+      return <span className="text-xs text-base-content/60">Chỉ xem</span>;
     }
     return (
       <div className="flex min-w-48 flex-col gap-2">
@@ -245,7 +246,7 @@ const ChargingStationInfrastructureTabs = () => {
             className={`tab ${tab === item.key ? 'tab-active font-semibold' : ''}`}
             onClick={() => selectTab(item.key)}
           >
-            {item.label}
+            {item.label}{item.key === 'need' && <ChargingStationNeedBadge stage="xay-dung-ha-tang" />}
           </button>
         ))}
       </div>
@@ -264,13 +265,13 @@ const ChargingStationInfrastructureTabs = () => {
         </span>
       </FilterBar>
 
-      <DataTable
+      <ChargingStationTable
         columns={columns}
         data={items}
         loading={loading}
         emptyMessage={tab === 'need' ? 'Không có trạm sạc cần hoàn thiện hạ tầng' : 'Không có trạm sạc'}
         startIndex={(pagination.page - 1) * PAGE_SIZE}
-        actions={canManageInfrastructure ? renderActions : undefined}
+        actions={renderActions}
       />
 
       <Pagination
