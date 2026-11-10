@@ -202,6 +202,9 @@ app.get('/health', (req, res) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
+  require('./workers/proposalReportConversionWorker').start().catch((error) => {
+    console.error('[ReportConversionWorker] start error:', error);
+  });
   console.log(`Server running on port ${PORT}`);
   console.log(`Swagger UI: http://localhost:${PORT}/api-docs`);
   require('./workers/leadConsultationWorker').start().catch((error) => {

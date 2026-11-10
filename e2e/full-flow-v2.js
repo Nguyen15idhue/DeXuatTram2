@@ -432,7 +432,7 @@ async function main() {
     check('B2 sinh request RE_GRADE mở', requestsOf(id).some((r) => r.startsWith('RE_GRADE|OPEN|')), requestsOf(id).join(' ; '));
     check('B2 notify GĐTTKD vùng đúng 1', (await notifCount(tokens.gd, 'GDTTKD_EVALUATING', id)) === 1);
 
-    const rg = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, { reason: 'Cần xem xét lại điểm QH-PL' });
+    const rg = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, { reason: 'Cần xem xét lại điểm QH-PL', departments: ['QH', 'PL'] });
     check('B3 GĐTTKD yêu cầu chấm lại → RE_GRADING', rg.status === 200 && statusOf(id) === 'RE_GRADING', statusOf(id));
     check('B3 review_level=2', sql(`SELECT IFNULL(review_level, 0) FROM station_proposals WHERE id=${id}`) === '2');
     const rgRequests = requestsOf(id).filter((r) => r.startsWith('RE_GRADE'));
@@ -473,7 +473,8 @@ async function main() {
     const initial = await gradeBothAsAdmin(id, 1, 1);
     check('B4b điểm ban đầu → GDTTKD_EVALUATING', initial === 'GDTTKD_EVALUATING', initial);
     const request = await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, {
-      reason: 'Yêu cầu chấm lại trước khi trình TGĐ'
+      reason: 'Yêu cầu chấm lại trước khi trình TGĐ',
+      departments: ['QH', 'PL']
     });
     check('B4b GĐTTKD yêu cầu chấm lại', request.status === 200 && statusOf(id) === 'RE_GRADING', statusOf(id));
     const regraded = await gradeBothAsAdmin(id, 1, 1);
@@ -487,7 +488,7 @@ async function main() {
   await section('B4c. TGĐ không duyệt (qua vòng chấm lại) → CANCELLED', async () => {
     const id = await createProposal('B4b', true);
     await gradeTo(id, 1, 1);
-    await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, { reason: 'Chấm lại lần 1' });
+    await req('PUT', `/admin/proposal-reviews/${id}/request-regrade`, tokens.gd, { reason: 'Chấm lại lần 1', departments: ['QH', 'PL'] });
     const st = await gradeTo(id, 1, 2);
     check('B4b vòng chấm lại → RE_GDTTKD_EVALUATING', st === 'RE_GDTTKD_EVALUATING', st);
     const tg = await req('PUT', `/admin/proposal-reviews/${id}/to-tgd`, tokens.gd, { reason: 'Trình TGĐ' });

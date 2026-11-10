@@ -34,7 +34,7 @@ const AdminProposalsDanhGiaLayoutPage = () => {
         title="Đánh giá layout"
       />
 
-      {!canManage ? (
+      {!canManage && user?.role !== 'ADMIN' ? (
         <div className="alert alert-warning">
           <ShieldAlert size={20} />
           <span>

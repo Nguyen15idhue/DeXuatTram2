@@ -84,12 +84,12 @@ const assertAccess = async (proposalId, user, { write = false, preparing = false
   const reports = require('./proposalReportService');
   const proposal = await loadProposal(proposalId);
   const scope = await reports.resolveScope(user);
-  if (preparing || EDIT_STATUSES.includes(proposal.status)) {
+  if (preparing || (write && EDIT_STATUSES.includes(proposal.status))) {
     if (!EDIT_STATUSES.includes(proposal.status)) throw error('Chỉ chuẩn bị tài liệu trong bước lập tờ trình', 409);
     if (!await reports.canUploadReport(scope, proposal)) throw error('Bạn không có quyền cập nhật tờ trình này', 403);
   } else {
     await reports.assertReportReadAccess(user, proposalId);
-    if (write && !(scope.isAdmin || scope.isBackOffice)) throw error('Chỉ quản trị viên hoặc Back Office được chuyển PDF ở bước duyệt', 403);
+    if (write && !(scope.role === 'SUPER_ADMIN' || scope.isBackOffice)) throw error('Chỉ SUPER_ADMIN hoặc Back Office được chuyển PDF ở bước duyệt', 403);
   }
   if (write && ![...EDIT_STATUSES, 'PROPOSAL_REPORT_REVIEWING'].includes(proposal.status)) {
     throw error('Chỉ được chuyển PDF khi lập hoặc duyệt BCĐX, trước cấu hình ký', 409);
@@ -133,15 +133,11 @@ const prepareDocuments = async ({ proposalId, files, user, ip }) => {
     const [rows] = await pool.query('SELECT id FROM proposal_report_documents WHERE proposal_id=? AND source_file_id=?', [proposalId, id]);
     documents.push(rows[0].id);
   }
-  for (const id of documents) {
-    const [rows] = await pool.query('SELECT conversion_status FROM proposal_report_documents WHERE id=?', [id]);
-    if (rows[0].conversion_status === 'PENDING') await convertDocument({ proposalId, documentId: id, user, ip });
-  }
   return listDocuments(proposalId, { initializeLegacy: false, ids: documents });
 };
 
-const convertDocumentOnce = async ({ proposalId, documentId, user, ip }) => {
-  await assertAccess(proposalId, user, { write: true });
+const convertDocumentOnce = async ({ proposalId, documentId, user, ip, background = false }) => {
+  if (!background) await assertAccess(proposalId, user, { write: true });
   const connection = await pool.getConnection();
   const lock = `report_pdf_${Number(documentId)}`;
   let acquired = false;
@@ -150,10 +146,15 @@ const convertDocumentOnce = async ({ proposalId, documentId, user, ip }) => {
     acquired = Number(locks[0].acquired) === 1;
     if (!acquired) throw error('Tài liệu đang chuyển PDF, vui lòng đợi', 409);
     await connection.beginTransaction();
-    await loadProposal(proposalId, connection, true);
+    const initialProposal = await loadProposal(proposalId, connection, true);
     const [docs] = await connection.query('SELECT * FROM proposal_report_documents WHERE id=? AND proposal_id=? FOR UPDATE', [documentId, proposalId]);
     if (!docs.length) throw error('Không tìm thấy tài liệu BCĐX', 404);
     const document = docs[0];
+    if (background && (initialProposal.status !== 'PROPOSAL_REPORT_REVIEWING' || !document.is_current
+      || !['PENDING', 'PROCESSING'].includes(document.conversion_status))) {
+      await connection.commit();
+      return;
+    }
     const [configs] = await connection.query(
       "SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND status<>'CANCELLED' AND (document_id=? OR file_id=?)",
       [proposalId, document.id, document.signing_file_id]);
@@ -183,6 +184,12 @@ const convertDocumentOnce = async ({ proposalId, documentId, user, ip }) => {
       await connection.beginTransaction();
       const proposal = await loadProposal(proposalId, connection, true);
       if (![...EDIT_STATUSES, 'PROPOSAL_REPORT_REVIEWING'].includes(proposal.status)) throw error('Trạng thái đề xuất đã thay đổi trong lúc chuyển PDF', 409);
+      const [currentRows] = await connection.query('SELECT * FROM proposal_report_documents WHERE id=? AND proposal_id=? FOR UPDATE', [documentId, proposalId]);
+      const currentDocument = currentRows[0];
+      if (!currentDocument || currentDocument.signed_file_id
+        || (background && (!currentDocument.is_current || proposal.status !== 'PROPOSAL_REPORT_REVIEWING'))) {
+        throw error('Tài liệu không còn hiện hành hoặc đã ký; không thay thế PDF', 409);
+      }
       const [activeConfigs] = await connection.query(
         "SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND status<>'CANCELLED' AND (document_id=? OR file_id=?)",
         [proposalId, document.id, document.signing_file_id]);
@@ -190,7 +197,7 @@ const convertDocumentOnce = async ({ proposalId, documentId, user, ip }) => {
       await connection.query(
         "UPDATE proposal_report_documents SET pdf_file_id=?,signing_file_id=?,conversion_status='READY',conversion_error=NULL WHERE id=?",
         [pdfFile, pdfFile, documentId]);
-      if (document.is_current) {
+      if (currentDocument.is_current) {
         const custom = parse(proposal.custom_data);
         custom.file_bc_dx_sources ||= custom.file_bc_dx;
         custom.file_bc_dx = (custom.file_bc_dx || []).map(file => Number(file.id) === Number(document.signing_file_id)
@@ -209,7 +216,7 @@ const convertDocumentOnce = async ({ proposalId, documentId, user, ip }) => {
     const [result] = await pool.query('SELECT conversion_status,conversion_error FROM proposal_report_documents WHERE id=?', [documentId]);
     await require('./proposalLifecycle').logActivity({
       proposalId, action: result[0].conversion_status === 'READY' ? 'report_pdf_converted' : 'report_pdf_failed',
-      actorId: user.id, actorRole: user.role, source: 'user', ip,
+      actorId: user?.id || null, actorRole: user?.role || null, source: background ? 'system_auto' : 'user', ip,
       changedFields: {
         report_document: { label: 'Tài liệu BCĐX', old: String(document.source_file_id), new: String(pdfFile || document.source_file_id) },
         conversion: { label: 'Chuyển PDF', old: document.conversion_status, new: result[0].conversion_error || result[0].conversion_status }
@@ -242,5 +249,6 @@ const activateDocuments = async (proposalId, documents, executor = pool) => {
 
 module.exports = {
   listDocuments, getSigningDocuments: listDocuments, prepareDocuments, convertDocument,
-  activateDocuments, assertAccess
+  activateDocuments, assertAccess,
+  convertInBackground: (input) => convertDocument({ ...input, background: true }),
 };

@@ -25,8 +25,8 @@ import MapCanvas from './map/MapCanvas';
 const RADIUS_OPTIONS = [5, 10, 20, 50, 100];
 
 export const PREVIEW_STATUS_FILTER = {
-  stations: ['ACTIVE', 'DEPLOYING'],
-  proposals: ['PENDING', 'APPROVED']
+  stations: [...EMPTY_MAP_FILTERS.stationStatuses],
+  proposals: [...EMPTY_MAP_FILTERS.proposalStatuses]
 };
 
 const zoomForRadius = (radius) => {

@@ -119,6 +119,7 @@ const notificationService = require('./notificationService');
 
 const SIGNER_TOTAL_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.status <> 'CANCELLED')";
 const SIGNER_SIGNED_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.status = 'SIGNED')";
+const SIGNING_COMPLETE_SQL = `(p.signature_completed_at IS NOT NULL OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}))`;
 const MY_CONFIG_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status <> 'CANCELLED')";
 const MY_PENDING_CONFIG_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'PENDING')";
 const MY_SIGNED_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'SIGNED')";
@@ -141,6 +142,7 @@ const resolveScope = async (user) => {
 
 const computeSignStatus = (row) => {
   if (row.signed_file_id) return SIGN_STATUS.CEO_SIGNED;
+  if (row.signature_completed_at) return SIGN_STATUS.DONE;
   const total = Number(row.signer_total || 0);
   const signed = Number(row.signer_signed || 0);
   if (total === 0 || signed === 0) return SIGN_STATUS.PENDING;
@@ -160,6 +162,7 @@ const mapSignatureRow = (row) => {
     signature_config_conflict: signatureConfigConflict,
     sign_status: signStatus,
     sign_status_label: SIGN_STATUS_LABELS[signStatus],
+    signature_manually_completed: !!row.signature_completed_at,
     can_sign: !signatureConfigConflict && Number(row.my_pending_count || 0) > 0,
     is_my_signed: Number(row.my_signed_count || 0) > 0
   };
@@ -169,7 +172,7 @@ exports.SIGN_STATUS = SIGN_STATUS;
 exports.SIGN_STATUS_LABELS = SIGN_STATUS_LABELS;
 exports.TAB_STATUSES = TAB_STATUSES;
 
-const SIGN_STATUS_CASE_SQL = `(CASE WHEN p.signed_file_id IS NOT NULL THEN 'CEO_SIGNED' WHEN (${SIGNER_TOTAL_SQL}) = 0 OR (${SIGNER_SIGNED_SQL}) = 0 THEN 'PENDING' WHEN (${SIGNER_SIGNED_SQL}) < (${SIGNER_TOTAL_SQL}) THEN 'DOING' ELSE 'DONE' END)`;
+const SIGN_STATUS_CASE_SQL = `(CASE WHEN p.signed_file_id IS NOT NULL THEN 'CEO_SIGNED' WHEN p.signature_completed_at IS NOT NULL THEN 'DONE' WHEN (${SIGNER_TOTAL_SQL}) = 0 OR (${SIGNER_SIGNED_SQL}) = 0 THEN 'PENDING' WHEN (${SIGNER_SIGNED_SQL}) < (${SIGNER_TOTAL_SQL}) THEN 'DOING' ELSE 'DONE' END)`;
 
 exports.listProposals = async ({
   user,
@@ -200,14 +203,25 @@ exports.listProposals = async ({
       params.push(scope.userId);
     }
   } else if (safeTab === 'pending') {
-    where.push(`${MY_PENDING_CONFIG_SQL} > 0`);
+    const uploadTask = scope.role === 'SUPER_ADMIN' || scope.isBackOffice
+      ? ` OR (${SIGNING_COMPLETE_SQL} AND p.signed_file_id IS NULL)`
+      : '';
+    where.push(`(${MY_PENDING_CONFIG_SQL} > 0${uploadTask})`);
     params.push(scope.userId);
   } else if (safeTab === 'chairman') {
-    where.push(`${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}`);
+    if (!scope.isManager) {
+      where.push(`${MY_CONFIG_SQL} > 0`);
+      params.push(scope.userId);
+    }
+    where.push(SIGNING_COMPLETE_SQL);
     where.push('p.signed_file_id IS NULL');
   } else if (safeTab === 'completed') {
+    if (!scope.isManager) {
+      where.push(`${MY_CONFIG_SQL} > 0`);
+      params.push(scope.userId);
+    }
     // Hồ sơ tôi đã ký, hoặc hồ sơ đã đủ chữ ký / đã hoàn thành chung.
-    where.push(`((p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL) OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}) OR ${MY_SIGNED_SQL} > 0)`);
+    where.push(`((p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL) OR ${SIGNING_COMPLETE_SQL} OR ${MY_SIGNED_SQL} > 0)`);
     params.push(scope.userId);
   }
 
@@ -290,6 +304,7 @@ exports.listProposals = async ({
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) },
     meta: {
       isAdmin: !!scope.isAdmin,
+      isSuperAdmin: scope.role === 'SUPER_ADMIN',
       isBackOffice: !!scope.isBackOffice,
       isTgd: !!scope.isTgd,
       isManager: !!scope.isManager,
@@ -380,7 +395,7 @@ const buildDetail = async (proposal, scope) => {
       ...document,
       signers: documentConfigs,
       has_config: documentConfigs.length > 0,
-      has_signed: !!document.signed_file_id || (documentConfigs.length > 0 && documentConfigs.every((config) => config.status === 'SIGNED')),
+      has_signed: !!document.signed_file_id || !!proposal.signature_completed_at || (documentConfigs.length > 0 && documentConfigs.every((config) => config.status === 'SIGNED')),
       my_config: myConfig,
       can_sign: proposal.status === SIGNATURE_PENDING && !hasDuplicateSigner && !!myConfig && myConfig.status === 'PENDING'
     };
@@ -424,6 +439,8 @@ const buildDetail = async (proposal, scope) => {
     chot_so_luong_tru: proposal.chot_so_luong_tru,
     tong_gia_tri_chot: proposal.tong_gia_tri_chot,
     signed_file_id: proposal.signed_file_id,
+    signature_completed_at: proposal.signature_completed_at || null,
+    signature_manually_completed: !!proposal.signature_completed_at,
     report_files: reportFiles,
     layout_files: layoutFiles,
     documents: byDocument,
@@ -435,7 +452,7 @@ const buildDetail = async (proposal, scope) => {
     signer_signed: mappedConfigs.filter((config) => config.status === 'SIGNED').length,
     sign_status: proposal.signed_file_id
       ? SIGN_STATUS.CEO_SIGNED
-      : (mappedConfigs.length > 0 && mappedConfigs.every((config) => config.status === 'SIGNED')
+      : (proposal.signature_completed_at || (mappedConfigs.length > 0 && mappedConfigs.every((config) => config.status === 'SIGNED'))
         ? SIGN_STATUS.DONE
         : (mappedConfigs.some((config) => config.status === 'SIGNED') ? SIGN_STATUS.DOING : SIGN_STATUS.PENDING)),
     can_sign: !signatureConfigConflict && byDocument.some((document) => document.can_sign),
@@ -498,9 +515,9 @@ exports.getDetail = async ({ user, id } = {}) => {
     fieldDefinitions,
     initial_proposal_data: initialProposalData,
     sign_status_label: SIGN_STATUS_LABELS[visibleDetail.sign_status],
-    can_reject: !!scope.isAdmin || !!scope.isTgd,
-    can_upload_signed: !!scope.isAdmin || !!scope.isBackOffice,
-    can_request_rework: (!!scope.isAdmin || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
+    can_reject: scope.role === 'SUPER_ADMIN' || !!scope.isTgd,
+    can_upload_signed: scope.role === 'SUPER_ADMIN' || !!scope.isBackOffice,
+    can_request_rework: (scope.role === 'SUPER_ADMIN' || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
       && proposal.status === SIGNATURE_PENDING,
     can_withdraw: (user.role === 'SUPER_ADMIN' || scope.isBackOffice)
       && proposal.status === SIGNATURE_PENDING && visibleDetail.signers.length > 0
@@ -538,8 +555,9 @@ const notifyRecipients = async (userIds, { type, title, message, entityId, actor
 const backOfficeUserIds = async () => {
   const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
   return rows
-    .filter((row) => ['ADMIN', 'SUPER_ADMIN'].includes(row.role)
-      || proposalReportService.isBackOffice(parseCustomData(row.custom_data).department))
+    .filter((row) => row.role === 'SUPER_ADMIN'
+      || (['ADMIN', 'SALES'].includes(row.role)
+        && proposalReportService.isBackOffice(parseCustomData(row.custom_data).department)))
     .map((row) => Number(row.id));
 };
 
@@ -683,8 +701,8 @@ const sign = async ({ user, id, documentId, fileId, ip, mutationConnection } = {
 
 exports.reject = async ({ user, id, reason, ip } = {}) => {
   const scope = await resolveScope(user);
-  if (!scope.isAdmin && !scope.isTgd) {
-    throw err('Chỉ Tổng giám đốc hoặc Admin được từ chối duyệt', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isTgd) {
+    throw err('Chỉ Tổng giám đốc hoặc SUPER_ADMIN được từ chối duyệt', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -741,8 +759,8 @@ exports.reject = async ({ user, id, reason, ip } = {}) => {
 
 exports.requestRework = async ({ user, id, reason, ip } = {}) => {
   const scope = await resolveScope(user);
-  if (!scope.isAdmin && !scope.isTgd && !scope.isBackOffice) {
-    throw err('Chỉ Back Office, Tổng giám đốc hoặc Admin được yêu cầu làm lại BCĐX', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isTgd && !scope.isBackOffice) {
+    throw err('Chỉ Back Office, Tổng giám đốc hoặc SUPER_ADMIN được yêu cầu làm lại BCĐX', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -799,8 +817,8 @@ exports.requestRework = async ({ user, id, reason, ip } = {}) => {
 
 const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments, ip, mutationConnection } = {}) => {
   const scope = await resolveScope(user);
-  if (!scope.isAdmin && !scope.isBackOffice) {
-    throw err('Chỉ Back Office hoặc Admin được tải lên file đã ký', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
+    throw err('Chỉ Back Office hoặc SUPER_ADMIN được tải lên file đã ký', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -815,7 +833,7 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
       ? config.document_id === documentIdOf(document)
       : Number(config.file_id) === signingFileIdOf(document)
   )));
-  if (docConfigs.some((items) => items.length === 0 || items.some((config) => config.status !== 'SIGNED'))) {
+  if (!proposal.signature_completed_at && docConfigs.some((items) => items.length === 0 || items.some((config) => config.status !== 'SIGNED'))) {
     throw err('Chưa đủ chữ ký trên toàn bộ tài liệu BCĐX', 400);
   }
 
@@ -930,9 +948,62 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
 exports.sign = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
   sign({ ...args, mutationConnection })
 ));
-exports.uploadSignedFile = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
-  uploadSignedFile({ ...args, mutationConnection })
-));
+exports.completeSigning = async ({ user, id, reason, ip } = {}) => {
+  if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được xác nhận hoàn tất ký', 403);
+  const proposalId = Number(id);
+  if (!Number.isInteger(proposalId) || proposalId <= 0) throw err('Đề xuất không hợp lệ', 400);
+  const cleanReason = typeof reason === 'string' ? reason.trim() : '';
+  if (!cleanReason) throw err('Vui lòng nhập lý do xác nhận hoàn tất ký', 400);
+  if (cleanReason.length > 2000) throw err('Lý do không được vượt quá 2000 ký tự', 400);
+  const result = await withSignatureMutationLock(proposalId, async (connection) => {
+    await connection.beginTransaction();
+    try {
+      const [rows] = await connection.query('SELECT * FROM station_proposals WHERE id = ? FOR UPDATE', [proposalId]);
+      if (!rows.length) throw err('Không tìm thấy đề xuất', 404);
+      const proposal = rows[0];
+      if (proposal.status !== SIGNATURE_PENDING || proposal.signed_file_id) throw err('Đề xuất không ở trạng thái trình ký', 400);
+      if (proposal.signature_completed_at) {
+        await connection.commit();
+        return { id: proposalId, status: SIGNATURE_PENDING, sign_status: SIGN_STATUS.DONE, already_completed: true };
+      }
+      const [updated] = await connection.query(
+        "UPDATE proposal_signature_configs SET status = 'SIGNED' WHERE proposal_id = ? AND status = 'PENDING'",
+        [proposalId]
+      );
+      await connection.query('UPDATE station_proposals SET signature_completed_at = NOW(), updated_at = NOW() WHERE id = ?', [proposalId]);
+      await require('./proposalLifecycle').logActivity({
+        proposalId, action: 'signature_manually_completed', fromStatus: SIGNATURE_PENDING, toStatus: SIGNATURE_PENDING,
+        reason: cleanReason, actorId: user.id, actorRole: user.role, source: 'user', manualOverride: true, ip, connection,
+        changedFields: {
+          sign_status: { label: 'Trạng thái ký duyệt', old: 'Chưa hoàn tất', new: SIGN_STATUS.DONE },
+          completed_signers: { label: 'Số ô ký được xác nhận thay', old: 0, new: updated.affectedRows },
+        },
+      });
+      await connection.commit();
+      return { id: proposalId, status: SIGNATURE_PENDING, sign_status: SIGN_STATUS.DONE };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    }
+  });
+  if (!result.already_completed) {
+    await notifyRecipients(await backOfficeUserIds(), {
+      type: SIGN_STATUS.DONE, title: 'SUPER_ADMIN đã xác nhận hoàn tất ký',
+      message: `Đề xuất #${proposalId} đã được SUPER_ADMIN xác nhận hoàn tất khâu ký. Lý do: ${cleanReason}. Back Office vui lòng tải lên file BCĐX đã ký để kết thúc.`,
+      entityId: proposalId, actorId: user.id,
+    });
+  }
+  return result;
+};
+exports.uploadSignedFile = async (args = {}) => {
+  const scope = await resolveScope(args.user);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
+    throw err('Chỉ Back Office hoặc SUPER_ADMIN được tải lên file đã ký', 403);
+  }
+  return withSignatureMutationLock(args.id, (mutationConnection) => (
+    uploadSignedFile({ ...args, mutationConnection })
+  ));
+};
 
 exports.getExportFile = async ({ user, id, documentId, all = false, ip } = {}) => {
   if (all) return exports.getSignedDocument({ user, id, all: true, ip });
@@ -1011,7 +1082,7 @@ exports.getSignedDocument = async ({ user, id, documentId, all = false, ip } = {
     }
     return signedDocumentService.build({
       reportFileId: fileId,
-      signers: documentSigners.filter((signer) => signer.status === 'SIGNED')
+      signers: documentSigners.filter((signer) => signer.status === 'SIGNED' && signer.signature_id)
     });
   };
 

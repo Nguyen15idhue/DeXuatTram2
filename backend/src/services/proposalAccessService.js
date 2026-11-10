@@ -89,37 +89,45 @@ const isTgdUser = async (user) => {
   return roleKey === proposalReviewService.REVIEW_ROLE.TGD;
 };
 
-// Quyền ngang người đề xuất: chính chủ, cấp trên trong nhánh (đệ quy), TGĐ và quản trị viên.
 const canActAsProposalOwner = async (user, proposal) => {
   if (!user || !proposal) return false;
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role)) return true;
+  if (user.role === 'SUPER_ADMIN') return true;
   const ownerId = proposal.user_id === null || proposal.user_id === undefined
     ? null
     : Number(proposal.user_id);
   if (ownerId && ownerId === Number(user.id)) return true;
-  if (['SALES', 'NPP'].includes(user.role) && await inBranch(user.id, ownerId)) return true;
-  return isTgdUser(user);
+  if (await isTgdUser(user)) return true;
+  if (!['ADMIN', 'SALES', 'NPP'].includes(user.role)) return false;
+  const ids = new Set([Number(user.id), ...((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number)]);
+  const custom = proposalGradingService.parseCustomData(proposal.custom_data);
+  return [ownerId, proposal.nguoi_phu_trach_id ?? custom.nguoi_phu_trach?.id,
+    proposal.sales_quan_ly_id ?? custom.sales_quan_ly?.id]
+    .some((id) => id && ids.has(Number(id)));
 };
 
-// Điều kiện SQL tương ứng với canActAsProposalOwner, dùng cho đếm/lọc theo bảng station_proposals (alias p).
-const buildOwnerScopeSql = async (user, alias = 'p') => {
+const buildOwnerScopeSql = async (user, alias = 'p', { includeTgdGlobal = true } = {}) => {
   if (!user?.id) return { sql: '1 = 0', params: [] };
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role) || await isTgdUser(user)) {
+  if (user.role === 'SUPER_ADMIN' || (includeTgdGlobal && await isTgdUser(user))) {
     return { sql: '1 = 1', params: [] };
   }
-  if (['SALES', 'NPP'].includes(user.role)) {
-    const branchIds = ((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number);
-    if (!branchIds.length) return { sql: '1 = 0', params: [] };
-    return { sql: `${alias}.user_id IN (${branchIds.map(() => '?').join(',')})`, params: branchIds };
+  if (['ADMIN', 'SALES', 'NPP'].includes(user.role)) {
+    const branchIds = [...new Set([Number(user.id), ...((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number)])];
+    const placeholders = branchIds.map(() => '?').join(',');
+    return {
+      sql: `(${alias}.user_id IN (${placeholders})
+        OR CAST(JSON_UNQUOTE(JSON_EXTRACT(${alias}.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) IN (${placeholders})
+        OR CAST(JSON_UNQUOTE(JSON_EXTRACT(${alias}.custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) IN (${placeholders}))`,
+      params: [...branchIds, ...branchIds, ...branchIds]
+    };
   }
   return { sql: `${alias}.user_id = ?`, params: [Number(user.id)] };
 };
 
 const buildOwnerMatcher = async (user) => {
   if (!user?.id) return () => false;
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role) || await isTgdUser(user)) return () => true;
-  if (['SALES', 'NPP'].includes(user.role)) {
-    const ids = new Set(((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number));
+  if (user.role === 'SUPER_ADMIN' || await isTgdUser(user)) return () => true;
+  if (['ADMIN', 'SALES', 'NPP'].includes(user.role)) {
+    const ids = new Set([Number(user.id), ...((await adminProposalService.getBranchUserIds(user.id)) || []).map(Number)]);
     return (ownerId) => ids.has(Number(ownerId));
   }
   return (ownerId) => Number(ownerId) === Number(user.id);
@@ -129,3 +137,16 @@ exports.isTgdUser = isTgdUser;
 exports.canActAsProposalOwner = canActAsProposalOwner;
 exports.buildOwnerScopeSql = buildOwnerScopeSql;
 exports.buildOwnerMatcher = buildOwnerMatcher;
+
+exports.buildReportTaskScopeSql = async (user, alias = 'p') => {
+  const scope = await proposalReportService.resolveScope(user);
+  if (scope.role === 'SUPER_ADMIN' || scope.roleKey === 'TGD') return { sql: '1 = 1', params: [] };
+  if (scope.roleKey === 'GDTTKD') {
+    if (!scope.region) return { sql: '1 = 0', params: [] };
+    return {
+      sql: `LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(${alias}.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?`,
+      params: [{ Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' }[scope.region]]
+    };
+  }
+  return buildOwnerScopeSql(user, alias);
+};

@@ -28,9 +28,11 @@ export const isBackOfficeDept = (user) => {
 export const isGdttkdUser = (user) => {
   const title = titleOf(user);
   const dept = deptOf(user);
-  if (user?.chuc_vu && isGdkv(user.chuc_vu, user.department)) return false;
-  if (user?.chuc_vu) {
-    return isGdtt(user.chuc_vu, user.department)
+  const chucVu = user?.chuc_vu || user?.custom_data?.chuc_vu;
+  const department = user?.department || user?.custom_data?.department;
+  if (chucVu && isGdkv(chucVu, department)) return false;
+  if (chucVu) {
+    return isGdtt(chucVu, department)
       || title.includes('giam doc trung tam kinh doanh');
   }
   return dept.includes('trung tam kd') || dept.includes('trung tam kinh doanh');
@@ -54,7 +56,7 @@ export const canSeeReviewRequestsPage = (user) => isAdminUser(user) || isReviewU
 export const canSeeLayoutPage = (user) => isAdminUser(user) || isLayoutDept(user);
 
 export const canSeeApprovalPage = (user) => (
-  user?.role === 'SUPER_ADMIN'
+  isAdminUser(user) || isTgdUser(user)
   || (['ADMIN', 'SALES'].includes(user?.role) && isBackOfficeDept(user))
 );
 

@@ -1,4 +1,5 @@
 import { resolveGradingRole } from './proposalGrading';
+import { isGdkv, isGdtt } from './salesRanks';
 
 export const REVIEW_ROLE = {
   GDTTKD: 'GDTTKD',
@@ -60,35 +61,29 @@ export const resolveReviewRole = (user) => {
   }
   const department = user.department || user.custom_data?.department || '';
   const chucVu = user.chuc_vu || user.custom_data?.chuc_vu || '';
-  if (user.role === 'ADMIN') {
-    return {
-      roleKey: isTgdTitle(department, chucVu) ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN,
-      region: null,
-      isAdmin: true,
-      isSuperAdmin: false
-    };
+  const isAdmin = user.role === 'ADMIN';
+  if (['ADMIN', 'SALES'].includes(user.role) && isTgdTitle(department, chucVu)) {
+    return { roleKey: REVIEW_ROLE.TGD, region: null, isAdmin };
   }
-  if (user.role === 'SALES' && isTgdTitle(department, chucVu)) {
-    return { roleKey: REVIEW_ROLE.TGD, region: null, isAdmin: false };
-  }
-  if (user.role !== 'SALES') {
+  if (!['ADMIN', 'SALES'].includes(user.role)) {
     return { roleKey: null, region: null, isAdmin: false };
   }
   const gradingRole = resolveGradingRole(department);
   if (gradingRole) {
-    return { roleKey: gradingRole, region: null, isAdmin: false };
+    return { roleKey: gradingRole, region: null, isAdmin };
   }
   const title = normalizeText(chucVu);
   const dept = normalizeText(department);
-  if (title.includes('giam doc trung tam kinh doanh')
-    || dept.includes('trung tam kd') || dept.includes('trung tam kinh doanh')) {
+  if (!isGdkv(chucVu, department) && (isGdtt(chucVu, department)
+    || title.includes('giam doc trung tam kinh doanh')
+    || (!title && (dept.includes('trung tam kd') || dept.includes('trung tam kinh doanh'))))) {
     return {
       roleKey: REVIEW_ROLE.GDTTKD,
       region: resolveRegion(department) || resolveRegion(user.custom_data?.vung_mien),
-      isAdmin: false
+      isAdmin
     };
   }
-  return { roleKey: null, region: null, isAdmin: false };
+  return { roleKey: null, region: null, isAdmin };
 };
 
 export const getReviewLevelLabel = (level) => {

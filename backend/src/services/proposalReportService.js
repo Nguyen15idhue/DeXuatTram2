@@ -68,7 +68,7 @@ const resolveScope = async (user) => {
     userId: user && user.id,
     role: user && user.role,
     isAdmin,
-    isBackOffice: isBackOffice(profile.department),
+    isBackOffice: ['ADMIN', 'SALES'].includes(user?.role) && isBackOffice(profile.department),
     isFinance: isFinanceDepartment(profile.department),
     roleKey,
     region,
@@ -79,7 +79,7 @@ const resolveScope = async (user) => {
 };
 
 const scopeClause = async (scope, params) => {
-  if (scope.isAdmin || scope.isBackOffice) return '';
+  if (scope.isAdmin || scope.isBackOffice || scope.roleKey === 'TGD') return '';
   if (scope.roleKey === 'GDTTKD' && scope.region) {
     const pattern = { Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' }[scope.region];
     if (pattern) {
@@ -109,30 +109,13 @@ const scopeClause = async (scope, params) => {
 
 const canUploadReport = async (scope, proposal) => {
   if (scope.role === 'SUPER_ADMIN') return true;
-  if (await require('./proposalAccessService').canActAsProposalOwner(
-    { id: scope.userId, role: scope.role },
-    { user_id: proposal.user_id }
-  )) return true;
-  // Giao việc theo GĐKV quản lý của người đề xuất: cho phép upload nếu
-  // nguoi_phu_trach/sales_quan_ly thuộc branch (chính mình + cấp dưới đệ quy).
-  if (['SALES', 'NPP'].includes(scope.role)) {
-    const cd = parseCustomData(proposal.custom_data);
-    const managerIds = [cd.nguoi_phu_trach?.id, cd.sales_quan_ly?.id]
-      .filter((v) => v !== null && v !== undefined && v !== '')
-      .map(Number)
-      .filter((n) => Number.isInteger(n) && n > 0);
-    if (managerIds.length > 0) {
-      const adminProposalService = require('./adminProposalService');
-      const branchIds = await adminProposalService.getBranchUserIds(scope.userId);
-      const allowed = new Set([Number(scope.userId), ...branchIds.map(Number)]);
-      if (managerIds.some((mid) => allowed.has(mid))) return true;
-    }
-  }
-  if (scope.roleKey === 'GDTTKD' && scope.region) {
+  if (scope.roleKey === 'GDTTKD') {
     const region = proposalRegion(proposal.custom_data);
-    return !!region && region === scope.region;
+    return !!scope.region && !!region && region === scope.region;
   }
-  return false;
+  return require('./proposalAccessService').canActAsProposalOwner(
+    { id: scope.userId, role: scope.role }, proposal
+  );
 };
 
 const mapReportRow = (row) => {
@@ -197,6 +180,11 @@ exports.listProposals = async ({
 
   const scoped = await scopeClause(scope, params);
   if (scoped) where.push(scoped.replace(/^ AND /, ''));
+  if (safeTab === 'pending') {
+    const taskScope = await require('./proposalAccessService').buildReportTaskScopeSql(user);
+    where.push(taskScope.sql);
+    params.push(...taskScope.params);
+  }
 
   if (search) {
     const like = `%${String(search).trim()}%`;
@@ -396,8 +384,8 @@ const assertCanUpload = async (scope, proposal) => {
 };
 
 const assertCanReview = (scope) => {
-  if (scope.isAdmin || scope.isBackOffice) return;
-  throw err('Chỉ Back Office hoặc Admin được duyệt BCĐX', 403);
+  if (scope.role === 'SUPER_ADMIN' || scope.isBackOffice) return;
+  throw err('Chỉ Back Office hoặc SUPER_ADMIN được duyệt BCĐX', 403);
 };
 
 const normalizeReportFiles = async (value, existingIds = []) => {
@@ -521,7 +509,7 @@ const normalizeExpectedOnDate = (value) => {
   return dateValue;
 };
 
-const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, acceptConversionFailure = false, ip } = {}) => {
+const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -561,12 +549,6 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, acc
     : normalizedExpectedOnDate;
   const documentService = require('./proposalReportDocumentService');
   const documents = await documentService.prepareDocuments({ proposalId: proposal.id, files: reportFiles, user, ip });
-  if (documents.some(document => ['PENDING', 'PROCESSING'].includes(document.conversion_status))) {
-    throw err('Tài liệu đang chuyển PDF. Vui lòng đợi rồi nộp lại.', 409);
-  }
-  if (documents.some(document => document.conversion_status === 'FAILED') && acceptConversionFailure !== true) {
-    throw Object.assign(err('Có tài liệu chuyển PDF thất bại. Thử lại hoặc xác nhận tiếp tục với Word.', 409), { documents });
-  }
   const canonicalFiles = documents.map(document => document.signing_file);
   if (canonicalFiles.some(file => !file)) throw err('Thiếu tài liệu dùng để duyệt BCĐX', 409);
   const connection = await pool.getConnection();

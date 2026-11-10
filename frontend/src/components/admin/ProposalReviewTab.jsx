@@ -140,7 +140,7 @@ const ScoreCell = ({ score, note }) => {
   );
 };
 
-const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false, isAdmin = false }) => {
+const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false }) => {
   const { token } = useAuth();
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const { getSelectOptions } = useFieldOptions("station_proposals", [
@@ -149,8 +149,8 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false, isAdmin = false
   ]);
   const modelOptions = getSelectOptions("mo_hinh_dau_tu");
 
-  const canActAsGdttkd = roleKey === "GDTTKD" || isSuperAdmin || isAdmin;
-  const canActAsTgd = roleKey === "TGD" || isSuperAdmin || isAdmin;
+  const canActAsGdttkd = roleKey === "GDTTKD" || isSuperAdmin;
+  const canActAsTgd = roleKey === "TGD" || isSuperAdmin;
   const isCompleted = tab === "completed";
 
   const [items, setItems] = useState([]);
@@ -316,11 +316,11 @@ const ProposalReviewTab = ({ tab, roleKey, isSuperAdmin = false, isAdmin = false
     if (isCompleted) return null;
     const level = Number(row.review_level);
     const isGdttkdReview = canActAsGdttkd
-      && row.status === "GDTTKD_EVALUATING" && level === 1;
+      && row.permissions?.canRequestRegrade && row.status === "GDTTKD_EVALUATING" && level === 1;
     const isGdttkdResubmissionReview = canActAsGdttkd
-      && row.status === "RE_GDTTKD_EVALUATING" && level === 2;
+      && row.permissions?.canSubmitToTgd && row.status === "RE_GDTTKD_EVALUATING" && level === 2;
     const isTgdReview = canActAsTgd
-      && row.status === "TGD_REVIEW" && level === 3;
+      && row.permissions?.canApproveTgd && row.status === "TGD_REVIEW" && level === 3;
 
     if (!isGdttkdReview && !isGdttkdResubmissionReview && !isTgdReview) return null;
     return (

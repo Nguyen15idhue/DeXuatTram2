@@ -216,7 +216,7 @@ function App() {
             <Route
               path="/admin/proposals/yeu-cau-cham-diem-lai"
               element={
-                <RoleRoute allowed={ADMIN_AND_SALES}>
+                <RoleRoute allowed={ADMIN_AND_SALES} accessCheck={canSeeReviewRequestsPage}>
                   <AdminProposalsReviewPage />
                 </RoleRoute>
               }

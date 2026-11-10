@@ -10,6 +10,7 @@ import Pagination from '../Pagination';
 import Toast from '../Toast';
 import FilterBar from '../ui/FilterBar';
 import ProposalSignedFileModal from './ProposalSignedFileModal';
+import ReviewActionDialog from './ReviewActionDialog';
 import { ProposalCodeLink, ProposalPersonLink } from './ProposalLinkCells';
 import {
   PROPOSAL_CONTEXT_COLUMNS,
@@ -91,6 +92,9 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
   const [toastType, setToastType] = useState('success');
 
   const [signedModal, setSignedModal] = useState({ open: false, record: null });
+  const [completionRecord, setCompletionRecord] = useState(null);
+  const [completing, setCompleting] = useState(false);
+  const [completionError, setCompletionError] = useState('');
   const [meta, setMeta] = useState({ isAdmin: false, isBackOffice: false, isTgd: false, isManager: false });
 
   const columns = useMemo(() => signColumns(tab), [tab]);
@@ -111,15 +115,16 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       const res = await proposalSignatureService.getAll(params.toString(), token);
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: targetSize, total: 0, totalPages: 0 });
-      if (onMeta && res?.meta) {
+      if (res?.meta) {
         const nextMeta = {
           isAdmin: !!res.meta.isAdmin,
+          isSuperAdmin: !!res.meta.isSuperAdmin,
           isBackOffice: !!res.meta.isBackOffice,
           isTgd: !!res.meta.isTgd,
           isManager: !!res.meta.isManager
         };
         setMeta(nextMeta);
-        onMeta(nextMeta);
+        onMeta?.(nextMeta);
       }
     } catch (err) {
       setError(err?.message || 'Không tải được danh sách đề xuất');
@@ -160,6 +165,22 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     loadItems(page, pageSize);
   };
 
+  const handleCompleteSigning = async (reason) => {
+    setCompleting(true);
+    setCompletionError('');
+    try {
+      await proposalSignatureService.completeSigning(completionRecord.id, { reason }, token);
+      setCompletionRecord(null);
+      setToastType('success');
+      setToastMessage('Đã hoàn tất ký; chờ Back Office tải file đã ký');
+      await loadItems(page, pageSize);
+    } catch (error) {
+      setCompletionError(error.message || 'Không thể xác nhận hoàn tất ký');
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   const cellRenderers = {
     ma_de_xuat: (row, value) => (
       <ProposalCodeLink
@@ -183,13 +204,21 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
 
   const renderActions = (row) => {
     const canSignRow = row.can_sign && row.status === 'SIGNATURE_PENDING';
-    const canUploadSigned = meta.isAdmin || meta.isBackOffice;
+    const canUploadSigned = meta.isSuperAdmin || meta.isBackOffice;
     const canExportCompletedSigning = row.status === 'SIGNATURE_PENDING'
       && row.sign_status === SIGN_STATUS.DONE;
 
     if (tab === 'completed') return null;
 
     const buttons = [];
+    if (meta.isSuperAdmin && row.status === 'SIGNATURE_PENDING' && row.sign_status !== SIGN_STATUS.DONE && row.sign_status !== SIGN_STATUS.CEO_SIGNED) {
+      buttons.push(
+        <button key="complete-signing" type="button" className="btn btn-xs btn-warning"
+          onClick={() => { setCompletionError(''); setCompletionRecord(row); }}>
+          Đã hoàn tất ký
+        </button>
+      );
+    }
 
     if (
       tab === 'all'
@@ -362,6 +391,16 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
         record={signedModal.record}
         onClose={() => setSignedModal({ open: false, record: null })}
         onSaved={handleSignedFileUploaded}
+      />
+      <ReviewActionDialog
+        isOpen={!!completionRecord}
+        title="Xác nhận đã hoàn tất ký"
+        description="Xác nhận thay toàn bộ người ký, kể cả chưa có cấu hình ký. Không chèn ảnh chữ ký. Đề xuất vẫn Đang trình ký; Back Office phải tải file đã ký để kết thúc."
+        confirmText="Đã hoàn tất ký"
+        saving={completing}
+        error={completionError}
+        onClose={() => { if (!completing) setCompletionRecord(null); }}
+        onConfirm={handleCompleteSigning}
       />
 
       <Toast message={toastMessage} type={toastType} onClose={() => setToastMessage('')} />

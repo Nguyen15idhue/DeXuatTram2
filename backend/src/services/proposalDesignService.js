@@ -40,12 +40,12 @@ const getUserProfile = async (userId) => {
 const resolveScope = async (user) => {
   const profile = await getUserProfile(user && user.id);
   const isAdmin = !!user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role);
-  const roleKey = isAdmin ? LAYOUT_ROLE : resolveDesignRole(profile.department);
+  const roleKey = user?.role === 'SUPER_ADMIN' ? LAYOUT_ROLE
+    : (['ADMIN', 'SALES'].includes(user?.role) ? resolveDesignRole(profile.department) : null);
   return { isAdmin, roleKey, department: profile.department, customData: profile.customData };
 };
 
 const assertCanManage = (scope) => {
-  if (scope.isAdmin) return;
   if (scope.roleKey !== LAYOUT_ROLE) {
     throw err('Bạn không thuộc Phòng Công nghệ và Quy hoạch', 403);
   }
@@ -98,6 +98,7 @@ exports.listProposals = async ({
   const statuses = TAB_STATUSES[safeTab];
   const where = [];
   const params = [];
+  if (safeTab === 'pending' && scope.roleKey !== LAYOUT_ROLE) where.push('1 = 0');
 
   const nonCancelled = statuses.filter((status) => status !== 'CANCELLED');
   if (nonCancelled.length > 0) {
@@ -197,18 +198,21 @@ exports.listProposals = async ({
   );
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  const proposals = rows.map((row) => dynamicUtils.mergeData(row, fieldDefs)).map(mapLayoutRow);
+  const proposals = rows.map((row) => ({
+    ...mapLayoutRow(dynamicUtils.mergeData(row, fieldDefs)),
+    can_manage: scope.roleKey === LAYOUT_ROLE && MANAGEABLE_STATUSES.includes(row.status)
+  }));
 
   return {
     proposals,
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) },
-    meta: { canManage: true, isAdmin: !!scope.isAdmin, department: scope.department }
+    meta: { canManage: scope.roleKey === LAYOUT_ROLE, isAdmin: !!scope.isAdmin, department: scope.department }
   };
 };
 
 exports.getFilterOptions = async ({ user } = {}) => {
   const scope = await resolveScope(user);
-  assertCanManage(scope);
+  if (!scope.isAdmin) assertCanManage(scope);
   const statuses = TAB_STATUSES.all;
   const statusClause = `(p.status IN (${statuses.map(() => '?').join(',')})
     AND (p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL))`;
@@ -260,7 +264,7 @@ exports.getFilterOptions = async ({ user } = {}) => {
 
 exports.getProposalDetail = async ({ user, id } = {}) => {
   const scope = await resolveScope(user);
-  assertCanManage(scope);
+  if (!scope.isAdmin) assertCanManage(scope);
   const proposalId = Number(id);
   if (!Number.isInteger(proposalId) || proposalId <= 0) {
     throw err('Đề xuất không hợp lệ', 400);
@@ -289,7 +293,10 @@ exports.getProposalDetail = async ({ user, id } = {}) => {
   if (rows.length === 0) throw err('Không tìm thấy đề xuất trong phạm vi đánh giá layout', 404);
 
   const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  const proposal = mapLayoutRow(dynamicUtils.mergeData(rows[0], fieldDefinitions));
+  const proposal = {
+    ...mapLayoutRow(dynamicUtils.mergeData(rows[0], fieldDefinitions)),
+    can_manage: scope.roleKey === LAYOUT_ROLE && MANAGEABLE_STATUSES.includes(rows[0].status)
+  };
   const progress = await require('./proposalProgressService').getProgress(proposalId);
   return { proposal, fieldDefinitions, progress };
 };

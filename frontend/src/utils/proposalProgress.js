@@ -73,6 +73,7 @@ const ACTION_STEP = {
   report_tgd_rejected: 5,
   signature_configured: 5,
   signature_signed: 6,
+  signature_manually_completed: 6,
   signed_file_uploaded: 6
 };
 
@@ -108,6 +109,7 @@ export const PROPOSAL_ACTION_LABELS = {
   report_tgd_rejected: 'Tổng Giám đốc từ chối duyệt BCĐX',
   signature_configured: 'Cấu hình trình ký',
   signature_signed: 'Ký BCĐX',
+  signature_manually_completed: 'SUPER_ADMIN xác nhận hoàn tất ký',
   signed_file_uploaded: 'Tải lên BCĐX đã ký',
   paused: 'Tạm dừng đề xuất',
   resumed: 'Tiếp tục đề xuất',

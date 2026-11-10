@@ -823,6 +823,13 @@ export const chargingStationCareService = {
 };
 
 export const proposalSignatureService = {
+  completeSigning(id, data, token) {
+    return runProposalTaskMutation(async () => {
+      const response = await api.postWithAuth(`/admin/proposal-signatures/${id}/complete-signing`, data, token);
+      if (!response?.success) throw new Error(response?.message || 'Không thể xác nhận hoàn tất ký');
+      return response;
+    });
+  },
   getAll(queryString, token) {
     const qs = queryString ? (queryString.startsWith('?') ? queryString : `?${queryString}`) : '';
     return api.getWithAuth(`/admin/proposal-signatures${qs}`, token);

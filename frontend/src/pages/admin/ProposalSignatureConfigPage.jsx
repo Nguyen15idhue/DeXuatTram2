@@ -419,7 +419,7 @@ const ProposalSignatureConfigPage = () => {
         <h2 className="font-semibold">Tài liệu và chuyển đổi PDF</h2>
         <p className="text-sm">Cấu hình người ký riêng cho từng tài liệu; thay đổi được giữ khi chuyển file. Một người có thể ký nhiều tài liệu.</p>
         <ProposalDocumentConversionList documents={documents} onRetry={retryConversion} busy={saving} />
-        {documents.find((document) => String(document.id) === String(documentId))?.conversion_status === 'FAILED' && <p className="text-warning text-sm">Đang dùng bản Word gốc; bố cục có thể thay đổi. Định dạng .doc không hỗ trợ ký.</p>}
+        {documents.find((document) => String(document.id) === String(documentId))?.conversion_status === 'FAILED' && <p className="text-warning text-sm">Chuyển PDF thất bại. Quay lại bước Duyệt BCĐX và chọn Chuyển sang PDF trước khi cấu hình ký.</p>}
       </section>}
 
       <fieldset disabled={saving}>

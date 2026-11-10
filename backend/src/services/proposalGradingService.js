@@ -253,6 +253,7 @@ exports.listProposals = async ({
   const params = [];
 
   const withoutCancelled = [...new Set(statuses.filter((status) => status !== 'CANCELLED'))];
+  if (safeTab === 'pending' && ![QH_ROLE, PL_ROLE, BOTH_ROLE].includes(scope.gradeRole)) where.push('1 = 0');
   if (withoutCancelled.length > 0) {
     const placeholders = withoutCancelled.map(() => '?').join(',');
     let clause = `p.status IN (${placeholders})`;
@@ -264,7 +265,8 @@ exports.listProposals = async ({
     where.push(clause);
   }
 
-  const dept = department || scope.gradeRole || '';
+  const dept = safeTab === 'pending' && scope.role !== 'SUPER_ADMIN'
+    ? scope.gradeRole : (department || scope.gradeRole || '');
   const qhRegradeExists = `EXISTS (
     SELECT 1 FROM proposal_requests rq
      WHERE rq.proposal_id = p.id AND rq.request_type = 'RE_GRADE' AND rq.status = 'OPEN'
@@ -283,6 +285,7 @@ exports.listProposals = async ({
   const plDone = `(p.phap_ly_score IS NOT NULL AND NOT ${plRegradeExists})`;
 
   if (safeTab === 'pending') {
+    where.push("p.status <> 'RE_GRADING'");
     if (dept === QH_ROLE) {
       where.push(`(((p.status IN (?, ?, ?) AND p.quy_hoach_score IS NULL) OR (p.status = ? AND ${qhRegradeExists})) AND NOT ${supplementExists})`);
       params.push(GRADING_STATUS, 'GDTTKD_EVALUATING', REGRADING_STATUS, REGRADING_STATUS);
@@ -588,6 +591,9 @@ const regionDepartment = (customData) => {
 };
 
 exports.updateGrading = async ({ id, userId, userRole, gradeRole, payload = {} } = {}) => {
+  if (!['SUPER_ADMIN', 'ADMIN', 'SALES'].includes(userRole)) {
+    throw Object.assign(new Error('Chỉ nhân sự phòng Quy hoạch hoặc Pháp lý được chấm điểm'), { statusCode: 403 });
+  }
   const proposalId = Number(id);
   if (!Number.isInteger(proposalId) || proposalId <= 0) {
     const error = new Error('Đề xuất không hợp lệ');

@@ -1,13 +1,27 @@
-import { useState, useRef } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { api } from '../../services/api';
+import { useState, useRef } from "react";
+import { useAuth } from "../../contexts/AuthContext";
+import { api } from "../../services/api";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
-const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, accept, disabled, fileConfig = {}, uploadUrl = '/files/upload', invalid = false, validationError = '', validateFile = null }) => {
+const FileUpload = ({
+  value,
+  onChange,
+  entityId,
+  entityType,
+  multiple = false,
+  accept,
+  disabled,
+  fileConfig = {},
+  uploadUrl = "/files/upload",
+  invalid = false,
+  validationError = "",
+  validateFile = null,
+  onUploadingChange,
+}) => {
   const { token } = useAuth();
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
 
@@ -15,24 +29,27 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
 
   const uploadFile = async (file) => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('originalName', file.name);
-    if (entityId) formData.append('entityId', entityId);
-    if (entityType) formData.append('entityType', entityType);
+    formData.append("file", file);
+    formData.append("originalName", file.name);
+    if (entityId) formData.append("entityId", entityId);
+    if (entityType) formData.append("entityType", entityType);
     let res;
     if (token) {
       res = await api.uploadWithAuth(uploadUrl, formData, token);
     } else {
-      const response = await fetch(`${API_URL}${uploadUrl}`, { method: 'POST', body: formData });
+      const response = await fetch(`${API_URL}${uploadUrl}`, {
+        method: "POST",
+        body: formData,
+      });
       res = await response.json();
     }
     if (res.success) return Array.isArray(res.data) ? res.data[0] : res.data;
-    throw new Error(res.message || 'Upload failed');
+    throw new Error(res.message || "Upload failed");
   };
 
   const handleFiles = async (fileList) => {
-    setError('');
-    if (typeof validateFile === 'function') {
+    setError("");
+    if (typeof validateFile === "function") {
       const rejected = fileList.find((file) => !validateFile(file));
       if (rejected) {
         setError(`File "${rejected.name}" không đúng định dạng được chấp nhận`);
@@ -47,6 +64,7 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
       }
     }
     setUploading(true);
+    onUploadingChange?.(true);
     try {
       const uploaded = [];
       for (const f of fileList) {
@@ -56,9 +74,10 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
       const newValue = multiple ? [...files, ...uploaded] : uploaded[0];
       onChange(newValue);
     } catch (err) {
-      setError(err.message || 'Lỗi upload file');
+      setError(err.message || "Lỗi upload file");
     } finally {
       setUploading(false);
+      onUploadingChange?.(false);
     }
   };
 
@@ -80,22 +99,27 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
   const getFileUrl = (file) => {
     if (file.url) return file.url;
     if (file.id) {
-      const t = token || localStorage.getItem('token') || '';
-      return t ? `${API_URL}/files/${file.id}/image?token=${encodeURIComponent(t)}` : `${API_URL}/files/${file.id}/image`;
+      const t = token || localStorage.getItem("token") || "";
+      return t
+        ? `${API_URL}/files/${file.id}/image?token=${encodeURIComponent(t)}`
+        : `${API_URL}/files/${file.id}/image`;
     }
     return null;
   };
 
   const isImage = (file) => {
-    const mime = file.mime_type || file.type || '';
-    return mime.startsWith('image/');
+    const mime = file.mime_type || file.type || "";
+    return mime.startsWith("image/");
   };
 
   return (
-    <div className={`file-upload${invalid ? ' has-error' : ''}`}>
+    <div className={`file-upload${invalid ? " has-error" : ""}`}>
       <div
-        className={`file-upload-dropzone ${dragOver ? 'drag-over' : ''}${invalid ? ' is-invalid' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        className={`file-upload-dropzone ${dragOver ? "drag-over" : ""}${invalid ? " is-invalid" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
@@ -117,19 +141,34 @@ const FileUpload = ({ value, onChange, entityId, entityType, multiple = false, a
       </div>
 
       {error && <div className="file-upload-error">{error}</div>}
-      {validationError && <div className="file-upload-error">{validationError}</div>}
+      {validationError && (
+        <div className="file-upload-error">{validationError}</div>
+      )}
 
       {files.length > 0 && (
         <div className="file-upload-list">
           {files.map((file, idx) => (
             <div key={idx} className="file-upload-item">
               {isImage(file) && getFileUrl(file) ? (
-                <img src={getFileUrl(file)} alt={file.original_name} className="file-preview-img" />
+                <img
+                  src={getFileUrl(file)}
+                  alt={file.original_name || file.name || "preview"}
+                  className="file-preview-img"
+                />
               ) : (
                 <span className="file-icon">📄</span>
               )}
-              <span className="file-name">{file.original_name || file.name}</span>
-              <button type="button" className="btn btn-sm btn-delete" onClick={() => handleRemove(idx)} disabled={disabled}>✕</button>
+              <span className="file-name">
+                {file.original_name || file.name}
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm btn-delete"
+                onClick={() => handleRemove(idx)}
+                disabled={disabled}
+              >
+                ✕
+              </button>
             </div>
           ))}
         </div>

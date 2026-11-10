@@ -102,7 +102,9 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     if (modeProp) setMode(allowEdit ? modeProp : 'view');
   }, [modeProp, allowEdit]);
 
-  const recordEditable = allowEdit && (!canEditRecord || (!!record && canEditRecord(record)));
+  const recordEditable = allowEdit
+    && (entity !== 'station_proposals' || updateService || record?.permissions?.canEdit === true)
+    && (!canEditRecord || (!!record && canEditRecord(record)));
 
   useEffect(() => {
     if (record && !recordEditable) setMode('view');
@@ -274,13 +276,14 @@ const RecordDetailPopup = ({ entity, recordId, viewId, mode: modeProp, record: r
     && record && record.id
     && (record.supplement_deadline_at || record.status === 'PENDING')
     && confirmStatuses.includes(record.status)
-    && allowEdit;
+    && allowEdit
+    && (updateService || record.permissions?.canManageOwner === true);
   const infoCompleted = !!(record && record.info_completed_at);
   // Gia hạn chỉ hiện khi record còn deadline ĐANG bật theo config (extendDeadline BE
   // cũng chỉ chấp nhận status có countdown) -> tránh bấm ra lỗi 400.
   const flagNow = record && countdownFlags ? countdownFlags[record.status] : null;
   const futureMs = (v) => v && !Number.isNaN(new Date(v).getTime()) && new Date(v).getTime() > Date.now();
-  const canExtend = !!flagNow
+  const canExtend = !!flagNow && (updateService || record.permissions?.canManageOwner === true)
     && ((flagNow.supplement && futureMs(record.supplement_deadline_at))
       || (flagNow.transition && futureMs(record.transition_deadline_at)));
 

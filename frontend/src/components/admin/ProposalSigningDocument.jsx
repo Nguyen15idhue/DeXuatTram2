@@ -48,14 +48,16 @@ const SignatureOverlay = ({
           paddingRight: `${signerTextLayout.rightPaddingPx}px`
         }}
       >
-        {signer.status === 'SIGNED' ? (
+        {signer.status === 'SIGNED' && signer.signature_id ? (
           <img
             src={`${API_URL}/admin/proposal-signatures/${proposalId}/signature-image/${signer.id}?token=${encodeURIComponent(token || '')}`}
             alt={`Chữ ký ${signer.full_name}`}
             className="max-h-full max-w-[88%] object-contain"
           />
         ) : (
-          <div className="w-full text-center text-[10px] text-base-content/50">Chờ chữ ký</div>
+          <div className="w-full text-center text-[10px] text-base-content/50">
+            {signer.status === 'SIGNED' ? 'SUPER_ADMIN đã xác nhận hoàn tất ký' : 'Chờ chữ ký'}
+          </div>
         )}
       </div>
       <div
@@ -65,10 +67,12 @@ const SignatureOverlay = ({
           padding: `0 ${signerTextLayout.rightPaddingPx}px 0 ${signerTextLayout.leftPaddingPx}px`
         }}
       >
-        <SignerDetailsText
+        {signer.status === 'SIGNED' && !signer.signature_id ? (
+          <div className="text-[10px] text-base-content/70">{signer.full_name} · Xác nhận thay, không chèn chữ ký</div>
+        ) : <SignerDetailsText
           signer={signer}
           timeText={signer.status === 'SIGNED' ? formatSignedTime(signer.signed_at) : 'Chờ ký'}
-        />
+        />}
       </div>
       {canSign && (
         <button
