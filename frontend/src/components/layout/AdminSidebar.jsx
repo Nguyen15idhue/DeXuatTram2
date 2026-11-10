@@ -363,7 +363,7 @@ const chargingStationTaskTitleByKey = {
 };
 
 const STORAGE_KEY = "admin-sidebar-groups-v2";
-const DEFAULT_OPEN_GROUPS = ["overview", "operations"];
+const DEFAULT_OPEN_GROUPS = ["operations", "customers"];
 
 const loadCollapsed = () => {
   try {

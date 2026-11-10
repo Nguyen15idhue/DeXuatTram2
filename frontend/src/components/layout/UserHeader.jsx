@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Map, ClipboardList, User, Settings, Menu, LogOut, BookOpen } from 'lucide-react';
 import NotificationBell from './NotificationBell';
+import { getAdminPanelRedirect } from '../../utils/adminPanelRedirect';
 
 const navItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
@@ -11,7 +12,7 @@ const navItems = [
 ];
 
 const UserHeader = ({ onMenuToggle }) => {
-  const { canAccessPanel, logout } = useAuth();
+  const { user, canAccessPanel, logout } = useAuth();
   const location = useLocation();
 
   const isActive = (path) => {
@@ -48,7 +49,7 @@ const UserHeader = ({ onMenuToggle }) => {
           <>
             <div className="divider divider-horizontal mx-1 h-6"></div>
             <Link
-              to="/admin"
+              to={getAdminPanelRedirect(user)}
               className={`btn btn-ghost btn-sm gap-2 ${
                 location.pathname === '/admin' || location.pathname.startsWith('/admin/') ? 'btn-active text-primary' : 'text-base-content/70'
               }`}
