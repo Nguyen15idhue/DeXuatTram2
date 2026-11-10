@@ -1,4 +1,5 @@
 const proposalReportService = require('../services/proposalReportService');
+const proposalReportGenerationService = require('../services/proposalReportGenerationService');
 
 const sendError = (res, error) => {
   console.error('Proposal report error:', error);
@@ -75,6 +76,24 @@ exports.upload = async (req, res) => {
       success: true,
       data: result,
       message: 'Đã tải lên tờ trình BCĐX và chuyển sang duyệt BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.generate = async (req, res) => {
+  try {
+    const result = await proposalReportGenerationService.generate({
+      proposalId: req.params.id,
+      templateId: req.body ? req.body.template_id : null,
+      user: req.user,
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã tạo tờ trình BCĐX từ mẫu'
     });
   } catch (error) {
     sendError(res, error);

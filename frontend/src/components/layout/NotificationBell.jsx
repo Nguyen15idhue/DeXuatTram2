@@ -6,6 +6,7 @@ import { notificationService } from '../../services/api';
 import { Bell } from 'lucide-react';
 
 const TYPE_COLORS = {
+  LEAD_FIRST_CONTACT_WARNING: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
   REJECTED: { bg: '#fee2e2', border: '#ef4444', text: '#b91c1c' },
   APPROVED: { bg: '#dcfce7', border: '#22c55e', text: '#166534' },
   PENDING: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
@@ -164,6 +165,8 @@ const NotificationBell = ({ mode = 'user' }) => {
     setOpen(false);
     if (n.entity_type === 'station_proposals' && n.entity_id) {
       navigate(mode === 'admin' ? `/admin/proposals/chi-tiet/${n.entity_id}` : `/my-proposals/view=${n.entity_id}`);
+    } else if (n.entity_type === 'leads' && n.entity_id) {
+      navigate(`/admin/leads/view=${n.entity_id}`);
     } else if (n.entity_type === 'charging_stations' && n.entity_id) {
       navigate(`/admin/on-tram/giao-tru`);
     }

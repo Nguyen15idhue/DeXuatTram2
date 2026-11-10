@@ -2,15 +2,9 @@ import { useState, useEffect } from 'react';
 import { leadService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { X, Users, Split } from 'lucide-react';
+import { canAssignLead, isLeadAreaDirector } from '../../utils/leadAccess';
 
 const GDKV_GROUP = 'Giám đốc Khu vực';
-const GDTT_GROUP = 'Giám đốc Trung tâm Kinh doanh';
-const ASSIGNABLE_GROUPS = [GDKV_GROUP, GDTT_GROUP];
-
-const isAssignableClassification = (value) => {
-  const c = String(value || '').trim();
-  return ['TIEM_NANG', 'Tiềm năng', 'QUAN_TAM', 'Quan tâm'].includes(c);
-};
 
 const normalizeUserId = (v) => {
   if (v === undefined || v === null || v === '') return null;
@@ -43,9 +37,8 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [extraOption, setExtraOption] = useState(null);
-  // ADMIN/SUPER thấy cả GĐTTKD + GĐKV (pool=sales); SALES chỉ thấy GĐKV cấp dưới.
-  const isAdminLevel = (user && ['SUPER_ADMIN', 'ADMIN'].includes(user.role));
-  const optionsTitle = isAdminLevel ? 'GĐTTKD/GĐKV phụ trách' : 'Giám đốc Khu vực phụ trách';
+  const optionsTitle = 'Giám đốc Khu vực phụ trách';
+  const canAssign = canAssignLead(user) && leads.length > 0 && leads.every(l => canAssignLead(user, l));
 
   useEffect(() => {
     if (!open || !token) return;
@@ -56,34 +49,32 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
     setAssignee(initial || '');
     setReason('');
     setExtraOption(null);
-    const load = isAdminLevel ? leadService.getSalesOptions(token) : leadService.getGdkvOptions(token);
+    const load = leadService.getGdkvOptions(token);
     load
       .then(res => {
         if (cancelled) return;
         if (res && res.success) {
           const all = res.data || [];
-          const primary = all.filter(o => ASSIGNABLE_GROUPS.includes(o.group));
-          const list = primary.length > 0 ? primary : all;
+          const list = all.filter(o => o.is_gdkv === true || o.group === GDKV_GROUP || isLeadAreaDirector(o));
           setOptions(list);
           // Người hiện tại không nằm trong danh sách (vd ngoài phạm vi chọn) → thêm option hiển thị tên đã giao.
           if (initial && !list.some(o => String(o.id) === String(initial))) {
-            setExtraOption({ id: initial, full_name: currentAssigneeLabelOf(leads) || `GĐTTKD/GĐKV #${initial}`, department: '' });
+            setExtraOption({ id: initial, full_name: currentAssigneeLabelOf(leads) || `Người phụ trách #${initial}`, department: '' });
           }
         } else {
-          setError((res && res.message) || 'Không tải được danh sách GĐTTKD/GĐKV');
+          setError((res && res.message) || 'Không tải được danh sách GĐKV');
         }
       })
-      .catch(() => { if (!cancelled) setError('Lỗi tải danh sách GĐTTKD/GĐKV'); })
+      .catch(() => { if (!cancelled) setError('Lỗi tải danh sách GĐKV'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, token, isAdminLevel, user && user.role]);
+  }, [open, token, leads]);
 
   if (!open) return null;
 
-  const nonPotential = (leads || []).filter(l => !isAssignableClassification(l.customer_classification));
-
   const handleConfirm = async () => {
-    if (!assignee) { setError('Vui lòng chọn GĐTTKD/GĐKV'); return; }
+    if (!canAssign || !options.some(o => String(o.id) === assignee)) return;
+    if (!assignee) { setError('Vui lòng chọn GĐKV'); return; }
     setSubmitting(true);
     setError('');
     try {
@@ -117,13 +108,6 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
 
         {error && <div className="alert alert-error text-sm mb-3">{error}</div>}
 
-        {nonPotential.length > 0 && (
-          <div className="alert alert-warning text-sm mb-3">
-            Chỉ Lead có Phân loại khách hàng là Tiềm năng hoặc Quan tâm mới được phân về phòng ban.
-            {` Có ${nonPotential.length} Lead chưa đủ điều kiện sẽ bị bỏ qua/báo lỗi.`}
-          </div>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <div className="text-sm font-semibold mb-2 flex items-center gap-1"><Users size={14} /> Danh sách Lead</div>
@@ -145,22 +129,20 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
               className="select select-bordered w-full"
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
-              disabled={loading}
+              disabled={loading || !canAssign}
             >
-              <option value="">{loading ? 'Đang tải...' : 'Chọn GĐTTKD/GĐKV'}</option>
+              <option value="">{loading ? 'Đang tải...' : 'Chọn GĐKV'}</option>
               {extraOption && (
-                <option value={extraOption.id}>{extraOption.full_name}{extraOption.department ? ` — ${extraOption.department}` : ''}</option>
+                <option value={extraOption.id} disabled>{extraOption.full_name} (đã giao, không thể chọn)</option>
               )}
               {options.map(o => (
                 <option key={o.id} value={o.id}>
-                  {o.full_name}{o.department ? ` — ${o.department}` : ''}{isAdminLevel && o.group ? ` (${
-                    o.group === GDTT_GROUP ? 'GĐTTKD' : o.group === GDKV_GROUP ? 'GĐKV' : o.group
-                  })` : ''}
+                  {o.full_name}{o.department ? ` — ${o.department}` : ''}
                 </option>
               ))}
             </select>
             <div className="text-xs text-base-content/60 mt-1">
-              {options.length} GĐTTKD/GĐKV khả dụng
+              {options.length} GĐKV khả dụng
             </div>
             <div className="form-control mt-3">
               <label className="label py-1"><span className="label-text text-xs">Lý do (tùy chọn)</span></label>
@@ -177,7 +159,7 @@ const LeadAssignDialog = ({ open, leads = [], onClose, onDone }) => {
 
         <div className="modal-action">
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={submitting}>Hủy</button>
-          <button type="button" className="btn btn-primary" onClick={handleConfirm} disabled={submitting || !assignee}>
+          <button type="button" className="btn btn-primary" onClick={handleConfirm} disabled={submitting || !canAssign || !options.some(o => String(o.id) === assignee)}>
             {submitting && <span className="loading loading-spinner loading-xs"></span>}
             {submitting ? 'Đang phân chia...' : 'Phân chia'}
           </button>

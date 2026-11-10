@@ -186,7 +186,7 @@ const processDeadlines = async (maxRetries = 5) => {
   const placeholders = enabledStatuses.map(() => '?').join(', ');
   const [rows] = await pool.query(
     `SELECT p.id, p.user_id, p.status, p.supplement_deadline_at, p.transition_deadline_at,
-            p.info_completed_at, p.custom_data
+            p.info_completed_at, p.custom_data, p.countdown_calendar_id
        FROM station_proposals p
       WHERE p.status IN (${placeholders})
         AND (p.supplement_deadline_at IS NOT NULL OR p.transition_deadline_at IS NOT NULL)
@@ -203,7 +203,7 @@ const processDeadlines = async (maxRetries = 5) => {
   );
   let acted = 0;
   const now = Date.now();
-  const warnMs = warnHours * 3600 * 1000;
+  const warnMinutes = warnHours * 60;
 
   const cancel = async (p, reason, kindLabel) => {
     try {
@@ -231,9 +231,12 @@ const processDeadlines = async (maxRetries = 5) => {
         if (!Number.isNaN(t)) {
           const iso = new Date(t).toISOString();
           const diff = t - now;
-          if (diff > 0 && diff <= warnMs) {
+          const remaining = diff > 0
+            ? await require('../services/businessDeadlineService').remainingMinutes(now, t, p.countdown_calendar_id)
+            : 0;
+          if (diff > 0 && remaining <= warnMinutes) {
             if (!(await deadlineNotified(p.id, 'deadline_expiring', iso))) {
-              const left = Math.ceil(diff / 3600000);
+              const left = Math.ceil(remaining / 60);
               await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
                 `Còn khoảng ${left} giờ để bổ sung thông tin · Người thực hiện: Hệ thống`);
               await proposalLifecycle.logActivity({
@@ -255,9 +258,12 @@ const processDeadlines = async (maxRetries = 5) => {
         if (!Number.isNaN(t)) {
           const iso = new Date(t).toISOString();
           const diff = t - now;
-          if (diff > 0 && diff <= warnMs) {
+          const remaining = diff > 0
+            ? await require('../services/businessDeadlineService').remainingMinutes(now, t, p.countdown_calendar_id)
+            : 0;
+          if (diff > 0 && remaining <= warnMinutes) {
             if (!(await deadlineNotified(p.id, 'transition_deadline_expiring', iso))) {
-              const left = Math.ceil(diff / 3600000);
+              const left = Math.ceil(remaining / 60);
               await notifyChain(p, 'SUPPLEMENT_EXPIRING', notificationService.statusTitle('SUPPLEMENT_EXPIRING'),
                 `Còn khoảng ${left} giờ để chuyển trạng thái tiếp theo · Người thực hiện: Hệ thống`);
               await proposalLifecycle.logActivity({

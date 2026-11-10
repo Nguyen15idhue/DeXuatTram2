@@ -129,17 +129,20 @@ const requireProposalInfoManager = (req, res, next) => {
 // Middleware: Quyen quan ly Lead/Report rieng (contract docs/8/mkt/04) — khong mo rong requireUserManager
 const LEAD_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MKT', 'SALES'];
 
-const requireLeadManager = (req, res, next) => {
-  if (!LEAD_ROLES.includes(req.user.role)) {
-    return res.status(403).json({
-      success: false,
-      message: 'Không có quyền truy cập'
-    });
+const requireLeadManager = async (req, res, next) => {
+  try {
+    const access = require('../services/leadAccessService');
+    const ctx = await access.getContext(req.user);
+    access.assertAccess(ctx);
+    req.leadAccessGranted = true;
+    next();
+  } catch (error) {
+    if (!error.statusCode) console.error('[LeadAccess]', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Lỗi server' });
   }
-  next();
 };
 
-const LEAD_WRITER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MKT'];
+const LEAD_WRITER_ROLES = ['SUPER_ADMIN'];
 
 const requireLeadWriter = (req, res, next) => {
   if (!LEAD_WRITER_ROLES.includes(req.user.role)) {

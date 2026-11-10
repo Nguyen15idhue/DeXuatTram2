@@ -312,6 +312,56 @@ exports.download = async (req, res) => {
   }
 };
 
+exports.preview = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const result = await fileService.getFilePath(id);
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy file' });
+    }
+    const allowed = await canAccessFile(result.file, req);
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    const mime = result.file.mime_type || 'application/octet-stream';
+
+    // PDF gốc → serve trực tiếp
+    if (mime === 'application/pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      return res.sendFile(result.filePath);
+    }
+
+    // Word → convert (cache) → serve PDF
+    const filePreviewCacheService = require('../services/filePreviewCacheService');
+    if (!filePreviewCacheService.isWord(mime)) {
+      return res.status(400).json({ success: false, message: 'File không hỗ trợ xem trước' });
+    }
+
+    const pdfFileId = await filePreviewCacheService.getPreviewPdfFileId(id);
+    if (!pdfFileId) {
+      return res.status(500).json({ success: false, message: 'Không thể chuyển đổi file sang PDF' });
+    }
+    const pdfResult = await fileService.getFilePath(pdfFileId);
+    if (!pdfResult) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy file PDF preview' });
+    }
+    const pdfAllowed = await canAccessFile(pdfResult.file, req);
+    if (!pdfAllowed) {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.sendFile(pdfResult.filePath);
+  } catch (error) {
+    console.error('Preview file error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Lỗi server' });
+  }
+};
+
 exports.delete = async (req, res) => {
   try {
     const file = await fileService.getFileById(req.params.id);

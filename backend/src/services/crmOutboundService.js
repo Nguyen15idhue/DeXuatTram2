@@ -58,7 +58,8 @@ const enqueue = async ({ eventId, eventType, leadId, crmLeadId, payload, conn = 
       [eventId, eventType, leadId || null, crmLeadId || null, JSON.stringify(finalPayload)]
     );
   } catch (e) {
-    // ignore duplicate
+    console.error(`[CrmOutbound] Could not enqueue event ${eventId}:`, e.message);
+    throw e;
   }
   return eventId;
 };

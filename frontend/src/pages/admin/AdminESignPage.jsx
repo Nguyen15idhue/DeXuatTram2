@@ -115,6 +115,10 @@ const AdminESignPage = () => {
   const [confirmDelete, setConfirmDelete] = useState({ open: false, sig: null });
 
   const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(user?.role);
+  const mySignature = useMemo(
+    () => signatures.find((signature) => Number(signature.user_id) === Number(user?.id)) || null,
+    [signatures, user?.id],
+  );
 
   const loadData = useCallback(async () => {
     if (!token) return;

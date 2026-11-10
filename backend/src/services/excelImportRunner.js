@@ -22,17 +22,6 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
   const checkDuplicate = params.checkDuplicate !== false && params.checkDuplicate !== 'false';
   const checkIntraFile = params.checkIntraFile !== false && params.checkIntraFile !== 'false';
 
-  let importSupplementMinutes = 4320;
-  let importTransitionMinutes = null;
-  if (entity === 'station_proposals') {
-    try {
-      const proposalLifecycle = require('./proposalLifecycle');
-      const configured = await proposalLifecycle.getDeadlineMinutes('PENDING');
-      importSupplementMinutes = Math.max(1, Number(configured) || 4320);
-      importTransitionMinutes = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
-    } catch { /* silent */ }
-  }
-
   const dynamicEngineService = require('./dynamicEngineService');
   const [allDefs] = await pool.query(
     'SELECT `key`, formula_config FROM field_definitions WHERE entity = ? AND status = \'active\'',
@@ -210,6 +199,7 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
       }
 
       if (entity === 'leads') {
+        if (user?.role !== 'SUPER_ADMIN') throw Object.assign(new Error('Chỉ Super Admin được nhập khách hàng'), { statusCode: 403 });
         const leadService = require('./leadService');
         const crypto = require('crypto');
         const fullName = String(fixedData.full_name || '').trim();
@@ -257,7 +247,7 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
             ]
           );
           const newLeadId = lres.insertId;
-          await conn.query('UPDATE leads SET lead_code = ? WHERE id = ?', [`LD-${String(newLeadId).padStart(6, '0')}`, newLeadId]);
+          await conn.query("UPDATE leads SET lead_code = ?, consultation_status = 'WAITING_ALLOCATION' WHERE id = ?", [`LD-${String(newLeadId).padStart(6, '0')}`, newLeadId]);
           const journeyActivityService = require('./journeyActivityService');
           await journeyActivityService.log({
             journey_id: journeyId, entity_type: 'lead', entity_id: newLeadId,
@@ -265,15 +255,10 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
             actor_id: user ? user.id : null, actor_role: user ? user.role : null,
             source: 'import', ip: ip || null
           }, conn);
+          const [[fresh]] = await conn.query('SELECT * FROM leads WHERE id = ?', [newLeadId]);
+          const routing = await require('./leadAssignmentService').tryAutoRoute(fresh, user, { conn, source: 'import' });
+          if (routing.warning) console.warn(`[LeadImport] #${newLeadId}: ${routing.warning}`);
           await conn.commit();
-          // Import cũng áp auto-routing như tạo tay (TIEM_NANG → phòng ban theo vùng).
-          // Best-effort: lỗi routing không làm fail dòng đã tạo.
-          try {
-            const fresh = await leadService.getLeadById(newLeadId);
-            if (fresh && user) {
-              await require('./leadAssignmentService').tryAutoRoute(fresh, user);
-            }
-          } catch { /* silent */ }
           createdIds.push(newLeadId);
           imported++;
           processed++;
@@ -303,9 +288,10 @@ exports.runImportRows = async ({ jobId, entity, rows, params, user, ip, onProgre
           fixedValues
         );
         if (entity === 'station_proposals') {
+          const deadlines = await require('./proposalLifecycle').getDeadlineDates('PENDING');
           await pool.query(
-            'UPDATE station_proposals SET supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = IF(? IS NULL, NULL, DATE_ADD(NOW(), INTERVAL ? MINUTE)) WHERE id = ?',
-            [importSupplementMinutes, importTransitionMinutes, importTransitionMinutes, result.insertId]
+            'UPDATE station_proposals SET supplement_deadline_at = ?, transition_deadline_at = ?, countdown_calendar_id = ? WHERE id = ?',
+            [deadlines.supplement, deadlines.transition, deadlines.calendarId, result.insertId]
           );
         }
 

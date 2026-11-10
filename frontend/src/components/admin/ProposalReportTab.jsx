@@ -32,7 +32,7 @@ import {
   formatCommittedPoles,
   uploadButtonLabel
 } from '../../utils/proposalReport';
-import { Pencil, RotateCcw, Search } from 'lucide-react';
+import { Pencil, RotateCcw, Search, FileText } from 'lucide-react';
 
 const EMPTY_FILTERS = {
   proposalStatus: '', model: '', province: '', region: '',
@@ -144,6 +144,11 @@ const ProposalReportTab = ({ tab }) => {
     setUploadModal({ open: true, record });
   };
 
+  const handleGenerate = () => {
+    setToastType('info');
+    setToastMessage('Chức năng đang triển khai');
+  };
+
   const handleUploaded = (result) => {
     setUploadModal({ open: false, record: null });
     setToastType('success');
@@ -205,6 +210,15 @@ const ProposalReportTab = ({ tab }) => {
           {uploadButtonLabel(row)}
         </button>
       )}
+      <button
+        type="button"
+        className="btn btn-xs btn-outline gap-1"
+        title="Tạo tờ trình BCĐX từ mẫu"
+        onClick={handleGenerate}
+      >
+        <FileText size={14} />
+        Tạo từ mẫu
+      </button>
     </div>
   );
 

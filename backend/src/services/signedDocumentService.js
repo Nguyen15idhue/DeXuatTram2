@@ -451,18 +451,34 @@ const stampDocx = async (source, signers, { includeImages = true } = {}) => {
         imageHeight: signature.height
       });
     }
-    const requestedPage = Math.max(1, Number(signer.page) || 1);
-    const pageProgress = maxPage > 1 ? (requestedPage - 1) / (maxPage - 1) : 0;
-    let paragraphIndex = Math.min(paragraphs.length - 1, Math.round(pageProgress * (paragraphs.length - 1)));
-    let renderedPage = 1;
-    for (let index = 0; index < paragraphs.length; index++) {
-      if (renderedPage >= requestedPage) {
-        paragraphIndex = index;
-        break;
+    let paragraphIndex;
+    const anchorText = signer.anchor_token ? (signer.anchor_token) : null;
+    const boxText = `Ký: ${signer.full_name || ''}`;
+    let anchorIdx = -1;
+    if (anchorText || signer.page === null || signer.page === undefined) {
+      for (let i = 0; i < paragraphs.length; i++) {
+        if (paragraphs[i][0].includes(boxText) || (anchorText && paragraphs[i][0].includes(anchorText))) {
+          anchorIdx = i;
+          break;
+        }
       }
-      const paragraph = paragraphs[index][0];
-      const explicitBreaks = (paragraph.match(/<w:lastRenderedPageBreak\b|<w:br\b[^>]*w:type="page"/g) || []).length;
-      renderedPage += explicitBreaks;
+    }
+    if (anchorIdx >= 0) {
+      paragraphIndex = anchorIdx;
+    } else {
+      const requestedPage = Math.max(1, Number(signer.page) || 1);
+      const pageProgress = maxPage > 1 ? (requestedPage - 1) / (maxPage - 1) : 0;
+      paragraphIndex = Math.min(paragraphs.length - 1, Math.round(pageProgress * (paragraphs.length - 1)));
+      let renderedPage = 1;
+      for (let index = 0; index < paragraphs.length; index++) {
+        if (renderedPage >= requestedPage) {
+          paragraphIndex = index;
+          break;
+        }
+        const paragraph = paragraphs[index][0];
+        const explicitBreaks = (paragraph.match(/<w:lastRenderedPageBreak\b|<w:br\b[^>]*w:type="page"/g) || []).length;
+        renderedPage += explicitBreaks;
+      }
     }
     const paragraph = paragraphs[paragraphIndex][0];
     const footerMarkup = textDrawing({

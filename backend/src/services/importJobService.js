@@ -63,6 +63,11 @@ exports.getById = async (id) => {
 exports.getByIdScoped = async (id, user) => {
   const job = await exports.getById(id);
   if (!job) return null;
+  if (job.entity === 'leads' && user?.role !== 'SUPER_ADMIN') {
+    const err = new Error('Chỉ Super Admin được xem lịch sử nhập khách hàng');
+    err.statusCode = 403;
+    throw err;
+  }
   if (user && ['SALES', 'MKT'].includes(user.role) && Number(job.created_by) !== Number(user.id)) {
     const err = new Error('Không có quyền xem job này');
     err.statusCode = 403;
@@ -185,6 +190,14 @@ exports.requeueStuck = async () => {
 exports.listScoped = async (filters = {}, page = 1, limit = 20, user) => {
   const where = [];
   const params = [];
+  if (user?.role !== 'SUPER_ADMIN') {
+    if (filters.entity === 'leads') {
+      const err = new Error('Chỉ Super Admin được xem lịch sử nhập khách hàng');
+      err.statusCode = 403;
+      throw err;
+    }
+    where.push("j.entity <> 'leads'");
+  }
   if (user && ['SALES', 'MKT'].includes(user.role)) {
     where.push('j.created_by = ?');
     params.push(user.id);

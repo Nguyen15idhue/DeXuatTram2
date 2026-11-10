@@ -1,6 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useState, useEffect } from "react";
+import { canAccessCustomers, canManageBusinessCalendar } from "../../utils/leadAccess";
+import useLeadTaskCounts from "../../hooks/useLeadTaskCounts";
 import {
   proposalApprovalService,
   proposalGradingService,
@@ -212,10 +214,19 @@ const mainItems = [
   },
   {
     path: "/admin/leads",
-    label: "Quản lý Leads",
+    label: "Quản lý khách hàng",
     group: "Khách hàng",
     icon: Target,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT"],
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT", "CTV", "NPP"],
+    access: canAccessCustomers,
+  },
+  {
+    path: "/admin/business-calendar",
+    label: "Lịch làm việc",
+    group: "Quản trị",
+    icon: History,
+    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT", "CTV", "NPP"],
+    access: canManageBusinessCalendar,
   },
   {
     path: "/admin/users",
@@ -387,6 +398,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const [mainCollapsed, setMainCollapsed] = useState({});
   const [proposalTaskCounts, setProposalTaskCounts] = useState(null);
   const [chargingStationTaskCounts, setChargingStationTaskCounts] = useState(null);
+  const { data: leadTaskCounts } = useLeadTaskCounts(token, canAccessCustomers(user));
   const gradingRole = resolveGradingRole(user?.department);
   const canSeeProposalMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
   const canSeeChargingStationMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
@@ -649,6 +661,8 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       ? proposalTaskCounts?.[taskKey]
       : chargingStationTaskKey
         ? chargingStationTaskCounts?.counts[chargingStationTaskKey]
+      : item.path === "/admin/leads"
+        ? leadTaskCounts?.total
       : item.path === "/admin/tai-chinh"
         ? chargingStationTaskCounts?.counts.finance
         : null;

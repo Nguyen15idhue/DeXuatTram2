@@ -793,7 +793,7 @@ const loadOnStationStatusRow = async (connection, stationId) => {
   const [rows] = await connection.query(
     `SELECT cs.id, cs.proposal_id, cs.ma_tram, cs.status, cs.sub_status,
             cs.manual_cancelled_at, cs.manual_cancelled_by, cs.manual_cancel_snapshot,
-            p.user_id, p.custom_data, p.status AS proposal_status, p.reject_reason,
+            p.user_id, p.custom_data, p.status AS proposal_status, p.reject_reason, p.countdown_calendar_id,
             p.reviewed_by, DATE_FORMAT(p.reviewed_at, '%Y-%m-%d %H:%i:%s') AS reviewed_at,
             DATE_FORMAT(p.supplement_deadline_at, '%Y-%m-%d %H:%i:%s') AS supplement_deadline_at,
             DATE_FORMAT(p.transition_deadline_at, '%Y-%m-%d %H:%i:%s') AS transition_deadline_at,
@@ -832,6 +832,7 @@ const cancelOnStation = async (id, user, ctx = {}) => {
       reviewed_at: current.reviewed_at,
       supplement_deadline_at: current.supplement_deadline_at,
       transition_deadline_at: current.transition_deadline_at,
+      countdown_calendar_id: current.countdown_calendar_id,
       info_completed_at: current.info_completed_at,
       paused_from_status: current.paused_from_status,
       paused_at: current.paused_at
@@ -972,14 +973,16 @@ const createChargingStationFromProposal = async (proposalId, { actorId = null, a
   const initialDeposit = requirements.requiresDeposit ? 'NOT_RECEIVED' : 'NOT_REQUIRED';
   const initialPayment = requirements.requiresPayment ? 'NOT' : 'NOT_REQUIRED';
   try {
+    const deadline = await require('./businessDeadlineService').createDeadline({ days: 15 });
     const [result] = await pool.query(
       `INSERT INTO charging_stations
         (ma_tram, proposal_id, status, sub_status, contract_status, infra_power_status, infra_site_status,
-         payment_status, deposit_status, contract_deadline_at, infra_deadline_at, finance_deadline_at)
+         payment_status, deposit_status, contract_deadline_at, infra_deadline_at, finance_deadline_at, countdown_calendar_id)
        VALUES (?, ?, ?, NULL, 'NOT', 'NOT', 'NOT', ?, ?,
-         DATE_ADD(NOW(), INTERVAL 15 DAY), DATE_ADD(NOW(), INTERVAL 15 DAY),
-         ${requirements.requiresDeposit || requirements.requiresPayment ? 'DATE_ADD(NOW(), INTERVAL 15 DAY)' : 'NULL'})`,
-      [maTram, id, STATUS.ONBOARDING, initialPayment, initialDeposit]
+         ?, ?, ?, ?)`,
+      [maTram, id, STATUS.ONBOARDING, initialPayment, initialDeposit,
+        deadline.date, deadline.date,
+        requirements.requiresDeposit || requirements.requiresPayment ? deadline.date : null, deadline.calendarId]
     );
     insertId = result.insertId;
   } catch (error) {
@@ -1467,14 +1470,24 @@ const extendOnboardingDeadline = async (id, { reason } = {}, user, ctx = {}) => 
     }
 
     const days = readiness.DEADLINE_EXTENSION_DAYS;
+    const businessDeadlines = require('./businessDeadlineService');
+    const contract = await businessDeadlines.extendDeadline(
+      current.contract_deadline_at, { days }, current.countdown_calendar_id, connection
+    );
+    const infra = await businessDeadlines.extendDeadline(
+      current.infra_deadline_at, { days }, current.countdown_calendar_id, connection
+    );
+    const finance = await businessDeadlines.extendDeadline(
+      current.finance_deadline_at, { days }, current.countdown_calendar_id, connection
+    );
     await connection.query(
       `UPDATE charging_stations
-          SET contract_deadline_at = DATE_ADD(contract_deadline_at, INTERVAL ? DAY),
-              infra_deadline_at = DATE_ADD(infra_deadline_at, INTERVAL ? DAY),
-              finance_deadline_at = CASE WHEN finance_deadline_at IS NULL THEN NULL ELSE DATE_ADD(finance_deadline_at, INTERVAL ? DAY) END,
+          SET contract_deadline_at = ?,
+              infra_deadline_at = ?,
+              finance_deadline_at = ?,
               deadline_extension_count = deadline_extension_count + 1
         WHERE id = ?`,
-      [days, days, days, stationId]
+      [contract, infra, finance, stationId]
     );
     await writeActivity(connection, {
       chargingStationId: stationId,

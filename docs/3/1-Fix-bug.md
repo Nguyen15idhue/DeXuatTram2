@@ -1,5 +1,46 @@
 # Fix Bug Log
 
+## Đồng bộ Sheet trạm ON: nguồn dữ liệu và khóa EMS
+
+- Chỉ đồng bộ đề xuất ACTIVE, giữ nguyên quyền Admin/Super Admin.
+- B: `charging_stations.cms_station_code`, dùng làm khóa đối soát. Trùng trên
+  Sheet/DB hoặc thiếu mã thì báo lỗi, không tự ghi đè.
+- E: tên tài khoản `station_proposals.custom_data.nguoi_phu_trach.id`.
+- F: role NPP → NPP; nếu không, mô hình TDT → TMT; còn lại phòng kinh doanh
+  miền Bắc/Trung/Nam của người phụ trách → MB/MT/MN.
+- M: bảng trụ đề xuất hiện tại theo mô hình, không phải snapshot lúc tạo.
+- N: bảng `chot_so_luong_tru` của BCĐX, ví dụ `LK_2 DC 120kW + NQ_1 AC 22kW`.
+- O: tổng số lượng trụ chốt, xuất kiểu số.
+- Ghi/cập nhật/xóa nội dung chỉ trong A–Q. Không chèn/xóa nguyên hàng, không
+  đọc/ghi cột R trở đi. Đọc Sheet thất bại phải báo lỗi, không coi như Sheet trống.
+- Thiếu người phụ trách, nguồn phòng ban hoặc bảng trụ chốt, số lượng không hợp lệ
+  được báo trong trạng thái FAILED và hiển thị cạnh nút đồng bộ.
+
+Trước lần chạy đầu trên Sheet cũ, quản trị viên cần đối soát và thay mã ON nội bộ
+ở B bằng mã EMS tương ứng; hệ thống không tự suy đoán hai mã là cùng một trạm.
+Sau đó dùng nút **Đồng bộ Sheet trạm ON** để cập nhật toàn bộ dữ liệu ACTIVE.
+Mã EMS là khóa: nếu thay đổi mã sau khi đồng bộ, phải đối soát mã B trên Sheet
+trước khi chạy lại để không giữ dòng thuộc mã cũ.
+
+Kiểm thử backend: `node --test tests/onStationSheetSync.test.js` trong `backend`.
+Kiểm thử giao diện: `node test-on-station-sheet.cjs` trong `frontend`; test mock
+API đồng bộ nên không gửi thông tin khách hàng lên Google Sheet thật.
+
+## E-sign: `mySignature is not defined`
+
+Trang `/admin/e-sign` gọi `renderMySignature()` nhưng chưa khai báo `mySignature`,
+gây crash khi xem chữ ký cá nhân. Đã bổ sung giá trị suy ra từ danh sách chữ ký
+theo `user_id` của tài khoản đăng nhập, không chọn nhầm chữ ký của người khác.
+
+Kiểm thử: `cd frontend` rồi `node test-e-sign.cjs` (cần Docker local đang chạy).
+Test tạo và dọn tài khoản tạm, kiểm tra SALES và ADMIN: chưa có chữ ký, tải ảnh,
+hiển thị ảnh, tải lại trang và xóa chữ ký.
+
+Lỗi 404 tại `/api/admin/signatures/:id/image` là vấn đề riêng: API trả 404 khi
+bản ghi hoặc tệp `signatures.file_path` không tồn tại. Nếu DB còn bản ghi nhưng
+tệp bị thiếu, cần khôi phục thư mục uploads đúng đường dẫn/mount hoặc tải lại ảnh
+chữ ký qua giao diện. Không xóa bản ghi thật hoặc tạo ảnh thay thế tự động.
+
 ## Bug #1: `setSuccess` undefined — AdminStationsPage.jsx:103
 
 **Mô tả:** Dòng `setSuccess('')` gọi biến chưa khai báo, gây crash khi submit form tạo/sửa trạm.

@@ -31,6 +31,7 @@ const emptyRow = () => ({
   so_luong: "",
   loai_tru: "",
   gia_chot: "",
+  ghi_chu: "",
 });
 
 const isAllowedReportFile = (file) => {
@@ -146,6 +147,9 @@ const getProposedPoleRows = (record) => {
           loai_tru: String(
             getTableCellValue(row?.loai_tru ?? row?.khoan_muc) || "",
           ),
+          gia_niem_yet: getTableCellValue(row?.gia_niem_yet),
+          gia_uu_dai: getTableCellValue(row?.gia_uu_dai),
+          ghi_chu: "",
         };
       })
       .filter((row) => Number(row.so_luong) > 0);
@@ -263,6 +267,9 @@ const ProposalReportUpdateModal = ({
             so_luong: row.so_luong ?? "",
             loai_tru: row.loai_tru || "",
             gia_chot: row.gia_chot ?? "",
+            ghi_chu: row.ghi_chu || "",
+            gia_niem_yet: row.gia_niem_yet ?? "",
+            gia_uu_dai: row.gia_uu_dai ?? "",
           }))
         : getProposedPoleRows(record).map((row) => ({ ...row, gia_chot: "" })),
     );
@@ -377,6 +384,9 @@ const ProposalReportUpdateModal = ({
           so_luong: Number(row.so_luong),
           loai_tru: row.loai_tru,
           gia_chot: Number(row.gia_chot),
+          ghi_chu: String(row.ghi_chu || "").trim(),
+          gia_niem_yet: row.gia_niem_yet ?? "",
+          gia_uu_dai: row.gia_uu_dai ?? "",
         })),
         ...(onUpload
           ? { ngay_du_kien_on: parseExpectedOnDate(expectedOnDate) }
@@ -490,6 +500,7 @@ const ProposalReportUpdateModal = ({
                       <th>Loại trụ *</th>
                       <th>Giá chốt hiện tại</th>
                       <th>Thành tiền</th>
+                      <th>Ghi chú</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -566,6 +577,18 @@ const ProposalReportUpdateModal = ({
                             {lineTotal === null ? "—" : formatMoney(lineTotal)}
                           </td>
                           <td>
+                            <input
+                              type="text"
+                              className="input input-bordered input-xs w-32"
+                              value={row.ghi_chu || ""}
+                              onChange={(event) =>
+                                updateRow(index, { ghi_chu: event.target.value })
+                              }
+                              disabled={saving}
+                              placeholder="Ghi chú"
+                            />
+                          </td>
+                          <td>
                             <button
                               type="button"
                               className="btn btn-ghost btn-xs text-error"
@@ -588,7 +611,7 @@ const ProposalReportUpdateModal = ({
                   </tbody>
                   <tfoot>
                     <tr>
-                      <th colSpan={5} className="text-right">
+                      <th colSpan={6} className="text-right">
                         Tổng giá trị chốt
                       </th>
                       <th className="whitespace-nowrap">

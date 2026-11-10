@@ -1,5 +1,6 @@
 import { notifyProposalTaskCountsChanged } from '../utils/proposalTaskCounts';
 import { notifyChargingStationTaskCountsChanged } from '../utils/chargingStationTaskCounts';
+import { notifyLeadTaskCountsChanged } from '../utils/leadTaskCounts';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -12,6 +13,12 @@ const runProposalTaskMutation = async (request) => {
 const runChargingStationTaskMutation = async (request) => {
   const response = await request();
   if (response?.success === true) notifyChargingStationTaskCountsChanged();
+  return response;
+};
+
+const runLeadTaskMutation = async (request) => {
+  const response = await request();
+  if (response?.success === true) notifyLeadTaskCountsChanged();
   return response;
 };
 
@@ -288,28 +295,31 @@ export const leadService = {
     return api.getWithAuth(`/admin/leads/${id}`, token);
   },
   create(data, token) {
-    return api.postWithAuth('/admin/leads', data, token);
+    return runLeadTaskMutation(() => api.postWithAuth('/admin/leads', data, token));
   },
   update(id, data, token) {
-    return api.putWithAuth(`/admin/leads/${id}`, data, token);
+    return runLeadTaskMutation(() => api.putWithAuth(`/admin/leads/${id}`, data, token));
   },
   delete(id, token) {
-    return api.deleteWithAuth(`/admin/leads/${id}`, token);
+    return runLeadTaskMutation(() => api.deleteWithAuth(`/admin/leads/${id}`, token));
   },
   restore(id, token) {
-    return api.postWithAuth(`/admin/leads/${id}/restore`, {}, token);
+    return runLeadTaskMutation(() => api.postWithAuth(`/admin/leads/${id}/restore`, {}, token));
   },
   bulkDelete(ids, token) {
-    return api.postWithAuth('/admin/leads/bulk-delete', { ids }, token);
+    return runLeadTaskMutation(() => api.postWithAuth('/admin/leads/bulk-delete', { ids }, token));
   },
   assign(id, assigneeUserId, token, reason) {
-    return api.postWithAuth(`/admin/leads/${id}/assign`, { assignee_user_id: assigneeUserId, reason }, token);
+    return runLeadTaskMutation(() => api.postWithAuth(`/admin/leads/${id}/assign`, { assignee_user_id: assigneeUserId, reason }, token));
   },
   bulkAssign(ids, assigneeUserId, token, reason) {
-    return api.postWithAuth('/admin/leads/bulk-assign', { ids, assignee_user_id: assigneeUserId, reason }, token);
+    return runLeadTaskMutation(() => api.postWithAuth('/admin/leads/bulk-assign', { ids, assignee_user_id: assigneeUserId, reason }, token));
   },
   getGdkvOptions(token) {
-    return api.getWithAuth('/admin/users/options/all?pool=gdkv', token);
+    return api.getWithAuth('/admin/leads/assignee-options', token);
+  },
+  getTaskCounts(token) {
+    return api.getWithAuth('/admin/leads/task-counts', token);
   },
   getSalesOptions(token) {
     return api.getWithAuth('/admin/users/options/all?pool=sales', token);
@@ -567,6 +577,9 @@ export const proposalReportService = {
   },
   upload(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}`, data || {}, token));
+  },
+  generate(id, data, token) {
+    return runProposalTaskMutation(() => api.postWithAuth(`/admin/proposal-reports/${id}/generate`, data || {}, token));
   },
   requestRevision(id, data, token) {
     return runProposalTaskMutation(() => api.putWithAuth(`/admin/proposal-reports/${id}/request-revision`, data || {}, token));

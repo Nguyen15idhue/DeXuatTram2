@@ -188,7 +188,8 @@ router.get('/:id', requireAuth, requireProposalReportManager, proposalReportCont
  *       404:
  *         description: Không tìm thấy đề xuất
  */
-router.put('/:id', requireAuth, requireProposalReportManager, proposalReportController.upload);
+router.put('/:id', requireAuth, requireProposalInfoManager, proposalReportController.upload);
+router.post('/:id/generate', requireAuth, requireProposalInfoManager, proposalReportController.generate);
 
 /**
  * @swagger

@@ -1,73 +1,134 @@
-import { useState, useEffect, useMemo } from 'react';
-import { leadService, dynamicService, formService } from '../../services/api';
-import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate, useLocation } from 'react-router-dom';
-import FieldRenderer from '../dynamic/FieldRenderer';
-import DynamicForm from '../dynamic/DynamicForm';
-import LeadJourneyPopup from './LeadJourneyPopup';
-import LeadAssignDialog from './LeadAssignDialog';
-import LeadReportTab from './LeadReportTab';
-import Toast from '../Toast';
-import { X, Pencil, Save, MapPinned, MapPin, Link2, FilePlus2, FileBarChart, FileText, Route, Split } from 'lucide-react';
-import useDataListMap from '../../hooks/useDataListMap';
-import useDefaultViewId from '../../hooks/useDefaultViewId';
-import { collectTableDatalistIds } from '../../utils/tableColumnSource';
-import { parseGoogleMapsLink, resolveGoogleMapsShortUrl } from '../../utils/mapHelpers';
-import { getLeadSectionKind, leadReadOnlyKeysForRole, leadFocusSectionForRole, leadSectionNotice, canViewLeadSection, canEditLeadSection } from '../../utils/leadSectionPerms';
+import { useState, useEffect, useMemo } from "react";
+import { leadService, dynamicService, formService } from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
+import { useNavigate, useLocation } from "react-router-dom";
+import FieldRenderer from "../dynamic/FieldRenderer";
+import DynamicForm from "../dynamic/DynamicForm";
+import LeadJourneyPopup from "./LeadJourneyPopup";
+import LeadAssignDialog from "./LeadAssignDialog";
+import LeadReportTab from "./LeadReportTab";
+import Toast from "../Toast";
+import {
+  X,
+  Pencil,
+  Save,
+  MapPinned,
+  MapPin,
+  Link2,
+  FilePlus2,
+  FileBarChart,
+  FileText,
+  Route,
+  Split,
+} from "lucide-react";
+import useDataListMap from "../../hooks/useDataListMap";
+import useDefaultViewId from "../../hooks/useDefaultViewId";
+import { collectTableDatalistIds } from "../../utils/tableColumnSource";
+import {
+  parseGoogleMapsLink,
+  resolveGoogleMapsShortUrl,
+} from "../../utils/mapHelpers";
+import {
+  getLeadSectionKind,
+  LEAD_TVBH_KEYS,
+  leadFocusSectionForRole,
+  leadSectionNotice,
+  canViewLeadSection,
+  canEditLeadSection,
+} from "../../utils/leadSectionPerms";
+import {
+  canEditLead,
+  canConsultLead,
+  canAssignLead,
+  canWriteLeadGeneral,
+  LEAD_CONSULTATION_OPTIONS,
+} from "../../utils/leadAccess";
 
 const parseJson = (v, fallback) => {
   if (v === null || v === undefined) return fallback;
-  if (typeof v === 'object') return v;
-  try { return JSON.parse(v); } catch { return fallback; }
+  if (typeof v === "object") return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return fallback;
+  }
 };
 
 const getFieldValue = (rec, field) => {
-  if (!rec) return '';
+  if (!rec) return "";
   const key = field.field_key || field.key;
-  if (rec[key] !== undefined && rec[key] !== null && rec[key] !== '') return rec[key];
-  const cd = rec.custom_data && typeof rec.custom_data === 'object' ? rec.custom_data : null;
+  if (rec[key] !== undefined && rec[key] !== null && rec[key] !== "")
+    return rec[key];
+  const cd =
+    rec.custom_data && typeof rec.custom_data === "object"
+      ? rec.custom_data
+      : null;
   if (cd && cd[key] !== undefined) return cd[key];
   return rec[key];
 };
 
 const buildCrmExtraNote = (extra) => {
-  const entries = extra && typeof extra === 'object' && !Array.isArray(extra) ? Object.entries(extra) : [];
+  const entries =
+    extra && typeof extra === "object" && !Array.isArray(extra)
+      ? Object.entries(extra)
+      : [];
   const lines = [];
   for (const [key, value] of entries) {
-    const fieldKey = String(key ?? '').trim();
+    const fieldKey = String(key ?? "").trim();
     if (!fieldKey) continue;
-    const text = value === null || value === undefined ? '' : String(value);
-    const clean = text.replace(/\r\n/g, ' ').trim();
+    const text = value === null || value === undefined ? "" : String(value);
+    const clean = text.replace(/\r\n/g, " ").trim();
     if (!clean) continue;
     lines.push(`${fieldKey}: ${clean}`);
   }
-  return lines.join('\n');
+  return lines.join("\n");
 };
 
-const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, onSwitchMode }) => {
+const LeadDetailPopup = ({
+  recordId,
+  mode: modeProp = "view",
+  onClose,
+  onSaved,
+  onSwitchMode,
+}) => {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const role = (user && user.role) || '';
-  const readOnlyKeys = useMemo(() => leadReadOnlyKeysForRole(role), [role]);
-  const focusFromNav = (location && location.state && location.state.focusSection) || null;
+  const role = (user && user.role) || "";
+  const focusFromNav =
+    (location && location.state && location.state.focusSection) || null;
   const focusFromQuery = useMemo(() => {
     try {
-      const q = new URLSearchParams((location && location.search) || '');
-      return q.get('focusSection');
-    } catch { return null; }
+      const q = new URLSearchParams((location && location.search) || "");
+      return q.get("focusSection");
+    } catch {
+      return null;
+    }
   }, [location && location.search]);
-  const focusSection = focusFromNav || focusFromQuery || leadFocusSectionForRole(role);
+  const focusSection =
+    focusFromNav || focusFromQuery || leadFocusSectionForRole(role);
   const sectionNotice = leadSectionNotice(role);
-  const leadsViewId = useDefaultViewId('leads', null);
+  const leadsViewId = useDefaultViewId("leads", null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState({ message: "", type: "success" });
   const [record, setRecord] = useState(null);
-  const [mode, setMode] = useState(modeProp);
+  const [requestedMode, setMode] = useState(modeProp);
+  const mode = canEditLead(user, record) ? requestedMode : "view";
   const [viewFields, setViewFields] = useState([]);
   const [allFields, setAllFields] = useState([]);
   const [formConfig, setFormConfig] = useState(null);
+  const readOnlyKeys = useMemo(() => {
+    if (canWriteLeadGeneral(user, record)) return [];
+    if (!canConsultLead(user, record)) return "*";
+    return [
+      ...new Set(
+        [...viewFields, ...allFields, ...(formConfig?.fields || [])].map(
+          (f) => f.field_key || f.key,
+        ),
+      ),
+    ].filter((key) => !LEAD_TVBH_KEYS.includes(key));
+  }, [user, record, viewFields, allFields, formConfig]);
   const [saving, setSaving] = useState(false);
   const [showCreateProposal, setShowCreateProposal] = useState(false);
   const [creatingProposal, setCreatingProposal] = useState(false);
@@ -76,33 +137,41 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   const [showAssign, setShowAssign] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [quickFormId, setQuickFormId] = useState(null);
-  const [mapLink, setMapLink] = useState('');
-  const [mapCoords, setMapCoords] = useState({ latitude: '', longitude: '' });
-  const [linkError, setLinkError] = useState('');
+  const [mapLink, setMapLink] = useState("");
+  const [mapCoords, setMapCoords] = useState({ latitude: "", longitude: "" });
+  const [linkError, setLinkError] = useState("");
   const [resolvingLink, setResolvingLink] = useState(false);
 
-  useEffect(() => { setMode(modeProp); }, [modeProp]);
+  useEffect(() => {
+    setMode(modeProp);
+  }, [modeProp]);
 
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    formService.getQuickCreate('station_proposals', token)
-      .then(res => { if (!cancelled && res && res.success) setQuickFormId(res.data ? res.data.id : null); })
+    formService
+      .getQuickCreate("station_proposals", token)
+      .then((res) => {
+        if (!cancelled && res && res.success)
+          setQuickFormId(res.data ? res.data.id : null);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const openCreateProposal = () => {
-    setMapLink('');
-    setMapCoords({ latitude: '', longitude: '' });
-    setLinkError('');
+    setMapLink("");
+    setMapCoords({ latitude: "", longitude: "" });
+    setLinkError("");
     setShowCreateProposal(true);
   };
 
   const handleGoogleMapLink = async () => {
     const url = mapLink.trim();
     if (!url) return;
-    setLinkError('');
+    setLinkError("");
     setResolvingLink(true);
     try {
       let coords = parseGoogleMapsLink(url);
@@ -110,24 +179,31 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
         coords = await resolveGoogleMapsShortUrl(coords.url);
       }
       if (coords && coords.lat != null && coords.lng != null) {
-        setMapCoords({ latitude: Number(coords.lat).toFixed(6), longitude: Number(coords.lng).toFixed(6) });
-        setMapLink('');
+        setMapCoords({
+          latitude: Number(coords.lat).toFixed(6),
+          longitude: Number(coords.lng).toFixed(6),
+        });
+        setMapLink("");
       } else {
-        setLinkError('Không đọc được tọa độ từ link Google Maps');
+        setLinkError("Không đọc được tọa độ từ link Google Maps");
       }
     } catch {
-      setLinkError('Không đọc được tọa độ từ link Google Maps');
+      setLinkError("Không đọc được tọa độ từ link Google Maps");
     } finally {
       setResolvingLink(false);
     }
   };
 
   const dataListIds = useMemo(() => {
-    const ids = new Set([...viewFields, ...allFields].map(f => f.data_list_id).filter(Boolean));
-    [...viewFields, ...allFields].forEach(f => {
-      if (f.type !== 'table') return;
+    const ids = new Set(
+      [...viewFields, ...allFields].map((f) => f.data_list_id).filter(Boolean),
+    );
+    [...viewFields, ...allFields].forEach((f) => {
+      if (f.type !== "table") return;
       const tc = parseJson(f.source_config, {});
-      (tc.columns || []).forEach(col => { for (const id of collectTableDatalistIds([col], allFields)) ids.add(id); });
+      (tc.columns || []).forEach((col) => {
+        for (const id of collectTableDatalistIds([col], allFields)) ids.add(id);
+      });
     });
     return [...ids];
   }, [viewFields, allFields]);
@@ -138,53 +214,72 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
     let cancelled = false;
     const load = async () => {
       setLoading(true);
-      setError('');
+      setError("");
       try {
         const res = await leadService.getById(recordId, token);
         if (cancelled) return;
-        if (!res.success) { setError(res.message || 'Không tìm thấy Lead'); return; }
+        if (!res.success) {
+          setError(res.message || "Không tìm thấy Lead");
+          return;
+        }
         setRecord(res.data);
       } catch {
-        if (!cancelled) setError('Lỗi tải Lead');
+        if (!cancelled) setError("Lỗi tải Lead");
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [recordId, token]);
 
   useEffect(() => {
     if (!leadsViewId || !token) return;
     let cancelled = false;
-    dynamicService.getViewConfig('leads', leadsViewId)
-      .then(res => {
+    dynamicService
+      .getViewConfig("leads", leadsViewId)
+      .then((res) => {
         if (cancelled || !res || !res.success) return;
         setViewFields(res.data.fields || []);
         setAllFields(res.data.allFields || []);
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [leadsViewId, token]);
 
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    formService.getByEntityAndPurpose('leads', 'view')
+    formService
+      .getByEntityAndPurpose("leads", "view")
       .then(async (formRes) => {
         if (cancelled || !formRes.success || !formRes.data) return;
         const lc = parseJson(formRes.data.layout_config, null);
-        const full = await formService.getById(formRes.data.id).catch(() => null);
+        const full = await formService
+          .getById(formRes.data.id)
+          .catch(() => null);
         if (cancelled) return;
-        setFormConfig({ ...formRes.data, layout_config: lc, fields: full && full.success ? full.data.fields : [] });
+        setFormConfig({
+          ...formRes.data,
+          layout_config: lc,
+          fields: full && full.success ? full.data.fields : [],
+        });
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const fieldsByKey = useMemo(() => {
     const map = {};
-    [...viewFields, ...allFields].forEach(f => { map[f.field_key || f.key] = f; });
+    [...viewFields, ...allFields].forEach((f) => {
+      map[f.field_key || f.key] = f;
+    });
     return map;
   }, [viewFields, allFields]);
 
@@ -192,12 +287,15 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
     if (!formConfig?.layout_config?.sections) return null;
     const rawSections = formConfig.layout_config.sections || [];
     const sectionMap = {};
-    rawSections.forEach(s => { if (s && s.id) sectionMap[s.id] = s; });
+    rawSections.forEach((s) => {
+      if (s && s.id) sectionMap[s.id] = s;
+    });
     const cellMap = {};
-    (formConfig.fields || []).forEach(f => {
+    (formConfig.fields || []).forEach((f) => {
       const cfg = parseJson(f.config, null);
       if (cfg && cfg.rowId != null && cfg.colIndex != null) {
-        cellMap[`${cfg.rowId}-${cfg.colIndex}`] = fieldsByKey[f.key || f.field_key] || null;
+        cellMap[`${cfg.rowId}-${cfg.colIndex}`] =
+          fieldsByKey[f.key || f.field_key] || null;
       }
     });
     return { sections: rawSections, sectionMap, cellMap };
@@ -210,66 +308,100 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
       const cfg = parseJson(f.config, null);
       const key = f.key || f.field_key;
       if (!key || !cfg || cfg.rowId == null) return;
-      const sec = secs.find((s) => s && ((s.rows || []).some((r) => r && r.id === cfg.rowId)));
+      const sec = secs.find(
+        (s) => s && (s.rows || []).some((r) => r && r.id === cfg.rowId),
+      );
       if (sec) map[key] = sec;
     });
     return map;
   }, [formConfig, layout]);
 
   const handleSave = async (formData) => {
+    if (!canEditLead(user, record))
+      throw new Error("Không có quyền cập nhật khách hàng");
     setSaving(true);
     try {
       const payload = { ...(formData || {}) };
       Object.keys(payload).forEach((k) => {
-        if ((readOnlyKeys || []).includes(k)) { delete payload[k]; return; }
+        if (!canWriteLeadGeneral(user, record) && !LEAD_TVBH_KEYS.includes(k)) {
+          delete payload[k];
+          return;
+        }
+        if ((readOnlyKeys || []).includes(k)) {
+          delete payload[k];
+          return;
+        }
         const sec = fieldSectionMap[k];
-        if (sec && !canEditLeadSection(sec, user)) delete payload[k];
+        if (
+          sec &&
+          !canEditLeadSection(sec, user) &&
+          !(canConsultLead(user, record) && LEAD_TVBH_KEYS.includes(k))
+        )
+          delete payload[k];
       });
       const res = await leadService.update(recordId, payload, token);
       if (res.success) {
         setRecord(res.data);
-        setToast({ message: 'Cập nhật Lead thành công', type: 'success' });
+        setToast({ message: "Cập nhật Lead thành công", type: "success" });
         if (onSaved) onSaved();
-        setMode('view');
-        if (onSwitchMode) onSwitchMode('view');
+        setMode("view");
+        if (onSwitchMode) onSwitchMode("view");
       } else {
-        throw new Error(res.message || 'Cập nhật thất bại');
+        throw new Error(res.message || "Cập nhật thất bại");
       }
     } catch (err) {
-      setToast({ message: err.message || 'Lỗi cập nhật', type: 'error' });
+      setToast({ message: err.message || "Lỗi cập nhật", type: "error" });
       throw err;
     } finally {
       setSaving(false);
     }
   };
 
-  const prefillProposal = record ? {
-    owner_name: record.full_name || '',
-    owner_phone: record.phone || '',
-    address: record.address || '',
-    province: record.province || '',
-    xa_phuong: record.ward || '',
-    ma_tinh: record.province_code || '',
-    vung_mien: record.region || '',
-    latitude: mapCoords.latitude || '',
-    longitude: mapCoords.longitude || ''
-  } : {};
+  const prefillProposal = record
+    ? {
+        owner_name: record.full_name || "",
+        owner_phone: record.phone || "",
+        address: record.address || "",
+        province: record.province || "",
+        xa_phuong: record.ward || "",
+        ma_tinh: record.province_code || "",
+        vung_mien: record.region || "",
+        latitude: mapCoords.latitude || "",
+        longitude: mapCoords.longitude || "",
+      }
+    : {};
 
   const handleCreateProposal = async (formData) => {
+    if (
+      !canConsultLead(user, record) ||
+      record?.consultation_status !== "SUCCESS"
+    )
+      throw new Error("Chưa đủ điều kiện tạo đề xuất");
     setCreatingProposal(true);
-    const idem = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `idem_${Date.now()}`;
+    const idem =
+      window.crypto && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `idem_${Date.now()}`;
     try {
-      const res = await leadService.createProposal(recordId, formData, token, idem);
+      const res = await leadService.createProposal(
+        recordId,
+        formData,
+        token,
+        idem,
+      );
       if (res.success) {
         const pid = res.data && res.data.id;
-        setToast({ message: res.message || 'Tạo đề xuất thành công', type: 'success' });
+        setToast({
+          message: res.message || "Tạo đề xuất thành công",
+          type: "success",
+        });
         setShowCreateProposal(false);
         if (pid) navigate(`/admin/proposals/chi-tiet/${pid}`);
       } else {
-        throw new Error(res.message || 'Tạo đề xuất thất bại');
+        throw new Error(res.message || "Tạo đề xuất thất bại");
       }
     } catch (err) {
-      setToast({ message: err.message || 'Lỗi tạo đề xuất', type: 'error' });
+      setToast({ message: err.message || "Lỗi tạo đề xuất", type: "error" });
       throw err;
     } finally {
       setCreatingProposal(false);
@@ -277,31 +409,55 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   };
 
   const handleAddCrmExtraToCskh = async () => {
-    if (!record) return;
-    const extra = record.custom_data && typeof record.custom_data === 'object' ? record.custom_data.extra : null;
+    if (!record || !canWriteLeadGeneral(user, record)) return;
+    const extra =
+      record.custom_data && typeof record.custom_data === "object"
+        ? record.custom_data.extra
+        : null;
     const noteText = buildCrmExtraNote(extra);
     if (!noteText) {
-      setToast({ message: 'Lead chưa có nội dung extra từ CRM để thêm vào ghi chú CSKH', type: 'error' });
+      setToast({
+        message: "Lead chưa có nội dung extra từ CRM để thêm vào ghi chú CSKH",
+        type: "error",
+      });
       return;
     }
-    const existing = Array.isArray(record.custom_data?.cskh_history) ? record.custom_data.cskh_history : [];
-    const lastNote = existing.length ? String(existing[existing.length - 1]?.note || '') : '';
-    const cskhHistory = lastNote === noteText
-      ? existing
-      : [...existing, { note: noteText, at: new Date().toISOString() }];
+    const existing = Array.isArray(record.custom_data?.cskh_history)
+      ? record.custom_data.cskh_history
+      : [];
+    const lastNote = existing.length
+      ? String(existing[existing.length - 1]?.note || "")
+      : "";
+    const cskhHistory =
+      lastNote === noteText
+        ? existing
+        : [...existing, { note: noteText, at: new Date().toISOString() }];
     setAddingCrmExtra(true);
     try {
-      const res = await leadService.update(record.id, { cskh_history: cskhHistory }, token);
+      const res = await leadService.update(
+        record.id,
+        { cskh_history: cskhHistory },
+        token,
+      );
       if (res && res.success) {
-        setToast({ message: 'Đã thêm nội dung CRM vào ghi chú CSKH', type: 'success' });
+        setToast({
+          message: "Đã thêm nội dung CRM vào ghi chú CSKH",
+          type: "success",
+        });
         const fresh = await leadService.getById(record.id, token);
         if (fresh && fresh.success) setRecord(fresh.data);
         if (onSaved) onSaved();
       } else {
-        throw new Error((res && res.message) || 'Thêm nội dung CRM vào ghi chú CSKH thất bại');
+        throw new Error(
+          (res && res.message) || "Thêm nội dung CRM vào ghi chú CSKH thất bại",
+        );
       }
     } catch (err) {
-      setToast({ message: (err && err.message) || 'Lỗi thêm nội dung CRM vào ghi chú CSKH', type: 'error' });
+      setToast({
+        message:
+          (err && err.message) || "Lỗi thêm nội dung CRM vào ghi chú CSKH",
+        type: "error",
+      });
     } finally {
       setAddingCrmExtra(false);
     }
@@ -310,94 +466,229 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
   const renderFieldInput = (field) => {
     const key = field.field_key || field.key;
     const value = getFieldValue(record, field);
-    return <FieldRenderer field={field} value={value} entity="leads" entityId={record.id} dataListOptions={dataListOptions} expandTable />;
+    if (key === "consultation_status")
+      return (
+        LEAD_CONSULTATION_OPTIONS.find((option) => option.value === value)
+          ?.label ||
+        value ||
+        "—"
+      );
+    return (
+      <FieldRenderer
+        field={field}
+        value={value}
+        entity="leads"
+        entityId={record.id}
+        dataListOptions={dataListOptions}
+        expandTable
+      />
+    );
   };
 
-  const renderRows = (sec) => (sec.rows || []).map(row => {
-    const cols = parseInt((row.columns || '1:1').split(':')[1]);
-    return (
-      <div key={row.id} className="form-row" style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-        {Array.from({ length: cols }).map((_, ci) => {
-          const field = layout ? layout.cellMap[`${row.id}-${ci}`] : null;
-          if (!field) return <div key={ci} style={{ flex: 1 }} />;
-          const label = field.field_label || field.label;
-          const isFullRow = field.type === 'table';
-          return (
-            <div key={ci} style={{ flex: isFullRow ? '1 1 100%' : 1, maxWidth: isFullRow ? '100%' : undefined }}>
-              <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{label}</label>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>
-                {renderFieldInput(field)}
+  const renderRows = (sec) =>
+    (sec.rows || []).map((row) => {
+      const cols = parseInt((row.columns || "1:1").split(":")[1]);
+      return (
+        <div
+          key={row.id}
+          className="form-row"
+          style={{ display: "flex", gap: 12, marginBottom: 12 }}
+        >
+          {Array.from({ length: cols }).map((_, ci) => {
+            const field = layout ? layout.cellMap[`${row.id}-${ci}`] : null;
+            if (!field) return <div key={ci} style={{ flex: 1 }} />;
+            const label = field.field_label || field.label;
+            const isFullRow = field.type === "table";
+            return (
+              <div
+                key={ci}
+                style={{
+                  flex: isFullRow ? "1 1 100%" : 1,
+                  maxWidth: isFullRow ? "100%" : undefined,
+                }}
+              >
+                <label
+                  style={{
+                    fontWeight: 500,
+                    fontSize: 13,
+                    color: "#374151",
+                    marginBottom: 4,
+                    display: "block",
+                  }}
+                >
+                  {label}
+                </label>
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    background: "#f8fafc",
+                    minHeight: 38,
+                  }}
+                >
+                  {renderFieldInput(field)}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  });
+            );
+          })}
+        </div>
+      );
+    });
 
-  const canCreateProposal = record && record.sales_outcome === 'SUCCESS';
-  const crmExtraNoteText = record ? buildCrmExtraNote(record.custom_data && typeof record.custom_data === 'object' ? record.custom_data.extra : null) : '';
+  const canCreateProposal =
+    record?.consultation_status === "SUCCESS" && canConsultLead(user, record);
+  const crmExtraNoteText = record
+    ? buildCrmExtraNote(
+        record.custom_data && typeof record.custom_data === "object"
+          ? record.custom_data.extra
+          : null,
+      )
+    : "";
   const canEditCskhSection = useMemo(() => {
     try {
-      return canEditLeadSection({ id: 'cskh_manual', title: 'Chăm sóc khách hàng (CSKH)' }, user);
+      return (
+        canWriteLeadGeneral(user, record) &&
+        canEditLeadSection(
+          { id: "cskh_manual", title: "Chăm sóc khách hàng (CSKH)" },
+          user,
+        )
+      );
     } catch {
       return false;
     }
-  }, [user]);
+  }, [user, record]);
 
   return (
-    <div className="modal-overlay" onClick={mode === 'edit' ? undefined : onClose}>
-      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
-      <div className="legacy-modal legacy-modal-lg popup-detail" onClick={e => e.stopPropagation()}>
+    <div
+      className="modal-overlay"
+      onClick={mode === "edit" ? undefined : onClose}
+    >
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ message: "", type: "success" })}
+      />
+      <div
+        className="legacy-modal legacy-modal-lg popup-detail"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="popup-header">
-          <h2>Lead #{record ? record.id : ''} {mode === 'edit' && '(chỉnh sửa)'}</h2>
+          <h2>
+            Lead #{record ? record.id : ""} {mode === "edit" && "(chỉnh sửa)"}
+          </h2>
           <div className="flex items-center gap-2">
-            <button type="button" className="btn btn-sm btn-outline gap-1" onClick={() => setShowJourney(true)} title="Xem hành trình Lead">
-              <Route size={14} /> <span className="hidden sm:inline">Hành trình</span>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline gap-1"
+              onClick={() => setShowJourney(true)}
+              title="Xem hành trình Lead"
+            >
+              <Route size={14} />{" "}
+              <span className="hidden sm:inline">Hành trình</span>
             </button>
-            <button type="button" className="btn btn-sm btn-outline btn-accent gap-1" onClick={() => setShowReport(true)} title="Báo cáo 360 của Lead">
-              <FileBarChart size={14} /> <span className="hidden sm:inline">Báo cáo 360</span>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline btn-accent gap-1"
+              onClick={() => setShowReport(true)}
+              title="Báo cáo 360 của Lead"
+            >
+              <FileBarChart size={14} />{" "}
+              <span className="hidden sm:inline">Báo cáo 360</span>
             </button>
-            {role !== 'MKT' && (
-              <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={() => setShowAssign(true)} title="Phân chia Lead cho Giám đốc Khu vực">
-                <Split size={14} /> <span className="hidden sm:inline">Phân chia Lead</span>
+            {record && canAssignLead(user, record) && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline btn-primary gap-1"
+                onClick={() => setShowAssign(true)}
+                title="Phân chia Lead cho Giám đốc Khu vực"
+              >
+                <Split size={14} />{" "}
+                <span className="hidden sm:inline">Phân chia Lead</span>
               </button>
             )}
-            <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Đóng">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm btn-circle"
+              onClick={onClose}
+              aria-label="Đóng"
+            >
               <X size={18} />
             </button>
           </div>
         </div>
 
-        <div className="popup-body" style={{ maxHeight: '70vh', overflowY: 'auto', padding: 16 }}>
+        <div
+          className="popup-body"
+          style={{ maxHeight: "70vh", overflowY: "auto", padding: 16 }}
+        >
           {loading && <div className="text-center py-6">Đang tải...</div>}
-          {!loading && error && <div className="alert alert-error">{error}</div>}
-          {!loading && !error && record && mode === 'view' && (
-            layout ? (
+          {!loading && error && (
+            <div className="alert alert-error">{error}</div>
+          )}
+          {!loading &&
+            !error &&
+            record &&
+            mode === "view" &&
+            (layout ? (
               layout.sections
-                .filter(sec => canViewLeadSection(sec, user))
+                .filter((sec) => canViewLeadSection(sec, user))
                 .map((sec, secIdx) => (
-                <fieldset key={sec.id} className={`form-section form-section-block${secIdx === 0 ? ' form-section-block-first' : ''}`} data-lead-section={getLeadSectionKind(sec.title) || undefined}>
-                  {sec.title && <legend className="form-section-title" style={{ fontWeight: 600, padding: '0 6px' }}>{sec.title}</legend>}
-                  {renderRows(sec)}
-                </fieldset>
-              ))
+                  <fieldset
+                    key={sec.id}
+                    className={`form-section form-section-block${secIdx === 0 ? " form-section-block-first" : ""}`}
+                    data-lead-section={
+                      getLeadSectionKind(sec.title) || undefined
+                    }
+                  >
+                    {sec.title && (
+                      <legend
+                        className="form-section-title"
+                        style={{ fontWeight: 600, padding: "0 6px" }}
+                      >
+                        {sec.title}
+                      </legend>
+                    )}
+                    {renderRows(sec)}
+                  </fieldset>
+                ))
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {viewFields.map(f => (
+                {viewFields.map((f) => (
                   <div key={f.key}>
-                    <label style={{ fontWeight: 500, fontSize: 13, color: '#374151', marginBottom: 4, display: 'block' }}>{f.label}</label>
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', background: '#f8fafc', minHeight: 38 }}>
+                    <label
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 13,
+                        color: "#374151",
+                        marginBottom: 4,
+                        display: "block",
+                      }}
+                    >
+                      {f.label}
+                    </label>
+                    <div
+                      style={{
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 8,
+                        padding: "8px 12px",
+                        background: "#f8fafc",
+                        minHeight: 38,
+                      }}
+                    >
                       {renderFieldInput(f)}
                     </div>
                   </div>
                 ))}
               </div>
-            )
-          )}
-          {!loading && !error && record && mode === 'edit' && (
+            ))}
+          {!loading && !error && record && mode === "edit" && (
             <>
-              {sectionNotice && <div className="alert alert-info text-sm py-2 mb-3">{sectionNotice}</div>}
+              {sectionNotice && (
+                <div className="alert alert-info text-sm py-2 mb-3">
+                  {sectionNotice}
+                </div>
+              )}
               <DynamicForm
                 entity="leads"
                 purpose="view"
@@ -406,52 +697,96 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
                 hideActions
                 htmlId="lead-edit-form"
                 readOnlyKeys={readOnlyKeys}
+                skipValidationKeys={
+                  Array.isArray(readOnlyKeys) ? readOnlyKeys : []
+                }
                 focusSection={focusSection}
               />
             </>
           )}
         </div>
 
-        <div className="popup-footer" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', padding: 12, borderTop: '1px solid #e2e8f0' }}>
-          {mode === 'view' && (
+        <div
+          className="popup-footer"
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            justifyContent: "flex-end",
+            padding: 12,
+            borderTop: "1px solid #e2e8f0",
+          }}
+        >
+          {mode === "view" && (
             <>
-              {canEditCskhSection && (
+              {canCreateProposal && (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline btn-accent gap-1"
-                  onClick={handleAddCrmExtraToCskh}
-                  disabled={addingCrmExtra || !record || !crmExtraNoteText}
-                  title={crmExtraNoteText ? 'Thêm nội dung extra từ CRM vào ghi chú CSKH' : 'Lead chưa có nội dung extra từ CRM'}
+                  className="btn btn-sm btn-outline btn-primary gap-1"
+                  onClick={openCreateProposal}
                 >
-                  <FileText size={14} /> {addingCrmExtra ? 'Đang thêm...' : 'Thêm nội dung CRM vào ghi chú CSKH'}
+                  <FilePlus2 size={14} /> Tạo đề xuất
                 </button>
               )}
-              <button type="button" className="btn btn-sm btn-outline btn-primary gap-1" onClick={openCreateProposal} disabled={!canCreateProposal} title={canCreateProposal ? 'Tạo nhanh đề xuất từ Lead' : 'Lead chưa TVBH thành công'}>
-                <FilePlus2 size={14} /> Tạo đề xuất
-              </button>
-              <button type="button" className="btn btn-sm btn-warning gap-1" onClick={() => { setMode('edit'); if (onSwitchMode) onSwitchMode('edit'); }}>
-                <Pencil size={14} /> Sửa
-              </button>
+              {canEditLead(user, record) && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-warning gap-1"
+                  onClick={() => {
+                    setMode("edit");
+                    if (onSwitchMode) onSwitchMode("edit");
+                  }}
+                >
+                  <Pencil size={14} /> Sửa
+                </button>
+              )}
             </>
           )}
-          {mode === 'edit' && (
+          {mode === "edit" && (
             <>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setMode('view'); if (onSwitchMode) onSwitchMode('view'); }} disabled={saving}>Hủy</button>
-              <button type="submit" form="lead-edit-form" className="btn btn-primary btn-sm gap-1" disabled={saving}>
-                <Save size={14} /> {saving ? 'Đang lưu...' : 'Lưu'}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setMode("view");
+                  if (onSwitchMode) onSwitchMode("view");
+                }}
+                disabled={saving}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                form="lead-edit-form"
+                className="btn btn-primary btn-sm gap-1"
+                disabled={saving}
+              >
+                <Save size={14} /> {saving ? "Đang lưu..." : "Lưu"}
               </button>
             </>
           )}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Đóng</button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+          >
+            Đóng
+          </button>
         </div>
       </div>
 
       {showJourney && record && (
-        <LeadJourneyPopup leadId={record.id} onClose={() => setShowJourney(false)} />
+        <LeadJourneyPopup
+          leadId={record.id}
+          onClose={() => setShowJourney(false)}
+        />
       )}
 
       {showReport && record && (
-        <LeadReportTab leadId={record.id} onClose={() => setShowReport(false)} />
+        <LeadReportTab
+          leadId={record.id}
+          onClose={() => setShowReport(false)}
+        />
       )}
 
       <LeadAssignDialog
@@ -459,10 +794,16 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
         leads={record ? [record] : []}
         onClose={() => setShowAssign(false)}
         onDone={(res) => {
-          setToast({ message: (res && res.message) || 'Phân chia Lead thành công', type: 'success' });
+          setToast({
+            message: (res && res.message) || "Phân chia Lead thành công",
+            type: "success",
+          });
           if (record) {
-            leadService.getById(record.id, token)
-              .then(r => { if (r && r.success) setRecord(r.data); })
+            leadService
+              .getById(record.id, token)
+              .then((r) => {
+                if (r && r.success) setRecord(r.data);
+              })
               .catch(() => {});
           }
           if (onSaved) onSaved();
@@ -470,24 +811,44 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
       />
 
       {showCreateProposal && (
-        <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
-          <div className="modal-box max-w-3xl" onClick={e => e.stopPropagation()}>
+        <dialog
+          className="modal modal-open"
+          onCancel={(e) => e.preventDefault()}
+        >
+          <div
+            className="modal-box max-w-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">Tạo nhanh đề xuất từ Lead #{record.id}</h3>
-              <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={() => setShowCreateProposal(false)} aria-label="Close">
+              <h3 className="font-bold text-lg">
+                Tạo nhanh đề xuất từ Lead #{record.id}
+              </h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-circle"
+                onClick={() => setShowCreateProposal(false)}
+                aria-label="Close"
+              >
                 <X size={18} />
               </button>
             </div>
             <div className="border border-base-300 rounded-lg p-3 mb-4">
-              <label className="text-sm font-medium block mb-2">Lấy tọa độ từ link Google Maps</label>
+              <label className="text-sm font-medium block mb-2">
+                Lấy tọa độ từ link Google Maps
+              </label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   placeholder="Dán link Google Maps vào đây..."
                   className="input input-bordered input-sm flex-1"
                   value={mapLink}
-                  onChange={(e) => { setMapLink(e.target.value); if (linkError) setLinkError(''); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleGoogleMapLink(); }}
+                  onChange={(e) => {
+                    setMapLink(e.target.value);
+                    if (linkError) setLinkError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleGoogleMapLink();
+                  }}
                 />
                 <button
                   type="button"
@@ -496,10 +857,14 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
                   disabled={resolvingLink || !mapLink.trim()}
                 >
                   <Link2 size={14} />
-                  {resolvingLink ? '...' : 'Lấy tọa độ'}
+                  {resolvingLink ? "..." : "Lấy tọa độ"}
                 </button>
               </div>
-              {linkError && <div className="alert alert-error text-sm mt-2">{linkError}</div>}
+              {linkError && (
+                <div className="alert alert-error text-sm mt-2">
+                  {linkError}
+                </div>
+              )}
               {mapCoords.latitude && mapCoords.longitude && (
                 <div className="flex items-center gap-1.5 mt-2 px-3 py-2 bg-blue-50 rounded-md text-sm text-base-content/80">
                   <MapPin size={14} />
@@ -508,19 +873,27 @@ const LeadDetailPopup = ({ recordId, mode: modeProp = 'view', onClose, onSaved, 
               )}
               {!mapCoords.latitude && (
                 <div className="flex items-center gap-2 mt-2 text-xs text-base-content/60">
-                  <MapPinned size={12} /> Tọa độ (Vĩ độ/Kinh độ) là bắt buộc — dán link ở trên hoặc nhập trực tiếp trong form.
+                  <MapPinned size={12} /> Tọa độ (Vĩ độ/Kinh độ) là bắt buộc —
+                  dán link ở trên hoặc nhập trực tiếp trong form.
                 </div>
               )}
             </div>
             <DynamicForm
-              key={`lead-proposal-${record.id}-${mapCoords.latitude}-${mapCoords.longitude}-${quickFormId || 'full'}`}
+              key={`lead-proposal-${record.id}-${mapCoords.latitude}-${mapCoords.longitude}-${quickFormId || "full"}`}
               entity="station_proposals"
               purpose="create"
               formId={quickFormId || undefined}
               initialData={prefillProposal}
               onSubmit={handleCreateProposal}
             >
-              <button type="button" className="btn btn-ghost" onClick={() => setShowCreateProposal(false)} disabled={creatingProposal}>Hủy</button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowCreateProposal(false)}
+                disabled={creatingProposal}
+              >
+                Hủy
+              </button>
             </DynamicForm>
           </div>
           <div className="modal-backdrop" />

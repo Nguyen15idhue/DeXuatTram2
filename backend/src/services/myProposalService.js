@@ -205,16 +205,9 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
     : (wasWaitingInfo ? 'DESIGNING' : (existing.length > 0 ? existing[0].status : 'PENDING'));
   const reviewerId = existing.length > 0 ? existing[0].reviewed_by : null;
 
-  let resetDeadlineMinutes = null;
-  let resetTransitionMinutes = null;
+  let resetDeadlines = null;
   if (wasRejected) {
-    try {
-      const proposalLifecycle = require('./proposalLifecycle');
-      const configured = await proposalLifecycle.getDeadlineMinutes('PENDING', 'supplement');
-      resetDeadlineMinutes = Math.max(1, Number(configured) || 4320);
-      const tConf = await proposalLifecycle.getDeadlineMinutes('PENDING', 'transition');
-      resetTransitionMinutes = tConf ? Math.max(1, Number(tConf)) : null;
-    } catch { resetDeadlineMinutes = 4320; }
+    resetDeadlines = await require('./proposalLifecycle').getDeadlineDates('PENDING');
   }
 
   const prevRow = existing.length > 0 ? existing[0] : {};
@@ -229,10 +222,10 @@ exports.updateProposal = async (id, userId, data, opts = {}) => {
   await pool.query(
     `UPDATE station_proposals
      SET latitude = ?, longitude = ?, owner_name = ?, owner_phone = ?, address = ?, area = ?, land_type = ?, description = ?, note = ?, chot_so_luong_tru = ?, custom_data = ?, status = ?, updated_at = NOW()
-     ${resetDeadlineMinutes ? ', supplement_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), transition_deadline_at = DATE_ADD(NOW(), INTERVAL ? MINUTE), info_completed_at = NULL' : ''}
+     ${resetDeadlines ? ', supplement_deadline_at = ?, transition_deadline_at = ?, countdown_calendar_id = ?, info_completed_at = NULL' : ''}
      WHERE id = ? AND user_id = ?`,
-    resetDeadlineMinutes
-      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, resetDeadlineMinutes, resetTransitionMinutes, id, userId]
+    resetDeadlines
+      ? [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, resetDeadlines.supplement, resetDeadlines.transition, resetDeadlines.calendarId, id, userId]
       : [nextLat, nextLng, fixedData.owner_name, fixedData.owner_phone, fixedData.address || '', fixedData.area || '', fixedData.land_type || '', fixedData.description || '', nextNote ?? null, dynamicUtils.toJsonParam(nextPole), customData, nextStatus, id, userId]
   );
 
