@@ -1,7 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useState, useEffect } from "react";
-import { canAccessCustomers, canManageBusinessCalendar } from "../../utils/leadAccess";
+import {
+  canAccessCustomers,
+  canManageBusinessCalendar,
+} from "../../utils/leadAccess";
 import useLeadTaskCounts from "../../hooks/useLeadTaskCounts";
 import {
   proposalApprovalService,
@@ -13,9 +16,7 @@ import {
   proposalSignatureService,
   chargingStationService,
 } from "../../services/api";
-import {
-  resolveGradingRole,
-} from "../../utils/proposalGrading";
+import { resolveGradingRole } from "../../utils/proposalGrading";
 import { PROPOSAL_TASK_COUNTS_CHANGED_EVENT } from "../../utils/proposalTaskCounts";
 import { CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT } from "../../utils/chargingStationTaskCounts";
 import {
@@ -23,9 +24,7 @@ import {
   Users,
   Zap,
   ClipboardList,
-  Settings,
   Target,
-  PieChart,
   FileText,
   File,
   LayoutGrid,
@@ -57,18 +56,16 @@ import {
   canSeeReviewRequestsPage,
 } from "../../utils/proposalAccess";
 
-const mainItems = [
+const navigationItems = [
   {
     path: "/admin",
     label: "Dashboard",
     icon: BarChart3,
-    group: "Tổng quan",
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
     path: "/admin/proposals",
     label: "Quản lý Đề xuất",
-    group: "Quy trình đề xuất",
     icon: ClipboardList,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
     children: [
@@ -122,7 +119,6 @@ const mainItems = [
   {
     path: "/admin/on-tram",
     label: "Quản lý ON trạm",
-    group: "Quy trình đề xuất",
     icon: BatteryCharging,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
     children: [
@@ -173,14 +169,12 @@ const mainItems = [
   {
     path: "/admin/e-sign",
     label: "Quản lý Chữ ký số",
-    group: "Quy trình đề xuất",
     icon: File,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"],
   },
   {
     path: "/admin/tai-chinh",
     label: "Quản lý tài chính",
-    group: "Vận hành",
     icon: Wallet,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
     access: canSeeFinancePage,
@@ -188,21 +182,18 @@ const mainItems = [
   {
     path: "/admin/kho",
     label: "Quản lý kho",
-    group: "Vận hành",
     icon: Warehouse,
     roles: ["SUPER_ADMIN", "ADMIN"],
   },
   {
     path: "/admin/stations",
-    label: "Quản lý Trạm",
-    group: "Vận hành",
+    label: "Quản lý quy hoạch",
     icon: Zap,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
   {
     path: "/admin/ev-reports",
     label: "Quản lý Nhu cầu sạc",
-    group: "Khách hàng",
     icon: MapPin,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
@@ -215,15 +206,13 @@ const mainItems = [
   {
     path: "/admin/leads",
     label: "Quản lý khách hàng",
-    group: "Khách hàng",
     icon: Target,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT", "CTV", "NPP"],
     access: canAccessCustomers,
   },
   {
     path: "/admin/business-calendar",
-    label: "Lịch làm việc",
-    group: "Quản trị",
+    label: "Quản lý lịch làm việc",
     icon: History,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT", "CTV", "NPP"],
     access: canManageBusinessCalendar,
@@ -231,27 +220,56 @@ const mainItems = [
   {
     path: "/admin/users",
     label: "Quản lý Users",
-    group: "Quản trị",
     icon: Users,
     roles: ["SUPER_ADMIN", "ADMIN", "SALES", "NPP"],
-  },
-  {
-    path: "/admin/reports",
-    label: "Báo cáo",
-    group: "Báo cáo & nhật ký",
-    icon: PieChart,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES", "MKT"],
-  },
-  {
-    path: "/admin/audit-log",
-    label: "Audit Log",
-    group: "Báo cáo & nhật ký",
-    icon: History,
-    roles: ["SUPER_ADMIN", "ADMIN", "SALES"],
   },
 ];
 
 const configGroups = [
+  {
+    id: "overview",
+    label: "Tổng quan",
+    items: ["/admin", "/admin/excel-export"].map((path) =>
+      navigationItems.find((item) => item.path === path),
+    ),
+  },
+  {
+    id: "operations",
+    label: "Vận hành",
+    items: [
+      "/admin/proposals",
+      "/admin/on-tram",
+      "/admin/tai-chinh",
+      "/admin/kho",
+    ].map((path) => navigationItems.find((item) => item.path === path)),
+  },
+  {
+    id: "customers",
+    label: "Khách hàng",
+    items: ["/admin/leads", "/admin/ev-reports"].map((path) =>
+      navigationItems.find((item) => item.path === path),
+    ),
+  },
+  {
+    id: "system",
+    label: "Hệ thống",
+    items: [
+      ...["/admin/users", "/admin/e-sign", "/admin/business-calendar"].map(
+        (path) => navigationItems.find((item) => item.path === path),
+      ),
+      {
+        path: "/admin/roles",
+        label: "Phân quyền",
+        icon: ShieldCheck,
+        roles: ["SUPER_ADMIN"],
+      },
+    ],
+  },
+  {
+    id: "other",
+    label: "Khác",
+    items: navigationItems.filter((item) => item.path === "/admin/stations"),
+  },
   {
     id: "fields",
     label: "Trường thông tin",
@@ -314,19 +332,6 @@ const configGroups = [
       },
     ],
   },
-  {
-    id: "perms",
-    label: "Phân quyền",
-    roles: ["SUPER_ADMIN"],
-    items: [
-      {
-        path: "/admin/roles",
-        label: "Phân quyền",
-        icon: ShieldCheck,
-        roles: ["SUPER_ADMIN"],
-      },
-    ],
-  },
 ];
 
 const proposalTaskKeyByPath = {
@@ -357,15 +362,20 @@ const chargingStationTaskTitleByKey = {
   on_station: "công việc On trạm",
 };
 
-const STORAGE_KEY = "admin-sidebar-groups";
+const STORAGE_KEY = "admin-sidebar-groups-v2";
+const DEFAULT_OPEN_GROUPS = ["overview", "operations"];
 
 const loadCollapsed = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
+    const arr = raw ? JSON.parse(raw) : null;
+    return (
+      Array.isArray(arr) ? arr : configGroups.map((group) => group.id)
+    ).filter((id) => !DEFAULT_OPEN_GROUPS.includes(id));
   } catch {
-    return [];
+    return configGroups
+      .map((group) => group.id)
+      .filter((id) => !DEFAULT_OPEN_GROUPS.includes(id));
   }
 };
 
@@ -383,13 +393,20 @@ const isItemActiveExact = (pathname, path) => pathname === path;
 const getActivePath = (pathname, items) =>
   items
     .filter((item) => isItemActive(pathname, item.path))
-    .reduce((activePath, item) => (
-      !activePath || item.path.length > activePath.length ? item.path : activePath
-    ), null);
+    .reduce(
+      (activePath, item) =>
+        !activePath || item.path.length > activePath.length
+          ? item.path
+          : activePath,
+      null,
+    );
 
 const filterItemsByRole = (items, user) =>
-  items.filter((item) => (!item.roles || item.roles.includes(user?.role))
-    && (!item.access || item.access(user)));
+  items.filter(
+    (item) =>
+      (!item.roles || item.roles.includes(user?.role)) &&
+      (!item.access || item.access(user)),
+  );
 
 const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const { user, token, logout } = useAuth();
@@ -397,26 +414,47 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [mainCollapsed, setMainCollapsed] = useState({});
   const [proposalTaskCounts, setProposalTaskCounts] = useState(null);
-  const [chargingStationTaskCounts, setChargingStationTaskCounts] = useState(null);
-  const { data: leadTaskCounts } = useLeadTaskCounts(token, canAccessCustomers(user));
+  const [chargingStationTaskCounts, setChargingStationTaskCounts] =
+    useState(null);
+  const { data: leadTaskCounts } = useLeadTaskCounts(
+    token,
+    canAccessCustomers(user),
+  );
   const gradingRole = resolveGradingRole(user?.department);
-  const canSeeProposalMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
-  const canSeeChargingStationMenu = ["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user?.role);
-  const canSeeGradingTaskCount = user?.role === "SUPER_ADMIN"
-    || ["QH", "PL"].includes(gradingRole);
+  const canSeeProposalMenu = [
+    "SUPER_ADMIN",
+    "ADMIN",
+    "SALES",
+    "CTV",
+    "NPP",
+  ].includes(user?.role);
+  const canSeeChargingStationMenu = [
+    "SUPER_ADMIN",
+    "ADMIN",
+    "SALES",
+    "CTV",
+    "NPP",
+  ].includes(user?.role);
+  const canSeeGradingTaskCount =
+    user?.role === "SUPER_ADMIN" || ["QH", "PL"].includes(gradingRole);
   const proposalTaskTotal = proposalTaskCounts
     ? Object.values(proposalTaskCounts).every(Number.isFinite)
-      ? Object.values(proposalTaskCounts).reduce((total, count) => total + count, 0)
+      ? Object.values(proposalTaskCounts).reduce(
+          (total, count) => total + count,
+          0,
+        )
       : null
     : null;
-  const formatTaskCount = (count) => count > 999 ? "999+" : count;
+  const formatTaskCount = (count) => (count > 999 ? "999+" : count);
 
   useEffect(() => {
     setCollapsed((prev) => {
       const next = prev.filter((id) => {
         const g = configGroups.find((x) => x.id === id);
         if (!g) return false;
-        return !g.items.some((it) => isItemActive(location.pathname, it.path));
+        return !filterItemsByRole(g.items, user).some((it) =>
+          isItemActive(location.pathname, it.path),
+        );
       });
       if (next.length !== prev.length) {
         saveCollapsed(next);
@@ -424,21 +462,23 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       }
       return prev;
     });
-  }, [location.pathname]);
+  }, [location.pathname, user]);
 
   useEffect(() => {
-    const proposalItem = mainItems.find((item) => item.path === "/admin/proposals");
-    const activeChildPath = getActivePath(
-      location.pathname,
-      filterItemsByRole(proposalItem?.children || [], user),
+    const activeParent = filterItemsByRole(navigationItems, user).find(
+      (item) =>
+        item.children &&
+        getActivePath(
+          location.pathname,
+          filterItemsByRole(item.children, user),
+        ),
     );
-    if (!activeChildPath) return;
-
-    setMainCollapsed((current) => (
-      current[proposalItem.path]
+    if (!activeParent) return;
+    setMainCollapsed((current) =>
+      current[activeParent.path]
         ? current
-        : { ...current, [proposalItem.path]: true }
-    ));
+        : { ...current, [activeParent.path]: true },
+    );
   }, [location.pathname, user]);
 
   useEffect(() => {
@@ -452,82 +492,78 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         return;
       }
 
-      const sources = [{
-        key: "requests",
-        load: () => proposalRequestService.getAll(
-          "status=OPEN&work_scope=all&page=1&limit=1",
-          token,
-        ),
-      }];
+      const sources = [
+        {
+          key: "requests",
+          load: () =>
+            proposalRequestService.getAll(
+              "status=OPEN&work_scope=all&page=1&limit=1",
+              token,
+            ),
+        },
+      ];
 
       if (canSeeGradingTaskCount) {
         sources.push({
           key: "grading",
-          load: () => proposalGradingService.getAll(
-            "tab=pending&page=1&limit=1",
-            token,
-          ),
+          load: () =>
+            proposalGradingService.getAll("tab=pending&page=1&limit=1", token),
         });
       }
       if (canSeeReviewRequestsPage(user)) {
         sources.push({
           key: "review",
-          load: () => proposalReviewService.getAll(
-            "tab=pending&page=1&limit=1",
-            token,
-          ),
+          load: () =>
+            proposalReviewService.getAll("tab=pending&page=1&limit=1", token),
         });
       }
       if (canSeeLayoutPage(user)) {
         sources.push({
           key: "layout",
-          load: () => proposalLayoutService.getAll(
-            "tab=pending&page=1&limit=1",
-            token,
-          ),
+          load: () =>
+            proposalLayoutService.getAll("tab=pending&page=1&limit=1", token),
         });
       }
       if (["SUPER_ADMIN", "ADMIN", "SALES", "NPP"].includes(user.role)) {
         sources.push({
           key: "reports",
-          load: () => proposalReportService.getAll(
-            "tab=pending&page=1&limit=1",
-            token,
-          ),
+          load: () =>
+            proposalReportService.getAll("tab=pending&page=1&limit=1", token),
         });
       }
       if (canSeeApprovalPage(user)) {
         sources.push({
           key: "approval",
-          load: () => proposalApprovalService.getAll(
-            "tab=pending&page=1&limit=1",
-            token,
-          ),
+          load: () =>
+            proposalApprovalService.getAll("tab=pending&page=1&limit=1", token),
         });
       }
       if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user.role)) {
         sources.push({
           key: "signatures",
-          load: () => proposalSignatureService.getAll(
-            "tab=pending&page=1&limit=1",
-            token,
-          ),
+          load: () =>
+            proposalSignatureService.getAll(
+              "tab=pending&page=1&limit=1",
+              token,
+            ),
         });
       }
 
-      const results = await Promise.all(sources.map(async ({ key, load }) => {
-        try {
-          const response = await load();
-          const total = Number(response?.pagination?.total);
-          if (!Number.isFinite(total) || total < 0) {
-            throw new Error(`Invalid task count response for ${key}`);
+      const results = await Promise.all(
+        sources.map(async ({ key, load }) => {
+          try {
+            const response = await load();
+            const total = Number(response?.pagination?.total);
+            if (!Number.isFinite(total) || total < 0) {
+              throw new Error(`Invalid task count response for ${key}`);
+            }
+            return [key, total];
+          } catch (error) {
+            console.error(`Load proposal ${key} task count error:`, error);
+            return [key, null];
           }
-          return [key, total];
-        } catch (error) {
-          console.error(`Load proposal ${key} task count error:`, error);
-          return [key, null];
-        }
-      }));
+        }),
+      );
 
       if (!cancelled && currentSequence === loadSequence) {
         setProposalTaskCounts(Object.fromEntries(results));
@@ -536,16 +572,28 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
     loadProposalTaskCounts();
     window.addEventListener("focus", loadProposalTaskCounts);
-    window.addEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, loadProposalTaskCounts);
+    window.addEventListener(
+      PROPOSAL_TASK_COUNTS_CHANGED_EVENT,
+      loadProposalTaskCounts,
+    );
     const intervalId = window.setInterval(loadProposalTaskCounts, 30000);
 
     return () => {
       cancelled = true;
       window.removeEventListener("focus", loadProposalTaskCounts);
-      window.removeEventListener(PROPOSAL_TASK_COUNTS_CHANGED_EVENT, loadProposalTaskCounts);
+      window.removeEventListener(
+        PROPOSAL_TASK_COUNTS_CHANGED_EVENT,
+        loadProposalTaskCounts,
+      );
       window.clearInterval(intervalId);
     };
-  }, [canSeeGradingTaskCount, canSeeProposalMenu, location.pathname, token, user]);
+  }, [
+    canSeeGradingTaskCount,
+    canSeeProposalMenu,
+    location.pathname,
+    token,
+    user,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -572,9 +620,12 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         ];
         const onStationTaskKeys = taskKeys.filter((key) => key !== "finance");
         if (
-          response?.success !== true
-          || !counts
-          || taskKeys.some((key) => !Number.isFinite(Number(counts[key])) || Number(counts[key]) < 0)
+          response?.success !== true ||
+          !counts ||
+          taskKeys.some(
+            (key) =>
+              !Number.isFinite(Number(counts[key])) || Number(counts[key]) < 0,
+          )
         ) {
           throw new Error("Invalid ON-station task count response");
         }
@@ -582,7 +633,10 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         const normalizedCounts = Object.fromEntries(
           taskKeys.map((key) => [key, Number(counts[key])]),
         );
-        const total = onStationTaskKeys.reduce((sum, key) => sum + normalizedCounts[key], 0);
+        const total = onStationTaskKeys.reduce(
+          (sum, key) => sum + normalizedCounts[key],
+          0,
+        );
         if (Number(response.data.total) !== total) {
           throw new Error("ON-station task total does not match stage counts");
         }
@@ -600,13 +654,19 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
     loadChargingStationTaskCounts();
     window.addEventListener("focus", loadChargingStationTaskCounts);
-    window.addEventListener(CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT, loadChargingStationTaskCounts);
+    window.addEventListener(
+      CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT,
+      loadChargingStationTaskCounts,
+    );
     const intervalId = window.setInterval(loadChargingStationTaskCounts, 30000);
 
     return () => {
       cancelled = true;
       window.removeEventListener("focus", loadChargingStationTaskCounts);
-      window.removeEventListener(CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT, loadChargingStationTaskCounts);
+      window.removeEventListener(
+        CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT,
+        loadChargingStationTaskCounts,
+      );
       window.clearInterval(intervalId);
     };
   }, [canSeeChargingStationMenu, location.pathname, token]);
@@ -628,12 +688,11 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     }));
   };
 
-  const visibleMain = filterItemsByRole(mainItems, user);
   const visibleGroups = configGroups
     .filter((g) => !g.roles || g.roles.includes(user?.role))
     .map((g) => ({
       ...g,
-      items: g.items.filter((it) => !it.roles || it.roles.includes(user?.role)),
+      items: filterItemsByRole(g.items, user),
     }))
     .filter((g) => g.items.length > 0);
 
@@ -645,7 +704,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
     }`;
 
   const childLinkClass = (isActive) =>
-    `group flex items-center gap-3 h-10 pl-10 pr-3 rounded-lg text-[13px] font-medium transition-colors duration-150 mb-0.5 ${
+    `group flex items-center gap-3 h-10 pl-2 pr-3 rounded-lg text-[13px] font-medium transition-colors duration-150 mb-0.5 ${
       isActive
         ? "bg-primary text-primary-content font-semibold shadow-sm"
         : "text-[#71717A] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"
@@ -654,23 +713,24 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
   const renderLink = (item, activePath = null, isChild = false) => {
     const isActive = activePath
       ? activePath === item.path
-      : isItemActiveExact(location.pathname, item.path);
+      : isItemActive(location.pathname, item.path);
     const taskKey = proposalTaskKeyByPath[item.path];
     const chargingStationTaskKey = chargingStationTaskKeyByPath[item.path];
     const taskCount = taskKey
       ? proposalTaskCounts?.[taskKey]
       : chargingStationTaskKey
         ? chargingStationTaskCounts?.counts[chargingStationTaskKey]
-      : item.path === "/admin/leads"
-        ? leadTaskCounts?.total
-      : item.path === "/admin/tai-chinh"
-        ? chargingStationTaskCounts?.counts.finance
-        : null;
-    const taskTitle = item.path === "/admin/tai-chinh"
-      ? "công việc Tài chính ON trạm"
-      : chargingStationTaskKey
-        ? chargingStationTaskTitleByKey[chargingStationTaskKey]
-      : "công việc cần thực hiện";
+        : item.path === "/admin/leads"
+          ? leadTaskCounts?.total
+          : item.path === "/admin/tai-chinh"
+            ? chargingStationTaskCounts?.counts.finance
+            : null;
+    const taskTitle =
+      item.path === "/admin/tai-chinh"
+        ? "công việc Tài chính ON trạm"
+        : chargingStationTaskKey
+          ? chargingStationTaskTitleByKey[chargingStationTaskKey]
+          : "công việc cần thực hiện";
     const cls = isChild ? childLinkClass(isActive) : linkClass(isActive);
     return (
       <Link
@@ -683,7 +743,11 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <item.icon
           size={isChild ? 16 : 18}
           strokeWidth={1.8}
-          className={isActive ? "text-primary-content" : "text-[#71717A] group-hover:text-[#4F35E8]"}
+          className={
+            isActive
+              ? "text-primary-content"
+              : "text-[#71717A] group-hover:text-[#4F35E8]"
+          }
         />
         <span className="truncate" title={item.label}>
           {item.label}
@@ -714,14 +778,16 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
       isActive = !!activeChildPath || isActiveExact;
     }
     const isOpen = mainCollapsed[item.path] ?? !!activeChildPath;
-    const taskCount = item.path === "/admin/proposals"
-      ? proposalTaskTotal
-      : item.path === "/admin/on-tram"
-        ? chargingStationTaskCounts?.total
-        : null;
-    const taskTitle = item.path === "/admin/proposals"
-      ? "công việc cần thực hiện trong Quản lý Đề xuất"
-      : "công việc cần thực hiện trong Quản lý ON trạm";
+    const taskCount =
+      item.path === "/admin/proposals"
+        ? proposalTaskTotal
+        : item.path === "/admin/on-tram"
+          ? chargingStationTaskCounts?.total
+          : null;
+    const taskTitle =
+      item.path === "/admin/proposals"
+        ? "công việc cần thực hiện trong Quản lý Đề xuất"
+        : "công việc cần thực hiện trong Quản lý ON trạm";
 
     if (hasChildren) {
       return (
@@ -729,6 +795,8 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           <button
             type="button"
             onClick={() => toggleMainItem(item.path)}
+            aria-expanded={isOpen}
+            aria-controls={`sidebar-children-${item.path.split("/").filter(Boolean).join("-")}`}
             className={`group w-full flex items-center justify-between h-11 px-3 rounded-lg text-[14px] font-medium transition-colors duration-150 mb-0.5 ${isActive ? "bg-primary text-primary-content font-semibold shadow-sm" : "text-[#52525B] hover:bg-[#F5F3FF] hover:text-[#4F35E8]"}`}
             title={item.label}
           >
@@ -736,7 +804,11 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
               <item.icon
                 size={18}
                 strokeWidth={1.8}
-                className={isActive ? "text-primary-content" : "text-[#71717A] group-hover:text-[#4F35E8]"}
+                className={
+                  isActive
+                    ? "text-primary-content"
+                    : "text-[#71717A] group-hover:text-[#4F35E8]"
+                }
               />
               <span className="truncate" title={item.label}>
                 {item.label}
@@ -759,8 +831,13 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
             </span>
           </button>
           {isOpen && (
-            <div className="ml-2 mt-1 space-y-1 border-l border-base-300 pl-2">
-              {visibleChildren.map((child) => renderLink(child, activeChildPath, true))}
+            <div
+              id={`sidebar-children-${item.path.split("/").filter(Boolean).join("-")}`}
+              className="ml-2 mt-1 space-y-1 border-l border-base-300 pl-2"
+            >
+              {visibleChildren.map((child) =>
+                renderLink(child, activeChildPath, true),
+              )}
             </div>
           )}
         </div>
@@ -785,47 +862,6 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-3 overflow-y-auto">
-        {(() => {
-          const grouped = [];
-          visibleMain.forEach((item) => {
-            const label = item.group || 'Khác';
-            const last = grouped[grouped.length - 1];
-            if (!last || last.label !== label) grouped.push({ label, items: [item] });
-            else last.items.push(item);
-          });
-          return grouped.map((group, groupIndex) => (
-            <div key={`${group.label}-${groupIndex}`} className="mb-2">
-              <div className="px-2 pt-5 pb-2 text-[11px] font-semibold uppercase tracking-[0.6px] text-[#9CA3AF]">
-                {group.label}
-              </div>
-              {group.items.map(renderMainItem)}
-            </div>
-          ));
-        })()}
-        {visibleGroups.length > 0 && (
-          <div className="border-t border-base-300 my-3 mx-1" />
-        )}
-        {visibleGroups.map((g) => {
-          const isCollapsed = collapsed.includes(g.id);
-          return (
-            <div key={g.id} className="mb-1">
-              <button
-                type="button"
-                onClick={() => toggleGroup(g.id)}
-                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-base-content/50 uppercase tracking-wider hover:bg-base-200 hover:text-base-content rounded-lg transition-colors"
-                title={g.label}
-              >
-                <span title={g.label}>{g.label}</span>
-                <ChevronDown
-                  size={14}
-                  className={`transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                />
-              </button>
-              {!isCollapsed && g.items.map(renderLink)}
-            </div>
-          );
-        })}
-        <div className="border-t border-base-300 my-3 mx-1" />
         <Link
           to="/map"
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-base-content/70 hover:bg-base-300 hover:text-base-content transition-all duration-150 hl-dash"
@@ -837,6 +873,33 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
             Xem bản đồ
           </span>
         </Link>
+        {visibleGroups.map((g) => {
+          const isCollapsed = collapsed.includes(g.id);
+          return (
+            <div key={g.id} className="mb-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(g.id)}
+                className="w-full flex items-center justify-between px-2 pt-3 pb-2 text-xs font-semibold text-black uppercase tracking-wider hover:bg-[#F5F3FF] hover:text-base-content rounded-lg transition-colors"
+                title={g.label}
+                aria-expanded={!isCollapsed}
+                aria-controls={`sidebar-group-${g.id}`}
+              >
+                <span title={g.label}>{g.label}</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                />
+              </button>
+              {!isCollapsed && (
+                <div id={`sidebar-group-${g.id}`}>
+                  {g.items.map(renderMainItem)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="border-t border-base-300 my-3 mx-1" />
         <Link
           to="/admin/huong-dan"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${location.pathname === "/admin/huong-dan" ? "bg-primary text-primary-content shadow-sm" : "text-base-content/70 hover:bg-base-300 hover:text-base-content"}`}
@@ -868,7 +931,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         <button
           onClick={logout}
           className="btn btn-ghost w-full gap-2 justify-start text-[#6B7280] hover:text-[#DC2626] hover:bg-[#FEF2F2]"
-          style={{ minHeight: '36px' }}
+          style={{ minHeight: "36px" }}
         >
           <LogOut size={14} />
           Đăng xuất
