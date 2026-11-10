@@ -15,7 +15,7 @@ import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/
 import FileViewer from '../../components/dynamic/FileViewer';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_URL, proposalApprovalService, proposalReportService } from '../../services/api';
-import { ensureDocumentResponse } from '../../utils/proposalDocuments';
+import { documentFile, ensureDocumentResponse } from '../../utils/proposalDocuments';
 import ProposalDocumentConversionList from '../../components/admin/ProposalDocumentConversionList';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import {
@@ -68,7 +68,33 @@ const AdminProposalApprovalDetailPage = () => {
     loadProposal();
   }, [loadProposal]);
 
-  const reportFiles = getReportFiles(proposal);
+  const conversionPending = documents.some((document) => ['PENDING', 'PROCESSING'].includes(document.conversion_status));
+  const allDocumentsReady = documents.length > 0 && documents.every((document) =>
+    document.conversion_status === 'READY' && document.signing_file?.mime_type === 'application/pdf');
+  useEffect(() => {
+    if (!conversionPending || !token || !id || proposal?.status !== 'PROPOSAL_REPORT_REVIEWING') return undefined;
+    let cancelled = false;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const response = ensureDocumentResponse(await proposalReportService.getDocuments(id, token));
+        if (cancelled) return;
+        const next = response?.data?.documents || [];
+        setDocuments(next);
+        const proposalResponse = ensureDocumentResponse(await proposalApprovalService.getProposal(id, token));
+        if (!cancelled) setProposal(proposalResponse.data);
+      } catch (error) {
+        if (!cancelled) setActionError(error.message || 'Không cập nhật được trạng thái chuyển PDF');
+      } finally { busy = false; }
+    }, 3000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [conversionPending, id, token, proposal?.status]);
+
+  const reportFiles = documents.length > 0
+    ? documents.map(documentFile).filter(Boolean).map((file) => ({ ...file, name: file.name || file.original_name }))
+    : getReportFiles(proposal);
   const previewFileId = searchParams.get('previewFile');
   const previewFile = reportFiles.find((file) => String(file.id) === previewFileId);
   const modelOptions = getSelectOptions('mo_hinh_dau_tu');
@@ -248,8 +274,8 @@ const AdminProposalApprovalDetailPage = () => {
         <button
           type="button"
           className="btn btn-success gap-2"
-          disabled={!canConfigureSignature(proposal)}
-          title={!reviewable ? 'Chỉ khả dụng khi đề xuất đang chờ duyệt BCĐX' : ''}
+          disabled={!canConfigureSignature(proposal) || !allDocumentsReady}
+          title={!allDocumentsReady ? 'Cần chuyển toàn bộ tài liệu sang PDF trước khi cấu hình ký' : !reviewable ? 'Chỉ khả dụng khi đề xuất đang chờ duyệt BCĐX' : ''}
           onClick={() => navigate(`/admin/proposals/duyet-bcdx/${proposal.id}/cau-hinh-ky`)}
         >
           <PenSquare size={16} /> Cấu hình ký

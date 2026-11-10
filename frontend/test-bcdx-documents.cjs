@@ -43,7 +43,8 @@ async function main() {
   let legacy = false;
   let unsupported = false;
   let processing = false;
-  let uploadNeedsConfirmation = true;
+  let approvalConversion = 'READY';
+  let approvalPolls = 0;
   const signBodies = [];
   const exportQueries = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -76,15 +77,13 @@ async function main() {
       retried = true;
       return ok({ documents: [{ ...documents[1], conversion_status: 'FAILED', conversion_error: 'mock conversion failed again' }] });
     }
-    if (path.endsWith('/documents/1/convert')) return ok({ documents: [documents[0]] });
-    if (path.endsWith('/documents')) return ok({ documents });
+    if (path.endsWith('/documents/1/convert')) { approvalConversion = 'READY'; return ok({ documents: [documents[0]] }); }
+    if (path.endsWith('/documents')) {
+      if (approvalConversion === 'PENDING' && ++approvalPolls > 1) approvalConversion = 'FAILED';
+      return ok({ documents: [{ ...documents[0], conversion_status: approvalConversion,
+        ...(approvalConversion !== 'READY' ? { signing_file: file(11, 'report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), conversion_error: approvalConversion === 'FAILED' ? 'background conversion failed' : null } : {}) }, documents[1]] });
+    }
     if (path === '/admin/proposal-reports/701' && method === 'PUT') {
-      if (uploadNeedsConfirmation) {
-        uploadNeedsConfirmation = false;
-        return route.fulfill({ status: 409, json: { success: false, message: 'Cần xác nhận lại lỗi chuyển PDF', data: {
-          documents: [documents[0], { ...documents[1], conversion_status: 'FAILED', conversion_error: 'mock changed conversion' }]
-        } } });
-      }
       uploaded = request.postDataJSON();
       return ok({ id: 701 });
     }
@@ -137,26 +136,27 @@ async function main() {
     await page.getByRole('button', { name: 'Cập nhật', exact: true }).click();
     const modal = page.locator('dialog.modal-open');
     const submit = modal.getByRole('button', { name: 'Tải lên và gửi duyệt' });
-    assert.equal(await submit.isDisabled(), true);
-    await modal.getByRole('button', { name: 'Chuẩn bị PDF', exact: true }).click();
-    await modal.getByText('mock conversion failed', { exact: true }).waitFor();
-    assert.equal(prepared, true);
-    assert.equal(await submit.isDisabled(), true);
-    await modal.getByRole('button', { name: 'Thử chuyển PDF lại' }).click();
-    await modal.getByText('mock conversion failed again', { exact: true }).waitFor();
-    assert.equal(retried, true);
-    assert.equal(await modal.getByText('PDF sẵn sàng', { exact: true }).count(), 1);
-    await modal.getByRole('checkbox').check();
-    await submit.click();
-    await modal.getByText('Cần xác nhận lại lỗi chuyển PDF', { exact: true }).waitFor();
-    assert.equal(await modal.getByRole('checkbox').isChecked(), false);
-    assert.equal(await submit.isDisabled(), true);
-    await modal.getByRole('checkbox').check();
+    assert.equal(await modal.getByRole('button', { name: 'Chuẩn bị PDF', exact: true }).count(), 0);
+    assert.equal(await modal.getByRole('checkbox').count(), 0);
+    assert.equal(await submit.isEnabled(), true);
     await submit.click();
     await page.waitForFunction(() => !document.querySelector('dialog.modal-open'));
-    assert.equal(uploaded.accept_conversion_failure, true);
+    assert.equal(uploaded.accept_conversion_failure, undefined);
+    assert.equal(prepared, false);
+    assert.equal(retried, false);
     assert.deepEqual(uploaded.files.map(file => file.id), [11, 12]);
-    console.log('PASS preparation gate, retry merges draft docs, explicit failure consent and original sources');
+    console.log('PASS Word submits immediately with original sources, no prepare button or failure-consent gate');
+
+    approvalConversion = 'PENDING';
+    await page.goto(`${BASE}/admin/proposals/duyet-bcdx/701`);
+    await page.getByText('Chưa chuyển đổi', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Cấu hình ký', exact: true }).isDisabled(), true);
+    await page.getByText('background conversion failed', { exact: true }).waitFor();
+    assert.equal(approvalPolls > 1, true);
+    assert.equal(await page.getByRole('button', { name: 'Cấu hình ký', exact: true }).isDisabled(), true);
+    await page.getByRole('button', { name: 'Chuyển sang PDF', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Cấu hình ký' && !button.disabled));
+    console.log('PASS approval polls background failure, keeps config locked, and retry enables PDF configuration');
 
     await page.goto(`${BASE}/admin/proposals/duyet-bcdx/701/cau-hinh-ky`);
     await page.getByRole('button', { name: 'Thêm ô ký', exact: true }).click();
@@ -207,16 +207,14 @@ async function main() {
     await page.goto(`${BASE}/admin/proposals/duyet-bcdx/701/cau-hinh-ky`);
     await page.getByText('Đang chuyển PDF', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Thêm ô ký', exact: true }).isDisabled(), true);
-    await page.getByRole('button', { name: 'Thử chuyển PDF lại', exact: true }).click();
-    await page.getByText('PDF sẵn sàng', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Thêm ô ký', exact: true }).isEnabled(), true);
-    console.log('PASS PROCESSING remains retryable after interrupted conversion');
+    assert.equal(await page.getByRole('button', { name: 'Chuyển sang PDF', exact: true }).isDisabled(), true);
+    console.log('PASS PROCESSING cannot be configured or converted twice from the UI');
     processing = false;
     unsupported = true;
     await page.goto(`${BASE}/admin/proposals/duyet-bcdx/701/cau-hinh-ky`);
     await page.getByText('unsupported .doc', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Thêm ô ký', exact: true }).isDisabled(), true);
-    assert.equal(await page.getByRole('button', { name: 'Thử chuyển PDF lại', exact: true }).isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: 'Chuyển sang PDF', exact: true }).isDisabled(), true);
     assert.equal(await page.getByRole('button', { name: 'Xác nhận trình ký', exact: true }).isDisabled(), true);
     console.log('PASS .doc signing and conversion of configured documents blocked');
     assert.deepEqual(errors, []);

@@ -127,7 +127,7 @@ router.get('/filter-options', requireAuth, requireProposalReportManager, proposa
  *             properties:
  *               files: { type: array, items: { type: object, properties: { id: { type: integer } } } }
  *     responses:
- *       200: { description: Kết quả từng file; FAILED có thể thử lại hoặc xác nhận nộp với accept_conversion_failure }
+ *       200: { description: Đăng ký tài liệu gốc; PDF READY, Word PENDING để chuyển nền sau khi gửi duyệt }
  *       403: { description: Không có quyền nộp }
  * /api/admin/proposal-reports/{id}/documents/{documentId}/convert:
  *   post:
@@ -182,7 +182,8 @@ router.get('/:id', requireAuth, requireProposalReportManager, proposalReportCont
  *       SUPER_ADMIN, người tạo đề xuất, quản lý trực tiếp hoặc GĐTTKD đúng khu vực được tải lên.
  *       File chỉ nhận Word (.doc, .docx) hoặc PDF.
  *       Bắt buộc gửi chot_so_luong_tru gồm mô hình, số lượng, loại trụ; server tự lấy giá hiện tại,
- *       tính tổng giá trị chốt. Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING
+ *       tính tổng giá trị chốt. Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING.
+ *       Word tự chuyển PDF trong nền; không chặn gửi duyệt bởi trạng thái chuyển đổi.
  *       và thông báo Back Office.
  *     security:
  *       - bearerAuth: []

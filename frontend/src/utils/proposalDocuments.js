@@ -6,7 +6,8 @@ export const isUnsupportedSigningFile = (file) =>
   /\.doc$/i.test(fileName(file)) || file?.mime_type === 'application/msword';
 
 export const isDocumentAwaitingConversion = (document) =>
-  ['PENDING', 'PROCESSING'].includes(document?.conversion_status);
+  !!document && (document.conversion_status !== 'READY'
+    || documentFile(document)?.mime_type !== 'application/pdf');
 
 export const ensureDocumentResponse = (response) => {
   if (response?.success === false) {

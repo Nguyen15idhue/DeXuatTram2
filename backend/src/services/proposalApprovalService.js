@@ -612,8 +612,8 @@ const configureSignature = async ({ user, id, fileId, signers, documents: reques
     if (!canonicalFileId || requestedFileId !== canonicalFileId) {
       throw err('File cấu hình ký phải đúng với file ký chuẩn của tài liệu', 400);
     }
-    if (['PENDING', 'PROCESSING'].includes(String(document.conversion_status || '').toUpperCase())) {
-      throw err('Đang xử lý chuyển đổi tài liệu; vui lòng chờ hoàn tất trước khi cấu hình ký', 409);
+    if (document.conversion_status !== 'READY' || document.signing_file?.mime_type !== 'application/pdf') {
+      throw err('Vui lòng chuyển toàn bộ tài liệu sang PDF thành công trước khi cấu hình ký', 409);
     }
     if (!isSignableFile(document.signing_file)) {
       throw err('Tài liệu ký phải là PDF hoặc DOCX; file .doc không được hỗ trợ', 400);
@@ -668,10 +668,11 @@ const configureSignature = async ({ user, id, fileId, signers, documents: reques
     }
 
     const [lockedDocuments] = await connection.query(
-      `SELECT id, signing_file_id, conversion_status
-         FROM proposal_report_documents
-        WHERE proposal_id = ? AND is_current = 1
-        ORDER BY id ASC
+      `SELECT d.id, d.signing_file_id, d.conversion_status, f.mime_type
+         FROM proposal_report_documents d
+         LEFT JOIN files f ON f.id=d.signing_file_id
+        WHERE d.proposal_id = ? AND d.is_current = 1
+        ORDER BY d.id ASC
         FOR UPDATE`,
       [proposal.id]
     );
@@ -680,7 +681,7 @@ const configureSignature = async ({ user, id, fileId, signers, documents: reques
         const current = lockedDocuments.find((item) => Number(item.id) === document.document_id);
         return !current
           || Number(current.signing_file_id) !== document.file_id
-          || ['PENDING', 'PROCESSING'].includes(String(current.conversion_status || '').toUpperCase());
+          || current.conversion_status !== 'READY' || current.mime_type !== 'application/pdf';
       })) {
       throw err('Tài liệu BCĐX hoặc trạng thái chuyển đổi đã thay đổi; vui lòng tải lại cấu hình', 409);
     }

@@ -509,7 +509,7 @@ const normalizeExpectedOnDate = (value) => {
   return dateValue;
 };
 
-const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, acceptConversionFailure = false, ip } = {}) => {
+const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -549,12 +549,6 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, acc
     : normalizedExpectedOnDate;
   const documentService = require('./proposalReportDocumentService');
   const documents = await documentService.prepareDocuments({ proposalId: proposal.id, files: reportFiles, user, ip });
-  if (documents.some(document => ['PENDING', 'PROCESSING'].includes(document.conversion_status))) {
-    throw err('Tài liệu đang chuyển PDF. Vui lòng đợi rồi nộp lại.', 409);
-  }
-  if (documents.some(document => document.conversion_status === 'FAILED') && acceptConversionFailure !== true) {
-    throw Object.assign(err('Có tài liệu chuyển PDF thất bại. Thử lại hoặc xác nhận tiếp tục với Word.', 409), { documents });
-  }
   const canonicalFiles = documents.map(document => document.signing_file);
   if (canonicalFiles.some(file => !file)) throw err('Thiếu tài liệu dùng để duyệt BCĐX', 409);
   const connection = await pool.getConnection();

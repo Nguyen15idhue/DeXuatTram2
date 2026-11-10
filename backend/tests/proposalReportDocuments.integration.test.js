@@ -71,7 +71,10 @@ test('real Word conversion, fixed PDF, retry, permissions and legacy preservatio
     }), { statusCode: 400 });
     const invalidPdf = await save(owner, Buffer.from('not a PDF'), '.pdf', 'application/pdf');
     await assert.rejects(documents.prepareDocuments({ proposalId: id, files: [invalidPdf], user: owner }), { statusCode: 400 });
-    const prepared = await documents.prepareDocuments({ proposalId: id, files: [word, nativePdf], user: owner });
+    const queued = await documents.prepareDocuments({ proposalId: id, files: [word, nativePdf], user: owner });
+    assert.equal(queued.find(doc => doc.source_file_id === word.id).conversion_status, 'PENDING');
+    await documents.convertDocument({ proposalId: id, documentId: queued.find(doc => doc.source_file_id === word.id).id, user: owner });
+    const prepared = await documents.listDocuments(id, { initializeLegacy: false, ids: queued.map(doc => doc.id) });
     assert.equal(prepared.length, 2);
     assert.ok(prepared.every(doc => doc.conversion_status === 'READY'), JSON.stringify(prepared.map(doc => doc.conversion_error)));
     const converted = prepared.find(doc => doc.source_file_id === word.id);
@@ -92,7 +95,9 @@ test('real Word conversion, fixed PDF, retry, permissions and legacy preservatio
 
     const failedWord = await save(owner, await makeDocx(), '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     converter.convertToPdf = async () => { throw new Error('Simulated conversion outage'); };
-    const failed = await documents.prepareDocuments({ proposalId: id, files: [failedWord], user: owner });
+    const failureDraft = await documents.prepareDocuments({ proposalId: id, files: [failedWord], user: owner });
+    await documents.convertDocument({ proposalId: id, documentId: failureDraft[0].id, user: owner });
+    const failed = await documents.listDocuments(id, { initializeLegacy: false, ids: [failureDraft[0].id] });
     assert.equal(failed[0].conversion_status, 'FAILED');
     assert.match(failed[0].conversion_error, /Simulated conversion outage/);
     assert.equal(failed[0].signing_file_id, failedWord.id);
