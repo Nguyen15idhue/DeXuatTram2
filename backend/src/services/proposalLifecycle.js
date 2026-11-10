@@ -387,12 +387,14 @@ exports.transition = async (id, to, opts = {}) => {
        SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = NOW(), updated_at = NOW(),
            supplement_deadline_at = ?, transition_deadline_at = ?, countdown_calendar_id = ?,
            info_completed_at = NULL,
+           signature_completed_at = CASE WHEN ? = 'SIGNATURE_PENDING' THEN NULL ELSE signature_completed_at END,
            paused_from_status = CASE WHEN ? = 1 THEN NULL ELSE paused_from_status END,
            paused_at = CASE WHEN ? = 1 THEN NULL ELSE paused_at END
        WHERE id = ?`,
       [
         to, rejectReasonValue, actorId || null,
         deadlines.supplement, deadlines.transition, deadlines.calendarId,
+        to,
         isPausedCancellation ? 1 : 0,
         isPausedCancellation ? 1 : 0,
         id

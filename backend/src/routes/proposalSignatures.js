@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin } = require('../middlewares/auth');
 const proposalSignatureController = require('../controllers/proposalSignatureController');
 
 /**
@@ -123,6 +123,44 @@ router.get('/:id', requireAuth, proposalSignatureController.detail);
  *         description: Không tìm thấy đề xuất
  */
 router.post('/:id/sign', requireAuth, proposalSignatureController.sign);
+
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/complete-signing:
+ *   post:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN xác nhận hoàn tất ký, kể cả chưa cấu hình người ký
+ *     description: Giữ SIGNATURE_PENDING, ghi nhận DONE và log lý do; không chèn ảnh chữ ký. Back Office vẫn tải file đã ký để kết thúc.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 maxLength: 2000
+ *     responses:
+ *       200:
+ *         description: Đã hoàn tất khâu ký
+ *       400:
+ *         description: Sai trạng thái hoặc thiếu lý do
+ *       403:
+ *         description: Chỉ SUPER_ADMIN
+ *       404:
+ *         description: Không tìm thấy đề xuất
+ */
+router.post('/:id/complete-signing', requireAuth, requireSuperAdmin, proposalSignatureController.completeSigning);
 
 /**
  * @swagger

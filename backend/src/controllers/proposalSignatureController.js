@@ -60,6 +60,17 @@ exports.sign = async (req, res) => {
   }
 };
 
+exports.completeSigning = async (req, res) => {
+  try {
+    const result = await proposalSignatureService.completeSigning({
+      user: req.user, id: req.params.id, reason: req.body?.reason, ip: req.ip,
+    });
+    res.json({ success: true, data: result, message: 'Đã xác nhận hoàn tất ký; chờ Back Office tải file đã ký' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
 exports.reject = async (req, res) => {  try {
     const result = await proposalSignatureService.reject({
       user: req.user,
