@@ -4,10 +4,11 @@ const adminProposalService = require('../services/adminProposalService');
 const scopeFor = async (user) => {
   if (!user) return { role: null };
   if (user.role === 'SUPER_ADMIN') {
-    return { all: true, gradeRole: proposalGradingService.BOTH_ROLE };
+    return { all: true, role: user.role, userId: user.id, gradeRole: proposalGradingService.BOTH_ROLE };
   }
   const department = await proposalGradingService.getUserDepartment(user.id);
-  const gradeRole = proposalGradingService.resolveGradingRole(department);
+  const gradeRole = ['ADMIN', 'SALES'].includes(user.role)
+    ? proposalGradingService.resolveGradingRole(department) : null;
   if (user.role === 'ADMIN' || gradeRole) {
     return { all: true, role: user.role, userId: user.id, gradeRole, department };
   }

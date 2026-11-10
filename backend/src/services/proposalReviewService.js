@@ -71,10 +71,8 @@ const getUserProfile = async (userId) => {
 
 const resolveRoleKey = ({ role, department, chucVu }) => {
   if (role === 'SUPER_ADMIN') return REVIEW_ROLE.ADMIN;
-  if (role === 'ADMIN') return isTgdTitle(department, chucVu) ? REVIEW_ROLE.TGD : REVIEW_ROLE.ADMIN;
-  if (role === 'SALES' && isTgdTitle(department, chucVu)) return REVIEW_ROLE.TGD;
-  // Vai trò quy trình theo phòng ban/chức vụ chỉ áp dụng cho nhân sự nội bộ (SALES); CTV/NPP không kế thừa.
-  if (role !== 'SALES') return null;
+  if (!['ADMIN', 'SALES'].includes(role)) return null;
+  if (isTgdTitle(department, chucVu)) return REVIEW_ROLE.TGD;
   const gradingRole = resolveGradingRole(department);
   if (gradingRole) return gradingRole;
   const title = normalizeText(chucVu);
@@ -99,9 +97,6 @@ const resolveReviewer = async (user) => {
   const region = roleKey === REVIEW_ROLE.GDTTKD
     ? (resolveRegion(profile.department) || resolveRegion(profile.customData.vung_mien))
     : null;
-  const branchIds = roleKey === REVIEW_ROLE.GDTTKD && user && user.id
-    ? await require('./adminUserService').getBranchIds(Number(user.id))
-    : null;
   return {
     isAdmin: ['SUPER_ADMIN', 'ADMIN'].includes(user && user.role),
     isSuperAdmin: user?.role === 'SUPER_ADMIN',
@@ -110,7 +105,6 @@ const resolveReviewer = async (user) => {
     roleLabel: REVIEW_ROLE_LABELS[roleKey] || null,
     region,
     regionLabel: REGION_LABELS[region] || null,
-    branchIds,
     department: profile.department,
     chucVu: profile.chucVu,
     customData: profile.customData
@@ -133,11 +127,19 @@ const regionClause = (region, params) => {
   return " AND LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?";
 };
 
-const branchClause = (branchIds, params) => {
-  if (!Array.isArray(branchIds)) return '';
-  if (!branchIds.length) return '1 = 0';
-  params.push(...branchIds.map(Number));
-  return `p.user_id IN (${branchIds.map(() => '?').join(',')})`;
+const permissionsFor = (scope, proposal) => {
+  const isGdttkd = scope.isSuperAdmin || (scope.roleKey === REVIEW_ROLE.GDTTKD
+    && !!scope.region && scope.region === proposalRegion(proposal.custom_data));
+  const isTgd = scope.isSuperAdmin || scope.roleKey === REVIEW_ROLE.TGD;
+  const level = Number(proposal.review_level);
+  return {
+    canRequestRegrade: isGdttkd && proposal.status === 'GDTTKD_EVALUATING' && level === 1,
+    canCancelGdttkd: isGdttkd && ((proposal.status === 'GDTTKD_EVALUATING' && level === 1)
+      || (proposal.status === 'RE_GDTTKD_EVALUATING' && level === 2)),
+    canSubmitToTgd: isGdttkd && proposal.status === 'RE_GDTTKD_EVALUATING' && level === 2,
+    canCancelTgd: isTgd && proposal.status === TGD_STATUS && level === 3,
+    canApproveTgd: isTgd && proposal.status === TGD_STATUS && level === 3
+  };
 };
 
 const mapReviewRow = (row) => {
@@ -204,13 +206,20 @@ const listReviews = async ({
   if (safeTab === 'all') {
     where.push('p.review_level IS NOT NULL');
   } else if (safeTab === 'pending') {
-    if (scope.roleKey === REVIEW_ROLE.GDTTKD) {
+    if (!scope.isSuperAdmin && !REVIEWER_KEYS.includes(scope.roleKey)) {
+      where.push('1 = 0');
+    } else if (scope.roleKey === REVIEW_ROLE.GDTTKD) {
       where.push(`((p.status = ? AND p.review_level = 1) OR (p.status = ? AND p.review_level = 2))`);
       params.push('GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING');
-      where.push(branchClause(scope.branchIds, params));
+      const clause = regionClause(scope.region, params);
+      where.push(clause ? clause.replace(/^ AND /, '') : '1 = 0');
     } else if (scope.roleKey === REVIEW_ROLE.QH || scope.roleKey === REVIEW_ROLE.PL) {
       where.push('p.status = ?');
       params.push(REGRADING_STATUS);
+      where.push(`EXISTS (SELECT 1 FROM proposal_requests r WHERE r.proposal_id = p.id
+        AND r.request_type = 'RE_GRADE' AND r.status = 'OPEN'
+        AND (r.target_department = ? OR r.target_title = 'Hai phòng chấm điểm'))`);
+      params.push(scope.roleKey);
     } else if (scope.roleKey === REVIEW_ROLE.TGD) {
       where.push('p.status = ?');
       params.push(TGD_STATUS);
@@ -232,8 +241,9 @@ const listReviews = async ({
     where.push('p.status <> ?');
     params.push('GDTTKD_EVALUATING');
   }
-  if (scope.roleKey === REVIEW_ROLE.GDTTKD && safeTab !== 'pending') {
-    where.push(branchClause(scope.branchIds, params));
+  if (scope.roleKey === REVIEW_ROLE.GDTTKD && !scope.isAdmin && safeTab !== 'pending') {
+    const clause = regionClause(scope.region, params);
+    where.push(clause ? clause.replace(/^ AND /, '') : '1 = 0');
   }
 
   if (search) {
@@ -317,7 +327,9 @@ const listReviews = async ({
   );
 
   const fieldDefs = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
-  const proposals = rows.map((row) => dynamicUtils.mergeData(row, fieldDefs)).map(mapReviewRow);
+  const proposals = rows.map((row) => ({
+    ...mapReviewRow(dynamicUtils.mergeData(row, fieldDefs)), permissions: permissionsFor(scope, row)
+  }));
 
   return {
     proposals,
@@ -373,25 +385,12 @@ const getReviewDetail = async (id, user) => {
   const fieldDefinitions = await dynamicUtils.getFieldDefinitionsByEntity('station_proposals');
   const proposal = mapReviewRow(dynamicUtils.mergeData(row, fieldDefinitions));
   const progress = await require('./proposalProgressService').getProgress(proposalId);
-  const isGdttkd = scope.roleKey === REVIEW_ROLE.GDTTKD || scope.isSuperAdmin;
-  const isTgd = scope.roleKey === REVIEW_ROLE.TGD || scope.isSuperAdmin;
-  const status = proposal.status;
-  const reviewLevel = proposal.review_level;
-
   return {
     proposal,
     fieldDefinitions,
     requests,
     progress,
-    permissions: {
-      canRequestRegrade: isGdttkd && status === 'GDTTKD_EVALUATING' && reviewLevel === 1,
-      canCancelGdttkd: isGdttkd
-        && ((status === 'GDTTKD_EVALUATING' && reviewLevel === 1)
-          || (status === 'RE_GDTTKD_EVALUATING' && reviewLevel === 2)),
-      canSubmitToTgd: isGdttkd && status === 'RE_GDTTKD_EVALUATING' && reviewLevel === 2,
-      canCancelTgd: isTgd && status === TGD_STATUS && reviewLevel === 3,
-      canApproveTgd: isTgd && status === TGD_STATUS && reviewLevel === 3
-    },
+    permissions: permissionsFor(scope, row),
     viewer: {
       roleKey: scope.roleKey,
       isAdmin: scope.isAdmin,
@@ -414,7 +413,7 @@ const loadProposal = async (id) => {
 };
 
 const assertRole = (scope, allowed) => {
-  if (scope.isSuperAdmin || scope.isAdmin) return;
+  if (scope.isSuperAdmin) return;
   if (!scope.roleKey || !allowed.includes(scope.roleKey)) {
     throw err('Bạn không có quyền thực hiện thao tác này', 403);
   }
@@ -427,9 +426,9 @@ const assertStatus = (proposal, allowed) => {
 };
 
 const assertBranch = (scope, proposal) => {
-  if (scope.isSuperAdmin || scope.roleKey !== REVIEW_ROLE.GDTTKD || !Array.isArray(scope.branchIds)) return;
-  if (!scope.branchIds.includes(Number(proposal.user_id))) {
-    throw err('Đề xuất không thuộc nhánh quản lý của bạn', 403);
+  if (scope.isSuperAdmin || scope.roleKey !== REVIEW_ROLE.GDTTKD) return;
+  if (!scope.region || proposalRegion(proposal.custom_data) !== scope.region) {
+    throw err('Đề xuất không thuộc miền phụ trách của bạn', 403);
   }
 };
 

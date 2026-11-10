@@ -79,7 +79,7 @@ const scopeClause = async (scope, params) => {
 };
 
 const assertApprovalAccess = (scope) => {
-  if (scope.role === 'SUPER_ADMIN' || scope.isBackOffice || scope.roleKey === 'TGD') return;
+  if (scope.isAdmin || scope.isBackOffice || scope.roleKey === 'TGD') return;
   throw err('Chỉ SUPER_ADMIN, nhân sự Back Office hoặc Tổng giám đốc được duyệt BCĐX', 403);
 };
 
@@ -120,6 +120,9 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
   const params = [...statuses];
+  if (safeTab === 'pending' && scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice && scope.roleKey !== 'TGD') {
+    where.push('1 = 0');
+  }
   if (statuses.includes(APPROVED_STATUS)) {
     where.push("(p.status <> 'APPROVED' OR p.signed_file_id IS NOT NULL)");
   }
@@ -215,7 +218,12 @@ exports.getProposal = async ({ user, id } = {}) => {
   const progress = await require('./proposalProgressService').getProgress(proposal.id);
   return {
     ...mapApprovalRow(dynamicUtils.mergeData(rows[0], fieldDefs)),
-    progress
+    progress,
+    permissions: {
+      canConfigure: scope.role === 'SUPER_ADMIN' || scope.isBackOffice,
+      canRequestUpdate: scope.role === 'SUPER_ADMIN' || scope.isBackOffice,
+      canReject: scope.role === 'SUPER_ADMIN' || scope.roleKey === 'TGD'
+    }
   };
 };
 

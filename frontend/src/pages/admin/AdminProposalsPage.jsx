@@ -975,15 +975,12 @@ const AdminProposalsPage = () => {
       </button>
     );
     if (isAdmin || isSales || user?.role === 'NPP') {
-      const editableStatuses = ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'];
       const canEditProposalInfo =
-        isSuperAdmin
-        || editableStatuses.includes(row.status)
-        || (Number(row.user_id) === Number(user?.id) && canOwnerEditProposal(row));
+        row.permissions?.canEdit === true;
       if (canEditProposalInfo) {
         items.push(item('edit', <Pencil size={14} />, 'Sửa', () => navigate(`/admin/proposals/edit=${row.id}`)));
       }
-      if (row.status === 'PENDING' && row.owner_role === 'CTV') {
+      if (row.permissions?.canManageOwner && row.status === 'PENDING' && row.owner_role === 'CTV') {
         items.push(item('approve', <CheckCircle2 size={14} />, 'Duyệt (chuyển sang chấm điểm)', () => handleStatusChange(row.id, 'GRADING')));
       }
     }
@@ -996,13 +993,13 @@ const AdminProposalsPage = () => {
       items.push(item('reopen', <RotateCcw size={14} />, 'Mở lại (khẩn cấp)', () => setReopenModal({ open: true, id: row.id, reason: '', saving: false })));
     }
     const dangerItems = [];
-    if (row.status === 'PENDING') {
+    if (row.permissions?.canManageOwner && row.status === 'PENDING') {
       dangerItems.push(item('reject', <X size={14} />, 'Từ chối', () => go('REJECTED'), true));
     }
-    if (row.status !== 'CANCELLED') {
+    if (row.permissions?.canManageOwner && row.status !== 'CANCELLED') {
       dangerItems.push(item('cancel', <Ban size={14} />, 'Hủy đề xuất', () => go('CANCELLED'), true));
     }
-    dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));
+    if (row.permissions?.canDelete) dangerItems.push(item('delete', <Trash2 size={14} />, 'Xóa', () => handleDeleteClick(row.id), true));
     return (
       <>
         {items}
@@ -1733,7 +1730,7 @@ const AdminProposalsPage = () => {
           viewId={proposalsViewId}
           mode={popup.mode}
           allowEdit={isAdmin || isSales || user?.role === 'NPP'}
-          canEditRecord={(rec) => isSuperAdmin || rec?.status === 'PENDING' || (Number(rec.user_id) === Number(user?.id) && canOwnerEditProposal(rec))}
+          canEditRecord={(rec) => rec.permissions?.canEdit === true}
           onClose={() => {
             setPopup({ open: false, record: null, mode: 'view', recordId: null });
             navigate(activeTab === 'all' ? '/admin/proposals' : `/admin/proposals?tab=${activeTab}`);

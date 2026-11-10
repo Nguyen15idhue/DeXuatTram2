@@ -27,7 +27,8 @@ const AdminProposalsDanhGiaQuyHoachPage = () => {
   };
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
-  const gradingRole = resolveGradingRole(user?.department);
+  const gradingRole = ['ADMIN', 'SALES'].includes(user?.role)
+    ? resolveGradingRole(user?.department || user?.custom_data?.department) : null;
   const canGradeQH = isSuperAdmin || gradingRole === "QH";
   const canGradePL = isSuperAdmin || gradingRole === "PL";
   return (

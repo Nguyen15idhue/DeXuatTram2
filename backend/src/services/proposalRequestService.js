@@ -147,32 +147,19 @@ exports.closeRequests = async (proposalId, types = null, { resolvedBy = null, st
   return result.affectedRows || 0;
 };
 
-const scopeClause = (scope, params, workScope = 'all', user = null) => {
-  if (!scope || !scope.role) return '';
-  if (workScope === 'mine') return '';
-  if (scope.role === 'SALES' || scope.role === 'NPP') {
-    if (workScope === 'subordinates') return ' AND r.target_user_id = p.user_id';
-    const ors = [];
-    const ids = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
-    if (scope.isTgdOwnerManager) {
-      ors.push('r.target_user_id = p.user_id');
-    } else if (ids.length > 0) {
-      ors.push(`(r.target_user_id = p.user_id AND p.user_id IN (${ids.map(() => '?').join(',')}))`);
-      params.push(...ids);
-    }
-    if (user) {
-      ors.push(requestAssignmentClause(user, params));
-    }
-    if (ors.length === 0) return ' AND 1 = 0';
-    return ` AND (${ors.join(' OR ')})`;
+const scopeClause = async (scope, params, workScope = 'all', user = null) => {
+  if (!user?.id) return ' AND 1 = 0';
+  const owner = await require('./proposalAccessService').buildOwnerScopeSql(user, 'p', { includeTgdGlobal: false });
+  params.push(...owner.params);
+  let sql = ` AND r.request_type IN ('UPDATE_INFO', 'SUPPLEMENT', 'LAYOUT_SUPPLEMENT')
+    AND r.target_user_id = p.user_id
+    AND (r.current_status IS NULL OR r.current_status NOT IN ('PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING'))
+    AND (${owner.sql})`;
+  if (workScope === 'mine') {
+    sql += ' AND (p.user_id = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, \'$.nguoi_phu_trach.id\')) AS UNSIGNED) = ? OR CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, \'$.sales_quan_ly.id\')) AS UNSIGNED) = ?)';
+    params.push(user.id, user.id, user.id);
   }
-  if (scope.role === 'CTV') {
-    if (workScope === 'subordinates') return ' AND 1 = 0';
-    if (!scope.userId) return ' AND 1 = 0';
-    params.push(Number(scope.userId));
-    return ' AND p.user_id = ? AND r.target_user_id = p.user_id';
-  }
-  return '';
+  return sql;
 };
 
 const addProposalFilters = (where, params, filters = {}, dateField = 'p.created_at') => {
@@ -228,47 +215,6 @@ const addDateFilters = (where, params, filters, dateField) => {
   }
 };
 
-const requestAssignmentClause = (user, params) => {
-  const conditions = [];
-  if (user?.id) {
-    conditions.push('r.target_user_id = ?');
-    params.push(Number(user.id));
-    const assignedTypes = assignedTypesForUser(user);
-    if (assignedTypes.length > 0) {
-      const reviewProfile = getReviewProfile(user);
-      const regularTypes = assignedTypes.filter((type) => !['REVISE_BCDX', 'RE_GRADE'].includes(type));
-      if (regularTypes.length > 0) {
-        conditions.push(`r.request_type IN (${regularTypes.map(() => '?').join(',')})`);
-        params.push(...regularTypes);
-      }
-      if (assignedTypes.includes('RE_GRADE')) {
-        const gradingRole = require('./proposalGradingService').resolveGradingRole(user.department);
-        const proposalReviewService = require('./proposalReviewService');
-        if (user.role === 'SUPER_ADMIN') {
-          conditions.push("r.request_type = 'RE_GRADE'");
-        } else if (gradingRole) {
-          conditions.push("(r.request_type = 'RE_GRADE' AND (r.target_department = ? OR r.target_title = 'Hai phòng chấm điểm'))");
-          params.push(gradingRole);
-        } else if (reviewProfile.roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD && reviewProfile.region) {
-          conditions.push(`(r.request_type = 'RE_GRADE'
-            AND r.target_title = 'Giám đốc Trung tâm Kinh doanh'
-            AND LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?)`);
-          params.push(regionPattern(reviewProfile.region));
-        }
-      }
-      if (assignedTypes.includes('REVISE_BCDX')) {
-        if (reviewProfile.roleKey === 'GDTTKD' && reviewProfile.region) {
-          conditions.push("(r.request_type = 'REVISE_BCDX' AND LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?)");
-          params.push(regionPattern(reviewProfile.region));
-        } else {
-          conditions.push("r.request_type = 'REVISE_BCDX'");
-        }
-      }
-    }
-  }
-  return conditions.length > 0 ? `(${conditions.join(' OR ')})` : '1 = 0';
-};
-
 exports.listRequests = async ({
   status = 'OPEN', type = '', search = '', page = 1, limit = 10, scope = {},
   workScope = '', my = false, proposalStatus = '', model = '', province = '',
@@ -304,10 +250,8 @@ exports.listRequests = async ({
     where.push('(p.ma_de_xuat_gen LIKE ? OR u.full_name LIKE ? OR p.owner_name LIKE ? OR p.address LIKE ? OR p.tracking_code LIKE ? OR r.description LIKE ?)');
     params.push(like, like, like, like, like, like);
   }
-  if (normalizedWorkScope === 'mine') {
-    where.push(requestAssignmentClause(managerUser, params));
-  } else if (normalizedWorkScope === 'subordinates') {
-    if (!['SALES', 'NPP'].includes(scope.role) || !Array.isArray(scope.branchIds) || scope.branchIds.length < 2) {
+  if (normalizedWorkScope === 'subordinates') {
+    if (!['ADMIN', 'SALES', 'NPP'].includes(scope.role) || !Array.isArray(scope.branchIds) || scope.branchIds.length < 2) {
       throw err('Bạn không có quyền xem công việc của cấp dưới', 403);
     }
   }
@@ -319,7 +263,6 @@ exports.listRequests = async ({
     ...scope,
     region: reviewProfile.roleKey === 'GDTTKD' ? reviewProfile.region : null
   };
-  const scoped = scopeClause(effectiveScope, params, normalizedWorkScope, managerUser);
   if (normalizedWorkScope === 'subordinates') {
     const ids = (scope.branchIds || []).map(Number).filter((id) => id !== Number(scope.userId));
     if (ids.length === 0) where.push('1 = 0');
@@ -328,6 +271,7 @@ exports.listRequests = async ({
       params.push(...ids);
     }
   }
+  const scoped = await scopeClause(effectiveScope, params, normalizedWorkScope, managerUser);
   const whereClause = `WHERE ${where.length > 0 ? where.join(' AND ') : '1 = 1'}${scoped}`;
 
   const [countRows] = await pool.query(
@@ -342,6 +286,7 @@ exports.listRequests = async ({
 
   const [rows] = await pool.query(
     `SELECT r.id, r.proposal_id, r.request_type, r.description, r.requested_by, r.target_user_id,
+            r.target_department, r.target_title, p.custom_data AS proposal_custom_data,
             r.previous_status, r.current_status, r.round_no, r.note, r.resolution_note, r.status,
             r.created_at, r.updated_at,
             p.ma_de_xuat_gen AS ma_de_xuat, p.user_id AS owner_id,
@@ -373,36 +318,13 @@ exports.listRequests = async ({
     [...params, safeLimit, offset]
   );
 
-  const branchIds = ['SALES', 'NPP'].includes(managerUser?.role) && !scope.isTgdOwnerManager
-    ? new Set((await require('./adminUserService').getBranchIds(managerUser.id)).map(Number))
-    : new Set();
-  const canManageOwner = (row) => {
-    if (!managerUser || !row.owner_id) return false;
-    if (Number(row.target_user_id) !== Number(row.owner_id)) return false;
-    if (['SUPER_ADMIN', 'ADMIN'].includes(managerUser.role) || scope.isTgdOwnerManager) return true;
-    if (Number(row.owner_id) === Number(managerUser.id)) return true;
-    if (branchIds.has(Number(row.owner_id))) return true;
-    if (reviewProfile.roleKey === 'GDTTKD' && reviewProfile.region) {
-      const proposalRegion = require('./proposalReviewService').resolveRegion(row.vung_mien);
-      return proposalRegion === reviewProfile.region;
-    }
-    return false;
-  };
-  const requests = rows.map((row) => {
-    const task = { ...row, proposal_custom_data: JSON.stringify({ vung_mien: row.vung_mien }) };
-    const assigned = requestAssignedToUser(task, managerUser);
-    const canManage = canManageOwner(row);
-    const scoreTask = row.request_type === 'RE_GRADE';
+  const requests = await Promise.all(rows.map(async (row) => {
     return {
       ...row,
-      can_update: !scoreTask && (managerUser?.role === 'SUPER_ADMIN'
-        || (managerUser?.role === 'ADMIN' && assigned)
-        || (Number(row.target_user_id) === Number(row.owner_id) && canManage)),
-      can_complete: !scoreTask && (managerUser?.role === 'SUPER_ADMIN'
-        || assigned
-        || (Number(row.target_user_id) === Number(row.owner_id) && canManage))
+      can_update: await canUpdateProposalForRequest(managerUser, row),
+      can_complete: row.request_type !== 'RE_GRADE' && await canActOnRequest(managerUser, row)
     };
-  });
+  }));
 
   return {
     requests,
@@ -413,7 +335,7 @@ exports.listRequests = async ({
 exports.getFilterOptions = async (scope = {}) => {
   const params = [];
   const visibility = [];
-  if (['SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
+  if (['ADMIN', 'SALES', 'NPP'].includes(scope.role) && !scope.isTgdOwnerManager) {
     const branchIds = Array.isArray(scope.branchIds) ? scope.branchIds.map(Number) : [];
     if (branchIds.length === 0) visibility.push('1 = 0');
     else {
@@ -525,22 +447,9 @@ const canManageProposalOwner = async (user, request) => {
   if (user.role === 'SUPER_ADMIN') return true;
   if (Number(request.target_user_id) !== ownerId) return false;
   if (Number(user.id) === ownerId) return true;
-  const profile = await loadUserById(user.id);
-  if (!profile) return false;
-  if (profile.role === 'ADMIN') return true;
-  if (getReviewProfile(profile).roleKey === 'TGD') return true;
-
-  const ancestors = await require('./adminUserService').getAncestorIds(ownerId);
-  if (ancestors.includes(Number(user.id))) return true;
-
-  const reviewProfile = getReviewProfile(profile);
-  if (reviewProfile.roleKey === 'GDTTKD' && reviewProfile.region) {
-    const proposalRegion = require('./proposalReviewService').resolveRegion(
-      parseCustomData(request.proposal_custom_data).vung_mien
-    );
-    return proposalRegion === reviewProfile.region;
-  }
-  return false;
+  return require('./proposalAccessService').canActAsProposalOwner(user, {
+    user_id: ownerId, custom_data: parseCustomData(request.proposal_custom_data)
+  });
 };
 
 const canActOnRequest = async (user, request) => {
@@ -557,6 +466,16 @@ const canUpdateProposalForRequest = async (user, request) => {
   if (!user || !request) return false;
   if (!['SUPPLEMENT', 'UPDATE_INFO', 'LAYOUT_SUPPLEMENT', 'REVISE_BCDX'].includes(request.request_type)) return false;
   if (user.role === 'SUPER_ADMIN') return true;
+  if (request.request_type === 'REVISE_BCDX'
+    || ['PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING', 'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING'].includes(request.current_status)) {
+    const reports = require('./proposalReportService');
+    return reports.canUploadReport(await reports.resolveScope(user), {
+      user_id: request.owner_id, custom_data: parseCustomData(request.proposal_custom_data)
+    });
+  }
+  if (Number(request.target_user_id) === Number(request.owner_id)) {
+    return canManageProposalOwner(user, request);
+  }
   const profile = await loadUserById(user.id);
   return requestAssignedToUser(request, profile);
 };

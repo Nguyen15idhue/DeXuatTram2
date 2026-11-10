@@ -102,7 +102,10 @@ async function main() {
       withdrawalDenied = true;
       return route.fulfill({ status: 403, json: { success: false, message: 'Không thể thu hồi sau khi đã ký' } });
     }
-    if (path === '/admin/proposal-approvals/701') return ok({ ...proposal, status: 'PROPOSAL_REPORT_REVIEWING' });
+    if (path === '/admin/proposal-approvals/701') return ok({
+      ...proposal, status: 'PROPOSAL_REPORT_REVIEWING',
+      permissions: { canConfigure: true, canRequestUpdate: true, canReject: true }
+    });
     if (path === '/admin/proposal-signatures/701/sign') {
       signBodies.push(request.postDataJSON());
       signed.add(request.postDataJSON().document_id);

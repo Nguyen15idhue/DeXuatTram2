@@ -290,7 +290,7 @@ const AdminProposalDetailPage = () => {
     return () => clearInterval(timer);
   }, [record?.status, record?.transition_deadline_at]);
 
-  const canExtend = ['ADMIN', 'SUPER_ADMIN', 'SALES', 'CTV'].includes(user?.role)
+  const canExtend = record?.permissions?.canManageOwner === true
     && record?.status === 'PENDING'
     && Number.isFinite(new Date(record.transition_deadline_at).getTime())
     && new Date(record.transition_deadline_at).getTime() > now;

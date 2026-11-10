@@ -62,7 +62,9 @@ const stageFilters = {
 
 const actionable = async (user) => {
   const permissions = await access.permissions(user);
-  const owner = await require('./proposalAccessService').buildOwnerScopeSql(user);
+  const owner = permissions.request_early
+    ? await require('./proposalAccessService').buildOwnerScopeSql(user)
+    : { sql: '1 = 0', params: [] };
   const expressions = {
     contract: permissions.back_office ? stageFilters['khoi-tao-hop-dong'].need : '0',
     infrastructure: permissions.back_office ? stageFilters['xay-dung-ha-tang'].need : '0',

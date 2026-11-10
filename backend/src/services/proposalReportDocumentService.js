@@ -84,12 +84,12 @@ const assertAccess = async (proposalId, user, { write = false, preparing = false
   const reports = require('./proposalReportService');
   const proposal = await loadProposal(proposalId);
   const scope = await reports.resolveScope(user);
-  if (preparing || EDIT_STATUSES.includes(proposal.status)) {
+  if (preparing || (write && EDIT_STATUSES.includes(proposal.status))) {
     if (!EDIT_STATUSES.includes(proposal.status)) throw error('Chỉ chuẩn bị tài liệu trong bước lập tờ trình', 409);
     if (!await reports.canUploadReport(scope, proposal)) throw error('Bạn không có quyền cập nhật tờ trình này', 403);
   } else {
     await reports.assertReportReadAccess(user, proposalId);
-    if (write && !(scope.isAdmin || scope.isBackOffice)) throw error('Chỉ quản trị viên hoặc Back Office được chuyển PDF ở bước duyệt', 403);
+    if (write && !(scope.role === 'SUPER_ADMIN' || scope.isBackOffice)) throw error('Chỉ SUPER_ADMIN hoặc Back Office được chuyển PDF ở bước duyệt', 403);
   }
   if (write && ![...EDIT_STATUSES, 'PROPOSAL_REPORT_REVIEWING'].includes(proposal.status)) {
     throw error('Chỉ được chuyển PDF khi lập hoặc duyệt BCĐX, trước cấu hình ký', 409);

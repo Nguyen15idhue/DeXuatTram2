@@ -487,7 +487,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           ),
         });
       }
-      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV"].includes(user.role)) {
+      if (["SUPER_ADMIN", "ADMIN", "SALES", "NPP"].includes(user.role)) {
         sources.push({
           key: "reports",
           load: () => proposalReportService.getAll(
@@ -505,11 +505,11 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           ),
         });
       }
-      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV"].includes(user.role)) {
+      if (["SUPER_ADMIN", "ADMIN", "SALES", "CTV", "NPP"].includes(user.role)) {
         sources.push({
           key: "signatures",
           load: () => proposalSignatureService.getAll(
-            "tab=pending&my_status=my_pending&page=1&limit=1",
+            "tab=pending&page=1&limit=1",
             token,
           ),
         });

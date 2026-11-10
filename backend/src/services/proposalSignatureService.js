@@ -200,12 +200,23 @@ exports.listProposals = async ({
       params.push(scope.userId);
     }
   } else if (safeTab === 'pending') {
-    where.push(`${MY_PENDING_CONFIG_SQL} > 0`);
+    const uploadTask = scope.role === 'SUPER_ADMIN' || scope.isBackOffice
+      ? ` OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL} AND p.signed_file_id IS NULL)`
+      : '';
+    where.push(`(${MY_PENDING_CONFIG_SQL} > 0${uploadTask})`);
     params.push(scope.userId);
   } else if (safeTab === 'chairman') {
+    if (!scope.isManager) {
+      where.push(`${MY_CONFIG_SQL} > 0`);
+      params.push(scope.userId);
+    }
     where.push(`${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}`);
     where.push('p.signed_file_id IS NULL');
   } else if (safeTab === 'completed') {
+    if (!scope.isManager) {
+      where.push(`${MY_CONFIG_SQL} > 0`);
+      params.push(scope.userId);
+    }
     // Hồ sơ tôi đã ký, hoặc hồ sơ đã đủ chữ ký / đã hoàn thành chung.
     where.push(`((p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL) OR (${SIGNER_TOTAL_SQL} > 0 AND ${SIGNER_SIGNED_SQL} = ${SIGNER_TOTAL_SQL}) OR ${MY_SIGNED_SQL} > 0)`);
     params.push(scope.userId);
@@ -290,6 +301,7 @@ exports.listProposals = async ({
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) },
     meta: {
       isAdmin: !!scope.isAdmin,
+      isSuperAdmin: scope.role === 'SUPER_ADMIN',
       isBackOffice: !!scope.isBackOffice,
       isTgd: !!scope.isTgd,
       isManager: !!scope.isManager,
@@ -498,9 +510,9 @@ exports.getDetail = async ({ user, id } = {}) => {
     fieldDefinitions,
     initial_proposal_data: initialProposalData,
     sign_status_label: SIGN_STATUS_LABELS[visibleDetail.sign_status],
-    can_reject: !!scope.isAdmin || !!scope.isTgd,
-    can_upload_signed: !!scope.isAdmin || !!scope.isBackOffice,
-    can_request_rework: (!!scope.isAdmin || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
+    can_reject: scope.role === 'SUPER_ADMIN' || !!scope.isTgd,
+    can_upload_signed: scope.role === 'SUPER_ADMIN' || !!scope.isBackOffice,
+    can_request_rework: (scope.role === 'SUPER_ADMIN' || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
       && proposal.status === SIGNATURE_PENDING,
     can_withdraw: (user.role === 'SUPER_ADMIN' || scope.isBackOffice)
       && proposal.status === SIGNATURE_PENDING && visibleDetail.signers.length > 0
@@ -538,8 +550,9 @@ const notifyRecipients = async (userIds, { type, title, message, entityId, actor
 const backOfficeUserIds = async () => {
   const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
   return rows
-    .filter((row) => ['ADMIN', 'SUPER_ADMIN'].includes(row.role)
-      || proposalReportService.isBackOffice(parseCustomData(row.custom_data).department))
+    .filter((row) => row.role === 'SUPER_ADMIN'
+      || (['ADMIN', 'SALES'].includes(row.role)
+        && proposalReportService.isBackOffice(parseCustomData(row.custom_data).department)))
     .map((row) => Number(row.id));
 };
 
@@ -683,8 +696,8 @@ const sign = async ({ user, id, documentId, fileId, ip, mutationConnection } = {
 
 exports.reject = async ({ user, id, reason, ip } = {}) => {
   const scope = await resolveScope(user);
-  if (!scope.isAdmin && !scope.isTgd) {
-    throw err('Chỉ Tổng giám đốc hoặc Admin được từ chối duyệt', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isTgd) {
+    throw err('Chỉ Tổng giám đốc hoặc SUPER_ADMIN được từ chối duyệt', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -741,8 +754,8 @@ exports.reject = async ({ user, id, reason, ip } = {}) => {
 
 exports.requestRework = async ({ user, id, reason, ip } = {}) => {
   const scope = await resolveScope(user);
-  if (!scope.isAdmin && !scope.isTgd && !scope.isBackOffice) {
-    throw err('Chỉ Back Office, Tổng giám đốc hoặc Admin được yêu cầu làm lại BCĐX', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isTgd && !scope.isBackOffice) {
+    throw err('Chỉ Back Office, Tổng giám đốc hoặc SUPER_ADMIN được yêu cầu làm lại BCĐX', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -799,8 +812,8 @@ exports.requestRework = async ({ user, id, reason, ip } = {}) => {
 
 const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments, ip, mutationConnection } = {}) => {
   const scope = await resolveScope(user);
-  if (!scope.isAdmin && !scope.isBackOffice) {
-    throw err('Chỉ Back Office hoặc Admin được tải lên file đã ký', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
+    throw err('Chỉ Back Office hoặc SUPER_ADMIN được tải lên file đã ký', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -930,9 +943,15 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
 exports.sign = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
   sign({ ...args, mutationConnection })
 ));
-exports.uploadSignedFile = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
-  uploadSignedFile({ ...args, mutationConnection })
-));
+exports.uploadSignedFile = async (args = {}) => {
+  const scope = await resolveScope(args.user);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
+    throw err('Chỉ Back Office hoặc SUPER_ADMIN được tải lên file đã ký', 403);
+  }
+  return withSignatureMutationLock(args.id, (mutationConnection) => (
+    uploadSignedFile({ ...args, mutationConnection })
+  ));
+};
 
 exports.getExportFile = async ({ user, id, documentId, all = false, ip } = {}) => {
   if (all) return exports.getSignedDocument({ user, id, all: true, ip });

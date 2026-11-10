@@ -84,8 +84,8 @@ const layoutUsers = async () => {
   const designService = require('./proposalDesignService');
   const users = await loadActiveUsers();
   return users
-    .filter((user) => ['ADMIN', 'SUPER_ADMIN'].includes(user.role)
-      || (user.role === 'SALES'
+    .filter((user) => user.role === 'SUPER_ADMIN'
+      || (['ADMIN', 'SALES'].includes(user.role)
         && designService.resolveDesignRole(user.department) === designService.LAYOUT_ROLE))
     .map((user) => user.id);
 };
@@ -95,25 +95,25 @@ const reportUploadUsers = async (proposal) => {
   const region = proposalRegion(proposal);
   const users = await loadActiveUsers();
   const ownerId = Number(proposal.user_id) || null;
-  const ancestorIds = new Set(
-    ownerId ? (await require('./adminUserService').getAncestorIds(ownerId)).map(Number) : []
-  );
+  const custom = parseCustomData(proposal.custom_data);
+  const responsibleIds = [ownerId, custom.nguoi_phu_trach?.id, custom.sales_quan_ly?.id].map(Number).filter(Boolean);
+  const ancestors = await Promise.all(responsibleIds.map((id) => require('./adminUserService').getAncestorIds(id)));
+  const ancestorIds = new Set([...responsibleIds, ...ancestors.flat().map(Number)]);
 
   return users
     .filter((user) => {
       if (user.role === 'SUPER_ADMIN') return true;
-      if (ownerId && user.id === ownerId) return true;
-      if (ancestorIds.has(user.id)) return true;
-
       const roleKey = proposalReviewService.resolveRoleKey({
         role: user.role,
         department: user.department,
         chucVu: user.chucVu
       });
-      if (roleKey !== proposalReviewService.REVIEW_ROLE.GDTTKD || !region) return false;
+      if (roleKey === proposalReviewService.REVIEW_ROLE.TGD) return true;
       const userRegion = proposalReviewService.resolveRegion(user.department)
         || proposalReviewService.resolveRegion(user.customData.vung_mien);
-      return userRegion === region;
+      if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) return !!region && userRegion === region;
+      return (ownerId && user.id === ownerId)
+        || (['ADMIN', 'SALES', 'NPP'].includes(user.role) && ancestorIds.has(user.id));
     })
     .map((user) => user.id);
 };
@@ -122,8 +122,8 @@ const reportReviewUsers = async () => {
   const reportService = require('./proposalReportService');
   const users = await loadActiveUsers();
   return users
-    .filter((user) => ['ADMIN', 'SUPER_ADMIN'].includes(user.role)
-      || (['SALES', 'CTV', 'NPP'].includes(user.role)
+    .filter((user) => user.role === 'SUPER_ADMIN'
+      || (['ADMIN', 'SALES'].includes(user.role)
         && reportService.isBackOffice(user.department)))
     .map((user) => user.id);
 };

@@ -4,7 +4,7 @@ const myProposalService = require('../services/myProposalService');
 
 const scopeFor = async (user) => {
   if (!user) return {};
-  if (['SALES', 'NPP'].includes(user.role)) {
+  if (['ADMIN', 'SALES', 'NPP'].includes(user.role)) {
     const branchIds = await adminProposalService.getBranchUserIds(user.id);
     const profile = await proposalRequestService.loadUserById(user.id);
     const reviewProfile = await require('../services/proposalReviewService').resolveReviewer({
@@ -65,7 +65,7 @@ exports.filterOptions = async (req, res) => {
   try {
     const scope = await scopeFor(req.user);
     const data = await proposalRequestService.getFilterOptions(scope);
-    const hasSubordinates = ['SALES', 'NPP'].includes(req.user.role)
+    const hasSubordinates = ['ADMIN', 'SALES', 'NPP'].includes(req.user.role)
       && !scope.isTgdOwnerManager
       && (scope.branchIds || []).length > 1;
     res.json({

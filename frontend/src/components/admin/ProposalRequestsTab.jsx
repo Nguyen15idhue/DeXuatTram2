@@ -26,11 +26,7 @@ import { RotateCcw, Search } from 'lucide-react';
 const REQUEST_TYPES = [
   { value: 'UPDATE_INFO', label: 'Yêu cầu cập nhật thông tin' },
   { value: 'SUPPLEMENT', label: 'Yêu cầu bổ sung thông tin' },
-  { value: 'LAYOUT_SUPPLEMENT', label: 'Yêu cầu bổ sung thông tin để vẽ layout' },
-  { value: 'RE_GRADE', label: 'Yêu cầu chấm điểm lại' },
-  { value: 'REVISE_BCDX', label: 'Yêu cầu sửa BCĐX' },
-  { value: 'TGD_REVIEW', label: 'Trình Tổng giám đốc' },
-  { value: 'OTHER', label: 'Yêu cầu khác' }
+  { value: 'LAYOUT_SUPPLEMENT', label: 'Yêu cầu bổ sung thông tin để vẽ layout' }
 ];
 
 const REQUEST_COLUMNS = [

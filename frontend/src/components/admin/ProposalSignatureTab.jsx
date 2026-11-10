@@ -114,6 +114,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       if (onMeta && res?.meta) {
         const nextMeta = {
           isAdmin: !!res.meta.isAdmin,
+          isSuperAdmin: !!res.meta.isSuperAdmin,
           isBackOffice: !!res.meta.isBackOffice,
           isTgd: !!res.meta.isTgd,
           isManager: !!res.meta.isManager
@@ -183,7 +184,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
 
   const renderActions = (row) => {
     const canSignRow = row.can_sign && row.status === 'SIGNATURE_PENDING';
-    const canUploadSigned = meta.isAdmin || meta.isBackOffice;
+    const canUploadSigned = meta.isSuperAdmin || meta.isBackOffice;
     const canExportCompletedSigning = row.status === 'SIGNATURE_PENDING'
       && row.sign_status === SIGN_STATUS.DONE;
 

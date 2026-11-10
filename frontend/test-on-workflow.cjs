@@ -185,7 +185,12 @@ async function main() {
     await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
     await page.getByText('Vui lòng tải biên bản nghiệm thu PDF cho phần trụ này', { exact: true }).first().waitFor();
     await page.locator('input[type=file]').setInputFiles({ name: 'Nghiem-thu.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF') });
-    await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
+    await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/deployments/33/actions')
+        && response.request().method() === 'POST'
+        && response.request().postDataJSON()?.action === 'acceptance-passed'),
+      page.getByRole('button', { name: 'Xác nhận', exact: true }).click()
+    ]);
     await page.getByRole('button', { name: 'Nghiệm thu đạt', exact: true }).waitFor();
     assert.equal(mutations.at(-1).body.acceptance_file_id, 91);
     assert.match(mutations.at(-1).path, /deployments\/33\/actions$/);

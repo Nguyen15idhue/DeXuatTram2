@@ -6,6 +6,12 @@ const proposalAccessService = require('../services/proposalAccessService');
 const proposalReviewService = require('../services/proposalReviewService');
 const proposalProgressService = require('../services/proposalProgressService');
 
+const SPECIALIST_STATUSES = new Set([
+  'GRADING', 'GDTTKD_EVALUATING', 'RE_GRADING', 'RE_GDTTKD_EVALUATING', 'TGD_REVIEW',
+  'DESIGNING', 'INFOR_WAITING', 'PROPOSAL_REPORT_CREATING', 'PROPOSAL_REPORT_RE_CREATING',
+  'PROPOSAL_REPORT_REVIEWING', 'PROPOSAL_REPORT_UPDATING', 'SIGNATURE_PENDING'
+]);
+
 const scopeFor = async (req) => {
   if (!['SALES', 'CTV', 'NPP'].includes(req.user.role)) return { role: req.user.role };
   if (req.user.role === 'SALES' || req.user.role === 'NPP') {
@@ -47,6 +53,20 @@ const denyOutsideBranch = (proposal, scope) => {
   return false;
 };
 
+const denyOwnerAction = async (proposal, user) => !await proposalAccessService.canActAsProposalOwner(user, proposal);
+
+const permissionsFor = async (proposal, user) => {
+  const canManageOwner = !await denyOwnerAction(proposal, user);
+  const isSuperAdmin = user.role === 'SUPER_ADMIN';
+  return {
+    canManageOwner,
+    canEdit: canManageOwner && (isSuperAdmin
+      || ['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(proposal.status)
+      || await require('../services/proposalRequestService').hasOpenOwnerUpdateRequest(proposal.id)),
+    canDelete: canManageOwner && (isSuperAdmin || ['PENDING', 'REJECTED'].includes(proposal.status))
+  };
+};
+
 exports.duplicates = async (req, res) => {
   try {
     const { min_m = 200, max_m = 2000 } = req.query;
@@ -75,7 +95,10 @@ exports.getAll = async (req, res) => {
       statuses: statusList,
       signedApprovalOnly: signed_approval_only === '1'
     });
-    res.json({ success: true, data: result.proposals, pagination: result.pagination });
+    const proposals = await Promise.all(result.proposals.map(async (proposal) => ({
+      ...proposal, permissions: await permissionsFor(proposal, req.user)
+    })));
+    res.json({ success: true, data: proposals, pagination: result.pagination });
   } catch (error) {
     console.error('Admin get proposals error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -94,7 +117,7 @@ exports.getById = async (req, res) => {
     }
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
     const progress = await proposalProgressService.getProgress(req.params.id);
-    res.json({ success: true, data: { ...proposal, progress } });
+    res.json({ success: true, data: { ...proposal, progress, permissions: await permissionsFor(proposal, req.user) } });
   } catch (error) {
     console.error('Admin get proposal error:', error);
     res.status(500).json({ success: false, message: 'Lỗi server' });
@@ -129,7 +152,7 @@ exports.delete = async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    if (denyOutsideBranch(existing, await scopeFor(req))) {
+    if (!(await permissionsFor(existing, req.user)).canDelete) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
     await adminProposalService.deleteProposal(req.params.id);
@@ -172,8 +195,14 @@ exports.updateStatus = async (req, res) => {
     if (existing.status === 'PAUSED' && status !== 'CANCELLED') {
       return res.status(400).json({ success: false, message: 'Đề xuất đang tạm dừng; chỉ có thể tiếp tục hoặc hủy đề xuất' });
     }
-    if (denyOutsideBranch(existing, await scopeFor(req))) {
+    if (await denyOwnerAction(existing, req.user)) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+
+    if (!forceOverride && status !== 'CANCELLED'
+      && !(existing.status === 'PENDING' && status === 'GRADING')
+      && (SPECIALIST_STATUSES.has(existing.status) || SPECIALIST_STATUSES.has(status))) {
+      return res.status(403).json({ success: false, message: 'Hãy thực hiện thao tác tại bước nghiệp vụ tương ứng; không đổi trạng thái quy trình qua API tổng quát' });
     }
 
     const result = await adminProposalService.updateStatus(req.params.id, status, {
@@ -184,7 +213,7 @@ exports.updateStatus = async (req, res) => {
       force: forceOverride
     });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal, message: 'Cập nhật trạng thái thành công' });
+    res.json({ success: true, data: { ...proposal, permissions: await permissionsFor(proposal, req.user) }, message: 'Cập nhật trạng thái thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message, errors: error.details || undefined });
@@ -206,7 +235,10 @@ const runPauseAction = async (req, res, action) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    if (!isSuperAdmin && reviewer.roleKey !== 'TGD' && denyOutsideBranch(existing, await scopeFor(req))) {
+    const region = proposalReviewService.resolveRegion(
+      require('../services/proposalGradingService').parseCustomData(existing.custom_data).vung_mien
+    );
+    if (!isSuperAdmin && reviewer.roleKey !== 'TGD' && (!reviewer.region || region !== reviewer.region)) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
 
@@ -246,22 +278,8 @@ exports.update = async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    if (denyOutsideBranch(existing, await scopeFor(req))) {
+    if (!(await permissionsFor(existing, req.user)).canEdit) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
-    }
-    if (!['SUPER_ADMIN', 'ADMIN', 'SALES'].includes(req.user.role) && Number(existing.user_id) !== Number(req.user.id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Chỉ chủ đề xuất, SALES, ADMIN hoặc SUPER_ADMIN được sửa khi có yêu cầu cập nhật; cấp trên không được sửa thay.'
-      });
-    }
-    if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)
-      && !['PENDING', 'REJECTED', 'REVIEWING', 'PRINCIPLE_APPROVED', 'GRADING', 'GDTTKD_EVALUATING', 'INFOR_WAITING', 'PROPOSAL_REPORT_UPDATING', 'PROPOSAL_REPORT_RE_CREATING'].includes(existing.status)
-      && !await require('../services/proposalRequestService').hasOpenOwnerUpdateRequest(id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Đề xuất chỉ được chỉnh sửa khi có yêu cầu cập nhật thông tin. ADMIN và SUPER_ADMIN được sửa ở mọi thời điểm.'
-      });
     }
 
     const updated = await adminProposalService.updateProposal(id, req.body, {
@@ -270,7 +288,7 @@ exports.update = async (req, res) => {
       ip: req.ip || null
     });
     const proposal = await adminProposalService.getProposalWithUser(id);
-    res.json({ success: true, data: proposal, infoCompleted: (updated && updated.infoCompleted) || null, message: 'Cập nhật đề xuất thành công' });
+    res.json({ success: true, data: { ...proposal, permissions: await permissionsFor(proposal, req.user) }, infoCompleted: (updated && updated.infoCompleted) || null, message: 'Cập nhật đề xuất thành công' });
   } catch (error) {
     console.error('Admin update proposal error:', error);
     if (error.statusCode) {
@@ -298,7 +316,7 @@ const setInfoCompleted = async (req, res, completed) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    if (denyOutsideBranch(existing, await scopeFor(req))) {
+    if (await denyOwnerAction(existing, req.user)) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
     const proposalLifecycle = require('../services/proposalLifecycle');
@@ -311,7 +329,7 @@ const setInfoCompleted = async (req, res, completed) => {
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
     res.json({
       success: true,
-      data: proposal,
+      data: { ...proposal, permissions: await permissionsFor(proposal, req.user) },
       message: completed && result.movedTo === 'GRADING'
         ? 'Đã xác nhận đủ thông tin và chuyển đề xuất sang chấm điểm'
         : (completed
@@ -339,7 +357,7 @@ exports.extendDeadline = async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đề xuất' });
     }
-    if (denyOutsideBranch(existing, await scopeFor(req))) {
+    if (await denyOwnerAction(existing, req.user)) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
     }
     const proposalLifecycle = require('../services/proposalLifecycle');
@@ -350,7 +368,7 @@ exports.extendDeadline = async (req, res) => {
       ip: req.ip || null
     });
     const proposal = await adminProposalService.getProposalWithUser(req.params.id);
-    res.json({ success: true, data: proposal, extend: result, message: 'Gia hạn thành công' });
+    res.json({ success: true, data: { ...proposal, permissions: await permissionsFor(proposal, req.user) }, extend: result, message: 'Gia hạn thành công' });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ success: false, message: error.message });

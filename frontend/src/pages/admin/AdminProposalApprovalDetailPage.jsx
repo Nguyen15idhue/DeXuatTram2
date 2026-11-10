@@ -187,7 +187,7 @@ const AdminProposalApprovalDetailPage = () => {
       <ProposalStaticInfo record={proposal} onViewFile={setFileViewing} />
       {documents.length > 0 && <section className="space-y-2 rounded-lg border p-4">
         <h2 className="font-semibold">Tài liệu BCĐX và bản gốc</h2>
-        <ProposalDocumentConversionList documents={documents} onRetry={canConfigureSignature(proposal) ? retryConversion : undefined} busy={converting} />
+        <ProposalDocumentConversionList documents={documents} onRetry={proposal.permissions?.canConfigure && canConfigureSignature(proposal) ? retryConversion : undefined} busy={converting} />
         {actionError && <p className="text-error text-sm">{actionError}</p>}
       </section>}
 
@@ -244,6 +244,7 @@ const AdminProposalApprovalDetailPage = () => {
       </section>
 
       <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+        {proposal.permissions?.canConfigure && (
         <button
           type="button"
           className="btn btn-success gap-2"
@@ -253,6 +254,8 @@ const AdminProposalApprovalDetailPage = () => {
         >
           <PenSquare size={16} /> Cấu hình ký
         </button>
+        )}
+        {proposal.permissions?.canRequestUpdate && (
         <button
           type="button"
           className="btn btn-warning gap-2"
@@ -262,6 +265,8 @@ const AdminProposalApprovalDetailPage = () => {
         >
           <RefreshCw size={16} /> Yêu cầu cập nhật thông tin
         </button>
+        )}
+        {proposal.permissions?.canReject && (
         <button
           type="button"
           className="btn btn-error gap-2"
@@ -271,6 +276,7 @@ const AdminProposalApprovalDetailPage = () => {
         >
           <XCircle size={16} /> Từ chối duyệt
         </button>
+        )}
         <button type="button" className="btn btn-ghost gap-2" onClick={() => navigate(-1)}>
           <ArrowLeft size={16} /> Trở về
         </button>

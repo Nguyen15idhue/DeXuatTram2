@@ -12,8 +12,9 @@ export const LAYOUT_UPDATE_STATUSES = ['DESIGNING'];
 
 export const resolveDesignRole = (user) => {
   if (!user) return null;
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user.role)) return LAYOUT_ROLE.ADMIN;
-  return resolveGradingRole(user.department) === 'QH' ? LAYOUT_ROLE.DESIGN : null;
+  if (user.role === 'SUPER_ADMIN') return LAYOUT_ROLE.ADMIN;
+  return ['ADMIN', 'SALES'].includes(user.role)
+    && resolveGradingRole(user.department || user.custom_data?.department) === 'QH' ? LAYOUT_ROLE.DESIGN : null;
 };
 
 export const canManageLayout = (user) => !!resolveDesignRole(user);
