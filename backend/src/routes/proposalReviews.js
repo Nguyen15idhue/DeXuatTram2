@@ -113,7 +113,7 @@ router.get('/:id', requireAuth, requireUserManager, proposalReviewController.det
  *   put:
  *     tags: [Proposal Reviews]
  *     summary: GĐTTKD yêu cầu Quy hoạch và Pháp lý chấm điểm lại
- *     description: Chỉ áp dụng cho đề xuất GDTTKD_EVALUATING. Bắt buộc nhập lý do.
+ *     description: Chỉ áp dụng cho đề xuất GDTTKD_EVALUATING. Bắt buộc nhập lý do và chọn phòng đã có điểm, không tự chọn phòng ban.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -128,15 +128,22 @@ router.get('/:id', requireAuth, requireUserManager, proposalReviewController.det
  *         application/json:
  *           schema:
  *             type: object
- *             required: [reason]
+ *             required: [reason, departments]
  *             properties:
  *               reason:
  *                 type: string
+ *               departments:
+ *                 type: array
+ *                 minItems: 1
+ *                 uniqueItems: true
+ *                 items:
+ *                   type: string
+ *                   enum: [QH, PL]
  *     responses:
  *       200:
  *         description: Thành công
  *       400:
- *         description: Sai trạng thái hoặc thiếu lý do
+ *         description: Sai trạng thái, thiếu lý do hoặc phòng cần chấm lại không hợp lệ
  *       403:
  *         description: Không có quyền / ngoài miền phụ trách
  *       404:

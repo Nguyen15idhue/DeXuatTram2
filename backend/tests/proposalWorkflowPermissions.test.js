@@ -114,6 +114,41 @@ test('report owner, assignee and ancestors retain upload permission without ADMI
   assert.equal(await access.canActAsProposalOwner(profiles[7], { ...proposal, user_id: 20 }), false);
 });
 
+test('GĐTTKD must explicitly select scored departments and provide a nonblank reason', async () => {
+  const user = profiles.find((item) => item.id === 5);
+  for (const departments of [undefined, null, [], 'QH', [''], ['OTHER']]) {
+    await assert.rejects(() => review.requestRegrade({ user, id: 101, reason: 'Chấm lại', departments }), { statusCode: 400 });
+  }
+  for (const reason of [undefined, '', '   ']) {
+    await assert.rejects(() => review.requestRegrade({ user, id: 101, reason, departments: ['QH'] }), { statusCode: 400 });
+  }
+  proposal.phap_ly_score = null;
+  await assert.rejects(() => review.requestRegrade({ user, id: 101, reason: 'Chấm lại', departments: ['PL'] }), { statusCode: 400 });
+  assert.equal(mutations, 0);
+});
+
+test('explicit regrade selection creates requests only for chosen departments', async (t) => {
+  const lifecycle = require('../src/services/proposalLifecycle');
+  const originalQuery = pool.query;
+  const created = [];
+  t.mock.method(pool, 'query', async (sql, params) => {
+    if (sql.startsWith('UPDATE station_proposals')) return [{ affectedRows: 1 }];
+    if (sql.includes('MAX(round_no)')) return [[{ n: 0 }]];
+    return originalQuery(sql, params);
+  });
+  t.mock.method(lifecycle, 'transition', async () => ({ status: 'RE_GRADING' }));
+  t.mock.method(lifecycle, 'logActivity', async () => {});
+  t.mock.method(lifecycle, 'notifyStepReceivers', async () => {});
+  t.mock.method(requests, 'closeRequests', async () => {});
+  t.mock.method(requests, 'createRequest', async (input) => { created.push(input); return { id: created.length }; });
+  for (const departments of [['QH'], ['PL'], ['QH', 'PL']]) {
+    created.length = 0;
+    await review.requestRegrade({ user: profiles.find((item) => item.id === 5), id: 101, reason: '  Cần chấm lại  ', departments });
+    assert.deepEqual(created.map((item) => item.targetDepartment), departments);
+    assert.ok(created.every((item) => item.description === 'Cần chấm lại'));
+  }
+});
+
 test('ADMIN and SALES GDT T handle all same-region reports, never another region even as owner', async () => {
   for (const user of profiles.filter((item) => [4, 5].includes(item.id))) {
     const scope = await reports.resolveScope(user);

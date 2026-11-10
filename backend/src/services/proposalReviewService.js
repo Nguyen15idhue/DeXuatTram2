@@ -469,8 +469,10 @@ const requestRegrade = async ({ user, id, reason, departments, ip }) => {
     ...(proposal.quy_hoach_score !== null && proposal.quy_hoach_score !== undefined ? ['QH'] : []),
     ...(proposal.phap_ly_score !== null && proposal.phap_ly_score !== undefined ? ['PL'] : [])
   ];
-  const selectedDepartments = departments === undefined ? scoredDepartments : departments;
-  const targets = [...new Set(Array.isArray(selectedDepartments) ? selectedDepartments : [])];
+  if (!Array.isArray(departments) || departments.length === 0) {
+    throw err('Vui lòng chọn phòng cần chấm lại', 400);
+  }
+  const targets = [...new Set(departments)];
   if (targets.length === 0 || targets.some((department) => !['QH', 'PL'].includes(department))) {
     throw err('Không có phòng đã chấm điểm hợp lệ để yêu cầu chấm lại', 400);
   }

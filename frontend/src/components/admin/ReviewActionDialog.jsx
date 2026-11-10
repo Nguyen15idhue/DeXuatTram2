@@ -24,7 +24,7 @@ const ReviewActionDialog = ({
   useEffect(() => {
     if (isOpen) {
       setReason('');
-      setDepartmentSelection(allowQH && allowPL ? 'BOTH' : allowQH ? 'QH' : allowPL ? 'PL' : '');
+      setDepartmentSelection('');
     }
   }, [isOpen, allowQH, allowPL]);
 
@@ -32,7 +32,11 @@ const ReviewActionDialog = ({
 
   const disabled = saving
     || (requireReason && !reason.trim())
-    || (showDepartmentSelection && !departmentSelection);
+    || (showDepartmentSelection && !(
+      (departmentSelection === 'QH' && allowQH)
+      || (departmentSelection === 'PL' && allowPL)
+      || (departmentSelection === 'BOTH' && allowQH && allowPL)
+    ));
 
   return (
     <dialog className="modal modal-open">
