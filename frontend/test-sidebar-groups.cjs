@@ -60,17 +60,18 @@ async function main() {
     }
     assert.deepEqual(await nav.locator(':scope > div > button').allTextContents(),
       ['Tổng quan', 'Vận hành', 'Khách hàng', 'Hệ thống', 'Khác', 'Trường thông tin', 'Dữ liệu']);
-    for (const name of ['Khách hàng', 'Hệ thống', 'Khác', 'Trường thông tin', 'Dữ liệu']) {
+    for (const name of ['Hệ thống', 'Khác', 'Trường thông tin', 'Dữ liệu']) {
       assert.equal(await group(name).getAttribute('aria-expanded'), 'false');
     }
     assert.equal(await group('Vận hành').getAttribute('aria-expanded'), 'true');
     assert.equal(await group('Tổng quan').getAttribute('aria-expanded'), 'true');
+    assert.equal(await group('Khách hàng').getAttribute('aria-expanded'), 'true');
     assert.equal(await group('Quản lý Đề xuất').getAttribute('aria-expanded'), 'true');
     assert.ok((await nav.locator('a[href="/admin/proposals/yeu-cau-cham-diem-lai"]').getAttribute('class')).includes('bg-primary'));
     await nav.getByTitle('14 công việc cần thực hiện trong Quản lý Đề xuất', { exact: true }).waitFor();
     await nav.getByTitle('6 công việc cần thực hiện trong Quản lý ON trạm', { exact: true }).waitFor();
     await nav.getByTitle('4 công việc Tài chính ON trạm', { exact: true }).waitFor();
-    for (const name of ['Khách hàng', 'Hệ thống', 'Khác', 'Trường thông tin', 'Dữ liệu']) await group(name).click();
+    for (const name of ['Hệ thống', 'Khác', 'Trường thông tin', 'Dữ liệu']) await group(name).click();
     const hrefs = await nav.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
     assert.equal(new Set(hrefs).size, hrefs.length);
     assert.equal(hrefs.includes('/admin/reports'), false);
@@ -82,12 +83,15 @@ async function main() {
       ['Quản lý Users', 'Quản lý Chữ ký số', 'Quản lý lịch làm việc', 'Phân quyền']);
     await group('Vận hành').click();
     await group('Tổng quan').click();
+    await group('Khách hàng').click();
     assert.equal(await group('Vận hành').getAttribute('aria-expanded'), 'false');
     assert.equal(await group('Tổng quan').getAttribute('aria-expanded'), 'false');
+    assert.equal(await group('Khách hàng').getAttribute('aria-expanded'), 'false');
     await page.evaluate(() => window.mountSidebar('/admin/on-tram/giao-tru/701'));
     await nav.locator('a[href="/admin/on-tram/giao-tru"]').waitFor();
     assert.equal(await group('Vận hành').getAttribute('aria-expanded'), 'true');
     assert.equal(await group('Tổng quan').getAttribute('aria-expanded'), 'true');
+    assert.equal(await group('Khách hàng').getAttribute('aria-expanded'), 'true');
     assert.equal(await group('Quản lý ON trạm').getAttribute('aria-expanded'), 'true');
     await page.setViewportSize({ width: 390, height: 844 });
     const before = await page.evaluate(() => window.navClicks);

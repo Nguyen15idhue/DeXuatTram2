@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Map, ClipboardList, User, Settings, LogOut, X, BookOpen } from 'lucide-react';
+import { getAdminPanelRedirect } from '../../utils/adminPanelRedirect';
 
 const menuItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
@@ -56,7 +57,7 @@ const UserSidebar = ({ isOpen, onClose }) => {
             <>
               <div className="border-t border-base-300 my-2"></div>
               <Link
-                to="/admin"
+                to={getAdminPanelRedirect(user)}
                 className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm text-base-content hover:bg-base-200 transition-colors"
                 onClick={onClose}
               >
