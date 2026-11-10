@@ -70,6 +70,26 @@ const canAccessFile = async (file, req) => {
   }
   if (requesterId && ['ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
   if (requesterId) {
+    const [documents] = await pool.query(
+      `SELECT d.proposal_id, d.id FROM proposal_report_documents d
+        WHERE d.is_current=1 AND ? IN (d.source_file_id,d.pdf_file_id,d.signing_file_id,d.signed_file_id)`,
+      [file.id]);
+    for (const document of documents) {
+      const [configs] = await pool.query(
+        `SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND user_id=?
+           AND status<>'CANCELLED' AND (document_id=? OR file_id=?) LIMIT 1`,
+        [document.proposal_id, requesterId, document.id, file.id]);
+      if (configs.length) return true;
+      try {
+        await require('../services/proposalReportService').assertReportReadAccess(
+          { id: requesterId, role: requesterRole }, document.proposal_id);
+        return true;
+      } catch (error) {
+        if (error.statusCode !== 403) throw error;
+      }
+    }
+  }
+  if (requesterId) {
     const [contractStations] = await pool.query(
       'SELECT id FROM charging_stations WHERE contract_file_id = ? LIMIT 1',
       [file.id]
@@ -370,6 +390,14 @@ exports.delete = async (req, res) => {
     }
     if (file.uploaded_by !== req.user.id && !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    const [linkedReports] = await pool.query(
+      `SELECT id FROM proposal_report_documents WHERE is_current=1
+         AND ? IN (source_file_id,pdf_file_id,signing_file_id,signed_file_id)
+       UNION SELECT id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'
+       LIMIT 1`, [file.id, file.id]);
+    if (linkedReports.length) {
+      return res.status(409).json({ success: false, message: 'Không được xóa tài liệu BCĐX đang sử dụng hoặc đã cấu hình ký. Hãy cập nhật hồ sơ theo quy trình.' });
     }
 
     await fileService.deleteFile(req.params.id);

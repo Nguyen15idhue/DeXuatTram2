@@ -14,7 +14,9 @@ import ReviewActionDialog from '../../components/admin/ReviewActionDialog';
 import { ProposalModelBadge, ProposalStatusBadge } from '../../components/admin/ProposalTableBadges';
 import FileViewer from '../../components/dynamic/FileViewer';
 import { useAuth } from '../../contexts/AuthContext';
-import { API_URL, proposalApprovalService } from '../../services/api';
+import { API_URL, proposalApprovalService, proposalReportService } from '../../services/api';
+import { ensureDocumentResponse } from '../../utils/proposalDocuments';
+import ProposalDocumentConversionList from '../../components/admin/ProposalDocumentConversionList';
 import useFieldOptions from '../../hooks/useFieldOptions';
 import {
   formatProposalCost,
@@ -43,6 +45,8 @@ const AdminProposalApprovalDetailPage = () => {
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState('');
   const [fileViewing, setFileViewing] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [converting, setConverting] = useState(false);
 
   const loadProposal = useCallback(async () => {
     if (!token || !id) return;
@@ -51,6 +55,8 @@ const AdminProposalApprovalDetailPage = () => {
     try {
       const response = await proposalApprovalService.getProposal(id, token);
       setProposal(response?.data || null);
+      const documentsResponse = ensureDocumentResponse(await proposalReportService.getDocuments(id, token));
+      setDocuments(documentsResponse?.data?.documents || []);
     } catch (loadError) {
       setError(loadError?.message || 'Không tải được thông tin đề xuất');
     } finally {
@@ -70,6 +76,16 @@ const AdminProposalApprovalDetailPage = () => {
     (getSelectOptions('status') || []).map((option) => [option.value, option])
   );
   const reviewable = proposal?.status === 'PROPOSAL_REPORT_REVIEWING';
+  const retryConversion = async (documentId) => {
+    setConverting(true);
+    setError('');
+    try {
+      const response = ensureDocumentResponse(await proposalReportService.convertDocument(id, documentId, token));
+      setDocuments((current) => current.map((document) => response?.data?.documents?.find((item) => String(item.id) === String(document.id)) || document));
+      await loadProposal();
+    } catch (err) { setActionError(err.message); }
+    finally { setConverting(false); }
+  };
 
   const submitAction = async (value) => {
     if (!proposal) return;
@@ -169,6 +185,11 @@ const AdminProposalApprovalDetailPage = () => {
       </section>
 
       <ProposalStaticInfo record={proposal} onViewFile={setFileViewing} />
+      {documents.length > 0 && <section className="space-y-2 rounded-lg border p-4">
+        <h2 className="font-semibold">Tài liệu BCĐX và bản gốc</h2>
+        <ProposalDocumentConversionList documents={documents} onRetry={canConfigureSignature(proposal) ? retryConversion : undefined} busy={converting} />
+        {actionError && <p className="text-error text-sm">{actionError}</p>}
+      </section>}
 
       <section className="space-y-3 rounded-lg border bg-base-100 p-4">
         <div className="flex items-center gap-2">

@@ -109,12 +109,31 @@ exports.configureSignature = async (req, res) => {
       id: req.params.id,
       fileId: body.file_id,
       signers: body.signers,
+      documents: body.documents,
       ip: req.ip
     });
     res.json({
       success: true,
       data: result,
       message: 'Đã cấu hình trình ký BCĐX'
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.withdrawSignatureConfig = async (req, res) => {
+  try {
+    const result = await proposalApprovalService.withdrawSignatureConfig({
+      user: req.user,
+      id: req.params.id,
+      reason: req.body ? req.body.reason : '',
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Đã thu hồi cấu hình ký'
     });
   } catch (error) {
     sendError(res, error);

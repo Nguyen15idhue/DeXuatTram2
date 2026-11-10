@@ -4,6 +4,53 @@ const { requireAuth } = require('../middlewares/auth');
 const { validateUpdateProposal } = require('../middlewares/validators');
 const myProposalController = require('../controllers/myProposalController');
 const excelService = require('../services/excelService');
+const reportDocuments = require('../controllers/proposalReportDocumentController');
+
+/**
+ * @swagger
+ * /api/my-proposals/{id}/report/documents:
+ *   get:
+ *     tags: [My Proposals]
+ *     summary: Xem tài liệu BCĐX của chính mình
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     responses:
+ *       200: { description: Tài liệu gốc và PDF hiện hành }
+ *       403: { description: Không phải chủ đề xuất }
+ * /api/my-proposals/{id}/report/documents/prepare:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Chuẩn bị PDF từ file BCĐX của chính mình trước khi nộp
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [files]
+ *             properties:
+ *               files: { type: array, items: { type: object, properties: { id: { type: integer } } } }
+ *     responses:
+ *       200: { description: Kết quả chuyển PDF từng tài liệu }
+ *       403: { description: Không phải chủ đề xuất }
+ * /api/my-proposals/{id}/report/documents/{documentId}/convert:
+ *   post:
+ *     tags: [My Proposals]
+ *     summary: Thử chuyển lại Word BCĐX của chính mình
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Kết quả chuyển PDF }
+ *       403: { description: Không có quyền }
+ *       409: { description: Tài liệu đã cấu hình ký hoặc sai bước }
+ */
+router.get('/:id/report/documents', requireAuth, reportDocuments.list);
+router.post('/:id/report/documents/prepare', requireAuth, reportDocuments.prepare);
+router.post('/:id/report/documents/:documentId/convert', requireAuth, reportDocuments.convert);
 
 /**
  * @swagger

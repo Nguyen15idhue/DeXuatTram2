@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { proposalSignatureService } from '../../services/api';
+import { documentFile, fileName, getDocumentSigners } from '../../utils/proposalDocuments';
 import ProposalDocumentPreview from './ProposalDocumentPreview';
 import { CheckCircle2, PenSquare, Send, X, XCircle } from 'lucide-react';
 import {
@@ -29,6 +30,7 @@ const ProposalSignatureDetailModal = ({ open, record, initialReject = false, onC
   const [showReject, setShowReject] = useState(false);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [documentId, setDocumentId] = useState(null);
 
   const proposalId = record?.id;
 
@@ -39,6 +41,7 @@ const ProposalSignatureDetailModal = ({ open, record, initialReject = false, onC
     try {
       const res = await proposalSignatureService.getDetail(proposalId, token);
       setDetail(res?.data || null);
+      setDocumentId(res?.data?.documents?.[0]?.id || null);
     } catch (err) {
       setError(err?.message || 'Không tải được chi tiết đề xuất');
     } finally {
@@ -81,7 +84,9 @@ const ProposalSignatureDetailModal = ({ open, record, initialReject = false, onC
 
   const signStatus = detail?.sign_status;
   const signColor = getSignStatusColor(signStatus);
-  const previewFile = detail?.report_files?.[0] || null;
+  const activeDocument = detail?.documents?.find((document) => String(document.id) === String(documentId));
+  const previewFile = activeDocument ? documentFile(activeDocument) : detail?.report_files?.[0] || null;
+  const signers = activeDocument ? getDocumentSigners(activeDocument, detail?.signers) : detail?.signers || [];
 
   return (
     <dialog className="modal modal-open" style={{ zIndex: 60 }}>
@@ -118,11 +123,14 @@ const ProposalSignatureDetailModal = ({ open, record, initialReject = false, onC
               </div>
             </div>
 
-            {detail.signers?.length > 0 && (
+            {detail.documents?.length > 0 && <select aria-label="Tài liệu trình ký" className="select select-bordered w-full" value={documentId || ''} onChange={(event) => setDocumentId(event.target.value)}>
+              {detail.documents.map((document) => <option key={document.id} value={document.id}>{fileName(document.source_file || documentFile(document))}</option>)}
+            </select>}
+            {signers.length > 0 && (
               <div className="border rounded p-3">
                 <p className="text-sm font-semibold mb-2">Người ký ({detail.signer_signed}/{detail.signer_total})</p>
                 <ul className="space-y-1">
-                  {detail.signers.map((signer) => (
+                  {signers.map((signer) => (
                     <li key={signer.id} className="flex items-center justify-between gap-2 text-sm">
                       <span className="truncate">
                         {signer.full_name}

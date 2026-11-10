@@ -38,6 +38,7 @@ services:
         target: /run/secrets/google-sheets.json
         read_only: true
       - ${SIGNATURE_FONT_HOST_DIR:-/usr/share/fonts/truetype/msttcorefonts}:/app/signature-fonts:ro
+      - ${SIGNATURE_FONT_HOST_DIR:-/usr/share/fonts/truetype/msttcorefonts}:/usr/local/share/fonts/tmt-signature:ro
     depends_on:
       mysql:
         condition: service_healthy

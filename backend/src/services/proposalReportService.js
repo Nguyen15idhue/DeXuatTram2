@@ -165,6 +165,14 @@ exports.TAB_STATUSES = TAB_STATUSES;
 exports.resolveScope = resolveScope;
 exports.isBackOffice = isBackOffice;
 exports.isFinanceDepartment = isFinanceDepartment;
+exports.canUploadReport = canUploadReport;
+exports.assertReportReadAccess = async (user, id) => {
+  const scope = await resolveScope(user);
+  const params = [id];
+  const filter = await scopeClause(scope, params);
+  const [rows] = await pool.query(`SELECT p.id FROM station_proposals p WHERE p.id=?${filter}`, params);
+  if (!rows.length) throw err('Bạn không có quyền xem tài liệu đề xuất này', 403);
+};
 
 exports.listProposals = async ({
   user,
@@ -513,7 +521,7 @@ const normalizeExpectedOnDate = (value) => {
   return dateValue;
 };
 
-exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip } = {}) => {
+const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, acceptConversionFailure = false, ip } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   if (![CREATING_STATUS, RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
@@ -523,6 +531,7 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, i
 
   const custom = parseCustomData(proposal.custom_data);
   const previous = toFileSummaries(custom[REPORT_FIELD]);
+  const previousSources = toFileSummaries(custom.file_bc_dx_sources || custom[REPORT_FIELD]);
   const reportFiles = await normalizeReportFiles(files, previous.map((file) => file.id));
   if (reportFiles.length === 0) {
     throw err('Vui lòng tải lên file tờ trình BCĐX', 400);
@@ -536,7 +545,7 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, i
   const totalValue = sumChotTotal(chotRows);
 
   if ([RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
-    const existingFileIds = new Set(previous.map((file) => Number(file.id)).filter(Number.isFinite));
+    const existingFileIds = new Set([...previous, ...previousSources].map((file) => Number(file.id)).filter(Number.isFinite));
     if (!reportFiles.some((file) => !existingFileIds.has(Number(file.id)))) {
       throw err('Vui lòng tải lên file BCĐX mới theo yêu cầu cập nhật', 400);
     }
@@ -550,14 +559,34 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, i
   const nextExpectedOnDate = normalizedExpectedOnDate === undefined
     ? previousExpectedOnDate
     : normalizedExpectedOnDate;
-  const nextCustom = { ...custom, [REPORT_FIELD]: reportFiles };
-
-  await pool.query(
+  const documentService = require('./proposalReportDocumentService');
+  const documents = await documentService.prepareDocuments({ proposalId: proposal.id, files: reportFiles, user, ip });
+  if (documents.some(document => ['PENDING', 'PROCESSING'].includes(document.conversion_status))) {
+    throw err('Tài liệu đang chuyển PDF. Vui lòng đợi rồi nộp lại.', 409);
+  }
+  if (documents.some(document => document.conversion_status === 'FAILED') && acceptConversionFailure !== true) {
+    throw Object.assign(err('Có tài liệu chuyển PDF thất bại. Thử lại hoặc xác nhận tiếp tục với Word.', 409), { documents });
+  }
+  const canonicalFiles = documents.map(document => document.signing_file);
+  if (canonicalFiles.some(file => !file)) throw err('Thiếu tài liệu dùng để duyệt BCĐX', 409);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [locked] = await connection.query('SELECT status,custom_data FROM station_proposals WHERE id=? FOR UPDATE', [proposal.id]);
+    if (!locked.length || locked[0].status !== proposal.status) throw err('Đề xuất đã đổi trạng thái, vui lòng tải lại', 409);
+    const nextCustom = { ...parseCustomData(locked[0].custom_data), [REPORT_FIELD]: canonicalFiles, file_bc_dx_sources: reportFiles };
+    await documentService.activateDocuments(proposal.id, documents, connection);
+    await connection.query(
     `UPDATE station_proposals
      SET custom_data = ?, chot_so_luong_tru = ?, tong_gia_tri_chot = ?, ngay_du_kien_on = ?, updated_at = NOW()
      WHERE id = ?`,
     [JSON.stringify(nextCustom), JSON.stringify(chotRows), totalValue, nextExpectedOnDate, proposal.id]
-  );
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally { connection.release(); }
 
   const proposalLifecycle = require('./proposalLifecycle');
   await proposalLifecycle.logActivity({
@@ -614,12 +643,39 @@ exports.uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, i
   return {
     id: proposal.id,
     status: REVIEWING_STATUS,
-    report_files: reportFiles,
+    report_files: canonicalFiles,
+    documents,
     chot_so_luong_tru: chotRows,
     tong_gia_tri_chot: totalValue,
     ngay_du_kien_on: nextExpectedOnDate,
     transition
   };
+};
+
+const activeUploads = new Set();
+exports.uploadReport = async (input = {}) => {
+  const key = Number(input.id);
+  if (!Number.isSafeInteger(key) || key <= 0) throw err('Đề xuất không hợp lệ', 400);
+  if (activeUploads.has(key)) throw err('Đề xuất đang nộp BCĐX, vui lòng đợi', 409);
+  if (activeUploads.size >= 3) throw err('Hệ thống đang xử lý nhiều BCĐX, vui lòng thử lại sau', 429);
+  activeUploads.add(key);
+  let connection;
+  let locked = false;
+  const lockName = `report_upload_${key}`;
+  try {
+    connection = await pool.getConnection();
+    const [rows] = await connection.query('SELECT GET_LOCK(?,0) AS acquired', [lockName]);
+    locked = Number(rows[0].acquired) === 1;
+    if (!locked) throw err('Đề xuất đang nộp BCĐX ở phiên khác, vui lòng đợi', 409);
+    return await uploadReport(input);
+  } finally {
+    try {
+      if (locked) await connection.query('SELECT RELEASE_LOCK(?)', [lockName]);
+    } finally {
+      connection?.release();
+      activeUploads.delete(key);
+    }
+  }
 };
 
 exports.requestRevision = async ({ user, id, description, ip } = {}) => {

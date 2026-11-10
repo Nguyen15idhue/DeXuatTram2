@@ -15,6 +15,7 @@ exports.uploadReport = async (req, res) => {
       files: req.body ? req.body.files : [],
       chotSoLuongTru: req.body ? req.body.chot_so_luong_tru : [],
       ngayDuKienOn: req.body ? req.body.ngay_du_kien_on : undefined,
+      acceptConversionFailure: req.body?.accept_conversion_failure,
       ip: req.ip
     });
     return res.json({
@@ -25,7 +26,10 @@ exports.uploadReport = async (req, res) => {
   } catch (error) {
     console.error('Upload BCĐX report error:', error);
     if (error.statusCode) {
-      return res.status(error.statusCode).json({ success: false, message: error.message });
+      return res.status(error.statusCode).json({
+        success: false, message: error.message,
+        ...(error.documents ? { data: { documents: error.documents } } : {})
+      });
     }
     return res.status(500).json({ success: false, message: 'Lỗi server' });
   }

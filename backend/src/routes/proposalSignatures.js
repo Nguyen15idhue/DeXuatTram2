@@ -101,6 +101,17 @@ router.get('/:id', requireAuth, proposalSignatureController.detail);
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               document_id:
+ *                 type: integer
+ *               file_id:
+ *                 type: integer
  *     responses:
  *       200:
  *         description: Thành công
@@ -221,6 +232,16 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  *                   properties:
  *                     id:
  *                       type: integer
+ *               documents:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [document_id, file_id]
+ *                   properties:
+ *                     document_id:
+ *                       type: integer
+ *                     file_id:
+ *                       type: integer
  *     responses:
  *       200:
  *         description: Thành công
@@ -247,6 +268,16 @@ router.post('/:id/signed-file', requireAuth, proposalSignatureController.uploadS
  *         required: true
  *         schema:
  *           type: integer
+ *       - in: query
+ *         name: document_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: all
+ *         description: Xuất các tài liệu BCĐX hiện hành thành một file ZIP (1 để bật)
+ *         schema:
+ *           type: string
+ *           enum: ['1']
  *     responses:
  *       200:
  *         description: Thành công
@@ -271,6 +302,16 @@ router.get('/:id/export', requireAuth, proposalSignatureController.exportFile);
  *         required: true
  *         schema:
  *           type: integer
+ *       - in: query
+ *         name: document_id
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: all
+ *         description: Tải mọi tài liệu BCĐX hiện hành trong ZIP (1 để bật)
+ *         schema:
+ *           type: string
+ *           enum: ['1']
  *     responses:
  *       200:
  *         description: File PDF hoặc DOCX có chữ ký đã đóng lên tài liệu

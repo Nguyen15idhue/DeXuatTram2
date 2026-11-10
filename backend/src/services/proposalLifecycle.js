@@ -114,7 +114,8 @@ exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changed
 exports.transition = async (id, to, opts = {}) => {
   const {
     reason, actorId, actorRole, source = 'user', manualOverride = false, ip,
-    isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false, directOnStation = false
+    isSuperAdmin = false, force = false, pauseAction = false, resumeAction = false, directOnStation = false,
+    signatureWithdrawal = false
   } = opts;
   if (!ALL_STATUSES.includes(to)) {
     throw err('Trạng thái không hợp lệ', 400);
@@ -130,6 +131,14 @@ exports.transition = async (id, to, opts = {}) => {
   }
   const proposal = rows[0];
   const from = proposal.status;
+  const isSignatureWithdrawal = signatureWithdrawal === true && from === 'SIGNATURE_PENDING'
+    && to === 'PROPOSAL_REPORT_REVIEWING' && source === 'user';
+  if (signatureWithdrawal) {
+    if (!isSignatureWithdrawal) throw err('Không thể thu hồi cấu hình ký ở trạng thái này', 409);
+    const [signed] = await pool.query(
+      "SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND status='SIGNED' LIMIT 1", [id]);
+    if (signed.length) throw err('Đã có người ký, không thể thu hồi cấu hình', 409);
+  }
   const isPauseTransition = pauseAction === true && to === 'PAUSED';
   const isResumeTransition = resumeAction === true
     && from === 'PAUSED'
@@ -201,7 +210,7 @@ exports.transition = async (id, to, opts = {}) => {
   }
   if (!forceOverride && !isDirectOnStation) {
     if (!isPauseTransition && !isResumeTransition && !isPausedCancellation
-      && !(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen) {
+      && !(ALLOWED_TRANSITIONS[from] || []).includes(to) && !isEmergencyReopen && !isSignatureWithdrawal) {
       await exports.logActivity({
         proposalId: id, action: 'status_change_denied',
         fromStatus: from, toStatus: to,

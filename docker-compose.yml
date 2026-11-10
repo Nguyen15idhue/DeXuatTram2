@@ -32,6 +32,7 @@ services:
         target: /run/secrets/google-sheets.json
         read_only: true
       - ${SIGNATURE_FONT_HOST_DIR:-C:/Windows/Fonts}:/app/signature-fonts:ro
+      - ${SIGNATURE_FONT_HOST_DIR:-C:/Windows/Fonts}:/usr/local/share/fonts/tmt-signature:ro
     environment:
       - PORT=3000
       - DB_HOST=mysql

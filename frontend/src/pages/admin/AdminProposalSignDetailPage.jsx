@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { proposalSignatureService } from '../../services/api';
+import { proposalSignatureService, proposalApprovalService } from '../../services/api';
+import { documentFile, ensureDocumentResponse, fileName, getDocumentSigners, isUnsupportedSigningFile } from '../../utils/proposalDocuments';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
@@ -94,6 +95,7 @@ const AdminProposalSignDetailPage = () => {
   const [signedModal, setSignedModal] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [documentId, setDocumentId] = useState(null);
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -101,7 +103,9 @@ const AdminProposalSignDetailPage = () => {
     setError('');
     try {
       const res = await proposalSignatureService.getDetail(id, token);
+      ensureDocumentResponse(res);
       setDetail(res?.data || null);
+      setDocumentId((current) => res?.data?.documents?.some((document) => String(document.id) === String(current)) ? current : res?.data?.documents?.[0]?.id || null);
     } catch (err) {
       setError(err?.message || 'Không tải được hồ sơ trình ký');
     } finally {
@@ -113,11 +117,18 @@ const AdminProposalSignDetailPage = () => {
     loadDetail();
   }, [loadDetail]);
 
+  const documents = detail?.documents || [];
+  const activeDocument = documents.find((document) => String(document.id) === String(documentId));
+  const activeSigners = activeDocument ? getDocumentSigners(activeDocument, detail?.signers) : detail?.signers || [];
+  const activeConfig = activeDocument ? activeDocument.my_config || activeSigners.find((signer) => String(signer.user_id) === String(detail?.my_config?.user_id)) : detail?.my_config;
+  const activeFile = activeDocument ? documentFile(activeDocument) : detail?.report_files?.[0] || null;
+  const activeCanSign = (activeDocument ? activeDocument.can_sign : detail?.can_sign) && !isUnsupportedSigningFile(activeFile);
+
   const handleSign = async () => {
     setSigning(true);
     setToast({ message: '', type: 'success' });
     try {
-      const response = await proposalSignatureService.sign(id, token);
+      const response = await proposalSignatureService.sign(id, token, activeDocument?.id);
       if (response && response.success === false) {
         if (String(response?.message || '').includes('chưa tải chữ ký số')) {
           setNoSignature(true);
@@ -140,10 +151,10 @@ const AdminProposalSignDetailPage = () => {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (all = false) => {
     setExporting(true);
     try {
-      const { blob, filename } = await proposalSignatureService.downloadSignedDocument(id, token);
+      const { blob, filename } = await proposalSignatureService.downloadSignedDocument(id, token, all === true ? { all: true } : { documentId: activeDocument?.id });
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
@@ -151,7 +162,7 @@ const AdminProposalSignDetailPage = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
     } catch (err) {
       setToast({ message: err?.message || 'Không xuất được file', type: 'error' });
     } finally {
@@ -196,6 +207,17 @@ const AdminProposalSignDetailPage = () => {
     loadDetail();
   };
 
+  const withdraw = async () => {
+    setSigning(true);
+    try {
+      ensureDocumentResponse(await proposalApprovalService.withdrawSignature(id, token));
+      setToast({ message: 'Đã thu hồi cấu hình ký', type: 'success' });
+      await loadDetail();
+    } catch (err) {
+      setToast({ message: err.message || 'Không thể thu hồi cấu hình ký', type: 'error' });
+    } finally { setSigning(false); }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -217,7 +239,7 @@ const AdminProposalSignDetailPage = () => {
   }
 
   const allSigned = detail.sign_status === SIGN_STATUS.DONE || detail.sign_status === SIGN_STATUS.CEO_SIGNED;
-  const showSignButton = detail.can_sign;
+  const showSignButton = activeCanSign;
   const chotRows = parseChotRows(detail.chot_so_luong_tru);
   const initialProposalData = detail.initial_proposal_data && typeof detail.initial_proposal_data === 'object'
     ? detail.initial_proposal_data
@@ -403,6 +425,15 @@ const AdminProposalSignDetailPage = () => {
       </section>
 
       <section className="border rounded-lg bg-base-100 p-4 space-y-2">
+        {documents.length > 0 && <div className="space-y-2">
+          <p className="text-sm font-semibold">Hoàn tất ký {documents.filter((document) => getDocumentSigners(document, detail.signers).length > 0 && getDocumentSigners(document, detail.signers).every((signer) => signer.status === 'SIGNED')).length}/{documents.length} tài liệu</p>
+          <select aria-label="Tài liệu cần ký" className="select select-bordered w-full" value={documentId || ''} disabled={signing} onChange={(event) => setDocumentId(event.target.value)}>
+            {documents.map((document) => <option key={document.id} value={document.id}>{fileName(document.source_file || documentFile(document))} · {getDocumentSigners(document, detail.signers).filter((signer) => signer.status === 'SIGNED').length}/{getDocumentSigners(document, detail.signers).length} chữ ký</option>)}
+          </select>
+          {activeDocument?.source_file?.id && <a className="link link-primary text-sm" href={`${API_URL}/files/${activeDocument.source_file.id}/download?token=${encodeURIComponent(token || '')}`} target="_blank" rel="noreferrer">Tải bản gốc</a>}
+          {documents.length > 1 && <button type="button" className="btn btn-outline btn-sm ml-2" onClick={() => handleExport(true)} disabled={exporting}>Tải tất cả (ZIP)</button>}
+          {isUnsupportedSigningFile(activeFile) && <p className="alert alert-warning text-sm">Định dạng .doc không hỗ trợ ký; hãy yêu cầu cập nhật PDF hoặc DOCX.</p>}
+        </div>}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <FileText size={18} />
@@ -414,8 +445,8 @@ const AdminProposalSignDetailPage = () => {
                 <button
                   type="button"
                   className="btn btn-outline btn-xs gap-1"
-                  title={`Cuộn tới ô ký của bạn ở trang ${detail.my_config?.page || 1}`}
-                  onClick={() => docRef.current?.scrollToOverlay?.(Number(detail.my_config?.page) || 1)}
+                  title={`Cuộn tới ô ký của bạn ở trang ${activeConfig?.page || 1}`}
+                  onClick={() => docRef.current?.scrollToOverlay?.(Number(activeConfig?.page) || 1)}
                 >
                   <Crosshair size={13} />
                   Đến vị trí ký của tôi
@@ -432,12 +463,13 @@ const AdminProposalSignDetailPage = () => {
           Nhấn "Ký ngay" tại ô ký của bạn để đóng dấu chữ ký số đã tải trong hồ sơ cá nhân.
         </p>
         <ProposalSigningDocument
+          key={activeDocument?.id || activeFile?.id}
           ref={docRef}
-          file={detail.report_files?.[0] || null}
+          file={activeFile}
           proposalId={detail.id}
-          myConfig={detail.my_config}
-          signers={detail.signers}
-          canSign={detail.can_sign}
+          myConfig={activeConfig}
+          signers={activeSigners}
+          canSign={activeCanSign}
           onSign={handleSign}
           signing={signing}
         />
@@ -449,7 +481,7 @@ const AdminProposalSignDetailPage = () => {
           <h2 className="font-semibold text-sm">Người ký ({detail.signer_signed}/{detail.signer_total})</h2>
         </div>
         <ul className="space-y-1 text-sm">
-          {(detail.signers || []).map((signer) => (
+          {activeSigners.map((signer) => (
             <li key={signer.id} className="flex items-center justify-between gap-2 border-b last:border-b-0 py-1">
               <span className="truncate">
                 {signer.full_name}
@@ -464,11 +496,12 @@ const AdminProposalSignDetailPage = () => {
       </section>
 
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex flex-wrap justify-center gap-2 rounded-full bg-base-100 border shadow-lg px-3 py-2">
+        {detail.can_withdraw && <button type="button" className="btn btn-warning btn-outline btn-sm" disabled={signing} onClick={withdraw}>Thu hồi cấu hình ký</button>}
         {showSignButton && (
           <button
             type="button"
             className="btn btn-primary btn-sm gap-1 rounded-full"
-            onClick={() => docRef.current?.scrollToOverlay?.(Number(detail.my_config?.page) || 1)}
+            onClick={() => docRef.current?.scrollToOverlay?.(Number(activeConfig?.page) || 1)}
           >
             <Crosshair size={14} />
             Đến vị trí ký của tôi

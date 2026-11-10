@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireProposalReportManager } = require('../middlewares/auth');
+const { requireAuth, requireProposalReportManager, requireProposalInfoManager } = require('../middlewares/auth');
 const proposalReportController = require('../controllers/proposalReportController');
+const reportDocuments = require('../controllers/proposalReportDocumentController');
 
 /**
  * @swagger
@@ -98,6 +99,51 @@ router.get('/', requireAuth, requireProposalReportManager, proposalReportControl
  *         description: Thành công
  */
 router.get('/filter-options', requireAuth, requireProposalReportManager, proposalReportController.filterOptions);
+
+/**
+ * @swagger
+ * /api/admin/proposal-reports/{id}/documents:
+ *   get:
+ *     tags: [Proposal Reports]
+ *     summary: Tài liệu gốc, PDF cố định và lỗi chuyển đổi BCĐX
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     responses:
+ *       200: { description: Danh sách tài liệu hiện hành }
+ *       403: { description: Ngoài phạm vi đề xuất }
+ * /api/admin/proposal-reports/{id}/documents/prepare:
+ *   post:
+ *     tags: [Proposal Reports]
+ *     summary: Chuẩn bị PDF cho tối đa 10 Word/PDF trước khi nộp BCĐX
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [files]
+ *             properties:
+ *               files: { type: array, items: { type: object, properties: { id: { type: integer } } } }
+ *     responses:
+ *       200: { description: Kết quả từng file; FAILED có thể thử lại hoặc xác nhận nộp với accept_conversion_failure }
+ *       403: { description: Không có quyền nộp }
+ * /api/admin/proposal-reports/{id}/documents/{documentId}/convert:
+ *   post:
+ *     tags: [Proposal Reports]
+ *     summary: Thử chuyển Word sang PDF; chặn nếu đã cấu hình hoặc ký
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Trạng thái chuyển đổi; lỗi nằm trong conversion_error }
+ *       409: { description: Đã cấu hình ký hoặc sai bước }
+ */
+router.get('/:id/documents', requireAuth, requireProposalReportManager, reportDocuments.list);
+router.post('/:id/documents/prepare', requireAuth, requireProposalReportManager, reportDocuments.prepare);
+router.post('/:id/documents/:documentId/convert', requireAuth, requireProposalReportManager, reportDocuments.convert);
 
 /**
  * @swagger

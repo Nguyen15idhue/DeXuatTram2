@@ -5,7 +5,8 @@ const sendError = (res, error) => {
   console.error('Proposal report error:', error);
   res.status(error.statusCode || 500).json({
     success: false,
-    message: error.message || 'Lỗi server'
+    message: error.message || 'Lỗi server',
+    ...(error.documents ? { data: { documents: error.documents } } : {})
   });
 };
 
@@ -70,6 +71,7 @@ exports.upload = async (req, res) => {
       files: body.files,
       chotSoLuongTru: body.chot_so_luong_tru,
       ngayDuKienOn: body.ngay_du_kien_on,
+      acceptConversionFailure: body.accept_conversion_failure,
       ip: req.ip
     });
     res.json({
