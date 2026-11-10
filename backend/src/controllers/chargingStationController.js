@@ -304,6 +304,7 @@ exports.removeImage = async (req, res) => {
 };
 exports.committedExportItems = async (req, res) => {
   try {
+    await require('../services/chargingStationAccessService').assertView(req.params.id, req.user);
     const data = await chargingStationService.getCommittedExportItems(req.params.id);
     res.json({ success: true, data });
   } catch (error) {

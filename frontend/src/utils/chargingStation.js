@@ -137,7 +137,7 @@ export const CS_STAGE_PATH_PREFIX = '/admin/on-tram';
 
 export const getStageConfig = (key) => CS_STAGES.find((stage) => stage.key === key) || CS_STAGES[0];
 
-export const CS_EDITOR_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+export const CS_EDITOR_ROLES = ['SUPER_ADMIN'];
 
 export const formatCsDate = (value) => {
   if (!value) return '—';

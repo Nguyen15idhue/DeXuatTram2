@@ -26,6 +26,7 @@ import {
   getProposalPhone
 } from '../../utils/proposalGrading';
 import { getProposalStatusLabel } from '../../utils/proposalProgress';
+import ChargingStationFulfillment from '../../components/admin/ChargingStationFulfillment';
 
 const MODEL_LABELS = {
   NQ: 'Nhượng quyền',
@@ -53,6 +54,18 @@ const ACTION_LABELS = {
   acceptance_failed: 'Nghiệm thu không đạt',
   acceptance_file_uploaded: 'Tải biên bản nghiệm thu',
   configuration_completed: 'Hoàn tất cấu hình ON trạm',
+  shipment_received: 'Nhận một phần trụ',
+  shipment_return_requested: 'Yêu cầu trả trụ',
+  shipment_return_confirmed: 'Xác nhận hoàn kho thực tế',
+  shipment_failed: 'Giao hàng thất bại',
+  shipment_created: 'Tạo chuyến giao trụ',
+  portion_start_installation: 'Bắt đầu lắp phần trụ',
+  portion_complete_installation: 'Hoàn tất lắp phần trụ',
+  portion_acceptance_failed: 'Nghiệm thu phần trụ không đạt',
+  portion_acceptance_passed: 'Nghiệm thu phần trụ đạt',
+  portion_complete_configuration: 'Hoàn tất ON phần trụ',
+  deployment_progress_updated: 'Cập nhật tiến độ các phần trụ',
+  deployment_refund_requested: 'Đã ON toàn bộ trụ — yêu cầu hoàn cọc',
   image_added: 'Thêm ảnh nghiệm thu',
   image_removed: 'Gỡ ảnh nghiệm thu'
 };
@@ -133,12 +146,23 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
   const defaultReturnTab = stage === 'thong-tin-chung' ? 'all' : 'need';
   const returnTo = location.state?.returnTo || `/admin/on-tram/${stage}?tab=${defaultReturnTab}`;
   const historySummary = (entry) => {
-    const changes = Object.values(entry.changed_fields || {})
-      .map((change) => {
-        const label = change.label || 'Thông tin';
-        const oldValue = change.old || '—';
-        const newValue = change.new || '—';
-        return `${label}: ${oldValue} → ${newValue}`;
+    const labels = { deployment_id: 'Phần trụ', quantity: 'Số lượng', sub_status: 'Trạng thái chi tiết',
+      acceptance_file_id: 'Biên bản', on_date: 'Ngày ON', cms_station_code: 'Mã CMS',
+      accept_missing: 'Chấp nhận thiếu điều kiện', missing_prerequisites: 'Hạng mục còn thiếu',
+      export_id: 'Phiếu xuất', item_id: 'Dòng trụ' };
+    const valueOf = (value) => {
+      if (value === null || value === undefined || value === '') return '—';
+      if (Array.isArray(value)) return value.join(', ') || '—';
+      if (typeof value === 'boolean') return value ? 'Có' : 'Không';
+      if (typeof value === 'object') return JSON.stringify(value);
+      return CS_SUB_STATUS_LABELS[value] || String(value);
+    };
+    const changes = Object.entries(entry.changed_fields || {})
+      .filter(([, change]) => change !== null && change !== undefined)
+      .map(([key, change]) => {
+        const label = change?.label || labels[key] || key;
+        if (typeof change !== 'object' || Array.isArray(change)) return `${label}: ${valueOf(change)}`;
+        return `${label}: ${valueOf(change.old)} → ${valueOf(change.new)}`;
       });
     return changes.length ? changes.join(' · ') : '';
   };
@@ -163,6 +187,29 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
       />
 
       <Card title="Thông tin trạm sạc">
+        <dl className="grid gap-3 sm:grid-cols-3">
+          <InfoItem label="Mã trạm" value={record.ma_tram} />
+          <InfoItem label="Chủ trạm" value={record.owner_name || getProposalLegalName(proposal)} />
+          <InfoItem label="SĐT" value={record.owner_phone || getProposalPhone(proposal)} />
+          <InfoItem label="Địa chỉ" value={record.address || getProposalAddress(proposal)} />
+          <InfoItem label="Mã CMS" value={record.cms_station_code} />
+          <InfoItem label="Ngày ON đầu tiên" value={formatCsDate(record.on_date)} />
+        </dl>
+      </Card>
+
+      <Card title="Trụ chốt, giao hàng và các phần triển khai">
+        <ChargingStationFulfillment station={record} onChanged={async () => {
+          const response = await chargingStationService.getDetail(id, token);
+          setRecord(response.data);
+        }} />
+      </Card>
+
+      <Card title="Hợp đồng, hạ tầng và tài chính">
+        <div className="flex flex-wrap gap-3 text-xs">
+          <Link className="link link-primary" to="/admin/on-tram/khoi-tao-hop-dong?tab=all">Cập nhật hợp đồng</Link>
+          <Link className="link link-primary" to="/admin/on-tram/xay-dung-ha-tang?tab=all">Cập nhật hạ tầng</Link>
+          <Link className="link link-primary" to="/admin/tai-chinh?tab=all">Tài chính / hóa đơn</Link>
+        </div>
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <InfoItem label="Mã trạm" value={record.ma_tram} />
           <InfoItem label="Mã trạm trên CMS" value={record.cms_station_code} />
@@ -242,7 +289,7 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
         )}
       </Card>
 
-      {record.delivery_export && (
+      {record.delivery_export && !record.fulfillment?.shipments?.length && (
         <Card title="Thông tin giao trụ và vận chuyển">
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
             <InfoItem label="Bên vận chuyển" value={record.delivery_export.carrier} />
@@ -277,7 +324,7 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
       <Card title="Thông tin chính của đề xuất">
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <InfoItem label="Mã đề xuất">
-            <Link to={`/admin/proposals/chi-tiet/${record.proposal_id}`} className="link link-primary font-mono">
+            <Link to={`/admin/proposals/chi-tiet/${record.proposal_id}`} className="link link-primary underline">
               {proposal.ma_de_xuat || record.ma_de_xuat || `#${record.proposal_id}`}
             </Link>
           </InfoItem>
@@ -305,6 +352,7 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
                 {historySummary(entry) && (
                   <p className="mt-1 whitespace-pre-wrap break-words text-sm">{historySummary(entry)}</p>
                 )}
+                {entry.reject_reason && <p className="mt-1 whitespace-pre-wrap text-sm">Lý do: {entry.reject_reason}</p>}
               </li>
             ))}
           </ol>

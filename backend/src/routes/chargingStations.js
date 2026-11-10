@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireSuperAdmin, requireChargingStationViewer, requireChargingStationEditor } = require('../middlewares/auth');
+const { requireAuth, requireSuperAdmin, requireChargingStationViewer } = require('../middlewares/auth');
 const chargingStationController = require('../controllers/chargingStationController');
 
 router.use(requireAuth);
@@ -216,7 +216,7 @@ router.post('/:id/restore', requireChargingStationViewer, chargingStationControl
  *       403:
  *         description: Không có quyền
  */
-router.put('/:id', requireChargingStationEditor, chargingStationController.update);
+router.put('/:id', requireSuperAdmin, chargingStationController.update);
 
 /**
  * @swagger
@@ -607,7 +607,7 @@ router.post('/:id/on-station/mark-active', requireSuperAdmin, chargingStationCon
  *       403:
  *         description: Không có quyền
  */
-router.post('/:id/status', requireChargingStationEditor, chargingStationController.changeStatus);
+router.post('/:id/status', requireSuperAdmin, chargingStationController.changeStatus);
 
 /**
  * @swagger

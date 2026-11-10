@@ -111,6 +111,66 @@ exports.logActivity = async ({ proposalId, action, fromStatus, toStatus, changed
   );
 };
 
+exports.transitionOnStationWithinTransaction = async (connection, id, to, ctx = {}) => {
+  if (!['DEPLOYING', 'ACTIVE'].includes(to)) throw err('Mốc ON trạm không hợp lệ', 400);
+  const [rows] = await connection.query('SELECT * FROM station_proposals WHERE id=? FOR UPDATE', [id]);
+  if (!rows.length) throw err('Không tìm thấy đề xuất', 404);
+  const proposal = rows[0];
+  if (proposal.status === to) return { unchanged: true };
+  if (!(ALLOWED_TRANSITIONS[proposal.status] || []).includes(to)) {
+    console.error('[ProposalLifecycle] denied ON-station milestone:', id, proposal.status, to);
+    throw err(`Không thể chuyển đề xuất từ ${proposal.status} sang ${to}`, 409);
+  }
+  await connection.query(`UPDATE station_proposals SET status=?, supplement_deadline_at=NULL,
+    transition_deadline_at=NULL, info_completed_at=NULL, reviewed_by=?, reviewed_at=NOW() WHERE id=?`,
+  [to, ctx.actorId || null, id]);
+  await exports.logActivity({
+    proposalId: id, action: 'status_change', fromStatus: proposal.status, toStatus: to,
+    actorId: ctx.actorId, actorRole: ctx.actorRole, source: 'system_auto', ip: ctx.ip,
+    reason: ctx.reason, connection
+  });
+  if (proposal.user_id) {
+    await connection.query(`INSERT INTO notifications
+      (user_id,type,title,message,entity_type,entity_id,created_by)
+      VALUES (?,?,?,?,'station_proposals',?,?)`,
+    [proposal.user_id, to, notificationService.statusTitle(to),
+      notificationService.statusMessage({
+        code: notificationService.proposalCode(proposal.custom_data, id),
+        actorName: 'Hệ thống', status: to, reason: ctx.reason
+      }), id, ctx.actorId || null]);
+  }
+  if (proposal.journey_id) {
+    await require('./journeyActivityService').log({
+      journey_id: proposal.journey_id, entity_type: 'proposal', entity_id: id,
+      action: 'proposal_status_changed', status_before: proposal.status, status_after: to,
+      actor_id: ctx.actorId, actor_role: ctx.actorRole, source: 'system_auto',
+      reason: ctx.reason, ip: ctx.ip
+    }, connection);
+    await require('./journeySyncService').recomputeStage(proposal.journey_id, connection);
+    const [leads] = await connection.query('SELECT id,external_crm_id FROM leads WHERE journey_id=? LIMIT 1', [proposal.journey_id]);
+    const lead = leads[0];
+    if (lead?.external_crm_id) {
+      const outbound = require('./crmOutboundService');
+      const code = notificationService.proposalCode(proposal.custom_data, id);
+      await outbound.enqueue({
+        eventId: `eg_${lead.id}_status_${id}_${proposal.status}_${to}`, eventType: 'lead.care',
+        leadId: lead.id, crmLeadId: lead.external_crm_id, conn: connection,
+        payload: { leadId: lead.external_crm_id, staff: 'Hệ thống', ref: code,
+          note: `Đã chuyển đề xuất ${code} từ trạng thái "${proposal.status}" sang "${to}"` }
+      });
+      if (to === 'ACTIVE') {
+        await outbound.enqueue({
+          eventId: `eg_${lead.id}_on_${id}`, eventType: 'lead.result', leadId: lead.id,
+          crmLeadId: lead.external_crm_id, conn: connection,
+          payload: { leadId: lead.external_crm_id, status: 'won',
+            note: require('../integrations/crm/crmStatusMapping').MILESTONE_NOTES.stationOn, ref: code }
+        });
+      }
+    }
+  }
+  return { id, status: to, prevStatus: proposal.status };
+};
+
 exports.transition = async (id, to, opts = {}) => {
   const {
     reason, actorId, actorRole, source = 'user', manualOverride = false, ip,

@@ -1,6 +1,5 @@
 const pool = require('../utils/db');
 const stationCodeService = require('./stationCodeService');
-const warehouseService = require('./warehouseService');
 const {
   STATUS,
   SUB_STATUS_BY_STATUS,
@@ -14,6 +13,8 @@ const {
   isBackward
 } = require('../constants/chargingStations');
 const readiness = require('./chargingStationReadiness');
+const stationAccess = require('./chargingStationAccessService');
+const stationWork = require('./chargingStationWorkService');
 
 const err = (message, statusCode) => Object.assign(new Error(message), { statusCode });
 
@@ -188,6 +189,9 @@ const isSetupOperationsDepartment = (department) => {
 
 const normalizeDate = (value) => {
   if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
   const text = String(value).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(text))) {
     throw err('Ngày không hợp lệ (định dạng YYYY-MM-DD)', 400);
@@ -220,6 +224,12 @@ const diffFields = (current, patch) => {
     }
   });
   return changed;
+};
+
+const assertLegacyStationAction = async (id) => {
+  const [rows] = await pool.query(`SELECT id FROM charging_station_deployments WHERE charging_station_id=?
+    UNION SELECT id FROM charging_station_commitments WHERE charging_station_id=? LIMIT 1`, [id, id]);
+  if (rows.length) throw err('Trạm có tiến độ theo đợt; hãy thao tác trên đúng phần trụ thay vì cập nhật toàn trạm', 409);
 };
 
 const writeActivity = async (executor, {
@@ -268,29 +278,7 @@ const getActiveFile = async (fileId) => {
 };
 
 const buildProposalScope = async (user) => {
-  if (!user?.id) return { sql: '1 = 0', params: [] };
-  const scope = await require('./proposalReportService').resolveScope(user);
-  if (scope.isAdmin || scope.isBackOffice || scope.isFinance || isSetupOperationsDepartment(scope.department)) {
-    return { sql: '1 = 1', params: [] };
-  }
-  if (scope.roleKey === 'GDTTKD' && scope.region) {
-    const pattern = { Bac: '%bac%', Trung: '%trung%', Nam: '%nam%' }[scope.region];
-    if (pattern) {
-      return {
-        sql: "LOWER(CONVERT(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) USING utf8mb4)) LIKE ?",
-        params: [pattern]
-      };
-    }
-  }
-  if (scope.role === 'SALES') {
-    const branchIds = await require('./adminUserService').getBranchIds(Number(scope.userId));
-    if (!branchIds.length) return { sql: '1 = 0', params: [] };
-    return {
-      sql: `p.user_id IN (${branchIds.map(() => '?').join(',')})`,
-      params: branchIds.map(Number)
-    };
-  }
-  return { sql: 'p.user_id = ?', params: [Number(scope.userId)] };
+  return stationAccess.buildViewScope(user);
 };
 
 const canViewChargingStation = async (id, user) => {
@@ -306,7 +294,7 @@ const canViewChargingStation = async (id, user) => {
 };
 
 const assertCanViewChargingStation = async (id, user) => {
-  if (!user) return;
+  if (!user) throw err('Chưa xác thực', 401);
   if (!await canViewChargingStation(id, user)) {
     throw err('Không có quyền xem ON trạm này', 403);
   }
@@ -314,22 +302,18 @@ const assertCanViewChargingStation = async (id, user) => {
 
 const resolveOnStationStatusManager = async (user) => {
   const scope = await require('./proposalReportService').resolveScope(user);
-  if (['SUPER_ADMIN', 'ADMIN'].includes(user?.role)) return scope;
+  if (user?.role === 'SUPER_ADMIN') return scope;
   if (user?.role === 'SALES' && scope.roleKey === 'GDTTKD') return scope;
   throw err('Chỉ SUPER_ADMIN, ADMIN hoặc GĐTTKD được hủy/khôi phục ON trạm', 403);
 };
 
 const assertBackOfficeManager = async (user) => {
-  const scope = await require('./proposalReportService').resolveScope(user);
-  if (user?.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
-    throw err('Chỉ Back Office hoặc SUPER_ADMIN được cập nhật hạ tầng và hợp đồng', 403);
-  }
+  await stationAccess.assertBackOffice(user);
 };
 
 const assertFinanceManager = async (user, message = 'Chỉ Phòng Tài chính, Back Office hoặc quản trị viên được xử lý tài chính ON trạm') => {
-  const scope = await require('./proposalReportService').resolveScope(user);
-  if (!scope.isAdmin && !scope.isBackOffice && !scope.isFinance) throw err(message, 403);
-  return scope;
+  await stationAccess.assertFinance(user);
+  return require('./proposalReportService').resolveScope(user);
 };
 
 const withReadiness = (row) => {
@@ -403,10 +387,7 @@ const notifyStationCreated = async (executor, station, ctx, requirements) => {
 };
 
 const assertSetupOperationsManager = async (user) => {
-  const scope = await require('./proposalReportService').resolveScope(user);
-  if (!scope.isAdmin && !isSetupOperationsDepartment(scope.department)) {
-    throw err('Chỉ Phòng Setup và Vận hành hoặc quản trị viên được cập nhật lắp đặt, nghiệm thu và cấu hình', 403);
-  }
+  await stationAccess.assertSetup(user);
 };
 
 const notifyBackOfficeDeliveryReady = async (connection, station, ctx = {}, details = {}) => {
@@ -462,6 +443,7 @@ const notifySetupOperations = async (connection, station, ctx = {}, actionLabel 
 const advanceToDeliveryIfReady = async (connection, stationRef, ctx = {}) => {
   const [rows] = await connection.query('SELECT * FROM charging_stations WHERE id = ?', [stationRef.id]);
   const station = rows[0];
+  if (station && station.status !== 'CANCELLED') await advanceProposalToDeploying(station.proposal_id, ctx, connection);
   if (!station || station.status !== STATUS.ONBOARDING) return stationRef;
   const model = await loadInvestmentModel(connection, station.proposal_id);
   if (!readiness.evaluateDeliveryReadiness(station, model).ready) return station;
@@ -491,31 +473,29 @@ const advanceToDeliveryIfReady = async (connection, stationRef, ctx = {}) => {
 
 const PROPOSAL_STATUSES_BEFORE_DEPLOYING = ['APPROVED', 'CONTRACT_SIGNED'];
 
-const advanceProposalToDeploying = async (proposalId, ctx = {}) => {
-  const [rows] = await pool.query(
-    `SELECT p.status,
-            JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
-            cs.deposit_status
+const advanceProposalToDeploying = async (proposalId, ctx = {}, executor = null) => {
+  const connection = executor || await pool.getConnection();
+  try {
+  if (!executor) await connection.beginTransaction();
+  const [rows] = await connection.query(
+    `SELECT p.status, cs.contract_status,cs.infra_power_status,cs.infra_site_status,cs.payment_status
        FROM station_proposals p
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
       WHERE p.id = ?
-      LIMIT 1`,
+      LIMIT 1 FOR UPDATE`,
     [proposalId]
   );
   if (!rows.length) throw err('Không tìm thấy đề xuất liên quan đến ON trạm', 404);
-  if (!PROPOSAL_STATUSES_BEFORE_DEPLOYING.includes(rows[0].status)) return;
-  const requirements = readiness.getFinanceRequirements(rows[0].mo_hinh_dau_tu);
-  if (requirements.requiresDeposit && !readiness.isDepositReceived(rows[0].deposit_status)) return;
-  try {
-    await require('./proposalLifecycle').transition(proposalId, 'DEPLOYING', {
-      actorId: ctx.actorId,
-      actorRole: ctx.actorRole,
-      source: 'system_auto',
-      ip: ctx.ip
-    });
-  } catch (error) {
-    console.error(`[ChargingStation] Không chuyển được đề xuất ${proposalId} sang Đang triển khai:`, error.message);
+  const row = rows[0];
+  if (PROPOSAL_STATUSES_BEFORE_DEPLOYING.includes(row.status)
+    && [row.contract_status,row.infra_power_status,row.infra_site_status,row.payment_status].includes('DONE')) {
+    await require('./proposalLifecycle').transitionOnStationWithinTransaction(connection, proposalId, 'DEPLOYING', ctx);
   }
+  if (!executor) await connection.commit();
+  } catch (error) {
+    if (!executor) await connection.rollback();
+    throw error;
+  } finally { if (!executor) connection.release(); }
 };
 
 const listChargingStations = async ({
@@ -533,44 +513,10 @@ const listChargingStations = async ({
   const where = [];
   const params = [];
   const scope = await buildProposalScope(user);
-  if (stage === 'tai-chinh') {
-    await assertFinanceManager(user, 'Chỉ Phòng Tài chính, Back Office hoặc quản trị viên được xem trang tài chính ON trạm');
-    const tabFilter = FINANCE_TAB_FILTERS[tab];
-    if (!tabFilter) throw err('Tab tài chính không hợp lệ', 400);
-    where.push(tabFilter);
-  } else if (stage === 'thong-tin-chung') {
-    const tabFilter = OVERVIEW_TAB_FILTERS[tab];
-    if (!tabFilter) throw err('Tab thông tin chung không hợp lệ', 400);
-    where.push(tabFilter);
-  } else if (stage === 'khoi-tao-hop-dong') {
-    const tabFilter = CONTRACT_TAB_FILTERS[tab];
-    if (!tabFilter) throw err('Tab khởi tạo hợp đồng không hợp lệ', 400);
-    where.push(tabFilter);
-  } else if (stage === 'xay-dung-ha-tang') {
-    const tabFilter = INFRA_TAB_FILTERS[tab];
-    if (!tabFilter) throw err('Tab xây dựng hạ tầng không hợp lệ', 400);
-    where.push(tabFilter);
-  } else if (stage === 'giao-tru') {
-    const isBackOfficeView = scope.isAdmin || scope.isBackOffice;
-    const tabFilter = tab === 'need'
-      ? (isBackOfficeView ? DELIVERY_TAB_FILTERS.backOfficeNeed : DELIVERY_TAB_FILTERS.requesterNeed)
-      : tab === 'all'
-        ? (isBackOfficeView ? DELIVERY_TAB_FILTERS.backOfficeAll : DELIVERY_TAB_FILTERS.requesterAll)
-        : DELIVERY_TAB_FILTERS[tab];
-    if (!tabFilter) throw err('Tab giao trụ không hợp lệ', 400);
-    where.push(tabFilter);
-  } else if (Object.hasOwn(CHARGING_STATION_STAGE_TAB_FILTERS, stage)) {
-    const tabFilter = CHARGING_STATION_STAGE_TAB_FILTERS[stage][tab];
-    if (!tabFilter) throw err('Tab ON trạm không hợp lệ', 400);
-    where.push(tabFilter);
-  } else {
-    const stageFilter = STAGE_FILTERS[stage] || STAGE_FILTERS['thong-tin-chung'];
-    where.push(stageFilter.sql);
-    params.push(...stageFilter.params);
-  }
-
-  where.push(scope.sql);
-  params.push(...scope.params);
+  if (stage === 'tai-chinh') await stationAccess.assertFinanceViewer(user);
+  const stageFilter = await stationWork.getFilter(stage || 'thong-tin-chung', tab, user);
+  where.push(stageFilter.sql, scope.sql);
+  params.push(...stageFilter.params, ...scope.params);
 
   if (search) {
     const like = `%${String(search).trim()}%`;
@@ -593,17 +539,22 @@ const listChargingStations = async ({
   );
 
   const userScope = await require('./proposalReportService').resolveScope(user);
+  const permissions = await stationAccess.permissions(user);
   const ownerMatcher = await require('./proposalAccessService').buildOwnerMatcher(user);
-  const canRequestEarly = !userScope.isBackOffice || user?.role === 'SUPER_ADMIN';
-  const canManageOnStationStatus = ['SUPER_ADMIN', 'ADMIN'].includes(user?.role)
+  const canRequestEarly = permissions.request_early;
+  const canManageOnStationStatus = user?.role === 'SUPER_ADMIN'
     || (user?.role === 'SALES' && userScope.roleKey === 'GDTTKD');
 
   return {
-    items: rows.map((row) => {
+    items: await Promise.all(rows.map(async (row) => {
       const record = withReadiness(row);
       const deadlineActive = readiness.isDeadlineActive(record);
+      const fulfillment = await require('./chargingStationShippingService').getSummary(row.id);
       return {
         ...record,
+        permissions,
+        fulfillment,
+        deployments: await require('./chargingStationDeploymentService').getDeployments(row.id),
         contract_amount: Number(record.contract_amount) || 0,
         paid_total: (Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0),
         remaining_amount: Math.max(0, (Number(record.contract_amount) || 0) - ((Number(record.deposit_total) || 0) + (Number(record.payment_total) || 0) - (Number(record.refund_total) || 0))),
@@ -618,16 +569,16 @@ const listChargingStations = async ({
         deadline_active: deadlineActive,
         can_extend_deadline: deadlineActive
           && Number(record.deadline_extension_count || 0) < readiness.MAX_DEADLINE_EXTENSIONS
-          && ownerMatcher(record.proposal_user_id),
+          && user?.role !== 'ADMIN' && ownerMatcher(record.proposal_user_id),
         can_request_early_delivery: canRequestEarly
           && record.status === STATUS.ONBOARDING
           && !record.delivery_ready
-          && (!record.requires_deposit || readiness.isDepositReceived(record.deposit_status))
           && ownerMatcher(record.proposal_user_id),
         can_cancel_on_station: canManageOnStationStatus
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
         can_mark_on_station_active: user?.role === 'SUPER_ADMIN'
+          && !fulfillment.items.length
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status)
           && !(record.status === STATUS.OPERATING
@@ -638,83 +589,22 @@ const listChargingStations = async ({
           && Boolean(record.manual_cancelled_at)
           && record.proposal_status === 'ARCHIVED'
       };
-    }),
+    })),
     pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) }
   };
 };
 
 const getChargingStationTaskCounts = async (user) => {
-  const scope = await require('./proposalReportService').resolveScope(user);
   const proposalScope = await buildProposalScope(user);
-  const canManageBackOffice = scope.isBackOffice || user?.role === 'SUPER_ADMIN';
-  const canManageSetup = scope.isAdmin
-    || (!scope.isBackOffice && isSetupOperationsDepartment(scope.department));
-  const canManageFinance = scope.isAdmin || scope.isBackOffice || scope.isFinance;
-  const canRequestEarlyDelivery = !scope.isBackOffice || user?.role === 'SUPER_ADMIN';
-  const ownerScope = canRequestEarlyDelivery
-    ? await require('./proposalAccessService').buildOwnerScopeSql(user)
-    : { sql: '1 = 0', params: [] };
-  const deliveryConditions = [];
-  const deliveryParams = [];
-
-  if (canManageBackOffice) {
-    deliveryConditions.push(
-      "(cs.status = 'DELIVERING' AND cs.sub_status IN ('NOT_DELIVERED', 'DELIVERING'))"
-    );
-  }
-  if (canRequestEarlyDelivery) {
-    deliveryConditions.push(`(
-      cs.status = 'ONBOARDING'
-      AND COALESCE(JSON_LENGTH(p.chot_so_luong_tru), 0) > 0
-      AND ${readiness.deliveryMissingSql('cs', 'p')}
-      AND (
-        UPPER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')), '')) = 'TDT'
-        OR cs.deposit_status IN ('RECEIVED', 'REFUND_PENDING', 'REFUNDED')
-      )
-      AND (${ownerScope.sql})
-    )`);
-    deliveryParams.push(...ownerScope.params);
-  }
-
-  const countExpression = (allowed, condition) => (
-    allowed ? `COUNT(CASE WHEN ${condition} THEN cs.id END)` : '0'
-  );
-  const expressions = [
-    `${countExpression(
-      canManageBackOffice,
-      "cs.status = 'ONBOARDING' AND cs.contract_status IN ('NOT', 'DOING')"
-    )} AS contract`,
-    `${countExpression(
-      canManageBackOffice,
-      "cs.status IN ('ONBOARDING', 'DELIVERING') AND (COALESCE(cs.infra_power_status, 'NOT') <> 'DONE' OR COALESCE(cs.infra_site_status, 'NOT') <> 'DONE')"
-    )} AS infrastructure`,
-    `${deliveryConditions.length
-      ? `COUNT(CASE WHEN ${deliveryConditions.join(' OR ')} THEN cs.id END)`
-      : '0'} AS delivery`,
-    `${countExpression(
-      canManageSetup,
-      "cs.status = 'INSTALLING'"
-    )} AS installation`,
-    `${countExpression(
-      canManageSetup,
-      "cs.status = 'ACCEPTANCE'"
-    )} AS acceptance`,
-    `${countExpression(
-      canManageSetup,
-      "cs.status = 'CONFIGURING'"
-    )} AS on_station`,
-    `${countExpression(
-      canManageFinance,
-      FINANCE_NEED_SQL
-    )} AS finance`
-  ];
-
+  const tasks = await stationWork.actionable(user);
+  const expressions = Object.entries(tasks.expressions).map(([key, condition]) =>
+    `COUNT(CASE WHEN cs.status<>'CANCELLED' AND (${condition}) THEN cs.id END) AS ${key}`);
   const [rows] = await pool.query(
     `SELECT ${expressions.join(', ')}
        FROM charging_stations cs
        JOIN station_proposals p ON p.id = cs.proposal_id
       WHERE ${proposalScope.sql}`,
-    [...deliveryParams, ...proposalScope.params]
+    [...tasks.params, ...proposalScope.params]
   );
   const row = rows[0] || {};
   const counts = {
@@ -783,6 +673,9 @@ const getChargingStationDetail = async (id, user = null) => {
   return {
     ...record,
     proposal,
+    permissions: user ? await stationAccess.permissions(user) : {},
+    fulfillment: await require('./chargingStationShippingService').getSummary(record.id),
+    deployments: await require('./chargingStationDeploymentService').getDeployments(record.id),
     images,
     delivery_export: deliveryExport,
     timeline: timeline.map((row) => ({ ...row, changed_fields: parseJson(row.changed_fields) }))
@@ -972,9 +865,11 @@ const createChargingStationFromProposal = async (proposalId, { actorId = null, a
   const requirements = readiness.getFinanceRequirements(investmentModel);
   const initialDeposit = requirements.requiresDeposit ? 'NOT_RECEIVED' : 'NOT_REQUIRED';
   const initialPayment = requirements.requiresPayment ? 'NOT' : 'NOT_REQUIRED';
+  const connection = await pool.getConnection();
   try {
+    await connection.beginTransaction();
     const deadline = await require('./businessDeadlineService').createDeadline({ days: 15 });
-    const [result] = await pool.query(
+    const [result] = await connection.query(
       `INSERT INTO charging_stations
         (ma_tram, proposal_id, status, sub_status, contract_status, infra_power_status, infra_site_status,
          payment_status, deposit_status, contract_deadline_at, infra_deadline_at, finance_deadline_at, countdown_calendar_id)
@@ -985,33 +880,41 @@ const createChargingStationFromProposal = async (proposalId, { actorId = null, a
         requirements.requiresDeposit || requirements.requiresPayment ? deadline.date : null, deadline.calendarId]
     );
     insertId = result.insertId;
+    await connection.query('SAVEPOINT commitment_snapshot');
+    try {
+      await require('./chargingStationShippingService').ensureCommitments(connection, insertId);
+    } catch (snapshotError) {
+      if (snapshotError.statusCode !== 409) throw snapshotError;
+      await connection.query('ROLLBACK TO SAVEPOINT commitment_snapshot');
+      await connection.query('UPDATE charging_stations SET fulfillment_review_required=1 WHERE id=?', [insertId]);
+      await writeActivity(connection, {
+        chargingStationId: insertId, action: 'fulfillment_review_required',
+        reason: snapshotError.message, actorId, actorRole, source, ip
+      });
+      console.error('[ChargingStation] Cần đối soát trụ chốt:', insertId, snapshotError.message);
+    }
+    await writeActivity(connection, {
+      chargingStationId: insertId,
+      action: 'created',
+      toStatus: STATUS.ONBOARDING,
+      reason,
+      changedFields: {
+        proposal_id: { label: FIELD_LABELS.proposal_id, old: '', new: String(id) },
+        ma_tram: { label: FIELD_LABELS.ma_tram, old: '', new: toText(maTram) }
+      },
+      actorId, actorRole, source, ip
+    });
+    await notifyStationCreated(connection, { id: insertId, ma_tram: maTram }, { actorId }, requirements);
+    await connection.commit();
   } catch (error) {
+    await connection.rollback();
     if (error.code === 'ER_DUP_ENTRY') {
       const duplicated = await findByProposal(id);
       if (duplicated) return { record: duplicated, created: false };
     }
     throw error;
-  }
-
-  await logActivity({
-    chargingStationId: insertId,
-    action: 'created',
-    toStatus: STATUS.ONBOARDING,
-    reason,
-    changedFields: {
-      proposal_id: { label: FIELD_LABELS.proposal_id, old: '', new: String(id) },
-      ma_tram: { label: FIELD_LABELS.ma_tram, old: '', new: toText(maTram) }
-    },
-    actorId,
-    actorRole,
-    source,
-    ip
-  });
-
-  try {
-    await notifyStationCreated(pool, { id: insertId, ma_tram: maTram }, { actorId }, requirements);
-  } catch (error) {
-    console.error('[ChargingStation] Không gửi được thông báo việc cần làm khi tạo trạm:', error.message);
+  } finally {
+    connection.release();
   }
 
   return { record: await getRecord(insertId), created: true };
@@ -1062,6 +965,7 @@ const createDirectFromProposal = async (proposalId, user, { reason } = {}, ctx =
 };
 
 const updateChargingStation = async (id, body = {}, ctx = {}) => {
+  if (ctx.actorRole !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được sửa thông tin chung', 403);
   if (INFRA_FIELDS.some((field) => body[field] !== undefined)) {
     throw err('Trạng thái hạ tầng chỉ được cập nhật qua quy trình Xây dựng hạ tầng', 400);
   }
@@ -1080,6 +984,11 @@ const updateChargingStation = async (id, body = {}, ctx = {}) => {
     const current = rows[0];
     const patch = {};
 
+    if (body.on_date !== undefined && normalizeDate(body.on_date) !== normalizeDate(current.on_date)) {
+      const [operating] = await connection.query(
+        "SELECT id FROM charging_station_deployments WHERE charging_station_id=? AND stage='OPERATING' LIMIT 1", [stationId]);
+      if (operating.length) throw err('Ngày ON đầu tiên đã được ghi nhận; không được sửa qua thông tin chung', 409);
+    }
     if (body.on_date !== undefined) patch.on_date = normalizeDate(body.on_date);
     if (body.acceptance_date !== undefined) patch.acceptance_date = normalizeDate(body.acceptance_date);
 
@@ -1134,7 +1043,7 @@ const updateChargingStation = async (id, body = {}, ctx = {}) => {
   } finally {
     connection.release();
   }
-  return getChargingStationDetail(station.id);
+  return getChargingStationDetail(station.id, { id: ctx.actorId, role: ctx.actorRole });
 };
 
 const updatePaymentStatus = async (id, { payment_status: nextStatus, reason } = {}, user, ctx = {}) => {
@@ -1249,7 +1158,7 @@ const startContractSigning = async (id, user, ctx = {}) => {
     );
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
-    if (current.status !== STATUS.ONBOARDING || current.contract_status !== 'NOT') {
+    if (current.status === 'CANCELLED' || current.contract_status !== 'NOT') {
       throw err('Chỉ có thể bắt đầu ký khi trạm đang hoàn thiện thủ tục và hợp đồng chưa ký', 400);
     }
 
@@ -1298,7 +1207,7 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
     proposalId = current.proposal_id;
-    if (current.status !== STATUS.ONBOARDING || current.contract_status !== 'DOING') {
+    if (current.status === 'CANCELLED' || current.contract_status !== 'DOING') {
       throw err('Chỉ có thể hoàn tất hợp đồng khi đang ở trạng thái Đang ký hợp đồng', 400);
     }
 
@@ -1316,7 +1225,7 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
     }
 
     await connection.query(
-      "UPDATE charging_stations SET contract_status = 'DONE', contract_file_id = ? WHERE id = ?",
+      "UPDATE charging_stations SET contract_status = 'DONE', contract_file_id = ?, payment_status=CASE WHEN payment_status='NOT' THEN 'DOING' ELSE payment_status END WHERE id = ?",
       [normalizedFileId, stationId]
     );
     const contractChanges = {
@@ -1327,6 +1236,9 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
         new: String(normalizedFileId)
       }
     };
+    if (current.payment_status === 'NOT') {
+      contractChanges.payment_status = { label: FIELD_LABELS.payment_status, old: 'NOT', new: 'DOING' };
+    }
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'contract_completed',
@@ -1396,8 +1308,8 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
     if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
     const current = rows[0];
     proposalId = current.proposal_id;
-    if (![STATUS.ONBOARDING, STATUS.DELIVERING].includes(current.status)) {
-      throw err('Chỉ có thể cập nhật hạ tầng khi trạm đang hoàn thiện thủ tục hoặc đang giao hàng', 400);
+    if (current.status === 'CANCELLED') {
+      throw err('Không thể cập nhật hạ tầng của trạm đã hủy', 400);
     }
 
     const expected = action === 'start' ? 'NOT' : 'DOING';
@@ -1435,6 +1347,7 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
 };
 
 const extendOnboardingDeadline = async (id, { reason } = {}, user, ctx = {}) => {
+  if (user?.role === 'ADMIN') throw err('ADMIN chỉ được xem ON trạm', 403);
   const stationId = normalizeId(id, 'Mã bản ghi');
   const cleanReason = toText(reason).trim();
   if (!cleanReason) throw err('Vui lòng nhập lý do gia hạn', 400);
@@ -1594,11 +1507,13 @@ const cancelOverdueStations = async () => {
   return cancelled;
 };
 
-const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, reason } = {}, user, ctx = {}) => {
+const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, reason, accept_missing: acceptMissing } = {}, user, ctx = {}) => {
   const stationId = normalizeId(id, 'Mã bản ghi');
   const cleanReason = toText(reason).trim();
   const deliveryDate = normalizeDate(desiredDate);
   if (!cleanReason) throw err('Vui lòng nhập lý do đề xuất giao trụ sớm', 400);
+  if (acceptMissing !== true) throw err('Phải xác nhận cảnh báo các điều kiện chưa hoàn thành', 400);
+  if (!(await stationAccess.permissions(user)).request_early) throw err('Không có quyền đề xuất giao trụ sớm', 403);
   const scope = await require('./proposalReportService').resolveScope(user);
   if (scope.isBackOffice && user?.role !== 'SUPER_ADMIN') {
     throw err('Thao tác đề xuất giao trụ sớm dành cho người đề xuất và người quản lý phía trên', 403);
@@ -1628,10 +1543,7 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
       throw err('Chỉ có thể đề xuất giao trụ sớm khi trạm đang hoàn thiện thủ tục', 400);
     }
 
-    const committedRows = parseJson(current.chot_so_luong_tru);
-    const { missingLabels: missingItems } = (committedRows && committedRows.length > 0)
-      ? readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu)
-      : { missingLabels: [] };
+    const { missingLabels: missingItems } = readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu);
 
     const nextStatus = STATUS.DELIVERING;
     const nextSubStatus = INITIAL_SUB_STATUS[nextStatus];
@@ -1672,215 +1584,14 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
   return getChargingStationDetail(stationId, user);
 };
 
-const resolveCommittedExportItems = async (connection, proposalId) => {
-  const [proposalRows] = await connection.query(
-    'SELECT chot_so_luong_tru FROM station_proposals WHERE id = ? FOR UPDATE',
-    [proposalId]
-  );
-  if (!proposalRows.length) throw err('Không tìm thấy đề xuất liên quan', 404);
-  const committedRows = parseJson(proposalRows[0].chot_so_luong_tru);
-  if (!Array.isArray(committedRows) || committedRows.length === 0) {
-    throw err('Đề xuất chưa có số lượng trụ chốt để xuất kho', 409);
-  }
-
-  const items = [];
-  for (const [index, row] of committedRows.entries()) {
-    const poleName = toText(row?.loai_tru).trim();
-    const quantity = Number(row?.so_luong);
-    if (!poleName || !Number.isInteger(quantity) || quantity <= 0) {
-      throw err(`Dòng trụ chốt ${index + 1} không hợp lệ`, 409);
-    }
-    const [poleRows] = await connection.query(
-      'SELECT id FROM charging_poles WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 2',
-      [poleName]
-    );
-    if (poleRows.length !== 1) {
-      throw err(
-        poleRows.length === 0
-          ? `Chưa có loại trụ "${poleName}" trong danh mục kho`
-          : `Loại trụ "${poleName}" bị trùng trong danh mục kho`,
-        409
-      );
-    }
-    items.push({ pole_id: poleRows[0].id, quantity });
-  }
-  return items;
-};
-
-const createDeliveryExport = async (id, body = {}, user, ctx = {}) => {
-  await assertBackOfficeManager(user);
-  const stationId = normalizeId(id, 'Mã bản ghi');
-  await assertCanViewChargingStation(stationId, user);
-  const carrier = toText(body.carrier).trim();
-  const transportCode = toText(body.transport_code).trim();
-  const transportStatus = toText(body.transport_status || 'SHIPPING').trim().toUpperCase();
-  const totalAmount = Number(body.total_amount);
-  if (!carrier) throw err('Vui lòng nhập bên vận chuyển', 400);
-  if (!transportCode) throw err('Vui lòng nhập mã vận chuyển', 400);
-  if (!['PENDING', 'SHIPPING'].includes(transportStatus)) {
-    throw err('Trạng thái vận chuyển khi xuất trụ chỉ được Chờ vận chuyển hoặc Đang vận chuyển', 400);
-  }
-  if (!Number.isFinite(totalAmount) || totalAmount < 0) {
-    throw err('Tổng tiền vận chuyển phải là số không âm', 400);
-  }
-
-  const connection = await pool.getConnection();
-  let transactionStarted = false;
-  try {
-    await connection.beginTransaction();
-    transactionStarted = true;
-    const [rows] = await connection.query(
-      `SELECT cs.*, p.chot_so_luong_tru,
-              JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu
-         FROM charging_stations cs
-         JOIN station_proposals p ON p.id = cs.proposal_id
-        WHERE cs.id = ?
-        FOR UPDATE`,
-      [stationId]
-    );
-    if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
-    const current = rows[0];
-    if (current.status !== STATUS.DELIVERING || current.sub_status !== 'NOT_DELIVERED') {
-      throw err('Chỉ có thể xuất trụ khi trạm đang giao hàng và chưa giao trụ', 400);
-    }
-    if (readiness.getFinanceRequirements(current.mo_hinh_dau_tu).requiresDeposit
-      && !readiness.isDepositReceived(current.deposit_status)) {
-      throw err('Chưa có đặt cọc. Vui lòng tạo hóa đơn cọc trước rồi mới xuất trụ', 409);
-    }
-    const items = await resolveCommittedExportItems(connection, current.proposal_id);
-    const exportId = await warehouseService.createExportWithinTransaction(
-      connection,
-      {
-        export_date: new Date().toISOString(),
-        charging_station_id: stationId,
-        reason: `Xuất trụ cho trạm ${current.ma_tram || `#${stationId}`}`,
-        carrier,
-        transport_code: transportCode,
-        transport_status: transportStatus,
-        total_amount: totalAmount,
-        items
-      },
-      { userId: user.id }
-    );
-    const nextSubStatus = 'DELIVERING';
-    await connection.query(
-      'UPDATE charging_stations SET sub_status = ? WHERE id = ?',
-      [nextSubStatus, stationId]
-    );
-    await writeActivity(connection, {
-      chargingStationId: stationId,
-      action: 'poles_exported',
-      fromStatus: current.status,
-      toStatus: current.status,
-      changedFields: {
-        sub_status: { label: FIELD_LABELS.sub_status, old: current.sub_status, new: nextSubStatus },
-        warehouse_export_id: { label: 'Mã phiếu xuất kho', old: '', new: String(exportId) },
-        carrier: { label: 'Bên vận chuyển', old: '', new: carrier },
-        transport_code: { label: 'Mã vận chuyển', old: '', new: transportCode },
-        transport_status: { label: 'Trạng thái vận chuyển', old: '', new: transportStatus },
-        total_amount: { label: 'Tiền vận chuyển', old: '', new: String(totalAmount) }
-      },
-      actorId: ctx.actorId,
-      actorRole: ctx.actorRole,
-      source: 'user',
-      ip: ctx.ip
-    });
-    await connection.commit();
-    transactionStarted = false;
-  } catch (error) {
-    if (transactionStarted) await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-  return getChargingStationDetail(stationId, user);
-};
-
 const confirmDelivery = async (id, user, ctx = {}) => {
   await assertBackOfficeManager(user);
-  const stationId = normalizeId(id, 'Mã bản ghi');
-  await assertCanViewChargingStation(stationId, user);
-  const connection = await pool.getConnection();
-  let transactionStarted = false;
-  let previousStatus;
-  try {
-    await connection.beginTransaction();
-    transactionStarted = true;
-    const [rows] = await connection.query(
-      'SELECT * FROM charging_stations WHERE id = ? FOR UPDATE',
-      [stationId]
-    );
-    if (!rows.length) throw err('Không tìm thấy bản ghi ON trạm', 404);
-    const current = rows[0];
-    if (current.status !== STATUS.DELIVERING || current.sub_status !== 'DELIVERING') {
-      throw err('Chỉ có thể xác nhận giao đến nơi khi trụ đang được vận chuyển', 400);
-    }
-    const [exports] = await connection.query(
-      `SELECT id, transport_status
-         FROM warehouse_exports
-        WHERE charging_station_id = ?
-        ORDER BY id DESC
-        LIMIT 1
-        FOR UPDATE`,
-      [stationId]
-    );
-    if (!exports.length) throw err('Không tìm thấy phiếu xuất kho của trạm', 409);
-    const exportRecord = exports[0];
-    if (!['PENDING', 'SHIPPING'].includes(exportRecord.transport_status)) {
-      throw err('Phiếu xuất kho không ở trạng thái đang vận chuyển', 409);
-    }
-    await connection.query(
-      "UPDATE warehouse_exports SET transport_status = 'DELIVERED' WHERE id = ?",
-      [exportRecord.id]
-    );
-    const nextStatus = STATUS.INSTALLING;
-    const nextSubStatus = INITIAL_SUB_STATUS[nextStatus];
-    await connection.query(
-      'UPDATE charging_stations SET status = ?, sub_status = ? WHERE id = ?',
-      [nextStatus, nextSubStatus, stationId]
-    );
-    await writeActivity(connection, {
-      chargingStationId: stationId,
-      action: 'delivery_confirmed',
-      fromStatus: current.status,
-      toStatus: nextStatus,
-      changedFields: {
-        ...diffFields(current, { status: nextStatus, sub_status: nextSubStatus }),
-        transport_status: { label: 'Trạng thái vận chuyển', old: exportRecord.transport_status, new: 'DELIVERED' }
-      },
-      actorId: ctx.actorId,
-      actorRole: ctx.actorRole,
-      source: 'user',
-      ip: ctx.ip
-    });
-    await notifySetupOperations(
-      connection,
-      { id: stationId, ma_tram: current.ma_tram, status: nextStatus, sub_status: nextSubStatus },
-      ctx,
-      'Trạm sạc đã giao đến nơi — cần lắp đặt'
-    );
-    previousStatus = current.status;
-    await connection.commit();
-    transactionStarted = false;
-  } catch (error) {
-    if (transactionStarted) await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-  await require('./journeySyncService').onStationStatus(stationId, {
-    from: previousStatus,
-    to: STATUS.INSTALLING,
-    actorId: ctx.actorId,
-    actorRole: ctx.actorRole,
-    source: 'user',
-    ip: ctx.ip
-  });
-  return getChargingStationDetail(stationId, user);
+  throw err('Hãy xác nhận nhận hàng trên từng phiếu và số lượng cụ thể', 409);
 };
 
 const updateInstallation = async (id, action, user, ctx = {}) => {
   await assertSetupOperationsManager(user);
+  await assertLegacyStationAction(id);
   const stationId = normalizeId(id, 'Mã bản ghi');
   await assertCanViewChargingStation(stationId, user);
   if (!['start', 'complete'].includes(action)) throw err('Thao tác lắp đặt không hợp lệ', 400);
@@ -1965,6 +1676,7 @@ const updateInstallation = async (id, action, user, ctx = {}) => {
 
 const updateAcceptanceResult = async (id, result, user, ctx = {}) => {
   await assertSetupOperationsManager(user);
+  await assertLegacyStationAction(id);
   const stationId = normalizeId(id, 'Mã bản ghi');
   await assertCanViewChargingStation(stationId, user);
   if (!['ACCEPT_FAILED', 'ACCEPT_PASSED'].includes(result)) {
@@ -2036,6 +1748,7 @@ const updateAcceptanceResult = async (id, result, user, ctx = {}) => {
 };
 
 const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_date: onDate, reason } = {}, user, ctx = {}) => {
+  await assertLegacyStationAction(id);
   if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được đánh dấu ON trạm trực tiếp', 403);
   const cleanReason = String(reason || '').trim();
   if (cleanReason.length < 3 || cleanReason.length > 5000) {
@@ -2187,6 +1900,7 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
 
 const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_date: onDate } = {}, user, ctx = {}) => {
   await assertSetupOperationsManager(user);
+  await assertLegacyStationAction(id);
   const stationId = normalizeId(id, 'Mã bản ghi');
   await assertCanViewChargingStation(stationId, user);
   const cleanCmsCode = toText(cmsStationCode).trim();
@@ -2321,6 +2035,8 @@ const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_
 };
 
 const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, reason } = {}, ctx = {}) => {
+  if (ctx.actorRole !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được điều chỉnh trạng thái trực tiếp', 403);
+  await assertLegacyStationAction(id);
   if (!Object.values(STATUS).includes(toStatus)) throw err('Trạng thái đích không hợp lệ', 400);
   const stationId = normalizeId(id, 'Mã bản ghi');
   const connection = await pool.getConnection();
@@ -2394,7 +2110,7 @@ const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, re
   } finally {
     connection.release();
   }
-  return getChargingStationDetail(stationId);
+  return getChargingStationDetail(stationId, { id: ctx.actorId, role: ctx.actorRole });
 };
 
 const updateAcceptance = async (id, { acceptance_user_id: userId, acceptance_date: date } = {}, user, ctx = {}) => {
@@ -2434,7 +2150,7 @@ const updateAcceptance = async (id, { acceptance_user_id: userId, acceptance_dat
     });
   }
 
-  return getChargingStationDetail(current.id);
+  return getChargingStationDetail(current.id, user);
 };
 
 const setAcceptanceFile = async (id, fileId, user, ctx = {}) => {
@@ -2459,7 +2175,7 @@ const setAcceptanceFile = async (id, fileId, user, ctx = {}) => {
     ip: ctx.ip
   });
 
-  return getChargingStationDetail(current.id);
+  return getChargingStationDetail(current.id, user);
 };
 
 const addAcceptanceImages = async (id, fileIds = [], user, ctx = {}) => {
@@ -2499,7 +2215,7 @@ const addAcceptanceImages = async (id, fileIds = [], user, ctx = {}) => {
     ip: ctx.ip
   });
 
-  return getChargingStationDetail(current.id);
+  return getChargingStationDetail(current.id, user);
 };
 
 const removeAcceptanceImage = async (id, fileId, user, ctx = {}) => {
@@ -2523,7 +2239,7 @@ const removeAcceptanceImage = async (id, fileId, user, ctx = {}) => {
     ip: ctx.ip
   });
 
-  return getChargingStationDetail(current.id);
+  return getChargingStationDetail(current.id, user);
 };
 
 exports.STAGES = [...Object.keys(STAGE_FILTERS), 'khoi-tao-hop-dong'];
@@ -2547,7 +2263,7 @@ exports.startContractSigning = startContractSigning;
 exports.completeContract = completeContract;
 exports.updateInfrastructureStatus = updateInfrastructureStatus;
 exports.requestEarlyDelivery = requestEarlyDelivery;
-exports.createDeliveryExport = createDeliveryExport;
+exports.createDeliveryExport = (...args) => require('./chargingStationShippingService').createExport(...args);
 exports.confirmDelivery = confirmDelivery;
 exports.markOnStationActive = markOnStationActive;
 exports.updateInstallation = updateInstallation;
@@ -2568,44 +2284,7 @@ exports.extendOnboardingDeadline = extendOnboardingDeadline;
 exports.cancelOverdueStations = cancelOverdueStations;
 exports.FIELD_LABELS = FIELD_LABELS;
 const getCommittedExportItems = async (id) => {
-  const stationId = normalizeId(id, 'Ma ban ghi');
-  const [rows] = await pool.query(
-    `SELECT cs.id, p.chot_so_luong_tru
-     FROM charging_stations cs
-     JOIN station_proposals p ON p.id = cs.proposal_id
-     WHERE cs.id = ?`,
-    [stationId]
-  );
-  if (rows.length === 0) throw err('Khong tim thay ban ghi ON tram', 404);
-  const committedRows = (() => {
-    const value = rows[0].chot_so_luong_tru;
-    if (!value) return [];
-    if (Array.isArray(value)) return value;
-    try { return JSON.parse(value); } catch { return []; }
-  })();
-  const items = [];
-  for (const row of committedRows) {
-    const poleName = String(row?.loai_tru || '').trim();
-    const quantity = Number(row?.so_luong);
-    if (!poleName || !Number.isInteger(quantity) || quantity <= 0) continue;
-    const [poleRows] = await pool.query(
-      'SELECT id, name, charging_type, power_kw, quantity AS stock_quantity FROM charging_poles WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 2',
-      [poleName]
-    );
-    if (poleRows.length === 1) {
-      items.push({
-        pole_id: poleRows[0].id,
-        name: poleRows[0].name,
-        charging_type: poleRows[0].charging_type,
-        power_kw: poleRows[0].power_kw,
-        committed_quantity: quantity,
-        stock_quantity: poleRows[0].stock_quantity,
-        supplier_id: row?.supplier_id || null,
-        supplier_name: row?.supplier_name || ''
-      });
-    }
-  }
-  return items;
+  return (await require('./chargingStationShippingService').getSummary(normalizeId(id, 'Mã bản ghi'))).items;
 };
 
 exports.getCommittedExportItems = getCommittedExportItems;

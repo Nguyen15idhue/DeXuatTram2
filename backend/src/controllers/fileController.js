@@ -108,7 +108,7 @@ const canAccessFile = async (file, req) => {
     );
     if (invoiceStations.length > 0) {
       try {
-        await require('../services/chargingFinanceService').assertFinanceManager({
+        await require('../services/chargingStationAccessService').assertFinanceViewer({
           id: requesterId,
           role: requesterRole
         });
@@ -122,14 +122,17 @@ const canAccessFile = async (file, req) => {
       );
     }
   }
-  if (requesterId && requesterRole === 'SALES') {
+  if (requesterId) {
     const [linkedCharging] = await pool.query(
-      `SELECT 1 FROM charging_stations WHERE acceptance_file_id = ?
-       UNION SELECT 1 FROM charging_station_images WHERE file_id = ?
-       LIMIT 1`,
-      [file.id, file.id]
+      `SELECT id AS charging_station_id FROM charging_stations WHERE acceptance_file_id = ?
+       UNION SELECT charging_station_id FROM charging_station_images WHERE file_id = ?
+       UNION SELECT charging_station_id FROM charging_station_deployments WHERE acceptance_file_id = ?`,
+      [file.id, file.id, file.id]
     );
-    if (linkedCharging.length > 0) return true;
+    for (const station of linkedCharging) {
+      if (await require('../services/chargingStationService').canViewChargingStation(
+        station.charging_station_id, { id: requesterId, role: requesterRole })) return true;
+    }
   }
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
   const reqIp = req.ip || req.connection?.remoteAddress || null;
@@ -398,6 +401,14 @@ exports.delete = async (req, res) => {
        LIMIT 1`, [file.id, file.id]);
     if (linkedReports.length) {
       return res.status(409).json({ success: false, message: 'Không được xóa tài liệu BCĐX đang sử dụng hoặc đã cấu hình ký. Hãy cập nhật hồ sơ theo quy trình.' });
+    }
+    const [linkedOnFiles] = await pool.query(
+      `SELECT id FROM charging_station_deployments WHERE acceptance_file_id=?
+       UNION SELECT id FROM charging_stations WHERE acceptance_file_id=? OR contract_file_id=?
+       UNION SELECT id FROM charging_station_invoices WHERE evidence_file_id=? LIMIT 1`,
+      [file.id, file.id, file.id, file.id]);
+    if (linkedOnFiles.length) {
+      return res.status(409).json({ success: false, message: 'Không được xóa chứng từ hợp đồng, nghiệm thu hoặc hóa đơn ON trạm đang sử dụng' });
     }
 
     await fileService.deleteFile(req.params.id);

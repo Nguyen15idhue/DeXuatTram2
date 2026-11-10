@@ -702,7 +702,7 @@ export const chargingFinanceService = {
     return api.getWithAuth(`/admin/charging-finance/invoices?${params.toString()}`, token);
   },
   createInvoice(stationId, data, token) {
-    return api.postWithAuth(`/admin/charging-finance/stations/${stationId}/invoices`, data || {}, token);
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-finance/stations/${stationId}/invoices`, data || {}, token));
   },
   updatePaymentStatus(stationId, data, token) {
     return runChargingStationTaskMutation(() => api.putWithAuth(`/admin/charging-finance/stations/${stationId}/payment-status`, data || {}, token));
@@ -710,6 +710,21 @@ export const chargingFinanceService = {
 };
 
 export const chargingStationService = {
+  getFulfillment(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/fulfillment`, token);
+  },
+  getDeployments(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/deployments`, token);
+  },
+  createShipment(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/shipments`, data, token));
+  },
+  shipmentAction(id, exportId, action, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/shipments/${exportId}/${action}`, data, token));
+  },
+  deploymentAction(id, deploymentId, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/deployments/${deploymentId}/actions`, data, token));
+  },
   createDirectFromProposal(proposalId, reason, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(
       `/admin/charging-stations/from-proposal/${proposalId}`,
