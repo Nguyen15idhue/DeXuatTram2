@@ -9,16 +9,17 @@
   "lineHeightPt": 18,
   "lines": {
     "name": {
-      "fontSizePt": 13,
+      "fontSizePt": 10,
       "font": "bold",
       "fontWeight": 700,
       "color": "#dc2626"
     },
     "time": {
-      "fontSizePt": 13,
+      "fontSizePt": 10,
       "font": "regular",
       "fontWeight": 400,
-      "color": "#dc2626"
+      "color": "#dc2626",
+      "isItalic": true
     }
   }
 }
