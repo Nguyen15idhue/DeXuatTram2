@@ -62,7 +62,8 @@ const OnStationSheetSyncButton = () => {
       setToast({ message: res.message || 'Đã xếp đồng bộ Sheet trạm ON', type: 'success' });
       await load();
     } catch (error) {
-      setToast({ message: error?.message || 'Không thể đồng bộ Sheet trạm ON', type: 'error' });
+      console.error('[OnStationSheetSyncButton] Sync error:', error);
+      setToast({ message: 'Không thể bắt đầu đồng bộ Sheet trạm ON. Vui lòng thử lại hoặc liên hệ quản trị viên.', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -80,11 +81,11 @@ const OnStationSheetSyncButton = () => {
         <RefreshCw size={14} className={pending ? 'animate-spin' : ''} />
         {pending ? `Đang đồng bộ ${pending}` : 'Đồng bộ Sheet trạm ON'}
       </button>
-      {(loadError || status?.recentErrors?.length > 0) && (
+      {(loadError || status?.queue?.failed > 0) && (
         <div role="alert" className="text-sm text-error max-w-xl">
-          {loadError || status.recentErrors.map((item) => (
-            <div key={item.proposal_id}>Đề xuất #{item.proposal_id}: {item.last_error}</div>
-          ))}
+          {loadError
+            ? 'Không tải được trạng thái đồng bộ. Vui lòng thử lại.'
+            : `Có ${status.queue.failed} mục đồng bộ chưa thành công. Vui lòng thử đồng bộ lại; nếu vẫn lỗi, vui lòng liên hệ quản trị viên.`}
         </div>
       )}
       <Toast message={toast.message} type={toast.type} onClose={() => setToast(EMPTY_TOAST)} />

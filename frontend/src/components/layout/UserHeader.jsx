@@ -6,9 +6,9 @@ import { getAdminPanelRedirect } from '../../utils/adminPanelRedirect';
 
 const navItems = [
   { path: '/map', label: 'Bản đồ', icon: Map },
-  { path: '/my-proposals', label: 'Đề xuất của tôi', icon: ClipboardList },
+  // { path: '/my-proposals', label: 'Đề xuất của tôi', icon: ClipboardList },
   { path: '/profile', label: 'Hồ sơ', icon: User },
-  { path: '/huong-dan', label: 'Hướng dẫn', icon: BookOpen, hl: 'hl-rgb' },
+  // { path: '/huong-dan', label: 'Hướng dẫn', icon: BookOpen, hl: 'hl-rgb' },
 ];
 
 const UserHeader = ({ onMenuToggle }) => {
@@ -55,7 +55,7 @@ const UserHeader = ({ onMenuToggle }) => {
               }`}
             >
               <Settings size={16} />
-              Admin Panel
+              Trang quản lý
             </Link>
           </>
         )}
