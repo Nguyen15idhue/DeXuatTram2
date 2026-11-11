@@ -3,7 +3,8 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { Badge, Button, ConfirmDialog, FilterBar, Input, Pagination, Toast } from '../ui';
+import { AlertTriangle, Trash2 } from 'lucide-react';
+import { Badge, Button, ConfirmDialog, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationCareModal from './ChargingStationCareModal';
 import { notifyBellRefresh } from '../layout/NotificationBell';
@@ -53,6 +54,12 @@ const ChargingStationTab = ({ stage }) => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [careStation, setCareStation] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [deletePreviewLoading, setDeletePreviewLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteSaving, setDeleteSaving] = useState(false);
   const [statusDialog, setStatusDialog] = useState({ open: false, action: '', row: null });
   const [onStationDialog, setOnStationDialog] = useState({ open: false, row: null, cms_station_code: '', on_date: '', reason: '', acknowledged: false });
   const [statusSaving, setStatusSaving] = useState(false);
@@ -82,6 +89,34 @@ const ChargingStationTab = ({ stage }) => {
     setPage(1);
     load(1);
   }, [load]);
+
+  useEffect(() => {
+    if (!deleteTarget) {
+      setDeletePreview(null);
+      setDeletePreviewLoading(false);
+      setDeleteError('');
+      setDeleteReason('');
+      return undefined;
+    }
+
+    let active = true;
+    setDeletePreview(null);
+    setDeletePreviewLoading(true);
+    setDeleteError('');
+    chargingStationService.getDeletePreview(deleteTarget.id, token)
+      .then((response) => {
+        if (!response?.success) throw new Error(response?.message || 'Không thể tải thông tin xóa ON trạm');
+        if (active) setDeletePreview(response.data);
+      })
+      .catch((error) => {
+        if (active) setDeleteError(error?.message || 'Không thể tải thông tin xóa ON trạm');
+      })
+      .finally(() => {
+        if (active) setDeletePreviewLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [deleteTarget, token]);
 
   const goPage = (next) => {
     setPage(next);
@@ -154,6 +189,28 @@ const ChargingStationTab = ({ stage }) => {
       setOnStationSaving(false);
     }
   };
+
+  const removeOnStation = async () => {
+    if (!deleteTarget || !deletePreview || deleteReason.trim().length < 3 || deleteSaving) return;
+    setDeleteSaving(true);
+    setDeleteError('');
+    try {
+      const response = await chargingStationService.deleteOnStation(deleteTarget.id, {
+        reason: deleteReason.trim(),
+        preview_token: deletePreview.preview_token
+      }, token);
+      if (!response?.success) throw new Error(response?.message || 'Không thể xóa ON trạm');
+      setDeleteTarget(null);
+      setToast({ message: response.message || 'Đã xóa ON trạm và rollback tồn kho', type: 'success' });
+      await load(page);
+    } catch (error) {
+      setDeleteError(error?.message || 'Không thể xóa ON trạm');
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+
+  const formatMoney = (value) => Number(value || 0).toLocaleString('vi-VN');
 
   const columns = useMemo(() => [
     {
@@ -275,6 +332,16 @@ const ChargingStationTab = ({ stage }) => {
           Đã ON Trạm
         </button>
       )}
+      {stage === 'thong-tin-chung' && tab === 'all' && isSuperAdmin && (
+        <Button
+          variant="outline-error"
+          size="xs"
+          aria-label={`Xóa ON trạm ${row.ma_tram || row.id}`}
+          onClick={() => setDeleteTarget(row)}
+        >
+          <Trash2 size={14} /> Xóa
+        </Button>
+      )}
     </div>
   );
 
@@ -296,6 +363,73 @@ const ChargingStationTab = ({ stage }) => {
           if (!statusSavingRef.current) setStatusDialog({ open: false, action: '', row: null });
         }}
       />
+
+      <Dialog
+        isOpen={!!deleteTarget}
+        onClose={() => { if (!deleteSaving) setDeleteTarget(null); }}
+        title={`Xóa ON trạm · ${deleteTarget?.ma_tram || `#${deleteTarget?.id || ''}`}`}
+      >
+        <div className="space-y-4">
+          <div className="alert alert-warning items-start">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0" />
+            <div className="text-sm">
+              Thao tác xóa vĩnh viễn ON trạm, phiếu xuất kho và phiếu cọc/thanh toán/hoàn cọc liên quan.
+              Đề xuất được giữ nguyên trạng thái. Phiếu nhập kho vẫn giữ, nhưng sẽ bỏ liên kết với ON trạm.
+              Tồn kho hệ thống sẽ được cộng lại theo số xuất ròng; việc này không thu hồi trụ vật lý.
+              Tệp minh chứng không bị xóa khỏi kho tệp.
+            </div>
+          </div>
+          {deletePreviewLoading && <div className="flex justify-center py-4"><span className="loading loading-spinner loading-md" /></div>}
+          {deletePreview && <>
+            <div className="rounded-lg border border-base-300 p-3 text-sm space-y-1">
+              <div><strong>Mã đề xuất:</strong> {deletePreview.proposal_code || `#${deletePreview.proposal_id}`}</div>
+              <div><strong>Trạng thái đề xuất sẽ giữ nguyên:</strong> {deletePreview.proposal_status}</div>
+              <div><strong>Phiếu xuất sẽ xóa:</strong> {deletePreview.export_count} phiếu ({deletePreview.export_item_count} dòng trụ)</div>
+              <div><strong>Phiếu tài chính sẽ xóa:</strong> {deletePreview.invoice_summary.count} phiếu — cọc {formatMoney(deletePreview.invoice_summary.DEPOSIT.amount)}, thanh toán {formatMoney(deletePreview.invoice_summary.PAYMENT.amount)}, hoàn cọc {formatMoney(deletePreview.invoice_summary.REFUND.amount)} đồng</div>
+              <div><strong>Phiếu nhập được giữ:</strong> {deletePreview.warehouse_import_count} phiếu (bỏ liên kết ON trạm)</div>
+              <div><strong>Dữ liệu vận hành sẽ xóa:</strong> {deletePreview.deployment_count} đợt triển khai, {deletePreview.acceptance_image_count} ảnh nghiệm thu, {deletePreview.care_log_count} nhật ký chăm sóc và {deletePreview.activity_log_count} nhật ký ON trạm</div>
+            </div>
+            <div className="space-y-1">
+              <strong className="text-sm">Tồn kho sẽ được cộng lại:</strong>
+              {deletePreview.restock_items.length
+                ? <ul className="list-disc pl-5 text-sm">{deletePreview.restock_items.map((item) => (
+                  <li key={`${item.supplier_id}:${item.pole_id}`}>
+                    {item.supplier_name} · {item.pole_name} ({item.power_kw} kW): +{item.quantity} trụ
+                  </li>
+                ))}</ul>
+                : <p className="text-sm text-base-content/60">Không có trụ cần cộng lại.</p>}
+            </div>
+            <Input
+              label="Lý do xóa"
+              required
+              value={deleteReason}
+              maxLength={5000}
+              onChange={(event) => setDeleteReason(event.target.value)}
+              placeholder="Nhập lý do xóa ON trạm"
+            />
+          </>}
+          {deleteError && <div role="alert" className="alert alert-error flex-col items-start">
+            <span>{deleteError}</span>
+            {deleteTarget && <Button
+              size="xs"
+              variant="outline"
+              disabled={deleteSaving}
+              onClick={() => { setDeleteReason(''); setDeleteTarget({ ...deleteTarget }); }}
+            >Tải lại thông tin xóa</Button>}
+          </div>}
+          <div className="modal-action">
+            <Button variant="outline" disabled={deleteSaving} onClick={() => setDeleteTarget(null)}>Đóng</Button>
+            <Button
+              variant="error"
+              loading={deleteSaving}
+              disabled={deletePreviewLoading || !deletePreview || deleteReason.trim().length < 3}
+              onClick={removeOnStation}
+            >
+              Xóa ON trạm
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {onStationDialog.open && (
         <dialog className="modal modal-open" onCancel={(event) => event.preventDefault()}>

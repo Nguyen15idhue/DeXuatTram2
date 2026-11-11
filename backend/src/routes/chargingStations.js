@@ -71,6 +71,69 @@ router.get('/task-counts', requireChargingStationViewer, chargingStationControll
 
 /**
  * @swagger
+ * /api/admin/charging-stations/{id}/delete-preview:
+ *   get:
+ *     tags: [Charging Stations]
+ *     summary: Xem trước dữ liệu bị xóa và tồn kho được rollback
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Tóm tắt phiếu xuất, hóa đơn, phiếu nhập giữ lại và lượng trụ cộng kho
+ *       403:
+ *         description: Chỉ SUPER_ADMIN được xem trước thao tác xóa
+ *       409:
+ *         description: Dữ liệu tồn kho không thể rollback an toàn
+ */
+router.get('/:id/delete-preview', requireSuperAdmin, chargingStationController.deletePreview);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/delete:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Xóa ON trạm và rollback các phiếu liên quan
+ *     description: Chỉ SUPER_ADMIN. Phiếu xuất và hóa đơn bị xóa; tồn kho được cộng lại theo số lượng xuất ròng; phiếu nhập giữ lại và bỏ liên kết ON trạm; đề xuất giữ nguyên trạng thái.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason, preview_token]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 5000
+ *               preview_token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Đã xóa ON trạm trong một transaction
+ *       403:
+ *         description: Chỉ SUPER_ADMIN được xóa
+ *       409:
+ *         description: Dữ liệu thay đổi sau khi xem trước hoặc tồn kho không thể rollback an toàn
+ */
+router.post('/:id/delete', requireSuperAdmin, chargingStationController.remove);
+
+/**
+ * @swagger
  * /api/admin/charging-stations/from-proposal/{proposalId}:
  *   post:
  *     tags: [Charging Stations]

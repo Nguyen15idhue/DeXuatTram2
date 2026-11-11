@@ -742,6 +742,12 @@ export const chargingStationService = {
   getDetail(id, token) {
     return api.getWithAuth(`/admin/charging-stations/${id}`, token);
   },
+  getDeletePreview(id, token) {
+    return api.getWithAuth(`/admin/charging-stations/${id}/delete-preview`, token);
+  },
+  deleteOnStation(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/delete`, data || {}, token));
+  },
   cancelOnStation(id, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/cancel`, {}, token));
   },

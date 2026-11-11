@@ -33,6 +33,7 @@ const STATUS_DOT = {
 
 const ACTION_LABEL = {
   created: 'Tạo đề xuất',
+  on_station_deleted: 'Xóa ON trạm',
   updated: 'Cập nhật nội dung',
   status_change: 'Đổi trạng thái',
   status_change_denied: 'Đổi trạng thái bị chặn',

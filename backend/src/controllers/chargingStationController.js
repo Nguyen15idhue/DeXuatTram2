@@ -1,4 +1,5 @@
 const chargingStationService = require('../services/chargingStationService');
+const chargingStationDeletionService = require('../services/chargingStationDeletionService');
 
 const sendError = (res, error) => {
   console.error('Charging station error:', error);
@@ -37,6 +38,29 @@ exports.detail = async (req, res) => {
   try {
     const data = await chargingStationService.getChargingStationDetail(req.params.id, req.user);
     res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.deletePreview = async (req, res) => {
+  try {
+    const data = await chargingStationDeletionService.getDeletePreview(req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.remove = async (req, res) => {
+  try {
+    const data = await chargingStationDeletionService.deleteChargingStation(
+      req.params.id,
+      req.body || {},
+      req.user,
+      actorOf(req)
+    );
+    res.json({ success: true, data, message: 'Đã xóa ON trạm, phiếu liên quan và rollback tồn kho' });
   } catch (error) {
     sendError(res, error);
   }
