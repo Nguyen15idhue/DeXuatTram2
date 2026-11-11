@@ -54,7 +54,12 @@ const requireAuth = async (req, res, next) => {
         message: 'Phiên đăng nhập đã hết hạn'
       });
     }
-    req.user = { id: rows[0].id, email: rows[0].email, role: rows[0].role };
+    req.user = {
+      id: rows[0].id,
+      email: rows[0].email,
+      role: rows[0].role,
+      tokenVersion: rows[0].token_version || 0
+    };
     next();
   } catch (error) {
     console.error('requireAuth DB error:', error);
