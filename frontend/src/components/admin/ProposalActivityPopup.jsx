@@ -4,6 +4,8 @@ import { proposalLogService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import useMapStatuses from '../../hooks/useMapStatuses';
 import { getStatusLabel } from '../../utils/mapStatuses';
+import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
+import { getNumberedProposalStatusLabel } from '../../utils/proposalStatus';
 
 const STATUS_DOT = {
   PENDING: '#facc15',
@@ -33,6 +35,7 @@ const STATUS_DOT = {
 
 const ACTION_LABEL = {
   created: 'Tạo đề xuất',
+  on_station_deleted: 'Xóa ON trạm',
   updated: 'Cập nhật nội dung',
   status_change: 'Đổi trạng thái',
   status_change_denied: 'Đổi trạng thái bị chặn',
@@ -104,6 +107,10 @@ const fmtRawValue = (key, v) => {
 };
 
 const ProposalActivityPopup = ({ proposalId, onClose }) => {
+  const numberedStatuses = useNumberedProposalStatuses();
+  const statusLabel = (value) => numberedStatuses
+    ? getNumberedProposalStatusLabel(value, getStatusLabel(value, 'proposal'))
+    : getStatusLabel(value, 'proposal');
   const { token } = useAuth();
   useMapStatuses();
   const [items, setItems] = useState([]);
@@ -146,7 +153,7 @@ const ProposalActivityPopup = ({ proposalId, onClose }) => {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-sm">{ACTION_LABEL[it.action] || it.action}</span>
             {(it.action === 'status_change' || it.action === 'status_change_denied') && (
-              <span className="text-xs text-base-content/70">{it.from_status ? getStatusLabel(it.from_status, 'proposal') : '—'} → <b>{it.to_status ? getStatusLabel(it.to_status, 'proposal') : '—'}</b></span>
+              <span className="text-xs text-base-content/70">{it.from_status ? statusLabel(it.from_status) : '—'} → <b>{it.to_status ? statusLabel(it.to_status) : '—'}</b></span>
             )}
             <span className="badge badge-ghost badge-xs">{SOURCE_LABEL[it.source] || it.source}</span>
             {it.manual_override ? <span className="badge badge-warning badge-xs">demo/tay</span> : null}

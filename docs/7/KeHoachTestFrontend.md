@@ -2,6 +2,31 @@
 
 ## 0. Thông tin chung
 
+- Nhãn trạng thái riêng `/admin/proposals`: `PENDING` = **1. Mới đề xuất**; 16 mã của luồng mới
+  được đánh số nguyên đến **16. Hoạt động**, gồm cả nhánh chấm lại/bổ sung.
+  Hủy, tạm dừng, lưu trữ và trạng thái legacy (kể cả Duyệt chủ trương) không số, xếp cuối bộ lọc.
+  Context chỉ bọc trang này: bảng, ba tab, popup xem/sửa, lịch sử và hộp thoại trạng thái dùng cùng nhãn;
+  bộ lọc cột gửi mã trạng thái chính xác. Không sửa DB, luồng chuyển trạng thái, bản đồ hoặc dữ liệu xuất.
+  Số thứ tự không có nghĩa mọi đề xuất phải đi qua đủ 16 trạng thái.
+  Kiểm tra: `node --test frontend/test-proposal-status.mjs` và
+  `npx playwright test FE-proposal-numbered-status.spec.js` (API mock, hỗ trợ `E2E_BASE_URL`).
+
+- Giao trụ theo NCC (migration `229-shipping-supplier-selection.sql`):
+  dòng chốt không bắt buộc NCC; nhu cầu gộp theo ID loại trụ, không phân biệt NQ/LK/TDT.
+  Form xuất hiển thị từng cặp loại trụ/NCC còn tồn, số lượng mặc định 0; tổng xuất các NCC không vượt nhu cầu còn lại.
+  Backend vẫn phân bổ nội bộ về dòng chốt để truy vết nhận/lắp/ON/hoàn kho; không sửa phiếu lịch sử.
+  Hai nút Xuất trụ và Đề xuất giao sớm bị vô hiệu hóa khi hết nhu cầu hoặc hết tồn phù hợp.
+  ON trạm (kể cả thao tác trực tiếp/legacy) không tự chuyển tiền cọc sang Chờ hoàn cọc; người có quyền lập phiếu hoàn thủ công tại Tài chính theo điều kiện hiện hành.
+  Chạy UI: `npx playwright test e2e/FE-on-station-nested-dialog.spec.js e2e/FE-shipping-suppliers.spec.js`.
+  Chạy backend: `node --test backend/test-shipping-supplier-selection.cjs backend/test-charging-station-deployments.cjs`.
+  Hai fixture MySQL `backend/test-shipping-supplier-integration.cjs` và `backend/test-on-partial-integration.cjs`
+  dùng `ON_PARTIAL_INTEGRATION=1`, yêu cầu migration 229 và tự rollback dữ liệu fixture.
+
+- Hồi quy modal lồng ON trạm: `npx playwright test e2e/FE-on-station-nested-dialog.spec.js`.
+  Kiểm tra Xuất trụ và Đề xuất giao sớm từ modal Các phần trụ / thao tác trên desktop/mobile:
+  modal con portal ra body, nằm trên modal cha, cuộn tới nút xác nhận, đóng bằng nút X/backdrop không đóng modal cha.
+  Dùng API mock, không thay đổi dữ liệu thật; biến `E2E_BASE_URL` cho phép chọn server frontend khác.
+
 - Mục đích: kiểm tra toàn diện frontend React + Vite theo 5 nhóm yêu cầu, thực thi chuẩn bằng Playwright MCP (AI điều khiển trình duyệt) + Playwright Test (script lưu lại, chạy lặp).
 - Phạm vi: tất cả routes trong `frontend/src/App.jsx`, forms/views dynamic của 3 entity, `/map`, buttons + phân quyền hiển thị.
 - Môi trường:

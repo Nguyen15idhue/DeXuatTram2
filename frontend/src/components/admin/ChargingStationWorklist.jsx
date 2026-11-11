@@ -59,7 +59,9 @@ const ChargingStationWorklist = ({ stage }) => {
       { key: 'address', label: 'Địa chỉ', render: (value) => <span className="block max-w-56 truncate" title={value}>{value || '—'}</span> },
       { key: 'status', label: 'Trạng thái tổng hợp', render: (value) => <Badge size="sm" variant={CS_STATUS_VARIANT[value]}>{CS_STATUS_LABELS[value] || value}</Badge> },
       { key: 'fulfillment', label: 'Trụ đã ON / chốt', render: (value) => value?.totals ? `${value.totals.operating || 0} / ${value.totals.committed || 0}` : '—' }
-    ]} actions={(row) => <Button size="xs" variant="outline" onClick={() => setSelected(row)}>Các phần trụ / thao tác</Button>} />
+    ]} actions={(row) => <div className="flex items-center gap-1">
+      <Button size="xs" variant="outline" onClick={() => setSelected(row)}>Các phần trụ / thao tác</Button>
+    </div>} />
     <Pagination page={pagination.page || page} totalPages={pagination.totalPages || 1} total={pagination.total || 0} onPageChange={(next) => { setPage(next); load(next); }} />
     <Dialog isOpen={!!selected} onClose={() => setSelected(null)} title={`Triển khai · ${selected?.ma_tram || ''}`} size="full">
       {selected && <ChargingStationFulfillment station={selected} stage={stage} onChanged={() => load(page)} />}

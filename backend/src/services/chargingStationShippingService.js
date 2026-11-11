@@ -1,4 +1,5 @@
 const pool = require('../utils/db');
+const { isDeepStrictEqual } = require('node:util');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const idOf = (value, label = 'Mã bản ghi') => {
@@ -23,7 +24,7 @@ const normalizeRequestId = (value) => {
   }
   return requestId;
 };
-const jsonEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const jsonEqual = (left, right) => isDeepStrictEqual(left, right);
 const normalizedRows = (items, idField, label) => {
   if (!Array.isArray(items) || items.length === 0) throw fail(`${label} là bắt buộc`);
   const map = new Map();
@@ -33,6 +34,40 @@ const normalizedRows = (items, idField, label) => {
     map.set(id, (map.get(id) || 0) + quantity);
   }
   return [...map.entries()].sort(([a], [b]) => a - b).map(([id, quantity]) => ({ [idField]: id, quantity }));
+};
+const normalizeShipmentRows = (rows) => {
+  if (!Array.isArray(rows) || !rows.length) throw fail('Danh sách trụ xuất là bắt buộc');
+  const grouped = new Map();
+  for (const row of rows) {
+    const poleId = idOf(row?.pole_id, 'Loại trụ');
+    const supplierId = idOf(row?.supplier_id, 'Nhà cung cấp');
+    const key = `${poleId}:${supplierId}`;
+    const current = grouped.get(key) || { pole_id: poleId, supplier_id: supplierId, quantity: 0 };
+    current.quantity += quantityOf(row.quantity);
+    if (!Number.isSafeInteger(current.quantity)) throw fail('Số lượng xuất quá lớn');
+    grouped.set(key, current);
+  }
+  return [...grouped.values()].sort((a, b) => a.pole_id - b.pole_id || a.supplier_id - b.supplier_id);
+};
+
+const allocateShipmentRows = (rows, commitments, exported) => {
+  const remaining = new Map(commitments.map((row) => [
+    Number(row.id), Math.max(0, Number(row.quantity) - (exported.get(Number(row.id)) || 0))
+  ]));
+  const result = [];
+  for (const row of rows) {
+    let needed = row.quantity;
+    for (const commitment of commitments) {
+      if (Number(commitment.pole_id) !== row.pole_id || !needed) continue;
+      const quantity = Math.min(needed, remaining.get(Number(commitment.id)));
+      if (!quantity) continue;
+      result.push({ commitment_id: Number(commitment.id), supplier_id: row.supplier_id, quantity });
+      remaining.set(Number(commitment.id), remaining.get(Number(commitment.id)) - quantity);
+      needed -= quantity;
+    }
+    if (needed) throw fail(`Số lượng xuất vượt số trụ còn lại của loại trụ #${row.pole_id}`, 409);
+  }
+  return result;
 };
 const actorContext = (user, ctx = {}) => ({
   ...ctx,
@@ -98,22 +133,6 @@ const readCommitmentLines = async (connection, stationId) => {
     if (poles.length !== 1) throw fail(`Không xác định duy nhất được loại trụ ở dòng ${index + 1}; cần đối soát thủ công`, 409);
     poleId = Number(poles[0].id);
 
-    let supplierId = Number(row.supplier_id) || null;
-    const [supplierRows] = await connection.query(
-      'SELECT supplier_id FROM supplier_charging_poles WHERE charging_pole_id = ? ORDER BY supplier_id',
-      [poleId]
-    );
-    const supplierIds = [...new Set(supplierRows.map((item) => Number(item.supplier_id)))];
-    if (supplierId) {
-      if (!supplierIds.includes(supplierId)) {
-        throw fail(`Nhà cung cấp ở dòng ${index + 1} không cung cấp loại trụ đã chốt; cần đối soát thủ công`, 409);
-      }
-    } else if (supplierIds.length === 1) {
-      [supplierId] = supplierIds;
-    } else {
-      throw fail(`Không xác định duy nhất được nhà cung cấp ở dòng ${index + 1}; cần đối soát thủ công`, 409);
-    }
-
     const sourceKey = text(row.source_key || row.id) || `line:${index + 1}`;
     if (sourceKey.length > 100) throw fail(`Mã dòng chốt ${index + 1} quá dài`, 409);
     if (commitments.some((item) => item.source_key === sourceKey)) {
@@ -121,7 +140,7 @@ const readCommitmentLines = async (connection, stationId) => {
     }
     commitments.push({
       model,
-      supplier_id: supplierId,
+      supplier_id: null,
       pole_id: poleId,
       quantity,
       source_key: sourceKey
@@ -158,7 +177,6 @@ const ensureCommitments = async (connection, stationId) => {
       const snapshot = snapshotByKey.get(item.source_key);
       return snapshot
         && item.model === snapshot.model
-        && Number(item.supplier_id) === snapshot.supplier_id
         && Number(item.pole_id) === snapshot.pole_id
         && Number(item.quantity) === snapshot.quantity;
     });
@@ -246,9 +264,12 @@ const getShipment = async (connection, exportId) => {
 
 const writeStationExport = async (connection, stationId, body, actor, ctx = {}) => {
   const requestId = normalizeRequestId(body.request_id);
-  const items = normalizedRows(body.items, 'commitment_id', 'Danh sách trụ xuất');
+  const supplierSelection = Array.isArray(body.items) && body.items.some((row) => row?.pole_id !== undefined);
+  const requestedItems = supplierSelection
+    ? normalizeShipmentRows(body.items)
+    : normalizedRows(body.items, 'commitment_id', 'Danh sách trụ xuất');
   const payload = {
-    items,
+    items: requestedItems,
     carrier: text(body.carrier) || null,
     transport_code: text(body.transport_code) || null,
     reason: text(body.reason) || null,
@@ -263,22 +284,36 @@ const writeStationExport = async (connection, stationId, body, actor, ctx = {}) 
   if (existing) return existing;
 
   await ensureCommitments(connection, stationId);
-  const commitmentIds = items.map((item) => item.commitment_id);
   const [lockedCommitments] = await connection.query(
     `SELECT id, model, supplier_id, pole_id, quantity
        FROM charging_station_commitments
-      WHERE charging_station_id = ? AND id IN (${commitmentIds.map(() => '?').join(',')})
+      WHERE charging_station_id = ?
       ORDER BY id FOR UPDATE`,
-    [stationId, ...commitmentIds]
+    [stationId]
   );
+  const commitmentIds = lockedCommitments.map((item) => Number(item.id));
+  if (!commitmentIds.length) throw fail('Không có số lượng trụ chốt để xuất', 409);
+  const [exported] = await connection.query(
+    `SELECT commitment_id, COALESCE(SUM(quantity - returned_quantity), 0) AS net_exported
+       FROM warehouse_export_items
+      WHERE commitment_id IN (${commitmentIds.map(() => '?').join(',')})
+      GROUP BY commitment_id`,
+    commitmentIds
+  );
+  const exportedByCommitment = new Map(exported.map((row) => [Number(row.commitment_id), Number(row.net_exported)]));
   const byId = new Map(lockedCommitments.map((item) => [Number(item.id), item]));
+  const items = supplierSelection
+    ? allocateShipmentRows(requestedItems, lockedCommitments, exportedByCommitment)
+    : requestedItems.map((item) => ({
+      ...item, supplier_id: idOf(byId.get(item.commitment_id)?.supplier_id, 'Nhà cung cấp: vui lòng chọn lại trên form xuất trụ')
+    }));
   for (const item of items) {
     if (!byId.has(item.commitment_id)) throw fail(`Dòng chốt #${item.commitment_id} không thuộc trạm này`, 409);
   }
 
   const inventoryKeys = [...new Set(items.map((item) => {
     const commitment = byId.get(item.commitment_id);
-    return `${commitment.supplier_id}:${commitment.pole_id}`;
+    return `${item.supplier_id}:${commitment.pole_id}`;
   }))].sort((a, b) => {
     const [as, ap] = a.split(':').map(Number);
     const [bs, bp] = b.split(':').map(Number);
@@ -294,20 +329,12 @@ const writeStationExport = async (connection, stationId, body, actor, ctx = {}) 
     stockParams
   );
   const stock = new Map(stockRows.map((row) => [`${row.supplier_id}:${row.charging_pole_id}`, Number(row.quantity)]));
-  const [exported] = await connection.query(
-    `SELECT commitment_id, COALESCE(SUM(quantity - returned_quantity), 0) AS net_exported
-       FROM warehouse_export_items
-      WHERE commitment_id IN (${commitmentIds.map(() => '?').join(',')})
-      GROUP BY commitment_id`,
-    commitmentIds
-  );
-  const exportedByCommitment = new Map(exported.map((row) => [Number(row.commitment_id), Number(row.net_exported)]));
   const sumsByInventory = new Map();
   const sumsByCommitment = new Map();
   for (const item of items) {
     const commitment = byId.get(item.commitment_id);
-    const key = `${commitment.supplier_id}:${commitment.pole_id}`;
-    if (!stock.has(key)) throw fail(`Không tìm thấy tồn kho cho nhà cung cấp #${commitment.supplier_id}, trụ #${commitment.pole_id}`, 409);
+    const key = `${item.supplier_id}:${commitment.pole_id}`;
+    if (!stock.has(key)) throw fail(`Không tìm thấy tồn kho cho nhà cung cấp #${item.supplier_id}, trụ #${commitment.pole_id}`, 409);
     const next = (exportedByCommitment.get(item.commitment_id) || 0) + item.quantity;
     if (next > Number(commitment.quantity)) {
       const remainder = Math.max(0, Number(commitment.quantity) - (exportedByCommitment.get(item.commitment_id) || 0));
@@ -334,7 +361,7 @@ const writeStationExport = async (connection, stationId, body, actor, ctx = {}) 
      VALUES ?`,
     [items.map((item) => {
       const commitment = byId.get(item.commitment_id);
-      return [exportId, commitment.supplier_id, commitment.pole_id, commitment.id, item.quantity];
+      return [exportId, item.supplier_id, commitment.pole_id, commitment.id, item.quantity];
     })]
   );
   for (const [key, quantity] of sumsByInventory) {
@@ -692,7 +719,7 @@ const getSummary = async (stationId, executor = pool) => {
   if (!stations.length) throw fail('Không tìm thấy ON trạm', 404);
   const [items] = await executor.query(
     `SELECT c.id AS commitment_id, c.model, c.supplier_id, s.name AS supplier_name,
-            c.pole_id, cp.name, c.quantity AS committed_quantity,
+            c.pole_id, cp.name, cp.charging_type, cp.power_kw, c.quantity AS committed_quantity,
             COALESCE(shipped.exported_quantity, 0) AS exported_quantity,
             COALESCE(shipped.received_quantity, 0) AS received_quantity,
             COALESCE(shipped.returned_quantity, 0) AS returned_quantity,
@@ -788,8 +815,66 @@ const getSummary = async (stationId, executor = pool) => {
     total.operating += item.operating_quantity;
   }
   const committedSnapshot = parseJson(stations[0].chot_so_luong_tru);
+  if (!items.length && Array.isArray(committedSnapshot) && committedSnapshot.length) {
+    if (executor === pool) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        await ensureCommitments(connection, stationId);
+        const summary = await getSummary(stationId, connection);
+        await connection.commit();
+        return summary;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    }
+    await ensureCommitments(executor, stationId);
+    return getSummary(stationId, executor);
+  }
+  const grouped = new Map();
+  for (const item of items) {
+    const poleId = Number(item.pole_id);
+    const group = grouped.get(poleId) || {
+      pole_id: poleId, name: item.name, charging_type: item.charging_type, power_kw: item.power_kw,
+      committed_quantity: 0, remaining_quantity: 0,
+      exported_quantity: 0, received_quantity: 0, returned_quantity: 0,
+      in_transit_quantity: 0, operating_quantity: 0, stock_quantity: 0
+    };
+    group.committed_quantity += item.committed_quantity;
+    group.remaining_quantity += item.remaining_quantity;
+    for (const key of ['exported_quantity', 'received_quantity', 'returned_quantity', 'in_transit_quantity', 'operating_quantity']) {
+      group[key] += Number(item[key]);
+    }
+    grouped.set(poleId, group);
+  }
+  const [inventory] = await executor.query(
+    `SELECT scp.supplier_id, scp.charging_pole_id AS pole_id,
+            scp.quantity AS stock_quantity, s.name AS supplier_name
+       FROM supplier_charging_poles scp
+       JOIN suppliers s ON s.id = scp.supplier_id
+      WHERE scp.quantity > 0
+        AND scp.charging_pole_id IN (
+          SELECT pole_id FROM charging_station_commitments WHERE charging_station_id = ?
+        )
+      ORDER BY scp.charging_pole_id, scp.supplier_id`,
+    [stationId]
+  );
+  for (const row of inventory) {
+    const group = grouped.get(Number(row.pole_id));
+    if (group) group.stock_quantity += Number(row.stock_quantity);
+  }
+  const shippingOptions = inventory.filter((row) => grouped.get(Number(row.pole_id))?.remaining_quantity > 0)
+    .map((row) => ({
+      ...grouped.get(Number(row.pole_id)), ...row,
+      id: `${row.pole_id}:${row.supplier_id}`, stock_quantity: Number(row.stock_quantity)
+    }));
   return {
     items,
+    pole_requirements: [...grouped.values()],
+    shipping_options: shippingOptions,
     totals: total,
     shipments,
     needs_review: Boolean(Number(stations[0].fulfillment_review_required)
@@ -800,6 +885,8 @@ const getSummary = async (stationId, executor = pool) => {
 };
 
 module.exports = {
+  normalizeShipmentRows,
+  allocateShipmentRows,
   ensureCommitments,
   getSummary,
   createExport,

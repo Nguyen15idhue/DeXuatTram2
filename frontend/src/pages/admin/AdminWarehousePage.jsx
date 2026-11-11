@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { requestKeyForIntent } from '../../utils/chargingFulfillment';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supplierService, warehouseService } from '../../services/api';
@@ -662,6 +663,7 @@ const ImportsTab = ({ token, onToast }) => {
 };
 
 const ExportsTab = ({ token, onToast }) => {
+  const exportRequest = useRef(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ search: '', supplier_id: '', destination_type: '', date_from: '', date_to: '' });
@@ -773,7 +775,7 @@ const ExportsTab = ({ token, onToast }) => {
       const pole = poles.find((p) => p.id === item.pole_id);
       const committed = committedItems.find((c) => c.pole_id === item.pole_id);
       const maxByStock = pole ? Number(pole.quantity) : 0;
-      const maxByCommitted = committed ? Number(committed.committed_quantity) : 0;
+      const maxByCommitted = committed ? Number(committed.remaining_quantity) : 0;
       const maxAllowed = committed ? Math.min(maxByCommitted, maxByStock) : maxByStock;
       if (item.quantity > maxAllowed) {
         onToast(`Số lượng xuất vượt quá số lượng cho phép. Số lượng tối đa có thể xuất là ${maxAllowed} trụ. Vui lòng kiểm tra lại.`, 'error');
@@ -783,7 +785,9 @@ const ExportsTab = ({ token, onToast }) => {
 
     setBusy(true);
     try {
+      exportRequest.current = requestKeyForIntent(exportRequest.current, form);
       await warehouseService.createExport({
+        request_id: exportRequest.current.request_id,
         export_date: form.export_date,
         destination_type: form.destination_type,
         charging_station_id: form.destination_type === 'STATION' ? Number(form.charging_station_id) : null,
@@ -794,6 +798,7 @@ const ExportsTab = ({ token, onToast }) => {
         items: normalizedItems
       }, token);
       setDialog({ open: false });
+      exportRequest.current = null;
       onToast('Đã xuất kho', 'success');
       load(page);
     } catch (error) {
@@ -846,11 +851,11 @@ const ExportsTab = ({ token, onToast }) => {
               <div className="rounded-lg border border-base-300 bg-base-200/40 p-3 text-xs space-y-1">
                 <div className="font-medium text-base-content/70">Số lượng đã chốt / tồn kho:</div>
                 {committedItems.map((item) => {
-                  const max = Math.min(item.committed_quantity, item.stock_quantity);
+                  const max = Math.min(item.remaining_quantity, item.stock_quantity);
                   return (
                     <div key={item.pole_id} className="flex justify-between gap-2">
                       <span>{item.name} ({item.charging_type} {Number(item.power_kw)}kW)</span>
-                      <span>chốt {item.committed_quantity} · tồn {item.stock_quantity} · tối đa {max}</span>
+                      <span>chốt {item.committed_quantity} · còn {item.remaining_quantity} · tồn {item.stock_quantity} · tối đa {max}</span>
                     </div>
                   );
                 })}
@@ -895,7 +900,7 @@ const ExportsTab = ({ token, onToast }) => {
                     />
                   </div>
                   <div className="w-full sm:w-32">
-                    <Input label={index === 0 ? 'Số lượng' : undefined} type="number" min="1" value={row.quantity} onChange={(e) => updateRow(index, { quantity: e.target.value })} max={(() => { const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id)); const pole = poles.find((p) => p.id === Number(row.pole_id)); if (!committed) return undefined; return Math.min(committed.committed_quantity, pole ? Number(pole.quantity) : 0); })()} />
+                    <Input label={index === 0 ? 'Số lượng' : undefined} type="number" min="1" value={row.quantity} onChange={(e) => updateRow(index, { quantity: e.target.value })} max={(() => { const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id)); const pole = poles.find((p) => p.id === Number(row.pole_id)); if (!committed) return undefined; return Math.min(committed.remaining_quantity, pole ? Number(pole.quantity) : 0); })()} />
                   </div>
                   <div className="w-full sm:w-auto">
                     {form.items.length > 1 && (
@@ -907,7 +912,7 @@ const ExportsTab = ({ token, onToast }) => {
                   const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
                   const pole = poles.find((p) => p.id === Number(row.pole_id));
                   if (!row.pole_id || !pole) return null;
-                  const maxAllowed = committed ? Math.min(committed.committed_quantity, Number(pole.quantity)) : Number(pole.quantity);
+                  const maxAllowed = committed ? Math.min(committed.remaining_quantity, Number(pole.quantity)) : Number(pole.quantity);
                   if (Number(row.quantity) <= maxAllowed) return null;
                   return <div className="text-xs text-error">Tối đa {maxAllowed} trụ</div>;
                 })()}
@@ -919,7 +924,7 @@ const ExportsTab = ({ token, onToast }) => {
               const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
               if (!row.pole_id || !committed) return false;
               const pole = poles.find((p) => p.id === Number(row.pole_id));
-              const maxAllowed = Math.min(committed.committed_quantity, pole ? Number(pole.quantity) : 0);
+              const maxAllowed = Math.min(committed.remaining_quantity, pole ? Number(pole.quantity) : 0);
               return Number(row.quantity) > maxAllowed;
             });
             return invalid ? <div className="alert alert-error text-sm">Số lượng xuất vượt quá số lượng cho phép. Vui lòng kiểm tra lại.</div> : null;
@@ -931,7 +936,7 @@ const ExportsTab = ({ token, onToast }) => {
               const committed = committedItems.find((item) => item.pole_id === Number(row.pole_id));
               if (!row.pole_id || !Number.isInteger(Number(row.pole_id)) || Number(row.pole_id) <= 0) return true;
               if (!Number.isInteger(Number(row.quantity)) || Number(row.quantity) <= 0) return true;
-              const maxAllowed = committed ? Math.min(committed.committed_quantity, pole ? Number(pole.quantity) : 0) : (pole ? Number(pole.quantity) : 0);
+              const maxAllowed = committed ? Math.min(committed.remaining_quantity, pole ? Number(pole.quantity) : 0) : (pole ? Number(pole.quantity) : 0);
               return Number(row.quantity) > maxAllowed;
             })}>Lưu phiếu xuất</Button>
           </div>

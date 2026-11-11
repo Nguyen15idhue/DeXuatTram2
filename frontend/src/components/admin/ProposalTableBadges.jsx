@@ -1,5 +1,7 @@
 import { getStatusColor, getStatusLabel } from '../../utils/mapStatuses';
 import { getModelLabel } from '../../utils/proposalGrading';
+import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
+import { getNumberedProposalStatusLabel } from '../../utils/proposalStatus';
 
 const BORDER_RADIUS = {
   square: '2px',
@@ -31,13 +33,16 @@ const FieldBadge = ({ label, color = '#666666', borderRadius = 'rounded' }) => {
 export const PROPOSAL_VIEW_BUTTON_CLASS = 'btn btn-primary btn-xs gap-1 whitespace-nowrap';
 
 export const ProposalStatusBadge = ({ value, optionMap }) => {
+  const numberedStatuses = useNumberedProposalStatuses();
   if (!value) return <span className="field-empty">-</span>;
   const option = Array.isArray(optionMap)
     ? optionMap.find((item) => String(item.value) === String(value))
     : optionMap?.[value];
   return (
     <FieldBadge
-      label={option?.label || getStatusLabel(value, 'proposal')}
+      label={numberedStatuses
+        ? getNumberedProposalStatusLabel(value, option?.label || getStatusLabel(value, 'proposal'))
+        : option?.label || getStatusLabel(value, 'proposal')}
       color={option?.color || getStatusColor(value, 'proposal') || '#666666'}
       borderRadius={option?.borderRadius}
     />

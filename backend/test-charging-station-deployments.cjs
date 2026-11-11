@@ -108,7 +108,7 @@ const configure = (id, extra = {}) => act(id, 'complete-configuration',
 const errorStatus = (status) => (error) => error.statusCode === status;
 
 test('parallel deployment workflow without database or external queue writes', async (t) => {
-  await t.test('installation, rejection, owned PDF, first activation, later activation and deferred refund', async () => {
+  await t.test('installation, rejection, owned PDF and all activations leave refund manual', async () => {
     reset();
     await assert.rejects(act(1, 'complete-installation'), errorStatus(409));
     await act(1, 'start-installation');
@@ -132,8 +132,8 @@ test('parallel deployment workflow without database or external queue writes', a
     await configure(2, { on_date: '2026-11-11' });
     assert.equal(state.station.on_date, '2026-11-10');
     assert.equal(state.portions[1].on_date, '2026-11-11');
-    assert.equal(state.station.deposit_status, 'REFUND_PENDING');
-    assert.equal(state.notifications.filter((n) => n[1] === 'CHARGING_STATION_REFUND_TASK').length, 1);
+    assert.equal(state.station.deposit_status, 'RECEIVED');
+    assert.equal(state.notifications.filter((n) => n[1] === 'CHARGING_STATION_REFUND_TASK').length, 0);
   });
   await t.test('missing prerequisites require explicit boolean confirmation and reason', async () => {
     reset(); ready(1); state.station.infra_site_status = 'NOT';
@@ -211,13 +211,13 @@ test('parallel deployment workflow without database or external queue writes', a
     await service.refreshStationProgress(pool, 1);
     assert.equal(state.station.deposit_status, 'RECEIVED');
   });
-  await t.test('unresolved legacy fulfillment review prevents automatic refund', async () => {
+  await t.test('resolving fulfillment review does not automatically request refund', async () => {
     reset(); ready(1); ready(2);
     state.station.fulfillment_review_required = 1;
     await configure(1); await configure(2);
     assert.equal(state.station.deposit_status, 'RECEIVED');
     state.station.fulfillment_review_required = 0;
     await service.refreshStationProgress(pool, 1);
-    assert.equal(state.station.deposit_status, 'REFUND_PENDING');
+    assert.equal(state.station.deposit_status, 'RECEIVED');
   });
 });

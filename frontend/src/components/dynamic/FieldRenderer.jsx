@@ -1,5 +1,7 @@
 import { useState, lazy, Suspense } from 'react';
 import UserChip from './UserChip';
+import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
+import { getNumberedProposalStatusLabel } from '../../utils/proposalStatus';
 import { create, all } from 'mathjs';
 import { Paperclip, Zap } from 'lucide-react';
 import { formatNumber, parseLeadingNumber } from '../../utils/formatNumber';
@@ -84,6 +86,7 @@ const normalizeFileEntries = (value) => {
 };
 
 const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, expandTable = false }) => {
+  const numberedStatuses = useNumberedProposalStatuses();
   const [showFilePopup, setShowFilePopup] = useState(false);
   const [showAvatarPopup, setShowAvatarPopup] = useState(false);
   const [showTablePopup, setShowTablePopup] = useState(false);
@@ -146,6 +149,9 @@ const FieldRenderer = ({ field, value, entity, entityId, dataListOptions = {}, e
 
     case 'select': {
       const opt = resolveOption(value);
+      if (numberedStatuses && entity === 'station_proposals' && (field.field_key || field.key) === 'status') {
+        return <span style={opt ? getBadgeStyle(opt) : undefined}>{getNumberedProposalStatusLabel(value, opt?.label || value)}</span>;
+      }
       if (!opt) return <span>{value}</span>;
       if (opt.optionType === 'number') {
         const displayVal = formatNumber(value, { format: opt.numberFormat || field.number_format || 'plain' });

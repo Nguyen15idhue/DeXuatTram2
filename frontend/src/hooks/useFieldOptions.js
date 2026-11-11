@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { fieldDefinitionService, dataListService } from '../services/api';
 import { fetchDataList } from '../utils/dataListCache';
 import { sortByOrder } from '../utils/optionOrder';
-import { isRetiredProposalStatusOption } from '../utils/proposalStatus';
+import { getNumberedProposalStatusOptions, isRetiredProposalStatusOption } from '../utils/proposalStatus';
+import { useNumberedProposalStatuses } from '../contexts/ProposalStatusContext';
 
 const cache = {};
 
@@ -15,6 +16,7 @@ export const clearFieldOptionsCache = (entity) => {
 };
 
 const useFieldOptions = (entity, keys) => {
+  const numberedStatuses = useNumberedProposalStatuses();
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dlOptions, setDlOptions] = useState({});
@@ -123,7 +125,12 @@ const useFieldOptions = (entity, keys) => {
     return field ? field.label : key;
   };
 
-  return { fields, loading, getSelectOptions, getFieldLabel, fetchChildOptions };
+  const scopedSelectOptions = (key) => {
+    const options = getSelectOptions(key);
+    return numberedStatuses && entity === 'station_proposals' && key === 'status'
+      ? getNumberedProposalStatusOptions(options, true) : options;
+  };
+  return { fields, loading, getSelectOptions: scopedSelectOptions, getFieldLabel, fetchChildOptions };
 };
 
 export default useFieldOptions;
