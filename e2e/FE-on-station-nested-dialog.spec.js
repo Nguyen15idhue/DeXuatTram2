@@ -10,6 +10,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 640 
     const station = { id: 501, ma_tram: 'TEST-501', proposal_id: 77, status: 'ONBOARDING' };
     const items = Array.from({ length: 14 }, (_, index) => ({
       id: index + 1, name: `DC120-${index + 1}`, model: 'LK',
+      pole_id: index + 1, supplier_id: 1, supplier_name: 'Supplier A',
       committed_quantity: 2, remaining_quantity: 2, stock_quantity: 5
     }));
     await page.route('**/api/**', async (route) => {
@@ -19,7 +20,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 640 
       if (pathname.endsWith('/auth/me')) {
         data = { user: { id: 501, full_name: 'UI Test', role: 'SUPER_ADMIN' } };
       } else if (pathname.endsWith('/501/fulfillment')) {
-        data = { items, totals: { committed: 28 }, shipments: [] };
+        data = { items, pole_requirements: items, shipping_options: items, totals: { committed: 28, remaining: 28 }, shipments: [] };
       } else if (pathname.endsWith('/501/deployments')) {
         data = [];
       } else if (pathname.endsWith('/charging-stations/501')) {
@@ -28,6 +29,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 640 
         data = [station];
         pagination = { page: 1, totalPages: 1, total: 1 };
       }
+
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({ success: true, data, pagination })

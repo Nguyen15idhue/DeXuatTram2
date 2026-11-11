@@ -82,7 +82,7 @@ test('real MySQL partial delivery, returns and parallel activation remain atomic
     const exportOne = async () => {
       await shipping.createExport(id, {
         request_id: request(), carrier: 'Test carrier', transport_code: request(), total_amount: 0,
-        items: [{ commitment_id: commitmentId, quantity: 1 }]
+        items: [{ pole_id: pole.insertId, supplier_id: supplier.insertId, quantity: 1 }]
       }, bo, ctx(bo));
       return (await shipping.getSummary(id)).shipments.reduce((latest, item) => item.id > latest.id ? item : latest);
     };
@@ -134,7 +134,7 @@ test('real MySQL partial delivery, returns and parallel activation remain atomic
     }, bo, ctx(bo)), { statusCode: 409 });
     await activate(await exportOne(), '2026-10-02');
     [[progress]] = await connection.query('SELECT * FROM charging_stations WHERE id=?', [id]);
-    assert.equal(progress.deposit_status, 'REFUND_PENDING');
+    assert.equal(progress.deposit_status, 'RECEIVED');
     assert.equal(new Date(progress.on_date).getDate(), 1);
     summary = await shipping.getSummary(id);
     assert.equal(summary.totals.committed, 2);
@@ -155,7 +155,7 @@ test('real MySQL partial delivery, returns and parallel activation remain atomic
     assert.ok(finished.items.some((row) => row.id === id));
     await assert.rejects(() => shipping.createExport(id, {
       request_id: request(), carrier: 'Test', transport_code: 'Too many', total_amount: 0,
-      items: [{ commitment_id: commitmentId, quantity: 1 }]
+      items: [{ pole_id: pole.insertId, supplier_id: supplier.insertId, quantity: 1 }]
     }, bo, ctx(bo)), { statusCode: 409 });
     for (const last of ['contract', 'infrastructure', 'deposit']) {
       const model = last === 'deposit' ? 'LK' : 'TDT';

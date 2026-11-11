@@ -9,6 +9,7 @@ router.use(requireAuth, requireChargingStationViewer);
  *   get:
  *     tags: [Charging Stations]
  *     summary: Đối soát trụ chốt, xuất, nhận, hoàn kho và tiến độ ON
+ *     description: pole_requirements gộp nhu cầu theo loại trụ không phân biệt mô hình; shipping_options liệt kê từng cặp loại trụ và nhà cung cấp còn tồn.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -38,9 +39,10 @@ router.use(requireAuth, requireChargingStationViewer);
  *                 type: array
  *                 items:
  *                   type: object
- *                   required: [commitment_id, quantity]
+ *                   required: [pole_id, supplier_id, quantity]
  *                   properties:
- *                     commitment_id: { type: integer }
+ *                     pole_id: { type: integer }
+ *                     supplier_id: { type: integer }
  *                     quantity: { type: integer, minimum: 1 }
  *     responses:
  *       200: { description: Đã xuất kho; retry cùng request_id không xuất lại }

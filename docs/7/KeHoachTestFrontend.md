@@ -2,6 +2,17 @@
 
 ## 0. Thông tin chung
 
+- Giao trụ theo NCC (migration `229-shipping-supplier-selection.sql`):
+  dòng chốt không bắt buộc NCC; nhu cầu gộp theo ID loại trụ, không phân biệt NQ/LK/TDT.
+  Form xuất hiển thị từng cặp loại trụ/NCC còn tồn, số lượng mặc định 0; tổng xuất các NCC không vượt nhu cầu còn lại.
+  Backend vẫn phân bổ nội bộ về dòng chốt để truy vết nhận/lắp/ON/hoàn kho; không sửa phiếu lịch sử.
+  Hai nút Xuất trụ và Đề xuất giao sớm bị vô hiệu hóa khi hết nhu cầu hoặc hết tồn phù hợp.
+  ON trạm (kể cả thao tác trực tiếp/legacy) không tự chuyển tiền cọc sang Chờ hoàn cọc; người có quyền lập phiếu hoàn thủ công tại Tài chính theo điều kiện hiện hành.
+  Chạy UI: `npx playwright test e2e/FE-on-station-nested-dialog.spec.js e2e/FE-shipping-suppliers.spec.js`.
+  Chạy backend: `node --test backend/test-shipping-supplier-selection.cjs backend/test-charging-station-deployments.cjs`.
+  Hai fixture MySQL `backend/test-shipping-supplier-integration.cjs` và `backend/test-on-partial-integration.cjs`
+  dùng `ON_PARTIAL_INTEGRATION=1`, yêu cầu migration 229 và tự rollback dữ liệu fixture.
+
 - Hồi quy modal lồng ON trạm: `npx playwright test e2e/FE-on-station-nested-dialog.spec.js`.
   Kiểm tra Xuất trụ và Đề xuất giao sớm từ modal Các phần trụ / thao tác trên desktop/mobile:
   modal con portal ra body, nằm trên modal cha, cuộn tới nút xác nhận, đóng bằng nút X/backdrop không đóng modal cha.

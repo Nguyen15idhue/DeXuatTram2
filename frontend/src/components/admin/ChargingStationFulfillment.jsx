@@ -68,8 +68,16 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
   const missing = missingOnPrerequisites(record);
   const showShipping = !stage || stage === 'giao-tru';
   const showPortions = !stage || stage !== 'giao-tru';
+  const shippingOptions = fulfillment.shipping_options || [];
+  const shippingDisabled = loading || loadError || !shippingOptions.length || fulfillment.needs_review;
+  const shippingDisabledReason = loading ? 'Đang tải dữ liệu'
+    : loadError ? 'Không tải được dữ liệu'
+      : fulfillment.needs_review ? 'Dữ liệu trụ cần đối soát'
+        : !Number(fulfillment.totals?.remaining) ? 'Đã xuất đủ số lượng trụ chốt'
+          : !shippingOptions.length ? 'Không có tồn kho cho loại trụ còn thiếu' : '';
   const begin = (action, target) => {
     if (loading || loadError) return;
+    if (['export', 'early'].includes(action) && shippingDisabled) return;
     setIntent({ action, target });
     request.current = null;
     uploadedFile.current = null;
@@ -78,9 +86,9 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
     setForm({ carrier: '', transport_code: '', total_amount: '', transport_status: 'SHIPPING',
       cms_station_code: record.cms_station_code || '', on_date: target?.on_date?.slice(0, 10) || today,
       reason: '', desired_date: '', acknowledged: false });
-    const rows = action === 'export' ? fulfillment.items || [] : target?.items || [];
+    const rows = action === 'export' ? shippingOptions : target?.items || [];
     setQuantities(Object.fromEntries(rows.map((row) => [row.id, action === 'export'
-      ? Number(row.remaining_quantity || 0) : shipmentAvailable(row, action)])));
+      ? 0 : shipmentAvailable(row, action)])));
     setFile(null);
     setError('');
   };
@@ -101,7 +109,17 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
         throw new Error('Vui lòng nhập lý do');
       }
       if (action === 'export') {
-        const items = validateShipmentQuantities(fulfillment.items || [], quantities, true);
+        const totals = new Map();
+        const items = shippingOptions.filter((row) => Number(quantities[row.id]) > 0).map((row) => {
+          const quantity = Number(quantities[row.id]);
+          if (!Number.isSafeInteger(quantity) || quantity > row.stock_quantity) throw new Error('Số lượng xuất vượt tồn kho hoặc không phải số nguyên');
+          const total = (totals.get(Number(row.pole_id)) || 0) + quantity;
+          if (total > row.remaining_quantity) throw new Error(`Tổng xuất ${row.name} vượt số lượng còn phải giao`);
+          totals.set(Number(row.pole_id), total);
+          return { pole_id: Number(row.pole_id), supplier_id: Number(row.supplier_id), quantity };
+        });
+        if (Object.values(quantities).some((value) => !Number.isSafeInteger(Number(value)) || Number(value) < 0)) throw new Error('Số lượng phải là số nguyên không âm');
+        if (!items.length) throw new Error('Vui lòng chọn ít nhất một trụ để xuất');
         response = await chargingStationService.createShipment(record.id, {
           ...form, items, total_amount: Number(form.total_amount), request_id
         }, token);
@@ -147,7 +165,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
     } catch (actionError) { setError(actionError.message || 'Thao tác thất bại'); }
     finally { saving.current = false; setBusy(false); }
   };
-  const rows = intent?.action === 'export' ? fulfillment.items || [] : intent?.target?.items || [];
+  const rows = intent?.action === 'export' ? shippingOptions : intent?.target?.items || [];
   const quantityAction = intent?.action === 'export' || (intent?.action !== 'fail' && Object.hasOwn(SHIPMENT_ACTIONS, intent?.action || ''));
   const title = intent?.action === 'export' ? 'Tạo phiếu xuất kho' : intent?.action === 'early'
     ? 'Đề xuất giao trụ sớm' : SHIPMENT_ACTIONS[intent?.action] || DEPLOYMENT_ACTION_LABELS[intent?.action];
@@ -164,19 +182,19 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       {fulfillment.needs_review && <div className="alert alert-warning">Dữ liệu trụ cần đối soát. Không thay thế bằng thao tác ON toàn trạm.</div>}
       {showShipping && <>
         <h3 className="font-semibold">Chốt trụ và tồn kho</h3>
-        <ChargingStationTable frozenColumns={0} emptyMessage="Không có dữ liệu" data={fulfillment.items || []} columns={[
+        <ChargingStationTable frozenColumns={0} emptyMessage="Không có dữ liệu" data={fulfillment.pole_requirements || []} columns={[
           { key: 'name', label: 'Trụ', render: (value, row) => value || row.pole_name || `#${row.id}` },
-          { key: 'model', label: 'Mô hình' }, { key: 'supplier', label: 'Nhà cung cấp' },
           { key: 'committed_quantity', label: 'Chốt' }, { key: 'stock_quantity', label: 'Tồn kho' },
           { key: 'exported_quantity', label: 'Đã xuất' }, { key: 'received_quantity', label: 'Đã nhận' },
           { key: 'returned_quantity', label: 'Hoàn kho' }, { key: 'in_transit_quantity', label: 'Đang giao' },
           { key: 'remaining_quantity', label: 'Chưa xuất' }, { key: 'operating_quantity', label: 'Đã ON' }
         ]} />
         <div className="flex gap-2">
-          {canShip && <Button size="sm" onClick={() => begin('export')}>Xuất trụ theo số lượng</Button>}
-          {canRequest && <Button size="sm" variant="outline-warning" onClick={() => begin('early')}>Đề xuất giao sớm</Button>}
+          {canShip && <Button size="sm" disabled={shippingDisabled} title={shippingDisabledReason} onClick={() => begin('export')}>Xuất trụ theo số lượng</Button>}
+          {canRequest && <Button size="sm" disabled={shippingDisabled} title={shippingDisabledReason} variant="outline-warning" onClick={() => begin('early')}>Đề xuất giao sớm</Button>}
           {!canShip && !canRequest && <span className="text-base-content/50">Chỉ xem</span>}
         </div>
+        {shippingDisabledReason && <p className="text-base-content/60">{shippingDisabledReason}</p>}
         <h3 className="font-semibold">Lịch sử các chuyến giao</h3>
         {(fulfillment.shipments || []).map((shipment) => (
           <details key={shipment.id} className="rounded-lg border border-base-300 p-3" open>
@@ -221,7 +239,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
       <Dialog isOpen={!!intent} title={title || ''} onClose={() => !busy && setIntent(null)} size="lg" portal>
         {intent && <form onSubmit={submit} className="space-y-3">
           {quantityAction && rows.map((row) => (
-            <Input key={row.id} type="number" min="0" step="1" label={`${row.name || row.pole_name || `Trụ #${row.id}`} · ${intent.action === 'export' ? `còn ${row.remaining_quantity}, tồn ${row.stock_quantity}` : `có thể xử lý ${shipmentAvailable(row, intent.action)}`}`}
+            <Input key={row.id} type="number" min="0" step="1" label={`${row.name || row.pole_name || `Trụ #${row.id}`} · ${row.supplier_name || ''} · ${intent.action === 'export' ? `còn ${row.remaining_quantity}, tồn ${row.stock_quantity}` : `có thể xử lý ${shipmentAvailable(row, intent.action)}`}`}
               value={quantities[row.id] ?? 0} onChange={(event) => setQuantities((current) => ({ ...current, [row.id]: event.target.value }))} />
           ))}
           {intent.action === 'export' && <>

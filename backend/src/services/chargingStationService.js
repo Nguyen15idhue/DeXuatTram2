@@ -1546,6 +1546,13 @@ const requestEarlyDelivery = async (id, { desired_delivery_date: desiredDate, re
       throw err('Chỉ có thể đề xuất giao trụ sớm khi trạm đang hoàn thiện thủ tục', 400);
     }
 
+    const shipping = require('./chargingStationShippingService');
+    await shipping.ensureCommitments(connection, stationId);
+    const summary = await shipping.getSummary(stationId, connection);
+    if (!summary.shipping_options.length) {
+      throw err('Không còn số trụ phải giao hoặc không có tồn kho phù hợp', 409);
+    }
+
     const { missingLabels: missingItems } = readiness.evaluateDeliveryReadiness(current, current.mo_hinh_dau_tu);
 
     const nextStatus = STATUS.DELIVERING;
@@ -1804,11 +1811,9 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
     }
     if (!normalizedOnDate) throw err('Không xác định được ngày ON trạm', 400);
 
-    const investmentModel = readiness.normalizeInvestmentModel(await loadInvestmentModel(connection, current.proposal_id));
-    const startsRefund = investmentModel === 'LK' && current.deposit_status === 'RECEIVED';
     await connection.query(
       `UPDATE charging_stations
-          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE'${startsRefund ? ", deposit_status = 'REFUND_PENDING'" : ''}
+          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE'
         WHERE id = ?`,
       [cleanCmsCode, normalizedOnDate, stationId]
     );
@@ -1819,9 +1824,6 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
       cms_station_code: { label: FIELD_LABELS.cms_station_code, old: current.cms_station_code || '', new: cleanCmsCode },
       on_date: { label: FIELD_LABELS.on_date, old: current.current_on_date || '', new: normalizedOnDate }
     };
-    if (startsRefund) {
-      changedFields.deposit_status = { label: FIELD_LABELS.deposit_status, old: current.deposit_status, new: 'REFUND_PENDING' };
-    }
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'manual_marked_active',
@@ -1850,13 +1852,6 @@ const markOnStationActive = async (id, { cms_station_code: cmsStationCode, on_da
       );
     }
 
-    if (startsRefund) {
-      await notifyFinanceTeams(connection, { id: stationId }, ctx, {
-        type: 'CHARGING_STATION_REFUND_TASK',
-        title: 'Trạm sạc đã ON — cần hoàn cọc',
-        message: `Mã trạm: ${current.ma_tram || `#${stationId}`} · Mô hình Liên kết đã ON trạm. Vui lòng hoàn tiền cọc cho nhà đầu tư.`
-      });
-    }
 
     await connection.commit();
     transactionStarted = false;
@@ -1979,11 +1974,9 @@ const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_
       throw err('Đề xuất chưa được chuyển sang Hoạt động; hãy thử lại thao tác', 409);
     }
 
-    const investmentModel = readiness.normalizeInvestmentModel(await loadInvestmentModel(connection, current.proposal_id));
-    const startsRefund = investmentModel === 'LK' && current.deposit_status === 'RECEIVED';
     await connection.query(
       `UPDATE charging_stations
-          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE'${startsRefund ? ", deposit_status = 'REFUND_PENDING'" : ''}
+          SET cms_station_code = ?, on_date = ?, status = 'OPERATING', sub_status = 'ACTIVE'
         WHERE id = ?`,
       [cleanCmsCode, normalizedOnDate, stationId]
     );
@@ -1997,9 +1990,6 @@ const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_
       },
       on_date: { label: FIELD_LABELS.on_date, old: current.on_date || '', new: normalizedOnDate }
     };
-    if (startsRefund) {
-      changedFields.deposit_status = { label: FIELD_LABELS.deposit_status, old: current.deposit_status, new: 'REFUND_PENDING' };
-    }
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'configuration_completed',
@@ -2011,13 +2001,6 @@ const completeConfiguration = async (id, { cms_station_code: cmsStationCode, on_
       source: 'user',
       ip: ctx.ip
     });
-    if (startsRefund) {
-      await notifyFinanceTeams(connection, { id: stationId }, ctx, {
-        type: 'CHARGING_STATION_REFUND_TASK',
-        title: 'Trạm sạc đã ON — cần hoàn cọc',
-        message: `Mã trạm: ${current.ma_tram || `#${stationId}`} · Mô hình Liên kết đã ON trạm. Vui lòng hoàn tiền cọc cho nhà đầu tư.`
-      });
-    }
     await connection.commit();
     transactionStarted = false;
   } catch (error) {
@@ -2287,7 +2270,7 @@ exports.extendOnboardingDeadline = extendOnboardingDeadline;
 exports.cancelOverdueStations = cancelOverdueStations;
 exports.FIELD_LABELS = FIELD_LABELS;
 const getCommittedExportItems = async (id) => {
-  return (await require('./chargingStationShippingService').getSummary(normalizeId(id, 'Mã bản ghi'))).items;
+  return (await require('./chargingStationShippingService').getSummary(normalizeId(id, 'Mã bản ghi'))).pole_requirements;
 };
 
 exports.getCommittedExportItems = getCommittedExportItems;

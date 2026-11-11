@@ -89,29 +89,6 @@ const refreshStationProgress = async (connection, stationId, ctx = {}) => {
   }
   station.status = status;
   station.sub_status = sub;
-  const [proposals] = await connection.query(
-    "SELECT JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.mo_hinh_dau_tu')) AS model FROM station_proposals WHERE id = ?",
-    [station.proposal_id]
-  );
-  if (anyOn && !Number(station.fulfillment_review_required) && station.deposit_status === 'RECEIVED'
-    && readiness.normalizeInvestmentModel(proposals[0]?.model) === 'LK') {
-    const [commitments] = await connection.query(
-      `SELECT c.id, c.quantity, COALESCE(SUM(CASE WHEN d.stage = 'OPERATING' THEN d.quantity ELSE 0 END), 0) AS operating_quantity
-         FROM charging_station_commitments c
-         LEFT JOIN warehouse_export_items i ON i.commitment_id = c.id
-         LEFT JOIN charging_station_deployments d ON d.export_item_id = i.id AND d.charging_station_id = c.charging_station_id
-        WHERE c.charging_station_id = ? GROUP BY c.id, c.quantity`,
-      [stationId]
-    );
-    if (commitments.length && commitments.every((c) => Number(c.operating_quantity) >= Number(c.quantity))) {
-      await connection.query("UPDATE charging_stations SET deposit_status = 'REFUND_PENDING' WHERE id = ? AND deposit_status = 'RECEIVED'", [stationId]);
-      await log(connection, stationId, 'deployment_refund_requested', status, status, ctx, null, {
-        deposit_status: { old: 'RECEIVED', new: 'REFUND_PENDING' }
-      });
-      station.deposit_status = 'REFUND_PENDING';
-      await notify(connection, station, ctx, 'Đã ON toàn bộ trụ — cần hoàn cọc', 'Toàn bộ số lượng trụ cam kết đã hoạt động.', true);
-    }
-  }
   return station;
 };
 
