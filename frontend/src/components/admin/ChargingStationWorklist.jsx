@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { Badge, Button, FilterBar, Input, Pagination } from '../ui';
+import { Badge, Button, Dialog, FilterBar, Input, Pagination } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationFulfillment from './ChargingStationFulfillment';
 import { CS_STATUS_LABELS, CS_STATUS_VARIANT } from '../../utils/chargingStation';

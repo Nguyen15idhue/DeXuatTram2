@@ -218,7 +218,7 @@ const ChargingStationFulfillment = ({ station, stage, onChanged }) => {
           </details>
         ))}
       </>}
-      <Dialog isOpen={!!intent} title={title || ''} onClose={() => !busy && setIntent(null)} size="lg">
+      <Dialog isOpen={!!intent} title={title || ''} onClose={() => !busy && setIntent(null)} size="lg" portal>
         {intent && <form onSubmit={submit} className="space-y-3">
           {quantityAction && rows.map((row) => (
             <Input key={row.id} type="number" min="0" step="1" label={`${row.name || row.pole_name || `Trụ #${row.id}`} · ${intent.action === 'export' ? `còn ${row.remaining_quantity}, tồn ${row.stock_quantity}` : `có thể xử lý ${shipmentAvailable(row, intent.action)}`}`}

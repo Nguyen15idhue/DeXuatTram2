@@ -2,6 +2,11 @@
 
 ## 0. Thông tin chung
 
+- Hồi quy modal lồng ON trạm: `npx playwright test e2e/FE-on-station-nested-dialog.spec.js`.
+  Kiểm tra Xuất trụ và Đề xuất giao sớm từ modal Các phần trụ / thao tác trên desktop/mobile:
+  modal con portal ra body, nằm trên modal cha, cuộn tới nút xác nhận, đóng bằng nút X/backdrop không đóng modal cha.
+  Dùng API mock, không thay đổi dữ liệu thật; biến `E2E_BASE_URL` cho phép chọn server frontend khác.
+
 - Mục đích: kiểm tra toàn diện frontend React + Vite theo 5 nhóm yêu cầu, thực thi chuẩn bằng Playwright MCP (AI điều khiển trình duyệt) + Playwright Test (script lưu lại, chạy lặp).
 - Phạm vi: tất cả routes trong `frontend/src/App.jsx`, forms/views dynamic của 3 entity, `/map`, buttons + phân quyền hiển thị.
 - Môi trường:
