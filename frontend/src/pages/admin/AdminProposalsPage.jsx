@@ -1934,10 +1934,14 @@ const AdminProposalsPage = () => {
           province: 'Tỉnh/Thành phố',
           address: 'Địa chỉ chi tiết'
         }}
-        additionalColumns={[...PROPOSAL_CONTEXT_COLUMNS, PROPOSAL_SCALE_COLUMN]}
-        columnsAfter={{ anchorKey: 'nguoi_de_xuat', keys: ['owner_department', 'vung_mien'] }}
+        additionalColumns={[
+          ...PROPOSAL_CONTEXT_COLUMNS,
+          { key: 'nguoi_phu_trach', field_key: 'nguoi_phu_trach', label: 'Người phụ trách', width: 180, type: 'user', visible: true, sortable: false, filterable: false },
+          PROPOSAL_SCALE_COLUMN
+        ]}
+        columnsAfter={{ anchorKey: 'nguoi_de_xuat', keys: ['owner_department', 'nguoi_phu_trach', 'vung_mien'] }}
         hiddenColumnKeys={[...PROPOSAL_MONEY_COLUMN_KEYS, ...PROPOSAL_HIDDEN_COLUMN_KEYS]}
-        hiddenColumnLabels={['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS]}
+        hiddenColumnLabels={['ID 1Office', ...PROPOSAL_HIDDEN_COLUMN_LABELS.filter(label => label !== 'Người phụ trách')]}
         getRowStyle={(row, now) => getProposalDeadlineRowStyle(row, countdownFlags, now)}
         density="compact"
         data={proposals}

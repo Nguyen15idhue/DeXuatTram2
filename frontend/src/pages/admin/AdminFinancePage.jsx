@@ -7,7 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { canOperateStation } from '../../utils/chargingFulfillment';
 import ChargingStationNeedBadge from '../../components/admin/ChargingStationNeedBadge';
-import { CS_DEPOSIT_LABELS, CS_DEPOSIT_VARIANT, CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS } from '../../utils/chargingStation';
+import { CS_DEPOSIT_LABELS, CS_DEPOSIT_VARIANT, CS_PAYMENT_LABELS, CS_STATUS_LABELS, CS_SUB_STATUS_LABELS, getCsDeadlineLabel, isCsDeadlineStopped } from '../../utils/chargingStation';
 
 const PAGE_SIZE = 20;
 const TABS = [
@@ -56,19 +56,6 @@ const formatDateTime = (value) => {
   if (!value) return '—';
   const date = new Date(String(value).replace(' ', 'T'));
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN');
-};
-
-const getDeadlineLabel = (value, completed) => {
-  if (completed) return 'Đã hoàn thành';
-  if (!value) return '—';
-  const deadline = new Date(String(value).replace(' ', 'T')).getTime();
-  if (Number.isNaN(deadline)) return '—';
-  const remaining = deadline - Date.now();
-  if (remaining <= 0) return 'Quá hạn';
-  const totalHours = Math.ceil(remaining / (60 * 60 * 1000));
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  return days > 0 ? `Còn ${days} ngày ${hours} giờ` : `Còn ${totalHours} giờ`;
 };
 
 const AdminFinancePage = () => {
@@ -314,9 +301,9 @@ const AdminFinancePage = () => {
     {
       key: 'finance_deadline_at',
       label: 'Mốc 15 ngày',
-      render: (value, row) => (
+      render: (value, row) => isCsDeadlineStopped(row) ? <span className="text-xs">—</span> : (
         <span className={isFinanceFinished(row) ? 'text-success text-xs' : 'text-xs'} title={formatDateTime(value)}>
-          {getDeadlineLabel(value, isFinanceFinished(row))}
+          {getCsDeadlineLabel(value, isFinanceFinished(row))}
         </span>
       )
     }

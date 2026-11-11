@@ -18,7 +18,8 @@ import {
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
   formatCsDate,
-  getCsDeadlineLabel
+  getCsDeadlineLabel,
+  isCsDeadlineStopped
 } from '../../utils/chargingStation';
 import { Badge, Button, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 
@@ -140,8 +141,8 @@ const ChargingStationContractTabs = () => {
       key: 'contract_status',
       label: 'Hợp đồng',
       render: (value, row) => {
-        if (value === 'DONE') {
-          return <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{CS_CONTRACT_LABELS[value]}</Badge>;
+        if (value === 'DONE' || isCsDeadlineStopped(row)) {
+          return <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>;
         }
         const expired = row.contract_deadline_at && new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now();
         const canExtend = expired && Number(row.deadline_extension_count || 0) < 3;

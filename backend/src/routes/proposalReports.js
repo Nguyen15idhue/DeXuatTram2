@@ -182,7 +182,9 @@ router.get('/:id', requireAuth, requireProposalReportManager, proposalReportCont
  *       SUPER_ADMIN, người tạo đề xuất, quản lý trực tiếp hoặc GĐTTKD đúng khu vực được tải lên.
  *       File chỉ nhận Word (.doc, .docx) hoặc PDF.
  *       Bắt buộc gửi chot_so_luong_tru gồm mô hình, số lượng, loại trụ; server tự lấy giá hiện tại,
- *       tính tổng giá trị chốt. Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING.
+ *       tính tổng giá trị chốt và cập nhật mô hình đề xuất theo bảng chốt (ưu tiên LK/NQ khi kèm TDT).
+ *       Chỉ TDT → TDT; có LK và NQ → NQ_LK; chỉ có một trong LK/NQ → mô hình tương ứng.
+ *       Giữ nguyên mã đề xuất. Sau khi tải lên, đề xuất chuyển sang PROPOSAL_REPORT_REVIEWING.
  *       Word tự chuyển PDF trong nền; không chặn gửi duyệt bởi trạng thái chuyển đổi.
  *       và thông báo Back Office.
  *     security:
@@ -217,7 +219,7 @@ router.get('/:id', requireAuth, requireProposalReportManager, proposalReportCont
  *                   properties:
  *                     mo_hinh:
  *                       type: string
- *                       enum: [TDT, LK, NQ, NQ_LK]
+ *                       enum: [TDT, LK, NQ]
  *                     so_luong:
  *                       type: integer
  *                       minimum: 1

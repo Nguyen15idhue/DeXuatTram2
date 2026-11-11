@@ -176,7 +176,11 @@ router.get('/:id/signature-config', requireAuth, requireUserManager, proposalApp
  * /api/admin/proposal-approvals/{id}/signer-candidates:
  *   get:
  *     tags: [Proposal Approvals]
- *     summary: Danh sách người ký thuộc Tổng giám đốc, Tài chính, Back Office hoặc nhánh quản lý của người đề xuất
+ *     summary: Danh sách người ký thuộc Tổng giám đốc, Tài chính, Back Office, người đề xuất, người phụ trách và quản lý CTV
+ *     description: >
+ *       TGĐ phải thuộc Ban Tổng giám đốc và có chức vụ Tổng giám đốc, không gồm Phó TGĐ.
+ *       Quản lý là toàn bộ cấp trên của nguoi_phu_trach khi người phụ trách là CTV.
+ *       Chỉ tài khoản ACTIVE; khử trùng theo user ID, ưu tiên theo thứ tự nhóm nêu trên.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -203,8 +207,9 @@ router.get('/:id/signer-candidates', requireAuth, requireUserManager, proposalAp
  *       Áp dụng cho đề xuất PROPOSAL_REPORT_REVIEWING. Gửi toàn bộ documents với document_id,
  *       file_id chuẩn ký và danh sách người ký kèm vị trí; box_width và box_height chuẩn hóa 0..1.
  *       Mỗi tài liệu cần ít nhất một người ký. Chỉ khi mọi tài liệu được cấu hình, đề xuất mới chuyển
- *       sang SIGNATURE_PENDING. Payload file_id/signers cũ chỉ dùng với một tài liệu. Người ký phải thuộc Ban
- *       Tổng giám đốc, Phòng Tài chính, Back Office, là người đề xuất hoặc quản lý phía trên của người đề xuất.
+ *       sang SIGNATURE_PENDING. Payload file_id/signers cũ chỉ dùng với một tài liệu. Người ký phải là
+ *       Tổng giám đốc thuộc Ban Tổng giám đốc, thuộc Phòng Tài chính/Back Office, là người đề xuất,
+ *       người phụ trách hoặc cấp trên trong chuỗi quản lý của người phụ trách là CTV.
  *     security:
  *       - bearerAuth: []
  *     parameters:

@@ -24,7 +24,6 @@ const MODEL_OPTIONS = [
   { value: "TDT", label: "Tự đầu tư (TDT)" },
   { value: "LK", label: "Liên kết (LK)" },
   { value: "NQ", label: "Nhượng quyền (NQ)" },
-  { value: "NQ_LK", label: "Nhượng quyền + Liên kết (NQ_LK)" },
 ];
 
 const emptyRow = () => ({
@@ -246,7 +245,7 @@ const ProposalReportUpdateModal = ({
     chotRows.length > 0 &&
     chotRows.every(
       (row) =>
-        row.mo_hinh &&
+        MODEL_OPTIONS.some(option => option.value === row.mo_hinh) &&
         Number.isInteger(Number(row.so_luong)) &&
         Number(row.so_luong) > 0 &&
         row.loai_tru &&
@@ -359,8 +358,12 @@ const ProposalReportUpdateModal = ({
       return "Vui lòng nhập ít nhất một dòng số lượng trụ chốt";
     for (let index = 0; index < chotRows.length; index += 1) {
       const row = chotRows[index];
+      if (row.mo_hinh === "NQ_LK")
+        return `Dòng ${index + 1}: vui lòng sửa hoặc tách NQ_LK thành các dòng LK/NQ`;
       if (!row.mo_hinh)
         return `Dòng ${index + 1}: vui lòng chọn mô hình liên kết`;
+      if (!MODEL_OPTIONS.some(option => option.value === row.mo_hinh))
+        return `Dòng ${index + 1}: mô hình không hợp lệ, chỉ chọn TDT, LK hoặc NQ`;
       if (
         !Number.isInteger(Number(row.so_luong)) ||
         Number(row.so_luong) <= 0
@@ -539,12 +542,18 @@ const ProposalReportUpdateModal = ({
                               disabled={saving}
                             >
                               <option value="">Chọn mô hình</option>
+                              {row.mo_hinh && !MODEL_OPTIONS.some(option => option.value === row.mo_hinh) && (
+                                <option value={row.mo_hinh} disabled>{row.mo_hinh} — dữ liệu cũ, cần sửa/tách thành LK/NQ</option>
+                              )}
                               {MODEL_OPTIONS.map((option) => (
                                 <option key={option.value} value={option.value}>
                                   {option.label}
                                 </option>
                               ))}
                             </select>
+                            {row.mo_hinh === "NQ_LK" && (
+                              <div className="text-warning text-xs mt-1">Cần sửa hoặc tách dòng thành LK/NQ trước khi gửi duyệt.</div>
+                            )}
                           </td>
                           <td>
                             <input

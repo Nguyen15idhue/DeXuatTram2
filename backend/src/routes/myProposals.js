@@ -258,7 +258,7 @@ router.put('/:id', requireAuth, validateUpdateProposal, myProposalController.upd
  *                   properties:
  *                     mo_hinh:
  *                       type: string
- *                       enum: [TDT, LK, NQ, NQ_LK]
+ *                       enum: [TDT, LK, NQ]
  *                     so_luong:
  *                       type: integer
  *                       minimum: 1

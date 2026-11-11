@@ -18,7 +18,8 @@ import {
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
   formatCsDate,
-  getCsDeadlineLabel
+  getCsDeadlineLabel,
+  isCsDeadlineStopped
 } from '../../utils/chargingStation';
 import { Badge, Button, FilterBar, Input, Pagination, Toast } from '../ui';
 
@@ -138,7 +139,7 @@ const ChargingStationInfrastructureTabs = () => {
           <Badge variant={CS_CONTRACT_VARIANT[value] || 'ghost'} size="sm" outline className="h-auto whitespace-normal py-1">
             {CS_CONTRACT_LABELS[value] || '—'}
           </Badge>
-          {value !== 'DONE' && row.contract_deadline_at && (
+          {value !== 'DONE' && !isCsDeadlineStopped(row) && row.contract_deadline_at && (
             <span className={`text-xs ${new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now() ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>

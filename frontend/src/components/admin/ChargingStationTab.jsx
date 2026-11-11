@@ -20,7 +20,8 @@ import {
   CS_STATUS_VARIANT,
   CS_SUB_STATUS_LABELS,
   formatCsDate,
-  getCsDeadlineLabel
+  getCsDeadlineLabel,
+  isCsDeadlineStopped
 } from '../../utils/chargingStation';
 
 const PAGE_SIZE = 20;
@@ -202,7 +203,7 @@ const ChargingStationTab = ({ stage }) => {
       render: (value, row) => (
         <div className="flex flex-col items-start gap-1">
           <Badge variant={CS_CONTRACT_VARIANT[value]} size="sm" outline className="whitespace-normal h-auto py-1">{CS_CONTRACT_LABELS[value] || '—'}</Badge>
-          {value !== 'DONE' && row.contract_deadline_at && (
+          {value !== 'DONE' && !isCsDeadlineStopped(row) && row.contract_deadline_at && (
             <span className={`text-xs ${new Date(String(row.contract_deadline_at).replace(' ', 'T')).getTime() <= Date.now() ? 'text-error font-semibold' : 'text-base-content/60'}`}>
               {getCsDeadlineLabel(row.contract_deadline_at, false, false)}
             </span>

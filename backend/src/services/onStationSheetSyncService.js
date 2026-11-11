@@ -1,18 +1,17 @@
 // backend/src/services/onStationSheetSyncService.js
 // Đồng bộ Google Sheet riêng cho trạm đã ON (proposal status = ACTIVE).
-// Cột A–Q: STT, Mã Trạm, Tên trạm sạc, Pháp nhân, Nhân sự phụ trách, Nguồn phụ trách,
+// Cột A–R: STT, Mã Trạm, Tên trạm sạc, Pháp nhân, Nhân sự phụ trách, Nguồn phụ trách,
 //          Link Google Map, Vĩ độ, Kinh độ, Địa chỉ chi tiết, Tỉnh cũ, Tỉnh mới,
 //          Quy mô trụ ban đầu, Quy mô trụ chốt triển khai, Số lượng trụ,
-//          Ngày ON trạm, Mã chủ đầu tư
+//          Ngày ON trạm, Mã chủ đầu tư, Mã BCĐX
 const pool = require('../utils/db');
 const { google } = require('googleapis');
 
 const LOCK_NAME = 'on_station_sheet_sync';
 const BATCH_SIZE = 50;
 const MAX_ATTEMPTS = 8;
-const LAST_COLUMN = 'Q';
-const KEY_COLUMN_INDEX = 1; // cột B — Mã Trạm
-const KEY_COLUMN_LETTER = 'B';
+const LAST_COLUMN = 'R';
+const KEY_COLUMN_INDEX = 17;
 
 // Ánh xạ tỉnh mới (34 đơn vị sau sáp nhập) -> danh sách tỉnh cũ
 const PROVINCE_MERGE_MAP = {
@@ -55,7 +54,7 @@ const PROVINCE_MERGE_MAP = {
 const HEADER_ROW = [
   'STT', 'Mã Trạm', 'Tên trạm sạc', 'Pháp nhân', 'Nhân sự phụ trách', 'Nguồn phụ trách',
   'Link Google Map', 'Vĩ độ', 'Kinh độ', 'Địa chỉ chi tiết', 'Tỉnh cũ', 'Tỉnh mới',
-  'Quy mô trụ ban đầu', 'Quy mô trụ chốt triển khai', 'Số lượng trụ', 'Ngày ON trạm', 'Mã chủ đầu tư'
+  'Quy mô trụ ban đầu', 'Quy mô trụ chốt triển khai', 'Số lượng trụ', 'Ngày ON trạm', 'Mã chủ đầu tư', 'Mã BCĐX'
 ];
 
 const getConfig = () => {
@@ -172,7 +171,7 @@ const formatPoleScale = (value) => {
     .map((row) => {
       const model = scalarValue(row.mo_hinh);
       const type = formatPoleType(row.loai_tru);
-      if (!model || !type) throw new Error('Dòng quy mô trụ thiếu mô hình hoặc loại trụ');
+      if (!model || !type || !poleQuantity(row)) return '';
       return `${model}_${poleQuantity(row)} ${type}`;
     })
     .filter(Boolean)
@@ -189,7 +188,7 @@ const countPoles = (value) => {
 const poleQuantity = (row) => {
   const quantity = Number(scalarValue(row.so_luong));
   if (!Number.isSafeInteger(quantity) || quantity <= 0) {
-    throw new Error('Số lượng trụ phải là số nguyên dương');
+    return 0;
   }
   return quantity;
 };
@@ -201,49 +200,59 @@ const formatPoleType = (value) => scalarValue(value)
 const tableRows = (value) => {
   if (value === null || value === undefined || value === '') return [];
   if (typeof value === 'string') {
-    try { return tableRows(JSON.parse(value)); } catch {
-      throw new Error('Bảng quy mô trụ không phải JSON hợp lệ');
+    try { return tableRows(JSON.parse(value)); } catch (error) {
+      console.warn('[OnStationSheetSync] Invalid pole table JSON:', error.message);
+      return [];
     }
   }
   if (Array.isArray(value)) return value;
   const rows = value?.rows || value?.data || [];
-  if (!Array.isArray(rows)) throw new Error('Bảng quy mô trụ phải là danh sách dòng');
+  if (!Array.isArray(rows)) return [];
   return rows;
 };
 
-const formatProposedScale = (custom, model) => {
-  const groups = {
-    TDT: [['TDT', 'tdt_tru']],
-    LK: [['LK', 'loai_tru_lk']],
-    NQ: [['NQ', 'loai_tru_nq']],
-    NQ_LK: [['NQ', 'loai_tru_nq'], ['LK', 'loai_tru_lk']]
-  }[model] || [];
+const proposedRows = (custom, model) => {
+  const groups = [['LK', 'loai_tru_lk'], ['NQ', 'loai_tru_nq'], ['TDT', 'tdt_tru']];
   const rows = groups.flatMap(([mo_hinh, key]) => tableRows(custom[key])
+    .filter((row) => row && typeof row === 'object')
     .map((row) => ({ ...row, mo_hinh })));
-  if (rows.length) return formatPoleScale(rows);
-  if (!scalarValue(custom.loai_tru)) return '';
-  return formatPoleScale([{ mo_hinh: model, so_luong: custom.so_luong_tru, loai_tru: custom.loai_tru }]);
+  if (rows.length) return rows;
+  if (!scalarValue(custom.loai_tru)) return [];
+  return [{ mo_hinh: model, so_luong: custom.so_luong_tru, loai_tru: custom.loai_tru }];
 };
 
 const resolveSource = (proposal, model) => {
-  if (proposal.assignee_role === 'NPP') return 'NPP';
   if (model === 'TDT') return 'TMT';
-  const department = scalarValue(parseObject(proposal.assignee_custom_data).department)
+  if (proposal.creator_role === 'NPP') return 'NPP';
+  const department = scalarValue(parseObject(proposal.creator_custom_data).department)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  if (department.includes('chinh sach') && department.includes('phat trien du an')) return 'PDA';
   if (/(kinh doanh|\bkd\b)/.test(department)) {
     if (department.includes('mien bac')) return 'MB';
     if (department.includes('mien trung')) return 'MT';
     if (department.includes('mien nam')) return 'MN';
   }
-  throw new Error(`Đề xuất ${proposal.id}: không xác định được nguồn từ phòng ban người phụ trách`);
+  return '';
 };
+
+const validPoleRows = (value) => tableRows(value).filter((row) =>
+  row && typeof row === 'object' && scalarValue(row.mo_hinh)
+  && formatPoleType(row.loai_tru) && poleQuantity(row) > 0);
 
 const buildRow = (proposal, serial) => {
   const custom = parseObject(proposal.custom_data);
   const model = scalarValue(proposal.mo_hinh_dau_tu || custom.mo_hinh_dau_tu).toUpperCase();
-  if (!scalarValue(proposal.cms_station_code)) throw new Error(`Đề xuất ${proposal.id}: thiếu mã trạm EMS`);
-  if (!scalarValue(proposal.assignee_name)) throw new Error(`Đề xuất ${proposal.id}: thiếu người phụ trách hợp lệ`);
-  if (!parseArray(proposal.chot_so_luong_tru).length) throw new Error(`Đề xuất ${proposal.id}: thiếu bảng trụ chốt BCĐX`);
+  const rawInitial = proposedRows(custom, model);
+  const initial = validPoleRows(rawInitial);
+  const committed = validPoleRows(proposal.chot_so_luong_tru);
+  const deployed = committed.length ? committed : initial;
+  const rawCommitted = tableRows(proposal.chot_so_luong_tru);
+  const skipped = rawCommitted.length - committed.length + rawInitial.length - initial.length;
+  if (skipped > 0) {
+    console.warn('[OnStationSheetSync] Invalid pole rows skipped:', {
+      proposalId: proposal.id, skipped
+    });
+  }
   const legalName = scalarValue(custom.lk_ten_phap_nhan || custom.nq_ten_khach_hang || proposal.owner_name);
   const province = scalarValue(proposal.province || custom.province);
   const address = scalarValue(proposal.address || custom.address);
@@ -265,11 +274,12 @@ const buildRow = (proposal, serial) => {
     address,
     oldProvince,
     province,
-    formatProposedScale(custom, model),
-    formatPoleScale(proposal.chot_so_luong_tru),
-    countPoles(proposal.chot_so_luong_tru),
+    formatPoleScale(initial),
+    formatPoleScale(deployed),
+    countPoles(deployed),
     formatDate(proposal.on_date),
-    ''
+    '',
+    scalarValue(proposal.ma_de_xuat_gen || custom.ma_de_xuat)
   ];
 };
 
@@ -282,6 +292,7 @@ const loadProposals = async (proposalIds) => {
             st.name AS station_name,
             assignee.full_name AS assignee_name, assignee.role AS assignee_role,
             assignee.custom_data AS assignee_custom_data,
+            creator.role AS creator_role, creator.custom_data AS creator_custom_data,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.mo_hinh_dau_tu')) AS mo_hinh_dau_tu,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.vung_mien')) AS vung_mien,
             JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.province')) AS province,
@@ -296,6 +307,7 @@ const loadProposals = async (proposalIds) => {
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
        LEFT JOIN stations st ON st.id = p.station_id
        LEFT JOIN users assignee ON assignee.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(p.custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED)
+       LEFT JOIN users creator ON creator.id = p.user_id
        WHERE p.id IN (${proposalIds.map(() => '?').join(',')}) AND p.status = 'ACTIVE'`,
     proposalIds
   );
@@ -305,22 +317,30 @@ const loadProposals = async (proposalIds) => {
 const loadProposalKeys = async (proposalIds) => {
   if (!proposalIds.length) return new Map();
   const [rows] = await pool.query(
-    `SELECT p.id, cs.cms_station_code
-       FROM station_proposals p
+    `SELECT q.proposal_id AS id,
+            COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code) AS proposal_code,
+            COALESCE(NULLIF(cs.cms_station_code, ''), q.sheet_cms_code) AS cms_station_code,
+            (SELECT COUNT(*) FROM station_proposals other_proposal
+              WHERE other_proposal.ma_de_xuat_gen=COALESCE(NULLIF(p.ma_de_xuat_gen, ''), q.sheet_proposal_code)) AS code_count,
+            (SELECT COUNT(*) FROM charging_stations other
+              WHERE TRIM(other.cms_station_code)=TRIM(COALESCE(NULLIF(cs.cms_station_code, ''), q.sheet_cms_code))) AS cms_count
+       FROM on_station_sheet_sync_queue q
+       LEFT JOIN station_proposals p ON p.id=q.proposal_id
        LEFT JOIN charging_stations cs ON cs.proposal_id = p.id
-      WHERE p.id IN (${proposalIds.map(() => '?').join(',')})`,
+      WHERE q.proposal_id IN (${proposalIds.map(() => '?').join(',')})`,
     proposalIds
   );
-  const codes = rows.map((row) => String(row.cms_station_code || '').trim()).filter(Boolean);
-  if (codes.length) {
-    const [duplicates] = await pool.query(
-      `SELECT TRIM(cms_station_code) AS code FROM charging_stations
-        WHERE TRIM(cms_station_code) IN (?) GROUP BY TRIM(cms_station_code) HAVING COUNT(*) > 1`,
-      [codes]
+  for (const row of rows) {
+    if (Number(row.code_count || 0) > 1) throw new Error(`Mã BCĐX trùng trong DB: đề xuất ${row.id}`);
+    await pool.query(
+      `UPDATE on_station_sheet_sync_queue SET sheet_proposal_code=?, sheet_cms_code=? WHERE proposal_id=?`,
+      [row.proposal_code || null, row.cms_station_code || null, row.id]
     );
-    if (duplicates.length) throw new Error(`Mã trạm EMS trùng trong DB: ${duplicates.map(row => row.code).join(', ')}`);
   }
-  return new Map(rows.map((row) => [Number(row.id), String(row.cms_station_code || '').trim()]));
+  return new Map(rows.map((row) => [Number(row.id), {
+    code: scalarValue(row.proposal_code), cms: scalarValue(row.cms_station_code),
+    ambiguousCms: Number(row.cms_count || 0) > 1
+  }]));
 };
 
 const readSheetRows = async (sheets, config) => {
@@ -332,52 +352,81 @@ const readSheetRows = async (sheets, config) => {
   });
   const rows = response.data.values || [];
   const rowById = new Map();
+  const legacyByCms = new Map();
   let maxSerial = 0;
   rows.forEach((row, index) => {
     if (!row || !row.length) return;
     const serial = Number(row[0]);
-    const key = String(row[KEY_COLUMN_INDEX] || '').trim();
-    if (!key) return;
     if (index === 0 && !Number.isFinite(serial)) return;
     if (serial > maxSerial) maxSerial = serial;
-    if (rowById.has(key)) throw new Error(`Mã trạm EMS trùng trên Sheet: ${key}`);
-    rowById.set(key, { row: index + 1, serial: Number.isFinite(serial) ? serial : null });
+    const key = String(row[KEY_COLUMN_INDEX] || '').trim();
+    const entry = { row: index + 1, serial: Number.isFinite(serial) ? serial : null };
+    if (key) {
+      if (rowById.has(key)) throw new Error(`Mã BCĐX trùng trên Sheet: ${key}`);
+      rowById.set(key, entry);
+    } else {
+      const cms = scalarValue(row[1]);
+      if (cms) legacyByCms.set(cms, [...(legacyByCms.get(cms) || []), entry]);
+    }
   });
-  return { rowById, maxSerial, empty: rows.length === 0, nextRow: Math.max(rows.length + 1, 2) };
+  return { rowById, legacyByCms, maxSerial, nextRow: Math.max(rows.length + 1, 2) };
 };
 
 const resolveKey = (keyById, proposalId, proposal) => {
-  const fromKeyMap = String(keyById.get(Number(proposalId)) || '').trim();
+  const fromKeyMap = scalarValue(keyById.get(Number(proposalId))?.code);
   if (fromKeyMap) return fromKeyMap;
-  if (proposal && proposal.cms_station_code) return String(proposal.cms_station_code).trim();
-  throw new Error(`Đề xuất ${proposalId}: thiếu mã trạm EMS để đối soát`);
+  const custom = parseObject(proposal?.custom_data);
+  const code = scalarValue(proposal?.ma_de_xuat_gen || custom.ma_de_xuat);
+  if (code) return code;
+  throw new Error(`Đề xuất ${proposalId}: thiếu mã BCĐX để đối soát`);
 };
 
 const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   const tab = quoteTab(config.tabName);
   const sheetIndex = await readSheetRows(sheets, config);
-  const { rowById, maxSerial, empty } = sheetIndex;
+  const { rowById, legacyByCms, maxSerial } = sheetIndex;
   const updates = [];
   const clears = [];
   let nextSerial = maxSerial + 1;
   let nextRow = sheetIndex.nextRow;
   const seenKeys = new Set();
-  if (empty) updates.push({ range: `${tab}!A1:${LAST_COLUMN}1`, values: [HEADER_ROW] });
+  const usedRows = new Set();
+  const cmsOwners = new Map();
+  for (const value of keyById.values()) {
+    if (value.cms) cmsOwners.set(value.cms, (cmsOwners.get(value.cms) || 0) + 1);
+  }
+  updates.push({ range: `${tab}!A1:${LAST_COLUMN}1`, values: [HEADER_ROW] });
 
   for (const job of jobs) {
     const proposalId = Number(job.proposal_id);
     const proposal = proposalsById.get(proposalId) || null;
     const key = resolveKey(keyById, proposalId, proposal);
-    if (seenKeys.has(key)) throw new Error(`Mã trạm EMS trùng trong lượt đồng bộ: ${key}`);
+    if (seenKeys.has(key)) throw new Error(`Mã BCĐX trùng trong lượt đồng bộ: ${key}`);
     seenKeys.add(key);
-    const existing = key ? rowById.get(key) : null;
+    let existing = rowById.get(key);
+    if (!existing) {
+      const cms = keyById.get(proposalId)?.cms || scalarValue(proposal?.cms_station_code);
+      const candidates = legacyByCms.get(cms) || [];
+      if (candidates.length > 1 || (candidates.length
+        && (cmsOwners.get(cms) > 1 || keyById.get(proposalId)?.ambiguousCms))) {
+        throw new Error(`Không thể ghép duy nhất dòng Sheet cũ cho đề xuất ${proposalId}`);
+      }
+      existing = candidates[0];
+    }
+    if (existing && usedRows.has(existing.row)) throw new Error('Hai đề xuất cùng khớp một dòng Sheet cũ');
+    if (existing) usedRows.add(existing.row);
     if (job.operation === 'DELETE' || !proposal) {
       if (existing) clears.push({ row: existing.row });
       continue;
     }
     const serial = existing && existing.serial ? existing.serial : nextSerial++;
     const row = buildRow(proposal, serial);
+    row[17] = key;
     if (existing) {
+      row.forEach((value, index) => {
+        // Sheets ignores null input cells, preserving existing values and formulas.
+        if (value === '' || value === null || value === undefined) row[index] = null;
+      });
       updates.push({ range: `${tab}!A${existing.row}:${LAST_COLUMN}${existing.row}`, values: [row] });
     } else {
       updates.push({ range: `${tab}!A${nextRow}:${LAST_COLUMN}${nextRow}`, values: [row] });
@@ -400,9 +449,13 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   for (const job of jobs) {
     await pool.query(
       `UPDATE on_station_sheet_sync_queue
-          SET status = 'DONE', synced_version = requested_version, last_synced_at = NOW(), last_error = NULL, updated_at = NOW()
-        WHERE proposal_id = ? AND requested_version = ?`,
-      [job.proposal_id, job.requested_version]
+          SET status = IF(requested_version = ?, 'DONE', 'PENDING'),
+              synced_version = GREATEST(synced_version, ?),
+              attempt_count = IF(requested_version = ?, attempt_count, 0),
+              next_attempt_at = NULL,
+              last_synced_at = NOW(), last_error = NULL, updated_at = NOW()
+        WHERE proposal_id = ?`,
+      [job.requested_version, job.requested_version, job.requested_version, job.proposal_id]
     );
   }
 };
@@ -458,12 +511,18 @@ const processBatch = async (limit = BATCH_SIZE) => {
         validationError = error;
       }
       if (validationError) {
+        console.error('[OnStationSheetSync] Invalid reconciliation key:', {
+          proposalId: job.proposal_id, message: validationError.message
+        });
         await pool.query(
           `UPDATE on_station_sheet_sync_queue
-              SET status = 'FAILED', next_attempt_at = DATE_ADD(NOW(), INTERVAL 5 MINUTE),
+              SET status = IF(requested_version = ?, 'FAILED', 'PENDING'),
+                  attempt_count = IF(requested_version = ?, attempt_count, 0),
+                  next_attempt_at = IF(requested_version = ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), NOW()),
                   last_error = ?, updated_at = NOW()
-            WHERE proposal_id = ? AND requested_version = ?`,
-          [String(validationError.message).slice(0, 500), job.proposal_id, job.requested_version]
+            WHERE proposal_id = ?`,
+          [job.requested_version, job.requested_version, job.requested_version,
+            String(validationError.message).slice(0, 500), job.proposal_id]
         );
       } else {
         validJobs.push(job);
@@ -475,13 +534,18 @@ const processBatch = async (limit = BATCH_SIZE) => {
     await writeSheetRows(sheets, config, validJobs, proposalsById, keyById);
     return { processed: validJobs.length, failed: jobs.length - validJobs.length };
   } catch (error) {
+    console.error('[OnStationSheetSync] Batch failed:', error);
     for (const job of selectedJobs) {
       await pool.query(
         `UPDATE on_station_sheet_sync_queue
-            SET status = 'FAILED', attempt_count = ?, next_attempt_at = DATE_ADD(NOW(), INTERVAL 5 MINUTE), last_error = ?, updated_at = NOW()
-          WHERE proposal_id = ? AND requested_version = ?`,
-        [job.attempt_number || 1, String(error.message || 'sync failed').slice(0, 500), job.proposal_id, job.requested_version]
-      ).catch(() => {});
+            SET status = IF(requested_version = ?, 'FAILED', 'PENDING'),
+                attempt_count = IF(requested_version = ?, ?, 0),
+                next_attempt_at = IF(requested_version = ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), NOW()),
+                last_error = ?, updated_at = NOW()
+          WHERE proposal_id = ?`,
+        [job.requested_version, job.requested_version, job.attempt_number || 1, job.requested_version,
+          String(error.message || 'sync failed').slice(0, 500), job.proposal_id]
+      ).catch(queueError => console.error('[OnStationSheetSync] Failed to record batch error:', queueError));
     }
     return { processed: 0, error: error.message || 'sync failed' };
   } finally {
@@ -550,9 +614,6 @@ const getStatus = async () => {
   const [lastRows] = await pool.query(
     `SELECT MAX(last_synced_at) AS last_synced_at FROM on_station_sheet_sync_queue WHERE last_synced_at IS NOT NULL`
   );
-  const [lastErrorRows] = await pool.query(
-    `SELECT proposal_id, last_error, updated_at FROM on_station_sheet_sync_queue WHERE status = 'FAILED' ORDER BY updated_at DESC LIMIT 5`
-  );
   return {
     configured: config.configured,
     message: config.message,
@@ -565,8 +626,7 @@ const getStatus = async () => {
       failed: queue.FAILED || 0,
       total: Object.values(queue).reduce((sum, n) => sum + n, 0)
     },
-    lastSyncedAt: lastRows[0]?.last_synced_at || null,
-    recentErrors: lastErrorRows
+    lastSyncedAt: lastRows[0]?.last_synced_at || null
   };
 };
 

@@ -428,7 +428,7 @@ const ProposalSignatureConfigPage = () => {
           <div>
             <h2 className="font-semibold">Danh sách người ký</h2>
             <p className="mt-1 text-xs text-base-content/60">
-              Chọn người thuộc Ban Tổng giám đốc, Phòng Tài chính, Back Office, người đề xuất hoặc quản lý phía trên.
+              Chọn Tổng giám đốc thuộc Ban Tổng giám đốc, Phòng Tài chính, Back Office, người đề xuất, người phụ trách hoặc cấp trên của người phụ trách là CTV. Mỗi người chỉ xuất hiện trong nhóm ưu tiên đầu tiên.
               Người ký mới sẽ được gắn vào trang đang chỉnh.
             </p>
           </div>
