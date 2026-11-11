@@ -505,18 +505,21 @@ exports.withdrawSignatureConfig = (args = {}) => (
 const getSignerCandidatesForProposal = async (proposal) => {
   const [rows] = await pool.query("SELECT id, full_name, role, custom_data FROM users WHERE status = 'ACTIVE'");
   const ownerId = Number(proposal.user_id) || null;
+  const assigneeId = Number(parseCustomData(proposal.custom_data).nguoi_phu_trach?.id) || null;
+  const assignee = rows.find(row => Number(row.id) === assigneeId);
   const adminUserService = require('./adminUserService');
   const managerIds = new Set(
-    ownerId
-      ? (await adminUserService.getAncestorIds(ownerId)).map(Number)
+    assignee?.role === 'CTV'
+      ? (await adminUserService.getAncestorIds(assigneeId)).map(Number)
       : []
   );
   const candidateRanks = {
-    'Ban Tổng giám đốc': 0,
+    'Tổng giám đốc': 0,
     'Phòng Tài chính': 1,
     'Back Office': 2,
     'Người đề xuất': 3,
-    'Quản lý phía trên': 4
+    'Người phụ trách': 4,
+    'Người quản lý': 5
   };
   const candidates = [];
   const push = (row, category, title) => {
@@ -537,12 +540,8 @@ const getSignerCandidatesForProposal = async (proposal) => {
     const department = custom.department || '';
     const chucVu = custom.chuc_vu || '';
     const normalizedDepartment = normalizeText(department);
-    if (userId === ownerId) {
-      push(row, 'Người đề xuất', 'Người đề xuất');
-      return;
-    }
-    if (normalizedDepartment.includes('tong giam doc') || normalizedDepartment.includes('ban tgd')) {
-      push(row, 'Ban Tổng giám đốc', chucVu);
+    if (require('./proposalReviewService').isTgdTitle(department, chucVu)) {
+      push(row, 'Tổng giám đốc', chucVu);
       return;
     }
     if (normalizedDepartment.includes('tai chinh') || normalizedDepartment.includes('finance')) {
@@ -553,8 +552,16 @@ const getSignerCandidatesForProposal = async (proposal) => {
       push(row, 'Back Office', chucVu);
       return;
     }
+    if (userId === ownerId) {
+      push(row, 'Người đề xuất', 'Người đề xuất');
+      return;
+    }
+    if (userId === assigneeId) {
+      push(row, 'Người phụ trách', chucVu);
+      return;
+    }
     if (managerIds.has(userId)) {
-      push(row, 'Quản lý phía trên', chucVu);
+      push(row, 'Người quản lý', chucVu);
     }
   });
   candidates.sort((a, b) => candidateRanks[a.category] - candidateRanks[b.category]

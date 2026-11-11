@@ -428,7 +428,7 @@ const normalizeReportFiles = async (value, existingIds = []) => {
 };
 
 const TRU_LIST_ID = 18;
-const INVESTMENT_MODELS = new Set(['TDT', 'LK', 'NQ', 'NQ_LK']);
+const INVESTMENT_MODELS = new Set(['TDT', 'LK', 'NQ']);
 
 const loadTruPrices = async () => {
   const [rows] = await pool.query(
@@ -458,8 +458,11 @@ const normalizeChotRows = (rows, prices) => {
   list.forEach((item, index) => {
     const row = item && typeof item === 'object' ? item : {};
     const moHinh = String(row.mo_hinh || '').trim();
+    if (moHinh === 'NQ_LK') {
+      throw err(`Dòng ${index + 1}: vui lòng sửa hoặc tách NQ_LK thành các dòng LK/NQ`, 400);
+    }
     if (!INVESTMENT_MODELS.has(moHinh)) {
-      throw err(`Dòng ${index + 1}: thiếu mô hình liên kết`, 400);
+      throw err(`Dòng ${index + 1}: mô hình không hợp lệ, chỉ chọn TDT, LK hoặc NQ`, 400);
     }
     const soLuong = Number(row.so_luong);
     if (!Number.isInteger(soLuong) || soLuong <= 0) {
@@ -531,6 +534,12 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
     throw err('Vui lòng nhập số lượng trụ chốt (mô hình liên kết, số lượng, loại trụ, giá chốt)', 400);
   }
   const totalValue = sumChotTotal(chotRows);
+  const models = new Set(chotRows.map(row => row.mo_hinh));
+  const nextModel = models.has('LK')
+    ? (models.has('NQ') ? 'NQ_LK' : 'LK')
+    : (models.has('NQ') ? 'NQ' : 'TDT');
+  const nextPriority = nextModel === 'TDT' ? 1 : 2;
+  let previousModel;
 
   if ([RE_CREATING_STATUS, UPDATING_STATUS].includes(proposal.status)) {
     const existingFileIds = new Set([...previous, ...previousSources].map((file) => Number(file.id)).filter(Number.isFinite));
@@ -556,7 +565,12 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
     await connection.beginTransaction();
     const [locked] = await connection.query('SELECT status,custom_data FROM station_proposals WHERE id=? FOR UPDATE', [proposal.id]);
     if (!locked.length || locked[0].status !== proposal.status) throw err('Đề xuất đã đổi trạng thái, vui lòng tải lại', 409);
-    const nextCustom = { ...parseCustomData(locked[0].custom_data), [REPORT_FIELD]: canonicalFiles, file_bc_dx_sources: reportFiles };
+    const lockedCustom = parseCustomData(locked[0].custom_data);
+    previousModel = lockedCustom.mo_hinh_dau_tu || '';
+    const nextCustom = {
+      ...lockedCustom, [REPORT_FIELD]: canonicalFiles, file_bc_dx_sources: reportFiles,
+      mo_hinh_dau_tu: nextModel, loai_uu_tien: nextPriority
+    };
     await documentService.activateDocuments(proposal.id, documents, connection);
     await connection.query(
     `UPDATE station_proposals
@@ -594,6 +608,9 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
         old: previousTotal === null || previousTotal === undefined ? '' : String(previousTotal),
         new: String(totalValue)
       },
+      ...(previousModel !== nextModel ? {
+        mo_hinh_dau_tu: { label: 'Mô hình đầu tư', old: previousModel, new: nextModel }
+      } : {}),
       ...(ngayDuKienOn !== undefined ? {
         ngay_du_kien_on: {
           label: 'Ngày dự kiến ON',
@@ -629,6 +646,8 @@ const uploadReport = async ({ user, id, files, chotSoLuongTru, ngayDuKienOn, ip 
     documents,
     chot_so_luong_tru: chotRows,
     tong_gia_tri_chot: totalValue,
+    mo_hinh_dau_tu: nextModel,
+    loai_uu_tien: nextPriority,
     ngay_du_kien_on: nextExpectedOnDate,
     transition
   };

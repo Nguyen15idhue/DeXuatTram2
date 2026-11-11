@@ -145,6 +145,8 @@ export const formatCsDate = (value) => {
   return y && m && d ? `${d}/${m}/${y}` : String(value);
 };
 
+export const isCsDeadlineStopped = (station) => station?.status === CS_STATUS.OPERATING;
+
 export const getCsDeadlineLabel = (value, completed, stopped = false) => {
   if (completed) return 'Đã hoàn thành';
   if (stopped) return 'Ngừng đếm hạn';

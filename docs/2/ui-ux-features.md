@@ -21,7 +21,9 @@ Frontend React 18 + React Router v6, sử dụng Leaflet cho bản đồ, cấu 
 - Active route highlight qua `useLocation()`
 
 ### AdminLayout (Admin Only)
-- Sidebar 250px fixed với grouped navigation
+- Sidebar 250px fixed với grouped navigation. Mỗi lần tải lại trang, **Tổng quan**, **Vận hành** và **Khách hàng** luôn mặc định mở nếu có quyền xem, kể cả lần trước đã thu gọn; vẫn cho thu gọn trong phiên đang xem. Các nhóm khác giữ lựa chọn đã lưu và tự mở khi chứa trang hiện tại.
+- Sidebar admin dùng accordion theo thứ tự: **Tổng quan** (Dashboard, Xuất Excel), **Vận hành** (Đề xuất + menu con, ON trạm + menu con, Tài chính, Kho), **Khách hàng** (Khách hàng, Nhu cầu sạc), **Hệ thống** (Users, Chữ ký số, Lịch làm việc, Phân quyền), **Khác** (Quản lý quy hoạch — route `/admin/stations` không đổi), **Trường thông tin**, **Dữ liệu**. Hai nhóm cấu hình cuối giữ nguyên nội dung và quyền SUPER_ADMIN. Báo cáo/Audit Log chỉ ẩn menu, giữ nguyên route. Giữ nguyên role, điều kiện phòng ban, badge và polling; nhóm rỗng tự ẩn. Tổng quan/Vận hành/Khách hàng mặc định mở mỗi lần tải lại; các nhóm khác lưu lựa chọn vào `admin-sidebar-groups-v2`, tự mở nhóm/menu cha khi vào link con, không đóng các nhóm khác đã mở. Xem bản đồ/Hướng dẫn và footer giữ nguyên. Kiểm thử: `node frontend/test-sidebar-groups.cjs`.
+- Sau đăng nhập vẫn vào **Bản đồ** (`/map`). Nút **Admin Panel** từ bản đồ (header desktop và menu mobile) đưa SUPER_ADMIN/ADMIN/SALES/CTV/NPP vào **Thông tin chung — Quản lý đề xuất** (`/admin/proposals`). MKT giữ quyền hiện hành: vào Khách hàng nếu được phép, nếu không vào bản đồ. Dashboard vẫn truy cập qua `/admin`. Kiểm thử: `node frontend/test-login-redirect.cjs`.
 - Sections: Dashboard, Management (Users/Stations/Proposals), Configuration (Fields/Forms/Views/Data Lists)
 - Mobile: Sidebar slide-in từ trái với overlay
 - Footer: User info (name, role) + logout

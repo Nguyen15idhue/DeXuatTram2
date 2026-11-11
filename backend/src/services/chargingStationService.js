@@ -1372,6 +1372,9 @@ const extendOnboardingDeadline = async (id, { reason } = {}, user, ctx = {}) => 
       throw err('Chỉ người đề xuất, cấp trên trong nhánh hoặc quản trị viên được gia hạn', 403);
     }
     if (!readiness.isDeadlineActive(current)) {
+      if (current.status === STATUS.OPERATING) {
+        throw err('Trạm đang hoạt động không còn áp dụng deadline hợp đồng, hạ tầng và tài chính', 400);
+      }
       throw err('Trạm không còn đếm hạn 15 ngày (đã có hạng mục hoàn thành, đã giao trụ hoặc đã hủy)', 400);
     }
     if (!current.contract_deadline_at || new Date(current.contract_deadline_at).getTime() <= Date.now()) {
