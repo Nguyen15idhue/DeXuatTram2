@@ -37,8 +37,9 @@ import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
-import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
+import { PRIORITY_OPTIONS } from '../../utils/mapStatuses';
 import { getProposalStatusFilterOptions } from '../../utils/proposalStatus';
+import { ProposalStatusContext } from '../../contexts/ProposalStatusContext';
 import { canOwnerEditProposal } from '../../utils/proposalOwnerLock';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { COUNTDOWN_CONFIG_EVENT, getCountdownFlags, loadCountdownConfig } from '../../utils/countdownConfig';
@@ -305,6 +306,7 @@ const AdminProposalsPage = () => {
       const dfield = overrides.dateField !== undefined ? overrides.dateField : dateField;
       const cf = overrides.columnFilters !== undefined ? overrides.columnFilters : columnFilters;
       if (f) params.append('status', f);
+      if (cf?.status) params.append('statuses', cf.status);
       if (ut) params.append('uu_tien', ut);
       if (s) params.append('search', s);
       if (pr) params.append('province', pr);
@@ -314,8 +316,8 @@ const AdminProposalsPage = () => {
       if (ll) params.append('lead_link', ll);
       if (df || dt) { params.append('date_field', dfield); if (df) params.append('date_from', df); if (dt) params.append('date_to', dt); }
       if (cf && Object.keys(cf).some(k => String(cf[k] ?? '').trim())) {
-        const active = Object.fromEntries(Object.entries(cf).filter(([, v]) => String(v ?? '').trim()));
-        params.append('filters', JSON.stringify(active));
+        const active = Object.fromEntries(Object.entries(cf).filter(([key, v]) => key !== 'status' && String(v ?? '').trim()));
+        if (Object.keys(active).length) params.append('filters', JSON.stringify(active));
       }
       const res = await adminProposalService.getAllWithParams(params.toString(), token);
       if (res.success) {
@@ -1471,7 +1473,7 @@ const AdminProposalsPage = () => {
 
       {forceModal.open && (() => {
         const forceRow = proposals.find(p => p.id === forceModal.id);
-        const curLabel = forceRow ? (PROPOSAL_STATUSES.find(s => s.value === forceRow.status)?.label || forceRow.status) : '';
+        const curLabel = forceRow ? (statusOptions.find(s => s.value === forceRow.status)?.label || forceRow.status) : '';
         return (
           <dialog className="modal modal-open" onCancel={(e) => e.preventDefault()}>
             <div className="modal-box max-w-md">
@@ -1492,7 +1494,7 @@ const AdminProposalsPage = () => {
                   value={forceModal.status}
                   onChange={(e) => setForceModal(prev => ({ ...prev, status: e.target.value }))}
                 >
-                  {PROPOSAL_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {statusOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
               {forceModal.status === 'CONTRACT_SIGNED' && (
@@ -1556,7 +1558,7 @@ const AdminProposalsPage = () => {
             </div>
             <div className="mt-3 rounded-lg bg-base-200 p-3 text-sm">
               <div><b>Mã đề xuất:</b> {directOnStationRow?.ma_de_xuat || `#${directOnStationModal.id}`}</div>
-              <div><b>Trạng thái hiện tại:</b> {PROPOSAL_STATUSES.find((status) => status.value === directOnStationRow?.status)?.label || directOnStationRow?.status || '—'}</div>
+              <div><b>Trạng thái hiện tại:</b> {statusOptions.find((status) => status.value === directOnStationRow?.status)?.label || directOnStationRow?.status || '—'}</div>
             </div>
             <div className="form-control mt-3">
               <label className="label"><span className="label-text">Lý do chuyển trực tiếp *</span></label>
@@ -2221,4 +2223,10 @@ const AdminProposalsPage = () => {
   );
 };
 
-export default AdminProposalsPage;
+const AdminProposalsWithNumberedStatuses = () => (
+  <ProposalStatusContext.Provider value={true}>
+    <AdminProposalsPage />
+  </ProposalStatusContext.Provider>
+);
+
+export default AdminProposalsWithNumberedStatuses;

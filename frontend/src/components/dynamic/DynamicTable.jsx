@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { dynamicService } from '../../services/api';
 import FieldRenderer from './FieldRenderer';
 import useDataListMap from '../../hooks/useDataListMap';
+import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
+import { getNumberedProposalStatusOptions } from '../../utils/proposalStatus';
 
 const SERVER_FILTER_DEBOUNCE_MS = 500;
 
@@ -14,6 +16,7 @@ const colWidthStyle = (col) => {
 
 const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, columnLabelOverrides = null, additionalColumns = [], columnsAfter = null, hiddenColumnKeys = [], hiddenColumnLabels = [], density = 'normal', data, onRowClick, actions, showActions = true, actionAfterKey = null, leadingAction = null, leadingActionTitle = 'Cập nhật thông tin', frozenColumns = null, startIndex = 0, rowDepth = null, selectedIds, onSelectionChange, onColumnFiltersChange, cellFooter = null, cellRenderers = null, getCellStyle = null, getRowStyle = null }, ref) => {
   const navigate = useNavigate();
+  const numberedStatuses = useNumberedProposalStatuses();
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState([]);
   const [error, setError] = useState('');
@@ -131,7 +134,12 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
     return mergedColumns
       .map((column) => {
         const key = column.field_key || column.key;
-        return labelOverrides[key] ? { ...column, label: labelOverrides[key] } : column;
+        const prepared = labelOverrides[key] ? { ...column, label: labelOverrides[key] } : column;
+        if (numberedStatuses && entity === 'station_proposals' && key === 'status') {
+          const options = typeof column.options === 'string' ? JSON.parse(column.options) : column.options;
+          return { ...prepared, options: getNumberedProposalStatusOptions(options || [], true) };
+        }
+        return prepared;
       })
       .filter((column) => (
         !hiddenColumns.has(column.key)
@@ -152,7 +160,7 @@ const DynamicTable = forwardRef(({ entity, viewId, columns: columnsProp = null, 
       setColumns([]);
       setLoading(false);
     }
-  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, hiddenColumnLabelsSig, hiddenLabels, columnLabelOverridesSig, additionalColumnsSig, columnsAfterSig]);
+  }, [entity, viewId, configVersion, columnsPropSig, hiddenColumnKeysSig, hiddenColumns, hiddenColumnLabelsSig, hiddenLabels, columnLabelOverridesSig, additionalColumnsSig, columnsAfterSig, numberedStatuses]);
 
   useEffect(() => {
     if (frozenColumns !== null && frozenColumns !== undefined) {
@@ -208,10 +216,11 @@ const toDisplayValue = (val) => {
       return activeFilters.every(([key, filterVal]) => {
         const val = toDisplayValue(getFieldValue(row, { key }));
         if (val === null || val === undefined) return false;
+        if (numberedStatuses && entity === 'station_proposals' && key === 'status') return String(val) === filterVal;
         return String(val).toLowerCase().includes(filterVal.toLowerCase());
       });
     });
-  }, [serverMode, data, filters]);
+  }, [serverMode, data, filters, numberedStatuses, entity]);
 
   const sortedData = useMemo(() => {
     if (!filteredData) return [];
@@ -448,7 +457,18 @@ const toDisplayValue = (val) => {
                   return (
                     <Fragment key={key}>
                       <th style={{ ...colWidthStyle(col), ...fp.style }} className={fp.className}>
-                        {col.filterable ? (
+                        {col.filterable && numberedStatuses && entity === 'station_proposals' && key === 'status' ? (
+                          <select
+                            aria-label="Lọc trạng thái quy trình"
+                            className="select select-bordered select-xs w-full"
+                            value={filters[key] || ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => handleFilterChange(key, e.target.value)}
+                          >
+                            <option value="">Tất cả trạng thái</option>
+                            {col.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        ) : col.filterable ? (
                           <input
                             type="text"
                             className="input input-bordered input-xs w-full"

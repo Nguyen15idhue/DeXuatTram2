@@ -5,7 +5,8 @@ import { formatNumber, parseFormattedNumber, parseLeadingNumber } from '../../ut
 import { formatDate, formatDateTime, toDateInputValue, toDateTimeLocalValue } from '../../utils/formatDateTime';
 import { resolveColumnDatalist, getColumnSource } from '../../utils/tableColumnSource';
 import { computeFooterValue, formatFooterValue, getFooterConfig, hasFooter } from '../../utils/tableFooter';
-import { isRetiredProposalStatusOption, RETIRED_PROPOSAL_STATUS } from '../../utils/proposalStatus';
+import { getNumberedProposalStatusOptions, isRetiredProposalStatusOption, RETIRED_PROPOSAL_STATUS } from '../../utils/proposalStatus';
+import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
 import { create, all } from 'mathjs';
 
 const math = create(all);
@@ -262,6 +263,7 @@ const applyTablePriceRulesToRow = ({ columns, row, formValues, dataListOptions, 
 };
 
 const DynamicField = ({ field, value, onChange, error, disabled, entityId, entityType, uploadUrl = '/files/upload', allowedOptions = null, allFields = [], dataListOptions = {}, formValues = {}, memory = null }) => {
+  const numberedStatuses = useNumberedProposalStatuses();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [focusedCell, setFocusedCell] = useState(null);
   const [selectSearch, setSelectSearch] = useState('');
@@ -334,7 +336,8 @@ const DynamicField = ({ field, value, onChange, error, disabled, entityId, entit
     if (Array.isArray(allowedOptions)) {
       opts = opts.filter(o => allowedOptions.includes(o.value !== undefined ? o.value : o));
     }
-    return opts;
+    return numberedStatuses && entityType === 'station_proposals' && field.key === 'status'
+      ? getNumberedProposalStatusOptions(opts) : opts;
   })();
 
   const optionStyle = (() => {

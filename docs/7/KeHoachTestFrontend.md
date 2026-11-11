@@ -2,6 +2,15 @@
 
 ## 0. Thông tin chung
 
+- Nhãn trạng thái riêng `/admin/proposals`: `PENDING` = **1. Mới đề xuất**; 16 mã của luồng mới
+  được đánh số nguyên đến **16. Hoạt động**, gồm cả nhánh chấm lại/bổ sung.
+  Hủy, tạm dừng, lưu trữ và trạng thái legacy (kể cả Duyệt chủ trương) không số, xếp cuối bộ lọc.
+  Context chỉ bọc trang này: bảng, ba tab, popup xem/sửa, lịch sử và hộp thoại trạng thái dùng cùng nhãn;
+  bộ lọc cột gửi mã trạng thái chính xác. Không sửa DB, luồng chuyển trạng thái, bản đồ hoặc dữ liệu xuất.
+  Số thứ tự không có nghĩa mọi đề xuất phải đi qua đủ 16 trạng thái.
+  Kiểm tra: `node --test frontend/test-proposal-status.mjs` và
+  `npx playwright test FE-proposal-numbered-status.spec.js` (API mock, hỗ trợ `E2E_BASE_URL`).
+
 - Giao trụ theo NCC (migration `229-shipping-supplier-selection.sql`):
   dòng chốt không bắt buộc NCC; nhu cầu gộp theo ID loại trụ, không phân biệt NQ/LK/TDT.
   Form xuất hiển thị từng cặp loại trụ/NCC còn tồn, số lượng mặc định 0; tổng xuất các NCC không vượt nhu cầu còn lại.

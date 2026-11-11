@@ -1,5 +1,50 @@
 export const RETIRED_PROPOSAL_STATUS = 'PRINCIPLE_APPROVED';
 
+export const NUMBERED_PROPOSAL_STATUSES = [
+  ['PENDING', 'Mới đề xuất'],
+  ['GRADING', 'Đang đánh giá quy hoạch và pháp lý'],
+  ['GDTTKD_EVALUATING', 'GĐTTKD đánh giá'],
+  ['RE_GRADING', 'GĐTTKD yêu cầu chấm lại'],
+  ['RE_GDTTKD_EVALUATING', 'GĐTTKD xem xét lại'],
+  ['TGD_REVIEW', 'Đang trình Tổng giám đốc'],
+  ['DESIGNING', 'Đang vẽ Layout'],
+  ['INFOR_WAITING', 'Chờ bổ sung thông tin'],
+  ['PROPOSAL_REPORT_CREATING', 'Đang lập tờ trình BCĐX'],
+  ['PROPOSAL_REPORT_RE_CREATING', 'Yêu cầu tạo lại BCĐX'],
+  ['PROPOSAL_REPORT_REVIEWING', 'Đang duyệt BCĐX'],
+  ['PROPOSAL_REPORT_UPDATING', 'Chờ cập nhật lại BCĐX'],
+  ['SIGNATURE_PENDING', 'Đang trình ký'],
+  ['APPROVED', 'Đã duyệt BCĐX'],
+  ['DEPLOYING', 'Đang triển khai'],
+  ['ACTIVE', 'Hoạt động']
+].map(([value, label], index) => ({ value, label: `${index + 1}. ${label}`, sort_order: index + 1 }));
+
+const EXCEPTION_STATUSES = [
+  ['PAUSED', 'Tạm dừng'], ['CANCELLED', 'Đã hủy'], ['ARCHIVED', 'Đã lưu trữ'],
+  ['REVIEWING', 'Đang xem xét'], ['PRINCIPLE_APPROVED', 'Duyệt chủ trương'],
+  ['REJECTED', 'Từ chối'], ['CONTRACT_SIGNED', 'Ký thành công'], ['CONTRACT_FAILED', 'Ký thất bại']
+].map(([value, label], index) => ({ value, label, sort_order: 17 + index }));
+
+const PAGE_STATUS_MAP = new Map(
+  [...NUMBERED_PROPOSAL_STATUSES, ...EXCEPTION_STATUSES].map((option) => [option.value, option])
+);
+
+export const getNumberedProposalStatusLabel = (value, fallback = value) => (
+  PAGE_STATUS_MAP.get(value)?.label || fallback
+);
+
+export const getNumberedProposalStatusOptions = (options = [], includeMissing = false) => {
+  const source = new Map(options.filter((option) => option.value !== 'COMPLETED')
+    .map((option) => [option.value, option]));
+  if (includeMissing) PAGE_STATUS_MAP.forEach((option, value) => {
+    if (!source.has(value)) source.set(value, option);
+  });
+  return [...source.values()].map((option) => ({
+    ...option,
+    ...(PAGE_STATUS_MAP.get(option.value) || { sort_order: 9999 })
+  })).sort((a, b) => a.sort_order - b.sort_order);
+};
+
 export const isRetiredProposalStatusOption = (entity, key, value) => (
   entity === 'station_proposals'
   && key === 'status'

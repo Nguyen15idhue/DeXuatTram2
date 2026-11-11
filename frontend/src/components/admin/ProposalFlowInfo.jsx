@@ -1,4 +1,7 @@
 import { X, GitBranch } from 'lucide-react';
+import { useNumberedProposalStatuses } from '../../contexts/ProposalStatusContext';
+import { getNumberedProposalStatusOptions } from '../../utils/proposalStatus';
+import { PROPOSAL_STATUSES } from '../../utils/mapStatuses';
 
 const STEPS = [
   {
@@ -43,7 +46,14 @@ const STEPS = [
   }
 ];
 
-const ProposalFlowInfo = ({ onClose }) => (
+const ProposalFlowInfo = ({ onClose }) => {
+  const numberedStatuses = useNumberedProposalStatuses();
+  const steps = numberedStatuses
+    ? getNumberedProposalStatusOptions(PROPOSAL_STATUSES, true).map(option => ({
+      title: option.label, color: option.color || '#64748b', desc: '', next: []
+    }))
+    : STEPS;
+  return (
   <dialog className="modal modal-open">
     <div className="modal-box max-w-lg">
       <div className="flex items-center justify-between mb-4">
@@ -56,15 +66,16 @@ const ProposalFlowInfo = ({ onClose }) => (
         </button>
       </div>
       <div className="max-h-[60vh] overflow-y-auto pr-1">
-        {STEPS.map((s, i) => (
+        {numberedStatuses && <p className="text-sm mb-4">Số thứ tự dùng để tra cứu quy trình, không bắt buộc đi qua mọi trạng thái. Các bước chấm lại, bổ sung và trình Tổng giám đốc là nhánh xử lý. Trạng thái ngoại lệ và trạng thái cũ nằm cuối, không đánh số.</p>}
+        {steps.map((s, i) => (
           <div key={s.title} className="flex gap-3">
             <div className="flex flex-col items-center">
               <span className="w-3 h-3 rounded-full mt-1 shrink-0" style={{ backgroundColor: s.color }} />
-              {i < STEPS.length - 1 && <span className="w-px flex-1 bg-base-300" />}
+              {i < steps.length - 1 && <span className="w-px flex-1 bg-base-300" />}
             </div>
             <div className="pb-4 flex-1">
               <div className="font-semibold text-sm">{s.title}</div>
-              <div className="text-xs text-base-content/70 mt-0.5">{s.desc}</div>
+              {s.desc && <div className="text-xs text-base-content/70 mt-0.5">{s.desc}</div>}
               {s.next.length > 0 && (
                 <ul className="mt-1 space-y-0.5">
                   {s.next.map(n => (
@@ -82,6 +93,7 @@ const ProposalFlowInfo = ({ onClose }) => (
     </div>
     <div className="modal-backdrop bg-black/50" onClick={onClose} />
   </dialog>
-);
+  );
+};
 
 export default ProposalFlowInfo;
