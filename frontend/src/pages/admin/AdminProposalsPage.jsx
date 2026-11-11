@@ -38,6 +38,7 @@ import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { FilterToggle, FilterBody } from '../../components/ui/FilterPanel';
 import { PRIORITY_OPTIONS, PROPOSAL_STATUSES } from '../../utils/mapStatuses';
+import { getProposalStatusFilterOptions } from '../../utils/proposalStatus';
 import { canOwnerEditProposal } from '../../utils/proposalOwnerLock';
 import { getReviewLevelLabel, resolveReviewRole, REVIEW_ROLE } from '../../utils/proposalReview';
 import { COUNTDOWN_CONFIG_EVENT, getCountdownFlags, loadCountdownConfig } from '../../utils/countdownConfig';
@@ -87,7 +88,7 @@ const AdminProposalsPage = () => {
   const proposalsViewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const { getSelectOptions, getFieldLabel } = useFieldOptions('station_proposals', ['status', 'province', 'vung_mien']);
-  const statusOptions = getSelectOptions('status');
+  const statusOptions = getProposalStatusFilterOptions(getSelectOptions('status'));
   const provinceOptions = getSelectOptions('province');
   const regionOptions = getSelectOptions('vung_mien');
   const [proposals, setProposals] = useState([]);
