@@ -18,7 +18,7 @@ const loadService = async (name, mocks) => {
   return module.exports;
 };
 
-const makeHarness = async ({ root, actualStamping = false } = {}) => {
+const makeHarness = async ({ root, actualStamping = false, failSnapshot = false } = {}) => {
   const proposal = { id: 501, user_id: 7, status: 'SIGNATURE_PENDING', ma_de_xuat: 'TEST', custom_data: {} };
   const configs = [
     { id: 1, proposal_id: 501, document_id: 11, file_id: 101, user_id: 7, created_by: 7, full_name: 'Same Signer', status: actualStamping ? 'SIGNED' : 'PENDING', signature_id: 99, signed_at: '2026-01-02T03:04:05Z', page: 1, pos_x: 0.1, pos_y: 0.2, box_width: 0.3, box_height: 0.25 },
@@ -59,6 +59,7 @@ const makeHarness = async ({ root, actualStamping = false } = {}) => {
     }
     if (sql.includes('FROM proposal_signature_configs')) return [configs.filter((config) => config.status !== 'CANCELLED').map((config) => ({ ...config }))];
     if (sql.includes('FROM proposal_requests')) return [[]];
+    if (sql.includes('FROM users')) return [[{ id: 7 }]];
     if (sql.includes('FROM signatures')) {
       return [[{ id: 99, file_url: 'mock-signature', file_path: path.join(root || '.', 'signature.png') }]];
     }
@@ -66,7 +67,16 @@ const makeHarness = async ({ root, actualStamping = false } = {}) => {
   };
   const pool = {
     query,
-    getConnection: async () => ({ query, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} })
+    getConnection: async () => {
+      let before;
+      return {
+        query,
+        beginTransaction: async () => { before = configs.map(config => ({ ...config })); },
+        commit: async () => {},
+        rollback: async () => { configs.splice(0, configs.length, ...before); },
+        release: () => {}
+      };
+    }
   };
   const reports = { resolveScope: async () => ({ userId: 7, role: 'SUPER_ADMIN', isAdmin: true, isBackOffice: true }), isBackOffice: () => true };
   const notifications = { proposalCode: () => 'TEST', getUserName: async () => 'Same Signer', statusMessage: () => 'mock', create: async () => {}, statusTitle: () => 'mock' };
@@ -85,9 +95,22 @@ const makeHarness = async ({ root, actualStamping = false } = {}) => {
       return document ? { file: document.signing_file, filePath: path.join(root, `${id}.pdf`) } : null;
     }
   };
+  const snapshotImages = new Map();
+  const snapshots = {
+    read: async (id) => snapshotImages.get(id) || null,
+    save: async (id, bytes) => {
+      if (failSnapshot) throw new Error('Snapshot storage failed');
+      snapshotImages.set(id, Buffer.from(bytes));
+    }
+  };
   const signedDocuments = actualStamping
-    ? await loadService('signedDocumentService.js', { '../utils/db': pool, './fileService': fileService })
-    : { validateSignature: async () => new Promise((resolve) => setTimeout(resolve, 10)) };
+    ? await loadService('signedDocumentService.js', {
+      '../utils/db': pool, './fileService': fileService, './signatureSnapshotService': snapshots
+    })
+    : { validateSignature: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { bytes: Buffer.from('snapshot') };
+    } };
   const mocks = {
     '../utils/db': pool,
     './dynamicUtils': {},
@@ -98,12 +121,13 @@ const makeHarness = async ({ root, actualStamping = false } = {}) => {
     './notificationService': notifications,
     './proposalLifecycle': lifecycle,
     './signedDocumentService': signedDocuments,
+    './signatureSnapshotService': snapshots,
     './fileService': fileService,
     '../controllers/fileController': { canAccessFile: async () => true }
   };
   const signatures = await loadService('proposalSignatureService.js', mocks);
   const approvals = await loadService('proposalApprovalService.js', { ...mocks, './proposalSignatureService': signatures });
-  return { signatures, approvals, proposal, configs, maximumMutations: () => maximumMutations };
+  return { signatures, approvals, proposal, configs, snapshots, signedDocuments, maximumMutations: () => maximumMutations };
 };
 
 test('sign and withdrawal serialize in both arrival orders without losing signed configs', async () => {
@@ -131,6 +155,15 @@ test('sign and withdrawal serialize in both arrival orders without losing signed
   assert.equal(withdrawalFirst.maximumMutations(), 1);
 });
 
+test('snapshot storage failure rolls back SIGNED status', async () => {
+  const harness = await makeHarness({ failSnapshot: true });
+  await assert.rejects(harness.signatures.sign({
+    user: { id: 7, role: 'SUPER_ADMIN' }, id: 501, documentId: 11
+  }), /Snapshot storage failed/);
+  assert.equal(harness.configs[0].status, 'PENDING');
+  assert.equal(harness.configs[0].signed_at, '2026-01-02T03:04:05Z');
+});
+
 test('actual two-size PDF stamping and ZIP preserve document-specific images, coordinates, and timestamps', async () => {
   const root = path.join(__dirname, `.multidoc-fixtures-${process.pid}`);
   await fs.mkdir(root, { recursive: true });
@@ -149,8 +182,16 @@ test('actual two-size PDF stamping and ZIP preserve document-specific images, co
     await require('node:util').promisify(require('node:child_process').execFile)(
       'convert', ['-size', '80x20', 'xc:black', path.join(root, 'signature.png')]
     );
-    const { signatures } = await makeHarness({ root, actualStamping: true });
+    const { signatures, snapshots, signedDocuments } = await makeHarness({ root, actualStamping: true });
+    const image = await signedDocuments.validateSignature(99);
+    await snapshots.save(1, image.bytes);
+    await snapshots.save(2, image.bytes);
+    await fs.unlink(path.join(root, 'signature.png'));
+    await assert.rejects(signatures.getSignatureImage({ user: { id: 8, role: 'CTV' }, id: 501, configId: 99 }),
+      { statusCode: 404 });
     const user = { id: 7, role: 'SUPER_ADMIN' };
+    assert.deepEqual((await signatures.getSignatureImage({ user, id: 501, configId: 1 })).bytes, image.bytes);
+    assert.deepEqual((await signatures.getSignatureImage({ user, id: 501, configId: 2 })).bytes, image.bytes);
     const inspect = async (bytes, index) => {
       const pdf = await PDFDocument.load(bytes);
       assert.equal(pdf.getPageCount(), 1);
@@ -170,9 +211,10 @@ test('actual two-size PDF stamping and ZIP preserve document-specific images, co
       const fontkit = require('@pdf-lib/fontkit');
       const regular = fontkit.create(await fs.readFile(process.env.SIGNATURE_FONT_REGULAR));
       const bold = fontkit.create(await fs.readFile(process.env.SIGNATURE_FONT_BOLD));
-      const nameWidth = bold.layout('Đã ký bởi: Same Signer').advanceWidth / bold.unitsPerEm * 13;
+      const layout = require('../assets/signatureTextLayout.json');
+      const nameWidth = bold.layout('Đã ký bởi: Same Signer').advanceWidth / bold.unitsPerEm * layout.lines.name.fontSizePt;
       const time = index ? '11:05:06 03/02/2026' : '10:04:05 02/01/2026';
-      const timeWidth = regular.layout(`Đã ký lúc: ${time}`).advanceWidth / regular.unitsPerEm * 13;
+      const timeWidth = regular.layout(`Đã ký lúc: ${time}`).advanceWidth / regular.unitsPerEm * layout.lines.time.fontSizePt;
       const expandedWidth = Math.min(sizes[index][0] - expectedLeft,
         Math.max(sizes[index][0] * 0.3, Math.max(nameWidth, timeWidth) + 9));
       const availableWidth = expandedWidth - 9;
@@ -201,6 +243,25 @@ test('actual two-size PDF stamping and ZIP preserve document-specific images, co
     assert.equal(names.length, 2);
     await inspect(await zip.file('11_source-11.pdf').async('nodebuffer'), 0);
     await inspect(await zip.file('12_source-12.pdf').async('nodebuffer'), 1);
+    const word = new JSZip();
+    word.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>');
+    word.file('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>TEST</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>');
+    await fs.writeFile(path.join(root, 'original.docx'), await word.generateAsync({ type: 'nodebuffer' }));
+    const wordService = await loadService('signedDocumentService.js', {
+      '../utils/db': { query: async () => { throw new Error('Must not read deleted profile signature'); } },
+      './signatureSnapshotService': snapshots,
+      './fileService': { getFilePath: async () => ({
+        file: { id: 201, original_name: 'original.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+        filePath: path.join(root, 'original.docx')
+      }) }
+    });
+    const signedWord = await wordService.build({
+      reportFileId: 201,
+      signers: [{ id: 1, signature_id: 99, full_name: 'Same Signer', signed_at: '2026-01-02T03:04:05Z',
+        page: 1, pos_x: 0.1, pos_y: 0.2, box_width: 0.3, box_height: 0.25 }]
+    });
+    const wordOutput = await JSZip.loadAsync(signedWord.bytes);
+    assert.deepEqual(await wordOutput.file('word/media/signature-1.png').async('nodebuffer'), image.bytes);
   } finally {
     if (previousRegular === undefined) delete process.env.SIGNATURE_FONT_REGULAR;
     else process.env.SIGNATURE_FONT_REGULAR = previousRegular;

@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   formatSignedTime,
@@ -14,6 +14,15 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 const IMAGE_TEXT_GAP_PT = 11;
 const FOOTER_PX = signerTextLayout.lineHeightPt * 2 * 4 / 3;
 const IMAGE_BOTTOM_PX = FOOTER_PX + IMAGE_TEXT_GAP_PT * 4 / 3;
+
+const SignedImage = ({ src, name }) => {
+  const [failedSource, setFailedSource] = useState(null);
+  if (failedSource === src) {
+    return <span role="alert" className="text-center text-[10px] text-error">Không tải được ảnh chữ ký đã ký</span>;
+  }
+  return <img src={src} alt={`Chữ ký ${name}`} className="max-h-full max-w-[88%] object-contain"
+    onError={() => setFailedSource(src)} />;
+};
 
 const SignatureOverlay = ({
   signer: sourceSigner,
@@ -49,10 +58,9 @@ const SignatureOverlay = ({
         }}
       >
         {signer.status === 'SIGNED' && signer.signature_id ? (
-          <img
+          <SignedImage
             src={`${API_URL}/admin/proposal-signatures/${proposalId}/signature-image/${signer.id}?token=${encodeURIComponent(token || '')}`}
-            alt={`Chữ ký ${signer.full_name}`}
-            className="max-h-full max-w-[88%] object-contain"
+            name={signer.full_name}
           />
         ) : (
           <div className="w-full text-center text-[10px] text-base-content/50">

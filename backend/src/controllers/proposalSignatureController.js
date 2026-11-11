@@ -174,12 +174,13 @@ exports.downloadSignedDocument = async (req, res) => {
 
 exports.signatureImage = async (req, res) => {
   try {
-    const filePath = await proposalSignatureService.getSignatureImagePath({
+    const image = await proposalSignatureService.getSignatureImage({
       user: req.user,
       id: req.params.id,
       configId: req.params.configId
     });
-    res.sendFile(filePath);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.type(image.contentType).send(image.bytes);
   } catch (error) {
     sendError(res, error);
   }

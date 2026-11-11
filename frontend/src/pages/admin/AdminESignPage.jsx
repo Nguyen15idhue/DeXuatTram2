@@ -604,7 +604,7 @@ const AdminESignPage = () => {
       <ConfirmDialog
         isOpen={confirmUpdate}
         title="Cập nhật chữ ký số"
-        message="Bạn có chắc chắn muốn cập nhật chữ ký số mới? Chữ ký cũ sẽ bị thay thế."
+        message="Bạn có chắc chắn muốn cập nhật chữ ký số mới? Thay đổi chỉ áp dụng cho những lần ký tiếp theo; chữ ký trên BCĐX đã ký được giữ nguyên."
         onConfirm={handleUpdate}
         onCancel={() => setConfirmUpdate(false)}
         confirmText={saving ? "Đang cập nhật..." : "Cập nhật"}
@@ -615,7 +615,7 @@ const AdminESignPage = () => {
       <ConfirmDialog
         isOpen={confirmDelete.open}
         title="Xóa chữ ký số"
-        message="Bạn có chắc chắn muốn xóa chữ ký này? Hành động không thể hoàn tác."
+        message="Bạn có chắc chắn muốn xóa chữ ký hồ sơ này? Chữ ký trên BCĐX đã ký được giữ nguyên. Bạn cần tải chữ ký mới trước lần ký tiếp theo."
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete({ open: false, sig: null })}
         confirmText={saving ? "Đang xóa..." : "Xóa"}

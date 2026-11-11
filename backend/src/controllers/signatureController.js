@@ -12,6 +12,9 @@ const handleError = (res, err, actionLabel) => {
   if (err.message === 'USER_NOT_FOUND') {
     return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
   }
+  if ([400, 404, 409].includes(err.statusCode)) {
+    return res.status(err.statusCode).json({ success: false, message: err.message });
+  }
   return res.status(500).json({ success: false, message: 'Lỗi server' });
 };
 

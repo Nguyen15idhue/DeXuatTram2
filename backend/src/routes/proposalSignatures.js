@@ -365,7 +365,7 @@ router.get('/:id/signed-document', requireAuth, proposalSignatureController.down
  * /api/admin/proposal-signatures/{id}/signature-image/{configId}:
  *   get:
  *     tags: [Proposal Signatures]
- *     summary: Ảnh chữ ký đã áp dụng cho một ô ký
+ *     summary: Bản chụp chữ ký tại thời điểm ký, không đổi theo chữ ký hồ sơ
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -381,11 +381,18 @@ router.get('/:id/signed-document', requireAuth, proposalSignatureController.down
  *           type: integer
  *     responses:
  *       200:
- *         description: Ảnh chữ ký
+ *         description: Ảnh PNG chữ ký đã ký
+ *         content:
+ *           image/png:
+ *             schema:
+ *               type: string
+ *               format: binary
  *       403:
  *         description: Không có quyền
  *       404:
  *         description: Không tìm thấy chữ ký
+ *       409:
+ *         description: Bản chụp chữ ký không toàn vẹn
  */
 router.get('/:id/signature-image/:configId', requireAuth, proposalSignatureController.signatureImage);
 
