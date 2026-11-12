@@ -1,6 +1,6 @@
 // backend/src/services/onStationSheetSyncService.js
 // Đồng bộ Google Sheet riêng cho trạm đã ON (proposal status = ACTIVE).
-// Cột A–R: STT, Mã Trạm, Tên trạm sạc, Pháp nhân, Nhân sự phụ trách, Nguồn phụ trách,
+// Cột A–Q và S (giữ nguyên R): STT, Mã Trạm, Tên trạm sạc, Pháp nhân, Nhân sự phụ trách, Nguồn phụ trách,
 //          Link Google Map, Vĩ độ, Kinh độ, Địa chỉ chi tiết, Tỉnh cũ, Tỉnh mới,
 //          Quy mô trụ ban đầu, Quy mô trụ chốt triển khai, Số lượng trụ,
 //          Ngày ON trạm, Mã chủ đầu tư, Mã BCĐX
@@ -10,8 +10,8 @@ const { google } = require('googleapis');
 const LOCK_NAME = 'on_station_sheet_sync';
 const BATCH_SIZE = 50;
 const MAX_ATTEMPTS = 8;
-const LAST_COLUMN = 'R';
-const KEY_COLUMN_INDEX = 17;
+const LAST_COLUMN = 'S';
+const KEY_COLUMN_INDEX = 18;
 
 // Ánh xạ tỉnh mới (34 đơn vị sau sáp nhập) -> danh sách tỉnh cũ
 const PROVINCE_MERGE_MAP = {
@@ -54,7 +54,7 @@ const PROVINCE_MERGE_MAP = {
 const HEADER_ROW = [
   'STT', 'Mã Trạm', 'Tên trạm sạc', 'Pháp nhân', 'Nhân sự phụ trách', 'Nguồn phụ trách',
   'Link Google Map', 'Vĩ độ', 'Kinh độ', 'Địa chỉ chi tiết', 'Tỉnh cũ', 'Tỉnh mới',
-  'Quy mô trụ ban đầu', 'Quy mô trụ chốt triển khai', 'Số lượng trụ', 'Ngày ON trạm', 'Mã chủ đầu tư', 'Mã BCĐX'
+  'Quy mô trụ ban đầu', 'Quy mô trụ chốt triển khai', 'Số lượng trụ', 'Ngày ON trạm', 'Mã chủ đầu tư', null, 'Mã BCĐX'
 ];
 
 const getConfig = () => {
@@ -279,6 +279,7 @@ const buildRow = (proposal, serial) => {
     countPoles(deployed),
     formatDate(proposal.on_date),
     '',
+    null,
     scalarValue(proposal.ma_de_xuat_gen || custom.ma_de_xuat)
   ];
 };
@@ -421,7 +422,7 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
     }
     const serial = existing && existing.serial ? existing.serial : nextSerial++;
     const row = buildRow(proposal, serial);
-    row[17] = key;
+    row[KEY_COLUMN_INDEX] = key;
     if (existing) {
       row.forEach((value, index) => {
         // Sheets ignores null input cells, preserving existing values and formulas.
@@ -442,7 +443,9 @@ const writeSheetRows = async (sheets, config, jobs, proposalsById, keyById) => {
   }
   if (clears.length) {
     for (const { row } of clears) {
-      await sheets.spreadsheets.values.clear({ spreadsheetId: config.spreadsheetId, range: `${tab}!A${row}:${LAST_COLUMN}${row}` });
+      for (const range of [`${tab}!A${row}:Q${row}`, `${tab}!S${row}:S${row}`]) {
+        await sheets.spreadsheets.values.clear({ spreadsheetId: config.spreadsheetId, range });
+      }
     }
   }
 

@@ -20,10 +20,13 @@ const proposal = (overrides = {}) => ({
   ...overrides
 });
 
-test('exports exact B/E/F/M/N/O/R values and eighteen columns', () => {
+test('exports exact B/E/F/M/N/O/S values and skips R', () => {
   const row = service.buildRow(proposal(), 7);
-  assert.equal(row.length, 18);
-  assert.equal(row[17], 'LK_HNO_0001');
+  assert.equal(row.length, 19);
+  assert.equal(row[17], null);
+  assert.equal(row[18], 'LK_HNO_0001');
+  assert.equal(service.HEADER_ROW[17], null);
+  assert.equal(service.HEADER_ROW[18], 'Mã BCĐX');
   assert.equal(row[1], 'EMS001');
   assert.equal(row[4], 'Assigned person');
   assert.equal(row[5], 'MB');
@@ -101,29 +104,43 @@ const config = { spreadsheetId: 'test-only', tabName: 'ON stations' };
 const jobs = [{ proposal_id: 1, operation: 'UPSERT', requested_version: 1 }];
 const keys = () => new Map([[1, { code: 'LK_HNO_0001', cms: 'EMS001' }]]);
 
-test('sheet updates, inserts, deletes A-R, migrates CMS legacy rows; read failure never appends', async () => {
+test('sheet updates and inserts A-S, deletes A-Q and S, migrates CMS legacy rows', async () => {
   const originalQuery = pool.query;
   const queries = [];
   pool.query = async (...args) => { queries.push(args); return [[]]; };
   try {
     const sheet = sheetMock([service.HEADER_ROW, [5, 'EMS001']]);
     await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys());
-    assert.equal(sheet.calls[0].requestBody.data[1].range, "'ON stations'!A2:R2");
+    assert.equal(sheet.calls[0].requestBody.data[1].range, "'ON stations'!A2:S2");
     assert.equal(sheet.calls[0].requestBody.data[1].values[0][0], 5);
     const insert = sheetMock([service.HEADER_ROW, [5, 'EMS-OTHER']]);
     await service.writeSheetRows(insert, config, jobs, new Map([[1, proposal()]]), keys());
-    assert.equal(insert.calls[0].requestBody.data[1].range, "'ON stations'!A3:R3");
+    assert.equal(insert.calls[0].requestBody.data[1].range, "'ON stations'!A3:S3");
     const empty = sheetMock([]);
     await service.writeSheetRows(empty, config, jobs, new Map([[1, proposal()]]), keys());
-    assert.deepEqual(empty.calls[0].requestBody.data.map(row => row.range), ["'ON stations'!A1:R1", "'ON stations'!A2:R2"]);
+    assert.deepEqual(empty.calls[0].requestBody.data.map(row => row.range), ["'ON stations'!A1:S1", "'ON stations'!A2:S2"]);
     const deletion = sheetMock([service.HEADER_ROW, [5, 'EMS001']]);
     await service.writeSheetRows(deletion, config, [{ ...jobs[0], operation: 'DELETE' }], new Map(), keys());
-    assert.equal(deletion.calls[1].range, "'ON stations'!A2:R2");
+    assert.equal(deletion.calls[1].range, "'ON stations'!A2:Q2");
+    assert.equal(deletion.calls[2].range, "'ON stations'!S2:S2");
     const broken = sheetMock([], new Error('Google read failed'));
     await assert.rejects(service.writeSheetRows(broken, config, jobs, new Map([[1, proposal()]]), new Map()), /Google read failed/);
     assert.deepEqual(broken.calls, []);
     assert.equal(queries.length, 4);
   } finally { pool.query = originalQuery; }
+});
+
+test('duplicate values in R are ignored when matching the proposal code in S', async (t) => {
+  t.mock.method(pool, 'query', async () => [[]]);
+  const first = service.buildRow(proposal(), 1);
+  const second = service.buildRow(proposal({ ma_de_xuat_gen: 'OTHER_CODE' }), 2);
+  first[17] = second[17] = 'LK00000031';
+  const sheet = sheetMock([service.HEADER_ROW, first, second]);
+  await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys());
+  const update = sheet.calls[0].requestBody.data[1];
+  assert.equal(update.range, "'ON stations'!A2:S2");
+  assert.equal(update.values[0][17], null);
+  assert.equal(update.values[0][18], 'LK_HNO_0001');
 });
 
 test('duplicates on Sheet, in a batch and in DB fail before writes', async () => {
@@ -145,22 +162,28 @@ test('duplicates on Sheet, in a batch and in DB fail before writes', async () =>
   } finally { pool.query = originalQuery; }
 });
 
-test('repeated reconciliation preserves S onward and never inserts or shifts whole rows', async () => {
+test('repeated reconciliation preserves R and T onward, including headers and deletion', async () => {
   const originalQuery = pool.query;
   const cells = [service.HEADER_ROW.concat('External header'), [...service.buildRow(proposal(), 1), 'External note']];
+  cells[0][17] = 'Custom R header';
+  cells[1][17] = '=CUSTOM_FORMULA()';
   const apply = ({ range, values }) => {
-    const match = range.match(/!A(\d+):R\d+$/);
+    const match = range.match(/!([AS])(\d+):([QS])\d+$/);
     assert.ok(match, range);
-    const index = Number(match[1]) - 1;
+    const index = Number(match[2]) - 1;
+    const start = match[1] === 'A' ? 0 : 18;
     cells[index] ||= [];
-    for (let column = 0; column < 18; column++) {
-      if (values[0][column] !== null) cells[index][column] = values[0][column];
+    for (let column = 0; column < values[0].length; column++) {
+      if (values[0][column] !== null) cells[index][start + column] = values[0][column];
     }
   };
   const sheet = { spreadsheets: { values: {
-    get: async () => ({ data: { values: cells.map(row => row.slice(0, 18)) } }),
+    get: async request => {
+      assert.equal(request.range, "'ON stations'!A1:S");
+      return { data: { values: cells.map(row => row.slice(0, 19)) } };
+    },
     batchUpdate: async request => { request.requestBody.data.forEach(apply); },
-    clear: async request => apply({ ...request, values: [Array(18).fill('')] })
+    clear: async request => apply({ ...request, values: [Array(request.range.includes('!A') ? 17 : 1).fill('')] })
   } } };
   pool.query = async () => [[]];
   try {
@@ -168,10 +191,16 @@ test('repeated reconciliation preserves S onward and never inserts or shifts who
       await service.writeSheetRows(sheet, config, jobs, new Map([[1, proposal()]]), keys());
     }
     assert.equal(cells.length, 2);
-    assert.equal(cells[1][18], 'External note');
+    assert.equal(cells[1][19], 'External note');
+    assert.equal(cells[1][17], '=CUSTOM_FORMULA()');
+    assert.equal(cells[1][18], 'LK_HNO_0001');
     await service.writeSheetRows(sheet, config, [{ ...jobs[0], operation: 'DELETE' }], new Map(), keys());
-    assert.equal(cells[1][18], 'External note');
-    assert.equal(cells[0][18], 'External header');
+    assert.equal(cells[1][19], 'External note');
+    assert.equal(cells[0][19], 'External header');
+    assert.equal(cells[0][17], 'Custom R header');
+    assert.equal(cells[1][17], '=CUSTOM_FORMULA()');
+    assert.equal(cells[1][18], '');
+    assert.ok(cells[1].slice(0, 17).every(value => value === ''));
     assert.equal(cells.length, 2);
   } finally { pool.query = originalQuery; }
 });
@@ -231,7 +260,7 @@ test('missing assignee does not fail or block either proposal in the batch', asy
   }
 });
 
-test('R locates rows without CMS, preserves missing cells and accepts zero coordinates', async (t) => {
+test('S locates rows without CMS, preserves missing cells and accepts zero coordinates', async (t) => {
   t.mock.method(pool, 'query', async () => [[]]);
   const existing = service.buildRow(proposal(), 9);
   existing[4] = 'Keep assigned person';
@@ -245,7 +274,7 @@ test('R locates rows without CMS, preserves missing cells and accepts zero coord
   await service.writeSheetRows(sheet, config, jobs, new Map([[1, updated]]),
     new Map([[1, { code: 'LK_HNO_0001', cms: '' }]]));
   const data = sheet.calls[0].requestBody.data[1];
-  assert.equal(data.range, "'ON stations'!A2:R2");
+  assert.equal(data.range, "'ON stations'!A2:S2");
   assert.equal(data.values[0][1], null);
   assert.equal(data.values[0][4], null);
   assert.equal(data.values[0][5], null);
@@ -254,14 +283,15 @@ test('R locates rows without CMS, preserves missing cells and accepts zero coord
   assert.equal(data.values[0][14], 4);
 });
 
-test('new row without CMS exports with R; missing key and ambiguous legacy CMS never write', async (t) => {
+test('new row without CMS exports with S; missing key and ambiguous legacy CMS never write', async (t) => {
   t.mock.method(pool, 'query', async () => [[]]);
   const sheet = sheetMock([service.HEADER_ROW]);
   await service.writeSheetRows(sheet, config, jobs,
     new Map([[1, proposal({ cms_station_code: '' })]]),
     new Map([[1, { code: 'LK_HNO_0001', cms: '' }]]));
   assert.equal(sheet.calls[0].requestBody.data[1].values[0][1], '');
-  assert.equal(sheet.calls[0].requestBody.data[1].values[0][17], 'LK_HNO_0001');
+  assert.equal(sheet.calls[0].requestBody.data[1].values[0][17], null);
+  assert.equal(sheet.calls[0].requestBody.data[1].values[0][18], 'LK_HNO_0001');
   const noKey = sheetMock([service.HEADER_ROW]);
   await assert.rejects(service.writeSheetRows(noKey, config, jobs,
     new Map([[1, proposal({ ma_de_xuat_gen: '' })]]), new Map()), /thiếu mã BCĐX/);
