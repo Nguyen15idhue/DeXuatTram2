@@ -10,10 +10,10 @@ const proposalSignatureController = require('../controllers/proposalSignatureCon
  *     tags: [Proposal Signatures]
  *     summary: Danh sách đề xuất cho bước Trình ký
  *     description: >
- *       tab=all: SIGNATURE_PENDING + APPROVED; tab=pending: SIGNATURE_PENDING (Back Office/Admin/TGD
- *       xem tất cả, người được phân công ký chỉ thấy hồ sơ mình chưa ký);
- *       tab=chairman: SIGNATURE_PENDING đã ký đủ (chờ trình chủ tịch, Back Office);
- *       tab=completed: hồ sơ đã ký đủ hoặc đã hoàn thành.
+ *       tab=all: giữ phạm vi xem, bổ sung hồ sơ đã đủ chữ ký/đã upload chủ tịch cho Tài chính và Kế toán.
+ *       tab=pending: còn chữ ký cá nhân; Tài chính/SUPER_ADMIN thêm hồ sơ đủ chữ ký chờ upload.
+ *       tab=chairman: hồ sơ được phân công ký đã đủ chữ ký chờ upload, SUPER_ADMIN xem tất cả; Tài chính trả rỗng.
+ *       tab=completed: đã ký hết tài liệu cá nhân được giao; Tài chính/SUPER_ADMIN thêm hồ sơ APPROVED có file chủ tịch.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -35,7 +35,7 @@ const proposalSignatureController = require('../controllers/proposalSignatureCon
  *           enum: [PENDING, DOING, DONE, CEO_SIGNED]
  *       - in: query
  *         name: my_status
- *         description: Lọc theo tình trạng của người xem (my_pending = tôi cần ký, my_signed = tôi đã ký)
+ *         description: my_pending = còn tài liệu cần ký; my_signed = đã ký hết tài liệu được giao
  *         schema:
  *           type: string
  *           enum: [my_pending, my_signed]
@@ -245,7 +245,7 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  * /api/admin/proposal-signatures/{id}/signed-file:
  *   post:
  *     tags: [Proposal Signatures]
- *     summary: Back Office tải lên file BCĐX đã ký (chủ tịch phê duyệt)
+ *     summary: Tài chính và Kế toán hoặc SUPER_ADMIN tải lên file BCĐX chủ tịch đã ký
  *     description: >
  *       Chỉ áp dụng khi đã đủ chữ ký; lưu file và chuyển đề xuất sang APPROVED.
  *     security:

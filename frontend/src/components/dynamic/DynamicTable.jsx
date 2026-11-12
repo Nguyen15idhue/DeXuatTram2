@@ -345,15 +345,11 @@ const toDisplayValue = (val) => {
       if (lastFrozen && map.has(lastFrozen)) map.get(lastFrozen).last = true;
       const headRow = wrap.querySelector('thead tr:first-child');
       const filtRow = wrap.querySelector('thead tr:nth-child(2)');
-      const bodyRows = wrap.querySelectorAll('tbody tr');
-      const plainCell = (row) => (row ? row.querySelector('th:not(.dt-frozen), td:not(.dt-frozen)') : null);
       const plainHead = headRow ? headRow.querySelector('th:not(.dt-frozen)') : null;
       const plainFilt = filtRow ? filtRow.querySelector('th:not(.dt-frozen)') : null;
       const bgs = {
         head: plainHead ? effectiveBg(plainHead) : '#ffffff',
         filter: plainFilt ? effectiveBg(plainFilt) : effectiveBg(filtRow),
-        row0: plainCell(bodyRows[0]) ? effectiveBg(plainCell(bodyRows[0])) : '#ffffff',
-        row1: plainCell(bodyRows[1]) ? effectiveBg(plainCell(bodyRows[1])) : '#ffffff',
       };
       const sig = JSON.stringify({ cells: [...map.entries()], bgs });
       if (sig !== frozenSigRef.current) {
@@ -370,14 +366,14 @@ const toDisplayValue = (val) => {
   if (error) return <div className="alert alert-error"><span>{error}</span></div>;
   if (columns.length === 0 && !loading) return <div className="text-center py-8 text-base-content/40">Chưa có cột nào được cấu hình</div>;
 
-  const frozenCell = (key, kind, base = '', parity = 0) => {
+  const frozenCell = (key, kind, base = '') => {
     if (!frozenMap || !frozenMap.has(key)) return base ? { className: base } : {};
     const { left, last } = frozenMap.get(key);
     const bg = !frozenBgs
       ? undefined
       : kind === 'filter' ? frozenBgs.filter
         : kind === 'th' ? frozenBgs.head
-          : (parity % 2 === 1 ? frozenBgs.row1 : frozenBgs.row0);
+          : undefined;
     return {
       className: `${base} dt-frozen ${last ? 'dt-frozen-last' : ''} ${kind === 'th' ? 'dt-frozen-head' : kind === 'filter' ? 'dt-frozen-filter' : ''}`.trim(),
       style: {
@@ -497,9 +493,9 @@ const toDisplayValue = (val) => {
               </tr>
             ) : sortedData.map((row, idx) => {
               const rowStyle = typeof getRowStyle === 'function' ? getRowStyle(row, cellStyleNow) || {} : {};
-              const selectionCell = hasSelection ? frozenCell('__sel', 'td', '', idx % 2) : null;
-              const indexCell = frozenCell('__stt', 'td', 'text-center', idx % 2);
-              const leadingCell = hasLeading ? frozenCell('__lead', 'td', 'text-center whitespace-nowrap', idx % 2) : null;
+              const selectionCell = hasSelection ? frozenCell('__sel', 'td') : null;
+              const indexCell = frozenCell('__stt', 'td', 'text-center');
+              const leadingCell = hasLeading ? frozenCell('__lead', 'td', 'text-center whitespace-nowrap') : null;
               return (
               <tr key={row.id || idx} className="hover" style={rowStyle}>
                 {hasSelection && (
@@ -512,8 +508,8 @@ const toDisplayValue = (val) => {
                 {visibleColumns.map((col, colIdx) => {
                   const key = col.field_key || col.key;
                   const depth = typeof rowDepth === 'function' ? (rowDepth(row) || 0) : 0;
-                  const fp = frozenCell(`__d:${key}`, 'td', '', idx % 2);
-                  const fpPin = (pinActions && colIdx === pinAfterIdx) ? frozenCell('__pin', 'td', '', idx % 2) : null;
+                  const fp = frozenCell(`__d:${key}`, 'td');
+                  const fpPin = (pinActions && colIdx === pinAfterIdx) ? frozenCell('__pin', 'td') : null;
                   const extraCellStyle = typeof getCellStyle === 'function'
                     ? getCellStyle(row, key, col, cellStyleNow) || {}
                     : {};

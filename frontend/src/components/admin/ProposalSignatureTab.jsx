@@ -5,6 +5,7 @@ import { proposalSignatureService } from '../../services/api';
 import useDefaultViewId from '../../hooks/useDefaultViewId';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useFieldOptions from '../../hooks/useFieldOptions';
+import useMediaQuery from '../../hooks/useMediaQuery';
 import DynamicTable from '../dynamic/DynamicTable';
 import Pagination from '../Pagination';
 import Toast from '../Toast';
@@ -67,6 +68,7 @@ const SignStatusBadge = ({ code }) => {
 
 const ProposalSignatureTab = ({ tab, onMeta }) => {
   const { token } = useAuth();
+  const isMobile = useMediaQuery('(max-width: 767px)');
   const navigate = useNavigate();
   const viewId = useDefaultViewId('station_proposals', PROPOSALS_VIEW_ID);
   const { getSelectOptions } = useFieldOptions('station_proposals', ['mo_hinh_dau_tu', 'status']);
@@ -120,6 +122,9 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
           isAdmin: !!res.meta.isAdmin,
           isSuperAdmin: !!res.meta.isSuperAdmin,
           isBackOffice: !!res.meta.isBackOffice,
+          isFinance: !!res.meta.isFinance,
+          can_handle_chairman: !!res.meta.can_handle_chairman,
+          can_view_chairman_tab: !!res.meta.can_view_chairman_tab,
           isTgd: !!res.meta.isTgd,
           isManager: !!res.meta.isManager
         };
@@ -204,7 +209,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
 
   const renderActions = (row) => {
     const canSignRow = row.can_sign && row.status === 'SIGNATURE_PENDING';
-    const canUploadSigned = meta.isSuperAdmin || meta.isBackOffice;
+    const canUploadSigned = meta.can_handle_chairman;
     const canExportCompletedSigning = row.status === 'SIGNATURE_PENDING'
       && row.sign_status === SIGN_STATUS.DONE;
 
@@ -240,7 +245,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
     }
 
     if (
-      (tab === 'all' || tab === 'chairman')
+      (tab === 'all' || tab === 'chairman' || (tab === 'pending' && canUploadSigned))
       && canExportCompletedSigning
     ) {
       buttons.push(
@@ -265,7 +270,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
             onClick={() => setSignedModal({ open: true, record: row })}
           >
             <FileUp size={14} />
-            Upload file đã ký
+            Upload file chủ tịch
           </button>
         );
       }
@@ -311,6 +316,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
           )}
         </label>
         <select
+          aria-label="Lọc kết quả ký"
           className="select select-bordered select-sm w-44"
           value={filters.signStatus}
           onChange={(e) => setFilters((current) => ({ ...current, signStatus: e.target.value }))}
@@ -322,12 +328,13 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
         </select>
         <select
           className="select select-bordered select-sm w-40"
+          aria-label="Lọc công việc ký cá nhân"
           value={filters.myStatus}
           onChange={(e) => setFilters((current) => ({ ...current, myStatus: e.target.value }))}
         >
           <option value="">Của tôi: Tất cả</option>
           <option value="my_pending">Tôi cần ký</option>
-          <option value="my_signed">Tôi đã ký</option>
+          <option value="my_signed">Tôi đã ký xong</option>
         </select>
         <select
           className="select select-bordered select-sm w-44"
@@ -373,7 +380,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
             cellRenderers={cellRenderers}
             actions={tab === 'completed' ? undefined : renderActions}
             showActions={tab !== 'completed'}
-            frozenColumns={3}
+            frozenColumns={isMobile ? 2 : 3}
           />
           <Pagination
             page={pagination.page}
@@ -395,7 +402,7 @@ const ProposalSignatureTab = ({ tab, onMeta }) => {
       <ReviewActionDialog
         isOpen={!!completionRecord}
         title="Xác nhận đã hoàn tất ký"
-        description="Xác nhận thay toàn bộ người ký, kể cả chưa có cấu hình ký. Không chèn ảnh chữ ký. Đề xuất vẫn Đang trình ký; Back Office phải tải file đã ký để kết thúc."
+        description="Xác nhận thay toàn bộ người ký, kể cả chưa có cấu hình ký. Không chèn ảnh chữ ký. Đề xuất vẫn Đang trình ký; Phòng Tài chính và Kế toán phải trình chủ tịch và tải file đã ký để kết thúc."
         confirmText="Đã hoàn tất ký"
         saving={completing}
         error={completionError}

@@ -124,6 +124,10 @@ const SIGNING_COMPLETE_SQL = `(p.signature_completed_at IS NOT NULL OR (${SIGNER
 const MY_CONFIG_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status <> 'CANCELLED')";
 const MY_PENDING_CONFIG_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'PENDING')";
 const MY_SIGNED_SQL = "(SELECT COUNT(*) FROM proposal_signature_configs s WHERE s.proposal_id = p.id AND s.user_id = ? AND s.status = 'SIGNED')";
+const MY_COMPLETED_SQL = `(${MY_SIGNED_SQL} > 0 AND ${MY_PENDING_CONFIG_SQL} = 0)`;
+const CHAIRMAN_PENDING_SQL = `(p.status = 'SIGNATURE_PENDING' AND ${SIGNING_COMPLETE_SQL} AND p.signed_file_id IS NULL)`;
+const CHAIRMAN_COMPLETED_SQL = "(p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL)";
+const CHAIRMAN_VISIBLE_SQL = `(${CHAIRMAN_PENDING_SQL} OR ${CHAIRMAN_COMPLETED_SQL})`;
 
 const resolveScope = async (user) => {
   const proposalReviewService = require('./proposalReviewService');
@@ -135,6 +139,7 @@ const resolveScope = async (user) => {
   });
   return {
     ...profile,
+    isFinance: ['ADMIN', 'SALES'].includes(user?.role) && !!profile.isFinance,
     roleKey,
     isTgd: roleKey === 'TGD',
     isManager: profile.isAdmin || profile.isBackOffice || roleKey === 'TGD'
@@ -165,7 +170,8 @@ const mapSignatureRow = (row) => {
     sign_status_label: SIGN_STATUS_LABELS[signStatus],
     signature_manually_completed: !!row.signature_completed_at,
     can_sign: !signatureConfigConflict && Number(row.my_pending_count || 0) > 0,
-    is_my_signed: Number(row.my_signed_count || 0) > 0
+    is_my_signed: Number(row.my_signed_count || 0) > 0,
+    is_my_completed: Number(row.my_signed_count || 0) > 0 && Number(row.my_pending_count || 0) === 0
   };
 };
 
@@ -190,6 +196,7 @@ exports.listProposals = async ({
   const safeLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
   const offset = (safePage - 1) * safeLimit;
   const scope = await resolveScope(user);
+  const canHandleChairman = scope.role === 'SUPER_ADMIN' || scope.isFinance;
   const statuses = TAB_STATUSES[safeTab];
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
@@ -200,30 +207,26 @@ exports.listProposals = async ({
 
   if (safeTab === 'all') {
     if (!scope.isManager) {
-      where.push(`${MY_CONFIG_SQL} > 0`);
+      where.push(`(${MY_CONFIG_SQL} > 0${scope.isFinance ? ` OR ${CHAIRMAN_VISIBLE_SQL}` : ''})`);
       params.push(scope.userId);
     }
   } else if (safeTab === 'pending') {
-    const uploadTask = scope.role === 'SUPER_ADMIN' || scope.isBackOffice
-      ? ` OR (${SIGNING_COMPLETE_SQL} AND p.signed_file_id IS NULL)`
+    const uploadTask = canHandleChairman
+      ? ` OR ${CHAIRMAN_PENDING_SQL}`
       : '';
     where.push(`(${MY_PENDING_CONFIG_SQL} > 0${uploadTask})`);
     params.push(scope.userId);
   } else if (safeTab === 'chairman') {
-    if (!scope.isManager) {
+    if (scope.isFinance && scope.role !== 'SUPER_ADMIN') {
+      where.push('1=0');
+    } else if (scope.role !== 'SUPER_ADMIN') {
       where.push(`${MY_CONFIG_SQL} > 0`);
       params.push(scope.userId);
     }
-    where.push(SIGNING_COMPLETE_SQL);
-    where.push('p.signed_file_id IS NULL');
+    where.push(CHAIRMAN_PENDING_SQL);
   } else if (safeTab === 'completed') {
-    if (!scope.isManager) {
-      where.push(`${MY_CONFIG_SQL} > 0`);
-      params.push(scope.userId);
-    }
-    // Hồ sơ tôi đã ký, hoặc hồ sơ đã đủ chữ ký / đã hoàn thành chung.
-    where.push(`((p.status = 'APPROVED' AND p.signed_file_id IS NOT NULL) OR ${SIGNING_COMPLETE_SQL} OR ${MY_SIGNED_SQL} > 0)`);
-    params.push(scope.userId);
+    where.push(`(${MY_COMPLETED_SQL}${canHandleChairman ? ` OR ${CHAIRMAN_COMPLETED_SQL}` : ''})`);
+    params.push(scope.userId, scope.userId);
   }
 
   if (search) {
@@ -246,8 +249,8 @@ exports.listProposals = async ({
     where.push(`${MY_PENDING_CONFIG_SQL} > 0`);
     params.push(scope.userId);
   } else if (cleanMyStatus === 'my_signed') {
-    where.push(`${MY_SIGNED_SQL} > 0`);
-    params.push(scope.userId);
+    where.push(MY_COMPLETED_SQL);
+    params.push(scope.userId, scope.userId);
   }
 
   if (moHinh) {
@@ -307,6 +310,9 @@ exports.listProposals = async ({
       isAdmin: !!scope.isAdmin,
       isSuperAdmin: scope.role === 'SUPER_ADMIN',
       isBackOffice: !!scope.isBackOffice,
+      isFinance: !!scope.isFinance,
+      can_handle_chairman: canHandleChairman,
+      can_view_chairman_tab: scope.role === 'SUPER_ADMIN' || !scope.isFinance,
       isTgd: !!scope.isTgd,
       isManager: !!scope.isManager,
       department: scope.department
@@ -323,6 +329,14 @@ const loadProposal = async (id) => {
   );
   if (rows.length === 0) throw err('Không tìm thấy đề xuất', 404);
   return rows[0];
+};
+
+exports.canReadChairmanProposal = async ({ user, id } = {}) => {
+  const scope = await resolveScope(user);
+  if (!scope.isFinance) return false;
+  const [rows] = await pool.query(
+    `SELECT p.id FROM station_proposals p WHERE p.id = ? AND ${CHAIRMAN_VISIBLE_SQL}`, [id]);
+  return rows.length > 0;
 };
 
 const loadConfigs = async (proposalId) => {
@@ -472,11 +486,12 @@ exports.getDetail = async ({ user, id } = {}) => {
     throw err('Đề xuất không ở trạng thái trình ký', 400);
   }
   const detail = await buildDetail(proposal, scope);
+  const financeCanView = scope.isFinance && await exports.canReadChairmanProposal({ user, id: proposal.id });
   const canView = scope.isManager || !!detail.can_sign || !!detail.is_my_signed
-    || Number(proposal.user_id) === Number(scope.userId);
+    || Number(proposal.user_id) === Number(scope.userId) || financeCanView;
   if (!canView) throw err('Bạn không có quyền xem hồ sơ trình ký này', 403);
   let visibleDetail = detail;
-  if (!scope.isManager && Number(proposal.user_id) !== Number(scope.userId)) {
+  if (!scope.isManager && !financeCanView && Number(proposal.user_id) !== Number(scope.userId)) {
     const visibleDocuments = detail.documents.filter((document) => (
       document.signers.some((config) => Number(config.user_id) === Number(scope.userId))
     ));
@@ -517,7 +532,7 @@ exports.getDetail = async ({ user, id } = {}) => {
     initial_proposal_data: initialProposalData,
     sign_status_label: SIGN_STATUS_LABELS[visibleDetail.sign_status],
     can_reject: scope.role === 'SUPER_ADMIN' || !!scope.isTgd,
-    can_upload_signed: scope.role === 'SUPER_ADMIN' || !!scope.isBackOffice,
+    can_upload_signed: scope.role === 'SUPER_ADMIN' || !!scope.isFinance,
     can_request_rework: (scope.role === 'SUPER_ADMIN' || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
       && proposal.status === SIGNATURE_PENDING,
     can_withdraw: (user.role === 'SUPER_ADMIN' || scope.isBackOffice)
@@ -553,12 +568,12 @@ const notifyRecipients = async (userIds, { type, title, message, entityId, actor
   }
 };
 
-const backOfficeUserIds = async () => {
+const chairmanUserIds = async () => {
   const [rows] = await pool.query("SELECT id, role, custom_data FROM users WHERE status = 'ACTIVE'");
   return rows
     .filter((row) => row.role === 'SUPER_ADMIN'
       || (['ADMIN', 'SALES'].includes(row.role)
-        && proposalReportService.isBackOffice(parseCustomData(row.custom_data).department)))
+        && proposalReportService.isFinanceDepartment(parseCustomData(row.custom_data).department)))
     .map((row) => Number(row.id));
 };
 
@@ -686,10 +701,10 @@ const sign = async ({ user, id, documentId, fileId, ip, mutationConnection } = {
   if (allDocumentsSigned) {
     const code = notificationService.proposalCode(proposal.custom_data, proposal.id);
     const actorName = (await notificationService.getUserName(user.id)) || 'Hệ thống';
-    await notifyRecipients((await backOfficeUserIds()), {
+    await notifyRecipients((await chairmanUserIds()), {
       type: SIGN_STATUS.DONE,
       title: 'Đã đủ chữ ký — trình chủ tịch',
-      message: `${code} đã đủ chữ ký (${actorName}). Back Office vui lòng xuất file và trình chủ tịch ký phê duyệt.`,
+      message: `${code} đã đủ chữ ký (${actorName}). Phòng Tài chính và Kế toán vui lòng xuất file và trình chủ tịch ký phê duyệt.`,
       entityId: proposal.id,
       actorId: user.id
     });
@@ -817,8 +832,8 @@ exports.requestRework = async ({ user, id, reason, ip } = {}) => {
 
 const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments, ip, mutationConnection } = {}) => {
   const scope = await resolveScope(user);
-  if (scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
-    throw err('Chỉ Back Office hoặc SUPER_ADMIN được tải lên file đã ký', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isFinance) {
+    throw err('Chỉ Phòng Tài chính và Kế toán hoặc SUPER_ADMIN được tải lên file chủ tịch đã ký', 403);
   }
   const proposal = await loadProposal(id);
   if (proposal.status !== SIGNATURE_PENDING) {
@@ -931,7 +946,7 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
 
   const message = await buildMessage(proposal, user.id, {
     status: APPROVED,
-    actionLabel: 'Back Office',
+    actionLabel: 'Người tải file chủ tịch',
     reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
   });
   await notifyRecipients(configs.map((config) => config.user_id), {
@@ -987,9 +1002,9 @@ exports.completeSigning = async ({ user, id, reason, ip } = {}) => {
     }
   });
   if (!result.already_completed) {
-    await notifyRecipients(await backOfficeUserIds(), {
+    await notifyRecipients(await chairmanUserIds(), {
       type: SIGN_STATUS.DONE, title: 'SUPER_ADMIN đã xác nhận hoàn tất ký',
-      message: `Đề xuất #${proposalId} đã được SUPER_ADMIN xác nhận hoàn tất khâu ký. Lý do: ${cleanReason}. Back Office vui lòng tải lên file BCĐX đã ký để kết thúc.`,
+      message: `Đề xuất #${proposalId} đã được SUPER_ADMIN xác nhận hoàn tất khâu ký. Lý do: ${cleanReason}. Phòng Tài chính và Kế toán vui lòng trình chủ tịch và tải lên file BCĐX đã ký để kết thúc.`,
       entityId: proposalId, actorId: user.id,
     });
   }
@@ -997,8 +1012,8 @@ exports.completeSigning = async ({ user, id, reason, ip } = {}) => {
 };
 exports.uploadSignedFile = async (args = {}) => {
   const scope = await resolveScope(args.user);
-  if (scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice) {
-    throw err('Chỉ Back Office hoặc SUPER_ADMIN được tải lên file đã ký', 403);
+  if (scope.role !== 'SUPER_ADMIN' && !scope.isFinance) {
+    throw err('Chỉ Phòng Tài chính và Kế toán hoặc SUPER_ADMIN được tải lên file chủ tịch đã ký', 403);
   }
   return withSignatureMutationLock(args.id, (mutationConnection) => (
     uploadSignedFile({ ...args, mutationConnection })

@@ -80,6 +80,11 @@ const canAccessFile = async (file, req) => {
            AND status<>'CANCELLED' AND (document_id=? OR file_id=?) LIMIT 1`,
         [document.proposal_id, requesterId, document.id, file.id]);
       if (configs.length) return true;
+      if (['ADMIN', 'SALES'].includes(requesterRole)
+        && require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+        && await require('../services/proposalSignatureService').canReadChairmanProposal({
+          user: { id: requesterId, role: requesterRole }, id: document.proposal_id
+        })) return true;
       try {
         await require('../services/proposalReportService').assertReportReadAccess(
           { id: requesterId, role: requesterRole }, document.proposal_id);
@@ -136,6 +141,26 @@ const canAccessFile = async (file, req) => {
     }
   }
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
+  if (requesterId && requesterRole === 'SALES'
+    && require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)) {
+    const [proposals] = await pool.query(
+      `SELECT id AS proposal_id FROM station_proposals WHERE signed_file_id=?
+       UNION SELECT proposal_id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'`,
+      [file.id, file.id]);
+    for (const proposal of proposals) {
+      if (await require('../services/proposalSignatureService').canReadChairmanProposal({
+        user: { id: requesterId, role: requesterRole }, id: proposal.proposal_id
+      })) return true;
+    }
+    const [linkedProposals] = await pool.query(
+      "SELECT id,custom_data FROM station_proposals WHERE status IN ('SIGNATURE_PENDING','APPROVED') AND custom_data IS NOT NULL");
+    for (const proposal of linkedProposals) {
+      if (containsFileId(proposal.custom_data, Number(file.id))
+        && await require('../services/proposalSignatureService').canReadChairmanProposal({
+          user: { id: requesterId, role: requesterRole }, id: proposal.id
+        })) return true;
+    }
+  }
   const reqIp = req.ip || req.connection?.remoteAddress || null;
   if (file.uploaded_by === null && file.submitter_ip && reqIp && file.submitter_ip === reqIp) return true;
   if (!requesterId) {
