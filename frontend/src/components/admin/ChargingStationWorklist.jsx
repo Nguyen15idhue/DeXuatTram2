@@ -58,7 +58,9 @@ const ChargingStationWorklist = ({ stage }) => {
       { key: 'owner_name', label: 'Chủ trạm' }, { key: 'owner_phone', label: 'SĐT' },
       { key: 'address', label: 'Địa chỉ', render: (value) => <span className="block max-w-56 truncate" title={value}>{value || '—'}</span> },
       { key: 'status', label: 'Trạng thái tổng hợp', render: (value) => <Badge size="sm" variant={CS_STATUS_VARIANT[value]}>{CS_STATUS_LABELS[value] || value}</Badge> },
-      { key: 'fulfillment', label: 'Trụ đã ON / chốt', render: (value) => value?.totals ? `${value.totals.operating || 0} / ${value.totals.committed || 0}` : '—' }
+      { key: 'fulfillment', label: 'Trụ đã ON / chốt', render: (value) => value?.needs_review
+        ? <span role="alert" className="text-warning" title={value.review_message}>Cần đối soát trụ</span>
+        : value?.totals ? `${value.totals.operating || 0} / ${value.totals.committed || 0}` : '—' }
     ]} actions={(row) => <div className="flex items-center gap-1">
       <Button size="xs" variant="outline" onClick={() => setSelected(row)}>Các phần trụ / thao tác</Button>
     </div>} />

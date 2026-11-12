@@ -7,6 +7,7 @@ import { AlertTriangle, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationCareModal from './ChargingStationCareModal';
+import { formatChotTruRows } from '../../utils/proposalSignature';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import {
   CS_CONTRACT_LABELS,
@@ -49,6 +50,7 @@ const ChargingStationTab = ({ stage }) => {
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 });
   const [search, setSearch] = useState('');
@@ -71,13 +73,16 @@ const ChargingStationTab = ({ stage }) => {
   const load = useCallback(async (targetPage) => {
     if (!token) return;
     setLoading(true);
+    setLoadError('');
     try {
       const params = new URLSearchParams({ stage, tab, page: targetPage, limit: PAGE_SIZE });
       if (debouncedSearch) params.set('search', debouncedSearch);
       const res = await chargingStationService.getAll(params.toString(), token);
+      if (res?.success === false) throw new Error(res.message || 'Không tải được danh sách ON trạm');
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: PAGE_SIZE, total: 0, totalPages: 1 });
     } catch (error) {
+      setLoadError(error?.message || 'Không tải được danh sách ON trạm');
       setToast({ message: error?.message || 'Không tải được danh sách ON trạm', type: 'error' });
       setItems([]);
     } finally {
@@ -237,6 +242,8 @@ const ChargingStationTab = ({ stage }) => {
     },
     { key: 'owner_name', label: 'Chủ trạm', render: (value) => value || '—' },
     { key: 'owner_phone', label: 'SĐT', render: (value) => value || '—' },
+    { key: 'chot_so_luong_tru', label: 'Số lượng trụ chốt',
+      render: (value) => <span className="whitespace-normal">{formatChotTruRows(value)}</span> },
     {
       key: 'address',
       label: 'Địa chỉ',
@@ -348,6 +355,7 @@ const ChargingStationTab = ({ stage }) => {
   return (
     <div className="space-y-4">
       <Toast message={toast.message} type={toast.type} onClose={closeToast} />
+      {loadError && <div role="alert" className="alert alert-error">{loadError}</div>}
 
       <ConfirmDialog
         isOpen={statusDialog.open}

@@ -706,7 +706,7 @@ const markFailed = async (stationId, exportId, body = {}, user, ctx = {}) => {
   }
 };
 
-const getSummary = async (stationId, executor = pool) => {
+const getSummary = async (stationId, executor = pool, { initialize = true, allowReview = false } = {}) => {
   stationId = idOf(stationId, 'Mã ON trạm');
   const [stations] = await executor.query(
     `SELECT cs.id, cs.fulfillment_review_required, p.chot_so_luong_tru,
@@ -815,9 +815,17 @@ const getSummary = async (stationId, executor = pool) => {
     total.operating += item.operating_quantity;
   }
   const committedSnapshot = parseJson(stations[0].chot_so_luong_tru);
-  if (!items.length && Array.isArray(committedSnapshot) && committedSnapshot.length) {
+  if (!items.length && Array.isArray(committedSnapshot)) {
+    total.committed = committedSnapshot.reduce((sum, row) => {
+      const quantity = Number(row?.quantity ?? row?.so_luong);
+      return sum + (Number.isFinite(quantity) && quantity > 0 ? quantity : 0);
+    }, 0);
+    total.remaining = total.committed;
+  }
+  if (initialize && !items.length && Array.isArray(committedSnapshot) && committedSnapshot.length) {
     if (executor === pool) {
       const connection = await pool.getConnection();
+      let reviewError;
       try {
         await connection.beginTransaction();
         await ensureCommitments(connection, stationId);
@@ -826,10 +834,14 @@ const getSummary = async (stationId, executor = pool) => {
         return summary;
       } catch (error) {
         await connection.rollback();
-        throw error;
+        if (!allowReview || error.statusCode !== 409) throw error;
+        reviewError = error;
       } finally {
         connection.release();
       }
+      console.error('[ChargingStationShipping] Commitment reconciliation required:', { stationId, message: reviewError.message });
+      const summary = await getSummary(stationId, pool, { initialize: false });
+      return { ...summary, needs_review: true, review_message: reviewError.message, shipping_options: [] };
     }
     await ensureCommitments(executor, stationId);
     return getSummary(stationId, executor);

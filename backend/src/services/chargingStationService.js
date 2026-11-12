@@ -549,7 +549,9 @@ const listChargingStations = async ({
     items: await Promise.all(rows.map(async (row) => {
       const record = withReadiness(row);
       const deadlineActive = readiness.isDeadlineActive(record);
-      const fulfillment = await require('./chargingStationShippingService').getSummary(row.id);
+      const fulfillment = await require('./chargingStationShippingService').getSummary(row.id, pool, {
+        initialize: !!stage && stage !== 'thong-tin-chung', allowReview: true
+      });
       return {
         ...record,
         permissions,
@@ -578,6 +580,7 @@ const listChargingStations = async ({
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status),
         can_mark_on_station_active: user?.role === 'SUPER_ADMIN'
+          && !fulfillment.needs_review
           && !fulfillment.items.length
           && record.status !== 'CANCELLED'
           && ['APPROVED', 'CONTRACT_SIGNED', 'DEPLOYING', 'ACTIVE'].includes(record.proposal_status)
