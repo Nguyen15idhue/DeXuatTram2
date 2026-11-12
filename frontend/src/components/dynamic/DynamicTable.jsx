@@ -315,7 +315,7 @@ const toDisplayValue = (val) => {
         order.push(`__d:${col.field_key || col.key}`);
         if (pinActions && ci === pinAfterIdx) order.push('__pin');
       });
-      order.push('__end');
+      if (!pinActions && showActions) order.push('__end');
       const headCount = wrap.querySelectorAll('thead tr:first-child > th').length;
       if (headCount === 0 || headCount !== order.length) return;
       const headCells = [...wrap.querySelectorAll('thead tr:first-child > th')];
@@ -365,7 +365,7 @@ const toDisplayValue = (val) => {
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [frozenKeys, hasSelection, hasLeading, visibleColumns, pinActions, pinAfterIdx, (data || []).length]);
+  }, [frozenKeys, hasSelection, hasLeading, visibleColumns, pinActions, pinAfterIdx, showActions, (data || []).length]);
 
   if (error) return <div className="alert alert-error"><span>{error}</span></div>;
   if (columns.length === 0 && !loading) return <div className="text-center py-8 text-base-content/40">Chưa có cột nào được cấu hình</div>;

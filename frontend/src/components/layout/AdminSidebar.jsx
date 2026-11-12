@@ -345,6 +345,7 @@ const proposalTaskKeyByPath = {
 };
 
 const chargingStationTaskKeyByPath = {
+  "/admin/on-tram/thong-tin-chung": "overview",
   "/admin/on-tram/khoi-tao-hop-dong": "contract",
   "/admin/on-tram/xay-dung-ha-tang": "infrastructure",
   "/admin/on-tram/giao-tru": "delivery",
@@ -354,6 +355,7 @@ const chargingStationTaskKeyByPath = {
 };
 
 const chargingStationTaskTitleByKey = {
+  overview: "trạm chưa ON toàn bộ",
   contract: "công việc Khởi tạo hợp đồng",
   infrastructure: "công việc Xây dựng hạ tầng",
   delivery: "công việc Giao trụ",
@@ -610,6 +612,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
         const response = await chargingStationService.getTaskCounts(token);
         const counts = response?.data?.counts;
         const taskKeys = [
+          "overview",
           "contract",
           "infrastructure",
           "delivery",
@@ -618,7 +621,7 @@ const AdminSidebar = ({ onNavClick, showBell = true }) => {
           "on_station",
           "finance",
         ];
-        const onStationTaskKeys = taskKeys.filter((key) => key !== "finance");
+        const onStationTaskKeys = taskKeys.filter((key) => !["finance", "overview"].includes(key));
         if (
           response?.success !== true ||
           !counts ||

@@ -55,7 +55,11 @@ const ChargingStationContractTabs = () => {
   const debouncedSearch = useDebouncedValue(search, 400);
   const [busyId, setBusyId] = useState(null);
   const [uploadStation, setUploadStation] = useState(null);
-  const [contractFile, setContractFile] = useState(null);
+  const [contractFiles, setContractFiles] = useState([]);
+  const [uploadedContractIds, setUploadedContractIds] = useState([]);
+  const [contractEffectiveDate, setContractEffectiveDate] = useState('');
+  const [contractExpiryDate, setContractExpiryDate] = useState('');
+  const [contractNote, setContractNote] = useState('');
   const [extendStation, setExtendStation] = useState(null);
   const [extendReason, setExtendReason] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -104,15 +108,6 @@ const ChargingStationContractTabs = () => {
           className="link link-primary underline text-left"
         >
           {value || `#${row.id}`}
-        </Link>
-      )
-    },
-    {
-      key: 'ma_de_xuat',
-      label: 'Mã đề xuất',
-      render: (value, row) => (
-        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary underline text-left">
-          {value || `#${row.proposal_id}`}
         </Link>
       )
     },
@@ -215,32 +210,52 @@ const ChargingStationContractTabs = () => {
   };
 
   const completeContract = async () => {
-    if (!uploadStation || !contractFile) {
+    if (!uploadStation || !contractFiles.length) {
       setToast({ message: 'Vui lòng chọn file hợp đồng', type: 'error' });
       return;
     }
-    if (!CONTRACT_MIME_TYPES.includes(contractFile.type)) {
+    if (contractFiles.some(file => !CONTRACT_MIME_TYPES.includes(file.type))) {
       setToast({ message: 'File hợp đồng phải có định dạng PDF hoặc DOCX', type: 'error' });
       return;
     }
-    if (contractFile.size > FILE_MAX_SIZE) {
+    if (contractFiles.some(file => file.size > FILE_MAX_SIZE)) {
       setToast({ message: 'File hợp đồng không được vượt quá 10 MB', type: 'error' });
+      return;
+    }
+    if (!contractEffectiveDate || !contractExpiryDate) {
+      setToast({ message: 'Vui lòng nhập ngày hiệu lực và ngày hết hạn hợp đồng', type: 'error' });
+      return;
+    }
+    if (contractExpiryDate <= contractEffectiveDate) {
+      setToast({ message: 'Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng', type: 'error' });
       return;
     }
 
     setUploading(true);
     try {
-      const data = new FormData();
-      data.append('file', contractFile);
-      data.append('originalName', contractFile.name);
-      const uploaded = await api.uploadWithAuth('/files/upload', data, token);
-      if (!uploaded?.success || !uploaded.data?.id) {
-        throw new Error(uploaded?.message || 'Tải file hợp đồng thất bại');
+      const fileIds = [...uploadedContractIds];
+      for (let index = fileIds.length; index < contractFiles.length; index++) {
+        const file = contractFiles[index];
+        const data = new FormData();
+        data.append('file', file);
+        data.append('originalName', file.name);
+        const uploaded = await api.uploadWithAuth('/files/upload', data, token);
+        if (!uploaded?.success || !uploaded.data?.id) {
+          throw new Error(uploaded?.message || `Tải file ${file.name} thất bại`);
+        }
+        fileIds.push(uploaded.data.id);
+        setUploadedContractIds([...fileIds]);
       }
-      const completed = await chargingStationService.completeContract(uploadStation.id, uploaded.data.id, token);
+      const completed = await chargingStationService.completeContract(uploadStation.id, {
+        file_ids: fileIds,
+        contract_effective_date: contractEffectiveDate,
+        contract_expiry_date: contractExpiryDate,
+        contract_note: contractNote.trim()
+      }, token);
       if (!completed?.success) throw new Error(completed?.message || 'Không thể hoàn tất hợp đồng');
       setUploadStation(null);
-      setContractFile(null);
+      setContractFiles([]);
+      setUploadedContractIds([]);
       setToast({ message: completed.message || 'Đã tải hợp đồng và hoàn tất thủ tục', type: 'success' });
       await load(page);
     } catch (error) {
@@ -279,7 +294,11 @@ const ChargingStationContractTabs = () => {
     if (row.contract_status === 'DOING') {
       return (
         <Button variant="primary" size="xs" disabled={busyId !== null || uploading} onClick={() => {
-          setContractFile(null);
+          setContractFiles([]);
+          setUploadedContractIds([]);
+          setContractEffectiveDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
+          setContractExpiryDate('');
+          setContractNote('');
           setUploadStation(row);
         }}>
           Tải file hợp đồng
@@ -347,27 +366,42 @@ const ChargingStationContractTabs = () => {
 
       <Dialog
         isOpen={!!uploadStation}
-        onClose={() => { if (!uploading) { setUploadStation(null); setContractFile(null); } }}
+        onClose={() => { if (!uploading) setUploadStation(null); }}
         title={uploadStation ? `Tải hợp đồng — ${uploadStation.ma_tram || `#${uploadStation.id}`}` : 'Tải hợp đồng'}
         size="md"
       >
         <div className="space-y-4">
           <p className="text-sm text-base-content/70">
-            Chọn file PDF hoặc DOCX. Xác nhận sẽ lưu hợp đồng và chuyển hợp đồng sang Đã ký.
+            Chọn một hoặc nhiều file PDF/DOCX (tối đa 10 MB mỗi file). Xác nhận sẽ lưu thông tin và chuyển hợp đồng sang Đã ký.
           </p>
+          <label htmlFor="contract-files" className="block text-sm font-medium">File hợp đồng <span className="text-error">*</span></label>
           <input
+            id="contract-files"
             type="file"
+            multiple
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="file-input file-input-bordered w-full"
             disabled={uploading}
-            onChange={(event) => setContractFile(event.target.files?.[0] || null)}
+            onChange={(event) => {
+              setContractFiles(Array.from(event.target.files || []));
+              setUploadedContractIds([]);
+            }}
           />
-          {contractFile && <p className="break-all text-sm">{contractFile.name}</p>}
+          {contractFiles.length > 0 && <ul className="list-disc pl-5 text-sm">{contractFiles.map((file, index) => <li key={index} className="break-all">{file.name}</li>)}</ul>}
+          <Input label="Ngày hiệu lực hợp đồng" aria-label="Ngày hiệu lực hợp đồng" type="date" required
+            value={contractEffectiveDate} disabled={uploading} onChange={event => setContractEffectiveDate(event.target.value)} />
+          <Input label="Ngày hết hạn hợp đồng" aria-label="Ngày hết hạn hợp đồng" type="date" required
+            value={contractExpiryDate} disabled={uploading} onChange={event => setContractExpiryDate(event.target.value)} />
+          <label className="block text-sm font-medium">
+            Ghi chú
+            <textarea className="textarea textarea-bordered mt-2 w-full" rows={3} value={contractNote}
+              disabled={uploading} onChange={event => setContractNote(event.target.value)} />
+          </label>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" disabled={uploading} onClick={() => { setUploadStation(null); setContractFile(null); }}>
+            <Button variant="ghost" disabled={uploading} onClick={() => setUploadStation(null)}>
               Hủy
             </Button>
-            <Button variant="primary" loading={uploading} disabled={!contractFile || uploading} onClick={completeContract}>
+            <Button variant="primary" loading={uploading} disabled={!contractFiles.length || uploading} onClick={completeContract}>
               Xác nhận tải lên
             </Button>
           </div>

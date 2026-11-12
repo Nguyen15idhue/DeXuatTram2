@@ -91,8 +91,9 @@ const canAccessFile = async (file, req) => {
   }
   if (requesterId) {
     const [contractStations] = await pool.query(
-      'SELECT id FROM charging_stations WHERE contract_file_id = ? LIMIT 1',
-      [file.id]
+      `SELECT id FROM charging_stations WHERE contract_file_id = ?
+       UNION SELECT charging_station_id AS id FROM charging_station_contract_files WHERE file_id = ? LIMIT 1`,
+      [file.id, file.id]
     );
     if (contractStations.length > 0) {
       return require('../services/chargingStationService').canViewChargingStation(
@@ -405,8 +406,9 @@ exports.delete = async (req, res) => {
     const [linkedOnFiles] = await pool.query(
       `SELECT id FROM charging_station_deployments WHERE acceptance_file_id=?
        UNION SELECT id FROM charging_stations WHERE acceptance_file_id=? OR contract_file_id=?
+       UNION SELECT id FROM charging_station_contract_files WHERE file_id=?
        UNION SELECT id FROM charging_station_invoices WHERE evidence_file_id=? LIMIT 1`,
-      [file.id, file.id, file.id, file.id]);
+      [file.id, file.id, file.id, file.id, file.id]);
     if (linkedOnFiles.length) {
       return res.status(409).json({ success: false, message: 'Không được xóa chứng từ hợp đồng, nghiệm thu hoặc hóa đơn ON trạm đang sử dụng' });
     }

@@ -50,8 +50,16 @@ const FIELD_LABELS = {
   cms_station_code: 'Mã trạm trên CMS',
   contract_status: 'Trạng thái hợp đồng',
   contract_file_id: 'File hợp đồng',
+  contract_files: 'Các file hợp đồng',
+  contract_effective_date: 'Ngày hiệu lực hợp đồng',
+  contract_expiry_date: 'Ngày hết hạn hợp đồng',
+  contract_note: 'Ghi chú hợp đồng',
   infra_power_status: 'Hạ tầng điện',
   infra_site_status: 'Hạ tầng mặt bằng',
+  infra_power_date: 'Ngày thực hiện hạ tầng điện',
+  infra_power_note: 'Ghi chú hạ tầng điện',
+  infra_site_date: 'Ngày thực hiện hạ tầng mặt bằng',
+  infra_site_note: 'Ghi chú hạ tầng mặt bằng',
   payment_status: 'Trạng thái thanh toán',
   deposit_status: 'Trạng thái tiền cọc',
   description: 'Mô tả',
@@ -140,7 +148,13 @@ const CS_SELECT = `SELECT cs.id, cs.ma_tram, cs.proposal_id,
     cs.acceptance_file_id, cs.acceptance_user_id,
     DATE_FORMAT(cs.acceptance_date, '%Y-%m-%d') AS acceptance_date,
     cs.status, cs.sub_status, cs.contract_status, cs.contract_file_id,
+    DATE_FORMAT(cs.contract_effective_date, '%Y-%m-%d') AS contract_effective_date,
+    DATE_FORMAT(cs.contract_expiry_date, '%Y-%m-%d') AS contract_expiry_date,
+    cs.contract_note,
     cs.infra_power_status, cs.infra_site_status, cs.payment_status, cs.deposit_status,
+    DATE_FORMAT(cs.infra_power_date, '%Y-%m-%d') AS infra_power_date,
+    DATE_FORMAT(cs.infra_site_date, '%Y-%m-%d') AS infra_site_date,
+    cs.infra_power_note, cs.infra_site_note,
     DATE_FORMAT(cs.contract_deadline_at, '%Y-%m-%d %H:%i:%s') AS contract_deadline_at,
     DATE_FORMAT(cs.infra_deadline_at, '%Y-%m-%d %H:%i:%s') AS infra_deadline_at,
     DATE_FORMAT(cs.finance_deadline_at, '%Y-%m-%d %H:%i:%s') AS finance_deadline_at,
@@ -602,6 +616,7 @@ const getChargingStationTaskCounts = async (user) => {
   const tasks = await stationWork.actionable(user);
   const expressions = Object.entries(tasks.expressions).map(([key, condition]) =>
     `COUNT(CASE WHEN cs.status<>'CANCELLED' AND (${condition}) THEN cs.id END) AS ${key}`);
+  expressions.push(`COUNT(CASE WHEN cs.status<>'CANCELLED' AND NOT ${stationWork.allOperating} THEN cs.id END) AS overview`);
   const [rows] = await pool.query(
     `SELECT ${expressions.join(', ')}
        FROM charging_stations cs
@@ -611,6 +626,7 @@ const getChargingStationTaskCounts = async (user) => {
   );
   const row = rows[0] || {};
   const counts = {
+    overview: Number(row.overview || 0),
     contract: Number(row.contract || 0),
     infrastructure: Number(row.infrastructure || 0),
     delivery: Number(row.delivery || 0),
@@ -635,6 +651,14 @@ const getChargingStationTaskCounts = async (user) => {
 const getChargingStationDetail = async (id, user = null) => {
   await assertCanViewChargingStation(id, user);
   const record = await requireRecord(id);
+  const [contractFiles] = await pool.query(
+    `SELECT f.id, f.original_name, f.mime_type, f.size
+       FROM charging_station_contract_files cf
+       JOIN files f ON f.id = cf.file_id
+      WHERE cf.charging_station_id = ?
+      ORDER BY cf.sort_order, cf.id`,
+    [record.id]
+  );
   const [images] = await pool.query(
     `SELECT f.id, f.original_name, f.mime_type, f.size, i.sort_order
      FROM charging_station_images i
@@ -675,6 +699,7 @@ const getChargingStationDetail = async (id, user = null) => {
   }
   return {
     ...record,
+    contract_files: contractFiles,
     proposal,
     permissions: user ? await stationAccess.permissions(user) : {},
     fulfillment: await require('./chargingStationShippingService').getSummary(record.id),
@@ -1189,10 +1214,31 @@ const startContractSigning = async (id, user, ctx = {}) => {
   return getChargingStationDetail(stationId, user);
 };
 
-const completeContract = async (id, fileId, user, ctx = {}) => {
+const completeContract = async (id, body, user, ctx = {}) => {
   await assertBackOfficeManager(user);
   const stationId = normalizeId(id, 'Mã bản ghi');
-  const normalizedFileId = normalizeId(fileId, 'File hợp đồng');
+  if (!Array.isArray(body.file_ids) || !body.file_ids.length) {
+    throw err('Vui lòng chọn ít nhất một file hợp đồng', 400);
+  }
+  const fileIds = [...new Set(body.file_ids.map(value => normalizeId(value, 'File hợp đồng')))];
+  const contractDates = {};
+  for (const key of ['contract_effective_date', 'contract_expiry_date']) {
+    const value = body[key];
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
+      || !normalizeDate(value) || new Date(value).toISOString().slice(0, 10) !== value) {
+      throw err(`${FIELD_LABELS[key]} không hợp lệ (YYYY-MM-DD)`, 400);
+    }
+    contractDates[key] = value;
+  }
+  if (contractDates.contract_expiry_date <= contractDates.contract_effective_date) {
+    throw err('Ngày hết hạn hợp đồng phải sau ngày hiệu lực hợp đồng', 400);
+  }
+  if (body.contract_note != null && typeof body.contract_note !== 'string') {
+    throw err('Ghi chú hợp đồng phải là văn bản', 400);
+  }
+  const contractNote = (body.contract_note || '').trim();
+  if (Buffer.byteLength(contractNote, 'utf8') > 65535) throw err('Ghi chú hợp đồng quá dài', 400);
+  const normalizedFileId = fileIds[0];
   await assertCanViewChargingStation(stationId, user);
   const connection = await pool.getConnection();
   let transactionStarted = false;
@@ -1202,7 +1248,7 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
     transactionStarted = true;
     const [rows] = await connection.query(
       `SELECT id, proposal_id, ma_tram, status, contract_status, contract_file_id, infra_power_status,
-              infra_site_status, payment_status
+              infra_site_status, payment_status, contract_effective_date, contract_expiry_date, contract_note
          FROM charging_stations
         WHERE id = ? FOR UPDATE`,
       [stationId]
@@ -1215,21 +1261,29 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
     }
 
     const [files] = await connection.query(
-      "SELECT id, mime_type, uploaded_by, status FROM files WHERE id = ? AND status <> 'deleted'",
-      [normalizedFileId]
+      "SELECT id, mime_type, uploaded_by, status FROM files WHERE id IN (?) AND status <> 'deleted' FOR UPDATE",
+      [fileIds]
     );
-    if (!files.length) throw err('Không tìm thấy file hợp đồng', 400);
-    const file = files[0];
-    if (Number(file.uploaded_by) !== Number(user.id)) {
-      throw err('Chỉ được gắn file do chính bạn tải lên', 403);
-    }
-    if (!CONTRACT_FILE_MIME_TYPES.includes(String(file.mime_type || '').toLowerCase())) {
-      throw err('File hợp đồng phải có định dạng PDF hoặc DOCX', 400);
+    if (files.length !== fileIds.length) throw err('Không tìm thấy file hợp đồng', 400);
+    for (const file of files) {
+      if (Number(file.uploaded_by) !== Number(user.id)) {
+        throw err('Chỉ được gắn file do chính bạn tải lên', 403);
+      }
+      if (!CONTRACT_FILE_MIME_TYPES.includes(String(file.mime_type || '').toLowerCase())) {
+        throw err('File hợp đồng phải có định dạng PDF hoặc DOCX', 400);
+      }
     }
 
     await connection.query(
-      "UPDATE charging_stations SET contract_status = 'DONE', contract_file_id = ?, payment_status=CASE WHEN payment_status='NOT' THEN 'DOING' ELSE payment_status END WHERE id = ?",
-      [normalizedFileId, stationId]
+      `UPDATE charging_stations SET contract_status = 'DONE', contract_file_id = ?,
+       contract_effective_date = ?, contract_expiry_date = ?, contract_note = ?,
+       payment_status=CASE WHEN payment_status='NOT' THEN 'DOING' ELSE payment_status END WHERE id = ?`,
+      [normalizedFileId, contractDates.contract_effective_date, contractDates.contract_expiry_date, contractNote || null, stationId]
+    );
+    await connection.query('DELETE FROM charging_station_contract_files WHERE charging_station_id = ?', [stationId]);
+    await connection.query(
+      'INSERT INTO charging_station_contract_files (charging_station_id, file_id, sort_order) VALUES ?',
+      [fileIds.map((fileId, index) => [stationId, fileId, index])]
     );
     const contractChanges = {
       contract_status: { label: FIELD_LABELS.contract_status, old: 'DOING', new: 'DONE' },
@@ -1239,6 +1293,10 @@ const completeContract = async (id, fileId, user, ctx = {}) => {
         new: String(normalizedFileId)
       }
     };
+    contractChanges.contract_files = { label: FIELD_LABELS.contract_files, old: '', new: fileIds.join(', ') };
+    for (const [key, value] of Object.entries({ ...contractDates, contract_note: contractNote })) {
+      contractChanges[key] = { label: FIELD_LABELS[key], old: toText(current[key]), new: value };
+    }
     if (current.payment_status === 'NOT') {
       contractChanges.payment_status = { label: FIELD_LABELS.payment_status, old: 'NOT', new: 'DOING' };
     }
@@ -1294,7 +1352,25 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
   await assertBackOfficeManager(user);
   const field = INFRA_FIELD_BY_TYPE[type];
   if (!field) throw err('Loại hạ tầng không hợp lệ', 400);
-  if (!['start', 'complete'].includes(action)) throw err('Thao tác hạ tầng không hợp lệ', 400);
+  const isStatusUpdate = action !== null && typeof action === 'object';
+  if (!isStatusUpdate && !['start', 'complete'].includes(action)) throw err('Thao tác hạ tầng không hợp lệ', 400);
+  const body = isStatusUpdate ? action : {
+    status: action === 'start' ? 'DOING' : 'DONE',
+    date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+  };
+  const statuses = ['NOT', 'DOING', 'DONE'];
+  if (!statuses.includes(body.status)) throw err('Trạng thái hạ tầng không hợp lệ', 400);
+  if (isStatusUpdate && !statuses.includes(body.expected_status)) throw err('Thiếu trạng thái hạ tầng hiện tại', 400);
+  if (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)
+    || !normalizeDate(body.date) || new Date(body.date).toISOString().slice(0, 10) !== body.date) {
+    throw err('Ngày thực hiện không hợp lệ (YYYY-MM-DD)', 400);
+  }
+  if (body.note != null && typeof body.note !== 'string') throw err('Ghi chú phải là văn bản', 400);
+  const note = (body.note || '').trim();
+  if (Buffer.byteLength(note, 'utf8') > 65535) throw err('Ghi chú quá dài', 400);
+  const dateField = `infra_${type}_date`;
+  const noteField = `infra_${type}_note`;
+  const next = body.status;
 
   const stationId = normalizeId(id, 'Mã bản ghi');
   await assertCanViewChargingStation(stationId, user);
@@ -1315,25 +1391,32 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
       throw err('Không thể cập nhật hạ tầng của trạm đã hủy', 400);
     }
 
-    const expected = action === 'start' ? 'NOT' : 'DOING';
-    const next = action === 'start' ? 'DOING' : 'DONE';
-    if (current[field] !== expected) {
-      throw err(
-        action === 'start'
-          ? 'Hạng mục hạ tầng chỉ có thể bắt đầu khi đang ở trạng thái Chưa làm'
-          : 'Hạng mục hạ tầng chỉ có thể hoàn tất khi đang ở trạng thái Đang làm',
-        400
-      );
+    if (isStatusUpdate && current[field] !== body.expected_status) {
+      throw err('Trạng thái hạ tầng đã thay đổi. Vui lòng tải lại danh sách', 409);
+    }
+    if (user.role !== 'SUPER_ADMIN' && statuses.indexOf(next) !== statuses.indexOf(current[field]) + 1) {
+      throw err('Chỉ được chuyển tuần tự Chưa làm → Đang làm → Đã làm', 400);
+    }
+    if (!isStatusUpdate && current[field] !== (action === 'start' ? 'NOT' : 'DOING')) {
+      throw err('Trạng thái hạ tầng hiện tại không cho phép thao tác này', 400);
     }
 
-    await connection.query(`UPDATE charging_stations SET ${field} = ? WHERE id = ?`, [next, stationId]);
+    await connection.query(
+      `UPDATE charging_stations SET ${field} = ?, ${dateField} = ?, ${noteField} = ? WHERE id = ?`,
+      [next, body.date, note || null, stationId]
+    );
     await writeActivity(connection, {
       chargingStationId: stationId,
       action: 'infrastructure_status_changed',
-      changedFields: { [field]: { label: FIELD_LABELS[field], old: current[field] || 'NOT', new: next } },
+      changedFields: {
+        [field]: { label: FIELD_LABELS[field], old: current[field] || 'NOT', new: next },
+        [dateField]: { label: FIELD_LABELS[dateField], old: normalizeDate(current[dateField]), new: body.date },
+        [noteField]: { label: FIELD_LABELS[noteField], old: current[noteField] || '', new: note }
+      },
       actorId: ctx.actorId,
       actorRole: ctx.actorRole,
-      source: 'user',
+      source: isStatusUpdate && user.role === 'SUPER_ADMIN' && statuses.indexOf(next) !== statuses.indexOf(current[field]) + 1
+        ? 'admin_override' : 'user',
       ip: ctx.ip
     });
     await advanceToDeliveryIfReady(connection, { ...current, [field]: next }, ctx);
@@ -1345,7 +1428,7 @@ const updateInfrastructureStatus = async (id, type, action, user, ctx = {}) => {
   } finally {
     connection.release();
   }
-  if (action === 'complete') await advanceProposalToDeploying(proposalId, ctx);
+  if (next === 'DONE') await advanceProposalToDeploying(proposalId, ctx);
   return getChargingStationDetail(stationId, user);
 };
 
@@ -2048,7 +2131,7 @@ const changeStatus = async (id, { to_status: toStatus, sub_status: subStatus, re
 
     const backward = isBackward(current.status, toStatus);
     const cleanReason = toText(reason).trim();
-    if (backward && !cleanReason) throw err('Bắt buộc nhập lý do khi lùi bước', 400);
+    if (!cleanReason) throw err('Bắt buộc nhập lý do đổi trạng thái', 400);
     if (!backward && [STATUS.INSTALLING, STATUS.ACCEPTANCE, STATUS.CONFIGURING, STATUS.OPERATING].includes(toStatus)) {
       throw err('Hãy dùng thao tác chuyên biệt của quy trình Giao trụ / Lắp trụ để chuyển bước', 400);
     }

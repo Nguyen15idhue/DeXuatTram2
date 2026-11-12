@@ -35,13 +35,15 @@ test('receipt, installation, acceptance and operation filter separate progress',
   assert.match(work.stageFilters['xay-dung-ha-tang'].need, /infra_power_status/);
 });
 
-test('overview remains pending until every committed pole is operating and residual work closes', async () => {
+test('overview completion depends on all poles operating, not financial or contract paperwork', async () => {
   const completed = (await work.getFilter('thong-tin-chung', 'completed')).sql;
   assert.match(completed, /charging_station_commitments/);
   assert.match(completed, /stage='OPERATING'/);
-  assert.match(completed, /infra_site_status='DONE'/);
-  assert.match(completed, /REFUND_PENDING/);
-  assert.match(completed, /payment_status IN \('NOT','DOING'\)/);
+  assert.doesNotMatch(completed, /contract_status|infra_site_status|REFUND_PENDING|payment_status/);
+  const pending = await work.getFilter('thong-tin-chung', 'need');
+  assert.match(pending.sql, /NOT /);
+  assert.match(pending.sql, /CANCELLED/);
+  assert.deepEqual(pending.params, []);
 });
 
 test('unknown stages fail explicitly rather than returning a broader list', async () => {

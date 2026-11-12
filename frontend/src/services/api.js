@@ -760,11 +760,14 @@ export const chargingStationService = {
   startContractSigning(id, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/start`, {}, token));
   },
-  completeContract(id, fileId, token) {
-    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/complete`, { file_id: fileId }, token));
+  completeContract(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/complete`, data, token));
   },
   startInfrastructure(id, type, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/start`, {}, token));
+  },
+  updateInfrastructure(id, type, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/status`, data, token));
   },
   completeInfrastructure(id, type, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/complete`, {}, token));

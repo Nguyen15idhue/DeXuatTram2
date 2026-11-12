@@ -36,6 +36,9 @@ const MODEL_LABELS = {
 };
 
 const ACTION_LABELS = {
+  progress_created: 'Thêm tiến độ ON trạm',
+  progress_updated: 'Sửa tiến độ ON trạm',
+  progress_deleted: 'Xóa tiến độ ON trạm',
   created: 'Khởi tạo ON trạm',
   updated: 'Cập nhật thông tin',
   contract_signing_started: 'Bắt đầu ký hợp đồng',
@@ -224,11 +227,15 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
             <Badge variant={CS_FLOW_VARIANT[record.infra_power_status] || 'ghost'} outline>
               {CS_FLOW_LABELS[record.infra_power_status] || '—'}
             </Badge>
+            <p className="mt-1 text-xs">Ngày: {formatCsDate(record.infra_power_date)}</p>
+            {record.infra_power_note && <p className="whitespace-pre-wrap">{record.infra_power_note}</p>}
           </InfoItem>
           <InfoItem label="Hạ tầng mặt bằng">
             <Badge variant={CS_FLOW_VARIANT[record.infra_site_status] || 'ghost'} outline>
               {CS_FLOW_LABELS[record.infra_site_status] || '—'}
             </Badge>
+            <p className="mt-1 text-xs">Ngày: {formatCsDate(record.infra_site_date)}</p>
+            {record.infra_site_note && <p className="whitespace-pre-wrap">{record.infra_site_note}</p>}
           </InfoItem>
           <InfoItem label="Tiền cọc">
             <Badge variant={CS_DEPOSIT_VARIANT[record.deposit_status] || 'ghost'} outline>
@@ -258,23 +265,34 @@ const AdminChargingStationDetailPage = ({ stage = 'khoi-tao-hop-dong' }) => {
             ) : '—'}
           </InfoItem>
         </dl>
-        {record.contract_file_id && (
+        {(record.contract_files?.length || record.contract_file_id) && (
           <div className="border-t border-base-300 pt-3">
             <p className="mb-1 text-xs font-semibold text-base-content/60">File hợp đồng</p>
-            <button
+            {(record.contract_files?.length ? record.contract_files : [{
+              id: record.contract_file_id, original_name: record.contract_file_name,
+              mime_type: record.contract_file_mime_type
+            }]).map(file => <button
+              key={file.id}
               type="button"
               className="link link-primary inline-flex items-center gap-1 text-left text-sm"
               onClick={() => setViewingFile({
-                id: record.contract_file_id,
-                original_name: record.contract_file_name || `Hợp đồng #${record.contract_file_id}`,
-                mime_type: record.contract_file_mime_type
+                ...file,
+                original_name: file.original_name || `Hợp đồng #${file.id}`
               })}
             >
               <FileText size={14} />
-              {record.contract_file_name || `Hợp đồng #${record.contract_file_id}`}
-            </button>
+              {file.original_name || `Hợp đồng #${file.id}`}
+            </button>)}
           </div>
         )}
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <InfoItem label="Ngày hiệu lực hợp đồng" value={formatCsDate(record.contract_effective_date)} />
+          <InfoItem label="Ngày hết hạn hợp đồng" value={formatCsDate(record.contract_expiry_date)} />
+        </dl>
+        {record.contract_note && <div>
+          <p className="text-xs font-semibold text-base-content/60">Ghi chú hợp đồng</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm">{record.contract_note}</p>
+        </div>}
         {record.description && (
           <div>
             <p className="text-xs font-semibold text-base-content/60">Mô tả</p>

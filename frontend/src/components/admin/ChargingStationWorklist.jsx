@@ -54,7 +54,6 @@ const ChargingStationWorklist = ({ stage }) => {
     <FilterBar><Input placeholder="Tìm mã trạm, mã đề xuất, chủ trạm, địa chỉ…" value={search} onChange={(event) => setSearch(event.target.value)} className="!mb-0 flex-1" /></FilterBar>
     <ChargingStationTable loading={loading} data={items} startIndex={(page - 1) * 20} columns={[
       { key: 'ma_tram', label: 'Mã trạm', render: (value, row) => <Link className="link link-primary underline text-left" to={`/admin/on-tram/${stage}/${row.id}`} state={{ returnTo: location.pathname + location.search }}>{value || `#${row.id}`}</Link> },
-      { key: 'ma_de_xuat', label: 'Mã đề xuất', render: (value, row) => <Link className="link link-primary underline text-left" to={`/admin/proposals/chi-tiet/${row.proposal_id}`}>{value || `#${row.proposal_id}`}</Link> },
       { key: 'owner_name', label: 'Chủ trạm' }, { key: 'owner_phone', label: 'SĐT' },
       { key: 'address', label: 'Địa chỉ', render: (value) => <span className="block max-w-56 truncate" title={value}>{value || '—'}</span> },
       { key: 'status', label: 'Trạng thái tổng hợp', render: (value) => <Badge size="sm" variant={CS_STATUS_VARIANT[value]}>{CS_STATUS_LABELS[value] || value}</Badge> },

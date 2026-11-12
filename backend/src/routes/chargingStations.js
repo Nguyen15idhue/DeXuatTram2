@@ -325,10 +325,22 @@ router.post('/:id/contract/start', requireChargingStationViewer, chargingStation
  *         application/json:
  *           schema:
  *             type: object
- *             required: [file_id]
+ *             required: [file_ids, contract_effective_date, contract_expiry_date]
  *             properties:
- *               file_id:
- *                 type: integer
+ *               file_ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 items:
+ *                   type: integer
+ *               contract_effective_date:
+ *                 type: string
+ *                 format: date
+ *               contract_expiry_date:
+ *                 type: string
+ *                 format: date
+ *                 description: Phải sau ngày hiệu lực hợp đồng
+ *               contract_note:
+ *                 type: string
  *     responses:
  *       200:
  *         description: File hợp đồng đã lưu, contract_status chuyển DONE; trạm tự chuyển sang Giao trụ nếu đủ điều kiện theo mô hình đầu tư (TĐT không cần cọc/thanh toán)
@@ -400,6 +412,58 @@ router.post('/:id/infrastructure/:type/start', requireChargingStationViewer, cha
  *         description: Không thuộc Back Office
  */
 router.post('/:id/infrastructure/:type/complete', requireChargingStationViewer, chargingStationController.completeInfrastructure);
+
+/**
+ * @swagger
+ * /api/admin/charging-stations/{id}/infrastructure/{type}/status:
+ *   post:
+ *     tags: [Charging Stations]
+ *     summary: Cập nhật trạng thái, ngày và ghi chú hạ tầng
+ *     description: Back Office chuyển tiến tuần tự; SUPER_ADMIN chọn tùy ý. Không tự lùi tiến độ giao trụ.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [power, site]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status, expected_status, date]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [NOT, DOING, DONE]
+ *               expected_status:
+ *                 type: string
+ *                 enum: [NOT, DOING, DONE]
+ *               date:
+ *                 type: string
+ *                 format: date
+ *               note:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Đã lưu trạng thái, ngày, ghi chú và nhật ký
+ *       400:
+ *         description: Dữ liệu hoặc chuyển trạng thái không hợp lệ
+ *       403:
+ *         description: Không có quyền cập nhật
+ *       409:
+ *         description: Trạng thái đã thay đổi, cần tải lại
+ */
+router.post('/:id/infrastructure/:type/status', requireChargingStationViewer, chargingStationController.updateInfrastructure);
 
 /**
  * @swagger

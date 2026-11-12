@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -21,7 +22,7 @@ import {
   getCsDeadlineLabel,
   isCsDeadlineStopped
 } from '../../utils/chargingStation';
-import { Badge, Button, FilterBar, Input, Pagination, Toast } from '../ui';
+import { Badge, Button, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 
 const PAGE_SIZE = 20;
 const TABS = [
@@ -53,6 +54,10 @@ const ChargingStationInfrastructureTabs = () => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [busyAction, setBusyAction] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [status, setStatus] = useState('NOT');
+  const [date, setDate] = useState('');
+  const [note, setNote] = useState('');
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   const load = useCallback(async (targetPage) => {
@@ -101,15 +106,6 @@ const ChargingStationInfrastructureTabs = () => {
         </Link>
       )
     },
-    {
-      key: 'ma_de_xuat',
-      label: 'Mã đề xuất',
-      render: (value, row) => (
-        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary underline text-left">
-          {value || `#${row.proposal_id}`}
-        </Link>
-      )
-    },
     { key: 'owner_name', label: 'Chủ trạm', render: (value) => value || '—' },
     { key: 'owner_phone', label: 'SĐT', render: (value) => value || '—' },
     {
@@ -147,14 +143,34 @@ const ChargingStationInfrastructureTabs = () => {
         </div>
       )
     },
-    ...INFRASTRUCTURE_ITEMS.map(({ field, columnLabel }) => ({
-      key: field,
-      label: columnLabel,
-      render: (value) => (
+    ...INFRASTRUCTURE_ITEMS.map((item) => ({
+      key: item.field,
+      label: item.columnLabel,
+      render: (value, row) => {
+        const editable = row.status !== 'CANCELLED' && canOperateStation(user, row, 'back_office')
+          && (user?.role === 'SUPER_ADMIN' || value !== 'DONE');
+        return editable ? (
+          <button type="button" aria-label={`${item.columnLabel}: ${CS_FLOW_LABELS[value] || 'Chưa làm'}`}
+            aria-haspopup="dialog" disabled={busyAction !== null}
+            className={`inline-flex w-full items-center justify-between gap-2 rounded-full border px-3 py-1 text-xs font-medium
+              ${value === 'DONE' ? 'border-success/30 bg-success/15 text-success' : value === 'DOING'
+                ? 'border-info/30 bg-info/15 text-info' : 'border-base-300 bg-base-200 text-base-content'}
+              hover:brightness-95 disabled:opacity-50`}
+            onClick={() => {
+              const current = value || 'NOT';
+              setEditing({ station: row, item, expectedStatus: current });
+              setStatus(user?.role === 'SUPER_ADMIN' ? current : current === 'NOT' ? 'DOING' : 'DONE');
+              setDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }));
+              setNote('');
+            }}>
+            {CS_FLOW_LABELS[value] || 'Chưa làm'}<ChevronDown size={14} />
+          </button>
+        ) : (
         <Badge variant={CS_FLOW_VARIANT[value] || 'ghost'} size="sm" outline>
           {CS_FLOW_LABELS[value] || '—'}
         </Badge>
-      )
+        );
+      }
     })),
     {
       key: 'payment_status',
@@ -168,7 +184,7 @@ const ChargingStationInfrastructureTabs = () => {
     },
     { key: 'on_date', label: 'Ngày ON', render: (value) => formatCsDate(value) },
 
-  ], [location.pathname, location.search]);
+  ], [location.pathname, location.search, user, busyAction]);
 
   const selectTab = (nextTab) => {
     const next = new URLSearchParams(searchParams);
@@ -176,57 +192,28 @@ const ChargingStationInfrastructureTabs = () => {
     setSearchParams(next);
   };
 
-  const updateInfrastructure = async (station, item, action) => {
+  const updateInfrastructure = async () => {
+    if (!editing) return;
+    if (!date) {
+      setToast({ message: 'Vui lòng nhập ngày thực hiện', type: 'error' });
+      return;
+    }
+    const { station, item, expectedStatus } = editing;
     const actionKey = `${station.id}:${item.type}`;
     setBusyAction(actionKey);
     try {
-      const response = action === 'start'
-        ? await chargingStationService.startInfrastructure(station.id, item.type, token)
-        : await chargingStationService.completeInfrastructure(station.id, item.type, token);
+      const response = await chargingStationService.updateInfrastructure(station.id, item.type, {
+        status, expected_status: expectedStatus, date, note: note.trim()
+      }, token);
       if (!response?.success) throw new Error(response?.message || 'Không cập nhật được hạ tầng');
       setToast({ message: response.message || 'Đã cập nhật trạng thái hạ tầng', type: 'success' });
+      setEditing(null);
       await load(page);
     } catch (error) {
       setToast({ message: error?.message || 'Không cập nhật được hạ tầng', type: 'error' });
     } finally {
       setBusyAction(null);
     }
-  };
-
-  const renderActions = (row) => {
-    if (row.status === 'CANCELLED' || !canOperateStation(user, row, 'back_office')) {
-      return <span className="text-xs text-base-content/60">Chỉ xem</span>;
-    }
-    return (
-      <div className="flex min-w-48 flex-col gap-2">
-        {INFRASTRUCTURE_ITEMS.map((item) => {
-          const value = row[item.field] || 'NOT';
-          const action = value === 'NOT' ? 'start' : value === 'DOING' ? 'complete' : null;
-          if (!action) {
-            return (
-              <span key={item.type} className="text-xs text-success">
-                {item.columnLabel}: Đã làm
-              </span>
-            );
-          }
-          const label = action === 'start'
-            ? `Đang hoàn thiện ${item.label}`
-            : `Đã hoàn thiện ${item.label}`;
-          return (
-            <Button
-              key={item.type}
-              variant={action === 'complete' ? 'primary' : 'outline'}
-              size="xs"
-              loading={busyAction === `${row.id}:${item.type}`}
-              disabled={busyAction !== null}
-              onClick={() => updateInfrastructure(row, item, action)}
-            >
-              {label}
-            </Button>
-          );
-        })}
-      </div>
-    );
   };
 
   return (
@@ -272,7 +259,6 @@ const ChargingStationInfrastructureTabs = () => {
         loading={loading}
         emptyMessage={tab === 'need' ? 'Không có trạm sạc cần hoàn thiện hạ tầng' : 'Không có trạm sạc'}
         startIndex={(pagination.page - 1) * PAGE_SIZE}
-        actions={renderActions}
       />
 
       <Pagination
@@ -284,6 +270,37 @@ const ChargingStationInfrastructureTabs = () => {
           load(nextPage);
         }}
       />
+      <Dialog isOpen={!!editing} title={editing?.item.columnLabel || 'Hạ tầng'}
+        onClose={() => { if (!busyAction) setEditing(null); }} size="md">
+        <div className="space-y-4">
+          <label className="block text-sm font-medium">
+            {editing?.item.type === 'power' ? 'Trạng thái điện' : 'Trạng thái mặt bằng'}
+            <select className="select select-bordered mt-2 w-full" value={status}
+              aria-label={editing?.item.type === 'power' ? 'Trạng thái điện' : 'Trạng thái mặt bằng'}
+              disabled={!!busyAction} onChange={event => setStatus(event.target.value)}>
+              {['NOT', 'DOING', 'DONE'].map(value => (
+                <option key={value} value={value}
+                  disabled={user?.role !== 'SUPER_ADMIN' && value !== (editing?.expectedStatus === 'NOT' ? 'DOING' : 'DONE')}>
+                  {CS_FLOW_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Input type="date" label="Ngày" aria-label="Ngày" required value={date}
+            disabled={!!busyAction} onChange={event => setDate(event.target.value)} />
+          <label className="block text-sm font-medium">Ghi chú
+            <textarea className="textarea textarea-bordered mt-2 w-full" rows={3}
+              value={note} disabled={!!busyAction} onChange={event => setNote(event.target.value)} />
+          </label>
+          {user?.role === 'SUPER_ADMIN' && <p className="text-xs text-base-content/60">
+            SUPER_ADMIN được chọn trạng thái tùy ý. Lùi trạng thái không tự lùi tiến độ giao trụ đã thực hiện.
+          </p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={!!busyAction} onClick={() => setEditing(null)}>Hủy</Button>
+            <Button variant="primary" loading={!!busyAction} disabled={!!busyAction} onClick={updateInfrastructure}>Xác nhận</Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { chargingStationService } from '../../services/api';
 import { CHARGING_STATION_TASK_COUNTS_CHANGED_EVENT } from '../../utils/chargingStationTaskCounts';
 
 export const CS_TASK_KEY = {
+  'thong-tin-chung': 'overview',
   'khoi-tao-hop-dong': 'contract', 'xay-dung-ha-tang': 'infrastructure',
   'giao-tru': 'delivery', 'lap-tru': 'installation', 'nghiem-thu': 'acceptance', 'on-tram': 'on_station',
   finance: 'finance'
