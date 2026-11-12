@@ -394,6 +394,60 @@ router.get('/:id/signed-document', requireAuth, proposalSignatureController.down
  *       409:
  *         description: Bản chụp chữ ký không toàn vẹn
  */
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/signature-repair/{configId}:
+ *   parameters:
+ *     - in: path
+ *       name: id
+ *       required: true
+ *       schema:
+ *         type: integer
+ *     - in: path
+ *       name: configId
+ *       required: true
+ *       schema:
+ *         type: integer
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN kiểm tra ô ký mất ảnh và thời điểm phục hồi
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Khả năng phục hồi và thời gian phục hồi ảnh
+ *       403:
+ *         description: Chỉ SUPER_ADMIN
+ *   post:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN lấy chữ ký mới nhất đúng người để phục hồi ô ký mất ảnh
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 maxLength: 2000
+ *     responses:
+ *       200:
+ *         description: Đã lưu bản chụp và nhật ký phục hồi, không đổi ngày ký gốc
+ *       400:
+ *         description: Thiếu lý do hoặc chữ ký hiện tại
+ *       403:
+ *         description: Chỉ SUPER_ADMIN
+ *       404:
+ *         description: Không tìm thấy ô ký hoặc ảnh
+ *       409:
+ *         description: Ảnh còn hợp lệ, đã có bản chụp hoặc tài liệu đã hoàn tất
+ */
+router.get('/:id/signature-repair/:configId', requireAuth, requireSuperAdmin, proposalSignatureController.signatureRepairStatus);
+router.post('/:id/signature-repair/:configId', requireAuth, requireSuperAdmin, proposalSignatureController.repairSignature);
 router.get('/:id/signature-image/:configId', requireAuth, proposalSignatureController.signatureImage);
 
 module.exports = router;

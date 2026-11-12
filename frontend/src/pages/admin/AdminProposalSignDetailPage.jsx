@@ -5,6 +5,7 @@ import { proposalSignatureService, proposalApprovalService } from '../../service
 import { documentFile, ensureDocumentResponse, fileName, getDocumentSigners, isUnsupportedSigningFile } from '../../utils/proposalDocuments';
 import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
+import SignatureRepairAction from '../../components/admin/SignatureRepairAction';
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
@@ -487,9 +488,12 @@ const AdminProposalSignDetailPage = () => {
                 {signer.full_name}
                 {signer.signer_title ? ` · ${signer.signer_title}` : ''}
               </span>
-              <span className="text-xs text-base-content/60 whitespace-nowrap">
-                {signer.status === 'SIGNED' ? `Đã ký ${formatSignedTime(signer.signed_at)}` : 'Chờ ký'}
-              </span>
+              <div className="text-right">
+                <span className="text-xs text-base-content/60 whitespace-nowrap">
+                  {signer.status === 'SIGNED' ? `Đã ký ${formatSignedTime(signer.signed_at)}` : 'Chờ ký'}
+                </span>
+                <SignatureRepairAction proposalId={detail.id} signer={signer} onRepaired={loadDetail} />
+              </div>
             </li>
           ))}
         </ul>

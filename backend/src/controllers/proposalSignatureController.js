@@ -1,4 +1,25 @@
 const proposalSignatureService = require('../services/proposalSignatureService');
+const signatureRepairService = require('../services/signatureRepairService');
+
+exports.signatureRepairStatus = async (req, res) => {
+  try {
+    const data = await signatureRepairService.getStatus({ user: req.user, id: req.params.id, configId: req.params.configId });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.repairSignature = async (req, res) => {
+  try {
+    const data = await signatureRepairService.repair({
+      user: req.user, id: req.params.id, configId: req.params.configId, reason: req.body?.reason, ip: req.ip
+    });
+    res.json({ success: true, data, message: 'Đã phục hồi bằng chữ ký hiện tại; giữ nguyên thời điểm ký gốc' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
 
 const sendError = (res, error) => {
   console.error('Proposal signature error:', error);
