@@ -7,6 +7,7 @@ const { PDFDocument, rgb } = require('pdf-lib');
 const fontkit = require('@pdf-lib/fontkit');
 const pool = require('../utils/db');
 const fileService = require('./fileService');
+const signatureSnapshots = require('./signatureSnapshotService');
 const signerTextLayout = require('../../assets/signatureTextLayout.json');
 
 const execFileAsync = promisify(execFile);
@@ -246,13 +247,23 @@ const parsePngDimensions = (buffer) => {
 };
 
 const readSignature = async (signer) => {
+  const snapshot = await signatureSnapshots.read(signer.id);
+  if (snapshot) {
+    const dims = parsePngDimensions(snapshot);
+    if (!dims) throw invalidDocument('Bản chụp chữ ký không phải ảnh PNG hợp lệ');
+    return { bytes: snapshot, extension: 'png', contentType: 'image/png', width: dims.width, height: dims.height };
+  }
   const [rows] = await pool.query(
     'SELECT file_path FROM signatures WHERE id = ? LIMIT 1',
     [signer.signature_id]
   );
   const filePath = rows[0]?.file_path;
+  return readSignatureFile(filePath, signer.full_name);
+};
+
+const readSignatureFile = async (filePath, fullName) => {
   if (!filePath || !fs.existsSync(filePath)) {
-    throw Object.assign(new Error(`Không tìm thấy ảnh chữ ký của ${signer.full_name || 'người ký'}`), { statusCode: 404 });
+    throw Object.assign(new Error(`Không tìm thấy ảnh chữ ký của ${fullName || 'người ký'}`), { statusCode: 404 });
   }
   let bytes;
   try {
@@ -264,13 +275,16 @@ const readSignature = async (signer) => {
     if (error.killed || error.code === 'ETIMEDOUT') {
       throw new Error('Xử lý ảnh chữ ký vượt quá thời gian cho phép', { cause: error });
     }
-    throw invalidDocument(`Ảnh chữ ký của ${signer.full_name || 'người ký'} không hợp lệ`);
+    throw invalidDocument(`Ảnh chữ ký của ${fullName || 'người ký'} không hợp lệ`);
   }
   const dims = parsePngDimensions(bytes);
+  if (!dims) throw invalidDocument('Ảnh chữ ký không phải ảnh PNG hợp lệ');
   return { bytes, extension: 'png', contentType: 'image/png', width: dims?.width, height: dims?.height };
 };
 
 exports.validateSignature = async (signatureId) => readSignature({ signature_id: signatureId });
+exports.readSignature = readSignature;
+exports.readSignatureFile = readSignatureFile;
 
 const stampPdf = async (source, signers, { includeImages = true } = {}) => {
   let pdf;

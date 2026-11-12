@@ -829,6 +829,12 @@ export const chargingStationCareService = {
 };
 
 export const proposalSignatureService = {
+  signatureRepairStatus(id, configId, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/signature-repair/${configId}`, token);
+  },
+  repairSignature(id, configId, reason, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/signature-repair/${configId}`, { reason }, token);
+  },
   completeSigning(id, data, token) {
     return runProposalTaskMutation(async () => {
       const response = await api.postWithAuth(`/admin/proposal-signatures/${id}/complete-signing`, data, token);

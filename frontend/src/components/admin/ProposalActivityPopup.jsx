@@ -61,6 +61,7 @@ const ACTION_LABEL = {
   report_pdf_converted: 'Chuyển tờ trình BCĐX sang PDF',
   report_pdf_failed: 'Chuyển PDF thất bại',
   signature_config_withdrawn: 'Thu hồi cấu hình ký BCĐX',
+  signature_image_repaired: 'Phục hồi ảnh chữ ký bằng chữ ký hồ sơ mới',
   report_revision_requested: 'Yêu cầu tạo lại tờ trình BCĐX',
   report_update_requested: 'Yêu cầu cập nhật thông tin BCĐX',
   signature_configured: 'Cấu hình trình ký BCĐX'

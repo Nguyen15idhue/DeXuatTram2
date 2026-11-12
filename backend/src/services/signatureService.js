@@ -1,6 +1,7 @@
 const pool = require('../utils/db');
 const path = require('path');
 const fs = require('fs');
+const signatureSnapshots = require('./signatureSnapshotService');
 
 const SIGNATURE_DIR = path.join(__dirname, '../../storage/uploads/signatures');
 
@@ -131,22 +132,33 @@ exports.getByUserId = async (requester, userId) => {
 };
 
 exports.upload = async (userId, file) => {
-  const [users] = await pool.query('SELECT id FROM users WHERE id = ?', [userId]);
-  if (users.length === 0) throw new Error('USER_NOT_FOUND');
-
-  const [old] = await pool.query('SELECT id, file_path FROM signatures WHERE user_id = ?', [userId]);
-  for (const sig of old) {
-    if (sig.file_path && fs.existsSync(sig.file_path)) fs.unlinkSync(sig.file_path);
-    await pool.query('DELETE FROM signatures WHERE id = ?', [sig.id]);
-  }
-
   const relativePath = path.relative(SIGNATURE_DIR, file.path);
   const fileUrl = `/files/signatures/${relativePath.replace(/\\/g, '/')}`;
-  const [result] = await pool.query('INSERT INTO signatures (user_id, file_path, file_url) VALUES (?, ?, ?)', [
-    userId,
-    file.path,
-    fileUrl,
-  ]);
+  let connection;
+  let old = [];
+  let result;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [users] = await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [userId]);
+    if (!users.length) throw new Error('USER_NOT_FOUND');
+    [old] = await connection.query('SELECT id, file_path FROM signatures WHERE user_id = ?', [userId]);
+    for (const sig of old) {
+      await signatureSnapshots.preserveLegacy(sig.id, connection);
+      await connection.query('DELETE FROM signatures WHERE id = ?', [sig.id]);
+    }
+    [result] = await connection.query('INSERT INTO signatures (user_id, file_path, file_url) VALUES (?, ?, ?)', [
+      userId, file.path, fileUrl
+    ]);
+    await connection.commit();
+  } catch (error) {
+    if (connection) await connection.rollback();
+    removeProfileImage(file.path);
+    throw error;
+  } finally {
+    connection?.release();
+  }
+  old.forEach(sig => removeProfileImage(sig.file_path));
   return {
     id: result.insertId,
     user_id: userId,
@@ -154,6 +166,15 @@ exports.upload = async (userId, file) => {
     created_at: new Date(),
     updated_at: new Date(),
   };
+};
+
+const removeProfileImage = (filePath) => {
+  if (!filePath) return;
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.error('[Signature] Cannot remove profile image:', error);
+  }
 };
 
 exports.remove = async (signatureId, requester) => {
@@ -164,8 +185,22 @@ exports.remove = async (signatureId, requester) => {
   const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(requester.role);
   if (!isAdmin && Number(sig.user_id) !== Number(requester.id)) throw new Error('FORBIDDEN');
 
-  if (sig.file_path && fs.existsSync(sig.file_path)) fs.unlinkSync(sig.file_path);
-  await pool.query('DELETE FROM signatures WHERE id = ?', [signatureId]);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [sig.user_id]);
+    const [current] = await connection.query('SELECT id FROM signatures WHERE id = ?', [signatureId]);
+    if (!current.length) throw new Error('NOT_FOUND');
+    await signatureSnapshots.preserveLegacy(signatureId, connection);
+    await connection.query('DELETE FROM signatures WHERE id = ?', [signatureId]);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+  removeProfileImage(sig.file_path);
   return true;
 };
 

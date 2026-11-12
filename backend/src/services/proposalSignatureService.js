@@ -6,6 +6,7 @@ const proposalGradingService = require('./proposalGradingService');
 const proposalReportService = require('./proposalReportService');
 const proposalReportDocumentService = require('./proposalReportDocumentService');
 const signedDocumentService = require('./signedDocumentService');
+const signatureSnapshots = require('./signatureSnapshotService');
 const JSZip = require('jszip');
 
 const { parseCustomData, toFileSummaries } = proposalGradingService;
@@ -617,21 +618,19 @@ const sign = async ({ user, id, documentId, fileId, ip, mutationConnection } = {
     throw err('Bạn đã ký đề xuất này', 400);
   }
 
-  const [signatureRows] = await pool.query(
-    'SELECT id, file_url FROM signatures WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
-    [scope.userId]
-  );
-  if (signatureRows.length === 0) {
-    throw err('Bạn chưa tải chữ ký số trong hồ sơ cá nhân', 400);
-  }
-  const signature = signatureRows[0];
-  await signedDocumentService.validateSignature(signature.id);
-
   const connection = mutationConnection;
   let transactionStarted = false;
   try {
     await connection.beginTransaction();
     transactionStarted = true;
+    await connection.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [scope.userId]);
+    const [signatureRows] = await connection.query(
+      'SELECT id, file_url FROM signatures WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
+      [scope.userId]
+    );
+    if (!signatureRows.length) throw err('Bạn chưa tải chữ ký số trong hồ sơ cá nhân', 400);
+    const signature = signatureRows[0];
+    const image = await signedDocumentService.validateSignature(signature.id);
     const [lockedProposals] = await connection.query(
       'SELECT status FROM station_proposals WHERE id = ? FOR UPDATE',
       [proposal.id]
@@ -646,6 +645,7 @@ const sign = async ({ user, id, documentId, fileId, ip, mutationConnection } = {
       [signature.id, signature.file_url || null, config.id, proposal.id, documentIdOf(selectedDocument), selectedFileId, selectedFileId]
     );
     if (!updateResult.affectedRows) throw err('Ô ký đã được ký hoặc thay đổi, vui lòng tải lại', 409);
+    await signatureSnapshots.save(config.id, image.bytes, connection);
     await connection.commit();
     transactionStarted = false;
   } catch (error) {
@@ -1103,7 +1103,7 @@ exports.getSignedDocument = async ({ user, id, documentId, all = false, ip } = {
   return buildDocument(documents[0]);
 };
 
-exports.getSignatureImagePath = async ({ user, id, configId } = {}) => {
+exports.getSignatureImage = async ({ user, id, configId } = {}) => {
   const scope = await resolveScope(user);
   const proposal = await loadProposal(id);
   const detail = await buildDetail(proposal, scope);
@@ -1115,9 +1115,5 @@ exports.getSignatureImagePath = async ({ user, id, configId } = {}) => {
     || detail.signers.some((item) => Number(item.user_id) === Number(scope.userId)
       && Number(item.document_id) === Number(config.document_id));
   if (!canView) throw err('Bạn không có quyền xem chữ ký này', 403);
-  const [rows] = await pool.query('SELECT file_path FROM signatures WHERE id = ? LIMIT 1', [config.signature_id]);
-  if (rows.length === 0 || !rows[0].file_path || !fs.existsSync(rows[0].file_path)) {
-    throw err('Không tìm thấy file chữ ký', 404);
-  }
-  return path.resolve(rows[0].file_path);
+  return signedDocumentService.readSignature(config);
 };
