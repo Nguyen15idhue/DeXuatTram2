@@ -52,6 +52,52 @@ test('Finance file access is restricted to eligible chairman proposal attachment
   await assert.rejects(files.canAccessFile({ id: 101 }, req), /Database unavailable/);
 });
 
+test('every chairman file is accessible to proposal owner, assigned signers and Finance, not unrelated users', async t => {
+  const controller = require('../src/controllers/fileController');
+  let requester = { id: 1, role: 'CTV', department: '' };
+  let finalMarker = 100;
+  t.mock.method(pool, 'query', async (sql, params = []) => {
+    if (sql.includes('SELECT role, token_version, custom_data FROM users')) {
+      return [[{ role: requester.role, token_version: 0, custom_data: { department: requester.department } }]];
+    }
+    if (sql.includes('FROM proposal_chairman_files cf')) return [params[0] === 202 ? [{ proposal_id: 10, user_id: 1, signed_file_id: finalMarker }] : []];
+    if (sql.includes('SELECT id FROM proposal_signature_configs')) return [params[1] === 2 ? [{ id: 10 }] : []];
+    return [[]];
+  });
+  t.mock.method(reports, 'assertReportReadAccess', async () => { throw Object.assign(new Error('Outside branch'), { statusCode: 403 }); });
+  const canRead = async () => controller.canAccessFile({ id: 202 }, {
+    user: { id: requester.id, role: requester.role, tokenVersion: 0 }
+  });
+  assert.equal(await canRead(), true);
+  requester = { id: 2, role: 'SALES', department: '' };
+  assert.equal(await canRead(), true);
+  requester = { id: 3, role: 'SALES', department: 'Phòng Tài chính và Kế toán' };
+  assert.equal(await canRead(), true);
+  finalMarker = null;
+  assert.equal(await canRead(), false);
+  finalMarker = 100;
+  requester = { id: 4, role: 'SALES', department: '' };
+  assert.equal(await canRead(), false);
+  requester = { id: 5, role: 'MKT', department: 'Phòng Tài chính và Kế toán' };
+  assert.equal(await canRead(), false);
+});
+
+test('delete endpoint protects non-first chairman files without deleting the physical file', async t => {
+  const controller = require('../src/controllers/fileController');
+  const storage = require('../src/services/fileService');
+  let status;
+  let body;
+  t.mock.method(storage, 'getFileById', async () => ({ id: 202, status: 'active' }));
+  t.mock.method(storage, 'deleteFile', async () => { throw new Error('Must not delete chairman file'); });
+  t.mock.method(pool, 'query', async sql => [sql.includes('UNION SELECT id FROM proposal_chairman_files') ? [{ id: 1 }] : []]);
+  await controller.delete({ params: { id: 202 }, user: { id: 1, role: 'SUPER_ADMIN' } }, {
+    status: code => { status = code; return { json: data => { body = data; } }; },
+    json: data => { body = data; }
+  });
+  assert.equal(status, 409);
+  assert.equal(body.success, false);
+});
+
 test('real SQL signature tabs split personal completion and chairman handoff without duplicate rows', {
   skip: process.env.RUN_SIGNATURE_SQL_TEST !== '1'
 }, async t => {

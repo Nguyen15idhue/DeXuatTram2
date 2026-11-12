@@ -34,6 +34,7 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false,
   let activeMutations = 0;
   let maximumMutations = 0;
   const notices = [];
+  const chairmanFiles = [];
   const query = async (sql, args = []) => {
     if (sql.includes('GET_LOCK')) {
       if (releaseLock) return [[{ acquired: 0 }]];
@@ -51,6 +52,11 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false,
       proposal.signed_file_id || configs.every(config => config.status === 'SIGNED') ? [{ id: proposal.id }] : []
     ];
     if (sql.includes('FROM station_proposals')) return [[{ ...proposal }]];
+    if (sql.includes('FROM proposal_chairman_files')) return [chairmanFiles];
+    if (sql.includes('INSERT INTO proposal_chairman_files')) {
+      chairmanFiles.push({ id: args[1], order_index: args[2] });
+      return [{ affectedRows: 1 }];
+    }
     if (sql.includes('FROM files WHERE id IN')) return [args.map(id => ({ id, original_name: `final-${id}.pdf` }))];
     if (sql.includes('UPDATE proposal_report_documents SET signed_file_id')) {
       documents.find(document => document.id === args[1]).signed_file_id = args[0];
@@ -99,6 +105,12 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false,
   }), isBackOffice: () => true, isFinanceDepartment: department => String(department).includes('Tài chính') };
   const notifications = { proposalCode: () => 'TEST', getUserName: async () => 'Same Signer', statusMessage: () => 'mock', create: async value => notices.push(value), statusTitle: () => 'mock' };
   const lifecycle = {
+    transitionSignedApprovalWithinTransaction: async (connection, id) => {
+      assert.equal(chairmanFiles.length > 0, true);
+      assert.equal(proposal.signed_file_id, chairmanFiles[0].id);
+      proposal.status = 'APPROVED';
+      return { id, status: 'APPROVED' };
+    },
     transition: async (id, status) => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       if (status !== 'APPROVED') assert.equal(configs.some((config) => config.status === 'SIGNED'), false);
@@ -140,6 +152,11 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false,
     './proposalReportDocumentService': { getSigningDocuments: async () => documents, listDocuments: async () => documents },
     './notificationService': notifications,
     './proposalLifecycle': lifecycle,
+    './proposalChairmanFileService': {
+      normalizeFiles: (files, documents) => (files || documents).map(file => file.id ?? file.file_id),
+      validate: async () => {},
+      list: async () => chairmanFiles
+    },
     './signedDocumentService': signedDocuments,
     './signatureSnapshotService': snapshots,
     './fileService': fileService,
@@ -147,7 +164,7 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false,
   };
   const signatures = await loadService('proposalSignatureService.js', mocks);
   const approvals = await loadService('proposalApprovalService.js', { ...mocks, './proposalSignatureService': signatures });
-  return { signatures, approvals, proposal, configs, documents, notices, snapshots, signedDocuments, maximumMutations: () => maximumMutations };
+  return { signatures, approvals, proposal, configs, documents, notices, chairmanFiles, snapshots, signedDocuments, maximumMutations: () => maximumMutations };
 };
 
 test('Finance reads all completed documents without being a signer but cannot read pending unrelated proposals', async () => {
@@ -166,7 +183,7 @@ test('Finance reads all completed documents without being a signer but cannot re
   assert.equal((await fixture.signatures.getDetail({ user, id: 501 })).documents.length, 2);
 });
 
-test('Finance upload still requires every document signed and maps final files before approval', async () => {
+test('Finance upload requires every document signed and saves a shared collection before approval', async () => {
   const fixture = await makeHarness({ finance: true });
   const args = { user: { id: 20, role: 'SALES' }, id: 501,
     documents: [{ document_id: 11, file_id: 201 }, { document_id: 12, file_id: 202 }] };
@@ -175,7 +192,9 @@ test('Finance upload still requires every document signed and maps final files b
   const result = await fixture.signatures.uploadSignedFile(args);
   assert.equal(result.status, 'APPROVED');
   assert.equal(fixture.proposal.signed_file_id, 201);
-  assert.deepEqual(fixture.documents.map(document => document.signed_file_id), [201, 202]);
+  assert.deepEqual(fixture.documents.map(document => document.signed_file_id), [undefined, undefined]);
+  assert.deepEqual(fixture.chairmanFiles.map(file => file.id), [201, 202]);
+  assert.equal((await fixture.signatures.getDetail({ user: args.user, id: 501 })).can_upload_signed, false);
 });
 
 test('last signature notifies Finance and SUPER_ADMIN, not Back Office', async () => {

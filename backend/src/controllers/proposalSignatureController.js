@@ -193,6 +193,20 @@ exports.downloadSignedDocument = async (req, res) => {
   }
 };
 
+exports.downloadChairmanFiles = async (req, res) => {
+  try {
+    const result = await require('../services/proposalChairmanFileService').download({
+      user: req.user, id: req.params.id, fileId: req.query.file_id, ip: req.ip
+    });
+    const filename = result.original_name.replace(/[\\/\r\n"]/g, '_');
+    res.setHeader('Content-Type', result.mime_type);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.setHeader('Content-Length', result.bytes.length);
+    res.send(result.bytes);
+  } catch (error) { sendError(res, error); }
+};
+
 exports.signatureImage = async (req, res) => {
   try {
     const image = await proposalSignatureService.getSignatureImage({

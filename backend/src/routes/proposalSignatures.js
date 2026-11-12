@@ -247,7 +247,9 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  *     tags: [Proposal Signatures]
  *     summary: Tài chính và Kế toán hoặc SUPER_ADMIN tải lên file BCĐX chủ tịch đã ký
  *     description: >
- *       Chỉ áp dụng khi đã đủ chữ ký; lưu file và chuyển đề xuất sang APPROVED.
+ *       Chỉ Tài chính và Kế toán/SUPER_ADMIN, khi đủ chữ ký. Danh sách chung 1-20 file,
+ *       tối đa 10MB/file: JPEG/PNG/GIF/WEBP/DOC/DOCX/PDF. Giữ file đầu tiên tương thích,
+ *       không ánh xạ file chung theo BCĐX gốc; lưu danh sách, trạng thái và nhật ký cùng transaction.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -265,12 +267,16 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  *             properties:
  *               files:
  *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 20
  *                 items:
  *                   type: object
  *                   properties:
  *                     id:
  *                       type: integer
  *               documents:
+ *                 deprecated: true
+ *                 description: Payload cũ; file_id được chuyển thành danh sách chung, không yêu cầu khớp BCĐX gốc
  *                 type: array
  *                 items:
  *                   type: object
@@ -446,6 +452,32 @@ router.get('/:id/signed-document', requireAuth, proposalSignatureController.down
  *       409:
  *         description: Ảnh còn hợp lệ, đã có bản chụp hoặc tài liệu đã hoàn tất
  */
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/chairman-files:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: Tải nguyên bản file chủ tịch hoặc ZIP toàn bộ
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: file_id
+ *         description: Không truyền thì ZIP toàn bộ; không chuyển PDF hay đóng dấu lại
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: File nguyên bản hoặc application/zip
+ *       403:
+ *         description: Không có quyền đọc hồ sơ/tệp
+ *       404:
+ *         description: Không có file hoặc file không thuộc đề xuất
+ */
+router.get('/:id/chairman-files', requireAuth, proposalSignatureController.downloadChairmanFiles);
 router.get('/:id/signature-repair/:configId', requireAuth, requireSuperAdmin, proposalSignatureController.signatureRepairStatus);
 router.post('/:id/signature-repair/:configId', requireAuth, requireSuperAdmin, proposalSignatureController.repairSignature);
 router.get('/:id/signature-image/:configId', requireAuth, proposalSignatureController.signatureImage);

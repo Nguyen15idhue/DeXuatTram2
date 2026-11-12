@@ -26,6 +26,7 @@ const verifyMagic = (filePath, mime) => {
   if (mime === 'application/msword' || mime === 'application/vnd.ms-excel') return (buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0) || (buf[0] === 0x50 && buf[1] === 0x4B);
   return true;
 };
+exports.verifyFileSignature = verifyMagic;
 
 const removePhysical = (p) => { try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch { /* silent */ } };
 
@@ -69,6 +70,24 @@ const canAccessFile = async (file, req) => {
     } catch { /* silent */ }
   }
   if (requesterId && ['ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
+  if (requesterId) {
+    const [chairmanProposals] = await pool.query(
+      `SELECT cf.proposal_id,p.user_id,p.signed_file_id FROM proposal_chairman_files cf
+       JOIN station_proposals p ON p.id=cf.proposal_id WHERE cf.file_id=?`, [file.id]);
+    for (const proposal of chairmanProposals) {
+      if (Number(proposal.user_id) === Number(requesterId)) return true;
+      const [assigned] = await pool.query(
+        "SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND user_id=? AND status<>'CANCELLED' LIMIT 1",
+        [proposal.proposal_id, requesterId]);
+      if (assigned.length) return true;
+      const reports = require('../services/proposalReportService');
+      if (requesterRole === 'SALES' && reports.isFinanceDepartment(requesterDepartment) && proposal.signed_file_id) return true;
+      try {
+        await reports.assertReportReadAccess({ id: requesterId, role: requesterRole }, proposal.proposal_id);
+        return true;
+      } catch (error) { if (error.statusCode !== 403) throw error; }
+    }
+  }
   if (requesterId) {
     const [documents] = await pool.query(
       `SELECT d.proposal_id, d.id FROM proposal_report_documents d
@@ -424,7 +443,8 @@ exports.delete = async (req, res) => {
       `SELECT id FROM proposal_report_documents WHERE is_current=1
          AND ? IN (source_file_id,pdf_file_id,signing_file_id,signed_file_id)
        UNION SELECT id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'
-       LIMIT 1`, [file.id, file.id]);
+       UNION SELECT id FROM proposal_chairman_files WHERE file_id=?
+       LIMIT 1`, [file.id, file.id, file.id]);
     if (linkedReports.length) {
       return res.status(409).json({ success: false, message: 'Không được xóa tài liệu BCĐX đang sử dụng hoặc đã cấu hình ký. Hãy cập nhật hồ sơ theo quy trình.' });
     }
@@ -442,6 +462,6 @@ exports.delete = async (req, res) => {
     res.json({ success: true, message: 'Xóa file thành công' });
   } catch (error) {
     console.error('Delete file error:', error);
-    res.status(500).json({ success: false, message: 'Lỗi server' });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Lỗi server' });
   }
 };

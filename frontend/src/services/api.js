@@ -868,8 +868,10 @@ export const proposalSignatureService = {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
   },
   async downloadSignedDocument(id, token, options = {}) {
-    const query = options.all ? '?all=1' : options.documentId ? `?document_id=${encodeURIComponent(options.documentId)}` : '';
-    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/signed-document${query}`, {
+    const query = options.chairman ? (options.fileId ? `?file_id=${encodeURIComponent(options.fileId)}` : '')
+      : options.all ? '?all=1' : options.documentId ? `?document_id=${encodeURIComponent(options.documentId)}` : '';
+    const endpoint = options.chairman ? 'chairman-files' : 'signed-document';
+    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/${endpoint}${query}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     handleUnauthorized(response);

@@ -18,9 +18,13 @@ const FileUpload = ({
   validationError = "",
   validateFile = null,
   onUploadingChange,
+  onUploadError,
+  onPreviewFile,
+  retryFailedUploads = false,
 }) => {
   const { token } = useAuth();
   const [uploading, setUploading] = useState(false);
+  const [failedFiles, setFailedFiles] = useState([]);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
@@ -48,36 +52,46 @@ const FileUpload = ({
   };
 
   const handleFiles = async (fileList) => {
+    if (disabled || uploading) return;
     setError("");
+    onUploadError?.("");
+    const fail = (message) => { setError(message); onUploadError?.(message); };
+    setFailedFiles([]);
+    if (multiple && fileConfig.maxFiles && files.length + fileList.length > fileConfig.maxFiles) {
+      fail(`Chỉ được tải tối đa ${fileConfig.maxFiles} file`);
+      return;
+    }
     if (typeof validateFile === "function") {
       const rejected = fileList.find((file) => !validateFile(file));
       if (rejected) {
-        setError(`File "${rejected.name}" không đúng định dạng được chấp nhận`);
+        fail(`File "${rejected.name}" không đúng định dạng được chấp nhận`);
         return;
       }
     }
     const max_size = (fileConfig.maxSize || 10) * 1024 * 1024;
     for (const f of fileList) {
       if (f.size > max_size) {
-        setError(`File "${f.name}" vượt quá ${fileConfig.maxSize || 10}MB`);
+        fail(`File "${f.name}" vượt quá ${fileConfig.maxSize || 10}MB`);
         return;
       }
     }
     setUploading(true);
     onUploadingChange?.(true);
+    const uploaded = [];
     try {
-      const uploaded = [];
       for (const f of fileList) {
         const result = await uploadFile(f);
         uploaded.push(result);
+        if (multiple) onChange([...files, ...uploaded]);
       }
-      const newValue = multiple ? [...files, ...uploaded] : uploaded[0];
-      onChange(newValue);
+      if (!multiple) onChange(uploaded[0]);
     } catch (err) {
-      setError(err.message || "Lỗi upload file");
+      fail(err.message || "Lỗi upload file");
+      if (retryFailedUploads) setFailedFiles(fileList.slice(uploaded.length));
     } finally {
       setUploading(false);
       onUploadingChange?.(false);
+      if (inputRef.current) inputRef.current.value = "";
     }
   };
 
@@ -141,6 +155,13 @@ const FileUpload = ({
       </div>
 
       {error && <div className="file-upload-error">{error}</div>}
+      {failedFiles.length > 0 && <div className="space-y-2 text-sm">
+        <p>Chưa tải: {failedFiles.map(file => file.name).join(', ')}. Các file đã tải thành công được giữ lại.</p>
+        <button type="button" className="btn btn-outline btn-sm" disabled={disabled || uploading}
+          onClick={() => handleFiles(failedFiles)}>Thử tải lại các file còn lỗi</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={disabled || uploading}
+          onClick={() => { setFailedFiles([]); setError(''); onUploadError?.(''); }}>Bỏ các file chưa tải</button>
+      </div>}
       {validationError && (
         <div className="file-upload-error">{validationError}</div>
       )}
@@ -159,13 +180,16 @@ const FileUpload = ({
                 <span className="file-icon">📄</span>
               )}
               <span className="file-name">
-                {file.original_name || file.name}
+                {onPreviewFile ? <button type="button" className="link text-left" onClick={() => onPreviewFile(file)}>
+                  {file.original_name || file.name}
+                </button> : file.original_name || file.name}
+                {file.size != null && <small className="ml-2 text-base-content/60">{(Number(file.size) / 1024 / 1024).toFixed(2)}MB</small>}
               </span>
               <button
                 type="button"
                 className="btn btn-sm btn-delete"
                 onClick={() => handleRemove(idx)}
-                disabled={disabled}
+                disabled={disabled || uploading}
               >
                 ✕
               </button>

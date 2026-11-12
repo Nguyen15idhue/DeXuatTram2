@@ -527,12 +527,14 @@ exports.getDetail = async ({ user, id } = {}) => {
   }
   return {
     ...visibleDetail,
+    chairman_files: await require('./proposalChairmanFileService').list(proposal.id),
     progress,
     fieldDefinitions,
     initial_proposal_data: initialProposalData,
     sign_status_label: SIGN_STATUS_LABELS[visibleDetail.sign_status],
     can_reject: scope.role === 'SUPER_ADMIN' || !!scope.isTgd,
-    can_upload_signed: scope.role === 'SUPER_ADMIN' || !!scope.isFinance,
+    can_upload_signed: proposal.status === SIGNATURE_PENDING && detail.sign_status === SIGN_STATUS.DONE
+      && (scope.role === 'SUPER_ADMIN' || !!scope.isFinance),
     can_request_rework: (scope.role === 'SUPER_ADMIN' || !!scope.isTgd || !!scope.isBackOffice) && !visibleDetail.is_my_signed
       && proposal.status === SIGNATURE_PENDING,
     can_withdraw: (user.role === 'SUPER_ADMIN' || scope.isBackOffice)
@@ -852,29 +854,18 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
     throw err('Chưa đủ chữ ký trên toàn bộ tài liệu BCĐX', 400);
   }
 
-  let finalDocuments;
-  if (Array.isArray(uploadedDocuments)) {
-    finalDocuments = uploadedDocuments.map((document) => ({
-      document_id: Number(document && document.document_id),
-      file_id: Number(document && (document.file_id ?? document.id))
-    }));
-  } else {
-    if (activeDocuments.length !== 1) throw err('Vui lòng tải lên file đã ký cho từng tài liệu BCĐX', 400);
-    const item = (Array.isArray(files) ? files : [files])[0];
-    finalDocuments = [{
-      document_id: documentIdOf(activeDocuments[0]),
-      file_id: Number(item && typeof item === 'object' ? (item.id ?? item.file_id) : item)
-    }];
-  }
-  normalizeFinalDocuments(activeDocuments, finalDocuments);
-  const fileIds = [...new Set(finalDocuments.map((document) => document.file_id))];
-  const [fileRows] = await pool.query(
-    `SELECT id, original_name FROM files WHERE id IN (${fileIds.map(() => '?').join(',')}) AND status <> 'deleted'`,
-    fileIds
-  );
-  if (fileRows.length !== fileIds.length) throw err('Không tìm thấy một hoặc nhiều file đã ký', 400);
-  const signedFileId = finalDocuments[0].file_id;
+  const chairmanFiles = require('./proposalChairmanFileService');
+  const fileIds = chairmanFiles.normalizeFiles(files, uploadedDocuments);
+  await chairmanFiles.validate(fileIds, user, ip);
+  const signedFileId = fileIds[0];
+  const message = await buildMessage(proposal, user.id, {
+    status: APPROVED, actionLabel: 'Người tải file chủ tịch',
+    reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
+  });
   const connection = mutationConnection;
+  const proposalLifecycle = require('./proposalLifecycle');
+  let transition;
+  let persistedFiles;
   let transactionStarted = false;
   try {
     await connection.beginTransaction();
@@ -885,52 +876,44 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
     );
     if (!lockedProposals.length) throw err('Không tìm thấy đề xuất', 404);
     if (lockedProposals[0].status !== SIGNATURE_PENDING) throw err('Đề xuất không ở trạng thái trình ký', 409);
-    for (const document of finalDocuments) {
-      const [updatedDocument] = await connection.query(
-        `UPDATE proposal_report_documents SET signed_file_id = ?, updated_at = NOW()
-         WHERE id = ? AND proposal_id = ? AND is_current = 1`,
-        [document.file_id, document.document_id, proposal.id]
-      );
-      if (!updatedDocument.affectedRows) throw err('Không thể gắn file đã ký vào tài liệu hiện hành', 409);
+    const [lockedFiles] = await connection.query(
+      `SELECT id FROM files WHERE id IN (${fileIds.map(() => '?').join(',')}) AND status<>'deleted' FOR UPDATE`, fileIds);
+    if (lockedFiles.length !== fileIds.length) throw err('Một hoặc nhiều file đã bị xóa, vui lòng tải lại', 409);
+    const [existingFiles] = await connection.query('SELECT id FROM proposal_chairman_files WHERE proposal_id=?', [proposal.id]);
+    if (existingFiles.length || proposal.signed_file_id) throw err('Đề xuất đã có file chủ tịch đã ký', 409);
+    for (const [index, fileId] of fileIds.entries()) {
+      await connection.query(
+        'INSERT INTO proposal_chairman_files (proposal_id,file_id,order_index,uploaded_by) VALUES (?,?,?,?)',
+        [proposal.id, fileId, index, user.id]);
     }
     await connection.query(
       'UPDATE station_proposals SET signed_file_id = ?, updated_at = NOW() WHERE id = ?',
       [signedFileId, proposal.id]
     );
+    transition = await proposalLifecycle.transitionSignedApprovalWithinTransaction(connection, proposal.id, {
+      reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt', actorId: user.id, actorRole: user.role, ip
+    });
+    await proposalLifecycle.logActivity({
+      proposalId: proposal.id, action: 'signed_file_uploaded', fromStatus: SIGNATURE_PENDING, toStatus: APPROVED,
+      changedFields: {
+        signed_file_id: { label: 'File chủ tịch đầu tiên', old: '', new: String(signedFileId) },
+        signed_files: { label: 'File BCĐX chủ tịch đã ký', old: '', new: fileIds.join(', ') }
+      },
+      actorId: user.id, actorRole: user.role, source: 'user', ip, connection
+    });
+    for (const userId of new Set(configs.map(config => config.user_id).filter(Boolean))) {
+      await notificationService.create({
+        userId, type: APPROVED, title: 'Đề xuất đã được phê duyệt', message,
+        entityType: 'station_proposals', entityId: proposal.id, createdBy: user.id
+      }, connection);
+    }
+    persistedFiles = await chairmanFiles.list(proposal.id, connection);
     await connection.commit();
     transactionStarted = false;
   } catch (error) {
     if (transactionStarted) await connection.rollback();
     throw error;
   }
-
-  const proposalLifecycle = require('./proposalLifecycle');
-  const transition = await proposalLifecycle.transition(proposal.id, APPROVED, {
-    reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt',
-    actorId: user.id,
-    actorRole: user.role,
-    source: 'user',
-    ip
-  });
-
-  await proposalLifecycle.logActivity({
-    proposalId: proposal.id,
-    action: 'signed_file_uploaded',
-    fromStatus: SIGNATURE_PENDING,
-    toStatus: APPROVED,
-    changedFields: {
-      signed_file_id: { label: 'File BCĐX đã ký đầu tiên', old: '', new: String(signedFileId) },
-      signed_files: {
-        label: 'Các file BCĐX đã ký',
-        old: '',
-        new: finalDocuments.map((document) => `${document.document_id}:${document.file_id}`).join(', ')
-      }
-    },
-    actorId: user.id,
-    actorRole: user.role,
-    source: 'user',
-    ip
-  });
 
   try {
     const chargingStationService = require('./chargingStationService');
@@ -944,20 +927,8 @@ const uploadSignedFile = async ({ user, id, files, documents: uploadedDocuments,
     console.error('Create charging station error:', error);
   }
 
-  const message = await buildMessage(proposal, user.id, {
-    status: APPROVED,
-    actionLabel: 'Người tải file chủ tịch',
-    reason: 'Đã tải lên file BCĐX chủ tịch phê duyệt'
-  });
-  await notifyRecipients(configs.map((config) => config.user_id), {
-    type: APPROVED,
-    title: 'Đề xuất đã được phê duyệt',
-    message,
-    entityId: proposal.id,
-    actorId: user.id
-  });
-
-  return { id: proposal.id, status: APPROVED, signed_file_id: signedFileId, transition };
+  return { id: proposal.id, status: APPROVED, signed_file_id: signedFileId, transition,
+    chairman_files: persistedFiles };
 };
 
 exports.sign = (args = {}) => withSignatureMutationLock(args.id, (mutationConnection) => (
