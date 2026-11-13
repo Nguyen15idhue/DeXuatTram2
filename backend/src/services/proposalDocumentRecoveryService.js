@@ -21,6 +21,59 @@ const reason = value => {
 const admin = user => { if (user?.role !== 'SUPER_ADMIN') throw err('Chỉ SUPER_ADMIN được phục hồi BCĐX', 403); };
 const summary = row => ({ ...row, signers: parse(row.signers), page_sizes: parse(row.page_sizes) || [],
   warnings: parse(row.warnings) || [] });
+const MAX_UPLOADED_PDF_SIZE = 10 * 1024 * 1024;
+const validatePdf = async bytes => {
+  if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > MAX_UPLOADED_PDF_SIZE) throw err('PDF tải lên phải có nội dung và không vượt quá 10MB');
+  if (!bytes.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw err('Nội dung file không phải PDF hợp lệ');
+  let pdf, pages;
+  try {
+    pdf = await PDFDocument.load(bytes, { throwOnInvalidObject: true });
+    pages = pdf.getPages().map(page => page.getSize());
+  }
+  catch (error) { throw err(`Không đọc được PDF; không dùng file hỏng hoặc có mật khẩu: ${error.message}`); }
+  if (pdf.isEncrypted) throw err('Không dùng PDF mã hóa hoặc có mật khẩu');
+  if (!pages.length || pages.some(page => ![page.width, page.height].every(value => Number.isFinite(value) && value > 0))) {
+    throw err('PDF phải có ít nhất một trang với kích thước hợp lệ');
+  }
+  if (String(pdf.getKeywords() || '').includes('TMT-EGREEN-SIGNATURE-BLOCK')) throw err('PDF đã được hệ thống chèn chữ ký; không chèn lặp');
+  return pages;
+};
+const uploadedPdf = async (fileId, user, ip) => {
+  const stored = await fileService.getFilePath(number(fileId));
+  if (!stored || stored.file.mime_type !== 'application/pdf' || path.extname(stored.file.original_name).toLowerCase() !== '.pdf') {
+    throw err('Vui lòng chọn file PDF hợp lệ còn hoạt động');
+  }
+  if (!await require('../controllers/fileController').canAccessFile(stored.file, { user, ip })) throw err('Không có quyền dùng PDF này', 403);
+  if (stored.file.size > MAX_UPLOADED_PDF_SIZE || (await fs.stat(stored.filePath)).size > MAX_UPLOADED_PDF_SIZE) throw err('PDF tải lên vượt quá 10MB');
+  const bytes = await fs.readFile(stored.filePath);
+  const pages = await validatePdf(bytes);
+  return { stored, bytes, pages };
+};
+const pageWarnings = async (ctx, pages) => {
+  const warnings = ['Bắt buộc đối chiếu nội dung/phân trang với DOCX gốc và kiểm tra mọi ô ký trước khi xác nhận.'];
+  const original = await fileService.getFilePath(ctx.document.pdf_file_id || ctx.document.signing_file_id);
+  if (original?.file.mime_type === 'application/pdf') {
+    try {
+      const oldPdf = await PDFDocument.load(await fs.readFile(original.filePath));
+      const oldPages = oldPdf.getPages().map(page => page.getSize());
+      if (JSON.stringify(oldPages) !== JSON.stringify(pages)) warnings.push(`Phân trang/kích thước khác PDF cũ (${oldPages.length} → ${pages.length} trang). Kiểm tra lại mọi ô ký.`);
+    } catch (error) { warnings.push(`Không đối chiếu được PDF cũ: ${error.message}`); }
+  }
+  return warnings;
+};
+const readBase = async row => {
+  const base = await fileService.getFilePath(row.base_file_id);
+  if (!base) throw err('Không còn PDF nền của lượt phục hồi', 404);
+  const bytes = await fs.readFile(base.filePath);
+  if (hash(bytes) !== base.file.checksum) throw err('PDF nền không toàn vẹn; hãy tạo lượt phục hồi mới', 409);
+  if (row.input_method === 'PDF_UPLOAD') {
+    const input = await fileService.getFilePath(row.uploaded_pdf_file_id);
+    if (!input || hash(await fs.readFile(input.filePath)) !== row.uploaded_pdf_sha256 || hash(bytes) !== row.uploaded_pdf_sha256) {
+      throw err('PDF tải lên đã thay đổi; hãy tạo lượt phục hồi mới', 409);
+    }
+  }
+  return bytes;
+};
 
 const withLock = (id, action) => require('./proposalSignatureService')._internals.withSignatureMutationLock(number(id), action);
 const context = async (proposalId, documentId, connection = pool, lock = false) => {
@@ -58,7 +111,8 @@ const context = async (proposalId, documentId, connection = pool, lock = false) 
 };
 
 const rowFor = async (proposalId, documentId, recoveryId, executor = pool, lock = false) => {
-  const [rows] = await executor.query(`SELECT * FROM proposal_document_recoveries WHERE id=? AND proposal_id=? AND document_id=?${lock ? ' FOR UPDATE' : ''}`,
+  const [rows] = await executor.query(`SELECT r.*,f.original_name AS uploaded_pdf_name FROM proposal_document_recoveries r
+    LEFT JOIN files f ON f.id=r.uploaded_pdf_file_id WHERE r.id=? AND r.proposal_id=? AND r.document_id=?${lock ? ' FOR UPDATE' : ''}`,
     [number(recoveryId), number(proposalId), number(documentId)]);
   if (!rows.length) throw err('Không tìm thấy bản phục hồi', 404);
   return summary(rows[0]);
@@ -90,24 +144,40 @@ const removeUnlinkedPdf = async id => {
 const inspect = async ({ user, id, documentId }) => {
   admin(user);
   const ctx = await context(id, documentId);
-  const [history] = await pool.query('SELECT * FROM proposal_document_recoveries WHERE document_id=? AND proposal_id=? ORDER BY id DESC', [documentId, id]);
+  const [history] = await pool.query(`SELECT r.*,f.original_name AS uploaded_pdf_name FROM proposal_document_recoveries r
+    LEFT JOIN files f ON f.id=r.uploaded_pdf_file_id WHERE r.document_id=? AND r.proposal_id=? ORDER BY r.id DESC`, [documentId, id]);
   return { source_file: { id: ctx.source.file.id, original_name: ctx.source.file.original_name },
     signers: ctx.configs.map(config => ({ ...config, has_snapshot: !!config.snapshot_hash, manual: !config.signature_id })),
     history: history.map(summary) };
 };
-const create = async ({ user, id, documentId, reason: explanation, ip }) => {
+const create = async ({ user, id, documentId, reason: explanation, input_method = 'DOCX_CONVERT', uploaded_pdf_file_id, ip }) => {
   admin(user);
   const cleanReason = reason(explanation);
+  if (!['DOCX_CONVERT','PDF_UPLOAD'].includes(input_method)) throw err('Nguồn PDF phục hồi không hợp lệ');
+  if (input_method === 'DOCX_CONVERT' && uploaded_pdf_file_id != null) throw err('Không gửi PDF tải lên khi chọn convert DOCX');
   return withLock(id, async connection => {
+    let baseId;
     await connection.beginTransaction();
     try {
       const ctx = await context(id, documentId, connection, true);
       const [busy] = await connection.query("SELECT id FROM proposal_document_recoveries WHERE document_id=? AND status IN ('PENDING','PROCESSING')", [documentId]);
       if (busy.length) throw err('Tài liệu đang có lượt phục hồi chạy nền', 409);
+      let input;
+      let warnings = [];
+      if (input_method === 'PDF_UPLOAD') {
+        await connection.query('SELECT id FROM files WHERE id=? FOR UPDATE', [number(uploaded_pdf_file_id)]);
+        input = await uploadedPdf(uploaded_pdf_file_id, user, ip);
+        warnings = [...await pageWarnings(ctx, input.pages),
+          'PDF do người dùng tải lên: hệ thống không thể bảo đảm nội dung giống DOCX hoặc tự nhận diện mọi ảnh chữ ký có sẵn. PDF nền phải chưa được chèn chữ ký.'];
+        baseId = await savePdf(input.bytes, `BCDX-${id}-PDF-tai-len-phuc-hoi.pdf`, user.id);
+      }
       const [result] = await connection.query(`INSERT INTO proposal_document_recoveries
-        (proposal_id,document_id,source_file_id,fingerprint,signers,reason,created_by) VALUES (?,?,?,?,?,?,?)`,
+        (proposal_id,document_id,source_file_id,fingerprint,signers,reason,created_by,input_method,
+         uploaded_pdf_file_id,uploaded_pdf_sha256,base_file_id,page_sizes,warnings,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id, documentId, ctx.document.source_file_id, ctx.fingerprint,
-          JSON.stringify(ctx.configs.map(signer => ({ ...signer, recovery_manual: !signer.signature_id }))), cleanReason, user.id]);
+          JSON.stringify(ctx.configs.map(signer => ({ ...signer, recovery_manual: !signer.signature_id }))), cleanReason, user.id,
+          input_method, input?.stored.file.id || null, input ? hash(input.bytes) : null, baseId || null,
+          input ? JSON.stringify(input.pages) : null, JSON.stringify(warnings), input ? 'DRAFT' : 'PENDING']);
       for (const signer of ctx.configs) {
         let image = null;
         let source = signer.signature_id ? 'MISSING' : 'MANUAL';
@@ -124,10 +194,11 @@ const create = async ({ user, id, documentId, reason: explanation, ip }) => {
           (recovery_id,config_id,image_data,image_sha256,source) VALUES (?,?,?,?,?)`,
           [result.insertId, signer.id, image, image ? hash(image) : null, source]);
       }
-      await audit(connection, id, user, 'document_recovery_created', `Tài liệu ${documentId}, bản phục hồi ${result.insertId}: ${cleanReason}`, ip);
+      await audit(connection, id, user, 'document_recovery_created',
+        `Tài liệu ${documentId}, bản phục hồi ${result.insertId}, nguồn ${input_method}${input ? `, PDF #${input.stored.file.id}, SHA256 ${hash(input.bytes)}` : ''}: ${cleanReason}`, ip);
       await connection.commit();
-      return rowFor(id, documentId, result.insertId);
-    } catch (error) { await connection.rollback(); throw error; }
+      return get({ user, id, documentId, recoveryId: result.insertId });
+    } catch (error) { await connection.rollback(); await removeUnlinkedPdf(baseId); throw error; }
   });
 };
 
@@ -212,9 +283,7 @@ const update = async ({ user, id, documentId, recoveryId, signers, replacements 
           [bytes, hash(bytes), fileId, cleanReason, row.id, configId]);
       }
       if (images.some(image => image.source === 'MISSING')) throw err('Còn thiếu ảnh chữ ký; hãy chọn ảnh thay thế và nhập lý do', 409);
-      const base = await fileService.getFilePath(row.base_file_id);
-      if (!base) throw err('Không còn PDF chuyển đổi của lượt phục hồi', 404);
-      const bytes = await signedDocuments.stampRecoveryPdf(await fs.readFile(base.filePath), positioned, map);
+      const bytes = await signedDocuments.stampRecoveryPdf(await readBase(row), positioned, map);
       previewId = await savePdf(bytes, `BCDX-${id}-phuc-hoi-${row.id}.pdf`, user.id);
       await connection.query('UPDATE proposal_document_recoveries SET signers=?,preview_file_id=?,error=NULL WHERE id=?',
         [JSON.stringify(positioned), previewId, row.id]);
@@ -242,6 +311,7 @@ const activate = async ({ user, id, documentId, recoveryId, reason: explanation,
         row = await rowFor(id, documentId, recoveryId, connection, true);
         if (!['DRAFT','CONFIRMED','ACTIVE'].includes(row.status) || !row.preview_file_id) throw err('Chưa dựng bản xem trước có đủ chữ ký', 409);
         if (ctx.fingerprint !== row.fingerprint) throw err('Dữ liệu gốc đã thay đổi; không thể sử dụng bản phục hồi này', 409);
+        await readBase(row);
         const pdf = await fileService.getFilePath(row.preview_file_id);
         if (!pdf) throw err('File phục hồi đã mất', 404);
         const bytes = await fs.readFile(pdf.filePath);
@@ -268,7 +338,7 @@ const processNext = async () => {
   let row, baseId;
   try {
     await pool.query("UPDATE proposal_document_recoveries SET status='FAILED',error='Tiến trình convert bị gián đoạn; hãy tạo lượt mới' WHERE status='PROCESSING' AND updated_at < NOW() - INTERVAL 10 MINUTE");
-    const [rows] = await pool.query("SELECT * FROM proposal_document_recoveries WHERE status='PENDING' ORDER BY id LIMIT 1");
+    const [rows] = await pool.query("SELECT * FROM proposal_document_recoveries WHERE status='PENDING' AND input_method='DOCX_CONVERT' ORDER BY id LIMIT 1");
     if (!rows.length) return;
     row = summary(rows[0]);
     const [claimed] = await pool.query("UPDATE proposal_document_recoveries SET status='PROCESSING',error=NULL WHERE id=? AND status='PENDING'", [row.id]);
@@ -278,15 +348,8 @@ const processNext = async () => {
     const { pdfBuffer, fontWarnings = [] } = await office.convertToPdf(ctx.bytes, '.docx');
     const pdf = await PDFDocument.load(pdfBuffer);
     const pages = pdf.getPages().map(page => page.getSize());
-    const warnings = [...fontWarnings, 'Bắt buộc đối chiếu nội dung/phân trang với DOCX gốc; convert thành công không bảo đảm bố cục giống Microsoft Word.'];
-    const original = await fileService.getFilePath(ctx.document.pdf_file_id || ctx.document.signing_file_id);
-    if (original?.file.mime_type === 'application/pdf') {
-      try {
-        const oldPdf = await PDFDocument.load(await fs.readFile(original.filePath));
-        const oldPages = oldPdf.getPages().map(page => page.getSize());
-        if (JSON.stringify(oldPages) !== JSON.stringify(pages)) warnings.push(`Phân trang/kích thước khác PDF cũ (${oldPages.length} → ${pages.length} trang). Kiểm tra lại mọi ô ký.`);
-      } catch (error) { warnings.push(`Không đối chiếu được PDF cũ: ${error.message}`); }
-    }
+    const warnings = [...fontWarnings, ...await pageWarnings(ctx, pages),
+      'Convert thành công không bảo đảm bố cục giống Microsoft Word.'];
     baseId = await savePdf(pdfBuffer, `${path.parse(ctx.source.file.original_name).name}-phuc-hoi.pdf`, row.created_by);
     await withLock(row.proposal_id, async connection => {
       const current = await context(row.proposal_id, row.document_id, connection);
@@ -303,4 +366,4 @@ const processNext = async () => {
   } finally { processing = false; }
 };
 
-module.exports = { inspect, create, get, update, activate, image, processNext, validPositions };
+module.exports = { inspect, create, get, update, activate, image, processNext, validPositions, validatePdf };
