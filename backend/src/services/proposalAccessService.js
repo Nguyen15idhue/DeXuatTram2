@@ -8,7 +8,7 @@ const WORKFLOW_STATUSES = new Set([...proposalGradingService.DOWNSTREAM_STATUSES
 
 const loadAccessRow = async (id) => {
   const [rows] = await pool.query(
-    `SELECT id, user_id, status, custom_data,
+    `SELECT id, user_id, status, review_level, custom_data,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.nguoi_phu_trach.id')) AS UNSIGNED) AS nguoi_phu_trach_id,
             CAST(JSON_UNQUOTE(JSON_EXTRACT(custom_data, '$.sales_quan_ly.id')) AS UNSIGNED) AS sales_quan_ly_id
      FROM station_proposals WHERE id = ?`,
@@ -64,6 +64,11 @@ const canViewProposal = async (user, proposal) => {
   if (proposalReportService.isBackOffice(profile.department)) return true;
 
   if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) {
+    if (proposal.review_level !== null && proposal.review_level !== undefined) {
+      const scope = await proposalReviewService.resolveReviewer(user);
+      if (require('./proposalReviewScope').matches(scope.managementScope, proposal)) return true;
+      if (['GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING', 'RE_GRADING', 'TGD_REVIEW'].includes(proposal.status)) return false;
+    }
     const region = proposalReviewService.resolveRegion(profile.department)
       || proposalReviewService.resolveRegion(profile.customData.vung_mien);
     if (!region) return true;

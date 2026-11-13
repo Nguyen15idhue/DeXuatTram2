@@ -11,9 +11,13 @@ const proposalReviewController = require('../controllers/proposalReviewControlle
  *     summary: Danh sách đề xuất cho trang Yêu cầu chấm điểm lại
  *     description: >
  *       tab=all: đề xuất có Mức độ xem xét khác null;
- *       tab=pending: đề xuất cần cấp của người dùng xử lý (GĐTTKD theo miền,
+ *       tab=pending: đề xuất cần cấp của người dùng xử lý (GĐTTKD theo nhánh/phòng ban của
+ *       người đề xuất hoặc nguoi_phu_trach, hoặc sales_quan_ly khớp tài khoản;
+ *       chỉ dự phòng theo miền trạm khi cả người đề xuất và nguoi_phu_trach không có tài khoản),
  *       Quy hoạch/Pháp lý với RE_GRADING, Tổng giám đốc với TGD_REVIEW);
  *       tab=completed: lọc theo vai trò (GĐTTKD: khác null, QH/PL: mức 2, TGĐ: mức 3).
+ *       Phạm vi GĐTTKD áp dụng cơ cấu nhân sự hiện tại cho cả ba tab;
+ *       bộ lọc region chỉ thu hẹp vị trí trạm, không cấp thêm quyền.
  *     security:
  *       - bearerAuth: []
  *     parameters:

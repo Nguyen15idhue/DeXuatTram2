@@ -231,11 +231,17 @@ const canAccessFile = async (file, req) => {
     } catch { /* silent */ }
   }
   if (requesterId) {
+    const reviewRole = require('../services/proposalReviewService').resolveRoleKey({
+      role: requesterRole, department: requesterDepartment, chucVu: requesterChucVu
+    });
+    const reviewScope = reviewRole === 'GDTTKD'
+      ? (await require('../services/proposalReviewService').resolveReviewer({ id: requesterId, role: requesterRole })).managementScope
+      : null;
     try {
       const fid = Number(file.id);
       const reviewService = require('../services/proposalReviewService');
       const reportService = require('../services/proposalReportService');
-      const [props] = await pool.query('SELECT user_id, status, custom_data FROM station_proposals');
+      const [props] = await pool.query('SELECT user_id, status, review_level, custom_data FROM station_proposals');
       let branchIds = null;
       if (requesterRole === 'SALES' || requesterRole === 'NPP') {
         const ids = await require('../services/adminUserService').getBranchIds(requesterId);
@@ -267,6 +273,10 @@ const canAccessFile = async (file, req) => {
         if (branchIds && p.user_id !== null && branchIds.has(Number(p.user_id))) return true;
         if (isTgdUser) return true;
         if (isGradingDepartment && gradingStatuses.has(p.status)) return true;
+        if (isGdttkdUser && p.review_level !== null && p.review_level !== undefined) {
+          if (require('../services/proposalReviewScope').matches(reviewScope, p)) return true;
+          if (['GDTTKD_EVALUATING', 'RE_GDTTKD_EVALUATING', 'RE_GRADING', 'TGD_REVIEW'].includes(p.status)) continue;
+        }
         if ((isGdttkdUser || isTgdUser || isBackOfficeUser) && gradingStatuses.has(p.status)) {
           if (isGdttkdUser && requesterRegion) {
             const proposalRegion = reviewService.resolveRegion(parseUserCustomData(p.custom_data).vung_mien);
