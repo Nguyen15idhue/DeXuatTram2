@@ -10,10 +10,10 @@ const proposalSignatureController = require('../controllers/proposalSignatureCon
  *     tags: [Proposal Signatures]
  *     summary: Danh sách đề xuất cho bước Trình ký
  *     description: >
- *       tab=all: SIGNATURE_PENDING + APPROVED; tab=pending: SIGNATURE_PENDING (Back Office/Admin/TGD
- *       xem tất cả, người được phân công ký chỉ thấy hồ sơ mình chưa ký);
- *       tab=chairman: SIGNATURE_PENDING đã ký đủ (chờ trình chủ tịch, Back Office);
- *       tab=completed: hồ sơ đã ký đủ hoặc đã hoàn thành.
+ *       tab=all: giữ phạm vi xem, bổ sung hồ sơ đã đủ chữ ký/đã upload chủ tịch cho Tài chính và Kế toán.
+ *       tab=pending: còn chữ ký cá nhân; Tài chính/SUPER_ADMIN thêm hồ sơ đủ chữ ký chờ upload.
+ *       tab=chairman: hồ sơ được phân công ký đã đủ chữ ký chờ upload, SUPER_ADMIN xem tất cả; Tài chính trả rỗng.
+ *       tab=completed: đã ký hết tài liệu cá nhân được giao; Tài chính/SUPER_ADMIN thêm hồ sơ APPROVED có file chủ tịch.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -35,7 +35,7 @@ const proposalSignatureController = require('../controllers/proposalSignatureCon
  *           enum: [PENDING, DOING, DONE, CEO_SIGNED]
  *       - in: query
  *         name: my_status
- *         description: Lọc theo tình trạng của người xem (my_pending = tôi cần ký, my_signed = tôi đã ký)
+ *         description: my_pending = còn tài liệu cần ký; my_signed = đã ký hết tài liệu được giao
  *         schema:
  *           type: string
  *           enum: [my_pending, my_signed]
@@ -245,9 +245,11 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  * /api/admin/proposal-signatures/{id}/signed-file:
  *   post:
  *     tags: [Proposal Signatures]
- *     summary: Back Office tải lên file BCĐX đã ký (chủ tịch phê duyệt)
+ *     summary: Tài chính và Kế toán hoặc SUPER_ADMIN tải lên file BCĐX chủ tịch đã ký
  *     description: >
- *       Chỉ áp dụng khi đã đủ chữ ký; lưu file và chuyển đề xuất sang APPROVED.
+ *       Chỉ Tài chính và Kế toán/SUPER_ADMIN, khi đủ chữ ký. Danh sách chung 1-20 file,
+ *       tối đa 10MB/file: JPEG/PNG/GIF/WEBP/DOC/DOCX/PDF. Giữ file đầu tiên tương thích,
+ *       không ánh xạ file chung theo BCĐX gốc; lưu danh sách, trạng thái và nhật ký cùng transaction.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -265,12 +267,16 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  *             properties:
  *               files:
  *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 20
  *                 items:
  *                   type: object
  *                   properties:
  *                     id:
  *                       type: integer
  *               documents:
+ *                 deprecated: true
+ *                 description: Payload cũ; file_id được chuyển thành danh sách chung, không yêu cầu khớp BCĐX gốc
  *                 type: array
  *                 items:
  *                   type: object
@@ -359,6 +365,106 @@ router.get('/:id/export', requireAuth, proposalSignatureController.exportFile);
  *         description: Không có quyền xem tài liệu
  */
 router.get('/:id/signed-document', requireAuth, proposalSignatureController.downloadSignedDocument);
+const recoveryController = require('../controllers/proposalDocumentRecoveryController');
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN kiểm tra điều kiện và lịch sử phục hồi DOCX
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Nguồn DOCX, người ký và lịch sử }
+ *       409: { description: Chưa ký đủ hoặc đã upload chủ tịch }
+ *   post:
+ *     tags: [Proposal Signatures]
+ *     summary: Tạo lượt phục hồi chạy nền từ DOCX gốc, bắt buộc lý do
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [reason], properties: { reason: { type: string, maxLength: 2000 } } }
+ *     responses:
+ *       200: { description: Lượt PENDING }
+ *       403: { description: Chỉ SUPER_ADMIN }
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: Trạng thái convert, PDF xem trước và nguồn ảnh đã chụp
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Trạng thái và bản nháp }
+ *   put:
+ *     tags: [Proposal Signatures]
+ *     summary: Dựng PDF xem trước với vị trí riêng và ảnh thay thế có lý do, không sửa chữ ký gốc
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [signers]
+ *             properties:
+ *               signers: { type: array, items: { type: object, required: [id,page,pos_x,pos_y,box_width,box_height] } }
+ *               replacements: { type: array, items: { type: object, required: [config_id,file_id,reason] } }
+ *     responses:
+ *       200: { description: PDF đã chèn chữ ký để kiểm tra }
+ *       409: { description: Nguồn ký đã thay đổi hoặc còn thiếu ảnh }
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}/activate:
+ *   post:
+ *     tags: [Proposal Signatures]
+ *     summary: Xác nhận bản phục hồi hoặc trở về bản gốc, giữ status và bằng chứng ký gốc
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [reason], properties: { reason: { type: string }, original: { type: boolean } } }
+ *     responses:
+ *       200: { description: Bản đang dùng đã được đổi trong transaction và ghi audit }
+ *       409: { description: Hồ sơ đã thay đổi hoặc upload chủ tịch }
+ */
+router.get('/:id/documents/:documentId/recovery', requireAuth, requireSuperAdmin, recoveryController.inspect);
+router.post('/:id/documents/:documentId/recovery', requireAuth, requireSuperAdmin, recoveryController.create);
+router.get('/:id/documents/:documentId/recovery/:recoveryId', requireAuth, requireSuperAdmin, recoveryController.get);
+router.put('/:id/documents/:documentId/recovery/:recoveryId', requireAuth, requireSuperAdmin, recoveryController.update);
+router.post('/:id/documents/:documentId/recovery/:recoveryId/activate', requireAuth, requireSuperAdmin, recoveryController.activate);
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}/image/{configId}:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN xem ảnh PNG đã đóng băng của bản phục hồi
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *       - { in: path, name: configId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: PNG snapshot hoặc ảnh thay thế riêng cho lượt phục hồi }
+ *       403: { description: Chỉ SUPER_ADMIN }
+ *       404: { description: Ảnh thiếu hoặc hoàn tất thủ công không có ảnh }
+ */
+router.get('/:id/documents/:documentId/recovery/:recoveryId/image/:configId', requireAuth, requireSuperAdmin, recoveryController.image);
 
 /**
  * @swagger
@@ -446,6 +552,32 @@ router.get('/:id/signed-document', requireAuth, proposalSignatureController.down
  *       409:
  *         description: Ảnh còn hợp lệ, đã có bản chụp hoặc tài liệu đã hoàn tất
  */
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/chairman-files:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: Tải nguyên bản file chủ tịch hoặc ZIP toàn bộ
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: file_id
+ *         description: Không truyền thì ZIP toàn bộ; không chuyển PDF hay đóng dấu lại
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: File nguyên bản hoặc application/zip
+ *       403:
+ *         description: Không có quyền đọc hồ sơ/tệp
+ *       404:
+ *         description: Không có file hoặc file không thuộc đề xuất
+ */
+router.get('/:id/chairman-files', requireAuth, proposalSignatureController.downloadChairmanFiles);
 router.get('/:id/signature-repair/:configId', requireAuth, requireSuperAdmin, proposalSignatureController.signatureRepairStatus);
 router.post('/:id/signature-repair/:configId', requireAuth, requireSuperAdmin, proposalSignatureController.repairSignature);
 router.get('/:id/signature-image/:configId', requireAuth, proposalSignatureController.signatureImage);

@@ -83,9 +83,8 @@ const getFilter = async (stage, tab, user) => {
   if (!['need', 'completed', 'all'].includes(tab)) throw Object.assign(new Error('Tab không hợp lệ'), { statusCode: 400 });
   if (stage === 'thong-tin-chung') {
     if (tab === 'all') return { sql: '1=1', params: [] };
-    if (tab === 'completed') return { sql: `cs.status<>'CANCELLED' AND ${complete}`, params: [] };
-    const tasks = await actionable(user);
-    return { sql: `cs.status<>'CANCELLED' AND (${Object.values(tasks.expressions).join(' OR ')})`, params: tasks.params };
+    if (tab === 'completed') return { sql: `cs.status<>'CANCELLED' AND ${allOperating}`, params: [] };
+    return { sql: `cs.status<>'CANCELLED' AND NOT ${allOperating}`, params: [] };
   }
   const definition = stageFilters[stage];
   if (!definition) throw Object.assign(new Error('Bước ON trạm không hợp lệ'), { statusCode: 400 });

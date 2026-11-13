@@ -75,9 +75,9 @@ exports.statusMessage = ({ code, actorName, reason, status, actionLabel }) => {
   return parts.join(' · ');
 };
 
-exports.create = async ({ userId, type, title, message, entityType, entityId, createdBy }) => {
+exports.create = async ({ userId, type, title, message, entityType, entityId, createdBy }, connection = pool) => {
   if (!userId) return null;
-  const [result] = await pool.query(
+  const [result] = await connection.query(
     `INSERT INTO notifications (user_id, type, title, message, entity_type, entity_id, is_read, created_by)
      VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
     [userId, type, title || exports.statusTitle(type), message || null, entityType || null, entityId || null, createdBy || null]

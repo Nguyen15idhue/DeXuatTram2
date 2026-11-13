@@ -32,7 +32,87 @@ const createConnection = (query) => {
       return query(sql.replace(/\s+/g, ' ').trim(), params);
     }
   };
+
 };
+
+  test('list summary isolates ambiguous legacy poles with an explicit review warning, preserving shipments', async () => {
+    const message = 'Không xác định duy nhất được loại trụ ở dòng 1; cần đối soát thủ công';
+    let released = false;
+    const connection = createConnection(sql => {
+      if (sql.includes('FOR UPDATE')) return [[{ id: 5 }]];
+      if (sql.includes('mo_hinh_dau_tu')) return [[{
+        id: 5, mo_hinh_dau_tu: 'LK', chot_so_luong_tru: [{ mo_hinh: 'LK', so_luong: 1, loai_tru: 'DC60' }]
+      }]];
+      if (sql.includes('FROM charging_poles')) return [[{ id: 1 }, { id: 2 }]];
+      throw new Error(sql);
+    });
+    const originalRelease = connection.release;
+    connection.release = () => { released = true; originalRelease(); };
+    let reads = 0;
+    const pool = {
+      getConnection: async () => { released = false; return connection; },
+      query: async sql => {
+        if (sql.includes('snapshot_count')) {
+          reads++;
+          if (reads > 1) assert.equal(released, true, 'release transaction before reading review summary');
+          return [[{ id: 5, chot_so_luong_tru: [{ mo_hinh: 'LK', so_luong: 1, loai_tru: 'DC60' }], snapshot_count: 1 }]];
+        }
+        if (sql.includes('COUNT(*) AS count')) return [[{ count: 1 }]];
+        if (sql.includes('FROM warehouse_exports we') && !sql.includes('JOIN warehouse_export_items')) return [[{ id: 8 }]];
+        if (sql.includes('SELECT wei.id')) return [[{ id: 9, export_id: 8, quantity: 1, commitment_id: null }]];
+        return [[]];
+      }
+    };
+    const { service, restore } = loadWithMocks('chargingStationShippingService.js', { '../utils/db': pool });
+    try {
+      const summary = await service.getSummary(5, pool, { allowReview: true });
+      assert.equal(summary.needs_review, true);
+      assert.equal(summary.review_message, message);
+      assert.deepEqual(summary.shipping_options, []);
+      assert.equal(summary.shipments[0].items[0].id, 9);
+      assert.equal(connection.calls.includes('rollback'), true);
+      assert.equal(connection.calls.includes('commit'), false);
+      assert.equal(connection.calls.some(call => call.sql?.startsWith('INSERT')), false);
+      await assert.rejects(service.getSummary(5), { statusCode: 409, message });
+    } finally { restore(); }
+  });
+
+  test('list summary does not mask infrastructure errors as reconciliation warnings', async () => {
+    const connection = createConnection(() => { throw new Error('Database unavailable'); });
+    const pool = {
+      getConnection: async () => connection,
+      query: async sql => sql.includes('snapshot_count')
+        ? [[{ id: 5, chot_so_luong_tru: [{}], snapshot_count: 1 }]] : [[]]
+    };
+    const { service, restore } = loadWithMocks('chargingStationShippingService.js', { '../utils/db': pool });
+    try {
+      await assert.rejects(service.getSummary(5, pool, { allowReview: true }), /Database unavailable/);
+      assert.equal(connection.calls.includes('rollback'), true);
+      assert.equal(connection.calls.includes('release'), true);
+    } finally { restore(); }
+  });
+test('overview reads committed quantities without resolving pole names or starting a transaction', async () => {
+  const pool = {
+    getConnection: async () => { throw new Error('Overview must not initialize commitments'); },
+    query: async sql => {
+      if (sql.includes('FROM charging_poles WHERE')) throw new Error('Must not resolve legacy pole names');
+      if (sql.includes('snapshot_count')) return [[{ id: 5, snapshot_count: 2,
+        chot_so_luong_tru: JSON.stringify([
+          { mo_hinh: 'NQ', so_luong: 2, loai_tru: 'not in inventory' },
+          { mo_hinh: 'LK', so_luong: 3, loai_tru: 'ambiguous name' }
+        ]) }]];
+      if (sql.includes('COUNT(*) AS count')) return [[{ count: 0 }]];
+      return [[]];
+    }
+  };
+  const { service, restore } = loadWithMocks('chargingStationShippingService.js', { '../utils/db': pool });
+  try {
+    const summary = await service.getSummary(5, pool, { initialize: false });
+    assert.equal(summary.totals.committed, 5);
+    assert.equal(summary.totals.remaining, 5);
+    assert.deepEqual(summary.items, []);
+  } finally { restore(); }
+});
 
 test('createExport requires a request id before any inventory or shipment write', async () => {
   const connection = createConnection((sql) => {

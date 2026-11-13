@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { chargingStationService } from '../../services/api';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { AlertTriangle, MoreVertical } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, Dialog, FilterBar, Input, Pagination, Toast } from '../ui';
 import ChargingStationTable from './ChargingStationTable';
 import ChargingStationCareModal from './ChargingStationCareModal';
+import ChargingStationNeedBadge from './ChargingStationNeedBadge';
+import { formatChotTruRows } from '../../utils/proposalSignature';
 import { notifyBellRefresh } from '../layout/NotificationBell';
 import {
   CS_CONTRACT_LABELS,
   CS_CONTRACT_VARIANT,
-  CS_EDITOR_ROLES,
   CS_FLOW_LABELS,
   CS_FLOW_VARIANT,
   CS_DEPOSIT_LABELS,
@@ -34,8 +36,8 @@ const getLocalDateInput = () => {
 };
 const TABS = [
   { key: 'all', label: 'Tất cả trạm sạc' },
-  { key: 'need', label: 'Trạm sạc cần thực hiện' },
-  { key: 'completed', label: 'Trạm sạc đã hoàn thành' }
+  { key: 'need', label: 'Cần theo dõi tiến độ' },
+  { key: 'completed', label: 'Trạm sạc đã ON' }
 ];
 
 const ChargingStationTab = ({ stage }) => {
@@ -44,16 +46,20 @@ const ChargingStationTab = ({ stage }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const tab = TABS.some((item) => item.key === requestedTab) ? requestedTab : 'all';
-  const canEdit = CS_EDITOR_ROLES.includes(user?.role);
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 });
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
   const [careStation, setCareStation] = useState(null);
+  const [menu, setMenu] = useState(null);
+  const [editStation, setEditStation] = useState(null);
+  const [changeStation, setChangeStation] = useState(null);
+  const [mutationBusy, setMutationBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletePreview, setDeletePreview] = useState(null);
   const [deletePreviewLoading, setDeletePreviewLoading] = useState(false);
@@ -71,13 +77,16 @@ const ChargingStationTab = ({ stage }) => {
   const load = useCallback(async (targetPage) => {
     if (!token) return;
     setLoading(true);
+    setLoadError('');
     try {
       const params = new URLSearchParams({ stage, tab, page: targetPage, limit: PAGE_SIZE });
       if (debouncedSearch) params.set('search', debouncedSearch);
       const res = await chargingStationService.getAll(params.toString(), token);
+      if (res?.success === false) throw new Error(res.message || 'Không tải được danh sách ON trạm');
       setItems(res?.data || []);
       setPagination(res?.pagination || { page: targetPage, limit: PAGE_SIZE, total: 0, totalPages: 1 });
     } catch (error) {
+      setLoadError(error?.message || 'Không tải được danh sách ON trạm');
       setToast({ message: error?.message || 'Không tải được danh sách ON trạm', type: 'error' });
       setItems([]);
     } finally {
@@ -89,6 +98,49 @@ const ChargingStationTab = ({ stage }) => {
     setPage(1);
     load(1);
   }, [load]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const reposition = () => {
+      if (!menu.anchor.isConnected) { close(); return; }
+      const bounds = menu.anchor.getBoundingClientRect();
+      const left = Math.max(8, Math.min(bounds.right - 220, window.innerWidth - 228));
+      const top = Math.max(8, Math.min(bounds.bottom + 4, window.innerHeight - 300));
+      setMenu(current => current && (current.left !== left || current.top !== top) ? { ...current, left, top } : current);
+    };
+    const keydown = event => { if (event.key === 'Escape') close(); };
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('keydown', keydown);
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('keydown', keydown);
+    };
+  }, [menu]);
+
+  const saveOverview = async (kind) => {
+    if (mutationBusy) return;
+    setMutationBusy(true);
+    try {
+      if (kind === 'edit') await chargingStationService.update(editStation.id, {
+        description: editStation.description, note: editStation.note,
+        ...(editStation.on_date !== editStation.original_on_date ? { on_date: editStation.on_date || null } : {})
+      }, token);
+      else {
+        if (!changeStation.reason.trim()) throw new Error('Bắt buộc nhập lý do đổi trạng thái');
+        await chargingStationService.changeStatus(changeStation.row.id, {
+          to_status: changeStation.to_status, reason: changeStation.reason.trim()
+        }, token);
+      }
+      setEditStation(null);
+      setChangeStation(null);
+      setToast({ message: 'Đã cập nhật ON trạm', type: 'success' });
+      await load(page);
+    } catch (error) { setToast({ message: error.message || 'Không thể cập nhật ON trạm', type: 'error' }); }
+    finally { setMutationBusy(false); }
+  };
 
   useEffect(() => {
     if (!deleteTarget) {
@@ -227,16 +279,15 @@ const ChargingStationTab = ({ stage }) => {
       )
     },
     {
-      key: 'ma_de_xuat',
-      label: 'Mã đề xuất',
-      render: (value, row) => (
-        <Link to={`/admin/proposals/chi-tiet/${row.proposal_id}`} className="link link-primary underline text-left">
-          {value || `#${row.proposal_id}`}
-        </Link>
-      )
+      key: 'progress',
+      label: 'Cập nhật tiến độ',
+      render: (_, row) => <Button variant="outline" size="xs"
+        onClick={() => setCareStation({ id: row.id, code: row.ma_tram })}>Cập nhật tiến độ</Button>
     },
     { key: 'owner_name', label: 'Chủ trạm', render: (value) => value || '—' },
     { key: 'owner_phone', label: 'SĐT', render: (value) => value || '—' },
+    { key: 'chot_so_luong_tru', label: 'Số lượng trụ chốt',
+      render: (value) => <span className="whitespace-normal">{formatChotTruRows(value)}</span> },
     {
       key: 'address',
       label: 'Địa chỉ',
@@ -291,63 +342,87 @@ const ChargingStationTab = ({ stage }) => {
     { key: 'on_date', label: 'Ngày ON', render: (value) => <span className="whitespace-nowrap">{formatCsDate(value)}</span> }
   ], [location.pathname, location.search]);
 
-  const renderActions = (row) => (
-    <div className="flex items-center justify-center gap-1">
-      <Link
-        to={`/admin/on-tram/thong-tin-chung/${row.id}`}
-        state={{ returnTo: `${location.pathname}${location.search}` }}
-        className="btn btn-outline btn-xs"
-      >
-        Chi tiết
-      </Link>
-      <Button variant="outline" size="xs" onClick={() => setCareStation({ id: row.id, code: row.ma_tram })}>
-        CSKH
-      </Button>
-      {stage === 'thong-tin-chung' && user?.role !== 'ADMIN' && row.can_cancel_on_station && (
-        <Button
-          variant="outline-error"
-          size="xs"
-          onClick={() => setStatusDialog({ open: true, action: 'cancel', row })}
-        >
-          Hủy ON trạm
-        </Button>
-      )}
-      {stage === 'thong-tin-chung' && user?.role !== 'ADMIN' && row.can_restore_on_station && (
-        <Button
-          variant="outline-warning"
-          size="xs"
-          onClick={() => setStatusDialog({ open: true, action: 'restore', row })}
-        >
-          Khôi phục
-        </Button>
-      )}
-      {stage === 'thong-tin-chung' && isSuperAdmin && row.can_mark_on_station_active
-        && !row.fulfillment?.items?.length && !row.deployments?.length && (
-        <button
-          type="button"
-          className="btn btn-success btn-xs whitespace-nowrap"
-          onClick={() => openOnStationDialog(row)}
-          title="SUPER_ADMIN xác nhận trạm đã ON và chuyển đề xuất sang Hoạt động"
-        >
-          Đã ON Trạm
-        </button>
-      )}
-      {stage === 'thong-tin-chung' && tab === 'all' && isSuperAdmin && (
-        <Button
-          variant="outline-error"
-          size="xs"
-          aria-label={`Xóa ON trạm ${row.ma_tram || row.id}`}
-          onClick={() => setDeleteTarget(row)}
-        >
-          <Trash2 size={14} /> Xóa
-        </Button>
-      )}
-    </div>
-  );
+  const renderActions = row => (isSuperAdmin || (user?.role !== 'ADMIN'
+    && (row.can_cancel_on_station || row.can_restore_on_station))) ? (
+    <button type="button" className="btn btn-ghost btn-xs btn-square" aria-label={`Thao tác khác ${row.ma_tram || row.id}`}
+      aria-haspopup="menu" onClick={event => {
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setMenu({ row, anchor: event.currentTarget, left: Math.max(8, Math.min(bounds.right - 220, window.innerWidth - 228)),
+          top: Math.max(8, Math.min(bounds.bottom + 4, window.innerHeight - 300)) });
+      }}><MoreVertical size={16} /></button>
+  ) : <span className="text-xs text-base-content/50">Chỉ xem</span>;
 
   return (
     <div className="space-y-4">
       <Toast message={toast.message} type={toast.type} onClose={closeToast} />
+      {menu && createPortal(<>
+        <div className="fixed inset-0 z-[9998]" onClick={() => setMenu(null)} />
+        <div role="menu" className="fixed z-[9999] w-[220px] rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl"
+          style={{ left: menu.left, top: menu.top }}>
+          {isSuperAdmin && <>
+            <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
+              setEditStation({ id: menu.row.id, description: menu.row.description || '', note: menu.row.note || '',
+                on_date: menu.row.on_date || '', original_on_date: menu.row.on_date || '' }); setMenu(null);
+            }}>Sửa</button>
+            <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
+              setChangeStation({ row: menu.row, to_status: '', reason: '' }); setMenu(null);
+            }}>Đổi trạng thái</button>
+          </>}
+          {user?.role !== 'ADMIN' && menu.row.can_cancel_on_station && <button role="menuitem"
+            className="btn btn-ghost btn-sm w-full justify-start text-error" onClick={() => {
+              setStatusDialog({ open: true, action: 'cancel', row: menu.row }); setMenu(null);
+            }}>Hủy ON trạm</button>}
+          {user?.role !== 'ADMIN' && menu.row.can_restore_on_station && <button role="menuitem"
+            className="btn btn-ghost btn-sm w-full justify-start" onClick={() => {
+              setStatusDialog({ open: true, action: 'restore', row: menu.row }); setMenu(null);
+            }}>Khôi phục</button>}
+          {isSuperAdmin && menu.row.can_mark_on_station_active && !menu.row.fulfillment?.items?.length && !menu.row.deployments?.length
+            && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start text-success" onClick={() => {
+              openOnStationDialog(menu.row); setMenu(null);
+            }}>Đã ON Trạm</button>}
+          {isSuperAdmin && <button role="menuitem" className="btn btn-ghost btn-sm w-full justify-start text-error"
+            onClick={() => { setDeleteTarget(menu.row); setMenu(null); }}>Xóa ON trạm</button>}
+        </div>
+      </>, document.body)}
+      <Dialog isOpen={!!editStation} title="Sửa thông tin ON trạm" size="md"
+        onClose={() => { if (!mutationBusy) setEditStation(null); }}>
+        {editStation && <div className="space-y-3">
+          <Input type="date" label="Ngày ON thực tế" aria-label="Ngày ON thực tế" value={editStation.on_date}
+            disabled={mutationBusy} onChange={event => setEditStation({ ...editStation, on_date: event.target.value })} />
+          <p className="text-xs text-base-content/60">Ngày ON đã ghi nhận theo phần trụ được bảo vệ, không thể sửa qua thông tin chung.</p>
+          {['description', 'note'].map(key => <label key={key} className="block text-sm">
+            {key === 'description' ? 'Mô tả' : 'Ghi chú nội bộ'}
+            <textarea className="textarea textarea-bordered mt-1 w-full" rows={3} value={editStation[key]}
+              disabled={mutationBusy} onChange={event => setEditStation({ ...editStation, [key]: event.target.value })} />
+          </label>)}
+          <div className="flex justify-end gap-2"><Button variant="ghost" disabled={mutationBusy} onClick={() => setEditStation(null)}>Hủy</Button>
+            <Button loading={mutationBusy} onClick={() => saveOverview('edit')}>Lưu</Button></div>
+        </div>}
+      </Dialog>
+      <Dialog isOpen={!!changeStation} title="Đổi trạng thái ON trạm" size="md"
+        onClose={() => { if (!mutationBusy) setChangeStation(null); }}>
+        {changeStation && <div className="space-y-3">
+          <p className="text-sm">Trạng thái hiện tại: {CS_STATUS_LABELS[changeStation.row.status]}</p>
+          <p className="text-sm text-warning">Chỉ hỗ trợ chuyển hợp lệ cho hồ sơ legacy. Trạm có dữ liệu triển khai từng phần phải cập nhật tại từng bước nghiệp vụ.</p>
+          <label className="block text-sm">Trạng thái đích
+            <select className="select select-bordered mt-1 w-full" value={changeStation.to_status}
+              disabled={mutationBusy} onChange={event => setChangeStation({ ...changeStation, to_status: event.target.value })}>
+              <option value="">Chọn trạng thái</option>
+              {changeStation.row.status === 'ONBOARDING' && changeStation.row.delivery_ready && !changeStation.row.fulfillment?.items?.length
+                && <option value="DELIVERING">{CS_STATUS_LABELS.DELIVERING}</option>}
+              {changeStation.row.status === 'ACCEPTANCE' && !changeStation.row.fulfillment?.items?.length && !changeStation.row.deployments?.length
+                && <option value="INSTALLING">{CS_STATUS_LABELS.INSTALLING}</option>}
+            </select>
+          </label>
+          <label className="block text-sm">Lý do *
+            <textarea className="textarea textarea-bordered mt-1 w-full" rows={3} value={changeStation.reason} disabled={mutationBusy}
+              onChange={event => setChangeStation({ ...changeStation, reason: event.target.value })} />
+          </label>
+          <div className="flex justify-end gap-2"><Button variant="ghost" disabled={mutationBusy} onClick={() => setChangeStation(null)}>Hủy</Button>
+            <Button loading={mutationBusy} disabled={mutationBusy || !changeStation.to_status || !changeStation.reason.trim()} onClick={() => saveOverview('status')}>Xác nhận</Button></div>
+        </div>}
+      </Dialog>
+      {loadError && <div role="alert" className="alert alert-error">{loadError}</div>}
 
       <ConfirmDialog
         isOpen={statusDialog.open}
@@ -517,7 +592,7 @@ const ChargingStationTab = ({ stage }) => {
             className={`tab ${tab === item.key ? 'tab-active font-semibold' : ''}`}
             onClick={() => selectTab(item.key)}
           >
-            {item.label}
+            {item.label}{item.key === 'need' && <ChargingStationNeedBadge stage="thong-tin-chung" />}
           </button>
         ))}
       </div>
@@ -541,12 +616,13 @@ const ChargingStationTab = ({ stage }) => {
         data={items}
         loading={loading}
         emptyMessage={tab === 'need'
-          ? 'Không có trạm sạc cần thực hiện'
+          ? 'Không có trạm sạc cần theo dõi tiến độ'
           : tab === 'completed'
-            ? 'Chưa có trạm sạc ON hoàn tất'
+            ? 'Chưa có trạm sạc đã ON toàn bộ trụ'
             : 'Chưa có bản ghi ON trạm nào'}
         startIndex={(pagination.page - 1) * PAGE_SIZE}
         actions={renderActions}
+        frozenColumns={2}
       />
 
       <Pagination
@@ -562,7 +638,6 @@ const ChargingStationTab = ({ stage }) => {
           stationId={careStation.id}
           stationCode={careStation.code}
           token={token}
-          canEdit={canEdit}
           onClose={() => setCareStation(null)}
           onToast={(message, type = 'success') => setToast({ message, type })}
         />

@@ -1,0 +1,43 @@
+CREATE TABLE IF NOT EXISTS proposal_document_recoveries (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  proposal_id INT NOT NULL,
+  document_id INT NOT NULL,
+  source_file_id INT NOT NULL,
+  base_file_id INT NULL,
+  preview_file_id INT NULL,
+  fingerprint CHAR(64) NOT NULL,
+  signers JSON NOT NULL,
+  page_sizes JSON NULL,
+  warnings JSON NULL,
+  reason TEXT NOT NULL,
+  status ENUM('PENDING','PROCESSING','DRAFT','ACTIVE','CONFIRMED','FAILED') NOT NULL DEFAULT 'PENDING',
+  error TEXT NULL,
+  created_by INT NULL,
+  confirmed_by INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  confirmed_at TIMESTAMP NULL,
+  active_document_id INT NULL,
+  UNIQUE KEY uq_document_active_recovery (active_document_id),
+  KEY idx_recovery_queue (status,updated_at),
+  CONSTRAINT fk_recovery_proposal FOREIGN KEY (proposal_id) REFERENCES station_proposals(id) ON DELETE CASCADE,
+  CONSTRAINT fk_recovery_document FOREIGN KEY (document_id) REFERENCES proposal_report_documents(id) ON DELETE CASCADE,
+  CONSTRAINT fk_recovery_source FOREIGN KEY (source_file_id) REFERENCES files(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_recovery_base FOREIGN KEY (base_file_id) REFERENCES files(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_recovery_preview FOREIGN KEY (preview_file_id) REFERENCES files(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_recovery_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_recovery_confirmer FOREIGN KEY (confirmed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS proposal_recovery_images (
+  recovery_id INT NOT NULL,
+  config_id INT NOT NULL,
+  image_data MEDIUMBLOB NULL,
+  image_sha256 CHAR(64) NULL,
+  source ENUM('SNAPSHOT','LEGACY','MISSING','MANUAL','REPLACEMENT') NOT NULL,
+  replacement_file_id INT NULL,
+  replacement_reason TEXT NULL,
+  PRIMARY KEY (recovery_id,config_id),
+  CONSTRAINT fk_recovery_image_parent FOREIGN KEY (recovery_id) REFERENCES proposal_document_recoveries(id) ON DELETE CASCADE,
+  CONSTRAINT fk_recovery_image_file FOREIGN KEY (replacement_file_id) REFERENCES files(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

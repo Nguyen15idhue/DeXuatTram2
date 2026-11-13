@@ -108,7 +108,7 @@ const reportUploadUsers = async (proposal) => {
         department: user.department,
         chucVu: user.chucVu
       });
-      if (roleKey === proposalReviewService.REVIEW_ROLE.TGD) return true;
+      if (roleKey === proposalReviewService.REVIEW_ROLE.TGD) return false;
       const userRegion = proposalReviewService.resolveRegion(user.department)
         || proposalReviewService.resolveRegion(user.customData.vung_mien);
       if (roleKey === proposalReviewService.REVIEW_ROLE.GDTTKD) return !!region && userRegion === region;

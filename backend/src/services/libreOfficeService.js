@@ -36,7 +36,8 @@ const getConversionSignature = async () => {
 };
 
 const checkDocumentFonts = async (inputBuffer, ext) => {
-  if (ext !== '.docx') return;
+  if (ext !== '.docx') return [];
+  const warnings = [];
   const zip = new PizZip(inputBuffer);
   const families = new Set();
   for (const name of Object.keys(zip.files).filter((name) => /^word\/(?:document|styles|header\d+|footer\d+)\.xml$/.test(name))) {
@@ -53,7 +54,9 @@ const checkDocumentFonts = async (inputBuffer, ext) => {
     const match = await runFile('fc-match', ['--format', '%{family}', '--', family], { timeout: TIMEOUT_MS, windowsHide: true });
     if (!match.stdout.split(',').some((value) => value.trim().toLowerCase() === family.toLowerCase())) {
       console.warn(`[Word preview] Missing font "${family}"; substituted with "${match.stdout.trim()}". Pagination may differ from Microsoft Word.`);
+      warnings.push(`Thiếu font "${family}", dùng "${match.stdout.trim()}"; phân trang có thể khác Word.`);
     }
+    return warnings;
   }
 };
 
@@ -69,7 +72,7 @@ const performConversion = async (inputBuffer, inputExt = '.docx') => {
   const outPath = path.join(tmpDir, 'input.pdf');
 
   try {
-    await checkDocumentFonts(inputBuffer, ext);
+    const fontWarnings = await checkDocumentFonts(inputBuffer, ext);
     fs.writeFileSync(inPath, inputBuffer);
 
     await new Promise((resolve, reject) => {
@@ -97,7 +100,7 @@ const performConversion = async (inputBuffer, inputExt = '.docx') => {
     }
     const pdf = await PDFDocument.load(pdfBuffer);
     if (pdf.getPageCount() < 1) throw new Error('File PDF chuyển đổi không có trang');
-    return { pdfBuffer };
+    return { pdfBuffer, fontWarnings };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

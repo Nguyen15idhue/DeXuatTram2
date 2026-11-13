@@ -29,7 +29,8 @@ test.before(() => {
   notification.create = async (value) => notices.push(value);
   pool.query = async (sql, params = []) => {
     queries.push({ sql, params });
-    if (sql.includes("FROM users WHERE status")) return [[superUser, { id: 8, role: 'ADMIN', custom_data: '{"department":"Back Office"}' }]];
+    if (sql.includes("FROM users WHERE status")) return [[superUser, { id: 8, role: 'SALES', custom_data: '{"department":"Phòng Tài chính và Kế toán"}' },
+      { id: 9, role: 'SALES', custom_data: '{"department":"Back Office"}' }]];
     if (sql.includes('COUNT(*) AS total')) return [[{ total: 1 }]];
     if (sql.includes('SELECT p.*')) {
       return [[{ ...proposal, signer_total: configs.length, signer_signed: configs.filter((item) => item.status === 'SIGNED').length, signer_distinct_total: configs.length }]];
@@ -88,7 +89,7 @@ test('validates reason and ID before acquiring locks', async () => {
   await assert.rejects(service.completeSigning({ user: superUser, id: 'invalid', reason: 'Reason' }), { statusCode: 400 });
   assert.equal(queries.length, 0);
 });
-test('completes without configuration, preserves workflow and notifies Back Office', async () => {
+test('completes without configuration, preserves workflow and notifies Finance instead of Back Office', async () => {
   const result = await service.completeSigning({ user: superUser, id: 71, reason: ' Signed offline ', ip: '127.0.0.1' });
   assert.equal(result.status, 'SIGNATURE_PENDING');
   assert.equal(result.sign_status, 'DONE');
@@ -101,6 +102,7 @@ test('completes without configuration, preserves workflow and notifies Back Offi
   assert.equal(logs[0][6], 1);
   assert.equal(logs[0][9], 1, 'Manual override audit is explicit');
   assert.ok(notices.some((notice) => notice.userId === 8));
+  assert.equal(notices.some((notice) => notice.userId === 9), false);
   assert.equal(committed, 1);
   assert.equal(released, 1);
   const list = await service.listProposals({ user: superUser });

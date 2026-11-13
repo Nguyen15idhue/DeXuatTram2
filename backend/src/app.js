@@ -202,6 +202,9 @@ app.get('/health', (req, res) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
+  require('./workers/proposalDocumentRecoveryWorker').start().catch(error => {
+    console.error('[ProposalRecoveryWorker] start error:', error);
+  });
   require('./workers/proposalReportConversionWorker').start().catch((error) => {
     console.error('[ReportConversionWorker] start error:', error);
   });

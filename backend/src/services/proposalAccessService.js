@@ -140,7 +140,8 @@ exports.buildOwnerMatcher = buildOwnerMatcher;
 
 exports.buildReportTaskScopeSql = async (user, alias = 'p') => {
   const scope = await proposalReportService.resolveScope(user);
-  if (scope.role === 'SUPER_ADMIN' || scope.roleKey === 'TGD') return { sql: '1 = 1', params: [] };
+  if (scope.role === 'SUPER_ADMIN') return { sql: '1 = 1', params: [] };
+  if (scope.roleKey === 'TGD') return { sql: '1 = 0', params: [] };
   if (scope.roleKey === 'GDTTKD') {
     if (!scope.region) return { sql: '1 = 0', params: [] };
     return {

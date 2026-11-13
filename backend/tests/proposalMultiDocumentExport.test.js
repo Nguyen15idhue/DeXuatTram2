@@ -18,7 +18,7 @@ const loadService = async (name, mocks) => {
   return module.exports;
 };
 
-const makeHarness = async ({ root, actualStamping = false, failSnapshot = false } = {}) => {
+const makeHarness = async ({ root, actualStamping = false, failSnapshot = false, finance = false } = {}) => {
   const proposal = { id: 501, user_id: 7, status: 'SIGNATURE_PENDING', ma_de_xuat: 'TEST', custom_data: {} };
   const configs = [
     { id: 1, proposal_id: 501, document_id: 11, file_id: 101, user_id: 7, created_by: 7, full_name: 'Same Signer', status: actualStamping ? 'SIGNED' : 'PENDING', signature_id: 99, signed_at: '2026-01-02T03:04:05Z', page: 1, pos_x: 0.1, pos_y: 0.2, box_width: 0.3, box_height: 0.25 },
@@ -33,6 +33,8 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false 
   let releaseLock = null;
   let activeMutations = 0;
   let maximumMutations = 0;
+  const notices = [];
+  const chairmanFiles = [];
   const query = async (sql, args = []) => {
     if (sql.includes('GET_LOCK')) {
       if (releaseLock) return [[{ acquired: 0 }]];
@@ -46,7 +48,24 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false 
       releaseLock = null;
       return [[{ released: 1 }]];
     }
+    if (sql.includes('SELECT p.id FROM station_proposals')) return [
+      proposal.signed_file_id || configs.every(config => config.status === 'SIGNED') ? [{ id: proposal.id }] : []
+    ];
     if (sql.includes('FROM station_proposals')) return [[{ ...proposal }]];
+    if (sql.includes('FROM proposal_chairman_files')) return [chairmanFiles];
+    if (sql.includes('INSERT INTO proposal_chairman_files')) {
+      chairmanFiles.push({ id: args[1], order_index: args[2] });
+      return [{ affectedRows: 1 }];
+    }
+    if (sql.includes('FROM files WHERE id IN')) return [args.map(id => ({ id, original_name: `final-${id}.pdf` }))];
+    if (sql.includes('UPDATE proposal_report_documents SET signed_file_id')) {
+      documents.find(document => document.id === args[1]).signed_file_id = args[0];
+      return [{ affectedRows: 1 }];
+    }
+    if (sql.includes('UPDATE station_proposals SET signed_file_id')) {
+      proposal.signed_file_id = args[0];
+      return [{ affectedRows: 1 }];
+    }
     if (sql.includes('UPDATE proposal_signature_configs')) {
       if (sql.includes("SET status = 'CANCELLED'")) {
         configs.forEach((config) => { config.status = 'CANCELLED'; });
@@ -59,7 +78,9 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false 
     }
     if (sql.includes('FROM proposal_signature_configs')) return [configs.filter((config) => config.status !== 'CANCELLED').map((config) => ({ ...config }))];
     if (sql.includes('FROM proposal_requests')) return [[]];
-    if (sql.includes('FROM users')) return [[{ id: 7 }]];
+    if (sql.includes('FROM users')) return [[{ id: 7, role: 'SUPER_ADMIN' },
+      { id: 20, role: 'SALES', custom_data: { department: 'Phòng Tài chính và Kế toán' } },
+      { id: 30, role: 'SALES', custom_data: { department: 'Back Office' } }]];
     if (sql.includes('FROM signatures')) {
       return [[{ id: 99, file_url: 'mock-signature', file_path: path.join(root || '.', 'signature.png') }]];
     }
@@ -78,12 +99,21 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false 
       };
     }
   };
-  const reports = { resolveScope: async () => ({ userId: 7, role: 'SUPER_ADMIN', isAdmin: true, isBackOffice: true }), isBackOffice: () => true };
-  const notifications = { proposalCode: () => 'TEST', getUserName: async () => 'Same Signer', statusMessage: () => 'mock', create: async () => {}, statusTitle: () => 'mock' };
+  const reports = { resolveScope: async () => ({
+    userId: finance ? 20 : 7, role: finance ? 'SALES' : 'SUPER_ADMIN', isAdmin: !finance,
+    isBackOffice: !finance, isFinance: finance
+  }), isBackOffice: () => true, isFinanceDepartment: department => String(department).includes('Tài chính') };
+  const notifications = { proposalCode: () => 'TEST', getUserName: async () => 'Same Signer', statusMessage: () => 'mock', create: async value => notices.push(value), statusTitle: () => 'mock' };
   const lifecycle = {
+    transitionSignedApprovalWithinTransaction: async (connection, id) => {
+      assert.equal(chairmanFiles.length > 0, true);
+      assert.equal(proposal.signed_file_id, chairmanFiles[0].id);
+      proposal.status = 'APPROVED';
+      return { id, status: 'APPROVED' };
+    },
     transition: async (id, status) => {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      assert.equal(configs.some((config) => config.status === 'SIGNED'), false);
+      if (status !== 'APPROVED') assert.equal(configs.some((config) => config.status === 'SIGNED'), false);
       proposal.status = status;
       return { id, status };
     },
@@ -113,13 +143,20 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false 
     } };
   const mocks = {
     '../utils/db': pool,
-    './dynamicUtils': {},
+    './dynamicUtils': { getFieldDefinitionsByEntity: async () => [], mergeData: row => row, enrichUserFields: async row => row },
+    './proposalProgressService': { getProgress: async () => ({ requests: [], activity: [] }) },
+    './chargingStationService': { createFromApprovedProposal: async () => {} },
     './proposalReportService': reports,
     './proposalGradingService': { parseCustomData: (value) => value || {}, toFileSummaries: () => [] },
     './proposalReviewService': { resolveRoleKey: () => null },
     './proposalReportDocumentService': { getSigningDocuments: async () => documents, listDocuments: async () => documents },
     './notificationService': notifications,
     './proposalLifecycle': lifecycle,
+    './proposalChairmanFileService': {
+      normalizeFiles: (files, documents) => (files || documents).map(file => file.id ?? file.file_id),
+      validate: async () => {},
+      list: async () => chairmanFiles
+    },
     './signedDocumentService': signedDocuments,
     './signatureSnapshotService': snapshots,
     './fileService': fileService,
@@ -127,8 +164,47 @@ const makeHarness = async ({ root, actualStamping = false, failSnapshot = false 
   };
   const signatures = await loadService('proposalSignatureService.js', mocks);
   const approvals = await loadService('proposalApprovalService.js', { ...mocks, './proposalSignatureService': signatures });
-  return { signatures, approvals, proposal, configs, snapshots, signedDocuments, maximumMutations: () => maximumMutations };
+  return { signatures, approvals, proposal, configs, documents, notices, chairmanFiles, snapshots, signedDocuments, maximumMutations: () => maximumMutations };
 };
+
+test('Finance reads all completed documents without being a signer but cannot read pending unrelated proposals', async () => {
+  const fixture = await makeHarness({ finance: true });
+  const user = { id: 20, role: 'SALES' };
+  await assert.rejects(fixture.signatures.getDetail({ user, id: 501 }), { statusCode: 403 });
+  fixture.configs.forEach(config => { config.status = 'SIGNED'; });
+  const detail = await fixture.signatures.getDetail({ user, id: 501 });
+  assert.equal(detail.documents.length, 2);
+  assert.equal(detail.can_upload_signed, true);
+  assert.equal(detail.can_sign, false);
+  assert.equal(detail.can_request_rework, false);
+  assert.equal(detail.can_withdraw, false);
+  fixture.proposal.status = 'APPROVED';
+  fixture.proposal.signed_file_id = 300;
+  assert.equal((await fixture.signatures.getDetail({ user, id: 501 })).documents.length, 2);
+});
+
+test('Finance upload requires every document signed and saves a shared collection before approval', async () => {
+  const fixture = await makeHarness({ finance: true });
+  const args = { user: { id: 20, role: 'SALES' }, id: 501,
+    documents: [{ document_id: 11, file_id: 201 }, { document_id: 12, file_id: 202 }] };
+  await assert.rejects(fixture.signatures.uploadSignedFile(args), { statusCode: 400 });
+  fixture.configs.forEach(config => { config.status = 'SIGNED'; });
+  const result = await fixture.signatures.uploadSignedFile(args);
+  assert.equal(result.status, 'APPROVED');
+  assert.equal(fixture.proposal.signed_file_id, 201);
+  assert.deepEqual(fixture.documents.map(document => document.signed_file_id), [undefined, undefined]);
+  assert.deepEqual(fixture.chairmanFiles.map(file => file.id), [201, 202]);
+  assert.equal((await fixture.signatures.getDetail({ user: args.user, id: 501 })).can_upload_signed, false);
+});
+
+test('last signature notifies Finance and SUPER_ADMIN, not Back Office', async () => {
+  const fixture = await makeHarness();
+  await fixture.signatures.sign({ user: { id: 7, role: 'SUPER_ADMIN' }, id: 501, documentId: 11 });
+  assert.equal(fixture.notices.some(notice => notice.type === 'DONE'), false);
+  await fixture.signatures.sign({ user: { id: 7, role: 'SUPER_ADMIN' }, id: 501, documentId: 12 });
+  const recipients = fixture.notices.filter(notice => notice.type === 'DONE').map(notice => notice.userId).sort((a, b) => a - b);
+  assert.deepEqual(recipients, [7, 20]);
+});
 
 test('sign and withdrawal serialize in both arrival orders without losing signed configs', async () => {
   const user = { id: 7, role: 'SUPER_ADMIN' };

@@ -42,6 +42,9 @@ const Card = ({ title, children }) => (
 );
 
 const ACTION_LABELS = {
+  progress_created: 'Thêm tiến độ ON trạm',
+  progress_updated: 'Sửa tiến độ ON trạm',
+  progress_deleted: 'Xóa tiến độ ON trạm',
   created: 'Tạo bản ghi ON trạm từ đề xuất đã ký',
   updated: 'Cập nhật thông tin',
   contract_signing_started: 'Bắt đầu ký hợp đồng',
@@ -129,7 +132,7 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
   );
 
   const advance = (toStatus) => run(
-    () => chargingStationService.changeStatus(id, { to_status: toStatus }, token),
+    () => chargingStationService.changeStatus(id, { to_status: toStatus, reason: rollbackReason.trim() }, token),
     `Đã chuyển sang ${CS_STATUS_LABELS[toStatus]}`
   );
 
@@ -287,16 +290,21 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
                     {CS_CONTRACT_LABELS[record.contract_status] || '—'}
                   </Badge>
                 </div>
-                {record.contract_file_id && (
+                {(record.contract_files?.length ? record.contract_files : record.contract_file_id
+                  ? [{ id: record.contract_file_id, original_name: record.contract_file_name }] : []).map(file => (
                   <a
+                    key={file.id}
                     className="link link-primary text-sm break-all"
-                    href={`${API_URL}/files/${record.contract_file_id}/download?token=${token}`}
+                    href={`${API_URL}/files/${file.id}/download?token=${token}`}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {record.contract_file_name || `Hợp đồng #${record.contract_file_id}`}
+                    {file.original_name || `Hợp đồng #${file.id}`}
                   </a>
-                )}
+                ))}
+                <div className="text-sm">Ngày hiệu lực hợp đồng: {formatCsDate(record.contract_effective_date)}</div>
+                <div className="text-sm">Ngày hết hạn hợp đồng: {formatCsDate(record.contract_expiry_date)}</div>
+                {record.contract_note && <div className="whitespace-pre-wrap text-sm">Ghi chú hợp đồng: {record.contract_note}</div>}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <span className="label-text font-medium">Hạ tầng điện</span>
@@ -304,6 +312,8 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
                       <Badge variant={CS_FLOW_VARIANT[record.infra_power_status] || 'ghost'} outline>
                         {CS_FLOW_LABELS[record.infra_power_status] || '—'}
                       </Badge>
+                      <p className="mt-1 text-xs">Ngày: {formatCsDate(record.infra_power_date)}</p>
+                      {record.infra_power_note && <p className="whitespace-pre-wrap text-sm">{record.infra_power_note}</p>}
                     </div>
                   </div>
                   <div>
@@ -312,6 +322,8 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
                       <Badge variant={CS_FLOW_VARIANT[record.infra_site_status] || 'ghost'} outline>
                         {CS_FLOW_LABELS[record.infra_site_status] || '—'}
                       </Badge>
+                      <p className="mt-1 text-xs">Ngày: {formatCsDate(record.infra_site_date)}</p>
+                      {record.infra_site_note && <p className="whitespace-pre-wrap text-sm">{record.infra_site_note}</p>}
                     </div>
                   </div>
                   <div>
@@ -353,9 +365,15 @@ const ChargingStationDetailModal = ({ id, token, canEdit, onClose, onChanged, on
                   </div>
                 )}
                 {canEdit && nextStatus && (
-                  <Button className="w-full" disabled={disabled} onClick={() => confirmAdvance(nextStatus)}>
+                  <>
+                  <label className="block text-sm">Lý do đổi trạng thái *
+                    <textarea className={TEXTAREA_CLASS} value={rollbackReason} disabled={disabled}
+                      onChange={event => setRollbackReason(event.target.value)} />
+                  </label>
+                  <Button className="w-full" disabled={disabled || !rollbackReason.trim()} onClick={() => confirmAdvance(nextStatus)}>
                     Chuyển sang: {CS_STATUS_LABELS[nextStatus]}
                   </Button>
+                  </>
                 )}
                 {record.status === 'OPERATING' && (
                   <Badge variant="success" outline>Trạm đã đưa vào hoạt động</Badge>

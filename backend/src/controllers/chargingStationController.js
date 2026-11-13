@@ -119,7 +119,7 @@ exports.completeContract = async (req, res) => {
   try {
     const data = await chargingStationService.completeContract(
       req.params.id,
-      req.body ? req.body.file_id : null,
+      req.body || {},
       req.user,
       actorOf(req)
     );
@@ -139,6 +139,17 @@ exports.startInfrastructure = async (req, res) => {
       actorOf(req)
     );
     res.json({ success: true, data, message: 'Đã chuyển hạng mục sang trạng thái Đang làm' });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+exports.updateInfrastructure = async (req, res) => {
+  try {
+    const data = await chargingStationService.updateInfrastructureStatus(
+      req.params.id, req.params.type, req.body || {}, req.user, actorOf(req)
+    );
+    res.json({ success: true, data, message: 'Đã cập nhật trạng thái hạ tầng' });
   } catch (error) {
     sendError(res, error);
   }

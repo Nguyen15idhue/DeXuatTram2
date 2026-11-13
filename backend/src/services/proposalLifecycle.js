@@ -171,6 +171,56 @@ exports.transitionOnStationWithinTransaction = async (connection, id, to, ctx = 
   return { id, status: to, prevStatus: proposal.status };
 };
 
+exports.transitionSignedApprovalWithinTransaction = async (connection, id, ctx = {}) => {
+  const [rows] = await connection.query('SELECT * FROM station_proposals WHERE id=? FOR UPDATE', [id]);
+  if (!rows.length) throw err('Không tìm thấy đề xuất', 404);
+  const proposal = rows[0];
+  if (proposal.status !== 'SIGNATURE_PENDING' || !proposal.signed_file_id
+    || !(ALLOWED_TRANSITIONS[proposal.status] || []).includes('APPROVED')) {
+    console.error('[ProposalLifecycle] denied signed approval:', id, proposal.status);
+    throw err('Đề xuất không đủ điều kiện hoàn tất trình ký', 409);
+  }
+  const [actors] = await connection.query('SELECT full_name FROM users WHERE id=?', [ctx.actorId]);
+  const actorName = actors[0]?.full_name || 'Hệ thống';
+  const code = notificationService.proposalCode(proposal.custom_data, id);
+  await connection.query(`UPDATE station_proposals SET status='APPROVED',reject_reason=NULL,
+    reviewed_by=?,reviewed_at=NOW(),updated_at=NOW(),supplement_deadline_at=NULL,
+    transition_deadline_at=NULL,countdown_calendar_id=NULL,info_completed_at=NULL WHERE id=?`, [ctx.actorId, id]);
+  await exports.logActivity({ proposalId: id, action: 'status_change', fromStatus: proposal.status,
+    toStatus: 'APPROVED', actorId: ctx.actorId, actorRole: ctx.actorRole, source: 'user',
+    ip: ctx.ip, reason: ctx.reason, connection });
+  if (proposal.user_id) {
+    await notificationService.create({ userId: proposal.user_id, type: 'APPROVED',
+      title: notificationService.statusTitle('APPROVED'),
+      message: notificationService.statusMessage({ code, actorName, status: 'APPROVED', reason: ctx.reason }),
+      entityType: 'station_proposals', entityId: id, createdBy: ctx.actorId }, connection);
+  }
+  if (proposal.journey_id) {
+    await require('./journeyActivityService').log({
+      journey_id: proposal.journey_id, entity_type: 'proposal', entity_id: id,
+      action: 'proposal_status_changed', status_before: proposal.status, status_after: 'APPROVED',
+      actor_id: ctx.actorId, actor_role: ctx.actorRole, source: 'user', reason: ctx.reason, ip: ctx.ip
+    }, connection);
+    await require('./journeySyncService').recomputeStage(proposal.journey_id, connection);
+    const [leads] = await connection.query('SELECT id,external_crm_id FROM leads WHERE journey_id=? LIMIT 1', [proposal.journey_id]);
+    const lead = leads[0];
+    if (lead?.external_crm_id) {
+      const outbound = require('./crmOutboundService');
+      const mapping = require('../integrations/crm/crmStatusMapping');
+      for (const [eventId, note] of [
+        [`eg_${lead.id}_signed_${id}`, mapping.MILESTONE_NOTES.signedFileUploaded],
+        [`eg_${lead.id}_status_${id}_${proposal.status}_APPROVED`, `Đã chuyển đề xuất ${code} từ trạng thái "${proposal.status}" sang "APPROVED"`]
+      ]) {
+        await outbound.enqueue({ eventId, eventType: 'lead.care', leadId: lead.id, crmLeadId: lead.external_crm_id,
+          conn: connection, payload: { leadId: lead.external_crm_id, staff: actorName, ref: code, note,
+            channel: mapping.mapCareValue('channel', ''), contact: mapping.mapCareValue('contact', ''),
+            classify: mapping.mapCareValue('classify', ''), saleResult: mapping.mapCareValue('saleResult', ''), reason: '' } });
+      }
+    }
+  }
+  return { id, status: 'APPROVED', prevStatus: proposal.status };
+};
+
 exports.transition = async (id, to, opts = {}) => {
   const {
     reason, actorId, actorRole, source = 'user', manualOverride = false, ip,

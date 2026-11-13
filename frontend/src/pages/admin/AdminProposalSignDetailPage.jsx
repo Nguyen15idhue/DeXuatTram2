@@ -7,6 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
 import SignatureRepairAction from '../../components/admin/SignatureRepairAction';
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
+import ProposalDocumentRecoveryModal from '../../components/admin/ProposalDocumentRecoveryModal';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
@@ -79,7 +80,7 @@ const InfoItem = ({ label, value }) => (
 
 const AdminProposalSignDetailPage = () => {
   const { id } = useParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const docRef = useRef(null);
   const [detail, setDetail] = useState(null);
@@ -97,6 +98,7 @@ const AdminProposalSignDetailPage = () => {
   const [viewing, setViewing] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [documentId, setDocumentId] = useState(null);
+  const [recoveryModal, setRecoveryModal] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -152,10 +154,11 @@ const AdminProposalSignDetailPage = () => {
     }
   };
 
-  const handleExport = async (all = false) => {
+  const handleExport = async (all = false, chairman = false, fileId) => {
     setExporting(true);
     try {
-      const { blob, filename } = await proposalSignatureService.downloadSignedDocument(id, token, all === true ? { all: true } : { documentId: activeDocument?.id });
+      const { blob, filename } = await proposalSignatureService.downloadSignedDocument(id, token,
+        chairman ? { chairman: true, fileId } : all === true ? { all: true } : { documentId: activeDocument?.id });
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
@@ -264,7 +267,7 @@ const AdminProposalSignDetailPage = () => {
             </button>
             <button type="button" className="btn btn-outline btn-sm gap-1" onClick={handleExport} disabled={exporting}>
               <Download size={16} />
-              {exporting ? 'Đang tạo file…' : 'Tải file đã ký'}
+              {exporting ? 'Đang tạo file…' : 'Tải BCĐX đã ký nội bộ'}
             </button>
           </div>
         )}
@@ -463,18 +466,25 @@ const AdminProposalSignDetailPage = () => {
         <p className="text-xs text-base-content/60">
           Nhấn "Ký ngay" tại ô ký của bạn để đóng dấu chữ ký số đã tải trong hồ sơ cá nhân.
         </p>
+        {user?.role === 'SUPER_ADMIN' && detail.status === 'SIGNATURE_PENDING' && detail.sign_status === 'DONE'
+          && !detail.signed_file_id && activeDocument?.source_file?.original_name?.toLowerCase().endsWith('.docx') && (
+          <button className="btn btn-warning btn-sm mb-2" onClick={() => setRecoveryModal(true)}>Phục hồi BCĐX đã ký</button>
+        )}
+        {activeDocument?.recovery_file && <p className="text-info text-sm mb-2">Đang dùng bản phục hồi #{activeDocument.recovery_id}; chữ ký đã được đóng băng trong PDF.</p>}
         <ProposalSigningDocument
           key={activeDocument?.id || activeFile?.id}
           ref={docRef}
           file={activeFile}
           proposalId={detail.id}
           myConfig={activeConfig}
-          signers={activeSigners}
+          signers={activeDocument?.recovery_file ? [] : activeSigners}
           canSign={activeCanSign}
           onSign={handleSign}
           signing={signing}
         />
       </section>
+      {recoveryModal && activeDocument && <ProposalDocumentRecoveryModal proposalId={detail.id} document={activeDocument}
+        onClose={() => setRecoveryModal(false)} onApplied={loadDetail} />}
 
       <section className="border rounded-lg bg-base-100 p-4 space-y-2">
         <div className="flex items-center gap-2">
@@ -530,7 +540,7 @@ const AdminProposalSignDetailPage = () => {
               disabled={exporting}
             >
               <Download size={14} />
-              {exporting ? 'Đang tạo file…' : 'Xuất file và trình chủ tịch'}
+              {exporting ? 'Đang tạo file…' : 'Xuất BCĐX đã ký nội bộ'}
             </button>
             {detail.can_upload_signed && (
               <button
@@ -545,6 +555,20 @@ const AdminProposalSignDetailPage = () => {
           </>
         )}
       </div>
+      {detail.chairman_files?.length > 0 && <section className="card bg-base-100 border p-4 space-y-3">
+        <div className="flex flex-wrap justify-between gap-2 items-center">
+          <h2 className="font-semibold">File BCĐX chủ tịch đã ký ({detail.chairman_files.length})</h2>
+          <button type="button" className="btn btn-outline btn-sm" disabled={exporting}
+            onClick={() => handleExport(false, true)}>Tải tất cả file chủ tịch (ZIP)</button>
+        </div>
+        <p className="text-xs text-base-content/60">File nguyên bản, không chuyển PDF hoặc đóng dấu lại.</p>
+        {detail.chairman_files.map(file => <div key={file.id} className="flex flex-wrap gap-2 items-center">
+          <button type="button" className="link text-left flex-1" onClick={() => setViewing(file)}>{file.original_name}</button>
+          <span className="text-xs">{(Number(file.size || 0) / 1024 / 1024).toFixed(2)}MB</span>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={exporting}
+            onClick={() => handleExport(false, true, file.id)}>Tải nguyên bản</button>
+        </div>)}
+      </section>}
 
       <ConfirmDialog
         isOpen={reworkConfirm}

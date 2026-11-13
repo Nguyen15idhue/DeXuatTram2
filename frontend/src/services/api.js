@@ -760,11 +760,14 @@ export const chargingStationService = {
   startContractSigning(id, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/start`, {}, token));
   },
-  completeContract(id, fileId, token) {
-    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/complete`, { file_id: fileId }, token));
+  completeContract(id, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/contract/complete`, data, token));
   },
   startInfrastructure(id, type, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/start`, {}, token));
+  },
+  updateInfrastructure(id, type, data, token) {
+    return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/status`, data, token));
   },
   completeInfrastructure(id, type, token) {
     return runChargingStationTaskMutation(() => api.postWithAuth(`/admin/charging-stations/${id}/infrastructure/${type}/complete`, {}, token));
@@ -829,6 +832,21 @@ export const chargingStationCareService = {
 };
 
 export const proposalSignatureService = {
+  recoveryHistory(id, documentId, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, token);
+  },
+  createRecovery(id, documentId, reason, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, { reason }, token);
+  },
+  recoveryStatus(id, documentId, recoveryId, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}`, token);
+  },
+  recoveryPreview(id, documentId, recoveryId, data, token) {
+    return api.putWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}`, data, token);
+  },
+  activateRecovery(id, documentId, recoveryId, data, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}/activate`, data, token);
+  },
   signatureRepairStatus(id, configId, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/signature-repair/${configId}`, token);
   },
@@ -865,8 +883,10 @@ export const proposalSignatureService = {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/export`, token);
   },
   async downloadSignedDocument(id, token, options = {}) {
-    const query = options.all ? '?all=1' : options.documentId ? `?document_id=${encodeURIComponent(options.documentId)}` : '';
-    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/signed-document${query}`, {
+    const query = options.chairman ? (options.fileId ? `?file_id=${encodeURIComponent(options.fileId)}` : '')
+      : options.all ? '?all=1' : options.documentId ? `?document_id=${encodeURIComponent(options.documentId)}` : '';
+    const endpoint = options.chairman ? 'chairman-files' : 'signed-document';
+    const response = await fetch(`${API_URL}/admin/proposal-signatures/${id}/${endpoint}${query}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     handleUnauthorized(response);

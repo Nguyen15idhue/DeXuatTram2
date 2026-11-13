@@ -265,7 +265,7 @@ const AdminProposalSigningPage = () => {
                 file={activeFile}
                 proposalId={detail.id}
                 myConfig={activeConfig}
-                signers={activeSigners}
+                signers={activeDocument?.recovery_file ? [] : activeSigners}
                 canSign={activeCanSign && detail.has_signature}
                 onSign={handleSign}
                 signing={signing}
