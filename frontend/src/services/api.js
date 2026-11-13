@@ -832,6 +832,21 @@ export const chargingStationCareService = {
 };
 
 export const proposalSignatureService = {
+  recoveryHistory(id, documentId, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, token);
+  },
+  createRecovery(id, documentId, reason, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, { reason }, token);
+  },
+  recoveryStatus(id, documentId, recoveryId, token) {
+    return api.getWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}`, token);
+  },
+  recoveryPreview(id, documentId, recoveryId, data, token) {
+    return api.putWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}`, data, token);
+  },
+  activateRecovery(id, documentId, recoveryId, data, token) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}/activate`, data, token);
+  },
   signatureRepairStatus(id, configId, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/signature-repair/${configId}`, token);
   },

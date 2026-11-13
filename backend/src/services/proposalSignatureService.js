@@ -1004,7 +1004,7 @@ exports.getExportFile = async ({ user, id, documentId, all = false, ip } = {}) =
     throw err('Vui lòng chọn tài liệu BCĐX cần xuất hoặc yêu cầu xuất tất cả', 400);
   }
   const fileId = document
-    ? (document.signed_file_id || document.signing_file_id || signingFileIdOf(document))
+    ? (document.signed_file_id || document.recovery_file_id || document.signing_file_id || signingFileIdOf(document))
     : (proposal.signed_file_id || detail.report_files[0]?.id);
   if (!fileId) {
     throw err('Đề xuất chưa có file BCĐX để xuất', 400);
@@ -1053,7 +1053,7 @@ exports.getSignedDocument = async ({ user, id, documentId, all = false, ip } = {
 
   const fileController = require('../controllers/fileController');
   const buildDocument = async (document) => {
-    const fileId = document.signed_file_id || document.signing_file_id || signingFileIdOf(document);
+    const fileId = document.signed_file_id || document.recovery_file_id || document.signing_file_id || signingFileIdOf(document);
     if (!fileId) throw err('Tài liệu chưa có file ký chuẩn', 400);
     const fileData = await require('./fileService').getFilePath(fileId);
     if (!fileData || !await fileController.canAccessFile(fileData.file, { user, ip })) {
@@ -1063,8 +1063,8 @@ exports.getSignedDocument = async ({ user, id, documentId, all = false, ip } = {
     if (new Set(documentSigners.map((signer) => Number(signer.user_id))).size !== documentSigners.length) {
       throw err('Một người ký đang có nhiều ô trên cùng tài liệu', 409);
     }
-    if (document.signed_file_id) {
-      return signedDocumentService.build({ signedFileId: document.signed_file_id, signers: [] });
+    if (document.signed_file_id || document.recovery_file_id) {
+      return signedDocumentService.build({ signedFileId: fileId, signers: [] });
     }
     return signedDocumentService.build({
       reportFileId: fileId,

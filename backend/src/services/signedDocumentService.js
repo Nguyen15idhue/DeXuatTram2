@@ -166,8 +166,8 @@ const drawSignerLine = (page, signer, box, pageWidth, pageHeight, fonts, key, va
 };
 
 const signerTextValues = (signer) => ({
-  name: `Đã ký bởi: ${signer.full_name || ''}`,
-  time: `Đã ký lúc: ${formatSignedTime(signer.signed_at) || 'Thời gian ký'}`
+  name: signer.recovery_manual ? `Hoàn tất thủ công: ${signer.full_name || ''}` : `Đã ký bởi: ${signer.full_name || ''}`,
+  time: signer.recovery_manual ? '' : `Đã ký lúc: ${formatSignedTime(signer.signed_at) || 'Thời gian ký'}`
 });
 
 const measureSignerText = (fonts, key, text) => {
@@ -286,7 +286,7 @@ exports.validateSignature = async (signatureId) => readSignature({ signature_id:
 exports.readSignature = readSignature;
 exports.readSignatureFile = readSignatureFile;
 
-const stampPdf = async (source, signers, { includeImages = true } = {}) => {
+const stampPdf = async (source, signers, { includeImages = true, signatureImages = null } = {}) => {
   let pdf;
   try {
     pdf = await PDFDocument.load(source);
@@ -305,9 +305,21 @@ const stampPdf = async (source, signers, { includeImages = true } = {}) => {
     }
     const page = pdf.getPage(pageIndex);
     const { width, height } = page.getSize();
-    const box = expandSignerBox(signer, signerBox(signer), width, fonts);
-    if (includeImages) {
-      const signature = await readSignature(signer);
+    const box = signatureImages ? signerBox(signer) : expandSignerBox(signer, signerBox(signer), width, fonts);
+    if (signatureImages) {
+      const requiredWidth = expandSignerBox(signer, box, width, fonts).width * width;
+      const textWidth = Math.max(...Object.entries(signerTextValues(signer)).map(([key, value]) =>
+        measureSignerText(fonts, key, String(value).normalize('NFC'))));
+      if (textWidth + signerTextLayout.leftPaddingPx * PDF_POINTS_PER_CSS_PIXEL > (1 - box.posX) * width
+        || box.height * height < signerTextLayout.lineHeightPt * 3) {
+        throw invalidDocument(`Ô ký ${signer.full_name} quá nhỏ hoặc thông tin ký vượt mép trang; tăng kích thước/đổi vị trí`);
+      }
+      box.width = requiredWidth / width;
+    }
+    if (includeImages && !(signatureImages && !signatureImages.has(Number(signer.id)))) {
+      const signature = signatureImages
+        ? { bytes: signatureImages.get(Number(signer.id)) }
+        : await readSignature(signer);
       const image = await pdf.embedPng(signature.bytes);
       const boxWidth = box.width * width;
       const boxHeight = box.height * height;
@@ -572,6 +584,10 @@ const findMissingDocxDetails = async (source, signers) => {
     .join(' ');
   return signers.filter((signer) => !hasSignerDetails(text, signer));
 };
+
+exports.stampRecoveryPdf = (source, signers, signatureImages) => stampPdf(source, signers, { signatureImages });
+exports.readRecoveryImage = async (filePath) => readSignatureFile(filePath, 'ảnh thay thế phục hồi');
+exports.hasRecoverySourceSignatures = hasDocxSignatureBlock;
 
 exports.build = async ({ reportFileId, signedFileId, signers }) => {
   const fileId = signedFileId || reportFileId;

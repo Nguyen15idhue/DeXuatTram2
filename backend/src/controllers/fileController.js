@@ -69,7 +69,36 @@ const canAccessFile = async (file, req) => {
       }
     } catch { /* silent */ }
   }
+  const [recoveryReferences] = await pool.query(
+    'SELECT proposal_id,document_id,status,preview_file_id FROM proposal_document_recoveries WHERE ? IN (base_file_id,preview_file_id)', [file.id]);
+  if (recoveryReferences.length && !(requesterId && requesterRole === 'SUPER_ADMIN')) {
+    if (!recoveryReferences.some(row => ['ACTIVE','CONFIRMED'].includes(row.status) && Number(row.preview_file_id) === Number(file.id))) return false;
+  }
   if (requesterId && ['ADMIN', 'SUPER_ADMIN'].includes(requesterRole)) return true;
+  if (requesterId) {
+    const [recoveries] = await pool.query(
+      `SELECT r.proposal_id,r.document_id,d.signing_file_id,p.user_id FROM proposal_document_recoveries r
+       JOIN proposal_report_documents d ON d.id=r.document_id JOIN station_proposals p ON p.id=r.proposal_id
+       WHERE r.status IN ('ACTIVE','CONFIRMED') AND r.preview_file_id=?`, [file.id]);
+    for (const recovery of recoveries) {
+      if (Number(recovery.user_id) === Number(requesterId)) return true;
+      const [assigned] = await pool.query(
+        "SELECT id FROM proposal_signature_configs WHERE proposal_id=? AND (document_id=? OR (document_id IS NULL AND file_id=?)) AND user_id=? AND status<>'CANCELLED' LIMIT 1",
+        [recovery.proposal_id, recovery.document_id, recovery.signing_file_id, requesterId]);
+      if (assigned.length) return true;
+      if (['ADMIN','SALES'].includes(requesterRole)
+        && require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+        && await require('../services/proposalSignatureService').canReadChairmanProposal({
+          user: { id: requesterId, role: requesterRole }, id: recovery.proposal_id
+        })) return true;
+      try {
+        await require('../services/proposalReportService').assertReportReadAccess({ id: requesterId, role: requesterRole }, recovery.proposal_id);
+        return true;
+      } catch (error) { if (error.statusCode !== 403) throw error; }
+    }
+    if (recoveryReferences.length) return false;
+  }
+  if (recoveryReferences.length) return false;
   if (requesterId) {
     const [chairmanProposals] = await pool.query(
       `SELECT cf.proposal_id,p.user_id,p.signed_file_id FROM proposal_chairman_files cf
@@ -444,7 +473,9 @@ exports.delete = async (req, res) => {
          AND ? IN (source_file_id,pdf_file_id,signing_file_id,signed_file_id)
        UNION SELECT id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'
        UNION SELECT id FROM proposal_chairman_files WHERE file_id=?
-       LIMIT 1`, [file.id, file.id, file.id]);
+       UNION SELECT id FROM proposal_document_recoveries WHERE ? IN (source_file_id,base_file_id,preview_file_id)
+       UNION SELECT recovery_id FROM proposal_recovery_images WHERE replacement_file_id=?
+       LIMIT 1`, [file.id, file.id, file.id, file.id, file.id]);
     if (linkedReports.length) {
       return res.status(409).json({ success: false, message: 'Không được xóa tài liệu BCĐX đang sử dụng hoặc đã cấu hình ký. Hãy cập nhật hồ sơ theo quy trình.' });
     }

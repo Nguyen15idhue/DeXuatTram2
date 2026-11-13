@@ -7,6 +7,7 @@ import PageHeader from '../../components/ui/PageHeader';
 import ProposalSigningDocument from '../../components/admin/ProposalSigningDocument';
 import SignatureRepairAction from '../../components/admin/SignatureRepairAction';
 import ProposalSignedFileModal from '../../components/admin/ProposalSignedFileModal';
+import ProposalDocumentRecoveryModal from '../../components/admin/ProposalDocumentRecoveryModal';
 import ProposalGradingSummary from '../../components/admin/ProposalGradingSummary';
 import ProposalStaticInfo from '../../components/admin/ProposalStaticInfo';
 import ProposalProgressiveDetails from '../../components/admin/ProposalProgressiveDetails';
@@ -79,7 +80,7 @@ const InfoItem = ({ label, value }) => (
 
 const AdminProposalSignDetailPage = () => {
   const { id } = useParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const docRef = useRef(null);
   const [detail, setDetail] = useState(null);
@@ -97,6 +98,7 @@ const AdminProposalSignDetailPage = () => {
   const [viewing, setViewing] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [documentId, setDocumentId] = useState(null);
+  const [recoveryModal, setRecoveryModal] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
@@ -464,18 +466,25 @@ const AdminProposalSignDetailPage = () => {
         <p className="text-xs text-base-content/60">
           Nhấn "Ký ngay" tại ô ký của bạn để đóng dấu chữ ký số đã tải trong hồ sơ cá nhân.
         </p>
+        {user?.role === 'SUPER_ADMIN' && detail.status === 'SIGNATURE_PENDING' && detail.sign_status === 'DONE'
+          && !detail.signed_file_id && activeDocument?.source_file?.original_name?.toLowerCase().endsWith('.docx') && (
+          <button className="btn btn-warning btn-sm mb-2" onClick={() => setRecoveryModal(true)}>Phục hồi BCĐX đã ký</button>
+        )}
+        {activeDocument?.recovery_file && <p className="text-info text-sm mb-2">Đang dùng bản phục hồi #{activeDocument.recovery_id}; chữ ký đã được đóng băng trong PDF.</p>}
         <ProposalSigningDocument
           key={activeDocument?.id || activeFile?.id}
           ref={docRef}
           file={activeFile}
           proposalId={detail.id}
           myConfig={activeConfig}
-          signers={activeSigners}
+          signers={activeDocument?.recovery_file ? [] : activeSigners}
           canSign={activeCanSign}
           onSign={handleSign}
           signing={signing}
         />
       </section>
+      {recoveryModal && activeDocument && <ProposalDocumentRecoveryModal proposalId={detail.id} document={activeDocument}
+        onClose={() => setRecoveryModal(false)} onApplied={loadDetail} />}
 
       <section className="border rounded-lg bg-base-100 p-4 space-y-2">
         <div className="flex items-center gap-2">

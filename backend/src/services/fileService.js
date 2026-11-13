@@ -80,9 +80,11 @@ exports.deleteFile = async (id) => {
   try {
     await connection.beginTransaction();
     await connection.query('SELECT id FROM files WHERE id=? FOR UPDATE', [id]);
-    const [references] = await connection.query('SELECT id FROM proposal_chairman_files WHERE file_id=? LIMIT 1', [id]);
+    const [references] = await connection.query(`SELECT id FROM proposal_chairman_files WHERE file_id=?
+      UNION SELECT id FROM proposal_document_recoveries WHERE ? IN (source_file_id,base_file_id,preview_file_id)
+      UNION SELECT recovery_id FROM proposal_recovery_images WHERE replacement_file_id=? LIMIT 1`, [id, id, id]);
     if (references.length) {
-      throw Object.assign(new Error('File đang được sử dụng trong hồ sơ chủ tịch đã ký'), { statusCode: 409 });
+      throw Object.assign(new Error('File đang được sử dụng trong hồ sơ ký hoặc phục hồi BCĐX'), { statusCode: 409 });
     }
     await connection.query("UPDATE files SET status = 'deleted' WHERE id = ?", [id]);
     await connection.commit();
@@ -109,7 +111,9 @@ exports.cleanupOrphanGuestFiles = async (ttlHours) => {
     `SELECT id FROM files
      WHERE uploaded_by IS NULL AND submitter_ip IS NOT NULL AND status = 'active'
      AND created_at < (NOW() - INTERVAL ? HOUR)
-     AND NOT EXISTS (SELECT 1 FROM proposal_chairman_files cf WHERE cf.file_id=files.id)`,
+     AND NOT EXISTS (SELECT 1 FROM proposal_chairman_files cf WHERE cf.file_id=files.id)
+     AND NOT EXISTS (SELECT 1 FROM proposal_document_recoveries r WHERE files.id IN (r.source_file_id,r.base_file_id,r.preview_file_id))
+     AND NOT EXISTS (SELECT 1 FROM proposal_recovery_images ri WHERE ri.replacement_file_id=files.id)`,
     [ttl]
   );
   if (candidates.length === 0) return { deleted: 0 };

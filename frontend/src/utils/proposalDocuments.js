@@ -1,4 +1,4 @@
-export const documentFile = (document) => document?.signing_file || document?.pdf_file || document?.source_file;
+export const documentFile = (document) => document?.recovery_file || document?.signing_file || document?.pdf_file || document?.source_file;
 
 export const fileName = (file) => file?.original_name || file?.name || `File #${file?.id || ''}`;
 

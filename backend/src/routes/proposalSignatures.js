@@ -365,6 +365,106 @@ router.get('/:id/export', requireAuth, proposalSignatureController.exportFile);
  *         description: Không có quyền xem tài liệu
  */
 router.get('/:id/signed-document', requireAuth, proposalSignatureController.downloadSignedDocument);
+const recoveryController = require('../controllers/proposalDocumentRecoveryController');
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN kiểm tra điều kiện và lịch sử phục hồi DOCX
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Nguồn DOCX, người ký và lịch sử }
+ *       409: { description: Chưa ký đủ hoặc đã upload chủ tịch }
+ *   post:
+ *     tags: [Proposal Signatures]
+ *     summary: Tạo lượt phục hồi chạy nền từ DOCX gốc, bắt buộc lý do
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [reason], properties: { reason: { type: string, maxLength: 2000 } } }
+ *     responses:
+ *       200: { description: Lượt PENDING }
+ *       403: { description: Chỉ SUPER_ADMIN }
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: Trạng thái convert, PDF xem trước và nguồn ảnh đã chụp
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Trạng thái và bản nháp }
+ *   put:
+ *     tags: [Proposal Signatures]
+ *     summary: Dựng PDF xem trước với vị trí riêng và ảnh thay thế có lý do, không sửa chữ ký gốc
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [signers]
+ *             properties:
+ *               signers: { type: array, items: { type: object, required: [id,page,pos_x,pos_y,box_width,box_height] } }
+ *               replacements: { type: array, items: { type: object, required: [config_id,file_id,reason] } }
+ *     responses:
+ *       200: { description: PDF đã chèn chữ ký để kiểm tra }
+ *       409: { description: Nguồn ký đã thay đổi hoặc còn thiếu ảnh }
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}/activate:
+ *   post:
+ *     tags: [Proposal Signatures]
+ *     summary: Xác nhận bản phục hồi hoặc trở về bản gốc, giữ status và bằng chứng ký gốc
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [reason], properties: { reason: { type: string }, original: { type: boolean } } }
+ *     responses:
+ *       200: { description: Bản đang dùng đã được đổi trong transaction và ghi audit }
+ *       409: { description: Hồ sơ đã thay đổi hoặc upload chủ tịch }
+ */
+router.get('/:id/documents/:documentId/recovery', requireAuth, requireSuperAdmin, recoveryController.inspect);
+router.post('/:id/documents/:documentId/recovery', requireAuth, requireSuperAdmin, recoveryController.create);
+router.get('/:id/documents/:documentId/recovery/:recoveryId', requireAuth, requireSuperAdmin, recoveryController.get);
+router.put('/:id/documents/:documentId/recovery/:recoveryId', requireAuth, requireSuperAdmin, recoveryController.update);
+router.post('/:id/documents/:documentId/recovery/:recoveryId/activate', requireAuth, requireSuperAdmin, recoveryController.activate);
+/**
+ * @swagger
+ * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}/image/{configId}:
+ *   get:
+ *     tags: [Proposal Signatures]
+ *     summary: SUPER_ADMIN xem ảnh PNG đã đóng băng của bản phục hồi
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: integer } }
+ *       - { in: path, name: documentId, required: true, schema: { type: integer } }
+ *       - { in: path, name: recoveryId, required: true, schema: { type: integer } }
+ *       - { in: path, name: configId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: PNG snapshot hoặc ảnh thay thế riêng cho lượt phục hồi }
+ *       403: { description: Chỉ SUPER_ADMIN }
+ *       404: { description: Ảnh thiếu hoặc hoàn tất thủ công không có ảnh }
+ */
+router.get('/:id/documents/:documentId/recovery/:recoveryId/image/:configId', requireAuth, requireSuperAdmin, recoveryController.image);
 
 /**
  * @swagger

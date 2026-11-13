@@ -33,14 +33,15 @@ const listDocuments = async (proposalId, { initializeLegacy = true, ids } = {}) 
     params.push(ids);
   }
   const [rows] = await pool.query(
-    `SELECT d.*,
+    `SELECT d.*,r.id AS recovery_id,r.preview_file_id AS recovery_file_id,
        EXISTS(SELECT 1 FROM proposal_signature_configs s WHERE s.proposal_id=d.proposal_id
          AND s.status<>'CANCELLED' AND (s.document_id=d.id OR s.file_id=d.signing_file_id)) AS has_config,
        EXISTS(SELECT 1 FROM proposal_signature_configs s WHERE s.proposal_id=d.proposal_id
          AND s.status='SIGNED' AND (s.document_id=d.id OR s.file_id=d.signing_file_id)) AS has_signed
-       FROM proposal_report_documents d WHERE d.proposal_id = ?${filter} ORDER BY d.id`, params);
+       FROM proposal_report_documents d LEFT JOIN proposal_document_recoveries r ON r.document_id=d.id AND r.status='ACTIVE'
+       WHERE d.proposal_id = ?${filter} ORDER BY d.id`, params);
   const idsToLoad = [...new Set(rows.flatMap(row =>
-    [row.source_file_id, row.pdf_file_id, row.signing_file_id, row.signed_file_id]).filter(Boolean))];
+    [row.source_file_id, row.pdf_file_id, row.signing_file_id, row.signed_file_id, row.recovery_file_id]).filter(Boolean))];
   const [files] = idsToLoad.length ? await pool.query('SELECT id,original_name,mime_type,size FROM files WHERE id IN (?)', [idsToLoad]) : [[]];
   const byId = new Map(files.map(file => [Number(file.id), summary(file)]));
   return rows.map(row => ({
@@ -48,7 +49,8 @@ const listDocuments = async (proposalId, { initializeLegacy = true, ids } = {}) 
     source_file: byId.get(Number(row.source_file_id)) || null,
     pdf_file: byId.get(Number(row.pdf_file_id)) || null,
     signing_file: byId.get(Number(row.signing_file_id)) || null,
-    signed_file: byId.get(Number(row.signed_file_id)) || null
+    signed_file: byId.get(Number(row.signed_file_id)) || null,
+    recovery_file: byId.get(Number(row.recovery_file_id)) || null
   }));
 };
 

@@ -135,6 +135,8 @@ test('real migration backfills all legacy files idempotently; actual upload atom
       reject_reason TEXT,reviewed_by INT,reviewed_at DATETIME,updated_at DATETIME,supplement_deadline_at DATETIME,
       transition_deadline_at DATETIME,info_completed_at DATETIME,countdown_calendar_id INT) ENGINE=InnoDB`);
     await connection.query(`CREATE TABLE proposal_report_documents(id INT PRIMARY KEY,proposal_id INT,signed_file_id INT,is_current INT) ENGINE=InnoDB`);
+    await connection.query('CREATE TABLE proposal_document_recoveries(id INT PRIMARY KEY,source_file_id INT,base_file_id INT,preview_file_id INT)');
+    await connection.query('CREATE TABLE proposal_recovery_images(recovery_id INT,replacement_file_id INT)');
     await connection.query(`CREATE TABLE proposal_signature_configs(id INT PRIMARY KEY,proposal_id INT,
       document_id INT,file_id INT,user_id INT,status VARCHAR(20),page INT,pos_x FLOAT,pos_y FLOAT,
       box_width FLOAT,box_height FLOAT,signer_title VARCHAR(40),signer_department VARCHAR(40),signed_at DATETIME,
