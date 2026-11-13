@@ -120,7 +120,7 @@ exports.listProposals = async ({ user, tab = 'all', search = '', page = 1, limit
 
   const where = [`p.status IN (${statuses.map(() => '?').join(',')})`];
   const params = [...statuses];
-  if (safeTab === 'pending' && scope.role !== 'SUPER_ADMIN' && !scope.isBackOffice && scope.roleKey !== 'TGD') {
+  if (safeTab === 'pending' && scope.role !== 'SUPER_ADMIN' && (scope.roleKey === 'TGD' || !scope.isBackOffice)) {
     where.push('1 = 0');
   }
   if (statuses.includes(APPROVED_STATUS)) {

@@ -109,6 +109,7 @@ const scopeClause = async (scope, params) => {
 
 const canUploadReport = async (scope, proposal) => {
   if (scope.role === 'SUPER_ADMIN') return true;
+  if (scope.roleKey === 'TGD') return false;
   if (scope.roleKey === 'GDTTKD') {
     const region = proposalRegion(proposal.custom_data);
     return !!scope.region && !!region && region === scope.region;

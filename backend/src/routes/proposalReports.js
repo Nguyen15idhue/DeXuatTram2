@@ -17,6 +17,7 @@ const reportDocuments = require('../controllers/proposalReportDocumentController
  *       tab=completed: PROPOSAL_REPORT_REVIEWING, SIGNATURE_PENDING,
  *       APPROVED, CANCELLED. Hỗ trợ lọc theo status, model, province, region, owner, manager, date.
  *       Phân quyền theo vai trò: Admin/Super Admin và Back Office xem tất cả;
+ *       TGĐ chỉ xem, tab=pending trả rỗng và không được upload/cập nhật BCĐX;
  *       GĐTTKD xem theo khu vực; SALES xem theo nhánh; CTV/NPP xem đề xuất của mình.
  *     security:
  *       - bearerAuth: []

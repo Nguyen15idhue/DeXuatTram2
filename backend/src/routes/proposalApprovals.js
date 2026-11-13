@@ -10,7 +10,9 @@ const proposalApprovalController = require('../controllers/proposalApprovalContr
  *     tags: [Proposal Approvals]
  *     summary: Danh sách đề xuất cho trang Duyệt BCĐX
  *     description: >
- *       Chỉ SUPER_ADMIN hoặc nhân sự thuộc Back Office được truy cập.
+ *       Quản trị viên, Back Office và TGĐ được xem theo phạm vi.
+ *       TGĐ không có task (tab=pending trả rỗng), vẫn được từ chối duyệt tại chi tiết;
+ *       cấu hình ký và yêu cầu cập nhật chỉ Back Office/SUPER_ADMIN.
  *       tab=all: PROPOSAL_REPORT_REVIEWING, PROPOSAL_REPORT_UPDATING, SIGNATURE_PENDING, APPROVED;
  *       tab=pending: PROPOSAL_REPORT_REVIEWING; tab=updating: PROPOSAL_REPORT_UPDATING;
  *       tab=completed: SIGNATURE_PENDING, APPROVED (chỉ hồ sơ đã upload file ký).

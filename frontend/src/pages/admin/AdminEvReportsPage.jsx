@@ -362,6 +362,11 @@ const AdminEvReportsPage = () => {
       <DynamicTable
         entity="ev_charging_reports"
         viewId={evReportsViewId}
+        additionalColumns={[
+          { key: "created_at", field_key: "created_at", label: "Thời gian tạo nhu cầu",
+            type: "datetime", width: 180, visible: true, sortable: true, filterable: false },
+        ]}
+        columnLabelOverrides={{ created_at: "Thời gian tạo nhu cầu" }}
         data={pageData}
         actions={renderActions}
         startIndex={(pagination.page - 1) * pagination.limit}

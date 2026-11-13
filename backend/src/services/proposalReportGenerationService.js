@@ -35,6 +35,11 @@ const resolveSigner = async (signerCfg) => {
 
 const generate = async ({ proposalId, templateId, user, ip } = {}) => {
   const proposal = await loadProposal(proposalId);
+  const reports = require('./proposalReportService');
+  const scope = await reports.resolveScope(user);
+  if (!await reports.canUploadReport(scope, proposal)) {
+    throw err('Bạn không có quyền tạo tờ trình BCĐX cho đề xuất này', 403);
+  }
   // Parse chot_so_luong_tru if string
   if (typeof proposal.chot_so_luong_tru === 'string') {
     try { proposal.chot_so_luong_tru = JSON.parse(proposal.chot_so_luong_tru); } catch { proposal.chot_so_luong_tru = []; }
