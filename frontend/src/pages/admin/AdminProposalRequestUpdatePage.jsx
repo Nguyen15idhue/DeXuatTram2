@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, MapPinned, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MapPinned } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { proposalRequestService } from "../../services/api";
 import DynamicForm from "../../components/dynamic/DynamicForm";
@@ -24,13 +24,10 @@ const AdminProposalRequestUpdatePage = () => {
   const [context, setContext] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [completing, setCompleting] = useState(false);
-  const [hasSaved, setHasSaved] = useState(false);
   const [resolutionNote, setResolutionNote] = useState(
     "Đã cập nhật thông tin theo yêu cầu.",
   );
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const load = useCallback(async () => {
     if (!token || !id) return;
@@ -53,42 +50,33 @@ const AdminProposalRequestUpdatePage = () => {
   }, [load]);
 
   const handleSave = async (formData) => {
+    if (saving || !context?.canComplete || !resolutionNote.trim()) return;
     setSaving(true);
     setError("");
-    setSuccess("");
+    let saved = false;
     try {
       const updateData = { ...formData };
       delete updateData.chot_so_luong_tru;
       const response = await proposalRequestService.updateProposal(id, updateData, token);
       if (!response?.success)
         throw new Error(response?.message || "Không cập nhật được đề xuất");
-      setHasSaved(true);
-      setSuccess(
-        "Đã lưu thông tin đề xuất. Hãy xác nhận hoàn thành để đóng yêu cầu.",
-      );
-    } catch (e) {
-      setError(e?.message || "Không cập nhật được đề xuất");
-      throw e;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleComplete = async () => {
-    if (!context?.canComplete || !hasSaved) return;
-    setCompleting(true);
-    setError("");
-    try {
-      await proposalRequestService.complete(
+      saved = true;
+      const completion = await proposalRequestService.complete(
         id,
-        { resolution_note: resolutionNote },
+        { resolution_note: resolutionNote.trim() },
         token,
       );
+      if (!completion?.success)
+        throw new Error(completion?.message || "Không xác nhận được yêu cầu");
       navigate("/admin/proposals?tab=requests", { replace: true });
     } catch (e) {
-      setError(e?.message || "Không xác nhận được yêu cầu");
+      const message = saved
+        ? `Đã lưu thông tin nhưng chưa xác nhận hoàn thành: ${e?.message || "Không xác nhận được yêu cầu"}. Vui lòng thử lại.`
+        : e?.message || "Không cập nhật được đề xuất";
+      setError(message);
+      throw new Error(message);
     } finally {
-      setCompleting(false);
+      setSaving(false);
     }
   };
 
@@ -168,42 +156,31 @@ const AdminProposalRequestUpdatePage = () => {
               htmlId="proposal-request-update-form"
               hideActions
               skipValidationKeys={["chot_so_luong_tru"]}
-              onValuesChange={() => setHasSaved(false)}
               onSubmit={handleSave}
             />
             <div className="flex flex-wrap items-end justify-between gap-3 mt-4">
-              <button
-                type="submit"
-                form="proposal-request-update-form"
-                className="btn btn-primary gap-2"
-                disabled={saving}
-              >
-                <Save size={16} /> {saving ? "Đang lưu..." : "Lưu thông tin"}
-              </button>
               {context.canComplete && (
                 <div className="flex flex-col sm:flex-row sm:items-end gap-2">
                   <label className="form-control w-full sm:w-80">
                     <span className="label-text text-xs mb-1">Kết quả xử lý</span>
                     <input
                       className="input input-bordered input-sm"
+                      disabled={saving}
                       value={resolutionNote}
                       onChange={(event) => setResolutionNote(event.target.value)}
                     />
                   </label>
                   <button
-                    type="button"
+                    type="submit"
+                    form="proposal-request-update-form"
                     className="btn btn-success gap-2"
-                    disabled={!hasSaved || completing || !resolutionNote.trim()}
-                    onClick={handleComplete}
+                    disabled={saving || !resolutionNote.trim()}
                   >
-                    <CheckCircle2 size={16} /> {completing ? 'Đang xác nhận...' : 'Xác nhận đã cập nhật'}
+                    <CheckCircle2 size={16} /> {saving ? 'Đang lưu và xác nhận...' : 'Xác nhận đã cập nhật'}
                   </button>
                 </div>
               )}
             </div>
-            {success && (
-              <div className="alert alert-success text-sm mt-3">{success}</div>
-            )}
           </section>
         </>
       )}
