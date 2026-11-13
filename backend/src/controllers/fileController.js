@@ -70,7 +70,7 @@ const canAccessFile = async (file, req) => {
     } catch { /* silent */ }
   }
   const [recoveryReferences] = await pool.query(
-    'SELECT proposal_id,document_id,status,preview_file_id FROM proposal_document_recoveries WHERE ? IN (base_file_id,preview_file_id)', [file.id]);
+    'SELECT proposal_id,document_id,status,preview_file_id FROM proposal_document_recoveries WHERE ? IN (base_file_id,preview_file_id,uploaded_pdf_file_id)', [file.id]);
   if (recoveryReferences.length && !(requesterId && requesterRole === 'SUPER_ADMIN')) {
     if (!recoveryReferences.some(row => ['ACTIVE','CONFIRMED'].includes(row.status) && Number(row.preview_file_id) === Number(file.id))) return false;
   }
@@ -473,7 +473,7 @@ exports.delete = async (req, res) => {
          AND ? IN (source_file_id,pdf_file_id,signing_file_id,signed_file_id)
        UNION SELECT id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'
        UNION SELECT id FROM proposal_chairman_files WHERE file_id=?
-       UNION SELECT id FROM proposal_document_recoveries WHERE ? IN (source_file_id,base_file_id,preview_file_id)
+       UNION SELECT id FROM proposal_document_recoveries WHERE ? IN (source_file_id,base_file_id,preview_file_id,uploaded_pdf_file_id)
        UNION SELECT recovery_id FROM proposal_recovery_images WHERE replacement_file_id=?
        LIMIT 1`, [file.id, file.id, file.id, file.id, file.id]);
     if (linkedReports.length) {

@@ -11,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 const labels = { PENDING: 'Đang chờ convert', PROCESSING: 'Đang convert', DRAFT: 'Bản nháp',
   ACTIVE: 'Đang dùng', CONFIRMED: 'Đã xác nhận', FAILED: 'Convert thất bại' };
 const valueOf = response => ensureDocumentResponse(response).data;
+const sourceLabels = { DOCX_CONVERT: 'Convert DOCX', PDF_UPLOAD: 'PDF tải lên' };
 
 export default function ProposalDocumentRecoveryModal({ proposalId, document, onClose, onApplied }) {
   const { token } = useAuth();
@@ -25,9 +26,14 @@ export default function ProposalDocumentRecoveryModal({ proposalId, document, on
   const [dirty, setDirty] = useState(false);
   const [checked, setChecked] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [previewReady, setPreviewReady] = useState(false);
   const [uploads, setUploads] = useState({});
+  const [inputMethod, setInputMethod] = useState('DOCX_CONVERT');
+  const [uploadedPdf, setUploadedPdf] = useState(null);
+  const [unsignedPdf, setUnsignedPdf] = useState(false);
+  const validateUploadedPdf = file => /\.pdf$/i.test(file.name) && file.type === 'application/pdf';
   const takeRow = data => {
-    setRow(data); setSigners(data.signers || []); setDirty(false); setChecked(false);
+    setRow(data); setSigners(data.signers || []); setDirty(false); setChecked(false); setPreviewReady(false);
     setReplacements({}); setPreview(!!data.preview_file_id);
   };
   const run = async action => {
@@ -98,7 +104,7 @@ export default function ProposalDocumentRecoveryModal({ proposalId, document, on
     <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-2" role="dialog" aria-modal="true" aria-label="Phục hồi BCĐX đã ký">
       <div className="bg-base-100 rounded-xl w-full max-w-7xl max-h-[96vh] overflow-auto p-4 space-y-3">
         <div className="flex justify-between items-center">
-          <h2 className="font-bold">Phục hồi BCĐX đã ký từ DOCX gốc</h2>
+          <h2 className="font-bold">Phục hồi BCĐX đã ký</h2>
           <button aria-label="Đóng phục hồi" className="btn btn-ghost btn-sm" disabled={busy || uploading} onClick={onClose}><X size={18} /></button>
         </div>
         <p className="text-sm">Giữ nguyên người ký, thời điểm, file và cấu hình ký gốc. Chỉ bản phục hồi được đổi vị trí/ảnh thiếu. Không sửa file chủ tịch.</p>
@@ -106,20 +112,47 @@ export default function ProposalDocumentRecoveryModal({ proposalId, document, on
         <label className="block text-sm">Lý do phục hồi / đổi bản đang dùng
           <textarea aria-label="Lý do phục hồi" className="textarea textarea-bordered w-full" maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} disabled={working} />
         </label>
+        <label className="block text-sm">Nguồn PDF phục hồi
+          <select aria-label="Nguồn PDF phục hồi" className="select select-bordered w-full" value={inputMethod} disabled={working}
+            onChange={event => { setInputMethod(event.target.value); setUnsignedPdf(false); setChecked(false); }}>
+            <option value="DOCX_CONVERT">Chuyển đổi từ DOCX gốc</option>
+            <option value="PDF_UPLOAD">Tải lên PDF thay thế</option>
+          </select>
+        </label>
+        {inputMethod === 'PDF_UPLOAD' && <div className="border rounded p-3 space-y-2">
+          <p className="text-sm">Hãy xuất PDF từ đúng DOCX của tài liệu này. PDF phải chưa được chèn chữ ký; hệ thống sẽ chèn lại các chữ ký đã lưu. Một file PDF, tối đa 10MB, không có mật khẩu.</p>
+          <FileUpload value={uploadedPdf} onChange={value => {
+            setUploadedPdf(Array.isArray(value) ? value[0] || null : value); setUnsignedPdf(false); setChecked(false);
+          }} accept="application/pdf" multiple={false} fileConfig={{ maxSize: 10 }} validateFile={validateUploadedPdf}
+            disabled={busy || ['PENDING','PROCESSING'].includes(row?.status)}
+            onUploadingChange={value => setUploads(current => ({ ...current, sourcePdf: value }))} />
+          <label className="flex gap-2 text-sm items-center">
+            <input type="checkbox" aria-label="PDF nền đúng DOCX và chưa có chữ ký" checked={unsignedPdf}
+              disabled={!uploadedPdf?.id || working} onChange={event => setUnsignedPdf(event.target.checked)} />
+            Tôi xác nhận PDF này xuất từ đúng DOCX và chưa được chèn chữ ký.
+          </label>
+        </div>}
         <div className="flex flex-wrap gap-2">
-          <button className="btn btn-primary btn-sm" disabled={working || !reason.trim()} onClick={() => run(async () => {
-            takeRow(valueOf(await service.createRecovery(proposalId, document.id, reason, token)));
+          <button className="btn btn-primary btn-sm" disabled={working || !reason.trim() || (inputMethod === 'PDF_UPLOAD' && (!uploadedPdf?.id || !unsignedPdf))} onClick={() => run(async () => {
+            takeRow(valueOf(await service.createRecovery(proposalId, document.id, reason, token,
+              inputMethod === 'PDF_UPLOAD' ? { input_method: inputMethod, uploaded_pdf_file_id: uploadedPdf.id } : { input_method: inputMethod })));
             await refreshHistory();
-          })}>Tạo bản phục hồi mới</button>
+          })}>{inputMethod === 'PDF_UPLOAD' ? 'Tạo bản phục hồi từ PDF' : 'Tạo bản phục hồi mới'}</button>
           <select aria-label="Lịch sử phục hồi" className="select select-bordered select-sm" value={row?.id || ''} disabled={working} onChange={event => run(async () =>
             takeRow(valueOf(await service.recoveryStatus(proposalId, document.id, event.target.value, token))))}>
             <option value="" disabled>Chọn bản phục hồi</option>
-            {history.map(item => <option key={item.id} value={item.id}>#{item.id} · {labels[item.status]} · {new Date(item.created_at).toLocaleString('vi-VN')}</option>)}
+            {history.map(item => <option key={item.id} value={item.id}>#{item.id} · {sourceLabels[item.input_method || 'DOCX_CONVERT']} · {labels[item.status]} · {new Date(item.created_at).toLocaleString('vi-VN')}</option>)}
           </select>
           <button className="btn btn-outline btn-sm" disabled={working || !history.length || !reason.trim()} onClick={() => activate(true)}>Trở về bản gốc</button>
         </div>
         {error && <div role="alert" className="alert alert-error text-sm">{error}</div>}
         {row && <p className="text-sm font-medium">Bản #{row.id}: {labels[row.status]} {row.error && <span className="text-error">{row.error}</span>}</p>}
+        {row?.status === 'FAILED' && <button className="btn btn-warning btn-sm" disabled={working} onClick={() => {
+          setInputMethod('PDF_UPLOAD'); setUnsignedPdf(false); setError('');
+          if (!reason.trim() && row.reason) setReason(row.reason);
+        }}>Dùng PDF tải lên thay thế</button>}
+        {row && <p className="text-sm">Nguồn bản phục hồi: {sourceLabels[row.input_method || 'DOCX_CONVERT']}
+          {row.uploaded_pdf_name && ` · ${row.uploaded_pdf_name}`}</p>}
         {row?.reason && <p className="text-sm">Lý do bản này: {row.reason} · Người tạo #{row.created_by}
           {row.confirmed_at && ` · Xác nhận bởi #${row.confirmed_by} lúc ${new Date(row.confirmed_at).toLocaleString('vi-VN')}`}</p>}
         {row?.warnings?.map((warning, index) => <p className="text-warning text-sm" key={index}>{warning}</p>)}
@@ -129,7 +162,7 @@ export default function ProposalDocumentRecoveryModal({ proposalId, document, on
               <button className={`btn btn-xs ${!preview ? 'btn-primary' : ''}`} onClick={() => setPreview(false)}>PDF nền / chỉnh ô ký</button>
               <button className={`btn btn-xs ${preview ? 'btn-primary' : ''}`} disabled={!row.preview_file_id || dirty} onClick={() => setPreview(true)}>PDF đã chèn chữ ký</button>
             </div>
-            <ProposalDocumentPages file={{ id: fileId, mime_type: 'application/pdf', original_name: 'BCDX-phuc-hoi.pdf' }} showPageLabel
+            <ProposalDocumentPages file={{ id: fileId, mime_type: 'application/pdf', original_name: 'BCDX-phuc-hoi.pdf' }} showPageLabel onReadyChange={setPreviewReady}
               renderPageOverlay={preview ? null : page => signers.filter(signer => Number(signer.page) === page).map(signer => {
                 const image = row.images?.find(item => Number(item.config_id) === Number(signer.id));
                 return <div key={signer.id} data-signer-overlay className="absolute border-2 border-primary bg-primary/10 pointer-events-auto touch-none text-[10px] overflow-hidden"
@@ -171,19 +204,19 @@ export default function ProposalDocumentRecoveryModal({ proposalId, document, on
             })}
           </div>
         </div>}
-        {row?.status === 'DRAFT' && <button className="btn btn-secondary btn-sm" disabled={working} onClick={() => run(async () => {
+        {row?.status === 'DRAFT' && <button className="btn btn-secondary btn-sm" disabled={working || !previewReady} onClick={() => run(async () => {
           const changedImages = Object.entries(replacements).filter(([, item]) => item.file?.id).map(([config_id,item]) =>
             ({ config_id: Number(config_id), file_id: item.file.id, reason: item.reason }));
           takeRow(valueOf(await service.recoveryPreview(proposalId, document.id, row.id, { signers, replacements: changedImages }, token)));
           await refreshHistory();
         })}>Dựng PDF xem trước có chữ ký</button>}
         {row?.preview_file_id && <label className="flex gap-2 items-center text-sm">
-          <input type="checkbox" checked={checked} disabled={dirty || !preview} onChange={event => setChecked(event.target.checked)} />
+          <input type="checkbox" aria-label="Đã kiểm tra PDF có chữ ký" checked={checked} disabled={dirty || !preview || !previewReady} onChange={event => setChecked(event.target.checked)} />
           Tôi đã kiểm tra nội dung, số trang, mọi chữ ký và bố cục PDF đã chèn chữ ký.
         </label>}
         <div className="flex justify-end gap-2">
           <button className="btn btn-sm" disabled={busy || uploading} onClick={onClose}>Đóng</button>
-          <button className="btn btn-primary btn-sm" disabled={working || !row?.preview_file_id || dirty || !checked || !reason.trim()} onClick={() => activate(false)}>Xác nhận dùng bản phục hồi</button>
+          <button className="btn btn-primary btn-sm" disabled={working || !row?.preview_file_id || dirty || !checked || !preview || !previewReady || !reason.trim()} onClick={() => activate(false)}>Xác nhận dùng bản phục hồi</button>
         </div>
       </div>
     </div>, window.document.body

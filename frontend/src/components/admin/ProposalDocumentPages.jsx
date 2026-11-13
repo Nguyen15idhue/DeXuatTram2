@@ -1,8 +1,8 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, renderPageOverlay, onError }) => {
+const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, renderPageOverlay, onError, onRendered }) => {
   const canvasRef = useRef(null);
   const wrapperRef = useRef(null);
   const [ratio, setRatio] = useState(595 / 842);
@@ -22,12 +22,13 @@ const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, r
         setRatio(viewport.width / viewport.height);
         task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
         await task.promise;
+        if (!cancelled) onRendered(pageNumber);
       } catch (error) {
         if (!cancelled && error.name !== 'RenderingCancelledException') onError(error.message);
       }
     })();
     return () => { cancelled = true; task?.cancel(); delete pageElsRef.current[pageNumber]; };
-  }, [pdf, pageNumber, pageElsRef, onError]);
+  }, [pdf, pageNumber, pageElsRef, onError, onRendered]);
   return (
     <div ref={wrapperRef} data-proposal-page={pageNumber}
       className="proposal-page-wrapper relative mx-auto mb-5 w-full max-w-[850px] bg-white shadow"
@@ -43,7 +44,7 @@ const PdfPageItem = ({ pdf, pageNumber, pageElsRef, activePage, showPageLabel, r
 };
 
 const ProposalDocumentPages = forwardRef(({
-  file, renderPageOverlay = null, activePage = null, onActivePageChange = null, showPageLabel = false,
+  file, renderPageOverlay = null, activePage = null, onActivePageChange = null, showPageLabel = false, onReadyChange = null,
   containerClassName = 'max-h-[75vh] min-h-[50vh] overflow-auto bg-base-200 p-3',
 }, ref) => {
   const { token } = useAuth();
@@ -52,6 +53,11 @@ const ProposalDocumentPages = forwardRef(({
   const [pdf, setPdf] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const renderedPagesRef = useRef(new Set());
+  const onRendered = useCallback(pageNumber => {
+    renderedPagesRef.current.add(pageNumber);
+    if (pdf && renderedPagesRef.current.size === pdf.numPages) onReadyChange?.(true);
+  }, [pdf, onReadyChange]);
   useImperativeHandle(ref, () => ({
     scrollToPage(pageNumber) {
       pageElsRef.current[Number(pageNumber) || 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -85,6 +91,8 @@ const ProposalDocumentPages = forwardRef(({
   }, [pdf, onActivePageChange]);
 
   useEffect(() => {
+    renderedPagesRef.current.clear();
+    onReadyChange?.(false);
     setPdf(null);
     setError('');
     if (!file?.id) { setLoading(false); setError('Chưa có file BCĐX'); return undefined; }
@@ -109,7 +117,7 @@ const ProposalDocumentPages = forwardRef(({
       }
     })();
     return () => { cancelled = true; loadingTask?.destroy(); };
-  }, [file?.id, token]);
+  }, [file?.id, token, onReadyChange]);
 
   return (
     <div ref={containerRef} className={containerClassName}>
@@ -117,7 +125,7 @@ const ProposalDocumentPages = forwardRef(({
       {error && <div role="alert" className="alert alert-error">{error}</div>}
       {!loading && !error && pdf && Array.from({ length: pdf.numPages }, (_, index) => (
         <PdfPageItem key={index + 1} pdf={pdf} pageNumber={index + 1} pageElsRef={pageElsRef}
-          activePage={activePage} showPageLabel={showPageLabel} renderPageOverlay={renderPageOverlay} onError={setError} />
+          activePage={activePage} showPageLabel={showPageLabel} renderPageOverlay={renderPageOverlay} onError={setError} onRendered={onRendered} />
       ))}
     </div>
   );

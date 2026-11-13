@@ -835,8 +835,8 @@ export const proposalSignatureService = {
   recoveryHistory(id, documentId, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, token);
   },
-  createRecovery(id, documentId, reason, token) {
-    return api.postWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, { reason }, token);
+  createRecovery(id, documentId, reason, token, source = {}) {
+    return api.postWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery`, { reason, ...source }, token);
   },
   recoveryStatus(id, documentId, recoveryId, token) {
     return api.getWithAuth(`/admin/proposal-signatures/${id}/documents/${documentId}/recovery/${recoveryId}`, token);

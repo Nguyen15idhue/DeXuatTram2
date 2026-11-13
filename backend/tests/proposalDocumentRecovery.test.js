@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const JSZip = require('jszip');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, PDFName } = require('pdf-lib');
 const pool = require('../src/utils/db');
 const service = require('../src/services/proposalDocumentRecoveryService');
 const files = require('../src/services/fileService');
@@ -33,6 +33,26 @@ test('recovery APIs reject non-SUPER_ADMIN before database/file access', async (
       await assert.rejects(service[method]({ user: { id: 1, role }, id: 1, documentId: 1, recoveryId: 1 }), { statusCode: 403 });
     }
   }
+});
+test('uploaded PDF validates actual format, pages, encryption, signature marker and exact 10MB boundary', async () => {
+  const pdf = await PDFDocument.create();
+  pdf.addPage([595,842]); pdf.addPage([842,595]);
+  const bytes = Buffer.from(await pdf.save());
+  assert.deepEqual(await service.validatePdf(bytes), [{ width:595,height:842 }, { width:842,height:595 }]);
+  const boundary = Buffer.alloc(10 * 1024 * 1024, 32);
+  bytes.copy(boundary);
+  assert.equal((await service.validatePdf(boundary)).length, 2);
+  for (const invalid of [Buffer.alloc(0), Buffer.from('not PDF'), Buffer.from('%PDF-1.7 broken'), Buffer.alloc(boundary.length+1)]) {
+    await assert.rejects(service.validatePdf(invalid), { statusCode:400 });
+  }
+  pdf.setKeywords(['TMT-EGREEN-SIGNATURE-BLOCK-V3']);
+  await assert.rejects(service.validatePdf(Buffer.from(await pdf.save())), /chèn chữ ký/);
+  const empty = await PDFDocument.create();
+  await assert.rejects(service.validatePdf(Buffer.from(await empty.save({ addDefaultPage:false }))), /ít nhất một trang/);
+  const encrypted = await PDFDocument.create();
+  encrypted.addPage();
+  encrypted.context.trailerInfo.Encrypt = encrypted.context.register(encrypted.context.obj({ Filter:PDFName.of('Standard') }));
+  await assert.rejects(service.validatePdf(Buffer.from(await encrypted.save())), /mật khẩu|mã hóa/);
 });
 
 const docx = async () => {
@@ -108,6 +128,8 @@ test('real SQL: DOCX conversion, frozen snapshots/replacements/manual signing, r
       from_status VARCHAR(50),to_status VARCHAR(50),changed_fields JSON,reject_reason TEXT,actor_id INT,actor_role VARCHAR(30),source VARCHAR(30),manual_override INT,ip VARCHAR(50))`);
     const migration = await fs.readFile(path.resolve(__dirname, '../../database/234-proposal-document-recovery.sql'), 'utf8');
     for (let run = 0; run < 2; run++) for (const sql of migration.split(';').map(value => value.trim()).filter(Boolean)) await query(sql);
+    const uploadMigration = await fs.readFile(path.resolve(__dirname, '../../database/235-proposal-recovery-uploaded-pdf.sql'), 'utf8');
+    for (let run = 0; run < 2; run++) for (const sql of uploadMigration.split(';').map(value => value.trim()).filter(Boolean)) await query(sql);
     const word = await docx();
     const { stdout: png } = await require('node:util').promisify(require('node:child_process').execFile)(
       'convert', ['-size','80x20','xc:black','png:-'], { encoding: 'buffer' });
@@ -149,6 +171,73 @@ test('real SQL: DOCX conversion, frozen snapshots/replacements/manual signing, r
     assert.deepEqual(row.images.map(image => image.source), ['SNAPSHOT','MISSING','MANUAL']);
     assert.equal(row.signers[2].recovery_manual, true);
     await assert.rejects(service.activate({ ...args, recoveryId: firstId }), { statusCode: 409 });
+    const testUploadedPdf = async () => {
+    await query('UPDATE station_proposals SET signed_file_id=NULL');
+    const office = require('../src/services/libreOfficeService');
+    let converterCalls = 0;
+    t.mock.method(office, 'convertToPdf', async () => { converterCalls++; throw new Error('LibreOffice unavailable'); });
+    const failedConvert = await service.create(args);
+    await service.processNext();
+    assert.equal((await service.get({ ...args, recoveryId: failedConvert.id })).status, 'FAILED');
+    assert.equal(converterCalls, 1);
+    const supplied = await PDFDocument.create();
+    supplied.addPage([595,842]); supplied.addPage([842,595]);
+    const suppliedBytes = Buffer.from(await supplied.save());
+    const suppliedPath = await putFile(901, 'pdf', 'application/pdf', suppliedBytes);
+    const uploadArgs = { ...args, input_method:'PDF_UPLOAD', uploaded_pdf_file_id:901 };
+    await assert.rejects(service.create({ ...uploadArgs, input_method:'OTHER' }), { statusCode:400 });
+    await assert.rejects(service.create({ ...args, uploaded_pdf_file_id:901 }), { statusCode:400 });
+    await assert.rejects(service.create({ ...uploadArgs, uploaded_pdf_file_id:103 }), { statusCode:400 });
+    await assert.rejects(service.create({ ...uploadArgs, uploaded_pdf_file_id:102 }), { statusCode:400 });
+    await assert.rejects(service.create({ ...uploadArgs, uploaded_pdf_file_id:undefined }), { statusCode:400 });
+    const fileController = require('../src/controllers/fileController');
+    const accessMock = t.mock.method(fileController, 'canAccessFile', async () => false);
+    await assert.rejects(service.create(uploadArgs), { statusCode:403 });
+    accessMock.mock.restore();
+    const [[runCount]] = await query('SELECT COUNT(*) AS n FROM proposal_document_recoveries');
+    failAudit = true;
+    await assert.rejects(service.create(uploadArgs), /Audit failed/);
+    const [[afterRunCount]] = await query('SELECT COUNT(*) AS n FROM proposal_document_recoveries');
+    assert.equal(afterRunCount.n, runCount.n);
+    failAudit = false;
+    let uploaded = await service.create(uploadArgs);
+    assert.equal(uploaded.status, 'DRAFT');
+    assert.equal(uploaded.input_method, 'PDF_UPLOAD');
+    assert.equal(uploaded.uploaded_pdf_file_id, 901);
+    assert.equal(uploaded.uploaded_pdf_sha256, hash(suppliedBytes));
+    assert.equal(uploaded.uploaded_pdf_name, '901.pdf');
+    assert.equal(uploaded.page_sizes[1].width, 842);
+    assert.ok(uploaded.warnings.some(warning => warning.includes('người dùng tải lên')));
+    await service.processNext();
+    assert.equal(converterCalls, 1, 'Upload must never invoke the converter');
+    assert.equal((await service.get({ ...args, recoveryId: failedConvert.id })).status, 'FAILED');
+    await query("UPDATE users SET role='ADMIN' WHERE id=1");
+    assert.equal(await access((await files.getFilePath(901)).file, { user:{id:1,role:'ADMIN'} }), false);
+    await query("UPDATE users SET role='SUPER_ADMIN' WHERE id=1");
+    await assert.rejects(files.deleteFile(901), { statusCode:409 });
+    const base = await files.getFilePath(uploaded.base_file_id);
+    await fs.writeFile(base.filePath, Buffer.from('changed base'));
+    await assert.rejects(service.update({ ...args, recoveryId:uploaded.id, signers:uploaded.signers }), { statusCode:409 });
+    await fs.writeFile(base.filePath, suppliedBytes);
+    await fs.writeFile(suppliedPath, Buffer.from('changed upload'));
+    await assert.rejects(service.update({ ...args, recoveryId:uploaded.id, signers:uploaded.signers }), { statusCode:409 });
+    await fs.writeFile(suppliedPath, suppliedBytes);
+    uploaded = await service.update({ ...args, recoveryId:uploaded.id, signers:uploaded.signers });
+    const uploadPreview = await fs.readFile((await files.getFilePath(uploaded.preview_file_id)).filePath);
+    await fs.writeFile(suppliedPath, Buffer.from('changed upload'));
+    await assert.rejects(service.activate({ ...args, recoveryId:uploaded.id }), { statusCode:409 });
+    await fs.writeFile(suppliedPath, suppliedBytes);
+    await service.activate({ ...args, recoveryId:uploaded.id });
+    assert.deepEqual((await signatures.getSignedDocument({ user:args.user,id:1,documentId:11 })).bytes, uploadPreview);
+    const uploadedZip = await JSZip.loadAsync((await signatures.getSignedDocument({ user:args.user,id:1,all:true })).bytes);
+    assert.deepEqual(await uploadedZip.file(Object.keys(uploadedZip.files)[0]).async('nodebuffer'), uploadPreview);
+    assert.deepEqual((await query('SELECT * FROM proposal_signature_configs ORDER BY id'))[0], beforeConfigs);
+    assert.deepEqual((await query('SELECT * FROM station_proposals WHERE id=1'))[0][0], beforeProposal);
+    await service.activate({ ...args, recoveryId:firstId });
+    assert.equal((await service.get({ ...args,recoveryId:uploaded.id })).status, 'CONFIRMED');
+    assert.equal(await access((await files.getFilePath(901)).file, { user:{id:2,role:'SALES'} }), false);
+    assert.equal(converterCalls, 1);
+    };
     await assert.rejects(service.update({ ...args, recoveryId: firstId, signers: row.signers }), { statusCode: 409 });
     await assert.rejects(service.update({ ...args, recoveryId: firstId, signers: row.signers, replacements: [{ config_id: 1, file_id: 103, reason: 'bad' }] }), { statusCode: 409 });
     await assert.rejects(service.update({ ...args, recoveryId: firstId, signers: row.signers, replacements: [{ config_id: 2, file_id: 103, reason: '' }] }), { statusCode: 400 });
@@ -226,6 +315,7 @@ test('real SQL: DOCX conversion, frozen snapshots/replacements/manual signing, r
     await service.processNext();
     assert.equal((await service.get({ ...args, recoveryId: second.id })).status, 'FAILED');
     await assert.rejects(service.activate({ ...args, recoveryId: firstId }), { statusCode: 409 });
+    await testUploadedPdf();
   } finally {
     await connection.rollback();
     await connection.query(`USE \`${original.name}\``);

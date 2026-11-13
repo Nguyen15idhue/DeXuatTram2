@@ -381,7 +381,7 @@ const recoveryController = require('../controllers/proposalDocumentRecoveryContr
  *       409: { description: Chưa ký đủ hoặc đã upload chủ tịch }
  *   post:
  *     tags: [Proposal Signatures]
- *     summary: Tạo lượt phục hồi chạy nền từ DOCX gốc, bắt buộc lý do
+ *     summary: Tạo lượt phục hồi từ DOCX (chạy nền) hoặc PDF tải lên (không gọi converter), bắt buộc lý do
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -390,9 +390,16 @@ const recoveryController = require('../controllers/proposalDocumentRecoveryContr
  *       required: true
  *       content:
  *         application/json:
- *           schema: { type: object, required: [reason], properties: { reason: { type: string, maxLength: 2000 } } }
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string, maxLength: 2000 }
+ *               input_method: { type: string, enum: [DOCX_CONVERT, PDF_UPLOAD], default: DOCX_CONVERT }
+ *               uploaded_pdf_file_id: { type: integer, description: Bắt buộc với PDF_UPLOAD; PDF không mật khẩu ≤10MB chưa chèn chữ ký }
  *     responses:
- *       200: { description: Lượt PENDING }
+ *       200: { description: DOCX tạo lượt PENDING; PDF hợp lệ tạo DRAFT có PDF nền riêng, giữ cấu hình ký và file gốc }
+ *       400: { description: PDF hỏng, mã hóa, quá 10MB hoặc đã đóng dấu chữ ký }
  *       403: { description: Chỉ SUPER_ADMIN }
  * /api/admin/proposal-signatures/{id}/documents/{documentId}/recovery/{recoveryId}:
  *   get:
