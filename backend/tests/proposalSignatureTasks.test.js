@@ -12,22 +12,26 @@ const profile = user => ({
   department: user.id === 20 ? 'Phòng Tài chính và Kế toán' : user.id === 30 ? 'Back Office' : ''
 });
 
-test('upload handoff removes Back Office privilege and does not give MKT/CTV department-based upload', async t => {
+test('chairman upload allows Back Office and Finance but denies MKT/CTV department-based upload', async t => {
   t.mock.method(reports, 'resolveScope', async user => profile(user));
   t.mock.method(pool, 'getConnection', async () => { throw new Error('Must not acquire lock'); });
-  for (const user of [{ id: 30, role: 'SALES' }, { id: 30, role: 'ADMIN' },
+  for (const user of [{ id: 30, role: 'CTV' }, { id: 30, role: 'MKT' },
     { id: 20, role: 'CTV' }, { id: 20, role: 'MKT' }]) {
     await assert.rejects(service.uploadSignedFile({ user, id: 1 }), { statusCode: 403 });
   }
+  for (const user of [{ id: 30, role: 'SALES' }, { id: 30, role: 'ADMIN' }, { id: 20, role: 'SALES' }]) {
+    await assert.rejects(service.uploadSignedFile({ user, id: 1 }), /Must not acquire lock/);
+  }
 });
 
-test('Finance file access is restricted to eligible chairman proposal attachments', async t => {
+for (const department of ['Phòng Tài chính và Kế toán', 'Back Office']) {
+test(`${department} file access is restricted to eligible chairman proposal attachments`, async t => {
   const files = require('../src/controllers/fileController');
   let eligible = false;
   let unavailable = false;
   t.mock.method(pool, 'query', async (sql, params = []) => {
     if (sql.includes('SELECT role, token_version, custom_data FROM users')) return [[{
-      role: 'SALES', token_version: 0, custom_data: { department: 'Phòng Tài chính và Kế toán' }
+      role: 'SALES', token_version: 0, custom_data: { department }
     }]];
     if (sql.includes('FROM proposal_report_documents')) return [params[0] === 100 ? [{ id: 11, proposal_id: 1 }] : []];
     if (sql.includes('SELECT id,custom_data FROM station_proposals')) return [[{
@@ -51,6 +55,7 @@ test('Finance file access is restricted to eligible chairman proposal attachment
   unavailable = true;
   await assert.rejects(files.canAccessFile({ id: 101 }, req), /Database unavailable/);
 });
+}
 
 test('every chairman file is accessible to proposal owner, assigned signers and Finance, not unrelated users', async t => {
   const controller = require('../src/controllers/fileController');
@@ -72,6 +77,8 @@ test('every chairman file is accessible to proposal owner, assigned signers and 
   requester = { id: 2, role: 'SALES', department: '' };
   assert.equal(await canRead(), true);
   requester = { id: 3, role: 'SALES', department: 'Phòng Tài chính và Kế toán' };
+  assert.equal(await canRead(), true);
+  requester = { id: 3, role: 'SALES', department: 'Back Office' };
   assert.equal(await canRead(), true);
   finalMarker = null;
   assert.equal(await canRead(), false);
@@ -150,14 +157,16 @@ test('real SQL signature tabs split personal completion and chairman handoff wit
     assert.deepEqual(await ids(superAdmin, 'chairman'), [5, 7]);
     for (const role of ['ADMIN', 'SALES']) {
       const backOffice = { id: 30, role };
-      assert.deepEqual(await ids(backOffice, 'pending'), []);
-      assert.deepEqual(await ids(backOffice, 'completed'), []);
+      assert.deepEqual(await ids(backOffice, 'pending'), [5, 7]);
+      assert.deepEqual(await ids(backOffice, 'completed'), [4]);
       assert.deepEqual(await ids(backOffice, 'chairman'), []);
       assert.deepEqual(await ids(backOffice, 'all'), [1, 2, 3, 4, 5, 7]);
     }
     assert.equal(await service.canReadChairmanProposal({ user: finance, id: 1 }), false);
     assert.equal(await service.canReadChairmanProposal({ user: finance, id: 5 }), true);
     assert.equal(await service.canReadChairmanProposal({ user: finance, id: 4 }), true);
+    assert.equal(await service.canReadChairmanProposal({ user: { id: 30, role: 'SALES' }, id: 5 }), true);
+    assert.equal(await service.canReadChairmanProposal({ user: { id: 30, role: 'SALES' }, id: 1 }), false);
   } finally {
     await connection.query(`USE \`${original.name}\``);
     await connection.query(`DROP DATABASE \`${database}\``);

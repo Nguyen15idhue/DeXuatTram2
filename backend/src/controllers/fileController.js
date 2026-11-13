@@ -87,7 +87,8 @@ const canAccessFile = async (file, req) => {
         [recovery.proposal_id, recovery.document_id, recovery.signing_file_id, requesterId]);
       if (assigned.length) return true;
       if (['ADMIN','SALES'].includes(requesterRole)
-        && require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+        && (require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+          || require('../services/proposalReportService').isBackOffice(requesterDepartment))
         && await require('../services/proposalSignatureService').canReadChairmanProposal({
           user: { id: requesterId, role: requesterRole }, id: recovery.proposal_id
         })) return true;
@@ -110,7 +111,8 @@ const canAccessFile = async (file, req) => {
         [proposal.proposal_id, requesterId]);
       if (assigned.length) return true;
       const reports = require('../services/proposalReportService');
-      if (requesterRole === 'SALES' && reports.isFinanceDepartment(requesterDepartment) && proposal.signed_file_id) return true;
+      if (requesterRole === 'SALES' && (reports.isFinanceDepartment(requesterDepartment)
+        || reports.isBackOffice(requesterDepartment)) && proposal.signed_file_id) return true;
       try {
         await reports.assertReportReadAccess({ id: requesterId, role: requesterRole }, proposal.proposal_id);
         return true;
@@ -129,7 +131,8 @@ const canAccessFile = async (file, req) => {
         [document.proposal_id, requesterId, document.id, file.id]);
       if (configs.length) return true;
       if (['ADMIN', 'SALES'].includes(requesterRole)
-        && require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+        && (require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+          || require('../services/proposalReportService').isBackOffice(requesterDepartment))
         && await require('../services/proposalSignatureService').canReadChairmanProposal({
           user: { id: requesterId, role: requesterRole }, id: document.proposal_id
         })) return true;
@@ -190,7 +193,8 @@ const canAccessFile = async (file, req) => {
   }
   if (requesterId && file.uploaded_by !== null && file.uploaded_by !== undefined && Number(file.uploaded_by) === Number(requesterId)) return true;
   if (requesterId && requesterRole === 'SALES'
-    && require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)) {
+    && (require('../services/proposalReportService').isFinanceDepartment(requesterDepartment)
+      || require('../services/proposalReportService').isBackOffice(requesterDepartment))) {
     const [proposals] = await pool.query(
       `SELECT id AS proposal_id FROM station_proposals WHERE signed_file_id=?
        UNION SELECT proposal_id FROM proposal_signature_configs WHERE file_id=? AND status<>'CANCELLED'`,
