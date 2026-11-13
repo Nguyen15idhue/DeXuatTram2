@@ -4,6 +4,7 @@ test.use({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173' });
 for (const scenario of ['signer', 'finance', 'backoffice', 'superadmin', 'finance-mobile']) {
   test(`signature task tabs and chairman upload privileges: ${scenario}`, async ({ page }) => {
     const finance = scenario.startsWith('finance');
+    const handler = finance || scenario === 'backoffice';
     const superAdmin = scenario === 'superadmin';
     const role = superAdmin ? 'SUPER_ADMIN' : 'SALES';
     if (scenario.endsWith('mobile')) await page.setViewportSize({ width: 390, height: 844 });
@@ -21,10 +22,10 @@ for (const scenario of ['signer', 'finance', 'backoffice', 'superadmin', 'financ
       else if (path.endsWith('/admin/proposal-signatures')) {
         requests.push(url.searchParams.toString());
         meta = { isFinance: finance, isSuperAdmin: superAdmin, isBackOffice: scenario === 'backoffice',
-          isManager: superAdmin || scenario === 'backoffice', can_handle_chairman: finance || superAdmin, can_view_chairman_tab: !finance };
+          isManager: superAdmin || scenario === 'backoffice', can_handle_chairman: handler || superAdmin, can_view_chairman_tab: !handler };
         const tab = url.searchParams.get('tab');
         data = [{ id: 501, ma_de_xuat: 'SIGNED-501', status: 'SIGNATURE_PENDING', sign_status: 'DONE', custom_data: {}, can_sign: false }];
-        if (tab === 'pending' && !finance && !superAdmin) data = [{ ...data[0], sign_status: 'DOING', can_sign: true }];
+        if (tab === 'pending' && !handler && !superAdmin) data = [{ ...data[0], sign_status: 'DOING', can_sign: true }];
         pagination = { page: 1, total: 1, totalPages: 1 };
       } else if (path.endsWith('/views')) data = [{ id: 8, entity: 'station_proposals', usage: 'table', status: 'active' }];
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data, meta, pagination }) });
@@ -32,10 +33,10 @@ for (const scenario of ['signer', 'finance', 'backoffice', 'superadmin', 'financ
     await page.addInitScript(() => localStorage.setItem('token', 'signature-tasks-fixture'));
     await page.goto(`/admin/proposals/trinh-ky${finance ? '?tab=chairman' : ''}`);
     await expect(page.getByRole('tab', { name: 'Các đề xuất cần thực hiện', exact: true })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('tab', { name: 'Đề xuất trình chủ tịch', exact: true })).toHaveCount(finance ? 0 : 1);
-    if (finance) await expect(page).not.toHaveURL(/tab=chairman/);
+    await expect(page.getByRole('tab', { name: 'Đề xuất trình chủ tịch', exact: true })).toHaveCount(handler ? 0 : 1);
+    if (handler) await expect(page).not.toHaveURL(/tab=chairman/);
     const upload = page.getByRole('button', { name: 'Upload file chủ tịch', exact: true });
-    if (finance || superAdmin) {
+    if (handler || superAdmin) {
       await expect(upload).toBeVisible();
       await upload.click();
       await expect(page.getByRole('heading', { name: /Upload file/ })).toBeVisible();
@@ -48,7 +49,7 @@ for (const scenario of ['signer', 'finance', 'backoffice', 'superadmin', 'financ
     await page.getByRole('tab', { name: 'Các đề xuất đã hoàn thành', exact: true }).click();
     await expect(upload).toHaveCount(0);
     await page.getByRole('tab', { name: 'Tất cả đề xuất', exact: true }).click();
-    await expect(upload).toHaveCount(finance || superAdmin ? 1 : 0);
+    await expect(upload).toHaveCount(handler || superAdmin ? 1 : 0);
     expect(requests.some(params => params.includes('tab=completed'))).toBe(true);
     expect(requests.some(params => params.includes('tab=all'))).toBe(true);
     expect(errors).toEqual([]);

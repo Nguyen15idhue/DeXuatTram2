@@ -11,9 +11,9 @@ const proposalSignatureController = require('../controllers/proposalSignatureCon
  *     summary: Danh sách đề xuất cho bước Trình ký
  *     description: >
  *       tab=all: giữ phạm vi xem, bổ sung hồ sơ đã đủ chữ ký/đã upload chủ tịch cho Tài chính và Kế toán.
- *       tab=pending: còn chữ ký cá nhân; Tài chính/SUPER_ADMIN thêm hồ sơ đủ chữ ký chờ upload.
- *       tab=chairman: hồ sơ được phân công ký đã đủ chữ ký chờ upload, SUPER_ADMIN xem tất cả; Tài chính trả rỗng.
- *       tab=completed: đã ký hết tài liệu cá nhân được giao; Tài chính/SUPER_ADMIN thêm hồ sơ APPROVED có file chủ tịch.
+ *       tab=pending: còn chữ ký cá nhân; Back Office/Tài chính/SUPER_ADMIN thêm hồ sơ đủ chữ ký chờ upload.
+ *       tab=chairman: hồ sơ được phân công ký đã đủ chữ ký chờ upload, SUPER_ADMIN xem tất cả; Back Office/Tài chính trả rỗng.
+ *       tab=completed: đã ký hết tài liệu cá nhân được giao; Back Office/Tài chính/SUPER_ADMIN thêm hồ sơ APPROVED có file chủ tịch.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -245,9 +245,9 @@ router.post('/:id/request-rework', requireAuth, proposalSignatureController.requ
  * /api/admin/proposal-signatures/{id}/signed-file:
  *   post:
  *     tags: [Proposal Signatures]
- *     summary: Tài chính và Kế toán hoặc SUPER_ADMIN tải lên file BCĐX chủ tịch đã ký
+ *     summary: Back Office, Tài chính và Kế toán hoặc SUPER_ADMIN tải lên file BCĐX chủ tịch đã ký
  *     description: >
- *       Chỉ Tài chính và Kế toán/SUPER_ADMIN, khi đủ chữ ký. Danh sách chung 1-20 file,
+ *       Chỉ Back Office/Tài chính và Kế toán/SUPER_ADMIN, khi đủ chữ ký. Danh sách chung 1-20 file,
  *       tối đa 10MB/file: JPEG/PNG/GIF/WEBP/DOC/DOCX/PDF. Giữ file đầu tiên tương thích,
  *       không ánh xạ file chung theo BCĐX gốc; lưu danh sách, trạng thái và nhật ký cùng transaction.
  *     security:

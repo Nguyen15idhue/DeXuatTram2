@@ -197,13 +197,13 @@ test('Finance upload requires every document signed and saves a shared collectio
   assert.equal((await fixture.signatures.getDetail({ user: args.user, id: 501 })).can_upload_signed, false);
 });
 
-test('last signature notifies Finance and SUPER_ADMIN, not Back Office', async () => {
+test('last signature notifies Finance, Back Office and SUPER_ADMIN', async () => {
   const fixture = await makeHarness();
   await fixture.signatures.sign({ user: { id: 7, role: 'SUPER_ADMIN' }, id: 501, documentId: 11 });
   assert.equal(fixture.notices.some(notice => notice.type === 'DONE'), false);
   await fixture.signatures.sign({ user: { id: 7, role: 'SUPER_ADMIN' }, id: 501, documentId: 12 });
   const recipients = fixture.notices.filter(notice => notice.type === 'DONE').map(notice => notice.userId).sort((a, b) => a - b);
-  assert.deepEqual(recipients, [7, 20]);
+  assert.deepEqual(recipients, [7, 20, 30]);
 });
 
 test('sign and withdrawal serialize in both arrival orders without losing signed configs', async () => {
